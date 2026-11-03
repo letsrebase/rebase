@@ -105,30 +105,28 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             or deps.settings is None
             or not deps.settings.pigro_engagements_token
         ):
-            raise not_configured("Il consuntivo di Pigro", "REBASE_PIGRO_ENGAGEMENTS_TOKEN")
+            raise not_configured("The Pigro report", "REBASE_PIGRO_ENGAGEMENTS_TOKEN")
         return deps.engagements
 
     @mcp.tool()
     def list_matches(freelancer_id: str) -> dict[str, Any]:
-        """I match e i contratti di un freelance, per id della scheda, come li mostra la
-        pagina «Match e contratti»: `framework` è il contratto quadro (quello attivo,
-        altrimenti l'ultimo ancora da inviare o partito per la firma, anche se poi
-        annullato o rifiutato; una bozza annullata prima di partire non conta) con
-        stato, data di firma, prossimo rinnovo, ultimo giorno per la disdetta e
-        versione del testo; `frameworks` li elenca tutti; `occasional_framework` è il contratto
-        quadro per prestazioni occasionali, con la stessa regola (un freelance può averne
-        uno per tipo); `matches` sono i
-        match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
-        con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
-        l'accesso admin: mai i byte, mai i dati fiscali. Ogni match e ogni documento
-        porta anche `situation`, a che punto è, e `next_action` e `other_actions`, i
-        passi che ha davanti. Su un match `send` è `send_match_for_signature`, `cancel`
-        è `cancel_match` e `close` è `close_match`, mentre `resend_email` e
-        `status_refresh` agiscono sulla sua lettera (`letter.id`) con
-        `resend_signing_mail` e `refresh_contract`; su un contratto quadro gli stessi due
-        strumenti prendono il suo id, `cancel` è `cancel_contract` e `record_notice`
-        è `record_notice`. Solo lettura; un match nuovo si prepara con `preview_match` e
-        si salva con `create_match`."""
+        """The matches and contracts of a freelancer, by card id, as the «Match e contratti» page
+        shows them: `framework` is the framework agreement (the active one, otherwise the last
+        one still to be sent or sent for signature, even if later cancelled or refused; a
+        draft cancelled before it was sent does not count) with its status, signing date, next
+        renewal, last day for notice and text version; `frameworks` lists them all;
+        `occasional_framework` is the framework agreement for occasional services, with the
+        same rule (a freelancer can have one per type); `matches` are the matches, newest
+        first, each with the company, the status and the engagement letter with its number.
+        Every document carries `pdf_url`, the link to the PDF to open with admin access: never
+        the bytes, never the tax data. Every match and every document also carries
+        `situation`, where it stands, and `next_action` and `other_actions`, the steps ahead
+        of it. On a match `send` is `send_match_for_signature`, `cancel` is `cancel_match` and
+        `close` is `close_match`, while `resend_email` and `status_refresh` act on its letter
+        (`letter.id`) with `resend_signing_mail` and `refresh_contract`; on a framework
+        agreement the same two tools take its id, `cancel` is `cancel_contract` and
+        `record_notice` is `record_notice`. Read-only; a new match is prepared with
+        `preview_match` and saved with `create_match`."""
         body = deps.run(
             lambda s: deps.reading(s).for_freelancer(to_uuid(freelancer_id, "freelancer_id"))
         )
@@ -142,13 +140,13 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_match(match_id: str) -> dict[str, Any]:
-        """Un match, per id: l'azienda e la figura richiesta, i dati del cliente come li
-        stampa la lettera, lo stato (draft, awaiting_signature, active, concluded, cancelled), la
-        lettera di incarico con numero, stato e `label` («Lettera di incarico» o «Lettera
-        di incarico occasionale»), e in `framework` il contratto quadro del freelance dello
-        stesso tipo della lettera. Ogni documento porta `pdf_url`, mai i byte. Il match e
-        i documenti portano `situation`, `next_action` e `other_actions`, e quale strumento fa
-        ogni azione lo dice `list_matches`. Solo lettura."""
+        """One match, by id: the company and the requested role, the customer data as the letter
+        prints it, the status (draft, awaiting_signature, active, concluded, cancelled), the
+        engagement letter with number, status and `label` («Lettera di incarico» or «Lettera
+        di incarico occasionale»), and in `framework` the freelancer's framework agreement of
+        the same type as the letter. Every document carries `pdf_url`, never the bytes. The
+        match and the documents carry `situation`, `next_action` and `other_actions`, and
+        `list_matches` says which tool performs each action. Read-only."""
         key = to_uuid(match_id, "match_id")
 
         def call(session: Session) -> dict[str, Any]:
@@ -182,28 +180,26 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         terms: dict[str, Any] | None = None,
         regime: Regime | None = None,
     ) -> dict[str, Any]:
-        """Cosa farebbe `create_match` con questi dati, senza scrivere nulla: le frasi del
-        passo 3 di «Crea match». `recap` è la lettera di incarico in tre o quattro
-        frasi, `what_happens` quale documento parte per primo, `required_framework` se
-        serve un nuovo contratto quadro, `missing_tax_data` se mancano i dati
-        fiscali del freelance (si salvano con `set_freelancer_tax_data`), `regime` il tipo
-        di lettera. `regime` è `vat_registered` (lettera di incarico, per chi lavora con
-        partita IVA) o `occasional` (lettera di incarico occasionale, prestazione
-        occasionale); omesso, quello che propone l'hub: occasionale se i dati fiscali sono
-        salvati senza partita IVA. Una lettera con partita IVA senza partita IVA salvata è
-        rifiutata. Si parte dalla proposta dell'hub: il cliente come l'ha chiamato l'ultimo
-        match della stessa azienda (altrimenti solo il nome dell'azienda), la lettera dalla
-        richiesta, dalla scheda e dalle condizioni di rebase. `customer` e `terms` la
-        cambiano campo per campo, con i nomi dell'API: per il cliente
-        `customer_legal_name`, `customer_vat_number`, `customer_registered_office`; per le
-        condizioni i campi
-        della lettera, come `role`, `activities`, `start_date` e `end_date` (AAAA-MM-GG),
-        `commitment`, `location`, `fee` (IVA esclusa nella lettera con partita IVA, lordo in
-        quella occasionale; anche all'italiana: «1.500», «1.234,50»), `unit`,
-        `payment_days`, `month_end`. Un campo omesso resta come lo propone l'hub,
-        `null` lo svuota. Risponde anche `customer` e `terms` come verrebbero scritti.
-        Un campo sconosciuto, o obbligatorio e rimasto vuoto, è rifiutato con il suo nome.
-        Solo lettura."""
+        """What `create_match` would do with this data, without writing anything: the sentences
+        of step 3 of «Crea match». `recap` is the engagement letter in three or four
+        sentences, `what_happens` which document goes out first, `required_framework`
+        whether a new framework agreement is needed, `missing_tax_data` whether the
+        freelancer's tax data is missing (save it with `set_freelancer_tax_data`), `regime`
+        the letter type. `regime` is `vat_registered` (engagement letter, for those who work
+        with a VAT number) or `occasional` (occasional engagement letter, occasional
+        service); if omitted, what the hub proposes: occasional if the tax data is saved
+        without a VAT number. A VAT-registered letter without a saved VAT number is refused.
+        It starts from the hub's proposal: the customer as the last match of the same company
+        named it (otherwise just the company name), the letter from the request, the card and
+        rebase's conditions. `customer` and `terms` change it field by field, with the API's
+        names: for the customer `customer_legal_name`, `customer_vat_number`,
+        `customer_registered_office`; for the conditions the letter's fields, such as `role`,
+        `activities`, `start_date` and `end_date` (`YYYY-MM-DD`), `commitment`, `location`,
+        `fee` (excluding VAT in the VAT-registered letter, gross in the occasional one; also
+        in Italian format: «1.500», «1.234,50»), `unit`, `payment_days`, `month_end`. An
+        omitted field stays as the hub proposes it, `null` clears it. The answer also
+        includes `customer` and `terms` as they would be written. An unknown field, or a
+        required one left empty, is refused by name. Read-only."""
         freelancer, company = (
             to_uuid(freelancer_id, "freelancer_id"),
             to_uuid(company_id, "company_id"),
@@ -229,22 +225,21 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         expected_days: int | None = None,
         regime: Regime | None = None,
     ) -> dict[str, Any]:
-        """Salva il match come bozza, come «Salva senza inviare» al passo 3 di «Crea
-        match»: la lettera di incarico con il suo numero e, se il freelance non ha un
-        contratto quadro attivo né uno già in firma dello stesso tipo della lettera, un
-        contratto quadro nuovo di quel tipo. Non parte nulla: per la firma c'è
-        `send_match_for_signature`. `customer` e `terms` come in `preview_match`, e
-        così `regime`, da chiamare prima per rileggere le frasi. Servono i dati
-        fiscali del freelance (`set_freelancer_tax_data`). `expected_days`, i giorni
-        attesi per il consuntivo su Pigro (fra 1 e 366, facoltativo), sta sul match e non
-        sulla lettera: il suo testo resta quello di «Impegno». `match_id`, un UUID
-        scelto da chi chiama, rende sicuro riprovare: con lo stesso id torna il match già
-        scritto e non un secondo, ma solo se la proposta è rimasta identica. Se nel
-        frattempo la proposta dell'hub è cambiata (la richiesta, la scheda o l'ultimo
-        match dell'azienda), il tentativo è rifiutato: per riprovare passa esplicitamente
-        in `customer` e `terms` i valori della prima volta. Risponde il match con
-        `situation`, `next_action` e la lettera con `pdf_url`, a nome dell'admin
-        dietro il token."""
+        """Saves the match as a draft, like «Salva senza inviare» at step 3 of «Crea match»: the
+        engagement letter with its number and, if the freelancer has no active framework
+        agreement nor one already out for signature of the same type as the letter, a new
+        framework agreement of that type. Nothing is sent: for signing there is
+        `send_match_for_signature`. `customer` and `terms` as in `preview_match`, and so is
+        `regime`, which you should call first to reread the sentences. The freelancer's tax
+        data is required (`set_freelancer_tax_data`). `expected_days`, the days expected for
+        the Pigro report (between 1 and 366, optional), lives on the match and not on the
+        letter: its text stays that of «Impegno». `match_id`, a UUID chosen by the caller,
+        makes retrying safe: with the same id the already written match comes back and not a
+        second one, but only if the proposal is unchanged. If the hub's proposal has changed
+        in the meantime (the request, the card or the company's last match), the attempt is
+        refused: to retry, explicitly pass the first-time values in `customer` and `terms`.
+        The answer is the match with `situation`, `next_action` and the letter with
+        `pdf_url`, in the name of the admin behind the token."""
         freelancer, company = (
             to_uuid(freelancer_id, "freelancer_id"),
             to_uuid(company_id, "company_id"),
@@ -268,15 +263,15 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def send_match_for_signature(match_id: str) -> dict[str, Any]:
-        """«Invia per la firma»: il documento che può partire ora va su Documenso e il
-        freelance riceve la mail con il link per firmarlo. Se non ha un contratto quadro
-        attivo parte prima quello, e la lettera di incarico parte da sola dopo la sua
-        firma. `message` dice cosa è partito, con le parole della pagina; `sent` è
-        `framework`, `letter` o `null` (la lettera aspetta un contratto quadro già in
-        firma), `mail_sent` se la mail è partita (altrimenti `resend_signing_mail`).
-        Non si torna indietro: il documento arriva al freelance, e da lì si può solo
-        annullare. Rifiutato per un testo ancora in bozza o un match che non ha più nulla
-        da inviare."""
+        """«Invia per la firma»: the document that can go out now goes to Documenso and the
+        freelancer receives the email with the link to sign it. If there is no active
+        framework agreement, that one goes first, and the engagement letter goes out by itself
+        after it is signed. `message` says what went out, in the page's words; `sent` is
+        `framework`, `letter` or `null` (the letter waits for a framework agreement already
+        out for signature), `mail_sent` whether the email went out (otherwise
+        `resend_signing_mail`). There is no going back: the document reaches the freelancer,
+        and from there it can only be cancelled. Refused for a text still in draft or a match
+        that has nothing left to send."""
         key = to_uuid(match_id, "match_id")
 
         def call(session: Session) -> dict[str, Any]:
@@ -290,49 +285,48 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def resend_signing_mail(document_id: str) -> dict[str, Any]:
-        """«Reinvia email»: di nuovo la mail con il link per firmare, lo stesso di prima,
-        per un documento che aspetta ancora la firma del freelance. L'id del documento è
-        in `list_matches` o `get_match`. Risponde il documento con `pdf_url`."""
+        """«Reinvia email»: the email with the signing link again, the same as before, for a
+        document still waiting for the freelancer's signature. The document id is in
+        `list_matches` or `get_match`. The answer is the document with `pdf_url`."""
         return _on_document(
             document_id, lambda service, key: service.admin.resend_mail(key, deps.admin().id)
         )
 
     @mcp.tool()
     def refresh_contract(document_id: str) -> dict[str, Any]:
-        """«Aggiorna stato»: chiede a Documenso a che punto è il documento e lo applica
-        come farebbe la sua notifica, poi fa quello che una firma lascia da fare (salva e
-        manda la copia firmata, fa partire le lettere che aspettavano questo contratto
-        quadro). Serve quando una notifica non è arrivata. Risponde il documento con
-        `situation`, `pdf_url` e, quando c'è la copia firmata, `pdf_signed_url`."""
+        """«Aggiorna stato»: asks Documenso where the document stands and applies it as its
+        notification would, then does what a signature leaves to do (saves and sends the
+        signed copy, releases the letters that were waiting for this framework agreement).
+        Needed when a notification did not arrive. The answer is the document with
+        `situation`, `pdf_url` and, when there is a signed copy, `pdf_signed_url`."""
         return _on_document(document_id, lambda service, key: service.admin.refresh(key))
 
     @mcp.tool()
     def cancel_contract(document_id: str) -> dict[str, Any]:
-        """«Annulla» su un contratto quadro non ancora firmato: se era partito è annullato
-        anche su Documenso, e il freelance riceve una mail che il link non vale più. Una
-        lettera di incarico si annulla con il suo match (`cancel_match`). Non si torna
-        indietro: le lettere che lo aspettavano restano in attesa, e «Invia per la firma»
-        sul loro match ne scrive uno nuovo."""
+        """«Annulla» on a framework agreement not yet signed: if it had gone out it is also
+        cancelled on Documenso, and the freelancer receives an email saying the link is no
+        longer valid. An engagement letter is cancelled with its match (`cancel_match`). There
+        is no going back: the letters that were waiting for it stay waiting, and «Invia per la
+        firma» on their match writes a new one."""
         return _on_document(
             document_id, lambda service, key: service.admin.cancel_document(key, deps.admin().id)
         )
 
     @mcp.tool()
     def record_notice(document_id: str) -> dict[str, Any]:
-        """«Registra disdetta» su un contratto quadro attivo, per una disdetta o un recesso:
-        da adesso il freelance non ha un contratto quadro attivo, e il suo prossimo match
-        ne scrive uno nuovo. Non si torna indietro."""
+        """«Registra disdetta» on an active framework agreement, for a notice of termination or
+        withdrawal: from now on the freelancer has no active framework agreement, and their
+        next match writes a new one. There is no going back."""
         return _on_document(
             document_id, lambda service, key: service.admin.record_notice(key, deps.admin().id)
         )
 
     @mcp.tool()
     def cancel_match(match_id: str) -> dict[str, Any]:
-        """«Annulla» su un match in bozza o in firma: il match e la sua lettera di
-        incarico diventano annullati, e il numero della lettera non si riusa. Una lettera
-        già partita è annullata anche su Documenso: il freelance riceve una mail e il suo
-        link smette di funzionare. Il contratto quadro resta com'è. Non si torna
-        indietro."""
+        """«Annulla» on a draft match or one out for signature: the match and its engagement
+        letter become cancelled, and the letter's number is not reused. A letter already sent
+        is also cancelled on Documenso: the freelancer receives an email and their link stops
+        working. The framework agreement stays as it is. There is no going back."""
         return _on_match(
             match_id,
             lambda session, key: deps.contracts(session).admin.cancel_match(key, deps.admin().id),
@@ -340,19 +334,19 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def close_match(match_id: str) -> dict[str, Any]:
-        """«Chiudi match» su un match attivo: l'incarico finisce e il match diventa
-        concluso. Il contratto quadro resta com'è. Non si torna indietro."""
+        """«Chiudi match» on an active match: the engagement ends and the match becomes
+        concluded. The framework agreement stays as it is. There is no going back."""
         return _on_match(
             match_id, lambda session, key: MatchService(session).close(key, deps.admin().id)
         )
 
     @mcp.tool()
     def link_match_to_pigro(match_id: str) -> dict[str, Any]:
-        """«Riprova su Pigro»: collega ora un match attivo al suo deal su PigroCRM, a
-        nome dell'admin dietro il token, o registra perché non ci è riuscito (`error`,
-        `rejected` con la frase del CRM) così che si possa riprovare. Rifiutato per un
-        match non attivo o non trovato. Risponde un errore anche quando Pigro non è
-        configurato su questo ambiente o non risponde."""
+        """«Riprova su Pigro»: links an active match to its deal on PigroCRM now, in the name of
+        the admin behind the token, or records why it did not succeed (`error`, `rejected`
+        with the CRM's sentence) so that it can be retried. Refused for a match that is not
+        active or not found. It also answers with an error when Pigro is not configured in
+        this environment or does not respond."""
         build_engagements = _require_engagements()
         try:
             return _on_match(
@@ -365,16 +359,15 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def get_match_report(
         match_id: str, from_date: str | None = None, to_date: str | None = None
     ) -> dict[str, Any]:
-        """Il consuntivo delle ore di un match, come «Consuntivo» nell'area admin: ore e
-        giorni totali, l'avanzamento sui giorni previsti quando ce ne sono, il dettaglio
-        per giorno con le fatture di ciascuno e le ore su ognuna, i totali per settimana
-        e per mese, e le fatture del periodo. `from_date` e `to_date` (AAAA-MM-GG) restringono il
-        periodo, l'intero incarico per difetto (dall'inizio della lettera a oggi).
-        Rifiutato per un match non collegato a Pigro, con la frase di dove sta il
-        collegamento. Risponde un errore anche quando Pigro non è configurato su questo
-        ambiente o non risponde. Solo lettura, con un'eccezione: un deal eliminato nello
-        spazio del freelance segna il match come rifiutato, finché il deal non torna e
-        «Riprova» lo ricollega."""
+        """The hours report of a match, like «Consuntivo» in the admin area: total hours and
+        days, progress against the expected days when there are any, the per-day detail with
+        each day's invoices and the hours on each, the totals per week and per month, and the
+        invoices of the period. `from_date` and `to_date` (`YYYY-MM-DD`) narrow the period,
+        the whole engagement by default (from the start of the letter to today). Refused for
+        a match not linked to Pigro, with the sentence saying where the link stands. It also
+        answers with an error when Pigro is not configured in this environment or does not
+        respond. Read-only, with one exception: a deleted deal in the freelancer's space marks
+        the match as rejected, until the deal comes back and «Riprova» links it again."""
         build_engagements = _require_engagements()
         key = to_uuid(match_id, "match_id")
         start = day(from_date, "from_date")

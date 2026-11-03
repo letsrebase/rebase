@@ -28,8 +28,8 @@ def preview(
     actor: ActorDep,
     settings: SettingsDep,
 ) -> ApprovalRequestMessage:
-    """Il testo che la richiesta di approvazione porterebbe, per le date indicate: oggetto
-    e corpo, scritti e non salvati. Una lettura."""
+    """The text the approval request would carry, for the given dates: subject
+    and body, written and not saved. A read."""
     return ApprovalRequestService(session, settings).compose(contract_id, data, actor)
 
 
@@ -41,8 +41,8 @@ def prepare(
     actor: ActorDep,
     settings: SettingsDep,
 ) -> ApprovalRequestPrepared:
-    """Registra le giornate chieste come `proposed` e salva il messaggio come bozza del
-    cliente, in una transazione. Non invia: l'invio è `POST /api/email-drafts/{id}/send`,
-    che una persona preme dopo aver letto la bozza. Una data in cui il contratto ha già
-    una giornata risponde 409. Chiusa a ogni credenziale di tipo agente."""
+    """Records the requested workdays as `proposed` and saves the message as the
+    client's draft, in one transaction. It does not send: sending is `POST
+    /api/email-drafts/{id}/send`, which a person presses after reading the draft. A date on which
+    the contract already has a workday answers 409. Closed to every agent-type credential."""
     return ApprovalRequestService(session, settings).prepare(contract_id, data, actor)

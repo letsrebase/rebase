@@ -39,15 +39,15 @@ async def test_a_zero_valued_deal_shows_zero_not_a_dash(server, mcp_session: Ses
         deal_text = (await client.read_resource(f"deal://{deal.id}")).contents[0].text
         customer_text = (await client.read_resource(f"customer://{customer.id}")).contents[0].text
 
-    assert _line(deal_text, "- Valore previsto:") == "- Valore previsto: 0.00"
-    assert _line(deal_text, "- Ore preventivate:") == "- Ore preventivate: 0.00"
-    assert _line(deal_text, "- Valore preventivato:") == "- Valore preventivato: 0.00"
-    assert "valore previsto 0.00" in customer_text
+    assert _line(deal_text, "- Expected value:") == "- Expected value: 0.00"
+    assert _line(deal_text, "- Budgeted hours:") == "- Budgeted hours: 0.00"
+    assert _line(deal_text, "- Budgeted value:") == "- Budgeted value: 0.00"
+    assert "expected value 0.00" in customer_text
 
 
 async def test_address_line_omits_missing_parts_cleanly(server, mcp_session: Session) -> None:
     """A customer with no street/CAP/comune/provincia beyond the country default
-    must not render as `- Indirizzo: —,   () IT` (a dash, a comma, a double
+    must not render as `- Address: —,   () IT` (a dash, a comma, a double
     space, and empty parentheses): only the parts actually present should
     appear, and the placeholder dash is reserved for when there is truly
     nothing to show."""
@@ -58,4 +58,4 @@ async def test_address_line_omits_missing_parts_cleanly(server, mcp_session: Ses
     async with Client(server) as client:
         text = (await client.read_resource(f"customer://{customer.id}")).contents[0].text
 
-    assert _line(text, "- Indirizzo:") == "- Indirizzo: IT"
+    assert _line(text, "- Address:") == "- Address: IT"

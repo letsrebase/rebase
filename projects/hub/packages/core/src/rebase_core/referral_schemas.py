@@ -88,7 +88,7 @@ class MatchReferral(ResponseModel):
     project: no base, a cancelled match, one whose letter is already out of the
     running); `already_accrued` when the referral already paid on another match, since a
     referral pays once -- no figure then; `to_verify` when the referral is a
-    company's and its referente has not logged in yet (REB-658): nothing it could sign
+    company's and its contact has not logged in yet (REB-658): nothing it could sign
     earns anything until then, so no figure either. `referrer_name` is the referrer's
     whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
     can link to it."""
@@ -147,7 +147,7 @@ class ReferralLedgerItem(ResponseModel):
     `letter`, `storico`) when and by what; they are `None` while it is pending. A
     pending referral has no reward and nothing to confirm (`reward_id` and `status` are
     `None`), and a pending company has no `match_*` and no projection either, since
-    nothing it could sign would earn anything until its referente logs in."""
+    nothing it could sign would earn anything until its contact logs in."""
 
     model_config = ConfigDict(from_attributes=True)
 

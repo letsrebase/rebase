@@ -38,14 +38,14 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         remote: str | None = None,
         links: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Crea (o riscrive) la scheda freelance di un'iscrizione con quanto si trova in
-        pubblico su quella persona: nome e cognome obbligatori, poi il profilo LinkedIn,
-        la posizione come la dichiara lei, altri link (sito, GitHub, portfolio). Tariffa e
-        modalità di lavoro solo se una fonte pubblica le dice, altrimenti restano vuote
-        con il CV: la persona le completa dalla sua area. `sources` sono gli indirizzi https
-        da cui vengono le informazioni, da una a dieci, e finiscono come nota nel thread della
-        scheda, firmata dall'admin dietro il token. Una
-        scheda che la persona ha già compilato non si tocca: il tool rifiuta."""
+        """Creates (or rewrites) the freelancer card of a signup with what can be found
+        publicly about that person: first and last name required, then the LinkedIn profile,
+        the job title as they state it, other links (website, GitHub, portfolio). Rate and
+        work mode only if a public source says so, otherwise they stay empty
+        along with the CV: the person fills them in from their own area. `sources` are the
+        https addresses the information comes from, from one to ten, and they are saved as a
+        note in the card's thread, signed by the admin behind the token. A card the person
+        has already filled in is not touched: the tool refuses."""
         draft = FreelancerDraft(
             first_name=first_name,
             last_name=last_name,
@@ -71,15 +71,15 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_freelancer(freelancer_id: str) -> dict[str, Any]:
-        """Un freelance, per id, con `note`: il thread di chi lo ha seguito, dal più
-        recente, ognuna con `id`, autore, data, `source` (`web`, `mcp`, `person`, `system`),
-        l'ultima modifica e `editable`. Le note cancellate non ci sono. `phone` è
-        quello dell'account; `cv_contacts` è quanto il CV dice della persona, letto da
-        Claude insieme alla scheda anonima (nome, cognome, email, telefono, città, LinkedIn,
-        altri link, aziende), `None` se la scheda non ne ha ancora (scritta prima della
-        versione 3 del prompt o senza CV) e `cv_differences` dove il CV e il profilo
-        dicono cose diverse. Sono dati personali: solo per l'admin, mai per le schede
-        anonime, il cloud o il team builder."""
+        """A freelancer, by id, with `note`: the thread of the people who followed them, most
+        recent first, each with `id`, author, date, `source` (`web`, `mcp`, `person`, `system`),
+        last edit and `editable`. Deleted notes are not included. `phone` is
+        the account's; `cv_contacts` is what the CV says about the person, read by
+        Claude together with the anonymous card (first name, last name, email, phone, city,
+        LinkedIn, other links, companies), `None` if the card has none yet (written before
+        version 3 of the prompt or without a CV) and `cv_differences` where the CV and the
+        profile say different things. This is personal data: for the admin only, never for
+        anonymous cards, the cloud or the team builder."""
 
         def call(session: Session) -> dict[str, Any]:
             key = to_uuid(freelancer_id, "freelancer_id")
@@ -98,9 +98,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def set_freelancer_status(freelancer_id: str, status: str) -> dict[str, Any]:
-        """Sposta una candidatura fra `new`, `contacted`, `active` e `discarded`. Non tocca
-        quello che la persona ha scritto. Il cambio finisce nel registro di
-        `get_freelancer_audit` (`status_changed`, con prima e dopo): per il perché usa
+        """Moves an application between `new`, `contacted`, `active` and `discarded`. It does
+        not touch what the person wrote. The change is written to the log of
+        `get_freelancer_audit` (`status_changed`, with before and after): for the reason use
         `add_freelancer_note`."""
         return deps.run(
             lambda s: FreelancerService(s).set_status(
@@ -113,12 +113,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def add_freelancer_note(freelancer_id: str, text: str) -> dict[str, Any]:
-        """Aggiunge una nota al thread di un freelance, senza toccare lo stato: una
-        telefonata fatta, un'impressione, una cosa da ricordare. La nota è già firmata
-        (l'admin dietro il token) e datata, con `source` `mcp`: il testo non deve iniziare
-        con una data o un'ora né nominare chi scrive. Fino a 4000 caratteri, anche su più
-        righe. Si può correggere con `update_note` e cancellare con `delete_note`, e ogni
-        aggiunta finisce nel registro di `get_freelancer_audit`."""
+        """Adds a note to a freelancer's thread, without touching the status: a call made,
+        an impression, something to remember. The note is already signed
+        (the admin behind the token) and dated, with `source` `mcp`: the text must not start
+        with a date or a time nor name who writes it. Up to 4000 characters, multiple
+        lines allowed. It can be corrected with `update_note` and deleted with `delete_note`,
+        and every addition is written to the log of `get_freelancer_audit`."""
         return deps.run(
             lambda s: NoteService(s).add(
                 "freelancer",
@@ -131,12 +131,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def update_note(note_id: str, text: str) -> dict[str, Any]:
-        """Sostituisce il testo di una nota di un freelance o di un'azienda, per `id`
-        (lo trovi in `note` di `get_freelancer` e `get_company`). Solo le note scritte da
-        un admin (`source` `web` o `mcp`, o senza fonte): quelle della persona o del sistema
-        sono eventi e vengono rifiutate. Resta scritto chi l'ha modificata e quando, e il
-        testo di prima è nel registro (`note_edited`). Il testo non deve iniziare con una
-        data o un'ora né nominare chi scrive: la nota è già firmata e datata."""
+        """Replaces the text of a freelancer's or company's note, by `id`
+        (you find it in `note` of `get_freelancer` and `get_company`). Only notes written by
+        an admin (`source` `web` or `mcp`, or without a source): the person's or the system's
+        are events and are refused. Who edited it and when stays recorded, and the
+        previous text is in the log (`note_edited`). The text must not start with a
+        date or a time nor name who writes it: the note is already signed and dated."""
         return deps.run(
             lambda s: NoteService(s).update(
                 to_uuid(note_id, "note_id"), text, admin_id=deps.admin().id, source=SOURCE
@@ -145,10 +145,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def delete_note(note_id: str) -> dict[str, Any]:
-        """Cancella una nota di un freelance o di un'azienda, per `id`. Esce dal thread e
-        da `get_freelancer`/`get_company`, ma il registro conserva chi l'ha cancellata e il
-        suo testo (`note_deleted`). Valgono le regole di `update_note`: le note della
-        persona o del sistema non si cancellano."""
+        """Deletes a freelancer's or company's note, by `id`. It leaves the thread and
+        `get_freelancer`/`get_company`, but the log keeps who deleted it and its
+        text (`note_deleted`). The rules of `update_note` apply: the person's or the
+        system's notes cannot be deleted."""
 
         def call(session: Session) -> dict[str, Any]:
             NoteService(session).delete(
@@ -173,20 +173,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         seniority: str | None = None,
         experience_years: str | None = None,
     ) -> dict[str, Any]:
-        """Scrive o svuota qualsiasi campo del profilo: nome,
-        cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
-        posizione, modalità di lavoro, link, stato e chi ha compilato per ultimo
-        (`person`/`admin`). Le note non sono un campo: stanno nel thread (`add_freelancer_note`,
-        `update_note`). Ogni parametro omesso resta com'era; una stringa vuota svuota
-        il campo dove è ammesso (tariffa, posizione, LinkedIn, modalità di
-        lavoro), altrove è rifiutata perché il campo non può restare senza un valore.
-        `links` sostituisce l'intera lista, `[]` la svuota. `seniority` (junior, mid,
-        senior o lead) e `experience_years` (0-60) correggono il livello che la scheda anonima
-        dichiara: la parola dell'admin vince su quella di Claude in ogni lettura
-        (`list_talents`, `get_talent`, `get_freelancer_card`, il cloud, il team
-        builder) e sopravvive a «Rigenera scheda»; la stringa vuota la toglie. Ogni
-        modifica reale finisce nel registro di `get_freelancer_audit`, con il valore
-        prima e dopo; per annullarla c'è `revert_freelancer_action`."""
+        """Writes or clears any field of the profile: first name,
+        last name and LinkedIn profile (on the shared identity in `users`), rate,
+        job title, work mode, links, status and who filled in last
+        (`person`/`admin`). Notes are not a field: they live in the thread (`add_freelancer_note`,
+        `update_note`). Every omitted parameter stays as it was; an empty string clears
+        the field where allowed (rate, job title, LinkedIn, work
+        mode), elsewhere it is refused because the field cannot be left without a value.
+        `links` replaces the whole list, `[]` clears it. `seniority` (junior, mid,
+        senior or lead) and `experience_years` (0-60) correct the level the anonymous card
+        declares: the admin's word wins over Claude's in every read
+        (`list_talents`, `get_talent`, `get_freelancer_card`, the cloud, the team
+        builder) and survives «Rigenera scheda»; the empty string removes it. Every
+        real change is written to the log of `get_freelancer_audit`, with the value
+        before and after; to undo it use `revert_freelancer_action`."""
         kwargs: dict[str, Any] = {}
         if first_name is not None:
             kwargs["first_name"] = supplied_text(first_name)
@@ -219,8 +219,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def delete_freelancer(freelancer_id: str) -> dict[str, Any]:
-        """Cancella la scheda: esce da Talenti e dall'elenco freelance. Reversibile,
-        mai una cancellazione vera: `restore_freelancer` la fa tornare com'era."""
+        """Deletes the card: it leaves «Talenti» and the freelancers list. Reversible,
+        never a real deletion: `restore_freelancer` brings it back as it was."""
         return deps.run(
             lambda s: FreelancerService(s).soft_delete(
                 to_uuid(freelancer_id, "freelancer_id"), deps.admin().id
@@ -229,8 +229,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def restore_freelancer(freelancer_id: str) -> dict[str, Any]:
-        """Ripristina una scheda cancellata: torna in Talenti e nell'elenco freelance.
-        Su una scheda già attiva non cambia nulla."""
+        """Restores a deleted card: it returns to «Talenti» and the freelancers list.
+        On an already active card nothing changes."""
         return deps.run(
             lambda s: FreelancerService(s).restore(
                 to_uuid(freelancer_id, "freelancer_id"), deps.admin().id
@@ -239,10 +239,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def set_freelancer_vetted(freelancer_id: str, vetted: bool) -> dict[str, Any]:
-        """«Segna come verificato» (`vetted` vero) o «Togli la verifica» (falso, REB-518):
-        il bollino «Verificato da rebase» che il talent cloud mostra accanto al profilo.
-        Una marca già messa, o già tolta, non scrive nulla: la data resta quella della
-        prima verifica, non dell'ultimo clic."""
+        """«Segna come verificato» (`vetted` true) or «Togli la verifica» (false, REB-518):
+        the «Verificato da rebase» badge the talent cloud shows next to the profile.
+        A mark already set, or already removed, writes nothing: the date stays that of the
+        first verification, not of the last click."""
         return deps.run(
             lambda s: FreelancerService(s).set_vetted(
                 to_uuid(freelancer_id, "freelancer_id"), vetted, deps.admin().id
@@ -251,13 +251,13 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_freelancer_audit(freelancer_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Chi ha modificato, svuotato, cancellato o ripristinato questa scheda, e
-        quando: ogni voce con l'amministratore, il tipo di azione e, per una modifica di
-        campo, il valore prima e dopo. Anche ogni volta che la scheda anonima è stata
-        riscritta (`card_regenerated`: esito, motivo se non scritta, `source`, costo, se in
-        blocco). Funziona anche su una scheda cancellata. Dalla più
-        recente. Solo lettura; per annullare una modifica di campo usa
-        `revert_freelancer_action` con l'id della voce."""
+        """Who edited, cleared, deleted or restored this card, and
+        when: each entry with the administrator, the kind of action and, for a field edit,
+        the value before and after. Also every time the anonymous card was
+        rewritten (`card_regenerated`: outcome, reason if not written, `source`, cost, whether
+        in bulk). It also works on a deleted card. Most
+        recent first. Read only; to undo a field edit use
+        `revert_freelancer_action` with the entry's id."""
         return deps.run_list(
             lambda s: FreelancerService(s).audit_timeline(
                 to_uuid(freelancer_id, "freelancer_id"), limit
@@ -266,9 +266,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def revert_freelancer_action(freelancer_id: str, action_id: str) -> dict[str, Any]:
-        """Riporta un campo al valore che aveva prima di una modifica passata, letta
-        dalla voce del registro `action_id` (da `get_freelancer_audit`). Solo su una
-        voce che è una modifica di campo, non su una cancellazione o un ripristino."""
+        """Puts a field back to the value it had before a past edit, read from the
+        log entry `action_id` (from `get_freelancer_audit`). Only on an entry that is a
+        field edit, not on a deletion or a restore."""
         return deps.run(
             lambda s: FreelancerService(s).revert(
                 to_uuid(freelancer_id, "freelancer_id"),

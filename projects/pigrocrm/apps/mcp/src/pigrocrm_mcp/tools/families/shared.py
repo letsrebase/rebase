@@ -22,7 +22,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_pipeline_stages() -> dict[str, Any]:
-        """Elenca gli stati della pipeline, con il tipo (open/won/lost)."""
+        """List the pipeline stages, with the type (open/won/lost)."""
         stages = PipelineService(context.session).list()
         return {"stages": [stage.model_dump(mode="json") for stage in stages]}
 
@@ -31,9 +31,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def get_timeline(
         entity_type: EntityType, entity_id: str, limit: BoundedLimit = 50
     ) -> dict[str, Any]:
-        """Cronologia di un'entità: per ogni voce chi, quando e da dove. `actor_type`: `user` dal
-        web, `mcp` da un agente col token del membro, `rebase`, `system` da un'automazione (che
-        nomina chi l'ha attivata in `triggered_by_name`).
+        """Timeline of an entity: for each entry who, when and from where. `actor_type`: `user` from
+        the web app, `mcp` from an agent using the member's token, `rebase`, `system` from an
+        automation (which names whoever triggered it in `triggered_by_name`).
         """
         entries = ActivityService(context.session).timeline(
             entity_type, UUID(entity_id), limit=cast(int, limit)
@@ -45,17 +45,18 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def search_everything(
         term: str, limit: SearchLimit = PER_CLASS_LIMIT, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Cerca in tutto il CRM con una chiamata: clienti (ragione sociale, P.IVA, codice fiscale,
-        email), persone (nome, cognome, email), deal (nome), documenti (titolo), fatture
-        (causale, numero) e attività (titolo e note, anche chiuse). Accetta anche un frammento
-        in mezzo a una parola («34567» trova la P.IVA 01234567890). Un numero di fattura si
-        scrive «2026/7», «7/2026» o «007»: trova quella fattura, senza anno in ogni anno.
+        """Search the whole CRM in one call: customers (company name, VAT number, tax code,
+        email), people (first name, last name, email), deals (name), documents (title), invoices
+        (description, number) and tasks (title and notes, closed ones too). It also accepts a
+        fragment in the middle of a word («34567» finds the VAT number 01234567890). An invoice
+        number is written «2026/7», «7/2026» or «007»: it finds that invoice; without a year, in
+        every year.
 
-        Servono almeno 3 caratteri. Dà fino a `limit` risultati per classe e il conteggio reale;
-        se `total_is_minimum` è true il conteggio è un minimo e il resto sta nell'elenco della
-        singola entità. `legal_entity_id` restringe clienti, persone (via il cliente), deal,
-        documenti e fatture a quell'azienda, ma non le attività, che non ne hanno; omesso, cerca in
-        tutto lo spazio. Non cerca contratti, costi, proposte né posta.
+        At least 3 characters are required. It returns up to `limit` results per class and the real
+        count; if `total_is_minimum` is true the count is a minimum and the rest is in the
+        entity's own list. `legal_entity_id` restricts customers, people (via the customer), deals,
+        documents and invoices to that company, but not tasks, which have none; if omitted, it
+        searches the whole space. It does not search contracts, costs, proposals or mail.
         """
         # `term` is a bare `str` with no `Annotated` bound, following the
         # runtime-permissive / schema-only-strict convention of `tools/params.py`: the

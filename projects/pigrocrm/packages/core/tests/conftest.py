@@ -45,7 +45,7 @@ def db_session(db_engine: Engine) -> Iterator[Session]:
     connection = db_engine.connect()
     transaction = connection.begin()
     # The space starts with its default legal entity, as every provisioned space does
-    # (REB-615): the fiscal profile belongs to an legal entity, so a test that saves one or
+    # (REB-615): the fiscal profile belongs to a legal entity, so a test that saves one or
     # issues anything needs the row first; the few tests about a space with no legal entity
     # at all delete it (`test_emitter.py`'s `_bare` fixture).
     _seed_default_legal_entity(connection)

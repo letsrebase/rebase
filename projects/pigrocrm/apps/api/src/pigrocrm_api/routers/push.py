@@ -25,20 +25,22 @@ router = APIRouter(
 class Unsubscribe(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    endpoint: str = Field(max_length=2048, description="L'indirizzo del browser da togliere")
+    endpoint: str = Field(
+        max_length=2048, description="The browser's push endpoint address to remove"
+    )
 
 
 @router.get("/config", response_model=PushConfigRead)
 def read_config(settings: SettingsDep) -> PushConfigRead:
-    """Se questa installazione può mandare notifiche push, e la chiave con cui il browser
-    si iscrive."""
+    """Whether this installation can send push notifications, and the key the browser
+    subscribes with."""
     key = push_public_key(settings)
     return PushConfigRead(enabled=key is not None, public_key=key)
 
 
 @router.get("/subscriptions", response_model=list[PushSubscriptionRead])
 def my_subscriptions(session: SessionDep, actor: ActorDep) -> list[PushSubscriptionRead]:
-    """I browser su cui hai attivato le notifiche."""
+    """The browsers on which you turned notifications on."""
     return PushSubscriptionService(session).mine(actor)
 
 
@@ -46,8 +48,8 @@ def my_subscriptions(session: SessionDep, actor: ActorDep) -> list[PushSubscript
 def subscribe(
     data: PushSubscriptionWrite, request: Request, session: SessionDep, actor: ActorDep
 ) -> PushSubscriptionRead:
-    """Attiva le notifiche su questo browser. Se lo stesso browser era di un'altra
-    persona, da adesso è tuo."""
+    """Turns notifications on for this browser. If the same browser belonged to another
+    person, it is yours from now on."""
     return PushSubscriptionService(session).subscribe(
         actor, data, request.headers.get("user-agent")
     )
@@ -55,6 +57,6 @@ def subscribe(
 
 @router.post("/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)
 def unsubscribe(data: Unsubscribe, session: SessionDep, actor: ActorDep) -> None:
-    """Toglie le notifiche da questo browser. Non c'è niente da togliere? Va bene lo
-    stesso."""
+    """Turns notifications off for this browser. Nothing to turn off? That is fine
+    too."""
     PushSubscriptionService(session).unsubscribe(actor, data.endpoint)

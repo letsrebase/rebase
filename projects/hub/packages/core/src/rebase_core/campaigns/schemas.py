@@ -44,7 +44,7 @@ FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 
 
 class TalentsFilters(ResponseModel):
-    """The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
+    """The «Talenti» list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
     on the campaign and replayed through `TalentsService` when the list is shown and when
     a mail is about to leave. `origin_page` is the marketing page the person started from
     (`home`, `pigrocrm`)."""

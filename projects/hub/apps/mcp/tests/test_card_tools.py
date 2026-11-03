@@ -113,7 +113,7 @@ async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
     source = lambda: configured[0] if configured else None  # noqa: E731
     async with Client(build_server(factory, lambda: IVAN, card_llm=source)) as client:
         off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
-        assert off.is_error and "Il team builder è spento." in off.content[0].text
+        assert off.is_error and "The team builder is off." in off.content[0].text
 
         configured.append(RecordingCall([card_response()]))
         written = _payload(
@@ -151,7 +151,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
 
         off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         assert off.is_error
-        assert "Il team builder è spento." in off.content[0].text
+        assert "The team builder is off." in off.content[0].text
 
     _seed_admin(factory)
     llm = RecordingCall([card_response(), card_response()])

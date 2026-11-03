@@ -145,7 +145,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
 
         # Two offers in `sent`: one with a known age, one whose `status_since` was never
         # recorded. The second is the row that makes `giorni is None` reachable, and
-        # "ferma da 0 giorni" -- which would read as "sent today" -- is the defect it pins.
+        # "stalled for 0 days" -- which would read as "sent today" -- is the defect it pins.
         session.add_all(
             [
                 # `ck_documents_customer_xor_deal`: one owner, never both. The dated offer
@@ -512,18 +512,18 @@ async def test_review_pipeline_lists_the_pending_offers_with_their_age(
     mcp_server: Any,
 ) -> None:
     text_block = _text_of(await mcp_server.get_prompt("pipeline-review", {}))
-    assert f"{_PREFIX} offerta datata — ferma da 21 giorni" in text_block
+    assert f"{_PREFIX} offerta datata — stalled for 21 days" in text_block
 
 
 async def test_an_offer_with_no_recorded_date_is_of_unknown_age_and_not_zero_days(
     mcp_server: Any,
 ) -> None:
     """`giorni is None` is the branch every briefing function gets wrong, and it gets it
-    wrong in the one direction that misleads: "ferma da 0 giorni" reads as "sent today",
+    wrong in the one direction that misleads: "stalled for 0 days" reads as "sent today",
     which is the opposite of what an offer with no recorded date might be."""
     text_block = _text_of(await mcp_server.get_prompt("pipeline-review", {}))
-    assert f"{_PREFIX} offerta senza data — ferma da data ignota" in text_block
-    assert "ferma da 0 giorni" not in text_block
+    assert f"{_PREFIX} offerta senza data — stalled for unknown date" in text_block
+    assert "stalled for 0 days" not in text_block
 
 
 async def test_a_period_where_nothing_closed_reports_a_dash_and_not_zero_per_cent(
@@ -536,7 +536,7 @@ async def test_a_period_where_nothing_closed_reports_a_dash_and_not_zero_per_cen
         "pipeline-review", {"date_from": "2019-01-01", "date_to": "2019-01-31"}
     )
     text_block = _text_of(rendered)
-    assert "Tasso di conversione: —" in text_block
+    assert "Conversion rate: —" in text_block
 
 
 async def test_review_pipeline_on_an_empty_database_is_to_valid_message(
@@ -550,7 +550,7 @@ async def test_review_pipeline_on_an_empty_database_is_to_valid_message(
     assert rendered.messages
     assert all(message.role in ("user", "assistant") for message in rendered.messages)
     text_block = _text_of(rendered)
-    assert "Tasso di conversione: —" in text_block
+    assert "Conversion rate: —" in text_block
 
 
 # -- month-close ---------------------------------------------------------------
@@ -587,7 +587,7 @@ async def test_closing_month_on_an_empty_database_renders_to_null_margin_as_to_d
     text_block = _text_of(
         await empty_server.get_prompt("month-close", {"year": _YEAR, "month": _MONTH})
     )
-    assert "| Margine % | — | — |" in text_block
+    assert "| Margin % | — | — |" in text_block
 
 
 # -- hours-to-log -----------------------------------------------------------
@@ -624,7 +624,7 @@ async def test_a_past_week_is_refused_rather_than_answered_with_the_current_one(
     worse than one it does not have: the caller would believe it worked."""
     text_block = _text_of(await mcp_server.get_prompt("hours-to-log", {"week": "2020-01-06"}))
     assert "2020-01-06" in text_block
-    assert "| Giorno | Ore |" not in text_block
+    assert "| Day | Hours |" not in text_block
 
 
 async def test_hours_to_log_on_an_empty_database_is_to_valid_message(
@@ -690,8 +690,8 @@ async def test_status_customer_lists_the_unpaid_invoices_with_their_deadline(
     text_block = _text_of(
         await mcp_server.get_prompt("customer-status", {"customer_id": str(seeded_customer.id)})
     )
-    assert f"- {_YEAR}/9001 — 4000,00 € (totale con IVA), scadenza {_YEAR}-03-31" in text_block
-    assert f"- {_YEAR}/9002 — 750,00 € (totale con IVA), scadenza senza scadenza" in text_block
+    assert f"- {_YEAR}/9001 — 4000,00 € (total incl. VAT), due {_YEAR}-03-31" in text_block
+    assert f"- {_YEAR}/9002 — 750,00 € (total incl. VAT), due no due date" in text_block
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
@@ -911,7 +911,7 @@ async def test_review_pipeline_shows_the_postal_code_and_admits_the_rest(
     """
     inflate(0)
     text_block = _text_of(await mcp_server.get_prompt("pipeline-review", {}))
-    section = text_block.split("## Offerte inviate in attesa di risposta", 1)[1]
+    section = text_block.split("## Offers sent awaiting a reply", 1)[1]
     listed = [line for line in section.splitlines() if line.startswith("- ")]
     assert len(listed) == dashboard_prompts.PENDING_OFFERS_SHOWN
     # The omitted rows are admitted in an italic note after the list.

@@ -36,9 +36,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal_pnl(deal_id: str) -> dict[str, Any]:
-        """Conto economico di un deal: ricavi fatturati, costi diretti, costo del lavoro, margine e
-        stato. `percentage_margin` è `null` se i ricavi sono zero: non è 0%, vuol dire che non
-        c'è ancora incasso. `accrued_value` è una stima, non un ricavo.
+        """Profit and loss of a deal: invoiced revenue, direct costs, labor cost, margin and
+        status. `percentage_margin` is `null` if revenue is zero: it is not 0%, it means there is no
+        collected revenue yet. `accrued_value` is an estimate, not revenue.
         """
         return timetracking.get_deal_pnl(context, deal_id)
 
@@ -47,14 +47,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def get_period_pnl(
         date_from: str, date_to: str, customer_id: str | None = None, base: str = "issue"
     ) -> dict[str, Any]:
-        """Conto economico di periodo in due colonne: deal chiusi e deal in corso; il numero
-        riportabile è il primo. `closed_period` e `written_entries_overdue` dicono se la cifra
-        può ancora cambiare. Le spese generali sono in una riga a parte, non ripartite.
+        """Period profit and loss in two columns: closed deals and ongoing deals; the figure
+        to report is the first. `closed_period` and `written_entries_overdue` say whether the number
+        can still change. Overheads are on a separate row, not allocated.
 
-        `base` sceglie la data che colloca il ricavo di una fattura nel periodo: `"issue"`
-        (predefinito, come il fisco) o `"accrual"` (`accrual_from`, o l'emissione se manca; per
-        le fatture emesse in ritardo). Costi e ore restano alla propria data; una proforma non è
-        mai ricavo.
+        `base` chooses the date that places an invoice's revenue in the period: `"issue"`
+        (default, as for the tax authority) or `"accrual"` (`accrual_from`, or the issue date if
+        missing; for invoices issued late). Costs and hours stay at their own date; a proforma is
+        never revenue.
         """
         return timetracking.get_period_pnl(
             context,
@@ -71,11 +71,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_unbilled_backlog() -> dict[str, Any]:
-        """Le ore fatturabili non ancora su una fattura emessa, in totale e senza periodo: ore,
-        valore maturato (ore × tariffa) e voci senza tariffa. Le voci senza tariffa contano
-        nelle ore ma valgono zero (assente ≠ zero). Le ore su una bozza contano ancora. Il
-        valore maturato non è un ricavo e non entra in nessun margine. Include le giornate di
-        contratto non fatturate, solo se in stato approvato o successivo.
+        """Billable hours not yet on an issued invoice, in total and with no period: hours,
+        accrued value (hours × rate) and entries without a rate. Entries without a rate count
+        in the hours but are worth zero (absent ≠ zero). Hours on a draft still count. The
+        accrued value is not revenue and enters no margin. It includes unbilled contract
+        days, only if in the approved state or later.
         """
         return timetracking.get_unbilled_backlog(context)
 
@@ -88,9 +88,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Preventivo contro consuntivo per deal. Lo scostamento di valore è contro il preventivo
-        pro-rata (preventivo × avanzamento ore). Una riga con `unbudgeted = true` non ha
-        preventivo (non è zero) ed è esclusa dagli aggregati.
+        """Budget against actuals per deal. The value variance is against the pro-rata budget
+        (budget × hours progress). A row with `unbudgeted = true` has no
+        budget (it is not zero) and is excluded from the aggregates.
         """
         return timetracking.get_budget_vs_actual(
             context,
@@ -108,10 +108,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_ceiling_headroom(year: Year, legal_entity_id: str | None = None) -> dict[str, Any]:
-        """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale, sui ricavi
-        incassati e reali dell'anno: `remaining` è soglia meno ricavi. Non richiede `admin`. Di
-        una sola azienda: senza `legal_entity_id` è l'unica dello spazio, con più aziende va
-        indicata. Un'azienda estera non ha soglie.
+        """How much room is left before each active threshold of the fiscal package, on the year's
+        collected, real revenue: `remaining` is threshold minus revenue. Does not require `admin`.
+        For a single company: without `legal_entity_id` it is the only one in the space; with
+        several companies it must be given. A foreign company has no thresholds.
         """
         return timetracking.get_ceiling_headroom(
             context, year, parse_legal_entity_id(legal_entity_id)
@@ -122,10 +122,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def get_days_analysis(
         date_from: str | None = None, date_to: str | None = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Le giornate di un periodo: per mese e stato, tariffa reale contro listino, per cliente e
-        contratto, e quante giornate sono finite in «lavorato senza approvazione» mese per mese.
-        `date_from`/`date_to` (YYYY-MM-DD) vanno dati entrambi o nessuno (allora è il mese
-        corrente). `legal_entity_id` filtra per azienda; senza, tutte. Non richiede `admin`.
+        """The days of a period: by month and status, actual rate against list price, by customer
+        and
+        contract, and how many days ended up in «worked without approval» month by month.
+        `date_from`/`date_to` (YYYY-MM-DD) are given both or neither (then it is the current
+        month). `legal_entity_id` filters by company; without it, all. Does not require `admin`.
         """
         return timetracking.get_days_analysis(
             context, date_from, date_to, parse_legal_entity_id(legal_entity_id)
@@ -134,11 +135,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_year_overview(year: Year, legal_entity_id: str | None = None) -> dict[str, Any]:
-        """L'anno di un'azienda come lo legge il commercialista: ricavi per regime e per
-        trattamento fiscale, con riferimento normativo, e registro delle fatture emesse con
-        bollo e rivalsa INPS a parte. `totali.taxable_amount` è il ricavo dell'anno. Non richiede
-        `admin`. Senza `legal_entity_id` è l'unica dello spazio, con più aziende va indicata. Non
-        restituisce file.
+        """A company's year as the accountant reads it: revenue by regime and by
+        tax treatment, with legal reference, and the register of issued invoices with
+        stamp duty and INPS contribution shown separately. `totali.taxable_amount` is the year's
+        revenue. Does not require
+        `admin`. Without `legal_entity_id` it is the only company in the space; with several
+        companies it must be given. It does not return files.
         """
         return timetracking.get_year_overview(context, year, parse_legal_entity_id(legal_entity_id))
 
@@ -153,13 +155,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         contract_id: str | None = None,
         expected_date: IsoDateStr = None,
     ) -> dict[str, Any]:
-        """Il simulatore «ci sta?»: somma la stima di un deal non vinto ai ricavi reali dell'anno e
-        rivaluta ogni soglia attiva, senza salvare. Serve `budgeted_value`, oppure
-        `budgeted_hours` con `hourly_rate`. `legal_entity_id` come in `get_ceiling_headroom`.
-        Con `contract_id` la stima è letta anche contro il tetto sulla quota del cliente
-        (`customer_share_cap`) nell'anno di anniversario del contratto che contiene
-        `expected_date` (YYYY-MM-DD, default oggi): `contract_cap` dà quota prima e dopo e se
-        `rientra`.
+        """The «does it fit?» simulator: adds the estimate of a deal not yet won to the year's real
+        revenue and
+        re-evaluates every active threshold, without saving. Requires `budgeted_value`, or
+        `budgeted_hours` with `hourly_rate`. `legal_entity_id` as in `get_ceiling_headroom`.
+        With `contract_id` the estimate is also read against the cap on the customer's share
+        (`customer_share_cap`) in the anniversary year of the contract that contains
+        `expected_date` (YYYY-MM-DD, default today): `contract_cap` gives the share before and
+        after and whether it `rientra` (fits).
         """
         return timetracking.simulate_ceiling(
             context,

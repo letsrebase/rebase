@@ -48,10 +48,10 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_reminders() -> list[dict[str, Any]]:
-        """I promemoria di chi chiede, ricalcolati adesso, i più gravi per primi. Ogni voce ha
-        `status` (`open`, `acknowledged`, `snoozed`), `entity`, `entity_id` e `key`, che serve a
-        `acknowledge_reminder` e `snooze_reminder`. Sparisce da solo quando la causa si
-        risolve.
+        """The reminders of whoever is asking, recomputed now, most serious first. Each entry has
+        `status` (`open`, `acknowledged`, `snoozed`), `entity`, `entity_id` and `key`, which
+        `acknowledge_reminder` and `snooze_reminder` need. It disappears by itself when the
+        cause is resolved.
         """
         reminders = ReminderService(context.session, settings).list(context.actor)
         return [item.model_dump(mode="json") for item in reminders]
@@ -59,30 +59,30 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_reminder_types() -> list[dict[str, Any]]:
-        """I tipi di promemoria che il CRM alza da solo, con le soglie predefinite. Ogni tipo ha
-        una scala di gravità (`warning`, `serious`, `critical`) che sale con giorni o ore.
+        """The reminder types the CRM raises by itself, with the default thresholds. Each type has
+        a severity scale (`warning`, `serious`, `critical`) that rises with days or hours.
         """
         return [item.model_dump(mode="json") for item in _preferences(context).catalogue()]
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_reminder_preferences() -> dict[str, Any]:
-        """Le preferenze sui promemoria: valori dello spazio, della persona che chiede e
-        `effective` (sua scelta, poi spazio, poi predefinito).
+        """The reminder preferences: the space's values, those of the person asking and
+        `effective` (their choice, then the space, then the default).
         """
         return _preferences(context).read(context.actor).model_dump(mode="json")
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def set_reminder_preference(scope: str, type: str, changes: dict[str, Any]) -> dict[str, Any]:
-        """Imposta le preferenze di un tipo di promemoria, o con `type` = `general` ore di silenzio
-        e ora del riepilogo.
+        """Sets the preferences of a reminder type, or with `type` = `general` the quiet hours
+        and the summary time.
 
-        `scope`: `me` per la persona, `space` per i predefiniti dello spazio (solo amministratore).
-        In `changes` solo ciò che cambia: `enabled`, `channels` (oltre all'app: `push`, `slack`,
-        `email`), `ladder` (soglie in ordine di gravità, es. `{"serious": 1, "critical": 14}`,
-        unità secondo il tipo), `urgent_from`, `email_mode`; per `general`, `quiet_hours` e
-        `summary_hour`. Un campo `null` torna al valore ereditato.
+        `scope`: `me` for the person, `space` for the space defaults (administrator only).
+        In `changes` only what changes: `enabled`, `channels` (besides the app: `push`, `slack`,
+        `email`), `ladder` (thresholds in order of severity, e.g. `{"serious": 1, "critical": 14}`,
+        unit depends on the type), `urgent_from`, `email_mode`; for `general`, `quiet_hours` and
+        `summary_hour`. A `null` field goes back to the inherited value.
         """
         row = _preferences(context).write(
             context.actor, _scope(scope), type, ReminderPreferenceWrite(**changes)
@@ -92,17 +92,17 @@ def register(
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def reset_reminder_preference(scope: str, type: str) -> dict[str, str]:
-        """Torna al valore predefinito di un tipo (o di `general`): cancella la scelta, così le
-        modifiche future del predefinito arrivano ancora.
+        """Goes back to the default value of a type (or of `general`): deletes the choice, so
+        future changes to the default still apply.
         """
         _preferences(context).reset(context.actor, _scope(scope), type)
-        return {"status": "ripristinato", "scope": scope, "type": type}
+        return {"status": "reset", "scope": scope, "type": type}
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def acknowledge_reminder(key: str, severity: str) -> dict[str, Any]:
-        """Segna un promemoria come visto per chi chiede, alla gravità vista (`warning`, `serious`,
-        `critical`). Torna a comparire se sale di gravità. `key` è `type:identificativo`.
+        """Marks a reminder as seen for whoever is asking, at the severity seen (`warning`,
+        `serious`, `critical`). It reappears if it rises in severity. `key` is `type:identifier`.
         """
         data = AcknowledgeRequest(key=key, severity=literal_arg("severity", severity, Severity))
         return (
@@ -114,9 +114,9 @@ def register(
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def snooze_reminder(key: str, severity: str, until: str) -> dict[str, Any]:
-        """Rimanda un promemoria per chi chiede. `until` è `tomorrow`, `next_monday`, `in_a_week` o
-        `in_a_month`, mai una data libera. Torna a comparire quel giorno, o prima se sale di
-        gravità.
+        """Snoozes a reminder for whoever is asking. `until` is `tomorrow`, `next_monday`,
+        `in_a_week` or `in_a_month`, never a free date. It reappears that day, or earlier if it
+        rises in severity.
         """
         data = SnoozeRequest(
             key=key,
@@ -132,17 +132,17 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_my_reminder_state() -> list[dict[str, Any]]:
-        """I promemoria che chi chiede ha già chiuso o rimandato."""
+        """The reminders that whoever is asking has already closed or snoozed."""
         return [item.model_dump(mode="json") for item in _state(context).mine(context.actor)]
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_scheduled_jobs() -> dict[str, Any]:
-        """Come sono andate le operazioni automatiche del server per questo spazio:
-        sincronizzazione Gmail, promemoria, automazioni giornaliere, riepilogo settimanale. Per
-        ciascuna: `state` (`ok`, `failed`, `late`, `never_run`, `not_configured`),
-        `last_run_at`, `last_failure_at` e `failure` se l'ultimo tentativo è fallito. Solo per
-        gli amministratori.
+        """How the server's automatic operations went for this space:
+        Gmail sync, reminders, daily automations, weekly summary. For
+        each: `state` (`ok`, `failed`, `late`, `never_run`, `not_configured`),
+        `last_run_at`, `last_failure_at` and `failure` if the last attempt failed. Only for
+        administrators.
         """
         return ScheduledJobService(context.session).describe(context.actor).model_dump(mode="json")
 
@@ -153,6 +153,6 @@ def _scope(value: str) -> Any:
 
     if value not in ("space", "me"):
         raise ValidationFailed(
-            "reminder_preference", "scope", "scope sconosciuto", expected="`space` oppure `me`"
+            "reminder_preference", "scope", "unknown scope", expected="`space` or `me`"
         )
     return value

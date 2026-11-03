@@ -36,7 +36,7 @@ from rebase_core.vocabulary import CompanyStatus, PigroState, RemoteOption
 
 
 class CompanyFields(BaseModel):
-    """The eight answers about a request that its referente may write and later
+    """The eight answers about a request that its contact may write and later
     change: what `CompanyCreate` collects together with the company's own identity,
     and what `CompanyUpdate` alone accepts once signed in, mirroring
     `FreelancerFields`' split for the freelancer side (REB-314). REB-380 widens the
@@ -77,7 +77,7 @@ class CompanyFields(BaseModel):
 
 class CompanyCreate(CompanyFields):
     """What the wizard collects: the eight `CompanyFields` answers plus the company's
-    own identity and its referente's, get-or-created by email."""
+    own identity and its contact's, get-or-created by email."""
 
     company_name: SafeStr = Field(min_length=1, max_length=COMPANY_MAX_LENGTH)
     contact_first_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
@@ -103,7 +103,7 @@ class CompanyCreate(CompanyFields):
 
 
 class CompanyAdminCreate(CompanyCreate):
-    """What an admin opens a request with, on the referente's behalf (REB-870): the
+    """What an admin opens a request with, on the contact's behalf (REB-870): the
     wizard's fields, validated the same way, plus the CRM deal the company already has,
     when it has one. With it the CRM links that deal and creates nothing."""
 
@@ -113,13 +113,13 @@ class CompanyAdminCreate(CompanyCreate):
 class CompanyUpdate(CompanyFields):
     """What a company contact changes about one of their requests (REB-314, by id since
     REB-602): the eight project answers, never `status`, `note`, `company_name`,
-    `phone` or the referente's identity -- the same field-isolation `MemberUpdate`
+    `phone` or the contact's identity -- the same field-isolation `MemberUpdate`
     keeps for the freelancer card."""
 
 
 class TalentCloudGrantRead(ResponseModel):
     """One grant of the talent cloud (REB-518, spec § 4.1), as the admin reads it: the
-    request it was opened from and its company's name, the referente by name and
+    request it was opened from and its company's name, the contact by name and
     address (the admin sees names everywhere), who opened it and when, and who closed
     it and when, `None` while it is live."""
 
@@ -175,7 +175,7 @@ class CompanyRead(ResponseModel):
     deleted_at: datetime | None = None
     # The thread, newest first; filled by `get` only, as on `FreelancerRead`.
     note: list[NoteRead] = Field(default_factory=list)
-    # The talent cloud this request's referente holds for it, while it is open
+    # The talent cloud this request's contact holds for it, while it is open
     # (REB-518): filled by `get` only, for «Apri il talent cloud» and «Revoca».
     talent_cloud_grant: TalentCloudGrantRead | None = None
 
@@ -194,8 +194,8 @@ class CompanyList(ResponseModel):
 
 class CompanyOverride(BaseModel):
     """What an admin may set or clear on a `Company` request beyond `status`
-    (REB-347): the eight project answers a referente could have written
-    (`CompanyFields`), the company's own name, and the referente's identity fields on
+    (REB-347): the eight project answers a contact could have written
+    (`CompanyFields`), the company's own name, and the contact's identity fields on
     the linked `users` row -- both admin-only even for a self-edit, as
     `MemberService.update_company`'s own docstring says. Same optional-and-`null`
     contract as `FreelancerOverride`. `remote`/`headcount`/`requested_role`

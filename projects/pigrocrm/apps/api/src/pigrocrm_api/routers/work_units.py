@@ -33,11 +33,11 @@ router = APIRouter(
 
 @router.post("", response_model=WorkUnitRead, status_code=status.HTTP_201_CREATED)
 def create(data: WorkUnitRecord, session: SessionDep, actor: ActorDep) -> WorkUnitRead:
-    """Registra una giornata. Una giornata `worked` su un contratto che richiede
-    l'approvazione preventiva, senza approvazione, nasce `worked_without_approval`: il
-    trigger la segna invece di rifiutarla. Chiusa a ogni credenziale di tipo agente: un
-    agente propone (`propose_day`), una persona conferma. Si registra una giornata `proposed` o
-    `worked`: `approved` lo scrive `POST /api/approvals`, con la prova."""
+    """Records a workday. A `worked` workday on a contract that requires
+    prior approval, without approval, is born `worked_without_approval`: the
+    trigger flags it instead of refusing it. Closed to every agent-type credential: an
+    agent proposes (`propose_day`), a person confirms. A `proposed` or
+    `worked` workday is recorded: `approved` is written by `POST /api/approvals`, with the proof."""
     return WorkUnitService(session).create(WorkUnitCreate(**data.model_dump()), actor)
 
 
@@ -47,19 +47,19 @@ def list_work_units(
     actor: ActorDep,
     contract_id: Annotated[UUID | None, Query()] = None,
     legal_entity_id: Annotated[
-        UUID | None, Query(description="Solo i contratti di questa azienda; omesso, tutte")
+        UUID | None, Query(description="Only this legal entity's contracts; omitted, all")
     ] = None,
     date_from: Annotated[
-        date | None, Query(alias="from", description="Dal giorno, YYYY-MM-DD, incluso")
+        date | None, Query(alias="from", description="From the day, YYYY-MM-DD, inclusive")
     ] = None,
     date_to: Annotated[
-        date | None, Query(alias="to", description="Al giorno, YYYY-MM-DD, incluso")
+        date | None, Query(alias="to", description="To the day, YYYY-MM-DD, inclusive")
     ] = None,
     status: Annotated[WorkUnitStatus | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
 ) -> WorkUnitList:
-    """Le giornate, dalla più recente. Serve almeno un contratto o una data (`from`, `to`):
-    il registro intero di uno spazio non è una domanda che una schermata faccia."""
+    """The workdays, most recent first. At least a contract or a date (`from`, `to`) is required:
+    a space's whole register is not a question a screen asks."""
     query = WorkUnitListQuery(
         contract_id=contract_id,
         legal_entity_id=legal_entity_id,
@@ -75,16 +75,16 @@ def list_work_units(
     "/{work_unit_id}/dispute-bundle",
     response_class=Response,
     responses={
-        200: {"content": {"application/zip": {}}, "description": "Il fascicolo della giornata"}
+        200: {"content": {"application/zip": {}}, "description": "The day's dispute bundle"}
     },
 )
 def dispute_bundle(
     work_unit_id: UUID, session: SessionDep, actor: ActorDep, storage: StorageDep
 ) -> Response:
-    """Il fascicolo di una giornata contestata (REB-759): un archivio ZIP con `summary.txt`
-    (la giornata, l'approvazione e l'estratto, lo storico, il registro del mese, la riga di
-    fattura) e, sotto `source/`, l'originale archiviato su cui poggia l'approvazione, byte
-    per byte. Aperto a ogni ruolo, come la pagina della giornata."""
+    """The file of a disputed workday (REB-759): a ZIP archive with `summary.txt`
+    (the workday, the approval and the excerpt, the history, the month's register, the
+    invoice line) and, under `source/`, the archived original the approval rests on, byte
+    for byte. Open to every role, like the workday's page."""
     filename, content = build_dispute_bundle(session, storage, work_unit_id, actor)
     return attachment_response(content, "application/zip", filename)
 
@@ -98,10 +98,10 @@ def get(work_unit_id: UUID, session: SessionDep, actor: ActorDep) -> WorkUnitDet
 def transition(
     work_unit_id: UUID, data: WorkUnitTransitionIn, session: SessionDep, actor: ActorDep
 ) -> WorkUnitDetail:
-    """Sposta una giornata lungo il suo ciclo di vita, con una mossa che la sua pagina offrirebbe
-    (`actions` di `GET /api/work-units/{id}`): `approved` lo scrive la registrazione di
-    un'approvazione e `invoiced` la fattura, quindi qui rispondono 409 come ogni passaggio
-    che il ciclo di vita non ammette."""
+    """Moves a workday along its lifecycle, with a move its page would offer
+    (`actions` of `GET /api/work-units/{id}`): `approved` is written by recording
+    an approval and `invoiced` by the invoice, so here they answer 409 like any transition
+    the lifecycle does not allow."""
     service = WorkUnitService(session)
     service.move(work_unit_id, data.status, actor, data.reason)
     return service.detail(work_unit_id, actor)

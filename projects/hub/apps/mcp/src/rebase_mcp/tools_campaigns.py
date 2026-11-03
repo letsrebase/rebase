@@ -24,25 +24,25 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def list_campaigns(
         limit: int = CAMPAIGNS_LIMIT_DEFAULT, cursor: str | None = None
     ) -> dict[str, Any]:
-        """Le campagne di mail della sezione «Campagne», dalla più recente. Per ognuna:
+        """The email campaigns of the «Campagne» section, most recent first. For each:
 
-        - `name`, `subject` e `status` (`draft`, `scheduled`, `sending`, `sent`, `cancelled`);
-        - quando parte o è partita (`scheduled_for`, `sent_at`);
-        - se l'invio è fermo, da quando e perché (`stalled_at`, `stalled_reason`), finché
-          non parte la prossima mail (anche quando il limite giornaliero di mail ferma
-          il resto della lista: `stalled_reason` dice il giorno in cui riparte);
-        - l'azione che misura: `signed_in`, `cv`, `card_complete`, `profile_created` o
-          `request_updated`, oppure `click` quando il bottone porta a un link;
-        - in `counts` quante sono state inviate, saltate, fallite, consegnate,
-          rimbalzate e cliccate, quante persone sono entrate nella loro area dopo la mail
-          (`entered`) e quante hanno fatto l'azione (`actions`);
-        - dove porta il bottone (`button_meta`: `area`, `wizard`, `request` o `link`) e, per
-          un link, il suo indirizzo (`button_url`), `null` altrimenti.
+        - `name`, `subject` and `status` (`draft`, `scheduled`, `sending`, `sent`, `cancelled`);
+        - when it starts or started (`scheduled_for`, `sent_at`);
+        - if sending is halted, since when and why (`stalled_at`, `stalled_reason`), until
+          the next email goes out (also when the daily email limit halts
+          the rest of the list: `stalled_reason` gives the day it resumes);
+        - the action it measures: `signed_in`, `cv`, `card_complete`, `profile_created` or
+          `request_updated`, or `click` when the button leads to a link;
+        - in `counts` how many were sent, skipped, failed, delivered,
+          bounced and clicked, how many people entered their area after the email
+          (`entered`) and how many took the action (`actions`);
+        - where the button leads (`button_meta`: `area`, `wizard`, `request` or `link`) and, for
+          a link, its address (`button_url`), `null` otherwise.
 
-        `limit` è di 20 campagne se non lo dai e di 100 al massimo; `next_cursor` è il
-        cursore opaco della pagina successiva, `None` all'ultima: ripassalo in `cursor`.
+        `limit` is 20 campaigns if you do not give it and 100 at most; `next_cursor` is the
+        opaque cursor of the next page, `None` on the last one: pass it back in `cursor`.
 
-        Solo lettura: una campagna si prepara e si invia dall'area admin."""
+        Read only: a campaign is prepared and sent from the admin area."""
         bounded(cursor, "cursor")
         page = max(1, min(limit, CAMPAIGNS_LIMIT_MAX))
         return deps.run(lambda s: CampaignService(s, deps.campaign_settings).list_all(page, cursor))
@@ -51,22 +51,23 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def get_campaign(
         campaign_id: str, limit: int = RECIPIENTS_LIMIT_DEFAULT, cursor: str | None = None
     ) -> dict[str, Any]:
-        """Una campagna, per id, con i suoi numeri e l'esito di ogni persona in
+        """A campaign, by id, with its numbers and the outcome of each person in
         `recipients`:
 
-        - lo stato (queued, sent, skipped con il motivo, failed);
-        - quando la mail è stata inviata, consegnata o è rimbalzata, e il primo clic;
-        - quando la persona è entrata nella sua area (`signed_in_from_mail` vero se dal
-          link di questa mail);
-        - quando ha fatto l'azione (`action_from_mail` per un profilo creato dal link).
+        - the state (queued, sent, skipped with the reason, failed);
+        - when the email was sent, delivered or bounced, and the first click;
+        - when the person entered their area (`signed_in_from_mail` true if from the
+          link in this email);
+        - when they took the action (`action_from_mail` for a profile created from the link).
 
-        `campaign.follows_id` è la campagna da cui viene una «Riscrivi a chi non ha fatto
-        niente»; `campaign.button_meta` e `campaign.button_url` dicono dove porta il
-        bottone, come in `list_campaigns`. `recipients` va per indirizzo, `limit` ne dà 50 se
-        non lo dai e 200 al massimo; `next_cursor` è il cursore opaco dei destinatari
-        successivi, `None` agli ultimi: ripassalo in `cursor` con lo stesso `campaign_id`.
-        `counts` contano sempre l'intera campagna. Ogni lettura dei destinatari (nomi e
-        indirizzi) è registrata fra le azioni dell'admin (`recipients_read`). Solo lettura."""
+        `campaign.follows_id` is the campaign a «Riscrivi a chi non ha fatto
+        niente» comes from; `campaign.button_meta` and `campaign.button_url` say where the
+        button leads, as in `list_campaigns`. `recipients` is ordered by address, `limit` gives
+        50 if you do not give it and 200 at most; `next_cursor` is the opaque cursor of the
+        next recipients, `None` on the last ones: pass it back in `cursor` with the same
+        `campaign_id`. `counts` always count the whole campaign. Every read of the recipients
+        (names and addresses) is recorded among the admin's actions (`recipients_read`). Read
+        only."""
         key = to_uuid(campaign_id, "campaign_id")
         bounded(cursor, "cursor")
         page = max(1, min(limit, RECIPIENTS_LIMIT_MAX))

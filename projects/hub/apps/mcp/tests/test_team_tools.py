@@ -237,7 +237,7 @@ async def test_set_team_request_status_refuses_a_bad_note_before_moving_anything
             {"request_id": request_id, "status": "contacted", "note": "x" * 4001},
         )
         assert long.is_error
-        assert long.content[0].text.endswith(": note: al massimo 4000 caratteri")
+        assert long.content[0].text.endswith(": note: at most 4000 characters")
         nul = await client.call_tool(
             "set_team_request_status",
             {"request_id": request_id, "status": "closed", "note": "Richiamare\x00."},

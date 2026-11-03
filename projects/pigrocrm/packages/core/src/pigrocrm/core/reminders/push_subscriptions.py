@@ -108,9 +108,9 @@ class PushSubscriptionWrite(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    endpoint: str = Field(description="L'indirizzo del servizio push del browser")
+    endpoint: str = Field(description="The address of the browser's push service")
     p256dh: str = Field(description="La chiave pubblica del browser, base64url")
-    auth: str = Field(description="Il segreto di autenticazione del browser, base64url")
+    auth: str = Field(description="The browser's authentication secret, base64url")
 
     @field_validator("endpoint")
     @classmethod
@@ -140,8 +140,8 @@ class PushConfigRead(BaseModel):
     the key a browser subscribes with (`applicationServerKey`). No key, no push: the page
     says so and the reminders go by the other channels."""
 
-    enabled: bool = Field(description="Questa installazione può mandare notifiche push")
-    public_key: str | None = Field(description="La chiave con cui il browser si iscrive")
+    enabled: bool = Field(description="This installation can send push notifications")
+    public_key: str | None = Field(description="The key the browser subscribes with")
 
 
 class PushSubscriptionRead(BaseModel):

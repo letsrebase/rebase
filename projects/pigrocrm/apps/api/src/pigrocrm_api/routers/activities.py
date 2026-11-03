@@ -41,7 +41,7 @@ def list_tasks(
     assigned_to: Annotated[UUID | None, Query()] = None,
     include_unassigned: Annotated[
         bool,
-        Query(description="Con `assigned_to`: anche le attività senza assegnatario"),
+        Query(description="With `assigned_to`: also the activities with no assignee"),
     ] = False,
     customer_id: Annotated[UUID | None, Query()] = None,
     person_id: Annotated[UUID | None, Query()] = None,
@@ -52,7 +52,8 @@ def list_tasks(
     # care has to be able to say. See `TaskListQuery`.
     without_due_date: Annotated[bool | None, Query()] = None,
     archived: Annotated[
-        bool, Query(description="Solo le archiviate (per ripristinarle); di default, le vive")
+        bool,
+        Query(description="Only the archived ones (to restore them); by default, the live ones"),
     ] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     # `str` and not `UUID` since slice 6: the cursor is opaque and carries the sort
@@ -61,7 +62,7 @@ def list_tasks(
     # A plain string and not a `Literal`, like every other list in this API: the
     # whitelist lives in `TASK_SORTS` and an unknown key resolves to the default
     # there, in one place.
-    sort: Annotated[SafeStr | None, Query(description="created_at | scadenza")] = None,
+    sort: Annotated[SafeStr | None, Query(description="created_at | due date")] = None,
     dir: Annotated[SortDirection, Query()] = "asc",
 ) -> TaskPage:
     query = TaskListQuery(
@@ -91,13 +92,13 @@ def today(
     actor: ActorDep,
     assigned_to: Annotated[
         UUID | None,
-        Query(description="Solo le attività di questa persona; senza, di tutto lo spazio"),
+        Query(description="Only this person's activities; omitted, the whole space"),
     ] = None,
     include_unassigned: Annotated[
         bool,
-        Query(description="Con `assigned_to`: anche le attività senza assegnatario"),
+        Query(description="With `assigned_to`: also the activities with no assignee"),
     ] = False,
-    limit: Annotated[int, Query(ge=1, le=200, description="Righe per sezione")] = 100,
+    limit: Annotated[int, Query(ge=1, le=200, description="Rows in each section")] = 100,
 ) -> TaskToday:
     return TaskService(session).today(
         actor,

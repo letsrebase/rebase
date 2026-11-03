@@ -68,11 +68,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         excerpt_type: str = "quoted",
         confidence_reason: str | None = None,
     ) -> dict[str, Any]:
-        """Propone un contratto letto da un documento già archiviato: crea solo una proposta in
-        attesa, che una persona decide dall'app. `document_id` è il documento da cui `excerpt`
-        è stato letto verbatim (`excerpt_type='quoted'`) o trascritto da una scansione
-        (`'transcribed'`). Gli altri campi sono quelli di `create_contract`, più la prima scheda
-        tariffaria (`rate_card_*`, come `create_rate_card`). Nulla nasce prima dell'accettazione.
+        """Propose a contract read from an already archived document: this only creates a pending
+        proposal, which a person decides from the app. `document_id` is the document from which
+        `excerpt` was read verbatim (`excerpt_type='quoted'`) or transcribed from a scan
+        (`'transcribed'`). The other fields are those of `create_contract`, plus the first rate
+        card (`rate_card_*`, as in
+        `create_rate_card`). Nothing is created before acceptance.
         """
         rate_card: dict[str, Any] = {
             "valid_from": rate_card_valid_from,
@@ -135,10 +136,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         excerpt_type: str = "quoted",
         confidence_reason: str | None = None,
     ) -> dict[str, Any]:
-        """Propone una giornata letta da un'email o da un documento di approvazione già archiviato:
-        crea solo una proposta in attesa, che una persona decide dall'app. `contract_id` è il
-        contratto. `channel`, `sender`, `received_at` e `message_id` sono l'evidenza
-        dell'approvazione, registrata insieme alla giornata all'accettazione.
+        """Propose a day read from an email or an approval document already archived: this only
+        creates a pending proposal, which a person decides from the app. `contract_id` is the
+        contract.
+        `channel`, `sender`, `received_at` and `message_id` are the evidence of the approval,
+        recorded together with the day on acceptance.
         """
         return proposals.propose(
             context,
@@ -168,7 +170,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_proposal(proposal_id: str) -> dict[str, Any]:
-        """Legge una proposta: campi proposti, estratto, stato ed esito se decisa
+        """Read a proposal: proposed fields, excerpt, status and outcome if decided
         (`accepted_fields`, `result_id`, `decided_by`, `decided_at`).
         """
         return proposals.get(context, proposal_id)
@@ -182,8 +184,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         contract_id: str | None = None,
         limit: BoundedLimit = 50,
     ) -> dict[str, Any]:
-        """Elenca le proposte, dalla più vecchia. `status`: `pending`, `accepted` o `rejected`;
-        senza filtro, tutte. Per la coda di revisione usa `pending`.
+        """List proposals, oldest first. `status`: `pending`, `accepted` or `rejected`;
+        without a filter, all of them. For the review queue use `pending`.
         """
         return proposals.search(
             context,

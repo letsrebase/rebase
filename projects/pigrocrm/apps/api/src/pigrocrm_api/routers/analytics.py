@@ -47,8 +47,8 @@ router = APIRouter(
 # `from` and `to` on the wire, as spec §11 writes them; `da`/`a` as the parameter names,
 # because `from` is a Python keyword. The alias is what keeps both true, and it is
 # recorded here rather than silently diverging from the spec.
-FromDate = Annotated[date, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")]
-ToDate = Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")]
+FromDate = Annotated[date, Query(alias="from", description="Start of the period, YYYY-MM-DD")]
+ToDate = Annotated[date, Query(alias="to", description="End of the period, YYYY-MM-DD")]
 # The sidebar's legal entity on a sum (REB-630, spec 2026-10-03 §1.9): one more predicate,
 # omitted for «tutte». On the estimate and the ceilings it is the legal entity the figure is
 # computed for: resolved alone on a one-legal entity space, required by name on a space with
@@ -57,8 +57,8 @@ LegalEntityFilter = Annotated[
     UUID | None,
     Query(
         description=(
-            "Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. "
-            "La risposta lo riporta in `legal_entity_id`."
+            "Limits the figures to one legal entity of the space; omitted, all legal entities "
+            "summed. The response reports it in `legal_entity_id`."
         )
     ),
 ]
@@ -66,8 +66,8 @@ LegalEntityRequired = Annotated[
     UUID | None,
     Query(
         description=(
-            "L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una "
-            "(una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere."
+            "The legal entity to compute for: required when the space has more than one (a 422 "
+            "response names `legal_entity_id`), otherwise it is the only one and can be omitted."
         )
     ),
 ]
@@ -85,10 +85,10 @@ def period_pnl(
         RevenueBase,
         Query(
             description=(
-                "Quale data colloca il ricavo di una fattura nel periodo: 'issue' "
-                "(la data del documento, predefinita) oppure 'accrual' (il periodo di "
-                "competenza dichiarato sulla fattura, con la data di emissione per chi non "
-                "lo dichiara). Costi e ore restano attribuiti alla propria data."
+                "Which date places an invoice's revenue in the period: 'issue' (the document "
+                "date, the default) or 'accrual' (the accrual period declared on the invoice, "
+                "with the issue date for invoices that do not declare one). Costs and hours stay "
+                "attributed to their own date."
             )
         ),
     ] = "issue",
@@ -110,8 +110,8 @@ def period_pnl(
 
 
 class BudgetParams(KeysetParams):
-    date_from: date = Field(alias="from", description="Inizio del periodo, YYYY-MM-DD")
-    date_to: date = Field(alias="to", description="Fine del periodo, YYYY-MM-DD")
+    date_from: date = Field(alias="from", description="Start of the period, YYYY-MM-DD")
+    date_to: date = Field(alias="to", description="End of the period, YYYY-MM-DD")
     customer_id: UUID | None = None
 
 
@@ -135,13 +135,12 @@ def economic_overview(
         CashBase,
         Query(
             description=(
-                "In quale mese cade il denaro di ogni documento: 'accrual' (il periodo "
-                "di competenza dichiarato sulla fattura o sulla proforma, con la data del "
-                "documento per chi non lo dichiara; predefinito) oppure 'collection' (la data "
-                "di incasso per le fatture pagate, la scadenza per quelle da incassare, la "
-                "data del documento, o di creazione, per bozze e proforma). La stima "
-                "fiscale resta sempre "
-                "sull'incassato dell'anno."
+                "In which month each document's money falls: 'accrual' (the accrual period "
+                "declared on the invoice or proforma, with the document date for those that do "
+                "not declare one; the default) or 'collection' (the collection date for paid "
+                "invoices, the due date for those still to be collected, the document or creation"
+                " date for drafts and proformas). The fiscal estimate always stays on the year's "
+                "collected amount."
             )
         ),
     ] = "accrual",
@@ -150,8 +149,8 @@ def economic_overview(
     estimate on collected and projected revenue for an admin with a profile. No MCP
     tool, for the estimate's own reasons. `base` moves the charts and the cash cards
     between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
-    on a space with several aziende the fiscal block is empty and the page asks
-    `/fiscal` once per azienda (REB-630)."""
+    on a space with several legal entities the fiscal block is empty and the page asks
+    `/fiscal` once per legal entity (REB-630)."""
     return AnalyticsService(session).economic_overview(year, actor, base, legal_entity_id)
 
 
@@ -188,11 +187,11 @@ def ceiling_headroom(
     year: Annotated[int, Query(ge=2000, le=2200)],
     legal_entity_id: LegalEntityRequired = None,
 ) -> CeilingHeadroom:
-    """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
-    configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
-    ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
-    solo `get_fiscal_estimate`. Le soglie sono quelle del regime forfettario: un'azienda
-    in un altro regime riceve `thresholds` vuoto."""
+    """How much room is left before each active threshold of the configured tax package
+    (REB-352 §1.4), on the year's collected and actual revenue. Open to every role,
+    unlike `/fiscal`: this is revenue, not the fiscal estimate that only
+    `get_fiscal_estimate` protects. The thresholds are those of the flat-rate regime: a
+    legal entity under another regime gets an empty `thresholds`."""
     return AnalyticsService(session).ceiling_headroom(year, actor, legal_entity_id)
 
 
@@ -208,22 +207,22 @@ def simulate_ceiling(
         UUID | None,
         Query(
             description=(
-                "Un contratto con un tetto sulla quota del cliente (REB-761): la stessa "
-                "aggiunta è letta anche contro il suo tetto, sull'anno di anniversario "
-                "del contratto che contiene `expected_date`, in `contract_cap`."
+                "A contract with a cap on the client's share (REB-761): the same addition is also"
+                " read against its cap, over the contract anniversary year that contains "
+                "`expected_date`, in `contract_cap`."
             )
         ),
     ] = None,
     expected_date: Annotated[
         date | None,
-        Query(description="Il giorno in cui arriva il ricavo, YYYY-MM-DD; assente, oggi."),
+        Query(description="The day the revenue arrives, YYYY-MM-DD; omitted, today."),
     ] = None,
     legal_entity_id: LegalEntityRequired = None,
 ) -> CeilingSimulation:
-    """Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
-    aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
-    nulla. Serve `budgeted_value`, oppure `budgeted_hours` insieme a
-    `hourly_rate`. Con `contract_id` risponde anche sul tetto di quel contratto."""
+    """The «ci sta?» (does it fit?) simulator (REB-352 §1.4): the estimate of a deal not yet won,
+    added to the actual revenue and re-evaluated against every active threshold, without
+    saving anything. Needs `budgeted_value`, or `budgeted_hours` together with
+    `hourly_rate`. With `contract_id` it also answers on that contract's cap."""
     return AnalyticsService(session).simulate_ceiling(
         year,
         CeilingSimulationQuery(
@@ -243,17 +242,17 @@ def days_analysis(
     session: SessionDep,
     actor: ActorDep,
     date_from: Annotated[
-        date | None, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")
+        date | None, Query(alias="from", description="Start of the period, YYYY-MM-DD")
     ] = None,
     date_to: Annotated[
-        date | None, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")
+        date | None, Query(alias="to", description="End of the period, YYYY-MM-DD")
     ] = None,
     legal_entity_id: LegalEntityFilter = None,
 ) -> DaysAnalysis:
-    """Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
-    contro il listino per cliente e per contratto, e l'andamento delle giornate
-    lavorate senza l'approvazione che il contratto chiede. Entrambe le date o nessuna
-    (il mese corrente). Aperto a ogni ruolo, come le giornate."""
+    """The workdays of a period (REB-756): by month and by status, the actual rate
+    against the price list by client and by contract, and the trend of days worked
+    without the approval the contract requires. Both dates or neither
+    (the current month). Open to every role, like the workdays."""
     return AnalyticsService(session).days_analysis(actor, date_from, date_to, legal_entity_id)
 
 
@@ -264,17 +263,17 @@ def year_overview(
     year: Annotated[int, Query(ge=2000, le=2200)],
     legal_entity_id: LegalEntityRequired = None,
 ) -> YearOverview:
-    """L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
-    regime e per trattamento fiscale e il registro delle fatture emesse, con bollo e
-    rivalsa a parte. Lo stesso universo di `annual_revenue`: `totali.taxable_amount` è il
-    ricavo dell'anno. Aperto a ogni ruolo, come il registro."""
+    """A legal entity's year as the accountant reads it (REB-757): revenue by
+    regime and by tax treatment, and the register of issued invoices, with stamp duty and
+    withholding-tax surcharge apart. The same universe as `annual_revenue`: `totali.taxable_amount`
+    is the year's revenue. Open to every role, like the register."""
     return AnalyticsService(session).year_overview(year, actor, legal_entity_id)
 
 
 @router.get(
     "/year/csv",
     response_class=Response,
-    responses={200: {"content": {"text/csv": {}}, "description": "Il CSV dell'anno"}},
+    responses={200: {"content": {"text/csv": {}}, "description": "The year as CSV"}},
 )
 def year_csv(
     session: SessionDep,
@@ -282,8 +281,8 @@ def year_csv(
     year: Annotated[int, Query(ge=2000, le=2200)],
     legal_entity_id: LegalEntityRequired = None,
 ) -> Response:
-    """Il CSV dell'anno per il commercialista (REB-757): una riga per ogni riga di
-    fattura e poi il registro, con i due totali. UTF-8 con BOM, punto e virgola e
-    virgola decimale, il formato che Excel italiano apre senza conversioni."""
+    """The year's CSV for the accountant (REB-757): one row per invoice line,
+    then the register, with the two totals. UTF-8 with BOM, semicolon and
+    decimal comma, the format Italian Excel opens without conversions."""
     filename, content = AnalyticsService(session).build_year_csv(year, actor, legal_entity_id)
     return attachment_response(content, "text/csv; charset=utf-8", filename)

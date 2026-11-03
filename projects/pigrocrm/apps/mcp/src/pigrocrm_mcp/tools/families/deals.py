@@ -40,10 +40,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         custom_fields: dict[str, Any] | None = None,
         owner_id: str | None = None,
     ) -> dict[str, Any]:
-        """Crea un deal per un cliente, nel primo stato della pipeline. `expected_close_date` in
-        formato YYYY-MM-DD. `owner_id` è l'utente attivo che segue il deal e riceve i
-        promemoria: omesso, è chi lo crea. `note` è la prima nota (senza data né autore: la
-        firma il CRM).
+        """Create a deal for a customer, in the first pipeline stage. `expected_close_date` in
+        `YYYY-MM-DD` format. `owner_id` is the active user who follows the deal and receives
+        reminders: if omitted, it is the creator. `note` is the first note (without date or
+        author: the CRM signs it).
         """
         return deals.create(
             context,
@@ -64,16 +64,16 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_deal(deal_id: str, changes: DealChanges) -> dict[str, Any]:
-        """Aggiorna un deal. Per cambiare stato usa `move_deal`. `owner_id` cambia chi segue il
-        deal (utente attivo); `null` lo toglie.
+        """Update a deal. To change its stage use `move_deal`. `owner_id` changes who follows the
+        deal (an active user); `null` removes them.
         """
         return deals.update(context, deal_id, changes)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal(deal_id: str) -> dict[str, Any]:
-        """Legge un deal, con le ultime 50 note (`note`, dalla più recente; `note_total`
-        le conta, tutte in `deal://<id>`).
+        """Read a deal, with the latest 50 notes (`note`, most recent first; `note_total`
+        counts them, all of them are in `deal://<id>`).
         """
         return deals.get(context, deal_id)
 
@@ -91,8 +91,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `str`, not a Literal -- see `search_customers`.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Cerca deal per nome (`name`), cliente o stato di pipeline. `sort`: `created_at`,
-        `updated_at`, `name`. `legal_entity_id` filtra per azienda.
+        """Search deals by name (`name`), customer or pipeline stage. `sort`: `created_at`,
+        `updated_at`, `name`. `legal_entity_id` filters by company.
         """
         return deals.search(
             context,
@@ -118,21 +118,21 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def move_deal(
         deal_id: str, stage_id: str | None = None, pipeline_stage_id: str | None = None
     ) -> dict[str, Any]:
-        """Sposta un deal in un altro stato (`stage_id` o `pipeline_stage_id`, ne basta uno; elenco
-        in `list_pipeline_stages`). Uno stato vinto/perso fissa la probabilità a 100/0.
+        """Move a deal to another stage (`stage_id` or `pipeline_stage_id`, one is enough; list
+        in `list_pipeline_stages`). A won/lost stage sets the probability to 100/0.
         """
         return deals.move(context, deal_id, stage_id, pipeline_stage_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_deal(deal_id: str) -> dict[str, str]:
-        """Archivia un deal (reversibile con `restore_deal`). Fallisce se ha ore registrate:
-        fatturale o archiviale prima.
+        """Archive a deal (reversible with `restore_deal`). Fails if it has logged hours:
+        invoice or archive them first.
         """
         return deals.archive(context, deal_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def restore_deal(deal_id: str) -> dict[str, Any]:
-        """Ripristina un deal archiviato."""
+        """Restore an archived deal."""
         return deals.restore(context, deal_id)

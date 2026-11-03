@@ -92,7 +92,7 @@ def report_unreadable(walk: Walk, *, prefix: str = "") -> bool:
     """The one line an unreadable registry gets, on `stderr`. Whether it printed."""
     if walk.unreadable is None:
         return False
-    print(f"{prefix}registro degli spazi non raggiungibile ({walk.unreadable})", file=sys.stderr)
+    print(f"{prefix}space registry unreachable ({walk.unreadable})", file=sys.stderr)
     return True
 
 
@@ -133,6 +133,6 @@ def record_job(
             session.commit()
     except Exception as exc:  # noqa: BLE001 - the clock must not stop the walk
         if not quiet:
-            print(f"{label}: orologio non scritto ({type(exc).__name__})", file=sys.stderr)
+            print(f"{label}: clock not written ({type(exc).__name__})", file=sys.stderr)
         return False
     return True

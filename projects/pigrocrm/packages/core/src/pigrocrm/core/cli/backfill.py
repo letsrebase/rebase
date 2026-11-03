@@ -33,7 +33,7 @@ def owner_backfill(
     if report_unreadable(walk):
         return 1
     if not walk.targets:
-        print(f"{slug}: non nel registro", file=sys.stderr)
+        print(f"{slug}: not in the registry", file=sys.stderr)
         return 1
     target = walk.targets[0]
 
@@ -43,24 +43,24 @@ def owner_backfill(
             plan = plan_owner_backfill(space, generic_emails=generic_accounts)
             written = apply_owner_backfill(space, plan) if apply else 0
     except Exception as exc:  # noqa: BLE001 - one line, never a traceback
-        print(f"{slug}: saltato ({type(exc).__name__})", file=sys.stderr)
+        print(f"{slug}: skipped ({type(exc).__name__})", file=sys.stderr)
         return 1
 
-    label = {"customer": "cliente", "deal": "deal"}
+    label = {"customer": "customer", "deal": "deal"}
     for assignment in plan.assignments:
         print(f"{slug}: {label[assignment.entity]} «{assignment.label}» -> {assignment.owner_name}")
     for listed in plan.listed:
-        who = f" (creato da {listed.creator_name})" if listed.creator_name else ""
+        who = f" (created by {listed.creator_name})" if listed.creator_name else ""
         print(
-            f"{slug}: {label[listed.entity]} «{listed.label}» lasciato senza responsabile: "
+            f"{slug}: {label[listed.entity]} «{listed.label}» left without an owner: "
             f"{listed.reason}{who}"
         )
     for entity in ("customer", "deal"):
         print(
-            f"{slug}: {label[entity]}: {plan.assigned(entity)} da assegnare, "
-            f"{plan.left(entity)} lasciati, {plan.already_owned[entity]} già con responsabile"
+            f"{slug}: {label[entity]}: {plan.assigned(entity)} to assign, "
+            f"{plan.left(entity)} left, {plan.already_owned[entity]} already owned"
         )
-    print(f"{slug}: {'scritti ' + str(written) if apply else 'prova, non scritto niente'}")
+    print(f"{slug}: {'written ' + str(written) if apply else 'dry run, nothing written'}")
     return 0
 
 
@@ -72,5 +72,5 @@ def vapid_keys() -> int:
     one."""
     private, public = generate_vapid_keys()
     print(f"PIGROCRM_VAPID_PRIVATE_KEY={private}")
-    print(f"# chiave pubblica, derivata dalla privata: {public}")
+    print(f"# public key, derived from the private one: {public}")
     return 0

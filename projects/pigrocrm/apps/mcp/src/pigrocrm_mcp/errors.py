@@ -12,8 +12,8 @@ def _malformed_identifier_error() -> ValidationFailed:
     return ValidationFailed(
         "input",
         "id",
-        "non è un identificativo valido",
-        expected="un identificativo valido (UUID); usa lo strumento di ricerca per trovarlo",
+        "is not a valid identifier",
+        expected="a valid identifier (UUID); use the search tool to find it",
     )
 
 
@@ -40,13 +40,13 @@ def to_domain_error(exc: ValueError) -> DomainError:
 
 
 HINT_BY_CODE: dict[str, str] = {
-    "not_found": "Verifica l'identificativo, oppure cerca l'entità con lo strumento di ricerca.",
-    "validation_failed": "Correggi il valore indicato e riprova.",
+    "not_found": "Check the identifier, or look the entity up with the search tool.",
+    "validation_failed": "Fix the indicated value and try again.",
     "conflict": (
-        "Lo stato attuale impedisce l'operazione: risolvi il conflitto descritto e riprova."
+        "The current state prevents the operation: resolve the described conflict and try again."
     ),
-    "permission_denied": "Servono permessi diversi: chiedi all'utente di procedere manualmente.",
-    "immutable_field": "Questo campo non è modificabile: archivia e ricrea invece di aggiornare.",
+    "permission_denied": "Different permissions are needed: ask the user to proceed manually.",
+    "immutable_field": "This field cannot be modified: archive and recreate instead of updating.",
 }
 
 
@@ -60,12 +60,12 @@ def to_agent_message(exc: DomainError) -> str:
 
     expected = exc.details.get("expected")
     if expected:
-        lines.append(f"Valore atteso: {expected}.")
+        lines.append(f"Expected value: {expected}.")
 
     if exc.code == "permission_denied":
         required = ", ".join(exc.details.get("required_roles", []))
-        actual = exc.details.get("actual_role", "sconosciuto")
-        lines.append(f"Ruolo attuale: {actual}. Ruoli sufficienti: {required}.")
+        actual = exc.details.get("actual_role", "unknown")
+        lines.append(f"Current role: {actual}. Sufficient roles: {required}.")
 
     extras = {
         key: value
@@ -73,9 +73,9 @@ def to_agent_message(exc: DomainError) -> str:
         if key not in {"expected", "required_roles", "actual_role", "entity", "field", "reason"}
     }
     if extras:
-        lines.append("Contesto: " + ", ".join(f"{k}={v}" for k, v in sorted(extras.items())))
+        lines.append("Context: " + ", ".join(f"{k}={v}" for k, v in sorted(extras.items())))
 
-    lines.append(HINT_BY_CODE.get(exc.code, "Rivedi i parametri e riprova."))
+    lines.append(HINT_BY_CODE.get(exc.code, "Review the parameters and try again."))
     return " ".join(lines)
 
 
@@ -87,10 +87,10 @@ def _parameters_of(schema: Mapping[str, Any]) -> str:
     optional = [name for name in properties if name not in required]
     parts = []
     if mandatory:
-        parts.append("obbligatori " + ", ".join(f"`{name}`" for name in mandatory))
+        parts.append("required " + ", ".join(f"`{name}`" for name in mandatory))
     if optional:
-        parts.append("facoltativi " + ", ".join(f"`{name}`" for name in optional))
-    return "parametri " + "; ".join(parts) if parts else "nessun parametro"
+        parts.append("optional " + ", ".join(f"`{name}`" for name in optional))
+    return "parameters " + "; ".join(parts) if parts else "no parameters"
 
 
 def unknown_argument_error(
@@ -101,11 +101,11 @@ def unknown_argument_error(
     as a missing one. Names the first, offers the closest real name, and lists them all."""
     name = names[0]
     close = get_close_matches(name, list(schema.get("properties", {})), n=1)
-    suggestion = f" (forse `{close[0]}`)" if close else ""
+    suggestion = f" (maybe `{close[0]}`)" if close else ""
     return ValidationFailed(
         "input",
         name,
-        f"parametro non riconosciuto da `{tool}`{suggestion}",
+        f"parameter not recognized by `{tool}`{suggestion}",
         expected=_parameters_of(schema),
     )
 
@@ -122,7 +122,7 @@ def argument_error(
         return ValidationFailed(
             "input",
             str(failed.details["field"]),
-            f"campo obbligatorio mancante in `{tool}`",
+            f"required field missing in `{tool}`",
             expected=_parameters_of(schema),
         )
     return failed

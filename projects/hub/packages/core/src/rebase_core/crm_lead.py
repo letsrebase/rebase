@@ -65,20 +65,20 @@ class LeadDraftOut(BaseModel):
     """What the model answers, in a schema with no bound that could fail the whole answer:
     `LeadDraft.from_output` applies them field by field."""
 
-    role: str = Field(default="", description="Il ruolo, normalizzato; al più 80 caratteri.")
+    role: str = Field(default="", description="The role, normalized; at most 80 characters.")
     week_days: float | None = Field(
-        default=None, description="Giorni a settimana, da 0,5 a 5; null se il testo non lo dice."
+        default=None, description="Days a week, from 0.5 to 5; null if the text does not say."
     )
     duration_weeks: float | None = Field(
         default=None,
-        description="Durata in settimane, intero da 1 a 104; null se non è detta.",
+        description="Duration in weeks, an integer from 1 to 104; null if not stated.",
     )
     skills: list[str] = Field(
         default_factory=list,
-        description="Competenze o strumenti nominati; al più dieci, ciascuno di 40 caratteri.",
+        description="Skills or tools named; at most ten, each of at most 40 characters.",
     )
     profile_summary: str = Field(
-        default="", description="Tre o quattro frasi in italiano; al più 800 caratteri."
+        default="", description="Three or four sentences in Italian; at most 800 characters."
     )
 
 

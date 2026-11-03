@@ -189,9 +189,9 @@ def test_the_cron_raises_a_reminder_in_every_space_on_its_own(
     assert cli.main(["reminders"]) == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
-    assert f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0" in lines
-    assert f"{SECOND_SPACE}: promemoria 1, nuovi 1, chiusi 0" in lines
+    assert lines[0] == f"{ROOT_LABEL}: reminders 1, new 1, closed 0"
+    assert f"{FIRST_SPACE}: reminders 1, new 1, closed 0" in lines
+    assert f"{SECOND_SPACE}: reminders 1, new 1, closed 0" in lines
     # Each space's owner has the reminder, with the time the pass put it in their list.
     for slug in SPACES:
         owner = _owner_id(settings, slug)
@@ -213,7 +213,7 @@ def test_a_second_pass_delivers_nothing_again(
     assert cli.main(["reminders"]) == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert f"{FIRST_SPACE}: promemoria 1, nuovi 0, chiusi 0" in lines
+    assert f"{FIRST_SPACE}: reminders 1, new 0, closed 0" in lines
     assert _deliveries(settings, FIRST_SPACE) == 1, "one row, however many passes"
     assert _clock(settings, FIRST_SPACE) == 1
 
@@ -224,7 +224,7 @@ def test_a_rehearsal_says_what_would_go_and_writes_nothing(
     assert cli.main(["reminders", "--dry-run"]) == 0
 
     out = capsys.readouterr().out
-    assert f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0 (prova)" in out
+    assert f"{FIRST_SPACE}: reminders 1, new 1, closed 0 (dry run)" in out
     assert _deliveries(settings, FIRST_SPACE) == 0
     assert _clock(settings, FIRST_SPACE) == 0, "not even the clock: a rehearsal is not a pass"
 
@@ -234,13 +234,11 @@ def test_one_space_by_name_and_the_root_by_its_label(
 ) -> None:
     assert cli.main(["reminders", "--slug", FIRST_SPACE]) == 0
     out = capsys.readouterr().out
-    assert out.splitlines() == [f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0"]
+    assert out.splitlines() == [f"{FIRST_SPACE}: reminders 1, new 1, closed 0"]
     assert _deliveries(settings, SECOND_SPACE) == 0
 
     assert cli.main(["reminders", "--slug", "root"]) == 0
-    assert capsys.readouterr().out.splitlines() == [
-        f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
-    ]
+    assert capsys.readouterr().out.splitlines() == [f"{ROOT_LABEL}: reminders 1, new 1, closed 0"]
 
 
 def test_a_slug_that_is_not_in_the_registry_is_said_and_fails(
@@ -249,7 +247,7 @@ def test_a_slug_that_is_not_in_the_registry_is_said_and_fails(
     assert cli.main(["reminders", "--slug", "non-esiste"]) == 1
 
     captured = capsys.readouterr()
-    assert "non-esiste: non nel registro" in captured.err
+    assert "non-esiste: not in the registry" in captured.err
     assert captured.out == ""
 
 
@@ -262,7 +260,7 @@ def test_another_day_is_rehearsed_as_that_day_and_writes_nothing(
 
     # Due today is overdue by tomorrow: a `serious` where today it was a `warning`.
     assert capsys.readouterr().out.splitlines() == [
-        f"{FIRST_SPACE}: promemoria 1, nuovi 1, chiusi 0 (prova)"
+        f"{FIRST_SPACE}: reminders 1, new 1, closed 0 (dry run)"
     ]
     with _engine(_url(settings, FIRST_SPACE)) as engine, engine.connect() as connection:
         assert connection.execute(text("select count(*) from reminder_delivery")).scalar_one() == 0
@@ -300,9 +298,9 @@ def test_a_failing_space_is_one_line_with_the_exception_name_and_the_next_goes_o
     assert cli.main(["reminders"]) == 1, "a line on stderr is the exit status the ping reads"
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{FIRST_SPACE}: saltato (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: skipped (RuntimeError)"]
     assert "secret" not in captured.err + captured.out, "the type, never the message"
-    assert f"{SECOND_SPACE}: promemoria 1, nuovi 1, chiusi 0" in captured.out
+    assert f"{SECOND_SPACE}: reminders 1, new 1, closed 0" in captured.out
     assert _deliveries(settings, SECOND_SPACE) == 1
     # REB-764: the failure is on the space's clock, as the type; the other space ran.
     assert _clock_row(settings, FIRST_SPACE) == (False, "RuntimeError")
@@ -326,7 +324,7 @@ def test_a_space_behind_the_image_is_skipped_by_name_and_not_migrated(
             connection.execute(text("alter table reminder_job_run_away rename to reminder_job_run"))
 
     # One line: the clock could not hold the failure either, and that is the same fault.
-    assert capsys.readouterr().err.splitlines() == [f"{FIRST_SPACE}: saltato (ProgrammingError)"]
+    assert capsys.readouterr().err.splitlines() == [f"{FIRST_SPACE}: skipped (ProgrammingError)"]
     assert _deliveries(settings, FIRST_SPACE) == 0, "the failed pass wrote nothing"
 
 
@@ -351,7 +349,7 @@ def test_a_pass_that_finds_another_one_running_says_so_and_does_nothing(
     holder.dispose()
 
     captured = capsys.readouterr()
-    assert captured.out.splitlines() == [f"{FIRST_SPACE}: saltato (in_corso)"]
+    assert captured.out.splitlines() == [f"{FIRST_SPACE}: skipped (in_progress)"]
     assert captured.err == ""
     assert _deliveries(settings, FIRST_SPACE) == 0
     assert _clock(settings, FIRST_SPACE) == 0
@@ -375,8 +373,8 @@ def test_an_unreachable_registry_is_a_line_and_the_root_still_runs(
     assert cli.main(["reminders"]) == 1
 
     captured = capsys.readouterr()
-    assert "registro degli spazi non raggiungibile (RuntimeError)" in captured.err
-    assert captured.out.splitlines() == [f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"]
+    assert "space registry unreachable (RuntimeError)" in captured.err
+    assert captured.out.splitlines() == [f"{ROOT_LABEL}: reminders 1, new 1, closed 0"]
 
 
 def test_the_reminder_arguments_reject_a_date_that_is_not_one() -> None:
@@ -404,9 +402,9 @@ def test_the_line_tells_what_the_other_channels_sent_only_when_they_sent(
     )
 
     assert capsys.readouterr().out.splitlines() == [
-        "acme: promemoria 3, nuovi 2, chiusi 0",
-        "acme: promemoria 3, nuovi 2, chiusi 0, push 2, email 1",
-        "acme: promemoria 3, nuovi 2, chiusi 0, email 1 (prova)",
+        "acme: reminders 3, new 2, closed 0",
+        "acme: reminders 3, new 2, closed 0, push 2, email 1",
+        "acme: reminders 3, new 2, closed 0, email 1 (dry run)",
     ]
 
 

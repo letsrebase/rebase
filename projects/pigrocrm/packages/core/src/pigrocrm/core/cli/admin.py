@@ -34,8 +34,8 @@ def _read_password(prompt: str) -> str:
 def _read_new_password(prompt: str) -> str | None:
     """The password to set, asked twice on a terminal. `None` when the two differ."""
     password = _read_password(prompt)
-    if sys.stdin.isatty() and password != getpass.getpass("Conferma password: "):
-        print("Le password non coincidono.", file=sys.stderr)
+    if sys.stdin.isatty() and password != getpass.getpass("Confirm password: "):
+        print("The passwords do not match.", file=sys.stderr)
         return None
     return password
 
@@ -69,9 +69,9 @@ def createadmin(settings: Settings, email: str | None, name: str | None) -> int:
             print(exc.message, file=sys.stderr)
             return 1
         legal_entity_created = _bootstrap_root_legal_entity(session, name)
-    print(f"Creato amministratore {user.email}")
+    print(f"Admin created: {user.email}")
     if legal_entity_created:
-        print(f"Creata l'azienda predefinita «{name}»: si rinomina da Impostazioni → Aziende")
+        print(f"Default legal entity «{name}» created: rename it from Impostazioni → Aziende")
     return 0
 
 
@@ -108,7 +108,7 @@ def resetpassword(settings: Settings, email: str | None) -> int:
     exists. The product has no e-mail flow for this on purpose; the operator at the
     server is the reset."""
     email = email or input("Email: ").strip()
-    password = _read_new_password("Nuova password: ")
+    password = _read_new_password("New password: ")
     if password is None:
         return 1
 
@@ -121,5 +121,5 @@ def resetpassword(settings: Settings, email: str | None) -> int:
         except DomainError as exc:
             print(exc.message, file=sys.stderr)
             return 1
-    print(f"Password aggiornata per {user.email}")
+    print(f"Password updated for {user.email}")
     return 0

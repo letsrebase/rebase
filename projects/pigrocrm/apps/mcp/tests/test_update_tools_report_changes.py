@@ -25,7 +25,7 @@ from pigrocrm_mcp.tools.changes import report
 ADMIN = Actor(id=None, type="mcp", role="admin")
 SETUP = Actor(id=None, type="system", role="admin")  # seeding a pipeline is not an agent's
 
-REFUSAL = "nessun campo da modificare"
+REFUSAL = "no field to change"
 
 
 def _ids(*names: str) -> dict[str, str]:

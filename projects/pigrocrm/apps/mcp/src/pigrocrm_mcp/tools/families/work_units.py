@@ -24,10 +24,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_work_unit(work_unit_id: str) -> dict[str, Any]:
-        """Legge una giornata di contratto: stato, contratto e cliente, approvazione con il
-        documento che la prova, cronologia dei passaggi di stato e mosse ammesse da qui
-        (`actions`). `out_of_term` dice se la data cade fuori dal contratto. Un agente la
-        propone con `propose_day`.
+        """Read a contract day: status, contract and customer, approval with the
+        document that proves it, history of status changes and moves allowed from here
+        (`actions`). `out_of_term` says whether the date falls outside the contract. An agent
+        proposes one with `propose_day`.
         """
         return work_units.get(context, work_unit_id)
 
@@ -44,11 +44,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             WithJsonSchema({"type": "integer", "minimum": 1, "maximum": 500, "default": 200}),
         ] = 200,
     ) -> dict[str, Any]:
-        """Elenca le giornate di contratto, dalla più recente. Serve `contract_id` o una data
-        (`date_from`, `date_to`, incluse, `YYYY-MM-DD`). `status`: `proposed`, `approved`, `worked`,
+        """List contract days, most recent first. `contract_id` or a date is required
+        (`date_from`, `date_to`, inclusive, `YYYY-MM-DD`). `status`: `proposed`, `approved`,
+        `worked`,
         `worked_without_approval`, `invoiced`, `paid`, `disputed`, `revoked`,
-        `rejected`, `non_billable`. `truncated: true` = ce n'erano più di `limit`.
-        `legal_entity_id` filtra per azienda.
+        `rejected`, `non_billable`. `truncated: true` = there were more than `limit`.
+        `legal_entity_id` filters by company.
         """
         return work_units.search(
             context,

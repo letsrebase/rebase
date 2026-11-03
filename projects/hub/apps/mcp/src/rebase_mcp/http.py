@@ -28,7 +28,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.types import ASGIApp
 
-from rebase_core.admin_tokens import INVALID_TOKEN, AdminRead, AdminTokenService, is_token
+from rebase_core.admin_tokens import AdminRead, AdminTokenService, is_token
 from rebase_core.config import Settings, get_settings
 from rebase_core.crm_link import CrmLeadService
 from rebase_core.db import create_engine_from_settings, session_factory
@@ -47,9 +47,10 @@ Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 
 MCP_PATH = "/mcp"
 HEALTH_PATH = "/health"
-NOT_FOUND = "non trovato"
-INTERNAL_ERROR = "errore interno"
-TOO_MANY_BEARERS = "Troppi token non validi da qui. Riprova tra un minuto."
+NOT_FOUND = "not found"
+INTERNAL_ERROR = "internal error"
+TOO_MANY_BEARERS = "Too many invalid tokens from here. Try again in a minute."
+INVALID_TOKEN_ANSWER = "Invalid token"
 BEARER_WINDOW_SECONDS = 60
 
 logger = logging.getLogger(__name__)
@@ -213,7 +214,7 @@ class McpHttpApp:
         except DomainError:
             # Only a failure is charged: a busy agent with a good token never meets this.
             self._bad_bearers.spend(client)
-            await _json(send, 401, {"detail": INVALID_TOKEN}, {"www-authenticate": "Bearer"})
+            await _json(send, 401, {"detail": INVALID_TOKEN_ANSWER}, {"www-authenticate": "Bearer"})
             return
         except Exception:
             logger.exception("failed to authenticate an MCP request over HTTP")

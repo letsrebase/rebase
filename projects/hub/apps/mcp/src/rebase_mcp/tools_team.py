@@ -43,11 +43,11 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         limit: int = TEAM_REQUEST_LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """«Richieste team» (spec § 3.5), dalla più recente: azienda, origine, stato,
-        quando è arrivata, e quanti talenti sono stati chiesti e quanti hanno già
-        risposto sì. `status` e `origin` filtrano sulle parole che quei campi usano; una
-        parola che non è una di quelle è rifiutata nominando il campo. `next_cursor` è
-        il cursore opaco della pagina successiva, `None` all'ultima. Solo lettura."""
+        """«Richieste team» (spec § 3.5), newest first: company, origin, status, when it
+        arrived, and how many talents were asked and how many have already answered yes.
+        `status` and `origin` filter on the words those fields use; a word that is not one of
+        them is refused naming the field. `next_cursor` is the opaque cursor of the next
+        page, `None` on the last. Read-only."""
         return deps.run(
             lambda s: TeamRequestService(s, settings=deps.team_settings()).list_recent(
                 status=status, origin=origin, limit=limit, cursor=cursor
@@ -61,19 +61,17 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         limit: int = TEAM_PROPOSAL_LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """«Proposte»: ogni «Proponi il team» chiesto dalla pagina pubblica o dal talent
-        cloud (e, nelle righe più vecchie, da un admin), dalla più recente, anche quando
-        nessuna richiesta è poi stata inviata: la descrizione del progetto, quante
-        persone sono state chieste, la nota di un «Rigenera», chi l'ha chiesto, il
-        riassunto, quanti membri aveva la proposta e chi erano (`team`: `position`,
-        `freelancer_id`, `role` proposto, `first_name` e `last_name`, vuoti per un talento nel
-        frattempo eliminato), e `request_id` della richiesta «Assumi team» se c'è.
-        `error` è vuoto su una
-        proposta che ha risposto e il codice del rifiuto (`llm_unavailable`,
-        `team_builder_busy`) su un tentativo senza proposta. `origin` (`public`,
-        `cloud`, `admin`) ed `outcome` (`ok`, `error`) filtrano; una parola che non è
-        una di quelle è rifiutata nominando il campo. `next_cursor` è il cursore opaco
-        della pagina successiva, `None` all'ultima. Solo lettura."""
+        """«Proposte»: every «Proponi il team» asked from the public page or the talent cloud
+        (and, in the older rows, by an admin), newest first, even when no request was sent
+        afterwards: the project description, how many people were asked, the note of a
+        «Rigenera», who asked, the summary, how many members the proposal had and who they
+        were (`team`: `position`, `freelancer_id`, proposed `role`, `first_name` and
+        `last_name`, empty for a talent deleted in the meantime), and `request_id` of the
+        «Assumi team» request if there is one. `error` is empty on a proposal that answered
+        and the refusal code (`llm_unavailable`, `team_builder_busy`) on an attempt with no
+        proposal. `origin` (`public`, `cloud`, `admin`) and `outcome` (`ok`, `error`) filter;
+        a word that is not one of them is refused naming the field. `next_cursor` is the
+        opaque cursor of the next page, `None` on the last. Read-only."""
         return deps.run(
             lambda s: TeamBuilder(s, None, deps.team_settings()).list_recent(
                 origin=origin, outcome=outcome, limit=limit, cursor=cursor
@@ -82,19 +80,19 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_team_request(request_id: str) -> dict[str, Any]:
-        """Una richiesta team, per id (spec § 3.5): la proposta con i talenti per nome
-        e la loro tariffa e fascia, il riassunto e il luogo che i talenti leggeranno, i
-        contatti dell'azienda, lo stato, la nota dell'admin, e la risposta di ciascun
-        talento con il suo orario. Solo lettura."""
+        """One team request, by id (spec § 3.5): the proposal with the talents by name and their
+        rate and band, the summary and the location the talents will read, the company's
+        contacts, the status, the admin's note, and each talent's answer with its time.
+        Read-only."""
         key = to_uuid(request_id, "request_id")
         return deps.run(lambda s: TeamRequestService(s, settings=deps.team_settings()).get(key))
 
     @mcp.tool()
     def set_team_request_summary(request_id: str, summary: str) -> dict[str, Any]:
-        """«Salva il riassunto» (spec § 3.5): il testo che i talenti leggeranno nella
-        mail di disponibilità, riscritto qui dall'admin prima di scrivere loro.
-        Rifiutato con la stessa frase di `contact_team_talents` se nomina ancora
-        l'azienda: il riassunto va corretto dove è scritto."""
+        """«Salva il riassunto» (spec § 3.5): the text the talents will read in the availability
+        email, rewritten here by the admin before writing to them. Refused with the same
+        sentence as `contact_team_talents` if it still names the company: the summary must be
+        corrected where it is written."""
         key = to_uuid(request_id, "request_id")
         change = TeamRequestSummary(summary=summary)
         return deps.run(
@@ -105,15 +103,14 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def contact_team_talents(request_id: str, only_silent: bool = False) -> dict[str, Any]:
-        """«Contatta i talenti» (`only_silent` falso, la prima volta) o «Rimanda a chi
-        non ha risposto» (vero, spec § 3.6), per una richiesta team arrivata dal sito o
-        dal talent cloud: una mail a ciascun talento del team con il riassunto, il ruolo
-        proposto e la propria tariffa, e due link, «Sono disponibile» e «Non sono
-        disponibile», buoni per trenta giorni. Scrive davvero alle persone: da usare
-        solo quando lo chiede l'admin, mai come passo di una ricerca. Rifiutato, con la
-        sua frase, per una richiesta chiusa, un riassunto che nomina ancora l'azienda,
-        una seconda prima volta, o nessun talento rimasto da scrivere; senza una chiave
-        di invio configurata risponde che l'invio non è attivo qui."""
+        """«Contatta i talenti» (`only_silent` false, the first time) or «Rimanda a chi non ha
+        risposto» (true, spec § 3.6), for a team request that came from the site or the
+        talent cloud: an email to each talent of the team with the summary, the proposed role
+        and their own rate, and two links, «Sono disponibile» and «Non sono disponibile»,
+        valid for thirty days. It really writes to people: use it only when the admin asks,
+        never as a step of a search. Refused, with its sentence, for a closed request, a
+        summary that still names the company, a second first time, or no talent left to write
+        to; without a configured sending key it answers that sending is not active here."""
         key = to_uuid(request_id, "request_id")
         return deps.run(
             lambda s: TeamAvailabilityService(
@@ -125,9 +122,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def set_team_request_status(
         request_id: str, status: str, note: str | None = None
     ) -> dict[str, Any]:
-        """«Segna come contattata», «Chiudi» (spec § 3.5), con una nota facoltativa per
-        chi la rileggerà; `note` omesso lascia la nota com'era. Una nota rifiutata
-        (oltre 4000 caratteri, o con un carattere nullo) lascia anche lo stato com'era."""
+        """«Segna come contattata», «Chiudi» (spec § 3.5), with an optional note for whoever
+        will reread it; an omitted `note` leaves the note as it was. A refused note (over
+        4000 characters, or with a null character) also leaves the status as it was."""
         key = to_uuid(request_id, "request_id")
         # The note is checked before anything is written: refused after `set_status`,
         # it would leave the state moved and the call answering an error.
@@ -147,12 +144,11 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def grant_talent_cloud(company_id: str) -> dict[str, Any]:
-        """«Apri il talent cloud» (spec § 4.1): apre alla referente di questa richiesta
-        l'accesso al cloud privato, e le manda «Il talent cloud di rebase è aperto per
-        …» quando è una concessione nuova; su una già viva per questa azienda e questa
-        persona risponde quella, senza mandare altro. `mail_sent` dice se la mail è
-        partita; senza una chiave di invio configurata il cloud si apre comunque e
-        nessuno la riceve."""
+        """«Apri il talent cloud» (spec § 4.1): opens access to the private cloud for this
+        request's contact person, and sends them «Il talent cloud di rebase è aperto per …»
+        when it is a new grant; on one already live for this company and this person it
+        answers that one, sending nothing else. `mail_sent` says whether the email went out;
+        without a configured sending key the cloud still opens and nobody receives it."""
 
         def call(session: Session) -> dict[str, Any]:
             read, mail = TalentCloudService(session, deps.team_settings()).grant(
@@ -175,10 +171,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def revoke_talent_cloud(company_id: str) -> dict[str, Any]:
-        """«Revoca il talent cloud» (spec § 4.1): chiude la concessione viva di questa
-        richiesta, e solo questa; un'altra azienda della stessa persona resta com'era e
-        il suo cloud resta aperto. Rifiutato, con la sua frase, quando non c'è nulla di
-        vivo da chiudere."""
+        """«Revoca il talent cloud» (spec § 4.1): closes the live grant of this request, and
+        only this one; another company of the same person stays as it was and its cloud stays
+        open. Refused, with its sentence, when there is nothing live to close."""
         return deps.run(
             lambda s: TalentCloudService(s).revoke(
                 to_uuid(company_id, "company_id"), deps.admin().id
@@ -187,8 +182,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def list_talent_cloud_grants() -> list[dict[str, Any]]:
-        """Ogni concessione del talent cloud, viva o chiusa, dalla più recente, fino a
-        200 (spec § 4.1, non paginate perché sono poche per un pezzo): per ciascuna,
-        chi l'ha aperta e quando, e chi l'ha eventualmente chiusa e quando. Solo
-        lettura."""
+        """Every talent cloud grant, live or closed, newest first, up to 200 (spec § 4.1, not
+        paginated because there are few for a while): for each, who opened it and when, and
+        who closed it, if anyone, and when. Read-only."""
         return deps.run_list(lambda s: TalentCloudService(s).list())

@@ -21,8 +21,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_automations() -> dict[str, Any]:
-        """Le regole di automazione del CRM, se attive, e le ultime esecuzioni con esito (anche
-        quando una regola ha deciso di non agire, con il motivo). Leggila prima di concludere
-        che un deal è stato spostato a mano. Si configurano solo dall'interfaccia web.
+        """The CRM's automation rules, if enabled, and the latest runs with their outcome (also
+        when a rule decided not to act, with the reason). Read it before concluding that a deal
+        was moved by hand. Rules can only be configured from the web interface.
         """
         return automation_tools.describe_automations(context)

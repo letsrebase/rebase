@@ -122,13 +122,13 @@ async def test_the_docstring_promises_the_example_it_is_tested_against(server: A
 
     description = tool.description or ""
     assert _DOCSTRING_FRAGMENT in description and _DOCSTRING_VAT_NUMBER in description, description
-    assert "3 caratteri" in description, description
+    assert "At least 3 characters" in description, description
     assert "total_is_minimum" in description, description
     # The fifth branch, since Task C12. A docstring naming four entity classes when the
     # tool searches five is how an agent concludes an invoice does not exist rather than
     # that it did not look -- the same silent partial result the branch was added to close,
     # moved from the response into the documentation.
-    assert "fatture" in description, description
+    assert "invoices" in description, description
     assert "2026/7" in description, description
 
 
@@ -150,7 +150,7 @@ async def test_a_two_character_term_is_a_domain_error_not_a_scan(server: Any) ->
     assert "term" in rendered, rendered
     assert "3" in rendered, rendered
     # Ours, not the SDK's: `errors.py`'s own remediation line for `validation_failed`.
-    assert "Correggi il valore indicato e riprova." in rendered, rendered
+    assert "Fix the indicated value and try again." in rendered, rendered
     assert "errors.pydantic.dev" not in rendered, rendered
 
 

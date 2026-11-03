@@ -70,12 +70,12 @@ def create_app() -> FastAPI:
         title="PigroCRM API",
         version="0.1.0",
         description=(
-            "API pubblica di PigroCRM. La UI e il server MCP usano esclusivamente questi servizi. "
-            "Il campo `custom_fields` di ogni entità è deliberatamente un oggetto libero in "
-            "questo documento: le chiavi realmente presenti dipendono dalle field_definitions "
-            "configurate a runtime da ciascun tenant e non sono, e non possono essere, fissate "
-            "qui. Chiama `GET /api/schema/{entity_type}` per scoprire, in ogni momento, quali "
-            "campi custom esistono per una data entità, con il loro tipo e le eventuali opzioni."
+            "Public PigroCRM API. The UI and the MCP server use these services exclusively. The "
+            "`custom_fields` field of every entity is deliberately a free-form object in this "
+            "document: the keys actually present depend on the field_definitions each tenant "
+            "configures at runtime, and they are not, and cannot be, fixed here. Call `GET "
+            "/api/schema/{entity_type}` to discover, at any time, which custom fields exist for a"
+            " given entity, with their type and any options."
         ),
     )
     # The SPA is same-origin behind nginx, and the dev server proxies `/api` (vite.config),

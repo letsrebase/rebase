@@ -51,7 +51,7 @@ function CeilingRow({ ceiling }: { ceiling: CeilingStatus }) {
 
 /**
  * Room left under each ceiling of the flat-rate regime, and the «ci sta?» simulator under it
- * (REB-755). What the server answers decides everything: an legal entity the thresholds do not
+ * (REB-755). What the server answers decides everything: a legal entity the thresholds do not
  * apply to (the ordinary regime, a company abroad) gets an empty list of ceilings. It then
  * draws only the simulator, under «Tetti dei contratti», when one of its active contracts
  * caps the customer's share (REB-761), and nothing at all when none does, not an empty box

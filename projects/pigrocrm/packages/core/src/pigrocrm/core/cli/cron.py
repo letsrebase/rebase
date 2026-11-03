@@ -54,7 +54,7 @@ def _refuse_other_day(settings: Settings, day: date | None, dry_run: bool) -> bo
     """`--date` evaluates another day, and only as a rehearsal: a real pass of another
     day would write against today's reminders and task."""
     if day is not None and day != today_local(settings) and not dry_run:
-        print("--date cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
+        print("--date changes the day: use it only with --dry-run", file=sys.stderr)
         return True
     return False
 
@@ -86,7 +86,7 @@ def digest(
         # A typo in a cron line, said only when the registry was really read: an
         # unreachable one has had its own line already. Never as a week that went out.
         if slug is not None and walk.registry_read:
-            print(f"{slug}: non nel registro", file=sys.stderr)
+            print(f"{slug}: not in the registry", file=sys.stderr)
         return 0
 
     week = week_containing(day) if day is not None else previous_week(settings)
@@ -99,7 +99,7 @@ def digest(
             sender = sender_from_settings(settings)
             tracker = tracker_from_settings(settings)
         except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
-            print(f"invio non configurabile ({type(exc).__name__})", file=sys.stderr)
+            print(f"sending cannot be configured ({type(exc).__name__})", file=sys.stderr)
             return 0
         for target in walk.targets:
             with space_engine(target.url) as engine:
@@ -131,7 +131,7 @@ def digest(
                     # `send_for_space` answers `skipped` for everything that fails once
                     # it has started; what is left for here is what fails before that
                     # -- a database that cannot be reached, a schema behind the image's.
-                    print(f"{target.label}: saltato ({type(exc).__name__})", file=sys.stderr)
+                    print(f"{target.label}: skipped ({type(exc).__name__})", file=sys.stderr)
                     if not dry_run:
                         record_job(engine, DIGEST_JOB, target.label, type(exc).__name__, quiet=True)
                     continue
@@ -145,20 +145,20 @@ def _print_digest_outcome(outcome: DigestOutcome, *, dry_run: bool) -> None:
     """One space, one line. `skipped` goes to stderr, so `2>&1` in the cron line keeps
     the order and a log split by stream keeps the failures on their own.
 
-    `(prova)` on a rehearsal: `--dry-run` answers `sent` with the people it *would*
+    `(dry run)` on a rehearsal: `--dry-run` answers `sent` with the people it *would*
     have written to, and a log where the rehearsal and the real Monday read identically is
     a log that cannot answer whether last week went out."""
     if outcome.outcome == "sent":
-        print(f"{outcome.slug}: inviato a {outcome.recipients}{' (prova)' if dry_run else ''}")
+        print(f"{outcome.slug}: sent to {outcome.recipients}{' (dry run)' if dry_run else ''}")
     elif outcome.outcome == "empty":
-        print(f"{outcome.slug}: vuoto")
+        print(f"{outcome.slug}: empty")
     elif outcome.outcome == "already_sent":
-        print(f"{outcome.slug}: già inviato per {outcome.week}")
+        print(f"{outcome.slug}: already sent for {outcome.week}")
     elif outcome.outcome == "no_recipient":
-        print(f"{outcome.slug}: nessun destinatario")
+        print(f"{outcome.slug}: no recipient")
     else:
         reason = label(DIGEST_SKIP, outcome.reason)
-        print(f"{outcome.slug}: saltato ({reason})", file=sys.stderr)
+        print(f"{outcome.slug}: skipped ({reason})", file=sys.stderr)
 
 
 def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run: bool) -> int:
@@ -180,7 +180,7 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
     failed = report_unreadable(walk)
     if not walk.targets:
         if slug is not None and walk.registry_read:
-            print(f"{slug}: non nel registro", file=sys.stderr)
+            print(f"{slug}: not in the registry", file=sys.stderr)
             return 1
         return 1 if failed else 0
 
@@ -194,7 +194,7 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
             slack=slack_client_for(settings) if settings.slack_client_id else None,
         )
     except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
-        print(f"canali non configurabili ({type(exc).__name__})", file=sys.stderr)
+        print(f"channels cannot be configured ({type(exc).__name__})", file=sys.stderr)
         return 1
     now = None
     if day is not None and day != today_local(settings):
@@ -212,7 +212,7 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
                     public_url=target.public_url,
                 )
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                print(f"{target.label}: saltato ({type(exc).__name__})", file=sys.stderr)
+                print(f"{target.label}: skipped ({type(exc).__name__})", file=sys.stderr)
                 failed = True
                 if not dry_run:
                     record_job(
@@ -225,12 +225,12 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
 
 def _print_reminder_outcome(outcome: ReminderOutcome, *, dry_run: bool) -> None:
     """One space, one line, counters only. A pass that found another one running is the
-    lock doing its work and goes to `stdout`, like gmail-sync's «già in corso»: an error
+    lock doing its work and goes to `stdout`, like gmail-sync's «already running»: an error
     in the log for the system working as designed teaches the operator to ignore the log.
 
-    `(prova)` on a rehearsal, for the reason the digest's has it."""
+    `(dry run)` on a rehearsal, for the reason the digest's has it."""
     if outcome.outcome == "in_progress":
-        print(f"{outcome.slug}: saltato (in_corso)")
+        print(f"{outcome.slug}: skipped (in_progress)")
         return
     # What the other channels sent is told only when there is something to tell, so the
     # line of a space with no transport configured reads as it always did.
@@ -244,8 +244,8 @@ def _print_reminder_outcome(outcome: ReminderOutcome, *, dry_run: bool) -> None:
         if count
     )
     print(
-        f"{outcome.slug}: promemoria {outcome.raised}, nuovi {outcome.delivered}, "
-        f"chiusi {outcome.ended}{sent}{' (prova)' if dry_run else ''}"
+        f"{outcome.slug}: reminders {outcome.raised}, new {outcome.delivered}, "
+        f"closed {outcome.ended}{sent}{' (dry run)' if dry_run else ''}"
     )
 
 
@@ -256,7 +256,7 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
     One line per space and one per rule. **Exits 1 when any line went to `stderr`**, so a
     host that pings a dead-man's switch after `&&` stops pinging when a space could not
     be walked, and that includes a clock that cannot be written after a run that worked
-    (`orologio non scritto`): the ping should not say a space is fine when its own
+    (`clock not written`): the ping should not say a space is fine when its own
     database refuses a write.
 
     `AutomationPass.run` decides; `--dry-run` runs it and rolls back, so the counters of a
@@ -268,7 +268,7 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
     failed = report_unreadable(walk)
     if not walk.targets:
         if slug is not None and walk.registry_read:
-            print(f"{slug}: non nel registro", file=sys.stderr)
+            print(f"{slug}: not in the registry", file=sys.stderr)
             return 1
         return 1 if failed else 0
 
@@ -280,7 +280,7 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                 if not dry_run and not record_job(engine, AUTOMATIONS_JOB, target.label, None):
                     failed = True
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                print(f"{target.label}: saltato ({type(exc).__name__})", file=sys.stderr)
+                print(f"{target.label}: skipped ({type(exc).__name__})", file=sys.stderr)
                 failed = True
                 if not dry_run:
                     record_job(
@@ -294,12 +294,12 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
 def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) -> None:
     """One line per rule, counters only. A rule that is switched off says so rather than
     printing zeros, which would read as «looked, found nothing»."""
-    suffix = " (prova)" if dry_run else ""
+    suffix = " (dry run)" if dry_run else ""
     for rule in report.rules:
         if rule.disabled:
-            print(f"{slug}: {label(TASK_RULE, rule.rule)} disattivata")
+            print(f"{slug}: {label(TASK_RULE, rule.rule)} disabled")
         else:
             print(
-                f"{slug}: {label(TASK_RULE, rule.rule)} aperte {rule.open}, già aperte "
+                f"{slug}: {label(TASK_RULE, rule.rule)} opened {rule.open}, already open "
                 f"{rule.already_open}{suffix}"
             )

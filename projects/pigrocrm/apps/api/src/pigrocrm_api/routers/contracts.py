@@ -68,8 +68,8 @@ def list_contracts(
 
 @router.get("/{contract_id}", response_model=ContractDetail)
 def get(contract_id: UUID, session: SessionDep, actor: ActorDep) -> ContractDetail:
-    """Il contratto con le sue note sulle clausole (REB-762) e, se è stato rinnovato,
-    l'id di chi lo rinnova (REB-763)."""
+    """The contract with its clause notes (REB-762) and, if it has been renewed,
+    the id of its renewal (REB-763)."""
     return ContractService(session).detail(contract_id, actor)
 
 
@@ -93,10 +93,10 @@ def set_state(
 def renew(
     contract_id: UUID, data: ContractRenew, session: SessionDep, actor: ActorDep
 ) -> ContractRead:
-    """Rinnova il contratto (REB-763): il successore ha gli stessi termini, comincia il
-    giorno dopo la fine di questo e dura quanto durava, salvo `start`, `end` o `duration`.
-    Le schede tariffarie che arrivano al nuovo termine passano con lui; le sue restano
-    dove sono. Un contratto si rinnova una volta (409) e solo se ha una fine (422)."""
+    """Renews the contract (REB-763): the successor has the same terms, starts the
+    day after this one ends and lasts as long as it did, except for `start`, `end` or `duration`.
+    The rate cards that reach the new term move with it; its own stay
+    where they are. A contract is renewed once (409) and only if it has an end (422)."""
     return ContractService(session).renew(contract_id, data, actor)
 
 
@@ -131,8 +131,8 @@ def create_rate_card(
     close_previous: Annotated[
         bool,
         Query(
-            description="Chiude il giorno prima la scheda in vigore alla data di inizio "
-            "di questa, invece di rifiutare la sovrapposizione"
+            description="Closes, the day before, the rate card in force at this one's start "
+            "date, instead of refusing the overlap"
         ),
     ] = False,
 ) -> RateCardRead:
@@ -163,8 +163,8 @@ def list_rate_cards(contract_id: UUID, session: SessionDep, actor: ActorDep) -> 
 def create_clause_note(
     contract_id: UUID, data: ClauseNoteCreate, session: SessionDep, actor: ActorDep
 ) -> ClauseNoteRead:
-    """Una lettura di una clausola: il riferimento, il testo letterale e l'interpretazione
-    adottata (REB-762)."""
+    """A reading of a clause: the reference, the literal text and the adopted
+    interpretation (REB-762)."""
     return ClauseNoteService(session).create(contract_id, data, actor)
 
 
@@ -190,7 +190,7 @@ def list_clause_notes(
 def upsert_renewal_assumption(
     contract_id: UUID, data: RenewalAssumptionUpsert, session: SessionDep, actor: ActorDep
 ) -> RenewalAssumptionRead:
-    """Admin or collaboratore, enforced by the service (`actor.require_write`), not
+    """Admin or collaborator (the write role), enforced by the service (`actor.require_write`), not
     here -- there is no role dependency in this codebase, and adding one here would
     put the same rule in two places."""
     return RenewalAssumptionService(session).upsert(contract_id, data, actor)
@@ -209,18 +209,18 @@ def project_revenue(
     session: SessionDep,
     actor: ActorDep,
     date_from: Annotated[
-        date, Query(alias="from", description="Inizio della finestra, YYYY-MM-DD, inclusa")
+        date, Query(alias="from", description="Start of the window, YYYY-MM-DD, inclusive")
     ],
     date_to: Annotated[
-        date, Query(alias="to", description="Fine della finestra, YYYY-MM-DD, esclusa")
+        date, Query(alias="to", description="End of the window, YYYY-MM-DD, exclusive")
     ],
     as_of: Annotated[
         date | None,
-        Query(description="Data di riferimento per la finestra di irrevocabilità; default oggi"),
+        Query(description="Reference date for the irrevocability window; default today"),
     ] = None,
 ) -> ContractProjectionRead:
-    """Il ricavo «programmato» oltre la finestra di irrevocabilità, più il contributo
-    dell'eventuale assunzione di rinnovo -- una figura distinta dal `projected` di
-    `GET /api/analytics/overview`, mai combinata con esso."""
+    """The «scheduled» revenue beyond the irrevocability window, plus the contribution
+    of the renewal assumption, if any -- a figure distinct from the `projected` of
+    `GET /api/analytics/overview`, never combined with it."""
     query = ContractProjectionQuery(date_from=date_from, date_to=date_to, as_of=as_of)
     return ContractProjectionService(session).project(contract_id, query, actor)

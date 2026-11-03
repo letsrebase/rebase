@@ -28,7 +28,7 @@ def month(
     # The sidebar's legal entity (REB-624): the hours through their deal, the invoices by
     # their own column; the activities have no legal entity and are always the space's.
     legal_entity_id: Annotated[
-        UUID | None, Query(description="Solo le ore e le fatture di questa azienda; omesso, tutte")
+        UUID | None, Query(description="Only this legal entity's hours and invoices; omitted, all")
     ] = None,
 ) -> CalendarMonth:
     """One month: the hours by day, the activities falling due, the invoices falling due.

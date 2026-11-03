@@ -102,7 +102,7 @@ async def test_a_malformed_resource_id_is_a_refusal_and_not_a_crash(server) -> N
         with pytest.raises(MCPError) as exc:
             await client.read_resource("customer://non-un-id")
     assert exc.value.code == DOMAIN_REFUSAL
-    assert "Correggi il valore indicato" in exc.value.message
+    assert "Fix the indicated value" in exc.value.message
 
 
 async def test_a_conflict_raised_by_a_resource_carries_the_application_code(

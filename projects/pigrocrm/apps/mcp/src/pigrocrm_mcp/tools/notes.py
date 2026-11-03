@@ -35,10 +35,10 @@ def add(
         raise ValidationFailed(
             "input",
             "deal_id, customer_id, person_id",
-            "serve uno solo fra `deal_id`, `customer_id` e `person_id`"
+            "exactly one of `deal_id`, `customer_id` and `person_id` is needed"
             if not named
-            else "`deal_id`, `customer_id` e `person_id` sono alternativi: passane uno solo",
-            expected="l'id del deal, del cliente o della persona a cui va la nota",
+            else "`deal_id`, `customer_id` and `person_id` are alternatives: pass only one",
+            expected="the id of the deal, customer or person the note belongs to",
         )
     ((entity_type, entity_id),) = named.items()
     return (
@@ -80,9 +80,9 @@ def refuse_note_in_changes(data: dict[str, Any], add_tool: str) -> None:
         raise ValidationFailed(
             "input",
             "changes.note",
-            "le note non si cambiano da qui",
+            "notes cannot be changed from here",
             expected=(
-                f"`{add_tool}` per aggiungere una nota; `update_note` e `delete_note` per "
-                "correggerne o toglierne una"
+                f"`{add_tool}` to add a note; `update_note` and `delete_note` to "
+                "correct or remove one"
             ),
         )

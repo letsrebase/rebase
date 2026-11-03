@@ -23,17 +23,13 @@ from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupCreate
 from rebase_mcp.server import build_server
 
-# The words a tool description is written with, and the ones an English rewrite would
-# bring in. A floor per description, not a pinned copy: an English sentence trips the
-# second pattern, an Italian one cannot.
+# Words that only an Italian description uses, and the ones an English one is written
+# with. A floor per description, not a pinned copy.
 ITALIAN = re.compile(
-    r"\b(che|con|per|non|sono|quando|come|senza|gli|le|li|da|fra|ad|su|la|il|un|una)\b",
+    r"\b(che|quando|della|dello|delle|nella|dal|dei|solo lettura|rifiutat[oa])\b",
     re.IGNORECASE,
 )
-ENGLISH = re.compile(
-    r"\b(the|and|with|from|this|that|will|page|search|filter|latest|which)\b",
-    re.IGNORECASE,
-)
+ENGLISH = re.compile(r"\b(the|and|with|from|this|that|will|page|search|filter)\b", re.IGNORECASE)
 
 
 @pytest.fixture(autouse=True)
@@ -257,15 +253,15 @@ async def test_skills_narrow_the_talent_list_and_ride_on_each_row(clean: Any) ->
     assert too_many.is_error and "skills" in too_many.content[0].text
 
 
-async def test_the_tool_descriptions_stay_italian(clean: Any) -> None:
+async def test_the_tool_descriptions_are_english(clean: Any) -> None:
     async with _server(clean) as client:
         tools = (await client.list_tools()).tools
     listed = {tool.name: tool.description or "" for tool in tools}
     assert listed  # every registered tool carries a description
     for name, description in listed.items():
-        assert not ENGLISH.findall(description), name
-        assert len(ITALIAN.findall(description)) >= 3, name
+        assert not ITALIAN.findall(description), name
+        assert ENGLISH.findall(description), name
     # The new surface is the one the card is about: it says what the cursor is for,
     # and the English tool names are the only ones left.
-    assert "cursore" in listed["list_talents"] and "cursore" in listed["list_companies"]
+    assert "cursor" in listed["list_talents"] and "cursor" in listed["list_companies"]
     assert "list_aziende" not in listed and "get_talent" in listed

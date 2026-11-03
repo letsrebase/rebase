@@ -430,10 +430,10 @@ def test_the_dry_run_prints_counts_and_ids_never_a_name_an_address_or_a_profile(
     code, lines = talent_duplicates(twice)
     text_ = "\n".join(lines)
     assert code == 0
-    assert lines[0].startswith("1 coppie unibili (stesso LinkedIn), 0 da rivedere")
-    assert f"tieni {survivor.id} assorbi {absorbed.id}" in text_
-    assert "sposterebbe: niente" in text_
-    assert "indici unici mancanti: uq_users_linkedin_lower" in text_
+    assert lines[0].startswith("1 mergeable pairs (same LinkedIn), 0 to review")
+    assert f"keep {survivor.id} absorb {absorbed.id}" in text_
+    assert "would move: nothing" in text_
+    assert "unique indexes missing: uq_users_linkedin_lower" in text_
     for private in ("studio.it", "Lanzo", "Marco", "linkedin.com", ADA):
         assert private not in text_
     # Reading wrote nothing.
@@ -449,17 +449,17 @@ def test_apply_merges_the_pair_with_the_newest_cv_and_then_creates_the_indexes(
     twice.expire_all()
     assert twice.get(Freelancer, absorbed.id).deleted_at is not None  # type: ignore[union-attr]
     assert twice.get(Freelancer, survivor.id).deleted_at is None  # type: ignore[union-attr]
-    assert any("unite (azione " in line for line in lines)
-    assert lines[-1].startswith("indici unici creati: uq_users_linkedin_lower")
+    assert any("merged (action " in line for line in lines)
+    assert lines[-1].startswith("unique indexes created: uq_users_linkedin_lower")
     code, again = talent_duplicates(twice)
-    assert again[0].startswith("0 coppie unibili") and again[-1] == "indici unici mancanti: nessuno"
+    assert again[0].startswith("0 mergeable pairs") and again[-1] == "unique indexes missing: none"
 
 
 def test_apply_and_undo_need_an_admin_and_say_so(twice: Session) -> None:
     _production_like(twice)
     assert talent_duplicates(twice, apply=True)[0] == 2
     code, lines = talent_duplicates(twice, apply=True, admin_email="vecchia@studio.it")
-    assert code == 1 and "Nessun amministratore" in lines[0]
+    assert code == 1 and "No administrator" in lines[0]
 
 
 def test_a_pair_a_merge_refuses_is_reported_and_the_rest_goes_on(twice: Session) -> None:
@@ -475,11 +475,11 @@ def test_a_pair_a_merge_refuses_is_reported_and_the_rest_goes_on(twice: Session)
         )
     twice.commit()
     _, dry = talent_duplicates(twice)
-    assert any("bloccata: " in line and "codici fiscali diversi" in line for line in dry)
+    assert any("blocked: " in line and "codici fiscali diversi" in line for line in dry)
     code, lines = talent_duplicates(twice, apply=True, admin_email="admin@rebase.it")
     assert code == 1
-    assert any("bloccata: " in line for line in lines)
-    assert lines[-1].startswith("indice uq_users_linkedin_lower non creato: 1 profili")
+    assert any("blocked: " in line for line in lines)
+    assert lines[-1].startswith("index uq_users_linkedin_lower not created: 1 profiles")
     assert twice.get(Freelancer, absorbed.id).deleted_at is None  # type: ignore[union-attr]
 
 
@@ -504,17 +504,17 @@ def test_undo_by_action_id_puts_the_merge_back(twice: Session) -> None:
     survivor, absorbed, _ = _production_like(twice)
     _, lines = talent_duplicates(twice, apply=True, admin_email="admin@rebase.it")
     action = (
-        next(line for line in lines if "unite (azione " in line).split("azione ")[1].split(")")[0]
+        next(line for line in lines if "merged (action " in line).split("action ")[1].split(")")[0]
     )
     code, undone = talent_duplicates(twice, undo=UUID(action), admin_email="admin@rebase.it")
-    assert code == 0 and "annullata" in undone[0]
+    assert code == 0 and "undone" in undone[0]
     twice.expire_all()
     assert twice.get(Freelancer, absorbed.id).deleted_at is None  # type: ignore[union-attr]
     # Both cards held one profile: the survivor keeps it (the unique index wants one holder),
-    # so the card that came back is only a «da rivedere» pair, by name.
-    assert "indice unico" in undone[0]
+    # so the card that came back is only a «to review» pair, by name.
+    assert "unique index" in undone[0]
     assert talent_duplicates(twice)[1][0].startswith(
-        "0 coppie unibili (stesso LinkedIn), 1 da rivedere"
+        "0 mergeable pairs (same LinkedIn), 1 to review"
     )
 
 

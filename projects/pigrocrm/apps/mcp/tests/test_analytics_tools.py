@@ -117,13 +117,13 @@ async def test_an_inverted_window_comes_back_as_guidance_not_a_pydantic_dump(ser
 async def test_the_deal_resource_now_carries_revenue_and_margin(server, deal_with_hours) -> None:
     async with Client(server) as client:
         rendered = (await client.read_resource(f"deal://{deal_with_hours}")).contents[0].text
-    assert "## Economia" in rendered
-    assert "- Ricavi fatturati: 0.00 EUR (0 fatture emesse)" in rendered
-    assert "- Costo del lavoro: 100.00 EUR" in rendered
+    assert "## Economics" in rendered
+    assert "- Invoiced revenue: 0.00 EUR (0 invoices issued)" in rendered
+    assert "- Labor cost: 100.00 EUR" in rendered
     # An open deal's margin is provisional and the resource says so, rather than handing
     # an agent a figure it will quote as final.
-    assert "provvisorio" in rendered
-    assert "- Margine %: non calcolabile, nessun ricavo fatturato" in rendered
+    assert "provisional" in rendered
+    assert "- Margin %: not computable, no revenue invoiced" in rendered
 
 
 async def test_get_period_pnl_offers_the_accrual_reading_and_refuses_an_unknown_base(

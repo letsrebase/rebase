@@ -78,7 +78,7 @@ def get_receivables_dashboard(
     context: McpContext, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """No period, like the operational one: a receivable is owed today whatever window the
-    reader has in mind (slice 8 §2, REB-329). `legal_entity_id` narrows it to one azienda
+    reader has in mind (slice 8 §2, REB-329). `legal_entity_id` narrows it to one legal entity
     (REB-631, spec 2026-10-03 §7), like the three tools beside it."""
     return (
         DashboardService(context.session)

@@ -72,7 +72,7 @@ def required_iso_date(value: str, field: str = "date") -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ValidationFailed(
-            "input", field, "non è una data valida", expected="una data ISO (YYYY-MM-DD)"
+            "input", field, "is not a valid date", expected="an ISO date (YYYY-MM-DD)"
         ) from exc
 
 
@@ -86,7 +86,7 @@ def parse_legal_entity_id(value: str | None) -> UUID | None:
         return UUID(value)
     except ValueError as exc:
         raise ValidationFailed(
-            "legal_entities", "legal_entity_id", "non e' l'id di un'azienda", expected="un UUID"
+            "legal_entities", "legal_entity_id", "is not a company id", expected="a UUID"
         ) from exc
 
 
@@ -100,8 +100,8 @@ def literal_arg(name: str, value: str | None, allowed: Any) -> Any:
         raise ValidationFailed(
             "input",
             name,
-            "non è uno dei valori ammessi",
-            expected=f"uno fra {', '.join(f'`{option}`' for option in options)}",
+            "is not one of the allowed values",
+            expected=f"one of {', '.join(f'`{option}`' for option in options)}",
         )
     return value
 
@@ -141,11 +141,11 @@ def bounded_limit(value: int | str) -> int:
         parsed = int(value)
     except (TypeError, ValueError) as exc:
         raise ValidationFailed(
-            "input", "limit", f"'{value}' non è un numero intero", expected="un intero da 1 a 200"
+            "input", "limit", f"'{value}' is not an integer", expected="an integer from 1 to 200"
         ) from exc
     if not 1 <= parsed <= 200:
         raise ValidationFailed(
-            "input", "limit", f"{parsed} fuori intervallo", expected="un intero da 1 a 200"
+            "input", "limit", f"{parsed} out of range", expected="an integer from 1 to 200"
         )
     return parsed
 

@@ -59,10 +59,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         internal_notes: str | None = None,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Registra ore su un deal. `date` in formato YYYY-MM-DD, non futura. `deal_id` deve essere
-        un id reale: risolvi il progetto con `search_deals`, ore fatturabili sul cliente
-        sbagliato emergono solo in fattura. La tariffa si congela sulla riga: `describe_rates`
-        dice quale si applica; se non ce n'è, la voce resta senza tariffa.
+        """Log hours on a deal. `date` in `YYYY-MM-DD` format, not in the future. `deal_id` must be
+        a real id: resolve the project with `search_deals`, since billable hours on the wrong
+        customer only surface on the invoice. The rate is frozen on the row: `describe_rates`
+        says which one applies; if there is none, the entry stays without a rate.
         """
         return timetracking.log_time(
             context,
@@ -83,31 +83,32 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_time_entry(entry_id: str, changes: TimeEntryChanges) -> dict[str, Any]:
-        """Aggiorna una voce di ore. Se è già su una fattura emessa, solo `internal_notes` e i campi
-        personalizzati sono modificabili.
+        """Update a time entry. If it is already on an issued invoice, only `internal_notes` and
+        the custom
+        fields can be changed.
         """
         return timetracking.update_time_entry(context, entry_id, changes)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_time_entry(entry_id: str) -> dict[str, str]:
-        """Archivia una voce di ore (reversibile con `restore_time_entry`). Fallisce se è legata a
-        una riga di fattura.
+        """Archive a time entry (reversible with `restore_time_entry`). Fails if it is linked to
+        an invoice line.
         """
         return timetracking.archive_time_entry(context, entry_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def restore_time_entry(entry_id: str) -> dict[str, Any]:
-        """Ripristina una voce di ore archiviata. Fallisce se il deal è archiviato: ripristina
-        prima il deal.
+        """Restore an archived time entry. Fails if the deal is archived: restore
+        the deal first.
         """
         return timetracking.restore_time_entry(context, entry_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_time_entry(entry_id: str) -> dict[str, Any]:
-        """Legge una voce di ore, con il valore di riga già calcolato."""
+        """Read a time entry, with the line value already computed."""
         return timetracking.get_time_entry(context, entry_id)
 
     @mcp.tool(annotations=READ_ONLY)
@@ -123,8 +124,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Elenca le voci di ore, dalla più recente. `invoiced = false` dice quanto resta da
-        fatturare. `legal_entity_id` filtra per azienda.
+        """List time entries, most recent first. `invoiced = false` says how much is left to
+        invoice. `legal_entity_id` filters by company.
         """
         return timetracking.list_time_entries(
             context,
@@ -144,8 +145,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_running_timer() -> dict[str, Any] | None:
-        """Il timer in corso del titolare del token, o `null`: deal, descrizione e `started_at`. Le
-        ore già registrate sono in `list_time_entries`.
+        """The running timer of the token owner, or `null`: deal, description and `started_at`.
+        Hours
+        already logged are in `list_time_entries`.
         """
         return timetracking.get_running_timer(context)
 
@@ -154,9 +156,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def start_timer(
         deal_id: str | None = None, description: str = "", billable: bool = True
     ) -> dict[str, Any]:
-        """Avvia il cronometro. Uno solo alla volta: se ce n'è uno in corso fallisce, fermalo
-        (`stop_timer`) o scartalo (`discard_timer`). Il deal si può scegliere dopo con
-        `update_timer` o allo stop, ma deve essere reale: risolvilo con `search_deals`.
+        """Start the stopwatch. Only one at a time: if one is running it fails; stop it
+        (`stop_timer`) or discard it (`discard_timer`). The deal can be chosen later with
+        `update_timer` or at stop, but it must be real: resolve it with `search_deals`.
         """
         return timetracking.start_timer(
             context,
@@ -174,7 +176,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         description: str | None = None,
         billable: bool | None = None,
     ) -> dict[str, Any]:
-        """Cambia deal, descrizione o fatturabilità del timer in corso senza fermarlo."""
+        """Change the deal, description or billable flag of the running timer without stopping
+        it."""
         return timetracking.update_timer(
             context,
             {
@@ -189,8 +192,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def stop_timer(
         deal_id: str | None = None, description: str | None = None, date: str | None = None
     ) -> dict[str, Any]:
-        """Ferma il timer e registra le ore come voce, con tariffa congelata come `log_time`.
-        `date` (YYYY-MM-DD) è il giorno, oggi se omessa. Restituisce la voce creata.
+        """Stop the timer and log the hours as an entry, with the rate frozen as in `log_time`.
+        `date` (YYYY-MM-DD) is the day, today if omitted. Returns the created entry.
         """
         return timetracking.stop_timer(
             context,
@@ -204,22 +207,22 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def discard_timer() -> dict[str, str]:
-        """Scarta il timer in corso senza registrare niente."""
+        """Discard the running timer without logging anything."""
         return timetracking.discard_timer(context)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal_time_summary(deal_id: str) -> dict[str, Any]:
-        """Ore totali, ore da fatturare, valore delle ore non fatturate, costo del lavoro e stato
-        del deal. Il ricavo non è qui: è la fattura.
+        """Total hours, hours to invoice, value of unbilled hours, labor cost and status
+        of the deal. Revenue is not here: it is the invoice.
         """
         return timetracking.get_deal_time_summary(context, deal_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_rates(deal_id: str, user_id: str) -> dict[str, Any]:
-        """Quale tariffa e quale costo verrebbero congelati su una nuova voce e da quale livello
-        (`manual`, `deal`, `user`, `absent`). Chiamalo prima di `log_time`.
+        """Which rate and which cost would be frozen on a new entry and from which level
+        (`manual`, `deal`, `user`, `absent`). Call it before `log_time`.
         """
         return timetracking.describe_rates(context, deal_id, user_id)
 
@@ -236,11 +239,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         custom_fields: dict[str, Any] | None = None,
         legal_entity_id: str | None = None,
     ) -> dict[str, Any]:
-        """Registra un costo. Senza `deal_id` è una spesa generale, nel conto economico di periodo
-        e non ripartita sui deal. `amount` è il totale pagato, IVA inclusa; negativo è un
-        rimborso; zero è rifiutato. Le categorie sono in `list_cost_categories`. `legal_entity_id`
-        vale solo per una spesa generale (omesso: condivisa); un costo su un deal è dell'azienda
-        del deal.
+        """Record a cost. Without `deal_id` it is an overhead, in the period profit and loss
+        and not allocated to deals. `amount` is the total paid, VAT included; negative is a
+        refund; zero is rejected. Categories are in `list_cost_categories`. `legal_entity_id`
+        applies only to an overhead (omitted: shared); a cost on a deal belongs to the deal's
+        company.
         """
         return timetracking.create_cost(
             context,
@@ -260,25 +263,25 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_cost(cost_id: str, changes: CostChanges) -> dict[str, Any]:
-        """Aggiorna un costo."""
+        """Update a cost."""
         return timetracking.update_cost(context, cost_id, changes)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_cost(cost_id: str) -> dict[str, str]:
-        """Archivia un costo (reversibile con `restore_cost`)."""
+        """Archive a cost (reversible with `restore_cost`)."""
         return timetracking.archive_cost(context, cost_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def restore_cost(cost_id: str) -> dict[str, Any]:
-        """Ripristina un costo archiviato."""
+        """Restore an archived cost."""
         return timetracking.restore_cost(context, cost_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_cost(cost_id: str) -> dict[str, Any]:
-        """Legge un costo."""
+        """Read a cost."""
         return timetracking.get_cost(context, cost_id)
 
     @mcp.tool(annotations=READ_ONLY)
@@ -293,9 +296,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Elenca i costi, dal più recente. `only_general = true` mostra solo le spese senza deal.
-        `legal_entity_id` filtra per azienda; omesso, tutti, comprese le spese condivise senza
-        azienda.
+        """List costs, most recent first. `only_general = true` shows only costs without a deal.
+        `legal_entity_id` filters by company; omitted, all, including shared costs with no
+        company.
         """
         return timetracking.list_costs(
             context,
@@ -314,13 +317,13 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_cost_categories(include_archived: bool = False) -> dict[str, Any]:
-        """Elenca le categorie di costo. Si creano e si archiviano dall'app."""
+        """List the cost categories. They are created and archived from the app."""
         return timetracking.list_cost_categories(context, include_archived)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_period_locks(year: OptionalYear = None) -> dict[str, Any]:
-        """Elenca i mesi chiusi, dal più recente. Un mese chiuso rifiuta ogni scrittura di ore e
-        costi datata in quel mese: leggi qui prima di registrare voci vecchie.
+        """List closed months, most recent first. A closed month rejects every write of hours and
+        costs dated in that month: read here before logging old entries.
         """
         return timetracking.list_period_locks(context, year)

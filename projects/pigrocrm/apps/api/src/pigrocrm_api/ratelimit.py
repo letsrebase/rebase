@@ -262,9 +262,9 @@ def bearer_key(request: Request) -> str:
 # merges a route's `responses=` with its router's.
 TOO_MANY_REQUESTS_RESPONSE: dict[str, Any] = {
     "description": (
-        "Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per "
-        "client, non per rotta): il client deve attendere `Retry-After` secondi "
-        "prima di riprovare."
+        "Too many requests from this address in the last minute (the bucket is kept for "
+        "each client, not each route): the client must wait `Retry-After` seconds before "
+        "retrying."
     ),
     "content": {
         "application/json": {

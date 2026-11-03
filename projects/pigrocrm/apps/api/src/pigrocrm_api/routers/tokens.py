@@ -80,7 +80,7 @@ def list_tokens(session: SessionDep, actor: ActorDep) -> list[PatRead]:
 @router.get("/options", response_model=TokenOptions)
 def token_options(settings: SettingsDep) -> TokenOptions:
     """Readable by any member, unlike the space settings page that holds the switch: a
-    collaboratore who makes a token has to be told why the box is off."""
+    collaborator who makes a token has to be told why the box is off."""
     return TokenOptions(full_access_available=settings.mcp_full_access)
 
 

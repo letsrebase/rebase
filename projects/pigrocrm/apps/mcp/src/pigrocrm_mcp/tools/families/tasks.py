@@ -18,14 +18,14 @@ from pigrocrm_mcp.tools.params import (
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
-    # -- Tasks e calendario (slice 10) -------------------------------------
+    # -- Tasks and calendar (slice 10) -------------------------------------
     #
     # On the default surface, all of it: nothing here consumes a number, touches the
     # fiscal register or rewrites a rate, so none of it is one of the forbidden. The one
     # rule worth knowing is that closing a commitment is two different operations --
     # `complete_task` says it was done, `cancel_task` says it stopped mattering
     # -- and that neither deletes the row, because six months later the question is
-    # *why*, not «where did it go».
+    # *why*, not "where did it go".
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
@@ -40,14 +40,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         assigned_to: str | None = None,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Crea un impegno con titolo e, se c'è, una scadenza. Lascia la scadenza vuota quando non
-        c'è: non inventarla. Un'attività senza scadenza non è in ritardo e nel calendario sta in
-        «senza scadenza».
+        """Create a commitment with a title and, if there is one, a due date. Leave the due date
+        empty
+        when there is none: do not invent it. A task without a due date is not late and in the
+        calendar it sits under «without due date».
 
-        Si aggancia a un solo fra cliente, persona, deal e fattura, o a nessuno. `assigned_to` è
-        l'id di una persona: lo trovi in `list_members`. Se lo ometti, l'attività è assegnata a chi
-        possiede il token; passa l'id di un collega per assegnarla a lui, o `"none"` per
-        lasciarla senza assegnatario di proposito.
+        It attaches to only one of customer, person, deal and invoice, or to none. `assigned_to` is
+        a person's id: find it in `list_members`. If you omit it, the task is assigned to whoever
+        owns the token; pass a colleague's id to assign it to them, or `"none"` to deliberately
+        leave it unassigned.
         """
         return calendar_tools.create(
             context,
@@ -67,58 +68,58 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_task(task_id: str, changes: TaskChanges) -> dict[str, Any]:
-        """Cambia un'attività: `title`, `note`, `due_date`, `assigned_to`, riferimento, campi
-        personalizzati. Lo stato non si cambia da qui: usa `complete_task`,
-        `cancel_task` o `reopen_task`.
+        """Change a task: `title`, `note`, `due_date`, `assigned_to`, reference, custom
+        fields. The status cannot be changed from here: use `complete_task`,
+        `cancel_task` or `reopen_task`.
 
-        Qui `null` non svuota: per togliere la scadenza serve `due_date_to_remove: true`; per
-        staccarla da cliente, deal, persona o fattura serve `reference_to_remove: true`.
-        `assigned_to` è l'id di una persona: lo trovi in `list_members`.
+        Here `null` does not clear: to remove the due date use `due_date_to_remove: true`; to
+        detach it from customer, deal, person or invoice use `reference_to_remove: true`.
+        `assigned_to` is a person's id: find it in `list_members`.
         """
         return calendar_tools.update(context, task_id, changes)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_task(task_id: str) -> dict[str, Any]:
-        """Legge un'attività: titolo, note, scadenza, stato, riferimento."""
+        """Read a task: title, notes, due date, status, reference."""
         return calendar_tools.get(context, task_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def complete_task(task_id: str) -> dict[str, Any]:
-        """Segna un'attività come fatta, con la data di oggi. Idempotente: completarla di nuovo non
-        sposta la data. Un'attività annullata va prima riaperta.
+        """Mark a task as done, with today's date. Idempotent: completing it again does not
+        move the date. A cancelled task must be reopened first.
         """
         return calendar_tools.complete(context, task_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def cancel_task(task_id: str) -> dict[str, Any]:
-        """Chiude un'attività che non serve più. Non è «fatta» e non cancella la riga. Reversibile
-        con `reopen_task`.
+        """Close a task that is no longer needed. It is not «done» and it does not delete the row.
+        Reversible with `reopen_task`.
         """
         return calendar_tools.cancel(context, task_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def reopen_task(task_id: str) -> dict[str, Any]:
-        """Riporta un'attività completata o annullata allo stato aperto e toglie la data di
-        completamento.
+        """Return a completed or cancelled task to the open state and remove the completion
+        date.
         """
         return calendar_tools.reopen(context, task_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def archive_task(task_id: str) -> dict[str, str]:
-        """Archivia un'attività (reversibile con `restore_task`). Per l'attività sbagliata, non
-        per il cambio di programma: quello è `cancel_task`.
+        """Archive a task (reversible with `restore_task`). For a task created by mistake, not
+        for a change of plan: that is `cancel_task`.
         """
         return calendar_tools.archive(context, task_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def restore_task(task_id: str) -> dict[str, Any]:
-        """Ripristina un'attività archiviata."""
+        """Restore an archived task."""
         return calendar_tools.restore(context, task_id)
 
     @mcp.tool(annotations=READ_ONLY)
@@ -137,9 +138,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         sort: str | None = None,
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Elenca gli impegni. `status`: `open`, `completed` o `cancelled`; senza, tornano tutti.
-        `due_within` è inclusivo e esclude le attività senza scadenza: per quelle usa
-        `without_due_date: true`. `sort`: `created_at` o `due_date`.
+        """List commitments. `status`: `open`, `completed` or `cancelled`; without it, all are
+        returned.
+        `due_within` is inclusive and excludes tasks without a due date: for those use
+        `without_due_date: true`. `sort`: `created_at` or `due_date`.
         """
         return calendar_tools.search(
             context,
@@ -162,10 +164,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_tasks_today(assigned_to: str | None = None, limit: BoundedLimit = 50) -> dict[str, Any]:
-        """Cosa scade oggi, in quattro sezioni: `overdue`, `today_due`,
-        `next_seven_days` e `without_due_date`. Solo attività aperte. Ogni sezione ha
-        `total` (quante sono davvero) e `items` (le prime `limit`). Senza `assigned_to`
-        risponde per tutto lo spazio; per «le mie» passa l'id di chi possiede il token.
+        """What is due today, in four sections: `overdue`, `today_due`,
+        `next_seven_days` and `without_due_date`. Open tasks only. Each section has
+        `total` (how many there really are) and `items` (the first `limit`). Without `assigned_to`
+        it answers for the whole space; for «mine» pass the id of whoever owns the token.
         """
         return calendar_tools.today(
             context,
@@ -177,12 +179,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def get_calendar_month(
         month: str, all: bool = False, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Un mese in una lettura: ore per giorno con dettaglio per deal, attività in scadenza,
-        giornate di contratto con stato (`worked_without_approval` se manca l'approvazione
-        richiesta) e fatture emesse non incassate che scadono. `month` è `AAAA-MM`. Tornano solo
-        i giorni con qualcosa; le attività senza scadenza stanno in `task_without_due_date`.
+        """A month in one read: hours per day with detail per deal, tasks falling due,
+        contract days with status (`worked_without_approval` if the required approval is missing)
+        and issued invoices not yet collected that fall due. `month` is `YYYY-MM`. Only days with
+        something are returned; tasks without a due date are in `task_without_due_date`.
 
-        Le ore sono di chi possiede il token; `tutti: true` legge tutto lo spazio. `legal_entity_id`
-        filtra ore e fatture, non le attività.
+        Hours are those of whoever owns the token; `all: true` reads the whole space.
+        `legal_entity_id` filters hours and invoices, not tasks.
         """
         return calendar_tools.month(context, month, all, parse_legal_entity_id(legal_entity_id))

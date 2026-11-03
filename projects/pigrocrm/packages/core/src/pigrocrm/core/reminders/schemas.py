@@ -33,7 +33,7 @@ class QuietHours(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    start: str = Field(default="20:00", description="Inizio, HH:MM")
+    start: str = Field(default="20:00", description="Start, HH:MM")
     end: str = Field(default="08:00", description="Fine, HH:MM")
     weekend: bool = Field(default=True, description="Sabato e domenica interi")
 
@@ -57,7 +57,7 @@ class ReminderTypeRead(BaseModel):
     audience: Literal["subject", "admins"]
     direction: Literal["since", "until"]
     unit: Literal["days", "hours", "minutes", "percent"]
-    ladder: dict[Severity, int] = Field(description="Le soglie predefinite del tipo")
+    ladder: dict[Severity, int] = Field(description="The type's default thresholds")
     daily: bool
 
 
@@ -68,16 +68,19 @@ class ReminderPreferenceWrite(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool | None = Field(default=None, description="Il tipo è attivo")
+    enabled: bool | None = Field(default=None, description="The type is active")
     channels: list[ChannelName] | None = Field(
-        default=None, description="I canali oltre all'app, che è sempre attiva"
+        default=None, description="The channels besides the app, which is always on"
     )
     ladder: dict[Severity, int] | None = Field(
-        default=None, description="Le soglie, in giorni, ore, minuti o percentuale secondo il tipo"
+        default=None,
+        description="The thresholds, in days, hours, minutes or percentage depending on the type",
     )
-    urgent_from: Severity | None = Field(default=None, description="Da quale gravità è urgente")
+    urgent_from: Severity | None = Field(
+        default=None, description="From which severity it is urgent"
+    )
     email_mode: EmailMode | None = Field(
-        default=None, description="`immediate` o `summary`; assente, decide l'urgenza"
+        default=None, description="`immediate` or `summary`; omitted, urgency decides"
     )
     quiet_hours: QuietHours | None = None
     summary_hour: int | None = Field(default=None, ge=0, le=23)
@@ -142,8 +145,8 @@ class ReminderRead(BaseModel):
     detail: str
     entity: str = Field(
         description=(
-            "Che cosa si apre: `attivita`, `deal`, `timer`, `invoice`, `proforma`, `contract`, "
-            "`proposal`, `fiscal`, o un elemento dello spazio senza pagina"
+            "What opens: `attivita`, `deal`, `timer`, `invoice`, `proforma`, `contract`, "
+            "`proposal`, `fiscal`, or a space item without a page"
         )
     )
     entity_id: UUID
@@ -156,8 +159,8 @@ class ReminderRead(BaseModel):
 class AcknowledgeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    key: str = Field(description="`type:identificativo`, come lo restituisce l'elenco")
-    severity: Severity = Field(description="La gravità che hai visto")
+    key: str = Field(description="`type:identifier`, as the list returns it")
+    severity: Severity = Field(description="The severity you saw")
 
 
 class SnoozeRequest(BaseModel):
@@ -166,7 +169,7 @@ class SnoozeRequest(BaseModel):
     key: str
     severity: Severity
     until: SnoozeOptionName = Field(
-        description="`tomorrow`, `next_monday`, `in_a_week` o `in_a_month`; mai una data libera"
+        description="`tomorrow`, `next_monday`, `in_a_week` or `in_a_month`; never a free-form date"
     )
 
 

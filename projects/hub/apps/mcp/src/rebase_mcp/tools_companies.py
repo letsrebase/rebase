@@ -41,7 +41,7 @@ def _deal_id(text: str | None) -> str | None:
         return None
     found = _DEAL_UUID.search(text)
     if found is None:
-        raise ToolError("deal_id: non è l'id di un deal né il suo indirizzo")
+        raise ToolError("deal_id: not a deal id or a deal address")
     return found.group(0).lower()
 
 
@@ -61,20 +61,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         created_from: str | None = None,
         created_to: str | None = None,
     ) -> dict[str, Any]:
-        """Le aziende che hanno descritto un progetto sull'hub, come la schermata
-        «Aziende»: ogni riga porta azienda, referente, email, progetto, da quando e
-        per quanto, budget a giornata e stato. Dal più recente, o dal più
-        pertinente quando `q` restringe.
-        `q` cerca nome azienda, referente, email e progetto; `status` filtra (`new`,
-        `contacted`, `in_progress`, `closed`) e `by_status` conta con ogni filtro tranne
-        `status`; `budget_min` e `budget_max` sul budget a giornata (stringa, «500»,
-        «450.50» o all'italiana «1.500», «1.234,50»), `period_from` sull'inizio del progetto (ISO
-        8601), `origin` sulla pagina da cui è arrivata la richiesta, `created_from` e
-        `created_to` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
-        `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
-        ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
-        un'altra `q` è rifiutato. Ogni riga porta lo stato del collegamento al CRM
-        (`crm_status`, `crm_situation`, `crm_deal_url`). Solo lettura."""
+        """The companies that described a project on the hub, like the «Aziende» screen:
+        each row carries company, contact person, email, project, start date and duration,
+        daily budget and status. Most recent first, or most relevant first when `q`
+        narrows the list.
+        `q` searches company name, contact person, email and project; `status` filters (`new`,
+        `contacted`, `in_progress`, `closed`) and `by_status` counts with every filter except
+        `status`; `budget_min` and `budget_max` apply to the daily budget (a string: «500»,
+        «450.50» or Italian style «1.500», «1.234,50»), `period_from` to the project start (ISO
+        8601), `origin` to the page the request came from, `created_from` and
+        `created_to` to the creation date (ISO 8601, `YYYY-MM-DD` is enough).
+        `next_cursor` is the opaque cursor of the next page, `None` on the last one:
+        pass it back in `cursor` together with the same parameters; a cursor created with
+        a different `q` is refused. Each row carries the state of the CRM link
+        (`crm_status`, `crm_situation`, `crm_deal_url`). Read only."""
         term = search_term(q)
         bounded(status, "status")
         bounded(origin, "origin")
@@ -114,20 +114,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_company(company_id: str) -> dict[str, Any]:
-        """Una richiesta di un'azienda, per id, con `note`: il thread di chi l'ha
-        seguita, dal più recente, ognuna con `id`, autore, data, `source` (`web`, `mcp`,
-        `person`, `system`), l'ultima modifica e `editable`. Le note cancellate non
-        ci sono. Porta anche dove sta il collegamento al CRM di rebase: `crm_status`
-        (`to_link`, `linked`, `error`, `rejected`; vuoto per una richiesta nata
-        prima del collegamento), `crm_situation` con la frase del CRM quando non è
-        collegata, `crm_deal_url` con l'indirizzo del deal e `crm_attempted_at`."""
+        """A company's request, by id, with `note`: the thread of the people who followed
+        it, most recent first, each with `id`, author, date, `source` (`web`, `mcp`,
+        `person`, `system`), last edit and `editable`. Deleted notes are not
+        included. It also carries where the link to the rebase CRM stands: `crm_status`
+        (`to_link`, `linked`, `error`, `rejected`; empty for a request created
+        before the link existed), `crm_situation` with the CRM's sentence when it is not
+        linked, `crm_deal_url` with the deal's address and `crm_attempted_at`."""
         return deps.run(lambda s: CompanyService(s).get(to_uuid(company_id, "company_id")))
 
     @mcp.tool()
     def set_company_status(company_id: str, status: str) -> dict[str, Any]:
-        """Sposta una richiesta fra `new`, `contacted`, `in_progress` e `closed`. Il cambio finisce
-        nel registro di `get_company_audit` (`status_changed`, con prima e dopo): per il
-        perché usa `add_company_note`."""
+        """Moves a request between `new`, `contacted`, `in_progress` and `closed`. The change
+        is written to the log of `get_company_audit` (`status_changed`, with before and after):
+        for the reason use `add_company_note`."""
         return deps.run(
             lambda s: CompanyService(s).set_status(
                 to_uuid(company_id, "company_id"),
@@ -139,12 +139,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def add_company_note(company_id: str, text: str) -> dict[str, Any]:
-        """Aggiunge una nota al thread di una richiesta di un'azienda, senza toccare lo
-        stato: come è andata la call, cosa hanno chiesto, cosa resta da fare. La nota è già
-        firmata (l'admin dietro il token) e datata, con `source` `mcp`: il testo non deve
-        iniziare con una data o un'ora né nominare chi scrive. Fino a 4000 caratteri, anche
-        su più righe. Si corregge con `update_note` e si cancella con `delete_note`, e ogni
-        aggiunta finisce nel registro di `get_company_audit`."""
+        """Adds a note to a company request's thread, without touching the
+        status: how the call went, what they asked, what is left to do. The note is already
+        signed (the admin behind the token) and dated, with `source` `mcp`: the text must not
+        start with a date or a time nor name who writes it. Up to 4000 characters, multiple
+        lines allowed. It is corrected with `update_note` and deleted with `delete_note`, and
+        every addition is written to the log of `get_company_audit`."""
         return deps.run(
             lambda s: NoteService(s).add(
                 "company",
@@ -172,18 +172,17 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         headcount: str | None = None,
         status: str | None = None,
     ) -> dict[str, Any]:
-        """Scrive o svuota qualsiasi campo della richiesta: nome e
-        cognome del referente e il suo profilo LinkedIn (sull'identità condivisa in
-        `users`), nome dell'azienda, figura richiesta, progetto, data di inizio, durata,
-        budget a giornata, modalità di lavoro, giorni in sede a settimana, numero di
-        persone richieste e stato. Le note non sono un campo: stanno nel thread
-        (`add_company_note`, `update_note`). Ogni parametro omesso resta com'era; una
-        stringa vuota svuota solo dove è ammesso (LinkedIn, giorni in sede),
-        altrove è rifiutata perché il campo non può restare senza un valore.
-        `onsite_days` va indicato solo, e sempre, quando `remote` è `hybrid` --
-        rifiutato altrimenti, dallo stesso `CHECK` del database. Ogni modifica reale
-        finisce nel registro di `get_company_audit`, con il valore prima e dopo; per
-        annullarla c'è `revert_company_action`."""
+        """Writes or clears any field of the request: the contact person's first and last
+        name and LinkedIn profile (on the shared identity in `users`), company name,
+        requested role, project, start date, duration, daily budget, work mode, onsite days
+        per week, number of people requested and status. Notes are not a field: they live in
+        the thread (`add_company_note`, `update_note`). Every omitted parameter stays as it
+        was; an empty string clears only where allowed (LinkedIn, onsite days), elsewhere
+        it is refused because the field cannot be left without a value.
+        `onsite_days` must be given only, and always, when `remote` is `hybrid` --
+        refused otherwise, by the same database `CHECK`. Every real change is written to
+        the log of `get_company_audit`, with the value before and after; to undo it use
+        `revert_company_action`."""
         kwargs: dict[str, Any] = {}
         if first_name is not None:
             kwargs["first_name"] = supplied_text(first_name)
@@ -222,8 +221,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def delete_company(company_id: str) -> dict[str, Any]:
-        """Cancella la richiesta: esce dall'elenco aziende. Reversibile, mai una
-        cancellazione vera: `restore_company` la fa tornare com'era."""
+        """Deletes the request: it leaves the companies list. Reversible, never a real
+        deletion: `restore_company` brings it back as it was."""
         return deps.run(
             lambda s: CompanyService(s).soft_delete(
                 to_uuid(company_id, "company_id"), deps.admin().id
@@ -232,28 +231,27 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def restore_company(company_id: str) -> dict[str, Any]:
-        """Ripristina una richiesta cancellata: torna nell'elenco aziende. Su una
-        richiesta già attiva non cambia nulla."""
+        """Restores a deleted request: it returns to the companies list. On an already
+        active request nothing changes."""
         return deps.run(
             lambda s: CompanyService(s).restore(to_uuid(company_id, "company_id"), deps.admin().id)
         )
 
     @mcp.tool()
     def get_company_audit(company_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        """Chi ha modificato, cancellato o ripristinato questa richiesta, e quando:
-        ogni voce con l'amministratore, il tipo di azione e, per una modifica di campo,
-        il valore prima e dopo. Funziona anche su una richiesta cancellata. Dalla più
-        recente. Solo lettura; per annullare una modifica di campo usa
-        `revert_company_action` con l'id della voce."""
+        """Who edited, deleted or restored this request, and when: each entry with the
+        administrator, the kind of action and, for a field edit, the value before and
+        after. It also works on a deleted request. Most recent first. Read only; to undo
+        a field edit use `revert_company_action` with the entry's id."""
         return deps.run_list(
             lambda s: CompanyService(s).audit_timeline(to_uuid(company_id, "company_id"), limit)
         )
 
     @mcp.tool()
     def revert_company_action(company_id: str, action_id: str) -> dict[str, Any]:
-        """Riporta un campo al valore che aveva prima di una modifica passata, letta
-        dalla voce del registro `action_id` (da `get_company_audit`). Solo su una voce
-        che è una modifica di campo, non su una cancellazione o un ripristino."""
+        """Puts a field back to the value it had before a past edit, read from the
+        log entry `action_id` (from `get_company_audit`). Only on an entry that is a
+        field edit, not on a deletion or a restore."""
         return deps.run(
             lambda s: CompanyService(s).revert(
                 to_uuid(company_id, "company_id"), to_uuid(action_id, "action_id"), deps.admin().id
@@ -277,18 +275,19 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         onsite_days: int | None = None,
         deal_id: str | None = None,
     ) -> dict[str, Any]:
-        """Apre la richiesta di un'azienda a nome del referente, per un'azienda incontrata
-        direttamente: gli stessi campi del wizard e gli stessi controlli (`period_from` in
-        AAAA-MM-GG, `daily_budget` in euro al giorno, `remote` uno fra `remote`,
-        `hybrid`, `on_site`; `onsite_days` solo, e sempre, per l'ibrido). Il referente si
-        trova o si crea dall'email. Non parte nessuna mail, né al referente né a rebase. Senza
-        `deal_id` è una richiesta come le altre: il CRM la registra come cliente e deal nuovi.
-        Con `deal_id` (l'id del deal che il CRM ha già, o il suo indirizzo `.../app/deal/<id>`)
-        il CRM collega quel deal e non crea nulla: né un secondo cliente né un secondo deal.
-        Risponde la richiesta com'è, con `crm_status` (`linked`, o `rejected`/`error` con la
-        frase del CRM in `crm_situation`, per esempio per un deal che il CRM non conosce) e
-        `crm_deal_url`. Quando il CRM non è configurato su questo ambiente la richiesta si apre
-        comunque e resta `to_link`."""
+        """Opens a company's request on behalf of the contact person, for a company met
+        directly: the same fields and the same checks as the wizard (`period_from` as
+        `YYYY-MM-DD`, `daily_budget` in euros per day, `remote` one of `remote`,
+        `hybrid`, `on_site`; `onsite_days` only, and always, for hybrid). The contact person
+        is found or created from the email. No email is sent, neither to the contact person
+        nor to rebase. Without `deal_id` it is a request like any other: the CRM records it
+        as a new customer and a new deal. With `deal_id` (the id of a deal the CRM already
+        has, or its address `.../app/deal/<id>`) the CRM links that deal and creates
+        nothing: neither a second customer nor a second deal. It returns the request as it
+        is, with `crm_status` (`linked`, or `rejected`/`error` with the CRM's sentence in
+        `crm_situation`, for example for a deal the CRM does not know) and `crm_deal_url`.
+        When the CRM is not configured on this environment the request is still opened and
+        stays `to_link`."""
         fields: dict[str, Any] = {
             "company_name": company_name,
             "contact_first_name": contact_first_name,
@@ -330,20 +329,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def link_company_to_pigro(company_id: str, deal_id: str | None = None) -> dict[str, Any]:
-        """«Riprova» sulla richiesta di un'azienda: la registra ora nel CRM di rebase (cliente,
-        contatto e deal con la bozza AI), a nome dell'admin dietro il token, e risponde la
-        richiesta com'è: `crm_status` (`linked`, o `error`/`rejected` con la frase del
-        CRM in `crm_situation`) e `crm_deal_url`. Registra anche una richiesta nata prima del
-        collegamento. Con `deal_id` (l'id di un deal che il CRM ha già) è «Collega a un altro
-        deal»: il CRM collega quel deal e non crea nulla, e un rifiuto lascia il collegamento
-        com'era. Rifiutato per una richiesta non trovata o cancellata e quando il CRM non è
-        configurato su questo ambiente."""
+        """«Riprova» on a company's request: records it now in the rebase CRM (customer,
+        contact and deal with the AI draft), on behalf of the admin behind the token, and
+        returns the request as it is: `crm_status` (`linked`, or `error`/`rejected` with the
+        CRM's sentence in `crm_situation`) and `crm_deal_url`. It also records a request
+        created before the link existed. With `deal_id` (the id of a deal the CRM already
+        has) it is «Collega a un altro deal»: the CRM links that deal and creates nothing,
+        and a refusal leaves the link as it was. Refused for a request that is not found or
+        deleted and when the CRM is not configured on this environment."""
         if (
             deps.crm_leads is None
             or deps.settings is None
             or not deps.settings.pigro_engagements_token
         ):
-            raise not_configured("Il CRM", "REBASE_PIGRO_ENGAGEMENTS_TOKEN")
+            raise not_configured("The CRM", "REBASE_PIGRO_ENGAGEMENTS_TOKEN")
         build = deps.crm_leads
         key = to_uuid(company_id, "company_id")
         deal = to_uuid(deal_id, "deal_id") if deal_id is not None else None

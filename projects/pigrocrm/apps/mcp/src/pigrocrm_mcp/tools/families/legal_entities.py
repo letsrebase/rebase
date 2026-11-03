@@ -25,9 +25,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_members() -> list[dict[str, Any]]:
-        """Le persone attive dello spazio: `id`, `name`, `role` e `email` (solo per un
-        amministratore, altrimenti `null`). Serve a trovare l'id per `owner_id` (clienti e deal)
-        e `assigned_to` (attività).
+        """The active people in the space: `id`, `name`, `role` and `email` (only for an
+        admin, otherwise `null`). Use it to find the id for `owner_id` (customers and deals)
+        and `assigned_to` (tasks).
         """
         directory = UserService(context.session).directory(context.actor)
         return [member.model_dump(mode="json") for member in directory]
@@ -35,25 +35,27 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_legal_entities() -> list[dict[str, Any]]:
-        """Le aziende dello spazio, la predefinita per prima: id, nome breve, ragione sociale,
-        partita IVA, nazione. Con una sola azienda, ogni tool con `legal_entity_id` la usa da sé.
+        """The legal entities in the space, the default first: id, short name, legal name,
+        VAT number, country. With a single legal entity, every tool with `legal_entity_id` uses it
+        on its own.
         """
         return invoices.list_legal_entities(context)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_fiscal_profile(legal_entity_id: str | None = None) -> dict[str, Any]:
-        """Il regime fiscale e i parametri che decidono aliquote, natura e bollo di un'azienda;
-        `legal_entity_id` omesso: predefinita. Utile per capire perché una riga ha una certa IVA.
+        """The tax regime and the parameters that decide rates, VAT nature and stamp duty of a
+        legal entity;
+        `legal_entity_id` omitted: default. Useful to understand why a line has a given VAT.
         """
         return invoices.describe_fiscal_profile(context, legal_entity_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_legal_entity(legal_entity_id: str | None = None) -> dict[str, Any]:
-        """Chi emette: ragione sociale, partita IVA, indirizzo e recapiti dell'intestazione di
-        fatture e documenti; `legal_entity_id` omesso: predefinita. Leggilo invece di chiedere
-        questi dati all'utente.
+        """Who issues: legal name, VAT number, address and contact details of the header of
+        invoices and documents; `legal_entity_id` omitted: default. Read it instead of asking
+        the user for this data.
         """
         return invoices.describe_legal_entity(context, legal_entity_id)
 
@@ -62,35 +64,35 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def update_fiscal_profile(
         data: dict[str, Any], legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Riscrive il profilo fiscale di un'azienda: **sostituzione totale**, ogni chiave assente
-        torna al default. `legal_entity_id` omesso: predefinita. Decide aliquota, natura, bollo e
-        riferimento normativo delle fatture future, non delle già emesse. Leggi prima
-        `describe_fiscal_profile`, rimanda l'oggetto intero con le modifiche e chiedi conferma
-        alla persona sul riepilogo. Solo un admin.
+        """Rewrite the fiscal profile of a legal entity: **full replacement**, every missing key
+        goes back to its default. `legal_entity_id` omitted: default. Decides rate, VAT nature,
+        stamp duty and legal reference of future invoices, not of those already issued. Read
+        `describe_fiscal_profile` first, send back the whole object with the changes and ask the
+        person to confirm on the summary. Admin only.
 
-        `data`: `pack_id` (`it-flat-rate` default, forfettario con `regime_code` `RF19`;
-        `it-standard`, ordinario con `RF01` e IVA 22% se non indichi altro; `non-it`, azienda
-        estera senza `regime_code`, bollo né parametri del forfettario (lasciali fuori); un
-        codice di un altro pacchetto è rifiutato), `profitability_coefficient`,
-        `substitute_tax_rate` e `social_security_rate` in percentuale (solo forfettario),
-        `payment_method` (codice SdI, `MP05` bonifico), `due_days`, `iban`, parametri
-        IVA e bollo.
+        `data`: `pack_id` (`it-flat-rate` default, flat-rate regime with `regime_code` `RF19`;
+        `it-standard`, standard regime with `RF01` and 22% VAT unless you say otherwise; `non-it`,
+        foreign company with no `regime_code`, stamp duty or flat-rate parameters (leave them out);
+        a code from another pack is rejected), `profitability_coefficient`,
+        `substitute_tax_rate` and `social_security_rate` as percentages (flat-rate only),
+        `payment_method` (SdI code, `MP05` bank transfer), `due_days`, `iban`, VAT
+        and stamp duty parameters.
         """
         return invoices.update_fiscal_profile(context, data, legal_entity_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_legal_entity(data: dict[str, Any], tax_profile: dict[str, Any]) -> dict[str, Any]:
-        """Apre una seconda azienda con il suo profilo fiscale in una chiamata: i clienti si
-        possono assegnare a lei, le sue fatture hanno un registro proprio e i documenti la sua
-        intestazione. Solo un admin, dopo la conferma dei dati: emessa una fattura, un'azienda
-        non si cancella più, si disattiva. Non diventa la predefinita, salvo che lo spazio non
-        ne abbia una.
+        """Open a second legal entity with its fiscal profile in one call: customers can be
+        assigned to it, its invoices have their own register and documents carry its
+        header. Admin only, after the data is confirmed: once an invoice is issued, a legal entity
+        can no longer be deleted, only deactivated. It does not become the default, unless the space
+        has none.
 
-        `data` come `update_legal_entity` con `name` obbligatorio (nome breve per selettore e
-        liste); `tax_profile` come `update_fiscal_profile` (`non-it` con IVA zero richiede
-        `default_vat_nature`). Un profilo rifiutato fa rifiutare tutta la chiamata. Un dato fiscale
-        non fornito non si inventa: chiedilo.
+        `data` as in `update_legal_entity` with `name` required (short name for the selector and
+        lists); `tax_profile` as in `update_fiscal_profile` (`non-it` with zero VAT requires
+        `default_vat_nature`). A rejected profile rejects the whole call. Fiscal data
+        not provided is never invented: ask for it.
         """
         return invoices.create_legal_entity(context, data, tax_profile)
 
@@ -99,15 +101,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def update_legal_entity(
         data: dict[str, Any], legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Scrive chi emette: l'intestazione di offerte e fatture di un'azienda. `legal_entity_id`
-        omesso: predefinita, creata se manca.
+        """Write who issues: the header of offers and invoices of a legal entity. `legal_entity_id`
+        omitted: default, created if missing.
 
-        **Sostituzione totale**: ogni chiave assente torna vuota (`country` a `IT`;
-        `legal_name` obbligatoria). Leggi prima `describe_legal_entity` e rimanda l'oggetto con le
-        sole modifiche. Chiavi: `name`, `legal_name`, `vat_number` (11 cifre) o
+        **Full replacement**: every missing key goes back to empty (`country` to `IT`;
+        `legal_name` required). Read `describe_legal_entity` first and send back the object with
+        only the changes. Keys: `name`, `legal_name`, `vat_number` (11 digits) or
         `tax_code`, `address`, `postal_code`, `city`, `province`, `country`, `certified_email`,
-        `sdi_code` (7 caratteri), `phone`, `email`, `website`, `tax_regime` (testo in calce),
-        `email_signature`, `logo_key`, `signature_key` (chiavi di storage, non byte). Chiedi
-        conferma sul riepilogo; non inventare dati fiscali. Solo un admin.
+        `sdi_code` (7 characters), `phone`, `email`, `website`, `tax_regime` (footer text),
+        `email_signature`, `logo_key`, `signature_key` (storage keys, not bytes). Ask for
+        confirmation on the summary; do not invent fiscal data. Admin only.
         """
         return invoices.update_legal_entity(context, data, legal_entity_id)

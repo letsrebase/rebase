@@ -64,7 +64,7 @@ async def test_a_malformed_id_is_an_italian_sentence_naming_the_parameter(
         result = await client.call_tool(tool, arguments)
     assert result.is_error
     text = result.content[0].text  # type: ignore[union-attr]
-    assert f"{field}: «{NOT_AN_ID}» non è un identificativo valido" in text
+    assert f"{field}: «{NOT_AN_ID}» is not a valid id" in text
     assert "hexadecimal" not in text and "ValueError" not in text
 
 
@@ -111,7 +111,7 @@ async def test_a_free_text_filter_past_its_bound_is_refused_before_a_query(
     async with Client(build_server(factory, lambda: IVAN)) as client:
         result = await client.call_tool(tool, arguments)
     assert result.is_error
-    assert "al massimo" in result.content[0].text  # type: ignore[union-attr]
+    assert "at most" in result.content[0].text  # type: ignore[union-attr]
 
 
 async def test_what_asks_the_model_is_capped_per_admin(factory: sessionmaker[Session]) -> None:
@@ -137,7 +137,7 @@ async def test_what_asks_the_model_is_capped_per_admin(factory: sessionmaker[Ses
             "regenerate_freelancer_card", {"freelancer_id": freelancer_id}
         )
     assert refused.is_error
-    assert "Troppe richieste" in refused.content[0].text  # type: ignore[union-attr]
+    assert "Too many requests" in refused.content[0].text  # type: ignore[union-attr]
     assert len(llm.requests) == asked
 
 

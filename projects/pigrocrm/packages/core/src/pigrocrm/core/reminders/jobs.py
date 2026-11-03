@@ -112,32 +112,32 @@ JOBS_BY_KEY: Final = {job.key: job for job in SCHEDULED_JOBS}
 
 
 class ScheduledJobRead(BaseModel):
-    key: str = Field(description="Il nome del comando: `gmail-sync`, `reminders`, ...")
-    label: str = Field(description="Come si chiama nell'app")
-    command: str = Field(description="La riga che il cron lancia")
-    schedule: str = Field(description="Ogni quanto deve girare")
+    key: str = Field(description="The command name: `gmail-sync`, `reminders`, ...")
+    label: str = Field(description="What it is called in the app")
+    command: str = Field(description="The line the cron launches")
+    schedule: str = Field(description="How often it must run")
     state: JobState = Field(
         description=(
-            "`ok`: l'ultimo giro è finito e non è vecchio. `failed`: l'ultimo tentativo è "
-            "fallito (`failure` dice perché). `late`: nessun giro finito da troppo tempo. "
-            "`never_run`: non ha mai girato in questo spazio. `not_configured`: non c'è "
-            "niente da fare qui, per esempio nessuna casella Gmail collegata."
+            "`ok`: the last run finished and is not old. `failed`: the last attempt failed "
+            "(`failure` says why). `late`: no run finished for too long. `never_run`: it has "
+            "never run in this space. `not_configured`: nothing to do here, for example no Gmail "
+            "mailbox linked."
         )
     )
     last_run_at: datetime | None = Field(
-        description="Quando l'ultimo giro è finito senza errori, `null` se non è mai successo"
+        description="When the last run finished without errors, `null` if it never has"
     )
     last_failure_at: datetime | None = Field(
-        description="Quando è fallito l'ultimo tentativo, solo se è anche l'ultimo"
+        description="When the last attempt failed, only if it is also the last one"
     )
     failure: str | None = Field(
         description=(
-            "Perché è fallito: una parola breve, per esempio il nome dell'errore, mai un testo "
-            "che cita dati"
+            "Why it failed: a short word, for example the name of the error, never a text that "
+            "quotes data"
         )
     )
     stale_after_minutes: int = Field(
-        description="Dopo quanti minuti senza un giro finito un'operazione risulta in ritardo"
+        description="After how many minutes without a finished run an operation counts as late"
     )
 
 

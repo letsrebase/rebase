@@ -32,15 +32,13 @@ router = APIRouter(
 
 ScopePath = Annotated[
     Literal["space", "me"],
-    Path(description="`space`: i valori predefiniti dello spazio (amministratori); `me`: i tuoi"),
+    Path(description="`space`: the space's default values (admins); `me`: yours"),
 ]
 TypePath = Annotated[
     str,
     Path(
         max_length=40,
-        description=(
-            "Un tipo di promemoria, o `general` per le ore di silenzio e l'ora del riepilogo"
-        ),
+        description=("A reminder type, or `general` for quiet hours and the digest time"),
     ),
 ]
 
@@ -52,23 +50,23 @@ def list_reminders(
     settings: SettingsDep,
     limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = PAGE_LIMIT_MAX,
 ) -> list[ReminderRead]:
-    """I promemoria di chi chiede, ricalcolati adesso dai dati: i più gravi per primi.
-    Quelli già chiusi o rimandati ci sono, con il loro `status`; sparisce solo ciò di cui
-    la causa è risolta. `limit` taglia la coda, cioè i meno gravi: il servizio li valuta
-    tutti, ma la risposta non cresce con loro."""
+    """The caller's reminders, recomputed now from the data: most severe first.
+    Those already closed or snoozed are there, with their `status`; only what
+    is resolved disappears. `limit` cuts the tail, that is, the least severe: the service evaluates
+    them all, but the response does not grow with them."""
     return ReminderService(session, settings).list(actor)[:limit]
 
 
 @router.get("/types", response_model=list[ReminderTypeRead])
 def list_types(session: SessionDep) -> list[ReminderTypeRead]:
-    """I tipi di promemoria di questo spazio, con le soglie predefinite."""
+    """The reminder types of this space, with the default thresholds."""
     return ReminderPreferenceService(session).catalogue()
 
 
 @router.get("/preferences", response_model=ReminderPreferencesRead)
 def read_preferences(session: SessionDep, actor: ActorDep) -> ReminderPreferencesRead:
-    """I valori dello spazio, i tuoi, e quello che ne risulta per te: la tua scelta, poi
-    il valore dello spazio, poi quello predefinito."""
+    """The space's values, yours, and the result for you: your choice, then
+    the space's value, then the default."""
     return ReminderPreferenceService(session).read(actor)
 
 
@@ -80,8 +78,8 @@ def write_preference(
     session: SessionDep,
     actor: ActorDep,
 ) -> ReminderPreferenceRead | None:
-    """Imposta i campi indicati; un campo `null` torna al valore che eredita. Risponde
-    `null` quando non resta niente da sovrascrivere e la riga è sparita."""
+    """Sets the given fields; a `null` field goes back to the value it inherits. Answers
+    `null` when nothing is left to override and the row is gone."""
     return ReminderPreferenceService(session).write(actor, scope, type_key, data)
 
 
@@ -89,14 +87,14 @@ def write_preference(
 def reset_preference(
     scope: ScopePath, type_key: TypePath, session: SessionDep, actor: ActorDep
 ) -> None:
-    """La strada di ritorno al valore predefinito: cancella la tua scelta (o quella dello
-    spazio), così una modifica successiva del predefinito ti raggiunge ancora."""
+    """The way back to the default value: deletes your choice (or the space's),
+    so that a later change of the default still reaches you."""
     ReminderPreferenceService(session).reset(actor, scope, type_key)
 
 
 @router.get("/state", response_model=list[ReminderStateRead])
 def my_state(session: SessionDep, actor: ActorDep) -> list[ReminderStateRead]:
-    """Quello che hai chiuso o rimandato."""
+    """What you have closed or snoozed."""
     return ReminderStateService(session).mine(actor)
 
 
@@ -104,13 +102,13 @@ def my_state(session: SessionDep, actor: ActorDep) -> list[ReminderStateRead]:
 def acknowledge(
     data: AcknowledgeRequest, session: SessionDep, actor: ActorDep
 ) -> ReminderStateRead:
-    """Segna un promemoria come visto, alla gravità che hai visto. Vale per te e non lo
-    nasconde agli altri; torna a comparire se sale di gravità."""
+    """Marks a reminder as seen, at the severity you saw. It applies to you and does not hide it
+    from others; it shows up again if its severity rises."""
     return ReminderStateService(session).acknowledge(actor, data.key, data.severity)
 
 
 @router.post("/snooze", response_model=ReminderStateRead)
 def snooze(data: SnoozeRequest, session: SessionDep, actor: ActorDep) -> ReminderStateRead:
-    """Rimanda un promemoria a domani, al prossimo lunedì, fra una settimana o fra un
-    mese. Vale per te; torna a comparire se sale di gravità."""
+    """Snoozes a reminder until tomorrow, next Monday, in a week or in a
+    month. It applies to you; it shows up again if its severity rises."""
     return ReminderStateService(session).snooze(actor, data.key, data.severity, data.until)

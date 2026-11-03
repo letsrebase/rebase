@@ -19,22 +19,22 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         customer_id: str | None = None,
         person_id: str | None = None,
     ) -> dict[str, Any]:
-        """Aggiunge una nota a un deal, a un cliente o a una persona: passa uno solo fra
-        `deal_id`, `customer_id`, `person_id`. Il CRM la firma e la data da solo: il testo non deve
-        iniziare con una data né dire chi scrive.
+        """Add a note to a deal, a customer or a person: pass exactly one of
+        `deal_id`, `customer_id`, `person_id`. The CRM signs and dates it itself: the text must not
+        start with a date or say who is writing.
         """
         return notes.add(context, text, deal_id, customer_id, person_id)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def update_note(note_id: str, text: str) -> dict[str, Any]:
-        """Riscrive una nota (`id` in `note` dei `get_*`): le proprie, o tutte se amministratore;
-        mai quelle del sistema. Niente data né autore nel testo.
+        """Rewrite a note (`id` in `note` of the `get_*` tools): your own, or any if admin;
+        never system notes. No date or author in the text.
         """
         return notes.update(context, note_id, text)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def delete_note(note_id: str) -> dict[str, Any]:
-        """Toglie una nota dal thread (resta nella cronologia). Stesse regole di `update_note`."""
+        """Remove a note from the thread (it stays in the history). Same rules as `update_note`."""
         return notes.delete(context, note_id)

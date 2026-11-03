@@ -50,8 +50,8 @@ router = APIRouter(
 def list_legal_entities(
     session: SessionDep, actor: ActorDep, include_inactive: bool = False
 ) -> list[LegalEntityRead]:
-    """The default first. Deactivated aziende are left out unless asked for: a
-    selector never offers one, Impostazioni may still show it."""
+    """The default first. Deactivated legal entities are left out unless asked for: a
+    selector never offers one, Settings may still show it."""
     return LegalEntityService(session).list(actor, only_active=not include_inactive)
 
 
@@ -59,10 +59,10 @@ def list_legal_entities(
 def create_legal_entity(
     data: LegalEntityCreate, session: SessionDep, actor: ActorDep
 ) -> LegalEntityRead:
-    """A second azienda, with its fiscal profile, in one transaction (REB-631, spec
+    """A second legal entity, with its fiscal profile, in one transaction (REB-631, spec
     2026-10-03 §3): active, not the default, and the first of a space when it had
     none. A profile the fiscal rules would refuse refuses the whole request, so no
-    azienda exists that could not issue."""
+    legal entity exists that could not issue."""
     return LegalEntityService(session).create(data, actor)
 
 
@@ -75,11 +75,11 @@ def suggest_legal_entity(
         SafeStr | None,
         Query(
             max_length=COUNTRY_MAX_LENGTH,
-            description="Nazione del cliente, ISO 3166-1 alpha-2; omessa, IT",
+            description="The client's country, ISO 3166-1 alpha-2; omitted, IT",
         ),
     ] = None,
 ) -> LegalEntityRead:
-    """The azienda a new customer of `country` would be billed by when nobody picks one
+    """The legal entity a new customer of `country` would be billed by when nobody picks one
     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
     lives in the service once; `POST /api/customers` applies the same one
     when `legal_entity_id` is left out."""
@@ -115,10 +115,10 @@ def set_default_legal_entity(
 def deactivate_legal_entity(
     legal_entity_id: UUID, session: SessionDep, actor: ActorDep
 ) -> LegalEntityDeactivated:
-    """Deactivation, never a row delete: an azienda that issued an invoice stays
+    """Deactivation, never a row delete: a legal entity that issued an invoice stays
     readable forever. Refused on the default; move the default first. The answer says
     how many customers still point at the row (`linked_customers`): nothing new is
-    born under them until they are moved to an active azienda."""
+    born under them until they are moved to an active legal entity."""
     return LegalEntityService(session).deactivate(legal_entity_id, actor)
 
 
@@ -139,7 +139,7 @@ def get_fiscal_profile(
 def upsert_fiscal_profile(
     legal_entity_id: UUID, data: FiscalProfileUpsert, session: SessionDep, actor: ActorDep
 ) -> FiscalProfileRead:
-    """Whole-row, like the azienda's own `PUT`; with `updated_at` in the body, a save on
+    """Whole-row, like the legal entity's own `PUT`; with `updated_at` in the body, a save on
     a profile somebody else saved since answers 409 `stale_row` (REB-622)."""
     return FiscalProfileService(session).upsert(data, actor, legal_entity_id)
 
@@ -184,7 +184,7 @@ def _serve(session: SessionDep, storage: StorageDep, legal_entity_id: UUID, slot
     responses={200: {"content": {"image/png": {}, "image/svg+xml": {}}}},
 )
 def get_logo(legal_entity_id: UUID, session: SessionDep, storage: StorageDep) -> Response:
-    """The azienda's logo, PNG or SVG; 404 when it has none."""
+    """The legal entity's logo, PNG or SVG; 404 when it has none."""
     return _serve(session, storage, legal_entity_id, "logo")
 
 
@@ -215,7 +215,7 @@ async def put_logo(
 def delete_logo(
     legal_entity_id: UUID, session: SessionDep, storage: StorageDep, actor: ActorDep
 ) -> LegalEntityRead:
-    """Idempotent: an azienda with no logo answers its row, not an error."""
+    """Idempotent: a legal entity with no logo answers its row, not an error."""
     return LegalEntityAssets(session, storage).remove_logo(actor, legal_entity_id)
 
 
@@ -225,7 +225,7 @@ def delete_logo(
     responses={200: {"content": {"image/png": {}}}},
 )
 def get_signature(legal_entity_id: UUID, session: SessionDep, storage: StorageDep) -> Response:
-    """The azienda's signature image, PNG; 404 when it has none."""
+    """The legal entity's signature image, PNG; 404 when it has none."""
     return _serve(session, storage, legal_entity_id, "signature")
 
 

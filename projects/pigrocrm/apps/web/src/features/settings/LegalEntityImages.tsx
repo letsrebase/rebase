@@ -12,7 +12,7 @@ import {
 } from './queries'
 
 /**
- * The two images an legal entity owns (REB-629, spec 2026-10-03 §5): the logo every PDF of
+ * The two images a legal entity owns (REB-629, spec 2026-10-03 §5): the logo every PDF of
  * this legal entity draws in its header, the signature the offers draw at their foot. Each
  * block shows the current image, read from the API as the PDF reads it, offers «Carica»
  * and, once there is one, «Rimuovi», and shows the server's refusal under the control.

@@ -16,7 +16,7 @@ def main() -> int:
     token = os.environ.get(PAT_ENV_VAR)
     if not token:
         print(
-            f"{PAT_ENV_VAR} non impostato. Genera un token dalla UI, nella pagina Agenti.",
+            f"{PAT_ENV_VAR} is not set. Generate a token from the UI, on the «Agenti» page.",
             file=sys.stderr,
         )
         return 1
@@ -36,7 +36,7 @@ def main() -> int:
             PatService(bootstrap).resolve(token)
             bootstrap.commit()
         except DomainError as exc:
-            print(f"Token non valido: {exc.message}", file=sys.stderr)
+            print(f"Invalid token: {exc.message}", file=sys.stderr)
             return 1
 
     # `finally`, so the last tool call's event leaves before the process does: the

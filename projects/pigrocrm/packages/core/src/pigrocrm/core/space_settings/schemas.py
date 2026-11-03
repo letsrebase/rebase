@@ -46,9 +46,9 @@ class SpaceSettingsUpdate(BaseModel):
     updated_at: datetime | None = Field(
         default=None,
         description=(
-            "L'`updated_at` letto sulle impostazioni da cui parte questa modifica "
-            "(`null` compreso): se nel frattempo qualcun altro ha salvato, la richiesta "
-            "è rifiutata con 409 `stale_row`. Omesso, nessun controllo."
+            "The `updated_at` read on the settings this change starts from (`null` included): if "
+            "someone else saved in the meantime, the request is rejected with 409 `stale_row`. "
+            "Omitted, no check."
         ),
     )
 

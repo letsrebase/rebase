@@ -24,16 +24,13 @@ from pigrocrm.core.validation import SafeStr
 PAGE_LIMIT_MAX = 200
 PAGE_LIMIT_DEFAULT = 50
 
-LEGAL_ENTITY_QUERY_DESCRIPTION = "Solo le righe di questa azienda; omesso, tutte"
+LEGAL_ENTITY_QUERY_DESCRIPTION = "Only this legal entity's rows; omitted, all of them"
 
-CUSTOM_QUERY_DESCRIPTION = (
-    "Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: "
-    "?custom=settore:IT&custom=priorita:alta restituisce solo le righe che "
-    "soddisfano entrambe (stessa semantica di contenimento JSONB usata dal "
-    "service). Ogni valore è confrontato come stringa esatta; un valore senza "
-    "il separatore ':' vale come chiave con valore vuoto, non genera un errore. "
-    "Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili."
-)
+CUSTOM_QUERY_DESCRIPTION = "Filter on custom fields (JSONB), repeatable for several keys: "
+"?custom=settore:IT&custom=priorita:alta returns only the rows that match both (same JSONB "
+"containment semantics the service uses). Each value is compared as an exact string; a value "
+"without the ':' separator counts as a key with an empty value and does not raise an error. Call "
+"GET /api/schema/{entity_type} to learn the available keys."
 
 
 def parse_custom_filter(raw: list[str] | None) -> dict[str, str] | None:

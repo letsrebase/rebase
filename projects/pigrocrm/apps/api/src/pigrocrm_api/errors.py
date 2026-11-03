@@ -171,13 +171,13 @@ def _domain_and_request_validation_response(description: str) -> dict[str, Any]:
 # purpose (a route that cannot raise a 409 still lists it), public routers included:
 # narrowing it per route would change the generated client's types for no gain.
 PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
-    403: _problem_response("Permesso negato: l'actor non ha il ruolo richiesto."),
-    404: _problem_response("La risorsa richiesta non esiste o è stata rimossa."),
-    409: _problem_response("La richiesta è in conflitto con lo stato attuale della risorsa."),
+    403: _problem_response("Permission denied: the actor does not have the required role."),
+    404: _problem_response("The requested resource does not exist or was removed."),
+    409: _problem_response("The request conflicts with the current state of the resource."),
     422: _domain_and_request_validation_response(
-        "Una regola di dominio non è stata rispettata (application/problem+json), "
-        "oppure il corpo, i parametri o il path della richiesta non hanno la forma "
-        "attesa e non hanno mai raggiunto l'endpoint (application/json)."
+        "A domain rule was not met (application/problem+json), or the request's body, "
+        "parameters or path did not have the expected shape and never reached the "
+        "endpoint (application/json)."
     ),
 }
 
@@ -186,10 +186,10 @@ PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
 # attached per route: a 410 in `PROBLEM_RESPONSES` would claim any endpoint can report a
 # dead invitation.
 INVITE_GONE_RESPONSE = _problem_response(
-    "L'invito esiste ma è finito: scaduto, revocato o già usato. `code` distingue i "
-    "tre casi (`invitation_expired`, `invitation_revoked`, `invitation_used`)."
+    "The invitation exists but is over: expired, revoked or already used. `code` tells "
+    "the three cases apart (`invitation_expired`, `invitation_revoked`, `invitation_used`)."
 )
-INVITE_NOT_FOUND_RESPONSE = _problem_response("Nessun invito porta questo link.")
+INVITE_NOT_FOUND_RESPONSE = _problem_response("No invitation carries this link.")
 
 
 def ensure_validation_error_schemas_are_declared(schema: dict[str, Any]) -> dict[str, Any]:

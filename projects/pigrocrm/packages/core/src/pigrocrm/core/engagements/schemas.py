@@ -197,7 +197,7 @@ class LeadUpsert(BaseModel):
 class LeadRead(BaseModel):
     """What the door filed for a request. `created` says whether this call wrote the deal
     (201) or found it by its marker, or linked an explicit one (200). `person_id` is
-    `None` only when a retry finds the deal and nobody with the referente's address any
+    `None` only when a retry finds the deal and nobody with the contact's address any
     more, or an explicit deal whose customer has no such person."""
 
     customer_id: UUID

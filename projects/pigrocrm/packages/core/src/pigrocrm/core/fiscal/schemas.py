@@ -244,9 +244,9 @@ class FiscalProfileUpsert(BaseModel):
     updated_at: datetime | None = Field(
         default=None,
         description=(
-            "L'`updated_at` letto sul profilo da cui parte questa modifica, `null` per "
-            "un profilo non ancora salvato: se nel frattempo qualcun altro ha salvato, la "
-            "richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo."
+            "The `updated_at` read on the profile this change starts from, `null` for a profile "
+            "not yet saved: if someone else saved in the meantime, the request is rejected with "
+            "409 `stale_row`. Omitted, no check."
         ),
     )
 

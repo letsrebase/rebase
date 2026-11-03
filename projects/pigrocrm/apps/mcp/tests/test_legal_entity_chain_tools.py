@@ -112,14 +112,14 @@ async def test_a_value_that_is_not_an_id_is_refused_in_words_and_never_the_defau
             "create_customer", {"legal_name": "X", "legal_entity_id": "la is_default"}
         )
         assert refused.is_error
-        assert "non e' l'id di un'azienda" in refused.content[0].text
+        assert "is not a company id" in refused.content[0].text
         unknown = await client.call_tool(
             "create_customer", {"legal_name": "X", "legal_entity_id": str(uuid4())}
         )
         assert unknown.is_error
         listed = await client.call_tool("search_customers", {"legal_entity_id": "tutte"})
         assert listed.is_error
-        assert "non e' l'id di un'azienda" in listed.content[0].text
+        assert "is not a company id" in listed.content[0].text
 
 
 async def test_the_lists_narrow_to_the_legal_entity_named(

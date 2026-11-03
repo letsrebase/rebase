@@ -299,11 +299,11 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
     assert cli.main(["digest"]) == 0
 
     out = capsys.readouterr().out
-    assert f"{FIRST_SPACE}: inviato a 1" in out
-    assert f"{SECOND_SPACE}: inviato a 1" in out
+    assert f"{FIRST_SPACE}: sent to 1" in out
+    assert f"{SECOND_SPACE}: sent to 1" in out
     # The space nobody has started using hears nothing, and says so in the same log: a
     # report where every section is empty is the one mail §2 exists to prevent.
-    assert f"{EMPTY}: vuoto" in out
+    assert f"{EMPTY}: empty" in out
     assert OWNER_EMPTY not in {mail.to for mail in cron.sent}
     assert sorted(mail.to for mail in _my(cron)) == sorted(OWNERS.values())
     # Each space's links are the root's public URL plus its own slug: `space_base_settings`
@@ -313,7 +313,7 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
         assert f"{PUBLIC_URL}/{slug}/app" in mail.text
         assert _weeks(settings, slug) == [iso]
     # The root installation is not in the registry and is visited all the same, first.
-    assert out.splitlines()[0] == f"{ROOT_LABEL}: inviato a 2"
+    assert out.splitlines()[0] == f"{ROOT_LABEL}: sent to 2"
     assert _weeks(settings, None) == [iso]
 
 
@@ -350,7 +350,7 @@ def test_the_root_installation_gets_its_week_like_a_space(
     assert cli.main(["digest", "--slug", ROOT_LABEL]) == 0
 
     captured = capsys.readouterr()
-    assert captured.out.strip() == f"{ROOT_LABEL}: inviato a 2"
+    assert captured.out.strip() == f"{ROOT_LABEL}: sent to 2"
     assert captured.err == ""
     root_mails = [mail for mail in cron.sent if mail.to.endswith("@radice.it")]
     # Every active user who kept it on, as in a space; never the one switched off.
@@ -387,7 +387,7 @@ def test_a_week_already_sent_is_not_sent_a_second_time(
 
     assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
-    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: già inviato per {iso}"
+    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: already sent for {iso}"
     assert len(_my(cron)) == 1
 
 
@@ -399,7 +399,7 @@ def test_a_rehearsal_says_what_would_go_out_and_sends_nothing(
     the week having gone out."""
     assert cli.main(["digest", "--slug", FIRST_SPACE, "--dry-run"]) == 0
 
-    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: inviato a 1 (prova)"
+    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: sent to 1 (dry run)"
     assert _my(cron) == []
     assert _weeks(settings, FIRST_SPACE) == []
 
@@ -410,7 +410,7 @@ def test_slug_visits_that_space_and_leaves_the_others_alone(
     assert cli.main(["digest", "--slug", SECOND_SPACE]) == 0
 
     out = capsys.readouterr().out
-    assert f"{SECOND_SPACE}: inviato a 1" in out
+    assert f"{SECOND_SPACE}: sent to 1" in out
     assert FIRST_SPACE not in out
     assert [mail.to for mail in _my(cron)] == [OWNERS[SECOND_SPACE]]
     assert _weeks(settings, FIRST_SPACE) == []
@@ -424,7 +424,7 @@ def test_a_slug_that_is_not_in_the_registry_is_one_line_and_not_a_failure(
     assert cli.main(["digest", "--slug", "prova-digest-mai-esistito"]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.strip() == "prova-digest-mai-esistito: non nel registro"
+    assert captured.err.strip() == "prova-digest-mai-esistito: not in the registry"
     assert captured.out == ""
     assert _my(cron) == []
 
@@ -438,7 +438,7 @@ def test_the_root_slug_is_not_a_way_to_name_the_root(
     assert cli.main(["digest", "--slug", ROOT_SLUG]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.strip() == f"{ROOT_SLUG}: non nel registro"
+    assert captured.err.strip() == f"{ROOT_SLUG}: not in the registry"
     assert captured.out == ""
     assert cron.sent == []
 
@@ -456,7 +456,7 @@ def test_a_space_where_everybody_switched_it_off_is_said_and_not_sent(
             connection.execute(text("update users set weekly_digest = false"))
         assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
-        assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: nessun destinatario"
+        assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: no recipient"
         assert _my(cron) == []
         assert _weeks(settings, FIRST_SPACE) == []
     finally:
@@ -477,7 +477,7 @@ def test_force_with_a_day_of_that_week_sends_it_again(
 
     assert cli.main(["digest", "--slug", FIRST_SPACE, "--force", "--date", monday.isoformat()]) == 0
 
-    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: inviato a 1"
+    assert capsys.readouterr().out.strip() == f"{FIRST_SPACE}: sent to 1"
     assert [mail.to for mail in _my(cron)] == [OWNERS[FIRST_SPACE], OWNERS[FIRST_SPACE]]
     assert _weeks(settings, FIRST_SPACE) == [iso]
 
@@ -514,10 +514,10 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     assert cli.main(["digest"]) == 0
 
     captured = capsys.readouterr()
-    assert f"{FIRST_SPACE}: inviato a 1" in captured.out
+    assert f"{FIRST_SPACE}: sent to 1" in captured.out
     assert SECOND_SPACE not in captured.out
     # The type and never the text: a psycopg error carries the connection's URL.
-    assert captured.err.strip() == f"{SECOND_SPACE}: saltato (OperationalError)"
+    assert captured.err.strip() == f"{SECOND_SPACE}: skipped (OperationalError)"
     assert [mail.to for mail in _my(cron)] == [OWNERS[FIRST_SPACE]]
     assert _weeks(settings, SECOND_SPACE) == []
 
@@ -543,7 +543,7 @@ def test_a_client_that_cannot_be_built_is_one_line_and_still_shuts_the_sdk_down(
     assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.strip() == "invio non configurabile (RuntimeError)"
+    assert captured.err.strip() == "sending cannot be configured (RuntimeError)"
     assert captured.out == ""
     assert closed == ["shutdown"]
     assert _my(cron) == []
@@ -567,9 +567,9 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
     assert cli.main(["digest"]) == 0
 
     captured = capsys.readouterr()
-    assert "registro degli spazi non raggiungibile" in captured.err
+    assert "space registry unreachable" in captured.err
     # The root is not in the registry, so it is still tried, and fails on its own line.
-    assert f"{ROOT_LABEL}: saltato (OperationalError)" in captured.err
+    assert f"{ROOT_LABEL}: skipped (OperationalError)" in captured.err
     assert "segreta" not in captured.err
     assert sender.sent == []
 
@@ -593,7 +593,7 @@ def test_every_space_the_command_walked_has_its_clock_moved_whatever_the_outcome
 
     for slug in (*SPACES, None):
         assert _clock(settings, slug) == (True, None), slug
-    assert "orologio non scritto" not in capsys.readouterr().err
+    assert "clock not written" not in capsys.readouterr().err
 
 
 def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
@@ -604,7 +604,7 @@ def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
         with engine.begin() as connection:
             connection.execute(text("update users set weekly_digest = false"))
         assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
-        assert _clock(settings, FIRST_SPACE) == (True, None), "nessun destinatario ran to the end"
+        assert _clock(settings, FIRST_SPACE) == (True, None), "no recipient ran to the end"
     finally:
         with engine.begin() as connection:
             connection.execute(text("update users set weekly_digest = true"))
@@ -665,7 +665,7 @@ def test_a_space_the_command_cannot_open_is_recorded_nowhere_and_says_so_once(
 
     assert cli.main(["digest"]) == 0
 
-    assert capsys.readouterr().err.strip() == f"{SECOND_SPACE}: saltato (OperationalError)"
+    assert capsys.readouterr().err.strip() == f"{SECOND_SPACE}: skipped (OperationalError)"
     assert _clock(settings, FIRST_SPACE) == (True, None)
 
 
@@ -682,7 +682,7 @@ def test_an_error_before_the_send_records_the_exception_type(
 
     assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
-    assert capsys.readouterr().err.splitlines() == [f"{FIRST_SPACE}: saltato (RuntimeError)"]
+    assert capsys.readouterr().err.splitlines() == [f"{FIRST_SPACE}: skipped (RuntimeError)"]
     assert _clock(settings, FIRST_SPACE) == (False, "RuntimeError")
 
 
@@ -703,6 +703,6 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_the_digest_still_exits_zer
     assert cli.main(["digest", "--slug", FIRST_SPACE]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{FIRST_SPACE}: orologio non scritto (RuntimeError)"]
-    assert f"{FIRST_SPACE}: inviato a 1" in captured.out
+    assert captured.err.splitlines() == [f"{FIRST_SPACE}: clock not written (RuntimeError)"]
+    assert f"{FIRST_SPACE}: sent to 1" in captured.out
     assert _clock(settings, FIRST_SPACE) is None

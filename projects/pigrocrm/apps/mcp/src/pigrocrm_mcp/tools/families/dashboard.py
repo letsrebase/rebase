@@ -22,11 +22,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def get_commercial_dashboard(
         date_from: IsoDateStr = None, date_to: IsoDateStr = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Quadro commerciale: pipeline per stato, deal chiusi nel periodo con tasso di
-        conversione, offerte inviate in attesa, chiusure previste nei 30 giorni successivi,
-        offerte accettate il cui deal non è vinto. `date_from` e `date_to` (`YYYY-MM-DD`) vanno
-        insieme; senza, mese corrente. `weighted_value` è una stima, non fatturato.
-        `legal_entity_id` filtra per azienda; senza, tutte sommate.
+        """Commercial overview: pipeline by stage, deals closed in the period with conversion
+        rate, sent offers awaiting a reply, closings expected in the next 30 days, accepted
+        offers whose deal is not won. `date_from` and `date_to` (`YYYY-MM-DD`) go together;
+        without them, the current month. `weighted_value` is an estimate, not invoiced revenue.
+        `legal_entity_id` filters by company; without it, all companies are summed.
         """
         # `IsoDateStr`, the alias this file already uses for a date parameter: the runtime
         # type stays `str | None` so a malformed date is rejected inside `PeriodQuery`,
@@ -48,11 +48,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def get_economic_dashboard(
         date_from: IsoDateStr = None, date_to: IsoDateStr = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Conto economico del periodo: ricavi, costi diretti, costo del lavoro e margine in due
-        colonne, `closed` e `in_progress`, da non sommare; più spese generali, maturato non
-        fatturato, `unpaid` e `expired` (senza periodo). `date_from` e `date_to` (`YYYY-MM-DD`)
-        vanno insieme; senza, mese corrente. Nessuna stima fiscale. `legal_entity_id` filtra per
-        azienda; senza, tutte sommate.
+        """Income statement for the period: revenue, direct costs, labour cost and margin in two
+        columns, `closed` and `in_progress`, which must not be added together; plus overheads,
+        accrued but not invoiced, `unpaid` and `expired` (no period). `date_from` and `date_to`
+        (`YYYY-MM-DD`) go together; without them, the current month. No tax estimate.
+        `legal_entity_id` filters by company; without it, all companies are summed.
         """
         return dashboard_tools.get_economic_dashboard(
             context,
@@ -68,11 +68,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_receivables_dashboard(legal_entity_id: str | None = None) -> dict[str, Any]:
-        """Scadenziario incassi: fatture emesse non incassate in sei fasce di scadenza (la somma è
-        `total`, uguale a `unpaid`), atteso per mese, esposizione per cliente, fatture
-        scadute con solleciti inviati. Nessun periodo: è il dovuto di oggi. Per i solleciti c'è
-        `list_payment_reminder_candidates`. `legal_entity_id` filtra per azienda; senza, tutte
-        sommate.
+        """Receivables schedule: issued, unpaid invoices in six due-date buckets (their sum is
+        `total`, equal to `unpaid`), expected per month, exposure per customer, overdue invoices
+        with reminders sent. No period: it is what is owed today. For reminders there is
+        `list_payment_reminder_candidates`. `legal_entity_id` filters by company; without it,
+        all companies are summed.
         """
         return dashboard_tools.get_receivables_dashboard(
             context, parse_legal_entity_id(legal_entity_id)
@@ -81,10 +81,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_operational_dashboard(legal_entity_id: str | None = None) -> dict[str, Any]:
-        """Cosa c'è da fare adesso: ore giorno per giorno della settimana corrente (anche i giorni
-        senza ore), arretrato da fatturare, quattro segnali di incoerenza (fatturato ma non
-        vinto, vinto ma da fatturare, scaduto non incassato, concentrazione cliente) e ultime
-        attività. Nessun periodo. `legal_entity_id` filtra per azienda; senza, tutte insieme.
+        """What needs doing now: hours day by day for the current week (also days with no hours),
+        backlog to invoice, four inconsistency signals (invoiced but not won, won but to be
+        invoiced, overdue and unpaid, customer concentration) and latest activity. No period.
+        `legal_entity_id` filters by company; without it, all companies together.
         """
         return dashboard_tools.get_operational_dashboard(
             context, parse_legal_entity_id(legal_entity_id)

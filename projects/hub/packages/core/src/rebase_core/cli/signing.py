@@ -37,8 +37,8 @@ def contracts_check() -> int:
             result = render(document, data)
             blanks = signature_blanks(document, data)
             print(
-                f"{document}: {len(result.pdf)} byte, versione {result.version}, "
-                f"{len(blanks)} spazi da firmare"
+                f"{document}: {len(result.pdf)} bytes, version {result.version}, "
+                f"{len(blanks)} signing blanks"
             )
     except ContractFailed as exc:
         print(exc.message, file=sys.stderr)
@@ -55,7 +55,7 @@ def contracts_sweep() -> int:
     every ten minutes on production and the preview alike, from the `sweep` service in
     `docker-compose.yml` (REB-393). Prints the `unconfirmed` count only when it is not
     zero (REB-431): an expired, revoked or wrong token, or Documenso itself unreachable,
-    otherwise failed silently, leaving a document `sent` and «0 documenti ripresi»
+    otherwise failed silently, leaving a document `sent` and «0 documents resumed»
     printed every ten minutes with nothing to say why. Then the round that links active
     matches to their deal on Pigro (REB-499): how many it linked, always, and how many
     it tried and left unlinked, only when there are any. Then, on a line of its own, the
@@ -68,12 +68,12 @@ def contracts_sweep() -> int:
         result = signing_from_settings(settings)(session).recovery.sweep()
     finally:
         session.close()
-    line = f"{result.touched} documenti ripresi"
+    line = f"{result.touched} documents resumed"
     if result.unconfirmed:
-        line += f", {result.unconfirmed} non confermati"
-    line += f", {result.linked} match collegati a Pigro"
+        line += f", {result.unconfirmed} unconfirmed"
+    line += f", {result.linked} matches linked to Pigro"
     if result.link_failed:
-        line += f", {result.link_failed} non collegati"
+        line += f", {result.link_failed} not linked"
     print(line)
     print(crm_sweep(settings))
     return 0
@@ -101,9 +101,9 @@ def crm_sweep(settings: Settings) -> str:
         ).link_pending()
     finally:
         session.close()
-    line = f"{counts.linked} richieste collegate al CRM"
+    line = f"{counts.linked} requests linked to the CRM"
     if counts.failed:
-        line += f", {counts.failed} non collegate"
+        line += f", {counts.failed} not linked"
     return line
 
 
@@ -117,7 +117,7 @@ def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
     client = client_from_settings(settings, http)
     if client is None:
         print(
-            "REBASE_DOCUMENSO_URL o REBASE_DOCUMENSO_API_TOKEN mancano: la firma è spenta.",
+            "REBASE_DOCUMENSO_URL or REBASE_DOCUMENSO_API_TOKEN is missing: signing is off.",
             file=sys.stderr,
         )
         return 1
@@ -130,7 +130,7 @@ def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
         if exc.detail:
             print(exc.detail, file=sys.stderr)
         return 1
-    print(f"Documenso risponde a {settings.documenso_url} e accetta il token.")
+    print(f"Documenso answers at {settings.documenso_url} and accepts the token.")
     return 0
 
 

@@ -379,7 +379,7 @@ def list_companies(
     created_from: datetime | None = None,
     created_to: datetime | None = None,
 ) -> CompanyList:
-    """REB-285 adds `q` (company_name/referente/email/progetto, trigram-ordered),
+    """REB-285 adds `q` (company_name/contact/email/project, trigram-ordered),
     `cursor`, and every filter after `origin` beside the original `limit`/`status`."""
     return CompanyService(session).list_recent(
         limit=limit,
@@ -405,7 +405,7 @@ def create_company(
     data: CompanyAdminCreate,
 ) -> CompanyRead:
     """An admin opens a request for a company met directly (REB-870): the wizard's fields,
-    validated the same way, the referente found or created by email, and no mail to anybody.
+    validated the same way, the contact found or created by email, and no mail to anybody.
     Without `deal_id` it is a new request like any other: `to_link`, filed in the CRM in
     the background as a new deal. With `deal_id`, the CRM deal it already has, the CRM links
     it now and creates nothing (no second customer, no second deal): the answer carries
@@ -462,7 +462,7 @@ def override_company(
     admin: AdminDep, session: SessionDep, company_id: UUID, change: CompanyOverride
 ) -> CompanyRead:
     """Sets or clears any request field beyond `status` (REB-347): the project
-    answers, the company's own name, the referente's identity on the linked `users`
+    answers, the company's own name, the contact's identity on the linked `users`
     row. Recorded on `GET .../audit`; reversible with
     `POST .../audit/{action_id}/revert`."""
     return CompanyService(session).override(company_id, change, admin.id)
@@ -515,7 +515,7 @@ def open_talent_cloud(
     company_id: UUID,
 ) -> TalentCloudGrantRead:
     """«Apri il talent cloud» on a company request's page: 201 with the grant to the
-    request's referente, whose mail leaves after this answer; 200 with the grant
+    request's contact, whose mail leaves after this answer; 200 with the grant
     already live for that person and request, a double click included, and no mail.
     Without a mail key the cloud opens all the same and nobody is mailed."""
     read, mail = TalentCloudService(session, settings).grant(company_id, admin.id)
@@ -633,7 +633,7 @@ def draft_card_from_signup(
 
 @router.get("/signups/{signup_id}", response_model=TalentRead)
 def get_signup(_: AdminDep, session: SessionDep, signup_id: UUID) -> TalentRead:
-    """One bare sign-up as the row the Talenti list shows for it (`status` «lead», `origin`
+    """One bare sign-up as the row the «Talenti» list shows for it (`status` «lead», `origin`
     «form»): the page of a person who has no card yet. 404 for an unknown id, and for a
     person who already has a card, whom the list shows as that card."""
     lead = lead_by_id(session, signup_id)

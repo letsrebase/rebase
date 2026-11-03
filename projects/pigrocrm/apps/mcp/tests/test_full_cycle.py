@@ -219,13 +219,13 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
         assert logged.structured_content["rate_source"] == "deal"
 
         rendered = (await client.read_resource(f"deal://{deal_id}")).contents[0].text
-        assert "- Ore consuntivate: 8.00" in rendered
-        assert "## Economia" in rendered
-        assert "- Ricavi fatturati: 0.00 EUR (0 fatture emesse)" in rendered
+        assert "- Hours logged: 8.00" in rendered
+        assert "## Economics" in rendered
+        assert "- Invoiced revenue: 0.00 EUR (0 invoices issued)" in rendered
         # Never a bare margin on an unfinished deal: an agent handed one quotes it as
         # final.
-        assert "**provvisorio**" in rendered
-        assert "- Valore maturato (stima, non un ricavo): 800.00 EUR" in rendered
+        assert "**provisional**" in rendered
+        assert "- Accrued value (estimate, not revenue): 800.00 EUR" in rendered
 
         # 2. And the tools it must not find are not there. Not a permission check: a PAT
         #    inherits its owner's full role and never expires (residual R10), so the
@@ -299,9 +299,9 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     # 9. And Claude, reading the same resource again, sees the decision it could not take.
     async with Client(server) as client:
         rendered = (await client.read_resource(f"deal://{deal_id}")).contents[0].text
-    assert "- Ricavi fatturati: 800.00 EUR (1 fatture emesse)" in rendered
-    assert "- Margine lordo: 560.00 EUR (definitivo)" in rendered
-    assert "provvisorio" not in rendered
+    assert "- Invoiced revenue: 800.00 EUR (1 invoices issued)" in rendered
+    assert "- Gross margin: 560.00 EUR (final)" in rendered
+    assert "provisional" not in rendered
     # Dropped once the deal is closed: repeating the estimate beside the revenue invites it
     # to be read as a second, disagreeing figure for the same thing.
-    assert "Valore maturato" not in rendered
+    assert "Accrued value" not in rendered

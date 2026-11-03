@@ -91,7 +91,7 @@ def restore(context: McpContext, task_id: str) -> dict[str, Any]:
 
 
 def today(context: McpContext, query: dict[str, Any]) -> dict[str, Any]:
-    """The Oggi panel: overdue, due today, the next seven days, and the undated."""
+    """The «Oggi» panel: overdue, due today, the next seven days, and the undated."""
     result = _task(context).today(context.actor, TaskTodayQuery(**query))
     return result.model_dump(mode="json")
 

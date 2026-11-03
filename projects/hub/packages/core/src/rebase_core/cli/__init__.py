@@ -20,70 +20,73 @@ from rebase_core.cli.common import Command
 REGISTRY: dict[str, tuple[str, str]] = {
     "conversions-check": (
         "campaigns",
-        "Verifica la chiave della Conversions API senza registrare una conversione",
+        "Check the Conversions API key without recording a conversion",
     ),
     "contracts-check": (
         "signing",
-        "Compone i contratti con pandoc e Typst: questa macchina li sa generare?",
+        "Render the contracts with pandoc and Typst: can this machine generate them?",
     ),
-    "documenso-check": ("signing", "Documenso risponde, e il token di questo ambiente lo apre?"),
+    "documenso-check": (
+        "signing",
+        "Does Documenso answer, and does this environment's token open it?",
+    ),
     "contracts-sweep": (
         "signing",
-        "Rifà quanto un riavvio o una mail rifiutata hanno lasciato indietro",
+        "Redo what a restart or a rejected mail left behind",
     ),
     "campaigns-tick": (
         "campaigns",
-        "Invia le campagne arrivate alla loro ora, una mail alla volta",
+        "Send the campaigns that reached their time, one mail at a time",
     ),
     "cards-refresh": (
         "cards",
-        "Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
+        "Write the anonymous card of whoever has a new or changed CV, oldest first",
     ),
     "cards-regenerate": (
         "cards",
-        "Riscrive le schede da aggiornare, in parallelo o, in blocco, col Batch API",
+        "Rewrite the cards to update, in parallel or, in bulk, with the Batch API",
     ),
     "cards-batch-poll": (
         "cards",
-        "Porta avanti il batch di schede inviato al Batch API e ne applica i risultati",
+        "Advance the card batch sent to the Batch API and apply its results",
     ),
     "sources-refetch": (
         "cards",
-        "Rilegge GitHub e i link da cui si scrive la scheda, senza chiamare un modello",
+        "Re-read GitHub and the links a card is written from, without calling a model",
     ),
     "cards-eval": (
         "cards",
-        "Scrive le schede di un campione e le confronta con le loro fonti, "
-        "senza toccare le schede vere",
+        "Write the cards of a sample and compare them with their sources, "
+        "without touching the live cards",
     ),
     "ai-seed": (
         "ai",
-        "Sposta la chiave Anthropic e il modello vecchi in «Modelli AI», con i prezzi",
+        "Move the old Anthropic key and model into «Modelli AI», with the prices",
     ),
     "ai-prices-seed": (
         "ai",
-        "Scrive i prezzi OpenAI e Google dalle loro pagine, senza toccare le righe esistenti",
+        "Write the OpenAI and Google prices from their pages, leaving existing rows alone",
     ),
     "ai-verify": (
         "ai",
-        "Prova una chiamata con output strutturato nativo al fornitore, con la sua chiave",
+        "Try a call with the provider's native structured output, with its own key",
     ),
     "ai-rotate-secrets": (
         "ai",
-        "Ricifra le chiavi dei modelli: REBASE_SECRETS_KEY_OLD e REBASE_SECRETS_KEY_NEW",
+        "Re-seal the model keys: REBASE_SECRETS_KEY_OLD and REBASE_SECRETS_KEY_NEW",
     ),
     "talent-duplicates": (
         "members",
-        "Elenca chi è in lista due volte (a secco) e con --apply unisce le schede",
+        "List who is on the list twice (dry run) and, with --apply, merge the cards",
     ),
-    "createtoken": ("members", "Crea un token personale di un amministratore, per un agente"),
+    "createtoken": ("members", "Create an administrator's personal token, for an agent"),
     "setrole": (
         "members",
-        "Imposta il ruolo (member/admin) di un indirizzo, creandolo se serve",
+        "Set the role (member/admin) of an address, creating it if needed",
     ),
     "welcome": (
         "members",
-        "Manda la mail «la tua area è aperta» a un indirizzo o a tutti quelli noti",
+        "Send the «la tua area è aperta» mail to one address or to every known one",
     ),
 }
 

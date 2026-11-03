@@ -78,7 +78,7 @@ def list_register_gaps(
     reads `register_gaps` (the same query `GET /api/invoices/register/{anno}/gaps`
     answers), it writes nothing, and it needs nothing an installation has to open --
     unlike `import_issued_invoice`/`declare_invoice_register_gaps`, which write the
-    register and stay behind `mcp_full_access`. One register per azienda (REB-619):
+    register and stay behind `mcp_full_access`. One register per legal entity (REB-619):
     none named is the default's."""
     gaps = _invoices(context).register_gaps(
         year, context.actor, parse_legal_entity_id(legal_entity_id)
@@ -114,7 +114,7 @@ def _require_proforma(
     if invoice.type != "proforma":
         raise Conflict(
             "invoice",
-            "da MCP si modificano solo le proforma: una fattura la prepara e la emette una persona",
+            "over MCP only proformas can be edited: an invoice is prepared and issued by a person",
             type=invoice.type,
             status=invoice.status,
         )
@@ -146,7 +146,7 @@ def update_proforma(
     purchase_order_tender_code: str | None = None,
     purchase_order_project_code: str | None = None,
 ) -> dict[str, Any]:
-    """The header of a proforma: causale, document date, due date, accrual period,
+    """The header of a proforma: reason, document date, due date, accrual period,
     purchase order (ORB-61, ORB-63, REB-326, REB-693).
 
     Same guard as `replace_proforma_lines`, and for the same reason: a proforma is the
@@ -197,7 +197,7 @@ def confirm_proforma(context: McpContext, invoice_id: str) -> dict[str, Any]:
     """`draft` -> `confirmed` on a proforma (ORB-132): the amount is agreed and the
     document is ready to be issued, still without touching the register.
 
-    Same guard as `replace_proforma_lines`, so a fattura is refused with the reason before
+    Same guard as `replace_proforma_lines`, so an invoice is refused with the reason before
     the service refuses it for its own. The service then refuses a proforma that is not a
     draft and one without lines, naming the field. On the default surface and not behind
     `mcp_full_access`: confirming consumes nothing and forecloses nothing, since a
@@ -219,7 +219,7 @@ def discard_proforma(context: McpContext, invoice_id: str) -> dict[str, Any]:
     exists` keeps that prefix off the surface, and this is the application's soft delete,
     the row stays. `InvoiceService.soft_delete` refuses on its own anything
     that consumed a number, and the table CHECK behind it refuses again; the guard here
-    only makes the refusal for a fattura say why before either of those is reached.
+    only makes the refusal for an invoice say why before either of those is reached.
 
     One-way, unlike the `archive_*` tools: `InvoiceService` has no restore, and none is
     owed to a document that never took a number and can be recreated from what
@@ -256,7 +256,7 @@ def xml_url(context: McpContext, invoice_id: str) -> dict[str, Any]:
     if invoice.xml_document_id is None:
         raise Conflict(
             "invoice",
-            "questa fattura non ha ancora un file XML: va prodotto dall'applicazione",
+            "this invoice has no XML file yet: it must be produced by the application",
             status=invoice.status,
         )
     return {
@@ -310,7 +310,7 @@ def update_fiscal_profile(
     )
 
 
-# What an agent needs to pick an legal entity, and nothing it does not: the two flags, the
+# What an agent needs to pick a legal entity, and nothing it does not: the two flags, the
 # nation and the three names (REB-616).
 LEGAL_ENTITY_FIELDS: Final[set[str]] = {
     "id",

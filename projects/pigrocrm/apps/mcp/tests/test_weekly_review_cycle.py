@@ -217,13 +217,13 @@ async def test_the_agent_runs_the_weekly_review_end_to_end(cycle_server: Corpus)
         # 1. Open the prompt. The context arrives *inside* it -- which is the whole reason
         #    these are prompts and not an instruction to go and fetch something.
         briefing = _text_of(await client.get_prompt("pipeline-review"))
-        assert "## Pipeline per stato" in briefing
-        assert "## Offerte inviate in attesa di risposta" in briefing
+        assert "## Pipeline by stage" in briefing
+        assert "## Offers sent awaiting a reply" in briefing
         assert STAGE_OPEN in briefing, "the stage row is missing, so nothing was read"
         # The age, not merely the title: an offer listed with no age is not a stalled offer,
         # it is a row. `— ferma da 0 giorni` would read as "sent today", which is a
         # different fact and the one `giorni is None` gets wrong.
-        assert f"- {OFFER_STALLED} — ferma da {DAYS_STALLED} giorni" in briefing
+        assert f"- {OFFER_STALLED} — stalled for {DAYS_STALLED} days" in briefing
 
         # 2. Read the dashboard as data, which is what a tool is for. The briefing is prose
         #    for a model to reason over; the tool is the same figures in a shape it can

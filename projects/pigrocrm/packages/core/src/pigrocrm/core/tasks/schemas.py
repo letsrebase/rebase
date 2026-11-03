@@ -125,7 +125,7 @@ DAYS_NEXT = 7
 
 
 class TaskTodayQuery(BaseModel):
-    """What the Oggi panel can be asked: whose task (everybody's when `None`) and how
+    """What the «Oggi» panel can be asked: whose task (everybody's when `None`) and how
     many rows each section carries. Validated here and not only by the REST router, so an
     agent's `limit` of 0 or of «molti» is a sentence and not a database error."""
 
@@ -136,7 +136,7 @@ class TaskTodayQuery(BaseModel):
 
 
 class TaskGroup(BaseModel):
-    """One section of the Oggi panel: the first `limit` rows and how many there are in all."""
+    """One section of the «Oggi» panel: the first `limit` rows and how many there are in all."""
 
     total: int
     items: list[TaskRead]

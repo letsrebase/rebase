@@ -1048,7 +1048,7 @@ export interface paths {
         /**
          * Token Options
          * @description Readable by any member, unlike the space settings page that holds the switch: a
-         *     collaboratore who makes a token has to be told why the box is off.
+         *     collaborator who makes a token has to be told why the box is off.
          */
         get: operations["token_options_api_tokens_options_get"];
         put?: never;
@@ -1463,9 +1463,9 @@ export interface paths {
         put?: never;
         /**
          * Import Issued
-         * @description Slice 9 §3: a fattura issued by the previous system. Admin only, enforced by the
+         * @description Slice 9 §3: an invoice issued by the previous system. Admin only, enforced by the
          *     service. No artefacts are produced: the PDF, if any, is the original. On the
-         *     register of `legal_entity_id`, the default azienda when omitted (REB-620).
+         *     register of `legal_entity_id`, the default legal entity when omitted (REB-620).
          */
         post: operations["import_issued_api_invoices_import_post"];
         delete?: never;
@@ -1669,7 +1669,7 @@ export interface paths {
         /**
          * Issue
          * @description Admin only, enforced by the service. `{invoice_id}` is the *source* row: a
-         *     `draft` fattura is issued in place, and a `confirmed` proforma produces a new
+         *     `draft` invoice is issued in place, and a `confirmed` proforma produces a new
          *     numbered row linked back to it.
          *
          *     `issue()` no longer produces the PDF/XML itself -- that used to be a second
@@ -2175,8 +2175,8 @@ export interface paths {
          *     estimate on collected and projected revenue for an admin with a profile. No MCP
          *     tool, for the estimate's own reasons. `base` moves the charts and the cash cards
          *     between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
-         *     on a space with several aziende the fiscal block is empty and the page asks
-         *     `/fiscal` once per azienda (REB-630).
+         *     on a space with several legal entities the fiscal block is empty and the page asks
+         *     `/fiscal` once per legal entity (REB-630).
          */
         get: operations["economic_overview_api_analytics_overview_get"];
         put?: never;
@@ -2242,11 +2242,11 @@ export interface paths {
         };
         /**
          * Ceiling Headroom
-         * @description Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
-         *     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
-         *     ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
-         *     solo `get_fiscal_estimate`. Le soglie sono quelle del regime forfettario: un'azienda
-         *     in un altro regime riceve `thresholds` vuoto.
+         * @description How much room is left before each active threshold of the configured tax package
+         *     (REB-352 §1.4), on the year's collected and actual revenue. Open to every role,
+         *     unlike `/fiscal`: this is revenue, not the fiscal estimate that only
+         *     `get_fiscal_estimate` protects. The thresholds are those of the flat-rate regime: a
+         *     legal entity under another regime gets an empty `thresholds`.
          */
         get: operations["ceiling_headroom_api_analytics_ceilings_get"];
         put?: never;
@@ -2266,10 +2266,10 @@ export interface paths {
         };
         /**
          * Simulate Ceiling
-         * @description Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
-         *     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
-         *     nulla. Serve `budgeted_value`, oppure `budgeted_hours` insieme a
-         *     `hourly_rate`. Con `contract_id` risponde anche sul tetto di quel contratto.
+         * @description The «ci sta?» (does it fit?) simulator (REB-352 §1.4): the estimate of a deal not yet won,
+         *     added to the actual revenue and re-evaluated against every active threshold, without
+         *     saving anything. Needs `budgeted_value`, or `budgeted_hours` together with
+         *     `hourly_rate`. With `contract_id` it also answers on that contract's cap.
          */
         get: operations["simulate_ceiling_api_analytics_ceilings_simulate_get"];
         put?: never;
@@ -2289,10 +2289,10 @@ export interface paths {
         };
         /**
          * Days Analysis
-         * @description Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
-         *     contro il listino per cliente e per contratto, e l'andamento delle giornate
-         *     lavorate senza l'approvazione che il contratto chiede. Entrambe le date o nessuna
-         *     (il mese corrente). Aperto a ogni ruolo, come le giornate.
+         * @description The workdays of a period (REB-756): by month and by status, the actual rate
+         *     against the price list by client and by contract, and the trend of days worked
+         *     without the approval the contract requires. Both dates or neither
+         *     (the current month). Open to every role, like the workdays.
          */
         get: operations["days_analysis_api_analytics_days_get"];
         put?: never;
@@ -2312,10 +2312,10 @@ export interface paths {
         };
         /**
          * Year Overview
-         * @description L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
-         *     regime e per trattamento fiscale e il registro delle fatture emesse, con bollo e
-         *     rivalsa a parte. Lo stesso universo di `annual_revenue`: `totali.taxable_amount` è il
-         *     ricavo dell'anno. Aperto a ogni ruolo, come il registro.
+         * @description A legal entity's year as the accountant reads it (REB-757): revenue by
+         *     regime and by tax treatment, and the register of issued invoices, with stamp duty and
+         *     withholding-tax surcharge apart. The same universe as `annual_revenue`: `totali.taxable_amount`
+         *     is the year's revenue. Open to every role, like the register.
          */
         get: operations["year_overview_api_analytics_year_get"];
         put?: never;
@@ -2335,9 +2335,9 @@ export interface paths {
         };
         /**
          * Year Csv
-         * @description Il CSV dell'anno per il commercialista (REB-757): una riga per ogni riga di
-         *     fattura e poi il registro, con i due totali. UTF-8 con BOM, punto e virgola e
-         *     virgola decimale, il formato che Excel italiano apre senza conversioni.
+         * @description The year's CSV for the accountant (REB-757): one row per invoice line,
+         *     then the register, with the two totals. UTF-8 with BOM, semicolon and
+         *     decimal comma, the format Italian Excel opens without conversions.
          */
         get: operations["year_csv_api_analytics_year_csv_get"];
         put?: never;
@@ -2357,17 +2357,17 @@ export interface paths {
         };
         /**
          * List Legal Entities
-         * @description The default first. Deactivated aziende are left out unless asked for: a
-         *     selector never offers one, Impostazioni may still show it.
+         * @description The default first. Deactivated legal entities are left out unless asked for: a
+         *     selector never offers one, Settings may still show it.
          */
         get: operations["list_legal_entities_api_legal_entities_get"];
         put?: never;
         /**
          * Create Legal Entity
-         * @description A second azienda, with its fiscal profile, in one transaction (REB-631, spec
+         * @description A second legal entity, with its fiscal profile, in one transaction (REB-631, spec
          *     2026-10-03 §3): active, not the default, and the first of a space when it had
          *     none. A profile the fiscal rules would refuse refuses the whole request, so no
-         *     azienda exists that could not issue.
+         *     legal entity exists that could not issue.
          */
         post: operations["create_legal_entity_api_legal_entities_post"];
         delete?: never;
@@ -2385,7 +2385,7 @@ export interface paths {
         };
         /**
          * Suggest Legal Entity
-         * @description The azienda a new customer of `country` would be billed by when nobody picks one
+         * @description The legal entity a new customer of `country` would be billed by when nobody picks one
          *     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
          *     lives in the service once; `POST /api/customers` applies the same one
          *     when `legal_entity_id` is left out.
@@ -2419,10 +2419,10 @@ export interface paths {
         post?: never;
         /**
          * Deactivate Legal Entity
-         * @description Deactivation, never a row delete: an azienda that issued an invoice stays
+         * @description Deactivation, never a row delete: a legal entity that issued an invoice stays
          *     readable forever. Refused on the default; move the default first. The answer says
          *     how many customers still point at the row (`linked_customers`): nothing new is
-         *     born under them until they are moved to an active azienda.
+         *     born under them until they are moved to an active legal entity.
          */
         delete: operations["deactivate_legal_entity_api_legal_entities__legal_entity_id__delete"];
         options?: never;
@@ -2462,7 +2462,7 @@ export interface paths {
         get: operations["get_fiscal_profile_api_legal_entities__legal_entity_id__fiscal_profile_get"];
         /**
          * Upsert Fiscal Profile
-         * @description Whole-row, like the azienda's own `PUT`; with `updated_at` in the body, a save on
+         * @description Whole-row, like the legal entity's own `PUT`; with `updated_at` in the body, a save on
          *     a profile somebody else saved since answers 409 `stale_row` (REB-622).
          */
         put: operations["upsert_fiscal_profile_api_legal_entities__legal_entity_id__fiscal_profile_put"];
@@ -2482,7 +2482,7 @@ export interface paths {
         };
         /**
          * Get Logo
-         * @description The azienda's logo, PNG or SVG; 404 when it has none.
+         * @description The legal entity's logo, PNG or SVG; 404 when it has none.
          */
         get: operations["get_logo_api_legal_entities__legal_entity_id__logo_get"];
         /**
@@ -2496,7 +2496,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Logo
-         * @description Idempotent: an azienda with no logo answers its row, not an error.
+         * @description Idempotent: a legal entity with no logo answers its row, not an error.
          */
         delete: operations["delete_logo_api_legal_entities__legal_entity_id__logo_delete"];
         options?: never;
@@ -2513,7 +2513,7 @@ export interface paths {
         };
         /**
          * Get Signature
-         * @description The azienda's signature image, PNG; 404 when it has none.
+         * @description The legal entity's signature image, PNG; 404 when it has none.
          */
         get: operations["get_signature_api_legal_entities__legal_entity_id__signature_get"];
         /**
@@ -3383,9 +3383,9 @@ export interface paths {
         get?: never;
         /**
          * Upsert Engagement
-         * @description Crea o ritrova lo spazio del freelancer, il cliente «rebase» e il deal della
-         *     lettera per questo match dell'hub, sotto il bearer di `PIGROCRM_ENGAGEMENTS_TOKEN`
-         *     che solo l'hub possiede.
+         * @description Creates or finds the freelancer's space, the «rebase» client and the letter's
+         *     deal for this hub match, under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN`
+         *     that only the hub holds.
          */
         put: operations["upsert_engagement_api_rebase_engagements__match_id__put"];
         post?: never;
@@ -3404,9 +3404,9 @@ export interface paths {
         };
         /**
          * Engagement Report
-         * @description Legge le ore del deal di questo match nel periodo dato, con le fatture su cui
-         *     siedono, sotto lo stesso bearer di `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub
-         *     possiede.
+         * @description Reads the hours of this match's deal in the given period, with the invoices they
+         *     sit on, under the same bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub
+         *     holds.
          */
         get: operations["engagement_report_api_rebase_engagements__match_id__report_get"];
         put?: never;
@@ -3740,8 +3740,8 @@ export interface paths {
         };
         /**
          * Get
-         * @description Il contratto con le sue note sulle clausole (REB-762) e, se è stato rinnovato,
-         *     l'id di chi lo rinnova (REB-763).
+         * @description The contract with its clause notes (REB-762) and, if it has been renewed,
+         *     the id of its renewal (REB-763).
          */
         get: operations["get_api_contracts__contract_id__get"];
         put?: never;
@@ -3781,10 +3781,10 @@ export interface paths {
         put?: never;
         /**
          * Renew
-         * @description Rinnova il contratto (REB-763): il successore ha gli stessi termini, comincia il
-         *     giorno dopo la fine di questo e dura quanto durava, salvo `start`, `end` o `duration`.
-         *     Le schede tariffarie che arrivano al nuovo termine passano con lui; le sue restano
-         *     dove sono. Un contratto si rinnova una volta (409) e solo se ha una fine (422).
+         * @description Renews the contract (REB-763): the successor has the same terms, starts the
+         *     day after this one ends and lasts as long as it did, except for `start`, `end` or `duration`.
+         *     The rate cards that reach the new term move with it; its own stay
+         *     where they are. A contract is renewed once (409) and only if it has an end (422).
          */
         post: operations["renew_api_contracts__contract_id__renew_post"];
         delete?: never;
@@ -3874,8 +3874,8 @@ export interface paths {
         put?: never;
         /**
          * Create Clause Note
-         * @description Una lettura di una clausola: il riferimento, il testo letterale e l'interpretazione
-         *     adottata (REB-762).
+         * @description A reading of a clause: the reference, the literal text and the adopted
+         *     interpretation (REB-762).
          */
         post: operations["create_clause_note_api_contracts__contract_id__clause_notes_post"];
         delete?: never;
@@ -3912,7 +3912,7 @@ export interface paths {
         get: operations["get_renewal_assumption_api_contracts__contract_id__renewal_assumption_get"];
         /**
          * Upsert Renewal Assumption
-         * @description Admin or collaboratore, enforced by the service (`actor.require_write`), not
+         * @description Admin or collaborator (the write role), enforced by the service (`actor.require_write`), not
          *     here -- there is no role dependency in this codebase, and adding one here would
          *     put the same rule in two places.
          */
@@ -3933,9 +3933,9 @@ export interface paths {
         };
         /**
          * Project Revenue
-         * @description Il ricavo «programmato» oltre la finestra di irrevocabilità, più il contributo
-         *     dell'eventuale assunzione di rinnovo -- una figura distinta dal `projected` di
-         *     `GET /api/analytics/overview`, mai combinata con esso.
+         * @description The «scheduled» revenue beyond the irrevocability window, plus the contribution
+         *     of the renewal assumption, if any -- a figure distinct from the `projected` of
+         *     `GET /api/analytics/overview`, never combined with it.
          */
         get: operations["project_revenue_api_contracts__contract_id__projection_get"];
         put?: never;
@@ -3990,8 +3990,8 @@ export interface paths {
         };
         /**
          * Get Billable Days
-         * @description Le giornate pronte da fatturare di un contratto, come le righe che metterebbero in una
-         *     bozza: `worked` e non ancora su una riga di fattura. Sola lettura.
+         * @description A contract's workdays ready to invoice, as the rows they would make in a
+         *     draft: `worked` and not yet on an invoice line. Read-only.
          */
         get: operations["get_billable_days_api_contracts__contract_id__billable_days_get"];
         put?: never;
@@ -4013,10 +4013,9 @@ export interface paths {
         put?: never;
         /**
          * Invoice Days
-         * @description Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `date_from` e
-         *     `date_to`), alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
-         *     amministratore e mai un agente: scegliere cosa finisce su una bozza decide cosa
-         *     congelerà l'emissione.
+         * @description Creates the draft invoice with the contract's ready workdays (or those between `date_from`
+         *     and `date_to`), at the contract's rates, and marks them `invoiced`. It issues nothing. Admin
+         *     only and never an agent: choosing what ends up on a draft decides what issuing will freeze.
          */
         post: operations["invoice_days_api_contracts__contract_id__invoice_days_post"];
         delete?: never;
@@ -4034,8 +4033,8 @@ export interface paths {
         };
         /**
          * Get Register
-         * @description Il registro delle giornate fatturate di un contratto nel periodo, ciascuna con la
-         *     prova di approvazione che la regge. Sola lettura.
+         * @description The register of a contract's invoiced workdays in the period, each with the
+         *     approval proof that supports it. Read-only.
          */
         get: operations["get_register_api_contracts__contract_id__register_get"];
         put?: never;
@@ -4055,8 +4054,8 @@ export interface paths {
         };
         /**
          * Get Register Csv
-         * @description Lo stesso registro come CSV (RFC 4180, UTF-8 con BOM). Una copia di lavoro che il
-         *     cliente filtra: si ricalcola a ogni richiesta e non si archivia, come l'XLSX delle ore.
+         * @description The same register as CSV (RFC 4180, UTF-8 with BOM). A working copy the
+         *     client filters: recomputed on every request and not archived, like the hours XLSX.
          */
         get: operations["get_register_csv_api_contracts__contract_id__register_csv_get"];
         put?: never;
@@ -4078,9 +4077,9 @@ export interface paths {
         put?: never;
         /**
          * Render Register Pdf
-         * @description Il registro come PDF, archiviato come documento del cliente: si scarica dal documento
-         *     e si allega alla fattura. Ogni chiamata archivia un documento nuovo: non ne sovrascrive
-         *     mai uno precedente.
+         * @description The register as PDF, archived as a client document: download it from the document
+         *     and attach it to the invoice. Every call archives a new document: it never
+         *     overwrites a previous one.
          */
         post: operations["render_register_pdf_api_contracts__contract_id__register_pdf_post"];
         delete?: never;
@@ -4098,7 +4097,7 @@ export interface paths {
         };
         /**
          * Template Variables
-         * @description I nomi che un modello può usare come `{{nome}}`. The path names the contract the page
+         * @description The names a template can use as `{{nome}}`. The path names the contract the page
          *     asks from; the names are the same for every contract, and the router's `get_actor`
          *     dependency is what authenticates.
          */
@@ -4157,7 +4156,7 @@ export interface paths {
         put?: never;
         /**
          * Preview
-         * @description Cosa partirebbe con questo modello per questa fattura, senza scrivere niente.
+         * @description What would go out with this template for this invoice, without writing anything.
          */
         post: operations["preview_api_contracts__contract_id__email_preview_post"];
         delete?: never;
@@ -4177,8 +4176,8 @@ export interface paths {
         put?: never;
         /**
          * Prepare Draft
-         * @description Prepara la bozza di email con la fattura e il registro in allegato. Non invia: la
-         *     persona invia con `POST /api/email-drafts/{id}/send`, che non ha un equivalente MCP.
+         * @description Prepares the email draft with the invoice and the register attached. It does not send: the
+         *     person sends with `POST /api/email-drafts/{id}/send`, which has no MCP equivalent.
          */
         post: operations["prepare_draft_api_contracts__contract_id__email_draft_post"];
         delete?: never;
@@ -4270,7 +4269,7 @@ export interface paths {
         };
         /**
          * Timeline
-         * @description La cronologia della proposta: depositata, poi accettata o rifiutata. Il motivo di un rifiuto sta solo qui, nel payload della riga `rejected`.
+         * @description The proposal's timeline: filed, then accepted or rejected. The reason for a rejection lives only here, in the payload of the `rejected` row.
          */
         get: operations["timeline_api_proposals__proposal_id__timeline_get"];
         put?: never;
@@ -4290,18 +4289,18 @@ export interface paths {
         };
         /**
          * List Work Units
-         * @description Le giornate, dalla più recente. Serve almeno un contratto o una data (`from`, `to`):
-         *     il registro intero di uno spazio non è una domanda che una schermata faccia.
+         * @description The workdays, most recent first. At least a contract or a date (`from`, `to`) is required:
+         *     a space's whole register is not a question a screen asks.
          */
         get: operations["list_work_units_api_work_units_get"];
         put?: never;
         /**
          * Create
-         * @description Registra una giornata. Una giornata `worked` su un contratto che richiede
-         *     l'approvazione preventiva, senza approvazione, nasce `worked_without_approval`: il
-         *     trigger la segna invece di rifiutarla. Chiusa a ogni credenziale di tipo agente: un
-         *     agente propone (`propose_day`), una persona conferma. Si registra una giornata `proposed` o
-         *     `worked`: `approved` lo scrive `POST /api/approvals`, con la prova.
+         * @description Records a workday. A `worked` workday on a contract that requires
+         *     prior approval, without approval, is born `worked_without_approval`: the
+         *     trigger flags it instead of refusing it. Closed to every agent-type credential: an
+         *     agent proposes (`propose_day`), a person confirms. A `proposed` or
+         *     `worked` workday is recorded: `approved` is written by `POST /api/approvals`, with the proof.
          */
         post: operations["create_api_work_units_post"];
         delete?: never;
@@ -4319,10 +4318,10 @@ export interface paths {
         };
         /**
          * Dispute Bundle
-         * @description Il fascicolo di una giornata contestata (REB-759): un archivio ZIP con `summary.txt`
-         *     (la giornata, l'approvazione e l'estratto, lo storico, il registro del mese, la riga di
-         *     fattura) e, sotto `source/`, l'originale archiviato su cui poggia l'approvazione, byte
-         *     per byte. Aperto a ogni ruolo, come la pagina della giornata.
+         * @description The file of a disputed workday (REB-759): a ZIP archive with `summary.txt`
+         *     (the workday, the approval and the excerpt, the history, the month's register, the
+         *     invoice line) and, under `source/`, the archived original the approval rests on, byte
+         *     for byte. Open to every role, like the workday's page.
          */
         get: operations["dispute_bundle_api_work_units__work_unit_id__dispute_bundle_get"];
         put?: never;
@@ -4361,10 +4360,10 @@ export interface paths {
         put?: never;
         /**
          * Transition
-         * @description Sposta una giornata lungo il suo ciclo di vita, con una mossa che la sua pagina offrirebbe
-         *     (`actions` di `GET /api/work-units/{id}`): `approved` lo scrive la registrazione di
-         *     un'approvazione e `invoiced` la fattura, quindi qui rispondono 409 come ogni passaggio
-         *     che il ciclo di vita non ammette.
+         * @description Moves a workday along its lifecycle, with a move its page would offer
+         *     (`actions` of `GET /api/work-units/{id}`): `approved` is written by recording
+         *     an approval and `invoiced` by the invoice, so here they answer 409 like any transition
+         *     the lifecycle does not allow.
          */
         post: operations["transition_api_work_units__work_unit_id__transitions_post"];
         delete?: never;
@@ -4384,13 +4383,13 @@ export interface paths {
         put?: never;
         /**
          * Record
-         * @description Registra l'approvazione di un cliente e le giornate che copre, in una transazione:
-         *     la prova (un documento già archiviato, o un messaggio di posta già sincronizzato che
-         *     il servizio archivia come documento del contratto), l'approvazione, e il passaggio di
-         *     ogni giornata (`proposed` diventa `approved`, `worked_without_approval` torna
-         *     `worked`). Immutabile: una correzione è una nuova approvazione. Chiusa a ogni
-         *     credenziale di tipo agente: un agente propone una giornata (`propose_day`), una persona
-         *     registra l'approvazione.
+         * @description Records a client's approval and the workdays it covers, in one transaction:
+         *     the proof (an already archived document, or an already synced mail message that
+         *     the service archives as a contract document), the approval, and the transition of
+         *     every workday (`proposed` becomes `approved`, `worked_without_approval` goes back to
+         *     `worked`). Immutable: a correction is a new approval. Closed to every
+         *     agent-type credential: an agent proposes a workday (`propose_day`), a person
+         *     records the approval.
          */
         post: operations["record_api_approvals_post"];
         delete?: never;
@@ -4410,8 +4409,8 @@ export interface paths {
         put?: never;
         /**
          * Preview
-         * @description Il testo che la richiesta di approvazione porterebbe, per le date indicate: oggetto
-         *     e corpo, scritti e non salvati. Una lettura.
+         * @description The text the approval request would carry, for the given dates: subject
+         *     and body, written and not saved. A read.
          */
         post: operations["preview_api_contracts__contract_id__approval_request_preview_post"];
         delete?: never;
@@ -4431,10 +4430,10 @@ export interface paths {
         put?: never;
         /**
          * Prepare
-         * @description Registra le giornate chieste come `proposed` e salva il messaggio come bozza del
-         *     cliente, in una transazione. Non invia: l'invio è `POST /api/email-drafts/{id}/send`,
-         *     che una persona preme dopo aver letto la bozza. Una data in cui il contratto ha già
-         *     una giornata risponde 409. Chiusa a ogni credenziale di tipo agente.
+         * @description Records the requested workdays as `proposed` and saves the message as the
+         *     client's draft, in one transaction. It does not send: sending is `POST
+         *     /api/email-drafts/{id}/send`, which a person presses after reading the draft. A date on which
+         *     the contract already has a workday answers 409. Closed to every agent-type credential.
          */
         post: operations["prepare_api_contracts__contract_id__approval_request_post"];
         delete?: never;
@@ -4452,10 +4451,10 @@ export interface paths {
         };
         /**
          * List Reminders
-         * @description I promemoria di chi chiede, ricalcolati adesso dai dati: i più gravi per primi.
-         *     Quelli già chiusi o rimandati ci sono, con il loro `status`; sparisce solo ciò di cui
-         *     la causa è risolta. `limit` taglia la coda, cioè i meno gravi: il servizio li valuta
-         *     tutti, ma la risposta non cresce con loro.
+         * @description The caller's reminders, recomputed now from the data: most severe first.
+         *     Those already closed or snoozed are there, with their `status`; only what
+         *     is resolved disappears. `limit` cuts the tail, that is, the least severe: the service evaluates
+         *     them all, but the response does not grow with them.
          */
         get: operations["list_reminders_api_reminders_get"];
         put?: never;
@@ -4475,7 +4474,7 @@ export interface paths {
         };
         /**
          * List Types
-         * @description I tipi di promemoria di questo spazio, con le soglie predefinite.
+         * @description The reminder types of this space, with the default thresholds.
          */
         get: operations["list_types_api_reminders_types_get"];
         put?: never;
@@ -4495,8 +4494,8 @@ export interface paths {
         };
         /**
          * Read Preferences
-         * @description I valori dello spazio, i tuoi, e quello che ne risulta per te: la tua scelta, poi
-         *     il valore dello spazio, poi quello predefinito.
+         * @description The space's values, yours, and the result for you: your choice, then
+         *     the space's value, then the default.
          */
         get: operations["read_preferences_api_reminders_preferences_get"];
         put?: never;
@@ -4519,16 +4518,16 @@ export interface paths {
         post?: never;
         /**
          * Reset Preference
-         * @description La strada di ritorno al valore predefinito: cancella la tua scelta (o quella dello
-         *     spazio), così una modifica successiva del predefinito ti raggiunge ancora.
+         * @description The way back to the default value: deletes your choice (or the space's),
+         *     so that a later change of the default still reaches you.
          */
         delete: operations["reset_preference_api_reminders_preferences__scope___type_key__delete"];
         options?: never;
         head?: never;
         /**
          * Write Preference
-         * @description Imposta i campi indicati; un campo `null` torna al valore che eredita. Risponde
-         *     `null` quando non resta niente da sovrascrivere e la riga è sparita.
+         * @description Sets the given fields; a `null` field goes back to the value it inherits. Answers
+         *     `null` when nothing is left to override and the row is gone.
          */
         patch: operations["write_preference_api_reminders_preferences__scope___type_key__patch"];
         trace?: never;
@@ -4542,7 +4541,7 @@ export interface paths {
         };
         /**
          * My State
-         * @description Quello che hai chiuso o rimandato.
+         * @description What you have closed or snoozed.
          */
         get: operations["my_state_api_reminders_state_get"];
         put?: never;
@@ -4564,8 +4563,8 @@ export interface paths {
         put?: never;
         /**
          * Acknowledge
-         * @description Segna un promemoria come visto, alla gravità che hai visto. Vale per te e non lo
-         *     nasconde agli altri; torna a comparire se sale di gravità.
+         * @description Marks a reminder as seen, at the severity you saw. It applies to you and does not hide it
+         *     from others; it shows up again if its severity rises.
          */
         post: operations["acknowledge_api_reminders_acknowledge_post"];
         delete?: never;
@@ -4585,8 +4584,8 @@ export interface paths {
         put?: never;
         /**
          * Snooze
-         * @description Rimanda un promemoria a domani, al prossimo lunedì, fra una settimana o fra un
-         *     mese. Vale per te; torna a comparire se sale di gravità.
+         * @description Snoozes a reminder until tomorrow, next Monday, in a week or in a
+         *     month. It applies to you; it shows up again if its severity rises.
          */
         post: operations["snooze_api_reminders_snooze_post"];
         delete?: never;
@@ -4604,8 +4603,8 @@ export interface paths {
         };
         /**
          * Read Config
-         * @description Se questa installazione può mandare notifiche push, e la chiave con cui il browser
-         *     si iscrive.
+         * @description Whether this installation can send push notifications, and the key the browser
+         *     subscribes with.
          */
         get: operations["read_config_api_push_config_get"];
         put?: never;
@@ -4625,7 +4624,7 @@ export interface paths {
         };
         /**
          * My Subscriptions
-         * @description I browser su cui hai attivato le notifiche.
+         * @description The browsers on which you turned notifications on.
          */
         get: operations["my_subscriptions_api_push_subscriptions_get"];
         put?: never;
@@ -4647,8 +4646,8 @@ export interface paths {
         put?: never;
         /**
          * Subscribe
-         * @description Attiva le notifiche su questo browser. Se lo stesso browser era di un'altra
-         *     persona, da adesso è tuo.
+         * @description Turns notifications on for this browser. If the same browser belonged to another
+         *     person, it is yours from now on.
          */
         post: operations["subscribe_api_push_subscribe_post"];
         delete?: never;
@@ -4668,8 +4667,8 @@ export interface paths {
         put?: never;
         /**
          * Unsubscribe
-         * @description Toglie le notifiche da questo browser. Non c'è niente da togliere? Va bene lo
-         *     stesso.
+         * @description Turns notifications off for this browser. Nothing to turn off? That is fine
+         *     too.
          */
         post: operations["unsubscribe_api_push_unsubscribe_post"];
         delete?: never;
@@ -4687,9 +4686,9 @@ export interface paths {
         };
         /**
          * Describe
-         * @description Le operazioni che il cron lancia sul server (sincronizzazione Gmail, passaggio dei
-         *     promemoria, automazioni, riepilogo settimanale): per ciascuna l'ultimo giro finito,
-         *     l'ultimo tentativo fallito e se è in ritardo. Solo per gli amministratori.
+         * @description The operations the cron launches on the server (Gmail sync, reminder pass,
+         *     automations, weekly digest): for each, the last finished run,
+         *     the last failed attempt and whether it is late. Admins only.
          */
         get: operations["describe_api_scheduled_jobs_get"];
         put?: never;
@@ -4709,17 +4708,17 @@ export interface paths {
         };
         /**
          * List Notes
-         * @description Le note di un deal, di un cliente o di una persona, la più recente per prima. Ognuna
-         *     dice chi l'ha scritta, quando e da dove, e se chi chiede può modificarla. Un thread è
-         *     una manciata di osservazioni: `limit` è un tetto contro una lettura senza fine, e il
-         *     suo valore predefinito è il massimo, perché mezzo thread vale meno di uno intero.
+         * @description The notes of a deal, a client or a person, most recent first. Each one
+         *     says who wrote it, when and from where, and whether the caller can edit it. A thread is
+         *     a handful of remarks: `limit` is a cap against an endless read, and its
+         *     default is the maximum, because half a thread is worth less than a whole one.
          */
         get: operations["list_notes_api__collection___entity_id__notes_get"];
         put?: never;
         /**
          * Add Note
-         * @description Aggiunge una nota. Autore, data e origine li scrive il CRM: il corpo porta solo il
-         *     testo.
+         * @description Adds a note. Author, date and origin are written by the CRM: the body carries only the
+         *     text.
          */
         post: operations["add_note_api__collection___entity_id__notes_post"];
         delete?: never;
@@ -4740,15 +4739,15 @@ export interface paths {
         post?: never;
         /**
          * Delete Note
-         * @description Cancella una nota (resta nella cronologia): stesse regole della modifica.
+         * @description Deletes a note (it stays in the history): same rules as editing.
          */
         delete: operations["delete_note_api_notes__note_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Note
-         * @description Cambia il testo di una nota: la modifica chi l'ha scritta o un amministratore, e
-         *     mai una nota scritta dal sistema o da rebase.
+         * @description Changes a note's text: its author or an admin can edit it, and
+         *     never a note written by the system or by rebase.
          */
         patch: operations["update_note_api_notes__note_id__patch"];
         trace?: never;
@@ -4762,7 +4761,7 @@ export interface paths {
         };
         /**
          * List Revisions
-         * @description Cosa diceva la nota prima di ogni modifica, per intero, la più recente per prima.
+         * @description What the note said before each edit, in full, most recent first.
          */
         get: operations["list_revisions_api_notes__note_id__revisions_get"];
         put?: never;
@@ -4783,12 +4782,12 @@ export interface paths {
         get?: never;
         /**
          * File Lead
-         * @description Archivia nello spazio di rebase la richiesta di un'azienda dell'hub: cliente,
-         *     referente e un deal nuovo per ogni richiesta, sotto il bearer di
-         *     `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub possiede. Una seconda chiamata con lo
-         *     stesso `request_id` ritrova il deal e non scrive nulla; con `deal_id` la richiesta si
-         *     collega a un deal già presente e non si crea altro. Lo spazio è quello di
-         *     `PIGROCRM_LEADS_SPACE`, mai uno scelto da chi chiama.
+         * @description Archives in the rebase space the request of a hub company: client,
+         *     contact and a new deal for each request, under the bearer of
+         *     `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub holds. A second call with the
+         *     same `request_id` finds the deal and writes nothing; with `deal_id` the request is
+         *     linked to an existing deal and nothing else is created. The space is the one in
+         *     `PIGROCRM_LEADS_SPACE`, never one chosen by the caller.
          */
         put: operations["file_lead_api_rebase_leads__request_id__put"];
         post?: never;
@@ -4831,12 +4830,12 @@ export interface components {
         AcknowledgeRequest: {
             /**
              * Key
-             * @description `type:identificativo`, come lo restituisce l'elenco
+             * @description `type:identifier`, as the list returns it
              */
             key: string;
             /**
              * Severity
-             * @description La gravità che hai visto
+             * @description The severity you saw
              * @enum {string}
              */
             severity: "warning" | "serious" | "critical";
@@ -5049,7 +5048,7 @@ export interface components {
          *
          *     With two booleans, `None` and "not sent" must be distinguishable: `exclude_none` would
          *     make "switch A1 off without mentioning A2" indistinguishable from "switch A1 off and
-         *     A2 on". This is residuo A14's shape, avoided rather than inherited -- there is no
+         *     A2 on". This is the leftover shape of A14, avoided rather than inherited -- there is no
          *     nullable typed column here, so no spelling of "clear it" is needed at all.
          *
          *     `extra="forbid"`, because the only thing a misspelled key can do on a settings form is
@@ -5160,7 +5159,7 @@ export interface components {
             lines: components["schemas"]["BillableLine"][];
             /**
              * Months
-             * @description I mesi AAAA-MM che hanno giornate pronte
+             * @description The YYYY-MM months that have ready workdays
              */
             months: string[];
             /** Work Units */
@@ -5175,12 +5174,12 @@ export interface components {
             without_approval: number;
             /**
              * Block Reason
-             * @description Perché la bozza non si può creare da qui, quando non è questione di tariffe
+             * @description Why the draft cannot be created from here, when it is not a matter of rates
              */
             block_reason?: string | null;
             /**
              * Billable
-             * @description C'è almeno una riga e ogni giornata ha la sua tariffa
+             * @description There is at least one line and every workday has its rate
              */
             billable: boolean;
         };
@@ -5199,7 +5198,7 @@ export interface components {
             description: string;
             /**
              * Work Units
-             * @description Quante giornate copre la riga
+             * @description How many workdays the line covers
              */
             work_units: number;
             /** Quantity */
@@ -5369,12 +5368,12 @@ export interface components {
             costs: string;
             /**
              * Trend Stack
-             * @description Altezza della colonna dell'andamento come importo: incassato + costi passivi. Non e' un ricavo: i costi sono dentro.
+             * @description Height of the trend column as an amount: collected + passive costs. It is not revenue: the costs are inside.
              */
             trend_stack: string;
             /**
              * Projection Stack
-             * @description Altezza della colonna della proiezione come importo: incassato + da incassare + bozze/proforma + costi passivi. Non e' un ricavo: i costi sono dentro.
+             * @description Height of the projection column as an amount: collected + to collect + drafts/proformas + passive costs. It is not revenue: the costs are inside.
              */
             projection_stack: string;
             /** Trend Shares */
@@ -7634,7 +7633,7 @@ export interface components {
          * @description One file the send will attach, named the way the recipient will see it.
          *
          *     `filename` is built by the same function the send composes with
-         *     (`attach.attachment_filename`), so the name a person reads before pressing Invia is
+         *     (`attach.attachment_filename`), so the name a person reads before pressing «Invia» is
          *     the name that leaves. `None` means the version id no longer resolves to a file the
          *     send could attach -- the send would refuse it -- and the interface says so rather
          *     than printing an id nobody can read.
@@ -8193,7 +8192,7 @@ export interface components {
             social_security_rate: number | string | null;
             /**
              * Updated At
-             * @description L'`updated_at` letto sul profilo da cui parte questa modifica, `null` per un profilo non ancora salvato: se nel frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             * @description The `updated_at` read on the profile this change starts from, `null` for a profile not yet saved: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
         };
@@ -8803,7 +8802,7 @@ export interface components {
         };
         /**
          * InvoiceImportResult
-         * @description The imported fattura alongside the gaps still waiting for a declaration -- the
+         * @description The imported invoice alongside the gaps still waiting for a declaration -- the
          *     operator sees both in one round trip instead of importing blind and querying the
          *     register separately after every row.
          */
@@ -9141,7 +9140,7 @@ export interface components {
          * LeadRead
          * @description What the door filed for a request. `created` says whether this call wrote the deal
          *     (201) or found it by its marker, or linked an explicit one (200). `person_id` is
-         *     `None` only when a retry finds the deal and nobody with the referente's address any
+         *     `None` only when a retry finds the deal and nobody with the contact's address any
          *     more, or an explicit deal whose customer has no such person.
          */
         LeadRead: {
@@ -9397,7 +9396,7 @@ export interface components {
             tax_regime?: string | null;
             /**
              * Updated At
-             * @description L'`updated_at` letto sulla riga da cui parte questa modifica: se nel frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             * @description The `updated_at` read on the row this change starts from: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
         };
@@ -10245,7 +10244,7 @@ export interface components {
             } | null;
             /**
              * Detach
-             * @description Se true, rimuove il collegamento della persona al cliente attuale invece di assegnarne uno nuovo con customer_id.
+             * @description If true, removes the person's link to the current client instead of assigning a new one with customer_id.
              * @default false
              */
             detach: boolean;
@@ -10493,12 +10492,12 @@ export interface components {
         PushConfigRead: {
             /**
              * Enabled
-             * @description Questa installazione può mandare notifiche push
+             * @description This installation can send push notifications
              */
             enabled: boolean;
             /**
              * Public Key
-             * @description La chiave con cui il browser si iscrive
+             * @description The key the browser subscribes with
              */
             public_key: string | null;
         };
@@ -10526,7 +10525,7 @@ export interface components {
         PushSubscriptionWrite: {
             /**
              * Endpoint
-             * @description L'indirizzo del servizio push del browser
+             * @description The address of the browser's push service
              */
             endpoint: string;
             /**
@@ -10536,7 +10535,7 @@ export interface components {
             p256dh: string;
             /**
              * Auth
-             * @description Il segreto di autenticazione del browser, base64url
+             * @description The browser's authentication secret, base64url
              */
             auth: string;
         };
@@ -10554,7 +10553,7 @@ export interface components {
             enabled: boolean;
             /**
              * Start
-             * @description Inizio, HH:MM
+             * @description Start, HH:MM
              * @default 20:00
              */
             start: string;
@@ -10870,29 +10869,29 @@ export interface components {
         ReminderPreferenceWrite: {
             /**
              * Enabled
-             * @description Il tipo è attivo
+             * @description The type is active
              */
             enabled?: boolean | null;
             /**
              * Channels
-             * @description I canali oltre all'app, che è sempre attiva
+             * @description The channels besides the app, which is always on
              */
             channels?: ("in_app" | "push" | "slack" | "email")[] | null;
             /**
              * Ladder
-             * @description Le soglie, in giorni, ore, minuti o percentuale secondo il tipo
+             * @description The thresholds, in days, hours, minutes or percentage depending on the type
              */
             ladder?: {
                 [key: string]: number;
             } | null;
             /**
              * Urgent From
-             * @description Da quale gravità è urgente
+             * @description From which severity it is urgent
              */
             urgent_from?: ("warning" | "serious" | "critical") | null;
             /**
              * Email Mode
-             * @description `immediate` o `summary`; assente, decide l'urgenza
+             * @description `immediate` or `summary`; omitted, urgency decides
              */
             email_mode?: ("immediate" | "summary") | null;
             quiet_hours?: components["schemas"]["QuietHours"] | null;
@@ -10940,7 +10939,7 @@ export interface components {
             detail: string;
             /**
              * Entity
-             * @description Che cosa si apre: `attivita`, `deal`, `timer`, `invoice`, `proforma`, `contract`, `proposal`, `fiscal`, o un elemento dello spazio senza pagina
+             * @description What opens: `attivita`, `deal`, `timer`, `invoice`, `proforma`, `contract`, `proposal`, `fiscal`, or a space item without a page
              */
             entity: string;
             /**
@@ -11001,7 +11000,7 @@ export interface components {
             unit: "days" | "hours" | "minutes" | "percent";
             /**
              * Ladder
-             * @description Le soglie predefinite del tipo
+             * @description The type's default thresholds
              */
             ladder: {
                 [key: string]: number;
@@ -11211,48 +11210,48 @@ export interface components {
         ScheduledJobRead: {
             /**
              * Key
-             * @description Il nome del comando: `gmail-sync`, `reminders`, ...
+             * @description The command name: `gmail-sync`, `reminders`, ...
              */
             key: string;
             /**
              * Label
-             * @description Come si chiama nell'app
+             * @description What it is called in the app
              */
             label: string;
             /**
              * Command
-             * @description La riga che il cron lancia
+             * @description The line the cron launches
              */
             command: string;
             /**
              * Schedule
-             * @description Ogni quanto deve girare
+             * @description How often it must run
              */
             schedule: string;
             /**
              * State
-             * @description `ok`: l'ultimo giro è finito e non è vecchio. `failed`: l'ultimo tentativo è fallito (`failure` dice perché). `late`: nessun giro finito da troppo tempo. `never_run`: non ha mai girato in questo spazio. `not_configured`: non c'è niente da fare qui, per esempio nessuna casella Gmail collegata.
+             * @description `ok`: the last run finished and is not old. `failed`: the last attempt failed (`failure` says why). `late`: no run finished for too long. `never_run`: it has never run in this space. `not_configured`: nothing to do here, for example no Gmail mailbox linked.
              * @enum {string}
              */
             state: "ok" | "failed" | "late" | "never_run" | "not_configured";
             /**
              * Last Run At
-             * @description Quando l'ultimo giro è finito senza errori, `null` se non è mai successo
+             * @description When the last run finished without errors, `null` if it never has
              */
             last_run_at: string | null;
             /**
              * Last Failure At
-             * @description Quando è fallito l'ultimo tentativo, solo se è anche l'ultimo
+             * @description When the last attempt failed, only if it is also the last one
              */
             last_failure_at: string | null;
             /**
              * Failure
-             * @description Perché è fallito: una parola breve, per esempio il nome dell'errore, mai un testo che cita dati
+             * @description Why it failed: a short word, for example the name of the error, never a text that quotes data
              */
             failure: string | null;
             /**
              * Stale After Minutes
-             * @description Dopo quanti minuti senza un giro finito un'operazione risulta in ritardo
+             * @description After how many minutes without a finished run an operation counts as late
              */
             stale_after_minutes: number;
         };
@@ -11444,7 +11443,7 @@ export interface components {
             severity: "warning" | "serious" | "critical";
             /**
              * Until
-             * @description `tomorrow`, `next_monday`, `in_a_week` o `in_a_month`; mai una data libera
+             * @description `tomorrow`, `next_monday`, `in_a_week` or `in_a_month`; never a free-form date
              * @enum {string}
              */
             until: "tomorrow" | "next_monday" | "in_a_week" | "in_a_month";
@@ -11522,7 +11521,7 @@ export interface components {
             preferred_concentration_threshold?: number | null;
             /**
              * Updated At
-             * @description L'`updated_at` letto sulle impostazioni da cui parte questa modifica (`null` compreso): se nel frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             * @description The `updated_at` read on the settings this change starts from (`null` included): if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
         };
@@ -11642,7 +11641,7 @@ export interface components {
         };
         /**
          * TaskGroup
-         * @description One section of the Oggi panel: the first `limit` rows and how many there are in all.
+         * @description One section of the «Oggi» panel: the first `limit` rows and how many there are in all.
          */
         TaskGroup: {
             /** Total */
@@ -12207,7 +12206,7 @@ export interface components {
         Unsubscribe: {
             /**
              * Endpoint
-             * @description L'indirizzo del browser da togliere
+             * @description The browser's push endpoint address to remove
              */
             endpoint: string;
         };
@@ -12862,7 +12861,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Email o password non corrette, oppure l'utente è disattivato -- lo stesso messaggio identico in tutti e tre i casi, così la risposta stessa non rivela quale sia la causa reale. */
+            /** @description Wrong email or password, or the user is deactivated: the message is identical in all three cases, so the answer itself does not reveal the real cause. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -12873,7 +12872,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -12897,7 +12896,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -12921,7 +12920,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12945,7 +12944,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12970,7 +12969,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -13007,7 +13006,7 @@ export interface operations {
                     "application/json": components["schemas"]["Ack"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13031,7 +13030,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13055,7 +13054,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13079,7 +13078,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13104,7 +13103,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -13141,7 +13140,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Non autenticato: il cookie di sessione è assente, scaduto o non valido, oppure l'utente non è più attivo. Il client deve trattarlo come sessione terminata (ritentare /api/auth/refresh e poi reindirizzare al login), non come un errore da ripetere. */
+            /** @description Not authenticated: the session cookie is missing, expired or invalid, or the user is no longer active. The client must treat it as an ended session (try /api/auth/refresh, then redirect to the login), not as an error to retry. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -13152,7 +13151,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13176,7 +13175,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13200,7 +13199,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13224,7 +13223,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13249,7 +13248,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -13284,7 +13283,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationPeek"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13308,7 +13307,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Nessun invito porta questo link. */
+            /** @description No invitation carries this link. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13332,7 +13331,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13356,7 +13355,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description L'invito esiste ma è finito: scaduto, revocato o già usato. `code` distingue i tre casi (`invitation_expired`, `invitation_revoked`, `invitation_used`). */
+            /** @description The invitation exists but is over: expired, revoked or already used. `code` tells the three cases apart (`invitation_expired`, `invitation_revoked`, `invitation_used`). */
             410: {
                 headers: {
                     [name: string]: unknown;
@@ -13380,7 +13379,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13405,7 +13404,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -13442,7 +13441,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13466,7 +13465,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Nessun invito porta questo link. */
+            /** @description No invitation carries this link. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13490,7 +13489,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13514,7 +13513,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description L'invito esiste ma è finito: scaduto, revocato o già usato. `code` distingue i tre casi (`invitation_expired`, `invitation_revoked`, `invitation_used`). */
+            /** @description The invitation exists but is over: expired, revoked or already used. `code` tells the three cases apart (`invitation_expired`, `invitation_revoked`, `invitation_used`). */
             410: {
                 headers: {
                     [name: string]: unknown;
@@ -13538,7 +13537,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13563,7 +13562,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -13594,7 +13593,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13618,7 +13617,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13642,7 +13641,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13666,7 +13665,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13711,7 +13710,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Non autenticato: il cookie di sessione è assente, scaduto o non valido, oppure l'utente non è più attivo. Il client deve trattarlo come sessione terminata (ritentare /api/auth/refresh e poi reindirizzare al login), non come un errore da ripetere. */
+            /** @description Not authenticated: the session cookie is missing, expired or invalid, or the user is no longer active. The client must treat it as an ended session (try /api/auth/refresh, then redirect to the login), not as an error to retry. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -13722,7 +13721,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13746,7 +13745,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13770,7 +13769,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13794,7 +13793,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13819,7 +13818,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -13852,7 +13851,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Non autenticato: il cookie di sessione è assente, scaduto o non valido, oppure l'utente non è più attivo. Il client deve trattarlo come sessione terminata (ritentare /api/auth/refresh e poi reindirizzare al login), non come un errore da ripetere. */
+            /** @description Not authenticated: the session cookie is missing, expired or invalid, or the user is no longer active. The client must treat it as an ended session (try /api/auth/refresh, then redirect to the login), not as an error to retry. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -13863,7 +13862,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13887,7 +13886,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13911,7 +13910,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13935,7 +13934,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13984,7 +13983,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Non autenticato: il cookie di sessione è assente, scaduto o non valido, oppure l'utente non è più attivo. Il client deve trattarlo come sessione terminata (ritentare /api/auth/refresh e poi reindirizzare al login), non come un errore da ripetere. */
+            /** @description Not authenticated: the session cookie is missing, expired or invalid, or the user is no longer active. The client must treat it as an ended session (try /api/auth/refresh, then redirect to the login), not as an error to retry. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -13995,7 +13994,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14019,7 +14018,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14043,7 +14042,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14067,7 +14066,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14097,7 +14096,7 @@ export interface operations {
     list_customers_api_customers_get: {
         parameters: {
             query?: {
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                /** @description Filter on custom fields (JSONB), repeatable for several keys: */
                 custom?: string[] | null;
                 search?: string | null;
                 limit?: number;
@@ -14106,7 +14105,7 @@ export interface operations {
                 sort?: string | null;
                 dir?: "asc" | "desc";
                 status?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -14124,7 +14123,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14148,7 +14147,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14172,7 +14171,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14196,7 +14195,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14245,7 +14244,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14269,7 +14268,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14293,7 +14292,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14317,7 +14316,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14366,7 +14365,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14390,7 +14389,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14414,7 +14413,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14438,7 +14437,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14489,7 +14488,7 @@ export interface operations {
                     "application/json": components["schemas"]["PersonRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14513,7 +14512,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14537,7 +14536,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14561,7 +14560,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14608,7 +14607,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14632,7 +14631,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14656,7 +14655,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14680,7 +14679,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14725,7 +14724,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14749,7 +14748,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14773,7 +14772,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14797,7 +14796,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14848,7 +14847,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14872,7 +14871,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14896,7 +14895,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14920,7 +14919,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14967,7 +14966,7 @@ export interface operations {
                     "application/json": components["schemas"]["CustomerRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14991,7 +14990,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15015,7 +15014,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15039,7 +15038,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15088,7 +15087,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15112,7 +15111,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15136,7 +15135,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15160,7 +15159,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15190,7 +15189,7 @@ export interface operations {
     list_people_api_people_get: {
         parameters: {
             query?: {
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                /** @description Filter on custom fields (JSONB), repeatable for several keys: */
                 custom?: string[] | null;
                 search?: string | null;
                 limit?: number;
@@ -15215,7 +15214,7 @@ export interface operations {
                     "application/json": components["schemas"]["PersonPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15239,7 +15238,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15263,7 +15262,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15287,7 +15286,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15336,7 +15335,7 @@ export interface operations {
                     "application/json": components["schemas"]["PersonRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15360,7 +15359,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15384,7 +15383,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15408,7 +15407,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15455,7 +15454,7 @@ export interface operations {
                     "application/json": components["schemas"]["PersonRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15479,7 +15478,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15503,7 +15502,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15527,7 +15526,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15572,7 +15571,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15596,7 +15595,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15620,7 +15619,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15644,7 +15643,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15695,7 +15694,7 @@ export interface operations {
                     "application/json": components["schemas"]["PersonRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15719,7 +15718,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15743,7 +15742,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15767,7 +15766,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15814,7 +15813,7 @@ export interface operations {
                     "application/json": components["schemas"]["PersonRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15838,7 +15837,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15862,7 +15861,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15886,7 +15885,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15935,7 +15934,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -15959,7 +15958,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15983,7 +15982,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16007,7 +16006,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16037,7 +16036,7 @@ export interface operations {
     list_deals_api_deals_get: {
         parameters: {
             query?: {
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                /** @description Filter on custom fields (JSONB), repeatable for several keys: */
                 custom?: string[] | null;
                 search?: string | null;
                 limit?: number;
@@ -16047,7 +16046,7 @@ export interface operations {
                 dir?: "asc" | "desc";
                 customer_id?: string | null;
                 stage_id?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
                 invoiced_unwon?: boolean;
                 to_invoice?: boolean;
@@ -16067,7 +16066,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16091,7 +16090,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16115,7 +16114,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16139,7 +16138,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16188,7 +16187,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16212,7 +16211,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16236,7 +16235,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16260,7 +16259,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16307,7 +16306,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16331,7 +16330,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16355,7 +16354,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16379,7 +16378,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16424,7 +16423,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16448,7 +16447,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16472,7 +16471,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16496,7 +16495,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16547,7 +16546,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16571,7 +16570,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16595,7 +16594,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16619,7 +16618,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16670,7 +16669,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16694,7 +16693,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16718,7 +16717,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16742,7 +16741,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16789,7 +16788,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16813,7 +16812,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16837,7 +16836,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16861,7 +16860,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16910,7 +16909,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -16934,7 +16933,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16958,7 +16957,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16982,7 +16981,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17034,7 +17033,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17058,7 +17057,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17082,7 +17081,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17106,7 +17105,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17153,7 +17152,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealTimeSummary"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17177,7 +17176,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17201,7 +17200,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17225,7 +17224,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17274,7 +17273,7 @@ export interface operations {
                     "application/json": components["schemas"]["RateDescription"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17298,7 +17297,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17322,7 +17321,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17346,7 +17345,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17395,7 +17394,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17419,7 +17418,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17443,7 +17442,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17467,7 +17466,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17518,7 +17517,7 @@ export interface operations {
                     "application/json": components["schemas"]["RecalculateResponse"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17542,7 +17541,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17566,7 +17565,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17590,7 +17589,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17620,7 +17619,7 @@ export interface operations {
     time_report_xlsx_api_deals__deal_id__time_report_get: {
         parameters: {
             query: {
-                /** @description Periodo nella forma AAAA-MM */
+                /** @description Period in the form YYYY-MM */
                 month: string;
             };
             header?: never;
@@ -17640,7 +17639,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17664,7 +17663,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17688,7 +17687,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17712,7 +17711,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17742,7 +17741,7 @@ export interface operations {
     render_time_report_pdf_api_deals__deal_id__time_report_pdf_post: {
         parameters: {
             query: {
-                /** @description Periodo nella forma AAAA-MM */
+                /** @description Period in the form YYYY-MM */
                 month: string;
             };
             header?: never;
@@ -17762,7 +17761,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17786,7 +17785,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17810,7 +17809,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17834,7 +17833,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17881,7 +17880,7 @@ export interface operations {
                     "application/json": components["schemas"]["DealPnl"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17905,7 +17904,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -17929,7 +17928,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17953,7 +17952,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -17983,9 +17982,9 @@ export interface operations {
     deal_budget_api_deals__deal_id__budget_get: {
         parameters: {
             query: {
-                /** @description Inizio del periodo, YYYY-MM-DD */
+                /** @description Start of the period, YYYY-MM-DD */
                 from: string;
-                /** @description Fine del periodo, YYYY-MM-DD */
+                /** @description End of the period, YYYY-MM-DD */
                 to: string;
             };
             header?: never;
@@ -18005,7 +18004,7 @@ export interface operations {
                     "application/json": components["schemas"]["BudgetVsActualRow"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18029,7 +18028,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18053,7 +18052,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18077,7 +18076,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18128,7 +18127,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18152,7 +18151,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18176,7 +18175,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18200,7 +18199,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18248,7 +18247,7 @@ export interface operations {
                     "application/json": components["schemas"]["FieldDefinitionRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18272,7 +18271,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18296,7 +18295,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18320,7 +18319,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18369,7 +18368,7 @@ export interface operations {
                     "application/json": components["schemas"]["FieldDefinitionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18393,7 +18392,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18417,7 +18416,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18441,7 +18440,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18492,7 +18491,7 @@ export interface operations {
                     "application/json": components["schemas"]["FieldDefinitionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18516,7 +18515,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18540,7 +18539,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18564,7 +18563,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18611,7 +18610,7 @@ export interface operations {
                     "application/json": components["schemas"]["FieldDefinitionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18635,7 +18634,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18659,7 +18658,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18683,7 +18682,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18730,7 +18729,7 @@ export interface operations {
                     "application/json": components["schemas"]["FieldDefinitionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18754,7 +18753,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18778,7 +18777,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18802,7 +18801,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18851,7 +18850,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18875,7 +18874,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -18899,7 +18898,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18923,7 +18922,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -18968,7 +18967,7 @@ export interface operations {
                     "application/json": components["schemas"]["PipelineStageRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18992,7 +18991,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19016,7 +19015,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19040,7 +19039,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19089,7 +19088,7 @@ export interface operations {
                     "application/json": components["schemas"]["PipelineStageRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19113,7 +19112,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19137,7 +19136,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19161,7 +19160,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19206,7 +19205,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19230,7 +19229,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19254,7 +19253,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19278,7 +19277,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19329,7 +19328,7 @@ export interface operations {
                     "application/json": components["schemas"]["PipelineStageRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19353,7 +19352,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19377,7 +19376,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19401,7 +19400,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19446,7 +19445,7 @@ export interface operations {
                     "application/json": components["schemas"]["PipelineStageRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19470,7 +19469,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19494,7 +19493,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19518,7 +19517,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19567,7 +19566,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19591,7 +19590,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19615,7 +19614,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19639,7 +19638,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19684,7 +19683,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19708,7 +19707,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19732,7 +19731,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19756,7 +19755,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19805,7 +19804,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19829,7 +19828,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19853,7 +19852,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19877,7 +19876,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19922,7 +19921,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemberRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19946,7 +19945,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -19970,7 +19969,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -19994,7 +19993,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20039,7 +20038,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20063,7 +20062,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20087,7 +20086,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20111,7 +20110,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20160,7 +20159,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20184,7 +20183,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20208,7 +20207,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20232,7 +20231,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20279,7 +20278,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20303,7 +20302,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20327,7 +20326,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20351,7 +20350,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20396,7 +20395,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20420,7 +20419,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20444,7 +20443,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20468,7 +20467,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20519,7 +20518,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20543,7 +20542,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20567,7 +20566,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20591,7 +20590,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20640,7 +20639,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20664,7 +20663,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20688,7 +20687,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20712,7 +20711,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20761,7 +20760,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20785,7 +20784,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20809,7 +20808,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20833,7 +20832,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20878,7 +20877,7 @@ export interface operations {
                     "application/json": components["schemas"]["PatRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20902,7 +20901,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20926,7 +20925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20950,7 +20949,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -20999,7 +20998,7 @@ export interface operations {
                     "application/json": components["schemas"]["CreatedToken"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21023,7 +21022,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21047,7 +21046,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21071,7 +21070,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21116,7 +21115,7 @@ export interface operations {
                     "application/json": components["schemas"]["TokenOptions"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21140,7 +21139,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21164,7 +21163,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21188,7 +21187,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21233,7 +21232,7 @@ export interface operations {
                     "application/json": components["schemas"]["TeamPatRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21257,7 +21256,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21281,7 +21280,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21305,7 +21304,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21350,7 +21349,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21374,7 +21373,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21398,7 +21397,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21422,7 +21421,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21473,7 +21472,7 @@ export interface operations {
                     "application/json": components["schemas"]["PatRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21497,7 +21496,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21521,7 +21520,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21545,7 +21544,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21592,7 +21591,7 @@ export interface operations {
                     "application/json": components["schemas"]["EntitySchema"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21616,7 +21615,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21640,7 +21639,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21664,7 +21663,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21696,7 +21695,7 @@ export interface operations {
             query: {
                 q: string;
                 limit?: number;
-                /** @description Solo i risultati di questa azienda; omesso, tutti */
+                /** @description Only this legal entity's results; omitted, all */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -21714,7 +21713,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchResults"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21738,7 +21737,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21762,7 +21761,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21786,7 +21785,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21825,7 +21824,7 @@ export interface operations {
                 customer_id?: string | null;
                 deal_id?: string | null;
                 contract_id?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
                 type?: ("offer" | "contract" | "minutes" | "document" | "invoice" | "invoice_xml" | "proforma" | "hours_report") | null;
                 status?: ("draft" | "sent" | "accepted" | "rejected") | null;
@@ -21846,7 +21845,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21870,7 +21869,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -21894,7 +21893,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -21918,7 +21917,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -21967,7 +21966,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -21991,7 +21990,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22015,7 +22014,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22039,7 +22038,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22088,7 +22087,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22112,7 +22111,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22136,7 +22135,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22160,7 +22159,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22207,7 +22206,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22231,7 +22230,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22255,7 +22254,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22279,7 +22278,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22324,7 +22323,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22348,7 +22347,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22372,7 +22371,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22396,7 +22395,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22447,7 +22446,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22471,7 +22470,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22495,7 +22494,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22519,7 +22518,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22566,7 +22565,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22590,7 +22589,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22614,7 +22613,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22638,7 +22637,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22689,7 +22688,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22713,7 +22712,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22737,7 +22736,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22761,7 +22760,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22808,7 +22807,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentVersionRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22832,7 +22831,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22856,7 +22855,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -22880,7 +22879,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -22937,7 +22936,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentVersionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -22961,7 +22960,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22985,7 +22984,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23009,7 +23008,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23057,7 +23056,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentVersionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23081,7 +23080,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23105,7 +23104,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23129,7 +23128,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23178,7 +23177,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23202,7 +23201,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23226,7 +23225,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23250,7 +23249,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23299,7 +23298,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentTextRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23323,7 +23322,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23347,7 +23346,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23371,7 +23370,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23420,7 +23419,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23444,7 +23443,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23468,7 +23467,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23492,7 +23491,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23543,7 +23542,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplatePage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23567,7 +23566,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23591,7 +23590,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23615,7 +23614,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23664,7 +23663,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23688,7 +23687,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23712,7 +23711,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23736,7 +23735,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23783,7 +23782,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23807,7 +23806,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23831,7 +23830,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23855,7 +23854,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -23902,7 +23901,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -23926,7 +23925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -23950,7 +23949,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -23974,7 +23973,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24025,7 +24024,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24049,7 +24048,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24073,7 +24072,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24097,7 +24096,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24144,7 +24143,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24168,7 +24167,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24192,7 +24191,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24216,7 +24215,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24263,7 +24262,7 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateDescription"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24287,7 +24286,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24311,7 +24310,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24335,7 +24334,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24386,7 +24385,7 @@ export interface operations {
                     "application/json": components["schemas"]["PreviewResult"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24410,7 +24409,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24434,7 +24433,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24458,7 +24457,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24492,7 +24491,7 @@ export interface operations {
                 cursor?: string | null;
                 customer_id?: string | null;
                 deal_id?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
                 type?: ("invoice" | "proforma") | null;
                 status?: ("draft" | "issued" | "cancelled" | "confirmed" | "consumed") | null;
@@ -24517,7 +24516,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoicePage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24541,7 +24540,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24565,7 +24564,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24589,7 +24588,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24638,7 +24637,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24662,7 +24661,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24686,7 +24685,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24710,7 +24709,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24761,7 +24760,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceImportResult"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24785,7 +24784,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24809,7 +24808,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24833,7 +24832,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24882,7 +24881,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceReviewResult"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -24906,7 +24905,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -24930,7 +24929,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -24954,7 +24953,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25003,7 +25002,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceConfirmResult"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25027,7 +25026,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25051,7 +25050,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25075,7 +25074,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25129,7 +25128,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadedInvoiceReviewResult"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25153,7 +25152,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25177,7 +25176,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25201,7 +25200,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25255,7 +25254,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadedInvoiceConfirmResult"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25279,7 +25278,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25303,7 +25302,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25327,7 +25326,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25376,7 +25375,7 @@ export interface operations {
                     "application/json": components["schemas"]["RegisterGapRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25400,7 +25399,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25424,7 +25423,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25448,7 +25447,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25501,7 +25500,7 @@ export interface operations {
                     "application/json": components["schemas"]["RegisterGapRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25525,7 +25524,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25549,7 +25548,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25573,7 +25572,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25620,7 +25619,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25644,7 +25643,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25668,7 +25667,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25692,7 +25691,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25737,7 +25736,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25761,7 +25760,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25785,7 +25784,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25809,7 +25808,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25860,7 +25859,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25884,7 +25883,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25908,7 +25907,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25932,7 +25931,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -25979,7 +25978,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceLineRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26003,7 +26002,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26027,7 +26026,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26051,7 +26050,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26102,7 +26101,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26126,7 +26125,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26150,7 +26149,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26174,7 +26173,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26221,7 +26220,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26245,7 +26244,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26269,7 +26268,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26293,7 +26292,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26344,7 +26343,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26368,7 +26367,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26392,7 +26391,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26416,7 +26415,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26467,7 +26466,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26491,7 +26490,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26515,7 +26514,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26539,7 +26538,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26590,7 +26589,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26614,7 +26613,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26638,7 +26637,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26662,7 +26661,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26713,7 +26712,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26737,7 +26736,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26761,7 +26760,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26785,7 +26784,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26832,7 +26831,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceArtifact"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26856,7 +26855,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26880,7 +26879,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -26904,7 +26903,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -26951,7 +26950,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -26975,7 +26974,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -26999,7 +26998,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27023,7 +27022,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27070,7 +27069,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27094,7 +27093,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27118,7 +27117,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27142,7 +27141,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27191,7 +27190,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27215,7 +27214,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27239,7 +27238,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27263,7 +27262,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27293,12 +27292,12 @@ export interface operations {
     list_time_entries_api_time_entries_get: {
         parameters: {
             query?: {
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                /** @description Filter on custom fields (JSONB), repeatable for several keys: */
                 custom?: string[] | null;
                 limit?: number;
                 cursor?: string | null;
                 deal_id?: string | null;
-                /** @description Solo le ore sui deal di questa azienda; omesso, tutte */
+                /** @description Only the hours on this legal entity's deals; omitted, all */
                 legal_entity_id?: string | null;
                 user_id?: string | null;
                 /** @description Data minima, YYYY-MM-DD */
@@ -27306,7 +27305,7 @@ export interface operations {
                 /** @description Data massima, YYYY-MM-DD */
                 to?: string | null;
                 billable?: boolean | null;
-                /** @description true = già su una riga di fattura; false = da fatturare */
+                /** @description true = already on an invoice line; false = still to invoice */
                 invoiced?: boolean | null;
             };
             header?: never;
@@ -27324,7 +27323,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27348,7 +27347,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27372,7 +27371,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27396,7 +27395,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27445,7 +27444,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27469,7 +27468,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27493,7 +27492,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27517,7 +27516,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27562,7 +27561,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimerRead"] | null;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27586,7 +27585,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27610,7 +27609,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27634,7 +27633,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27677,7 +27676,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27701,7 +27700,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27725,7 +27724,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27749,7 +27748,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27798,7 +27797,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimerRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27822,7 +27821,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27846,7 +27845,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27870,7 +27869,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27919,7 +27918,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimerRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -27943,7 +27942,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -27967,7 +27966,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -27991,7 +27990,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28040,7 +28039,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28064,7 +28063,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28088,7 +28087,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28112,7 +28111,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28159,7 +28158,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28183,7 +28182,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28207,7 +28206,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28231,7 +28230,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28276,7 +28275,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28300,7 +28299,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28324,7 +28323,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28348,7 +28347,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28399,7 +28398,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28423,7 +28422,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28447,7 +28446,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28471,7 +28470,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28518,7 +28517,7 @@ export interface operations {
                     "application/json": components["schemas"]["TimeEntryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28542,7 +28541,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28566,7 +28565,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28590,7 +28589,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28620,14 +28619,14 @@ export interface operations {
     list_costs_api_costs_get: {
         parameters: {
             query?: {
-                /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
+                /** @description Filter on custom fields (JSONB), repeatable for several keys: */
                 custom?: string[] | null;
                 limit?: number;
                 cursor?: string | null;
                 deal_id?: string | null;
-                /** @description Solo i costi di questa azienda; omesso, tutti, i generali compresi */
+                /** @description Only this legal entity's costs; omitted, all, general ones included */
                 legal_entity_id?: string | null;
-                /** @description Solo spese generali, cioè senza deal (§7.4) */
+                /** @description Only general expenses, that is, without a deal (§7.4) */
                 only_general?: boolean;
                 category_id?: string | null;
                 from?: string | null;
@@ -28648,7 +28647,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28672,7 +28671,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28696,7 +28695,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28720,7 +28719,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28769,7 +28768,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28793,7 +28792,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28817,7 +28816,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28841,7 +28840,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28888,7 +28887,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -28912,7 +28911,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -28936,7 +28935,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -28960,7 +28959,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29005,7 +29004,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29029,7 +29028,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29053,7 +29052,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29077,7 +29076,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29128,7 +29127,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29152,7 +29151,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29176,7 +29175,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29200,7 +29199,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29247,7 +29246,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29271,7 +29270,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29295,7 +29294,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29319,7 +29318,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29366,7 +29365,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostCategoryRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29390,7 +29389,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29414,7 +29413,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29438,7 +29437,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29487,7 +29486,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostCategoryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29511,7 +29510,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29535,7 +29534,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29559,7 +29558,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29604,7 +29603,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostCategoryRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29628,7 +29627,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29652,7 +29651,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29676,7 +29675,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29727,7 +29726,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostCategoryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29751,7 +29750,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29775,7 +29774,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29799,7 +29798,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29846,7 +29845,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostCategoryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29870,7 +29869,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29894,7 +29893,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -29918,7 +29917,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29965,7 +29964,7 @@ export interface operations {
                     "application/json": components["schemas"]["CostCategoryRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -29989,7 +29988,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30013,7 +30012,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30037,7 +30036,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30084,7 +30083,7 @@ export interface operations {
                     "application/json": components["schemas"]["PeriodLockRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30108,7 +30107,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30132,7 +30131,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30156,7 +30155,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30205,7 +30204,7 @@ export interface operations {
                     "application/json": components["schemas"]["PeriodLockRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30229,7 +30228,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30253,7 +30252,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30277,7 +30276,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30323,7 +30322,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30347,7 +30346,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30371,7 +30370,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30395,7 +30394,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30425,14 +30424,14 @@ export interface operations {
     period_pnl_api_analytics_pnl_get: {
         parameters: {
             query: {
-                /** @description Inizio del periodo, YYYY-MM-DD */
+                /** @description Start of the period, YYYY-MM-DD */
                 from: string;
-                /** @description Fine del periodo, YYYY-MM-DD */
+                /** @description End of the period, YYYY-MM-DD */
                 to: string;
                 customer_id?: string | null;
-                /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits the figures to one legal entity of the space; omitted, all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
-                /** @description Quale data colloca il ricavo di una fattura nel periodo: 'issue' (la data del documento, predefinita) oppure 'accrual' (il periodo di competenza dichiarato sulla fattura, con la data di emissione per chi non lo dichiara). Costi e ore restano attribuiti alla propria data. */
+                /** @description Which date places an invoice's revenue in the period: 'issue' (the document date, the default) or 'accrual' (the accrual period declared on the invoice, with the issue date for invoices that do not declare one). Costs and hours stay attributed to their own date. */
                 base?: "issue" | "accrual";
             };
             header?: never;
@@ -30450,7 +30449,7 @@ export interface operations {
                     "application/json": components["schemas"]["PeriodPnl"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30474,7 +30473,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30498,7 +30497,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30522,7 +30521,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30554,9 +30553,9 @@ export interface operations {
             query: {
                 limit?: number;
                 cursor?: string | null;
-                /** @description Inizio del periodo, YYYY-MM-DD */
+                /** @description Start of the period, YYYY-MM-DD */
                 from: string;
-                /** @description Fine del periodo, YYYY-MM-DD */
+                /** @description End of the period, YYYY-MM-DD */
                 to: string;
                 customer_id?: string | null;
             };
@@ -30575,7 +30574,7 @@ export interface operations {
                     "application/json": components["schemas"]["BudgetPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30599,7 +30598,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30623,7 +30622,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30647,7 +30646,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30678,9 +30677,9 @@ export interface operations {
         parameters: {
             query: {
                 year: number;
-                /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits the figures to one legal entity of the space; omitted, all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
-                /** @description In quale mese cade il denaro di ogni documento: 'accrual' (il periodo di competenza dichiarato sulla fattura o sulla proforma, con la data del documento per chi non lo dichiara; predefinito) oppure 'collection' (la data di incasso per le fatture pagate, la scadenza per quelle da incassare, la data del documento, o di creazione, per bozze e proforma). La stima fiscale resta sempre sull'incassato dell'anno. */
+                /** @description In which month each document's money falls: 'accrual' (the accrual period declared on the invoice or proforma, with the document date for those that do not declare one; the default) or 'collection' (the collection date for paid invoices, the due date for those still to be collected, the document or creation date for drafts and proformas). The fiscal estimate always stays on the year's collected amount. */
                 base?: "accrual" | "collection";
             };
             header?: never;
@@ -30698,7 +30697,7 @@ export interface operations {
                     "application/json": components["schemas"]["EconomicOverview"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30722,7 +30721,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30746,7 +30745,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30770,7 +30769,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30801,7 +30800,7 @@ export interface operations {
         parameters: {
             query: {
                 year: number;
-                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere. */
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -30819,7 +30818,7 @@ export interface operations {
                     "application/json": components["schemas"]["FiscalEstimate"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30843,7 +30842,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30867,7 +30866,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30891,7 +30890,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -30936,7 +30935,7 @@ export interface operations {
                     "application/json": components["schemas"]["UnbilledBacklog"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -30960,7 +30959,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30984,7 +30983,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31008,7 +31007,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31039,7 +31038,7 @@ export interface operations {
         parameters: {
             query: {
                 year: number;
-                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere. */
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -31057,7 +31056,7 @@ export interface operations {
                     "application/json": components["schemas"]["CeilingHeadroom"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31081,7 +31080,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31105,7 +31104,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31129,7 +31128,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31163,11 +31162,11 @@ export interface operations {
                 budgeted_hours?: number | string | null;
                 budgeted_value?: number | string | null;
                 hourly_rate?: number | string | null;
-                /** @description Un contratto con un tetto sulla quota del cliente (REB-761): la stessa aggiunta è letta anche contro il suo tetto, sull'anno di anniversario del contratto che contiene `expected_date`, in `contract_cap`. */
+                /** @description A contract with a cap on the client's share (REB-761): the same addition is also read against its cap, over the contract anniversary year that contains `expected_date`, in `contract_cap`. */
                 contract_id?: string | null;
-                /** @description Il giorno in cui arriva il ricavo, YYYY-MM-DD; assente, oggi. */
+                /** @description The day the revenue arrives, YYYY-MM-DD; omitted, today. */
                 expected_date?: string | null;
-                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere. */
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -31185,7 +31184,7 @@ export interface operations {
                     "application/json": components["schemas"]["CeilingSimulation"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31209,7 +31208,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31233,7 +31232,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31257,7 +31256,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31287,11 +31286,11 @@ export interface operations {
     days_analysis_api_analytics_days_get: {
         parameters: {
             query?: {
-                /** @description Inizio del periodo, YYYY-MM-DD */
+                /** @description Start of the period, YYYY-MM-DD */
                 from?: string | null;
-                /** @description Fine del periodo, YYYY-MM-DD */
+                /** @description End of the period, YYYY-MM-DD */
                 to?: string | null;
-                /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits the figures to one legal entity of the space; omitted, all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -31309,7 +31308,7 @@ export interface operations {
                     "application/json": components["schemas"]["DaysAnalysis"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31333,7 +31332,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31357,7 +31356,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31381,7 +31380,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31412,7 +31411,7 @@ export interface operations {
         parameters: {
             query: {
                 year: number;
-                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere. */
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -31430,7 +31429,7 @@ export interface operations {
                     "application/json": components["schemas"]["YearOverview"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31454,7 +31453,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31478,7 +31477,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31502,7 +31501,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31533,7 +31532,7 @@ export interface operations {
         parameters: {
             query: {
                 year: number;
-                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere. */
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -31542,7 +31541,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Il CSV dell'anno */
+            /** @description The year as CSV */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -31551,7 +31550,7 @@ export interface operations {
                     "text/csv": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31575,7 +31574,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31599,7 +31598,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31623,7 +31622,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31670,7 +31669,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31694,7 +31693,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31718,7 +31717,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31742,7 +31741,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31791,7 +31790,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31815,7 +31814,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31839,7 +31838,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31863,7 +31862,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -31893,7 +31892,7 @@ export interface operations {
     suggest_legal_entity_api_legal_entities_suggestion_get: {
         parameters: {
             query?: {
-                /** @description Nazione del cliente, ISO 3166-1 alpha-2; omessa, IT */
+                /** @description The client's country, ISO 3166-1 alpha-2; omitted, IT */
                 country?: string | null;
             };
             header?: never;
@@ -31911,7 +31910,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -31935,7 +31934,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -31959,7 +31958,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -31983,7 +31982,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32030,7 +32029,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32054,7 +32053,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32078,7 +32077,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32102,7 +32101,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32153,7 +32152,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32177,7 +32176,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32201,7 +32200,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32225,7 +32224,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32272,7 +32271,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityDeactivated"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32296,7 +32295,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32320,7 +32319,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32344,7 +32343,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32391,7 +32390,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32415,7 +32414,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32439,7 +32438,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32463,7 +32462,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32510,7 +32509,7 @@ export interface operations {
                     "application/json": components["schemas"]["FiscalProfileRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32534,7 +32533,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32558,7 +32557,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32582,7 +32581,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32633,7 +32632,7 @@ export interface operations {
                     "application/json": components["schemas"]["FiscalProfileRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32657,7 +32656,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32681,7 +32680,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32705,7 +32704,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32753,7 +32752,7 @@ export interface operations {
                     "image/svg+xml": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32777,7 +32776,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32801,7 +32800,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32825,7 +32824,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -32882,7 +32881,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -32906,7 +32905,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -32930,7 +32929,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -32954,7 +32953,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33001,7 +33000,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33025,7 +33024,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33049,7 +33048,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33073,7 +33072,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33120,7 +33119,7 @@ export interface operations {
                     "image/png": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33144,7 +33143,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33168,7 +33167,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33192,7 +33191,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33249,7 +33248,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33273,7 +33272,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33297,7 +33296,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33321,7 +33320,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33368,7 +33367,7 @@ export interface operations {
                     "application/json": components["schemas"]["LegalEntityRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33392,7 +33391,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33416,7 +33415,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33440,7 +33439,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33489,7 +33488,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33513,7 +33512,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33537,7 +33536,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33561,7 +33560,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33606,7 +33605,7 @@ export interface operations {
                     "application/json": components["schemas"]["GmailHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33630,7 +33629,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33654,7 +33653,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33678,7 +33677,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33723,7 +33722,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33747,7 +33746,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33771,7 +33770,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33795,7 +33794,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33844,7 +33843,7 @@ export interface operations {
                     "application/json": components["schemas"]["GoogleAccountRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33868,7 +33867,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -33892,7 +33891,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -33916,7 +33915,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -33961,7 +33960,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -33985,7 +33984,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34009,7 +34008,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34033,7 +34032,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34078,7 +34077,7 @@ export interface operations {
                     "application/json": components["schemas"]["SyncReport"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34102,7 +34101,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34126,7 +34125,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34150,7 +34149,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34199,7 +34198,7 @@ export interface operations {
                     "application/json": components["schemas"]["SyncReport"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34223,7 +34222,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34247,7 +34246,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34271,7 +34270,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34318,7 +34317,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestedCustomer"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34342,7 +34341,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34366,7 +34365,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34390,7 +34389,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34437,7 +34436,7 @@ export interface operations {
                     "application/json": components["schemas"]["DiscoveryReport"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34461,7 +34460,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34485,7 +34484,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34509,7 +34508,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34542,7 +34541,7 @@ export interface operations {
                 entity_type: "customer" | "person" | "deal";
                 entity_id: string;
                 limit?: number;
-                /** @description `conversations`: per conversazione, come la pagina di un cliente; `recent`: dal più recente, perché il limite tagli i più vecchi */
+                /** @description `conversations`: grouped by conversation, like a client's page; `recent`: most recent first, so that the limit cuts the oldest */
                 order?: "conversations" | "recent";
             };
             header?: never;
@@ -34560,7 +34559,7 @@ export interface operations {
                     "application/json": components["schemas"]["GmailMessageRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34584,7 +34583,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34608,7 +34607,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34632,7 +34631,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34681,7 +34680,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34705,7 +34704,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34729,7 +34728,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34753,7 +34752,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34798,7 +34797,7 @@ export interface operations {
                     "application/json": components["schemas"]["DriveHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34822,7 +34821,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34846,7 +34845,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34870,7 +34869,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -34913,7 +34912,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -34937,7 +34936,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -34961,7 +34960,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -34985,7 +34984,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35030,7 +35029,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35054,7 +35053,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35078,7 +35077,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35102,7 +35101,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35151,7 +35150,7 @@ export interface operations {
                     "application/json": components["schemas"]["GoogleDriveAccountRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35175,7 +35174,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35199,7 +35198,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35223,7 +35222,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35272,7 +35271,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35296,7 +35295,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35320,7 +35319,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35344,7 +35343,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35389,7 +35388,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35413,7 +35412,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35437,7 +35436,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35461,7 +35460,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35504,7 +35503,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35528,7 +35527,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35552,7 +35551,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35576,7 +35575,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35621,7 +35620,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackMine"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35645,7 +35644,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35669,7 +35668,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35693,7 +35692,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35738,7 +35737,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35762,7 +35761,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35786,7 +35785,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35810,7 +35809,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35855,7 +35854,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -35879,7 +35878,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -35903,7 +35902,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -35927,7 +35926,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -35978,7 +35977,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36002,7 +36001,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36026,7 +36025,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36050,7 +36049,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36097,7 +36096,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36121,7 +36120,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36145,7 +36144,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36169,7 +36168,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36214,7 +36213,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackChannelRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36238,7 +36237,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36262,7 +36261,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36286,7 +36285,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36335,7 +36334,7 @@ export interface operations {
                     "application/json": components["schemas"]["SlackHealth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36359,7 +36358,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36383,7 +36382,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36407,7 +36406,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36458,7 +36457,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36482,7 +36481,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36506,7 +36505,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36530,7 +36529,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36579,7 +36578,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36603,7 +36602,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36627,7 +36626,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36651,7 +36650,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36698,7 +36697,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36722,7 +36721,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36746,7 +36745,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36770,7 +36769,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36815,7 +36814,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36839,7 +36838,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36863,7 +36862,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -36887,7 +36886,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -36938,7 +36937,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -36962,7 +36961,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -36986,7 +36985,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37010,7 +37009,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37061,7 +37060,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37085,7 +37084,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37109,7 +37108,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37133,7 +37132,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37180,7 +37179,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37204,7 +37203,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37228,7 +37227,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37252,7 +37251,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37297,7 +37296,7 @@ export interface operations {
                     "application/json": components["schemas"]["PaymentRemindersPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37321,7 +37320,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37345,7 +37344,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37369,7 +37368,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37418,7 +37417,7 @@ export interface operations {
                     "application/json": components["schemas"]["PaymentReminderRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37442,7 +37441,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37466,7 +37465,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37490,7 +37489,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37522,7 +37521,7 @@ export interface operations {
             query?: {
                 from?: string | null;
                 to?: string | null;
-                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits every figure to one legal entity of the space; omitted, the figures of all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -37540,7 +37539,7 @@ export interface operations {
                     "application/json": components["schemas"]["CommercialDashboard"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37564,7 +37563,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37588,7 +37587,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37612,7 +37611,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37644,7 +37643,7 @@ export interface operations {
             query?: {
                 from?: string | null;
                 to?: string | null;
-                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits every figure to one legal entity of the space; omitted, the figures of all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -37662,7 +37661,7 @@ export interface operations {
                     "application/json": components["schemas"]["EconomicDashboard"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37686,7 +37685,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37710,7 +37709,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37734,7 +37733,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37764,7 +37763,7 @@ export interface operations {
     operational_api_dashboard_operational_get: {
         parameters: {
             query?: {
-                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits every figure to one legal entity of the space; omitted, the figures of all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -37782,7 +37781,7 @@ export interface operations {
                     "application/json": components["schemas"]["OperationalDashboard"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37806,7 +37805,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37830,7 +37829,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37854,7 +37853,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -37884,7 +37883,7 @@ export interface operations {
     receivables_api_dashboard_receivables_get: {
         parameters: {
             query?: {
-                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
+                /** @description Limits every figure to one legal entity of the space; omitted, the figures of all legal entities summed. The response reports it in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -37902,7 +37901,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReceivablesDashboard"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -37926,7 +37925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -37950,7 +37949,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -37974,7 +37973,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38019,7 +38018,7 @@ export interface operations {
                     "application/json": components["schemas"]["AutomationConfigRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38043,7 +38042,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38067,7 +38066,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38091,7 +38090,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38140,7 +38139,7 @@ export interface operations {
                     "application/json": components["schemas"]["AutomationConfigRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38164,7 +38163,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38188,7 +38187,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38212,7 +38211,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38257,7 +38256,7 @@ export interface operations {
                     "application/json": components["schemas"]["AutomationsDescription"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38281,7 +38280,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38305,7 +38304,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38329,7 +38328,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38376,7 +38375,7 @@ export interface operations {
                     "application/json": components["schemas"]["AutomationRun"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38400,7 +38399,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38424,7 +38423,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38448,7 +38447,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38493,7 +38492,7 @@ export interface operations {
                     "application/json": components["schemas"]["RootSpace"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38517,7 +38516,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38541,7 +38540,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38565,7 +38564,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38612,7 +38611,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenantRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38636,7 +38635,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38660,7 +38659,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38684,7 +38683,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38733,7 +38732,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenantRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38757,7 +38756,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38781,7 +38780,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38805,7 +38804,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38830,7 +38829,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -38843,7 +38842,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Il servizio non può creare uno spazio adesso: troppe creazioni in corso (`Retry-After` secondi) oppure il numero massimo di spazi è raggiunto. */
+            /** @description The service cannot create a space now: too many creations in progress (`Retry-After` seconds) or the maximum number of spaces has been reached. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -38878,7 +38877,7 @@ export interface operations {
                     "application/json": components["schemas"]["MemberAnswer"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -38902,7 +38901,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -38926,7 +38925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -38950,7 +38949,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -38997,7 +38996,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenantAvailability"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39021,7 +39020,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39045,7 +39044,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39069,7 +39068,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39094,7 +39093,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -39135,7 +39134,7 @@ export interface operations {
                     "application/json": components["schemas"]["EngagementRead"];
                 };
             };
-            /** @description Lo spazio, il cliente «rebase» e il deal della lettera sono stati creati ora, per la prima volta con questo match. */
+            /** @description The space, the «rebase» customer and the letter's deal were created now, for the first time with this match. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -39144,7 +39143,7 @@ export interface operations {
                     "application/json": components["schemas"]["EngagementRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39168,7 +39167,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39192,7 +39191,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39216,7 +39215,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39241,7 +39240,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description PIGROCRM_PUBLIC_URL non è configurato, lo spazio del freelancer non è raggiungibile in questo momento, oppure un'altra chiamata sta preparando lo spazio dello stesso indirizzo: si riprova più tardi. */
+            /** @description PIGROCRM_PUBLIC_URL is not configured, the freelancer's space cannot be reached right now, or another call is preparing the space of the same address: retry later. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -39279,7 +39278,7 @@ export interface operations {
                     "application/json": components["schemas"]["EngagementReport"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39303,7 +39302,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39327,7 +39326,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39351,7 +39350,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39376,7 +39375,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description PIGROCRM_PUBLIC_URL non è configurato, lo spazio del freelancer non è raggiungibile in questo momento, oppure un'altra chiamata sta preparando lo spazio dello stesso indirizzo: si riprova più tardi. */
+            /** @description PIGROCRM_PUBLIC_URL is not configured, the freelancer's space cannot be reached right now, or another call is preparing the space of the same address: retry later. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -39407,7 +39406,7 @@ export interface operations {
                     "application/json": components["schemas"]["IdentitySpace"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39431,7 +39430,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39455,7 +39454,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39479,7 +39478,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39526,7 +39525,7 @@ export interface operations {
                     "application/json": components["schemas"]["UserRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39550,7 +39549,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39574,7 +39573,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39598,7 +39597,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39623,7 +39622,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
@@ -39658,7 +39657,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationDoor"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39682,7 +39681,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39706,7 +39705,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39730,7 +39729,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39773,7 +39772,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39797,7 +39796,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39821,7 +39820,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39845,7 +39844,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -39890,7 +39889,7 @@ export interface operations {
                     "application/json": components["schemas"]["SpaceSettingsRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -39914,7 +39913,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -39938,7 +39937,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -39962,7 +39961,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40011,7 +40010,7 @@ export interface operations {
                     "application/json": components["schemas"]["SpaceSettingsRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40035,7 +40034,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40059,7 +40058,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40083,7 +40082,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40115,7 +40114,7 @@ export interface operations {
             query?: {
                 status?: ("open" | "completed" | "cancelled") | null;
                 assigned_to?: string | null;
-                /** @description Con `assigned_to`: anche le attività senza assegnatario */
+                /** @description With `assigned_to`: also the activities with no assignee */
                 include_unassigned?: boolean;
                 customer_id?: string | null;
                 person_id?: string | null;
@@ -40123,11 +40122,11 @@ export interface operations {
                 invoice_id?: string | null;
                 due_within?: string | null;
                 without_due_date?: boolean | null;
-                /** @description Solo le archiviate (per ripristinarle); di default, le vive */
+                /** @description Only the archived ones (to restore them); by default, the live ones */
                 archived?: boolean;
                 limit?: number;
                 cursor?: string | null;
-                /** @description created_at | scadenza */
+                /** @description created_at | due date */
                 sort?: string | null;
                 dir?: "asc" | "desc";
             };
@@ -40146,7 +40145,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40170,7 +40169,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40194,7 +40193,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40218,7 +40217,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40267,7 +40266,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40291,7 +40290,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40315,7 +40314,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40339,7 +40338,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40369,11 +40368,11 @@ export interface operations {
     today_api_activities_today_get: {
         parameters: {
             query?: {
-                /** @description Solo le attività di questa persona; senza, di tutto lo spazio */
+                /** @description Only this person's activities; omitted, the whole space */
                 assigned_to?: string | null;
-                /** @description Con `assigned_to`: anche le attività senza assegnatario */
+                /** @description With `assigned_to`: also the activities with no assignee */
                 include_unassigned?: boolean;
-                /** @description Righe per sezione */
+                /** @description Rows in each section */
                 limit?: number;
             };
             header?: never;
@@ -40391,7 +40390,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskToday"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40415,7 +40414,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40439,7 +40438,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40463,7 +40462,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40510,7 +40509,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40534,7 +40533,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40558,7 +40557,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40582,7 +40581,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40627,7 +40626,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40651,7 +40650,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40675,7 +40674,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40699,7 +40698,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40750,7 +40749,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40774,7 +40773,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40798,7 +40797,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40822,7 +40821,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40869,7 +40868,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -40893,7 +40892,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -40917,7 +40916,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -40941,7 +40940,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -40988,7 +40987,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41012,7 +41011,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41036,7 +41035,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41060,7 +41059,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41107,7 +41106,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41131,7 +41130,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41155,7 +41154,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41179,7 +41178,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41226,7 +41225,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41250,7 +41249,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41274,7 +41273,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41298,7 +41297,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41331,7 +41330,7 @@ export interface operations {
                 /** @description AAAA-MM */
                 month: string;
                 all?: boolean;
-                /** @description Solo le ore e le fatture di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's hours and invoices; omitted, all */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -41349,7 +41348,7 @@ export interface operations {
                     "application/json": components["schemas"]["CalendarMonth"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41373,7 +41372,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41397,7 +41396,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41421,7 +41420,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41458,7 +41457,7 @@ export interface operations {
                 dir?: "asc" | "desc";
                 customer_id?: string | null;
                 status?: string | null;
-                /** @description Solo le righe di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
             };
             header?: never;
@@ -41476,7 +41475,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41500,7 +41499,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41524,7 +41523,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41548,7 +41547,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41597,7 +41596,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41621,7 +41620,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41645,7 +41644,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41669,7 +41668,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41716,7 +41715,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractDetail"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41740,7 +41739,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41764,7 +41763,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41788,7 +41787,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41839,7 +41838,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41863,7 +41862,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -41887,7 +41886,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -41911,7 +41910,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -41962,7 +41961,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -41986,7 +41985,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42010,7 +42009,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42034,7 +42033,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42085,7 +42084,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42109,7 +42108,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42133,7 +42132,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42157,7 +42156,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42206,7 +42205,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42230,7 +42229,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42254,7 +42253,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42278,7 +42277,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42328,7 +42327,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractConcentrationCap"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42352,7 +42351,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42376,7 +42375,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42400,7 +42399,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42447,7 +42446,7 @@ export interface operations {
                     "application/json": components["schemas"]["RateCardRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42471,7 +42470,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42495,7 +42494,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42519,7 +42518,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42549,7 +42548,7 @@ export interface operations {
     create_rate_card_api_contracts__contract_id__rate_cards_post: {
         parameters: {
             query?: {
-                /** @description Chiude il giorno prima la scheda in vigore alla data di inizio di questa, invece di rifiutare la sovrapposizione */
+                /** @description Closes, the day before, the rate card in force at this one's start date, instead of refusing the overlap */
                 close_previous?: boolean;
             };
             header?: never;
@@ -42573,7 +42572,7 @@ export interface operations {
                     "application/json": components["schemas"]["RateCardRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42597,7 +42596,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42621,7 +42620,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42645,7 +42644,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42697,7 +42696,7 @@ export interface operations {
                     "application/json": components["schemas"]["RateCardRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42721,7 +42720,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42745,7 +42744,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42769,7 +42768,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42816,7 +42815,7 @@ export interface operations {
                     "application/json": components["schemas"]["ClauseNoteRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42840,7 +42839,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42864,7 +42863,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -42888,7 +42887,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -42939,7 +42938,7 @@ export interface operations {
                     "application/json": components["schemas"]["ClauseNoteRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -42963,7 +42962,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -42987,7 +42986,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43011,7 +43010,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43063,7 +43062,7 @@ export interface operations {
                     "application/json": components["schemas"]["ClauseNoteRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43087,7 +43086,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43111,7 +43110,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43135,7 +43134,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43182,7 +43181,7 @@ export interface operations {
                     "application/json": components["schemas"]["RenewalAssumptionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43206,7 +43205,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43230,7 +43229,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43254,7 +43253,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43305,7 +43304,7 @@ export interface operations {
                     "application/json": components["schemas"]["RenewalAssumptionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43329,7 +43328,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43353,7 +43352,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43377,7 +43376,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43407,11 +43406,11 @@ export interface operations {
     project_revenue_api_contracts__contract_id__projection_get: {
         parameters: {
             query: {
-                /** @description Inizio della finestra, YYYY-MM-DD, inclusa */
+                /** @description Start of the window, YYYY-MM-DD, inclusive */
                 from: string;
-                /** @description Fine della finestra, YYYY-MM-DD, esclusa */
+                /** @description End of the window, YYYY-MM-DD, exclusive */
                 to: string;
-                /** @description Data di riferimento per la finestra di irrevocabilità; default oggi */
+                /** @description Reference date for the irrevocability window; default today */
                 as_of?: string | null;
             };
             header?: never;
@@ -43431,7 +43430,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractProjectionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43455,7 +43454,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43479,7 +43478,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43503,7 +43502,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43550,7 +43549,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractExpenseRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43574,7 +43573,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43598,7 +43597,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43622,7 +43621,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43673,7 +43672,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractExpenseRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43697,7 +43696,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43721,7 +43720,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43745,7 +43744,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43797,7 +43796,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractExpenseRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43821,7 +43820,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43845,7 +43844,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43869,7 +43868,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -43899,9 +43898,9 @@ export interface operations {
     get_billable_days_api_contracts__contract_id__billable_days_get: {
         parameters: {
             query?: {
-                /** @description Dal giorno, incluso */
+                /** @description From the day, inclusive */
                 from?: string | null;
-                /** @description Al giorno, incluso */
+                /** @description To the day, inclusive */
                 to?: string | null;
             };
             header?: never;
@@ -43921,7 +43920,7 @@ export interface operations {
                     "application/json": components["schemas"]["BillableDays"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -43945,7 +43944,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -43969,7 +43968,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -43993,7 +43992,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44044,7 +44043,7 @@ export interface operations {
                     "application/json": components["schemas"]["InvoiceRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44068,7 +44067,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44092,7 +44091,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44116,7 +44115,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44146,9 +44145,9 @@ export interface operations {
     get_register_api_contracts__contract_id__register_get: {
         parameters: {
             query: {
-                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                /** @description From the day, YYYY-MM-DD, inclusive */
                 from: string;
-                /** @description Al giorno, YYYY-MM-DD, incluso */
+                /** @description To the day, YYYY-MM-DD, inclusive */
                 to: string;
             };
             header?: never;
@@ -44168,7 +44167,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractRegister"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44192,7 +44191,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44216,7 +44215,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44240,7 +44239,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44270,9 +44269,9 @@ export interface operations {
     get_register_csv_api_contracts__contract_id__register_csv_get: {
         parameters: {
             query: {
-                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                /** @description From the day, YYYY-MM-DD, inclusive */
                 from: string;
-                /** @description Al giorno, YYYY-MM-DD, incluso */
+                /** @description To the day, YYYY-MM-DD, inclusive */
                 to: string;
             };
             header?: never;
@@ -44292,7 +44291,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44316,7 +44315,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44340,7 +44339,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44364,7 +44363,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44394,9 +44393,9 @@ export interface operations {
     render_register_pdf_api_contracts__contract_id__register_pdf_post: {
         parameters: {
             query: {
-                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                /** @description From the day, YYYY-MM-DD, inclusive */
                 from: string;
-                /** @description Al giorno, YYYY-MM-DD, incluso */
+                /** @description To the day, YYYY-MM-DD, inclusive */
                 to: string;
             };
             header?: never;
@@ -44416,7 +44415,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44440,7 +44439,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44464,7 +44463,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44488,7 +44487,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44535,7 +44534,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractEmailVariable"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44559,7 +44558,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44583,7 +44582,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44607,7 +44606,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44654,7 +44653,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractEmailTemplateRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44678,7 +44677,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44702,7 +44701,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44726,7 +44725,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44777,7 +44776,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractEmailTemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44801,7 +44800,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44825,7 +44824,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44849,7 +44848,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -44901,7 +44900,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractEmailTemplateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -44925,7 +44924,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -44949,7 +44948,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -44973,7 +44972,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45024,7 +45023,7 @@ export interface operations {
                     "application/json": components["schemas"]["ContractEmailPreview"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45048,7 +45047,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45072,7 +45071,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45096,7 +45095,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45147,7 +45146,7 @@ export interface operations {
                     "application/json": components["schemas"]["EmailDraftRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45171,7 +45170,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45195,7 +45194,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45219,7 +45218,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45271,7 +45270,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProposalPage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45295,7 +45294,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45319,7 +45318,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45343,7 +45342,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45392,7 +45391,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProposalRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45416,7 +45415,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45440,7 +45439,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45464,7 +45463,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45511,7 +45510,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProposalRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45535,7 +45534,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45559,7 +45558,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45583,7 +45582,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45634,7 +45633,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProposalRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45658,7 +45657,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45682,7 +45681,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45706,7 +45705,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45757,7 +45756,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProposalRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45781,7 +45780,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45805,7 +45804,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45829,7 +45828,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45878,7 +45877,7 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -45902,7 +45901,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -45926,7 +45925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -45950,7 +45949,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -45981,11 +45980,11 @@ export interface operations {
         parameters: {
             query?: {
                 contract_id?: string | null;
-                /** @description Solo i contratti di questa azienda; omesso, tutte */
+                /** @description Only this legal entity's contracts; omitted, all */
                 legal_entity_id?: string | null;
-                /** @description Dal giorno, YYYY-MM-DD, incluso */
+                /** @description From the day, YYYY-MM-DD, inclusive */
                 from?: string | null;
-                /** @description Al giorno, YYYY-MM-DD, incluso */
+                /** @description To the day, YYYY-MM-DD, inclusive */
                 to?: string | null;
                 status?: ("proposed" | "approved" | "worked" | "worked_without_approval" | "invoiced" | "paid" | "disputed" | "revoked" | "rejected" | "non_billable") | null;
                 limit?: number;
@@ -46005,7 +46004,7 @@ export interface operations {
                     "application/json": components["schemas"]["WorkUnitList"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46029,7 +46028,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46053,7 +46052,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46077,7 +46076,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46126,7 +46125,7 @@ export interface operations {
                     "application/json": components["schemas"]["WorkUnitRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46150,7 +46149,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46174,7 +46173,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46198,7 +46197,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46236,7 +46235,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Il fascicolo della giornata */
+            /** @description The day's dispute bundle */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -46245,7 +46244,7 @@ export interface operations {
                     "application/zip": unknown;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46269,7 +46268,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46293,7 +46292,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46317,7 +46316,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46364,7 +46363,7 @@ export interface operations {
                     "application/json": components["schemas"]["WorkUnitDetail"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46388,7 +46387,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46412,7 +46411,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46436,7 +46435,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46487,7 +46486,7 @@ export interface operations {
                     "application/json": components["schemas"]["WorkUnitDetail"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46511,7 +46510,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46535,7 +46534,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46559,7 +46558,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46608,7 +46607,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApprovalRecorded"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46632,7 +46631,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46656,7 +46655,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46680,7 +46679,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46731,7 +46730,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApprovalRequestMessage"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46755,7 +46754,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46779,7 +46778,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46803,7 +46802,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46854,7 +46853,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApprovalRequestPrepared"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46878,7 +46877,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -46902,7 +46901,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -46926,7 +46925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -46973,7 +46972,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -46997,7 +46996,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47021,7 +47020,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47045,7 +47044,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47090,7 +47089,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderTypeRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47114,7 +47113,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47138,7 +47137,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47162,7 +47161,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47207,7 +47206,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderPreferencesRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47231,7 +47230,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47255,7 +47254,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47279,7 +47278,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47311,9 +47310,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `space`: i valori predefiniti dello spazio (amministratori); `me`: i tuoi */
+                /** @description `space`: the space's default values (admins); `me`: yours */
                 scope: "space" | "me";
-                /** @description Un tipo di promemoria, o `general` per le ore di silenzio e l'ora del riepilogo */
+                /** @description A reminder type, or `general` for quiet hours and the digest time */
                 type_key: string;
             };
             cookie?: never;
@@ -47327,7 +47326,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47351,7 +47350,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47375,7 +47374,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47399,7 +47398,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47431,9 +47430,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `space`: i valori predefiniti dello spazio (amministratori); `me`: i tuoi */
+                /** @description `space`: the space's default values (admins); `me`: yours */
                 scope: "space" | "me";
-                /** @description Un tipo di promemoria, o `general` per le ore di silenzio e l'ora del riepilogo */
+                /** @description A reminder type, or `general` for quiet hours and the digest time */
                 type_key: string;
             };
             cookie?: never;
@@ -47453,7 +47452,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderPreferenceRead"] | null;
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47477,7 +47476,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47501,7 +47500,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47525,7 +47524,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47570,7 +47569,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderStateRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47594,7 +47593,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47618,7 +47617,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47642,7 +47641,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47691,7 +47690,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderStateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47715,7 +47714,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47739,7 +47738,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47763,7 +47762,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47812,7 +47811,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReminderStateRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47836,7 +47835,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47860,7 +47859,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -47884,7 +47883,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -47929,7 +47928,7 @@ export interface operations {
                     "application/json": components["schemas"]["PushConfigRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -47953,7 +47952,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -47977,7 +47976,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48001,7 +48000,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48046,7 +48045,7 @@ export interface operations {
                     "application/json": components["schemas"]["PushSubscriptionRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48070,7 +48069,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48094,7 +48093,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48118,7 +48117,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48167,7 +48166,7 @@ export interface operations {
                     "application/json": components["schemas"]["PushSubscriptionRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48191,7 +48190,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48215,7 +48214,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48239,7 +48238,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48286,7 +48285,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48310,7 +48309,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48334,7 +48333,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48358,7 +48357,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48403,7 +48402,7 @@ export interface operations {
                     "application/json": components["schemas"]["ScheduledJobsRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48427,7 +48426,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48451,7 +48450,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48475,7 +48474,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48525,7 +48524,7 @@ export interface operations {
                     "application/json": components["schemas"]["NoteRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48549,7 +48548,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48573,7 +48572,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48597,7 +48596,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48649,7 +48648,7 @@ export interface operations {
                     "application/json": components["schemas"]["NoteRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48673,7 +48672,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48697,7 +48696,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48721,7 +48720,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48766,7 +48765,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48790,7 +48789,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48814,7 +48813,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48838,7 +48837,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -48889,7 +48888,7 @@ export interface operations {
                     "application/json": components["schemas"]["NoteRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -48913,7 +48912,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -48937,7 +48936,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -48961,7 +48960,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -49008,7 +49007,7 @@ export interface operations {
                     "application/json": components["schemas"]["NoteRevisionRead"][];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -49032,7 +49031,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -49056,7 +49055,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -49080,7 +49079,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -49133,7 +49132,7 @@ export interface operations {
                     "application/json": components["schemas"]["LeadRead"];
                 };
             };
-            /** @description Il deal della richiesta è stato creato ora. */
+            /** @description The request's deal was created now. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -49142,7 +49141,7 @@ export interface operations {
                     "application/json": components["schemas"]["LeadRead"];
                 };
             };
-            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            /** @description Permission denied: the actor does not have the required role. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -49166,7 +49165,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            /** @description The requested resource does not exist or was removed. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -49190,7 +49189,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            /** @description The request conflicts with the current state of the resource. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -49214,7 +49213,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -49239,7 +49238,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Spazio dei lead non configurato (PIGROCRM_LEADS_SPACE), PIGROCRM_PUBLIC_URL non è configurato, lo spazio non è raggiungibile in questo momento, oppure un'altra richiesta della stessa persona è in corso: si riprova più tardi. */
+            /** @description The leads space is not configured (PIGROCRM_LEADS_SPACE), PIGROCRM_PUBLIC_URL is not configured, the space cannot be reached right now, or another request from the same person is in progress: retry later. */
             503: {
                 headers: {
                     [name: string]: unknown;

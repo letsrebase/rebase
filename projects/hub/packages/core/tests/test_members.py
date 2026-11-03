@@ -579,9 +579,9 @@ def test_the_welcome_mailing_speaks_to_every_address_the_hub_knows(
     sender = RecordingSender()
     outcomes = send_welcome(hub_session, settings, sender, None)
     assert outcomes == [
-        ("bruna@studio.it", "inviata (admin)"),
-        ("carlo@studio.it", "inviata (none)"),
-        ("ada@studio.it", "inviata (person)"),
+        ("bruna@studio.it", "sent (admin)"),
+        ("carlo@studio.it", "sent (none)"),
+        ("ada@studio.it", "sent (person)"),
     ]
     by_to = {mail.to: mail for mail in sender.sent}
     assert "http://localhost:5180/hub/login" in by_to["ada@studio.it"].text
@@ -595,8 +595,8 @@ def test_the_welcome_mailing_speaks_to_every_address_the_hub_knows(
         hub_session, settings, RecordingSender(), ["ADA@studio.it", "nessuno@studio.it"]
     )
     assert named == [
-        ("ada@studio.it", "inviata (person)"),
-        ("nessuno@studio.it", "indirizzo sconosciuto"),
+        ("ada@studio.it", "sent (person)"),
+        ("nessuno@studio.it", "unknown address"),
     ]
     hub_session.execute(text("DELETE FROM signups"))
     hub_session.commit()

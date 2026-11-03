@@ -125,9 +125,9 @@ export function useFiscalEstimate(year: number, legalEntityId?: string | null, e
 }
 
 /**
- * How much room is left under each of an legal entity's ceilings in `year` (REB-755). One
+ * How much room is left under each of a legal entity's ceilings in `year` (REB-755). One
  * legal entity's, like the estimate: the one `legalEntityId` names, or the sidebar's when the
- * caller names none. `thresholds` comes back empty for an legal entity the flat-rate regime's
+ * caller names none. `thresholds` comes back empty for a legal entity the flat-rate regime's
  * thresholds do not apply to, and the panel then draws nothing.
  */
 export function useCeilingHeadroom(year: number, legalEntityId?: string | null) {

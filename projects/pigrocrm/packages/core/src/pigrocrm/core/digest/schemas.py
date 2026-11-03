@@ -127,7 +127,7 @@ class DigestTask(BaseModel):
     """The recipient's own commitments of the week (REB-726): overdue, then the next seven
     days, today included.
 
-    **Per recipient, not per scope.** Every other section is the space's (or the
+    **Recipient by recipient, not by scope.** Every other section is the space's (or the
     scope's) and is built once; this one is the person's, so `DigestRun` fills it in on
     a copy of the built report for each address. It is the week's view and nothing
     more: the daily summary the reminders spec adds (2026-10-26 §6.2) is a different mail
@@ -136,7 +136,7 @@ class DigestTask(BaseModel):
 
     `*_totale` is how many there are; the lists are the first few, so a mail never
     grows with the backlog. Open commitments only, and none without a date: an undated
-    to-do is on the Oggi page, not in a mail about the week.
+    to-do is on the «Oggi» page, not in a mail about the week.
     """
 
     overdue: list[DigestTaskLine] = Field(default_factory=list)

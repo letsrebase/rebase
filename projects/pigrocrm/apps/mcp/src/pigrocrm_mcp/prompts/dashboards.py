@@ -80,7 +80,7 @@ def _and_the_rest(shown: int, total: int) -> list[str]:
     """
     if total <= shown:
         return []
-    return ["", f"_Altre {total - shown} righe non mostrate._"]
+    return ["", f"_{total - shown} more rows not shown._"]
 
 
 def review_pipeline(
@@ -100,11 +100,11 @@ def review_pipeline(
     board = DashboardService(context.session).get_commercial_dashboard(query, context.actor)
 
     lines = [
-        f"# Revisione pipeline — {board.period.date_from} → {board.period.date_to}",
+        f"# Pipeline review — {board.period.date_from} → {board.period.date_to}",
         "",
-        "## Pipeline per stato",
+        "## Pipeline by stage",
         "",
-        "| Stato | Deal | Valore | Senza valore | Valore ponderato (stima) |",
+        "| Stage | Deals | Value | Without value | Weighted value (estimate) |",
         "|---|---|---|---|---|",
     ]
     for row in board.pipeline:
@@ -114,49 +114,48 @@ def review_pipeline(
         )
     lines += [
         "",
-        "Il valore ponderato è una **stima** (valore previsto × probabilità): non è "
-        "fatturato e non va sommato ai ricavi. I deal senza valore previsto sono contati "
-        "a parte e non valgono zero.",
+        "The weighted value is an **estimate** (expected value × probability): it is not "
+        "invoiced and must not be added to revenue. Deals with no expected value are counted "
+        "separately and are not worth zero.",
         "",
-        "Gli stati chiusi (vinto, perso) contano i deal che ci sono **oggi**, non quelli "
-        "chiusi nel periodo: quelli sono nella sezione successiva.",
+        "The closed stages (won, lost) count the deals that exist **today**, not the ones "
+        "closed in the period: those are in the next section.",
         "",
-        "## Chiusure nel periodo",
+        "## Closings in the period",
         "",
-        f"- Vinti: {board.closings.won}",
-        f"- Persi: {board.closings.lost}",
-        f"- Tasso di conversione: {_percent(board.closings.conversion_rate)}",
-        f"- Valore vinto (dichiarato dai deal, **non** fatturato): "
-        f"{_euro(board.closings.won_value)}",
-        f"- Chiusure attese nei 30 giorni successivi al periodo: {board.expected_closings_30_days}",
+        f"- Won: {board.closings.won}",
+        f"- Lost: {board.closings.lost}",
+        f"- Conversion rate: {_percent(board.closings.conversion_rate)}",
+        f"- Won value (declared by the deals, **not** invoiced): {_euro(board.closings.won_value)}",
+        f"- Closings expected in the 30 days after the period: {board.expected_closings_30_days}",
     ]
     if board.closings_not_attributable:
         lines.append(
-            f"- {board.closings_not_attributable} deal chiusi prima dell'introduzione di "
-            "questa misura non sono attribuibili a un periodo e non sono nei numeri sopra."
+            f"- {board.closings_not_attributable} deals closed before this measure was "
+            "introduced cannot be attributed to a period and are not in the numbers above."
         )
-    lines += ["", "## Offerte inviate in attesa di risposta", ""]
+    lines += ["", "## Offers sent awaiting a reply", ""]
     offers = board.offers_pending[:PENDING_OFFERS_SHOWN]
     if not offers:
-        lines.append("Nessuna offerta in attesa.")
+        lines.append("No offers pending.")
     else:
         for offer in offers:
             # `None` days is not zero days: an offer whose `status_since` was never recorded is
-            # of unknown age, and "ferma da 0 giorni" would read as "sent today".
-            age = "data ignota" if offer.days is None else f"{offer.days} giorni"
-            lines.append(f"- {offer.title} — ferma da {age}")
+            # of unknown age, and "stalled for 0 days" would read as "sent today".
+            age = "unknown date" if offer.days is None else f"{offer.days} days"
+            lines.append(f"- {offer.title} — stalled for {age}")
         lines += _and_the_rest(len(offers), board.offers_pending_total)
     lines += [
         "",
-        f"Segnale: {board.accepted_offers_deal_not_won} offerte accettate il cui deal non è vinto.",
+        f"Signal: {board.accepted_offers_deal_not_won} accepted offers whose deal is not won.",
         "",
         "---",
         "",
-        "Fai la revisione settimanale su questi dati. Chiedimi dei deal **fermi** — quelli "
-        "nello stesso stato da troppo tempo e le offerte in attesa da più di due settimane "
-        "— e non riassumere quelli che si stanno muovendo: quelli li vedo già. Se il tasso "
-        "di conversione è nullo dillo, non trattarlo come zero. Non proporre azioni "
-        "automatiche: elenca le domande da fare ai clienti.",
+        "Do the weekly review on this data. Ask me about the **stalled** deals — those "
+        "in the same stage for too long and the offers pending for more than two weeks "
+        "— and do not summarize the ones that are moving: I already see those. If the "
+        "conversion rate is null say so, do not treat it as zero. Do not propose automatic "
+        "actions: list the questions to ask the customers.",
     ]
     return [_user("\n".join(lines))]
 
@@ -177,54 +176,54 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
 
     pnl = economic.pnl
     lines = [
-        f"# Chiusura mese — {year}-{month:02d}",
+        f"# Month close — {year}-{month:02d}",
         "",
-        "## Conto economico del periodo",
+        "## Profit and loss of the period",
         "",
-        "| Voce | Deal chiusi | Deal in corso |",
+        "| Item | Closed deals | In-progress deals |",
         "|---|---|---|",
-        f"| Ricavi (imponibile, emesso) | {_euro(pnl.closed.revenue)} "
+        f"| Revenue (taxable amount, issued) | {_euro(pnl.closed.revenue)} "
         f"| {_euro(pnl.in_progress.revenue)} |",
-        f"| Costi diretti | {_euro(pnl.closed.direct_costs)} "
+        f"| Direct costs | {_euro(pnl.closed.direct_costs)} "
         f"| {_euro(pnl.in_progress.direct_costs)} |",
-        f"| Costo del lavoro | {_euro(pnl.closed.work_cost)} "
-        f"| {_euro(pnl.in_progress.work_cost)} |",
-        f"| Margine lordo | {_euro(pnl.closed.gross_margin)} "
+        f"| Labor cost | {_euro(pnl.closed.work_cost)} | {_euro(pnl.in_progress.work_cost)} |",
+        f"| Gross margin | {_euro(pnl.closed.gross_margin)} "
         f"| {_euro(pnl.in_progress.gross_margin)} |",
-        f"| Margine % | {_percent(pnl.closed.percentage_margin)} "
+        f"| Margin % | {_percent(pnl.closed.percentage_margin)} "
         f"| {_percent(pnl.in_progress.percentage_margin)} |",
         "",
-        "La cifra riportabile è la colonna **deal chiusi**. Le due colonne non si sommano: "
-        "il margine di un lavoro finito e quello di uno a metà non sono la stessa cosa.",
+        "The reportable figure is the **closed deals** column. The two columns are not added "
+        "together: the margin of finished work and that of work in progress are not the "
+        "same thing.",
         "",
-        f"Spese generali del periodo: {_euro(pnl.general_expenses)} — **non ripartite** "
-        "su nessun deal.",
+        f"General expenses of the period: {_euro(pnl.general_expenses)} — **not allocated** "
+        "to any deal.",
         "",
-        "## Da chiudere prima della chiusura",
+        "## To settle before closing",
         "",
-        f"- Ore fatturabili non fatturate **nel periodo**: "
-        f"{pnl.billable_uninvoiced_hours} ore, valore maturato "
+        f"- Billable uninvoiced hours **in the period**: "
+        f"{pnl.billable_uninvoiced_hours} hours, accrued value "
         f"{_euro(pnl.accrued_value)}",
-        f"- Voci senza tariffa nel periodo: {pnl.hours_without_rate}",
-        f"- Arretrato **in totale** (senza periodo): "
-        f"{backlog.billable_uninvoiced_hours} ore, "
-        f"{_euro(backlog.accrued_value)}, di cui {backlog.entries_without_rate} voci senza "
-        "tariffa",
-        f"- Fatture emesse nel periodo: {economic.issued_invoices}",
-        f"- Da incassare (totale con IVA, senza periodo): {_euro(economic.unpaid)}",
-        f"- Di cui **scaduto**: {_euro(economic.expired)}",
+        f"- Entries without a rate in the period: {pnl.hours_without_rate}",
+        f"- Backlog **in total** (no period): "
+        f"{backlog.billable_uninvoiced_hours} hours, "
+        f"{_euro(backlog.accrued_value)}, of which {backlog.entries_without_rate} entries "
+        "without a rate",
+        f"- Invoices issued in the period: {economic.issued_invoices}",
+        f"- To collect (total incl. VAT, no period): {_euro(economic.unpaid)}",
+        f"- Of which **overdue**: {_euro(economic.expired)}",
         "",
-        f"Periodo chiuso: {'sì' if pnl.closed_period else 'no'}. "
-        f"Voci scritte in ritardo: {pnl.written_entries_overdue}.",
+        f"Period closed: {'yes' if pnl.closed_period else 'no'}. "
+        f"Entries written late: {pnl.written_entries_overdue}.",
         "",
         "---",
         "",
-        "Prepara la lista delle cose da fare prima di chiudere questo mese. Segnala solo "
-        "gli scostamenti che contano: ore non fatturate, voci senza tariffa, fatture "
-        "scadute. «Da incassare» è un credito, non un ricavo: non sommarlo ai ricavi e non "
-        "usarlo per calcolare un margine. Se il periodo non è chiuso e ci sono voci scritte "
-        "in ritardo, dì che i numeri possono ancora muoversi. Non calcolare nessuna imposta "
-        "e nessun contributo: non è un dato di cui disponi.",
+        "Prepare the to-do list before closing this month. Flag only the deviations that "
+        "matter: unbilled hours, entries without a rate, overdue invoices. «To collect» is "
+        "a receivable, not revenue: do not add it to revenue and do not use it to compute a "
+        "margin. If the period is not closed and there are entries written late, say that "
+        "the numbers may still move. Do not compute any tax or contribution: it is not data "
+        "you have.",
     ]
     return [_user("\n".join(lines))]
 
@@ -246,28 +245,28 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
     if week is not None and week != current.date_from.isoformat():
         return [
             _user(
-                f"La dashboard operativa copre solo la settimana corrente "
-                f"({current.date_from} → {current.date_to}); la settimana richiesta ({week}) non è "
-                "disponibile. Per le ore di una settimana passata usa il rapporto ore."
+                f"The operational dashboard covers only the current week "
+                f"({current.date_from} → {current.date_to}); the requested week ({week}) is "
+                "not available. For the hours of a past week use the hours report."
             )
         ]
 
     lines = [
-        f"# Ore da registrare — settimana {current.date_from} → {current.date_to}",
+        f"# Hours to log — week {current.date_from} → {current.date_to}",
         "",
-        "| Giorno | Ore |",
+        "| Day | Hours |",
         "|---|---|",
     ]
     for day in current.days:
         lines.append(f"| {day.day} | {day.hours} |")
-    lines += ["", f"Totale settimana: {current.total_hours} ore.", ""]
+    lines += ["", f"Week total: {current.total_hours} hours.", ""]
     if current.days_without_hours:
-        lines.append("**Giorni senza nessuna ora registrata:**")
+        lines.append("**Days with no hours logged:**")
         lines += [f"- {day}" for day in current.days_without_hours]
     else:
-        lines.append("Nessun giorno scoperto: la settimana è completa.")
+        lines.append("No uncovered days: the week is complete.")
 
-    lines += ["", "## Deal su cui si è lavorato di recente", ""]
+    lines += ["", "## Deals worked on recently", ""]
     # Names, not identifiers: a list of UUIDs is a section nobody can answer from. The feed
     # carries fifty rows and can name the same deal many times, so the names are resolved in
     # one batch, deduplicated in feed order and capped.
@@ -282,17 +281,17 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
         if len(seen) == RECENT_DEALS_SHOWN:
             break
     if not seen:
-        lines.append("Nessuna attività recente su un deal.")
+        lines.append("No recent activity on a deal.")
     else:
         lines += [f"- {name}" for name in seen]
     lines += [
         "",
         "---",
         "",
-        "Aiutami a recuperare le ore mancanti. Per ogni giorno senza ore, chiedimi cosa ho "
-        "fatto — un giorno per volta, non tutti insieme — e proponi il deal più probabile "
-        "fra quelli sopra. Quando ti rispondo, registra le ore con `log_time`. Non "
-        "inventare né ore né deal: se non sai su cosa imputare un giorno, chiedi. Un giorno "
-        "in cui non ho lavorato va lasciato vuoto, non registrato a zero.",
+        "Help me recover the missing hours. For each day with no hours, ask me what I "
+        "did — one day at a time, not all together — and propose the most likely deal "
+        "among those above. When I answer, log the hours with `log_time`. Do not "
+        "invent hours or deals: if you do not know what to charge a day to, ask. A day "
+        "on which I did not work must be left empty, not logged as zero.",
     ]
     return [_user("\n".join(lines))]

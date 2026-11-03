@@ -82,9 +82,8 @@ class LegalEntityUpsert(LegalEntityFields):
     updated_at: datetime | None = Field(
         default=None,
         description=(
-            "L'`updated_at` letto sulla riga da cui parte questa modifica: se nel "
-            "frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 "
-            "`stale_row`. Omesso, nessun controllo."
+            "The `updated_at` read on the row this change starts from: if someone else saved in "
+            "the meantime, the request is rejected with 409 `stale_row`. Omitted, no check."
         ),
     )
 

@@ -56,10 +56,10 @@ def refuse_empty(changes: Mapping[str, Any] | None) -> None:
     raise ValidationFailed(
         "input",
         "changes",
-        "nessun campo da modificare",
+        "no field to change",
         expected=(
-            "almeno un campo in `changes` con il suo nuovo valore; `null` svuota un campo, "
-            "e un campo che non nomini resta com'è"
+            "at least one field in `changes` with its new value; `null` empties a field, "
+            "and a field you do not name stays as it is"
         ),
     )
 
@@ -83,8 +83,8 @@ def refuse_nothing_given(**given: object) -> None:
     raise ValidationFailed(
         "input",
         "fields",
-        "nessun campo da modificare",
-        expected=f"almeno uno fra {names}",
+        "no field to change",
+        expected=f"at least one of {names}",
     )
 
 
