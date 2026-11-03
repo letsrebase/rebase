@@ -526,6 +526,25 @@ jobs:
                   dump_logs ${not_running_services}
                   exit 1
                 fi
+                # A container that crash-loops reads `running` between two restarts, so
+                # one look proves nothing: the first non-root preview of REB-894 had the
+                # CRM's mcp restarting every few seconds and this step reported success.
+                # Read every container's restart count, wait, and read it again.
+                restarts() {
+                  docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT}" --format '{{.Names}}' \
+                    | while read -r name; do
+                        printf '%s %s\n' "${name}" "$(docker inspect -f '{{.RestartCount}}' "${name}")"
+                      done | sort
+                }
+                before=$(restarts)
+                sleep 20
+                after=$(restarts)
+                if [ "${before}" != "${after}" ]; then
+                  echo "::error::A container of ${COMPOSE_PROJECT} restarted while the deploy was being checked:"
+                  diff <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") || true
+                  dump_logs ${not_running_services}
+                  exit 1
+                fi
                 exit 0
               fi
               sleep 5
