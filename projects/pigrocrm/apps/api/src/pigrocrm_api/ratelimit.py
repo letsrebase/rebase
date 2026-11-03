@@ -277,7 +277,7 @@ TOO_MANY_REQUESTS_RESPONSE: dict[str, Any] = {
     },
     "headers": {
         "Retry-After": {
-            "description": "Secondi da attendere prima di riprovare.",
+            "description": "Seconds to wait before retrying.",
             "schema": {"type": "integer"},
         }
     },

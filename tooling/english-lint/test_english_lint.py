@@ -151,9 +151,12 @@ class PythonRules(Tree):
             "@router.get('/x', responses={\n"
             "    200: {'description': 'Il CSV dell anno', 'content': {}}})\n"
             "def export():\n"
-            '    """Export the year as CSV."""\n',
+            '    """Export the year as CSV."""\n'
+            "WAIT = {'headers': {'Retry-After': {\n"
+            "    'description': 'Secondi da attendere prima di riprovare.',\n"
+            "    'schema': {'type': 'integer'}}}}\n",
         )
-        self.assertEqual([f.line for f in self.lint(path)], [1, 2, 4])
+        self.assertEqual([f.line for f in self.lint(path)], [1, 2, 4, 8])
 
     def test_a_description_constant_is_read_where_another_module_uses_it(self) -> None:
         texts = self.write("a/texts.py", "ENTITY_HELP = 'Solo le righe di questa azienda'\n")
