@@ -187,8 +187,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         """Crea una scheda tariffaria per un contratto. `valid_from`/`valid_to` in formato
         YYYY-MM-DD; senza `valid_to` la scheda è aperta. Un periodo che si sovrappone a un'altra
         scheda del contratto è rifiutato, salvo `close_previous` vero: allora la scheda in
-        vigore a `valid_from` si chiude il giorno prima. `minimum_hours` vale solo per `tipo =
-        'orario'`, `delivery_period` solo per `'fixed_recurring'`.
+        vigore a `valid_from` si chiude il giorno prima. `minimum_hours` vale solo per `type =
+        'hourly'`, `delivery_period` solo per `'fixed_recurring'`.
         """
         payload: dict[str, Any] = {
             "valid_from": valid_from,

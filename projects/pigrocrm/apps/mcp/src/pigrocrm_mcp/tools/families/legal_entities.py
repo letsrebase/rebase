@@ -25,7 +25,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def list_members() -> list[dict[str, Any]]:
-        """Le persone attive dello spazio: `id`, `nome`, `role` e `email` (solo per un
+        """Le persone attive dello spazio: `id`, `name`, `role` e `email` (solo per un
         amministratore, altrimenti `null`). Serve a trovare l'id per `owner_id` (clienti e deal)
         e `assigned_to` (attività).
         """

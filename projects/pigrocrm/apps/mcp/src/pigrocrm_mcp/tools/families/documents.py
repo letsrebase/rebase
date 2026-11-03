@@ -162,8 +162,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def set_offer_state(document_id: str, status: OfferStateArg) -> dict[str, Any]:
-        """Cambia lo stato di un'offerta: bozza -> inviata; inviata -> accettata, rifiutata o
-        bozza. Accettata e rifiutata sono finali.
+        """Cambia lo stato di un'offerta: `draft` -> `sent`; `sent` -> `accepted`, `rejected` o
+        `draft`. `accepted` e `rejected` sono finali.
         """
         return documents.set_state(context, document_id, status)
 
