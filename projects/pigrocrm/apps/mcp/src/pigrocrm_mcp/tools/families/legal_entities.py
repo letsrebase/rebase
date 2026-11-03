@@ -105,10 +105,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         **Sostituzione totale**: ogni chiave assente torna vuota (`country` a `IT`;
         `legal_name` obbligatoria). Leggi prima `describe_legal_entity` e rimanda l'oggetto con le
         sole modifiche. Chiavi: `name`, `legal_name`, `vat_number` (11 cifre) o
-        `tax_code`, `address`, `cap`, `city`, `province`, `country`, `certified_email`, `sdi_code`
-        (7 caratteri), `phone`, `email`, `website`, `tax_regime` (testo in calce),
+        `tax_code`, `address`, `postal_code`, `city`, `province`, `country`, `certified_email`,
+        `sdi_code` (7 caratteri), `phone`, `email`, `website`, `tax_regime` (testo in calce),
         `email_signature`, `logo_key`, `signature_key` (chiavi di storage, non byte). Chiedi
-        conferma alla persona sul riepilogo; un dato fiscale non fornito non si inventa. Solo un
-        admin.
+        conferma sul riepilogo; non inventare dati fiscali. Solo un admin.
         """
         return invoices.update_legal_entity(context, data, legal_entity_id)

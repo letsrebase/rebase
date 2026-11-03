@@ -29,7 +29,7 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'sdi_code', label: 'Codice SDI', type: 'text', required: false, options: [] },
   { key: 'certified_email', label: 'PEC', type: 'text', required: false, options: [] },
   { key: 'address', label: 'Indirizzo', type: 'text', required: false, options: [] },
-  { key: 'cap', label: 'CAP', type: 'text', required: false, options: [] },
+  { key: 'postal_code', label: 'CAP', type: 'text', required: false, options: [] },
   { key: 'city', label: 'Comune', type: 'text', required: false, options: [] },
   { key: 'province', label: 'Provincia', type: 'text', required: false, options: [] },
   // Freeform text, not a `select`: CustomerCreate/Update place no enum on either

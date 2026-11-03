@@ -75,7 +75,7 @@ class ParsedInvoiceParty(BaseModel):
     vat_number: SafeStr | None = None
     tax_code: SafeStr | None = None
     address: SafeStr
-    cap: SafeStr
+    postal_code: SafeStr
     city: SafeStr
     province: SafeStr | None = None
     country: SafeStr

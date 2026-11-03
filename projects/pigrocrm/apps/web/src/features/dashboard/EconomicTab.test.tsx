@@ -516,7 +516,7 @@ function legalEntityRecord(id: string, name: string): LegalEntityRecord {
     vat_number: null,
     tax_code: null,
     address: null,
-    cap: null,
+    postal_code: null,
     city: null,
     province: null,
     country: 'IT',

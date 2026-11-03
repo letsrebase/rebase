@@ -40,7 +40,7 @@ def _upsert(**overrides: object) -> LegalEntityUpsert:
         "certified_email": "studiorossi@pec.it",
         "address": "Via Roma 1",
         "city": "Milano",
-        "cap": "20053",
+        "postal_code": "20053",
         "province": "MI",
         "phone": "+39 02 1234567",
         "email": "mario@example.com",

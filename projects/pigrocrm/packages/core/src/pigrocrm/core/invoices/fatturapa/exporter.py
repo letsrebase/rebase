@@ -44,7 +44,6 @@ from pigrocrm.core.invoices.fatturapa.checks import (
 from pigrocrm.core.invoices.fatturapa.constants import (
     ADDRESS_MAX,
     BASIC_LATIN_RE,
-    CAP_RE,
     CITY_MAX,
     CODE_PROJECT_CODE_MAX,
     CODE_RECIPIENT_FALLBACK,
@@ -70,6 +69,7 @@ from pigrocrm.core.invoices.fatturapa.constants import (
     NSMAP,
     PHONE_MAX,
     POSTAL_CODE_FOREIGN,
+    POSTAL_CODE_RE,
     PROVINCE_RE,
     RECIPIENT_ENTITY,
     STAMP_DUTY_VIRTUAL,
@@ -208,10 +208,10 @@ class InvoicePaExporter:
         self._text(
             headquarters,
             "CAP",
-            party.cap.strip() if italian else POSTAL_CODE_FOREIGN,
+            party.postal_code.strip() if italian else POSTAL_CODE_FOREIGN,
             entity=entity,
-            field="cap",
-            pattern=CAP_RE,
+            field="postal_code",
+            pattern=POSTAL_CODE_RE,
         )
         self._text(
             headquarters, "Comune", party.city, entity=entity, field="city", max_length=CITY_MAX

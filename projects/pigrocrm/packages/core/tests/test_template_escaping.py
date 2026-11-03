@@ -497,7 +497,7 @@ def test_the_render_pipeline_closes_the_residual_dash_and_ellipsis_gap(
                 "certified_email": "a@b.it",
                 "website": "b.it",
                 "address": "via Test 1",
-                "cap": "00000",
+                "postal_code": "00000",
                 "city": "Roma",
                 "province": "RM",
             },

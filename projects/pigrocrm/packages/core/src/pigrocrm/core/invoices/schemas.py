@@ -114,7 +114,7 @@ class PartySnapshot(BaseModel):
     sdi_code: str | None
     certified_email: str | None
     address: str
-    cap: str
+    postal_code: str
     city: str
     province: str
     country: str

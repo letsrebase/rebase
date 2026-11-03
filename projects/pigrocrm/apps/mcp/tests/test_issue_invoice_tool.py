@@ -31,7 +31,7 @@ def _draft(session: Session, tmp_path: Path) -> str:
         vat_number="12345678901",
         sdi_code="ABCDEFG",
         address="Via Roma 1",
-        cap="20154",
+        postal_code="20154",
         city="Milano",
         province="MI",
         country="IT",

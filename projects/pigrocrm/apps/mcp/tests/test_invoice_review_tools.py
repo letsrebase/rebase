@@ -61,7 +61,7 @@ def _seed_legal_entity(session: Session) -> None:
             vat_number=SUPPLIER_VAT_NUMBER,
             tax_code=SUPPLIER_CF,
             address="Via delle Officine 10",
-            cap="20121",
+            postal_code="20121",
             city="Milano",
             province="MI",
             country="IT",

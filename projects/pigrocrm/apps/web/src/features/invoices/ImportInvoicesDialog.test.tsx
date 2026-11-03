@@ -72,7 +72,7 @@ function invoice(number: string, overrides: Record<string, unknown> = {}) {
       legal_name: 'Esempio Servizi S.r.l.',
       vat_number: 'IT09876543210',
       address: 'Piazza dei Modelli 4',
-      cap: '00187',
+      postal_code: '00187',
       city: 'Roma',
       country: 'IT',
     },
