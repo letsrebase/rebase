@@ -57,7 +57,7 @@ export function InvoiceStateBadge({
         {INVOICE_STATE_LABELS[status]}
       </StatusPill>
       {/* The column's value is never printed verbatim -- what a reader of the register
-          needs for `"esterno"` is that this invoice was issued elsewhere, so it carries
+          needs for `"external"` is that this invoice was issued elsewhere, so it carries
           no XML and no PDF pigroCRM produced, and not the name of the tool it came out
           of, which is the owner's business and no part of the CRM's copy. `"fatturapa"`
           is different: it is the name of the transmission standard, not a product, and

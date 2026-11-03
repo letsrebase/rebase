@@ -152,7 +152,7 @@ export function buildInvoiceColumns(
       header: 'Stato',
       id: 'status',
       // `importata={false}` suppresses only the uninformative «importata» pill an
-      // "esterno" row would otherwise get (ORB-130: in a register where most rows came
+      // "external" row would otherwise get (ORB-130: in a register where most rows came
       // from the previous system the word explains nothing a reader of the list can act
       // on -- the detail page keeps it, as the reason its XML actions are missing). A
       // "fatturapa" row's own badge ignores the flag and still shows here: it names a

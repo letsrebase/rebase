@@ -276,7 +276,7 @@ describe('the invoice list', () => {
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 
-  /** REB-368: unlike the "esterno" pill the list still suppresses (assertion above,
+  /** REB-368: unlike the "external" pill the list still suppresses (assertion above,
    *  ORB-130), a "fatturapa" row's own badge names a fact the list can act on -- the
    *  original file is on record and downloadable -- so it shows here too. A space
    *  with both import kinds therefore reads two distinct badges across its rows: the

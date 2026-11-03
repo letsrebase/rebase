@@ -31,9 +31,9 @@ describe('the settings label maps', () => {
   })
 
   it('names the five seeded cost categories and none contains an underscore', () => {
-    expect(costCategoryCodeLabel('consulting_esterna')).toBe('Consulenza esterna')
-    expect(costCategoryCodeLabel('software_licenze')).toBe('Software e licenze')
-    expect(costCategoryCodeLabel('travel_trips')).toBe('Viaggi e trasferte')
+    expect(costCategoryCodeLabel('external_consulting')).toBe('Consulenza esterna')
+    expect(costCategoryCodeLabel('software_licenses')).toBe('Software e licenze')
+    expect(costCategoryCodeLabel('travel')).toBe('Viaggi e trasferte')
     expect(costCategoryCodeLabel('materials')).toBe('Materiali')
     expect(costCategoryCodeLabel('other')).toBe('Altro')
     for (const label of Object.values(COST_CATEGORY_CODE_LABELS)) expect(label).not.toContain('_')

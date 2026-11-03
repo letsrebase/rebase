@@ -14,7 +14,7 @@ export const PROPOSAL_ID = '3f0c2a10-0000-4000-8000-000000000004'
 
 export function reminder(overrides: Partial<Reminder> = {}): Reminder {
   return {
-    key: `attivita_overdue:${ACME_ACTIVITY_ID}`,
+    key: `task_overdue:${ACME_ACTIVITY_ID}`,
     type: 'task_overdue',
     label: 'Attività scaduta',
     severity: 'critical',

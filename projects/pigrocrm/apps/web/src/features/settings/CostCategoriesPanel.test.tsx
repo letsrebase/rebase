@@ -32,7 +32,7 @@ const SOFTWARE = {
   id: 'cat-2',
   nome: 'Software e licenze',
   position: 1,
-  code: 'software_licenze',
+  code: 'software_licenses',
   archived: false,
   ...TIMES,
 }
@@ -40,7 +40,7 @@ const CONSULTING = {
   id: 'cat-1',
   nome: 'Consulenza esterna',
   position: 0,
-  code: 'consulting_esterna',
+  code: 'external_consulting',
   archived: false,
   ...TIMES,
 }

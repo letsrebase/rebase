@@ -92,7 +92,7 @@ export function toRequestBody(
   const { initial, locked, isRenderedCustomKey } = options
   // Clearing a rate is the one native clear that matters most here: it is a deliberate
   // "this hour has no price", and `TimeEntryService.update` records it as
-  // `origine = "assente"` rather than letting the deal's rate quietly take over.
+  // `origine = "absent"` rather than letting the deal's rate quietly take over.
   return buildRequestBody(values, {
     fields: NATIVE_FIELDS,
     initial,

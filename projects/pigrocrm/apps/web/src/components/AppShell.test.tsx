@@ -509,7 +509,7 @@ describe('AppShell', () => {
   /** What the API answers for the list: two open, one snoozed and one acknowledged. */
   function answerReminders(statuses: Array<'open' | 'snoozed' | 'acknowledged'>) {
     const list = statuses.map((status, index) => ({
-      key: `attivita_due:${index}`,
+      key: `task_due:${index}`,
       type: 'task_due',
       label: 'Attività in scadenza',
       severity: 'warning',
