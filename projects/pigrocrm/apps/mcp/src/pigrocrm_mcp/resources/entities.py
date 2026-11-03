@@ -14,6 +14,8 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 
+_DEAL_HOURS_STATUS = {"in_progress": "in corso", "to_invoice": "da fatturare", "closed": "chiuso"}
+
 
 def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[str]:
     entries = ActivityService(context.session).timeline(entity, entity_id, limit=10)
@@ -183,7 +185,7 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     lines += [
         "",
         "## Ore",
-        f"- Stato: **{summary.status}**",
+        f"- Stato: **{_DEAL_HOURS_STATUS.get(summary.status, summary.status)}**",
         f"- Ore consuntivate: {summary.total_hours}",
         f"- Ore fatturabili non ancora fatturate: {summary.billable_uninvoiced_hours}",
         f"- Valore delle ore non fatturate (stima): {summary.unbilled_hours_value} EUR",
