@@ -90,7 +90,7 @@ def _iso(moment: datetime) -> str:
 
 def _actor_label(actor: dict[str, object]) -> str:
     """Who acted, as stored: the kind and, when there is one, the id of the person or token."""
-    kind = str(actor.get("kind", "system"))
+    kind = str(actor.get("kind", "sistema"))
     return f"{kind} {actor['id']}" if actor.get("id") else kind
 
 
