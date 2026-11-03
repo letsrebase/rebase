@@ -18,10 +18,9 @@ stopped being their last caller.
 import logging
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from rebase_api.deps import (
@@ -37,25 +36,44 @@ from rebase_api.deps import (
     SettingsDep,
 )
 from rebase_api.downloads import cv_response, pdf_response
+from rebase_api.params import Cursor, Limit, SearchQ
+from rebase_core.admin_schemas import CrmLinkBody, StatusChange, VettedChange
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.anonymous_cv.render import CvHead, filename
 from rebase_core.anonymous_cv.writer import AnonymousCvWriter
 from rebase_core.audit import AdminActionRead, AdminActionService
-from rebase_core.cards import CardWriter, Regeneration
+from rebase_core.card_types import Regeneration
+from rebase_core.card_writer import CardWriter
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import (
+    CompanyAdminCreate,
+    CompanyList,
+    CompanyOverride,
+    CompanyRead,
+    TalentCloudGrantRead,
+)
 from rebase_core.crm_link import NOT_CONFIGURED as CRM_NOT_CONFIGURED
 from rebase_core.duplicates import DuplicateListRead, duplicate_list
 from rebase_core.errors import NotFound, TeamBuilderOff
+from rebase_core.freelancer_schemas import (
+    FreelancerDetail,
+    FreelancerDraft,
+    FreelancerList,
+    FreelancerOverride,
+    FreelancerRead,
+)
 from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
+from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
-from rebase_core.mail import EmailSender, Mail
+from rebase_core.mail import send_after_response
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
 from rebase_core.models import NAME_MAX_LENGTH, User
+from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
 from rebase_core.notes import NoteService
-from rebase_core.pagination import CURSOR_MAX_LENGTH
 from rebase_core.perks import PerkService
+from rebase_core.referral_ledger import ReferralLedgerService
 from rebase_core.referral_schemas import (
     ReferralLedgerItem,
     ReferralLedgerList,
@@ -64,32 +82,10 @@ from rebase_core.referral_schemas import (
     ReferralSettingsRead,
     ReferralSettingsUpdate,
 )
-from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    CompanyAdminCreate,
-    CompanyList,
-    CompanyOverride,
-    CompanyRead,
-    CrmLinkBody,
-    FreelancerDetail,
-    FreelancerDraft,
-    FreelancerList,
-    FreelancerOverride,
-    FreelancerRead,
-    GuideStats,
-    LoginStats,
-    NoteCreate,
-    NoteRead,
-    NoteUpdate,
-    SignupList,
-    StatusChange,
-    TalentCloudGrantRead,
-    TalentoList,
-    TalentoRead,
-    VettedChange,
-)
-from rebase_core.search import SEARCH_MAX_LENGTH
+from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupList
+from rebase_core.talent_schemas import TalentoList, TalentoRead
 from rebase_core.talenti import TalentiService, lead_by_id
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
@@ -102,22 +98,6 @@ _log = logging.getLogger(__name__)
 # The door an admin's write comes through, recorded on notes and on status changes.
 SOURCE = "web"
 
-
-def _send(sender: EmailSender, mail: Mail) -> None:
-    """Runs after the response, same reasoning as `routers/members.py`'s own: a refusal
-    is logged without the address or the key."""
-    if not sender.send(mail):
-        _log.warning("a promotion's magic link mail was refused by the provider")
-
-
-Limit = Annotated[int, Query(ge=1, le=500)]
-# REB-285: shared by every list a cursor and a search box were added to (`/talent`,
-# `/companies`, and since REB-313 `/admins` and `/logins`). `SearchQ`'s bound is
-# `search.SEARCH_MAX_LENGTH`, `Cursor`'s is `pagination.CURSOR_MAX_LENGTH` -- both
-# bounded for the reason every free-text query parameter in this codebase is: an
-# unbounded one reaching the database is a denial of service with extra steps.
-SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
-Cursor = Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)]
 
 # ---- the admins ------------------------------------------------------------------------
 #
@@ -155,7 +135,7 @@ class PromoteRequest(BaseModel):
 
 @router.post("/admins/promote", response_model=AdminRead)
 def promote_admin(
-    _: AdminDep,
+    admin: AdminDep,
     session: SessionDep,
     settings: SettingsDep,
     sender: SenderDep,
@@ -167,20 +147,27 @@ def promote_admin(
     for it (§1, Nav and Amministratori). A brand-new row gets the same magic link
     everyone else gets, since it has no other way in yet."""
     users = UserService(session, settings)
-    user, created = users.promote(payload.email, payload.nome, payload.cognome)
+    user, created = users.promote(payload.email, payload.nome, payload.cognome, admin_id=admin.id)
     if created and sender is not None:
         mail = users.request_link(user.email)
         if mail is not None:
-            background.add_task(_send, sender, mail)
+            background.add_task(
+                send_after_response, sender, mail, f"magic link of the promoted user {user.id}"
+            )
     return AdminRead.model_validate(user)
 
 
 @router.post("/admins/{user_id}/demote", response_model=AdminRead)
 def demote_admin(
-    _: AdminDep, session: SessionDep, settings: SettingsDep, user_id: UUID
+    admin: AdminDep, session: SessionDep, settings: SettingsDep, user_id: UUID
 ) -> AdminRead:
-    """Sets `role = 'member'`, fully reversible since nothing is deleted."""
-    return AdminRead.model_validate(UserService(session, settings).demote(user_id))
+    """Sets `role = 'member'`, fully reversible since nothing is deleted. 409 with the
+    sentence for the last remaining admin, 422 for an address merged into somebody. Both
+    the promotion and the demotion are signed in the trail (`admin_promoted`,
+    `admin_demoted`), in the same transaction as the role."""
+    return AdminRead.model_validate(
+        UserService(session, settings).demote(user_id, admin_id=admin.id)
+    )
 
 
 # ---- the lists -------------------------------------------------------------------------
@@ -339,7 +326,7 @@ def download_anonymous_cv(
 
 @router.get("/freelancers/{freelancer_id}/audit", response_model=list[AdminActionRead])
 def freelancer_audit(
-    _: AdminDep, session: SessionDep, freelancer_id: UUID, limit: int = 50
+    _: AdminDep, session: SessionDep, freelancer_id: UUID, limit: Limit = 50
 ) -> list[AdminActionRead]:
     """Who overrode, cleared, deleted or restored this card, and when."""
     return FreelancerService(session).audit_timeline(freelancer_id, limit)
@@ -493,7 +480,7 @@ def restore_company(admin: AdminDep, session: SessionDep, company_id: UUID) -> C
 
 @router.get("/companies/{company_id}/audit", response_model=list[AdminActionRead])
 def company_audit(
-    _: AdminDep, session: SessionDep, company_id: UUID, limit: int = 50
+    _: AdminDep, session: SessionDep, company_id: UUID, limit: Limit = 50
 ) -> list[AdminActionRead]:
     """Who overrode, deleted or restored this request, and when."""
     return CompanyService(session).audit_timeline(company_id, limit)
@@ -509,12 +496,6 @@ def revert_company_action(
 
 
 # ---- the talent cloud's door (REB-518) ---------------------------------------------------
-
-
-def _send_cloud_opened(sender: EmailSender, mail: Mail, grant_id: UUID) -> None:
-    """After the response, like `_send`: a refusal is logged by the grant's id alone."""
-    if not sender.send(mail):
-        _log.warning("talent cloud grant %s: the mail was refused by the provider", grant_id)
 
 
 @router.post(
@@ -541,7 +522,7 @@ def open_talent_cloud(
     elif sender is None:
         _log.info("talent cloud grant %s: no mail sender, not mailed", read.id)
     else:
-        background.add_task(_send_cloud_opened, sender, mail, read.id)
+        send_after_response(sender, mail, f"talent cloud grant {read.id}")
     return read
 
 
@@ -730,16 +711,16 @@ def list_referrals(
     stato: str | None = None,
     cursor: Cursor = None,
 ) -> ReferralLedgerList:
-    return ReferralService(session).list_rewards(limit=limit, stato=stato, cursor=cursor)
+    return ReferralLedgerService(session).list_rewards(limit=limit, stato=stato, cursor=cursor)
 
 
 @router.post("/referrals/{reward_id}/state", response_model=ReferralLedgerItem)
 def set_referral_state(
     admin: AdminDep, session: SessionDep, reward_id: UUID, payload: ReferralRewardStateChange
 ) -> ReferralLedgerItem:
-    """`da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralService.
+    """`da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralLedgerService.
     set_state`). Tracking only: nothing here pays anyone."""
-    service = ReferralService(session)
+    service = ReferralLedgerService(session)
     service.set_state(reward_id, payload.stato, admin.id)
     return service.get_ledger_item(reward_id)
 
@@ -750,14 +731,14 @@ def set_referral_price(
 ) -> ReferralLedgerItem:
     """What an admin prices by hand for a reward `record_reward_if_signed` left with
     no figure (an `a corpo` letter with no `giorni_previsti` estimate)."""
-    service = ReferralService(session)
+    service = ReferralLedgerService(session)
     service.set_price(reward_id, payload.base_amount, payload.reward_amount)
     return service.get_ledger_item(reward_id)
 
 
 @router.get("/referral-settings", response_model=ReferralSettingsRead)
 def get_referral_settings(_: AdminDep, session: SessionDep) -> ReferralSettingsRead:
-    row = ReferralService(session).get_settings()
+    row = ReferralSettingsService(session).get_settings()
     updated_by = session.get(User, row.updated_by) if row.updated_by is not None else None
     return ReferralSettingsRead(
         rate_freelancer=row.rate_freelancer,
@@ -773,7 +754,7 @@ def save_referral_settings(
 ) -> ReferralSettingsRead:
     """Both rates together (`ReferralSettingsUpdate`'s own reasoning): a ledger open
     on stale numbers is a worse mistake than asking for the pair every time."""
-    row = ReferralService(session).save_settings(
+    row = ReferralSettingsService(session).save_settings(
         payload.rate_freelancer, payload.rate_company, admin.id
     )
     return ReferralSettingsRead(

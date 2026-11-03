@@ -8,7 +8,7 @@ to that row; the member area keeps reading it through `GET /api/hub/me/referral`
 
 Public, deliberately, like the other GETs of this hub the site opens (`/team/proposals/{id}`):
 no cookie, no token. Read-only in the strict sense, too: it never inserts the row the
-member area seeds on first need (`ReferralService.public_rates`). No speed bump
+member area seeds on first need (`ReferralSettingsService.public_rates`). No speed bump
 (`spend_one`): the bucket is the signups' and the wizards', so a page that reads the rates
 on every view would spend a visitor's five-a-minute before they submit the form; the read
 is one row by `created_at`, nothing mailed and nothing written, and a real cap belongs at
@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from rebase_api.deps import SessionDep
 from rebase_core.referral_schemas import PublicReferralRates
-from rebase_core.referrals import ReferralService
+from rebase_core.referral_settings import ReferralSettingsService
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])
 
@@ -54,7 +54,7 @@ def referral_rates(session: SessionDep) -> PublicReferralRates:
     figure it was going to quote. It never falls back to a typed 10% or 30%. A database
     that does not answer is the framework's own 500, which a page drops the same way. A
     200 is never partial, so a client reads either both rates or neither."""
-    rates = ReferralService(session).public_rates()
+    rates = ReferralSettingsService(session).public_rates()
     if rates is None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, UNREADABLE, headers={"Cache-Control": "no-store"}

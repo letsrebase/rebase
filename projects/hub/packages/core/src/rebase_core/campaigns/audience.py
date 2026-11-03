@@ -12,10 +12,11 @@ from pydantic import TypeAdapter
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
-from rebase_core.campaigns.actions import done_at
+from rebase_core.campaigns.actions import done_at_many
 from rebase_core.campaigns.schemas import AziendeFiltri, Filtri, TalentiFiltri
 from rebase_core.campaigns.states import Candidate, candidates_for_state, display_name
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyRead
 from rebase_core.models import (
     Campaign,
     CampaignOptout,
@@ -24,7 +25,7 @@ from rebase_core.models import (
     Freelancer,
     User,
 )
-from rebase_core.schemas import CompanyRead, TalentoRead
+from rebase_core.talent_schemas import TalentoRead
 from rebase_core.talenti import LIST_LIMIT_MAX, TalentiService
 
 ROME = ZoneInfo("Europe/Rome")
@@ -175,7 +176,7 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         if company_ids
         else set()
     )
-    found: list[CampaignRecipient] = []
+    open_rows: list[CampaignRecipient] = []
     for row in rows:
         if row.id not in richieste_by_row:
             continue  # its own snapshot was already unreadable, and logged above
@@ -184,10 +185,10 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         richieste = richieste_by_row[row.id]
         if richieste and not any(cid in alive_companies for cid in richieste):
             continue
-        if done_at(session, row, parent.azione, since=row.inviata_at) is not None:
-            continue
-        found.append(row)
-    return found
+        open_rows.append(row)
+    # One read per kind of fact for the whole list, not up to three per person.
+    done = done_at_many(session, open_rows, parent.azione, since=lambda row: row.inviata_at)
+    return [row for row in open_rows if done[row.id] is None]
 
 
 def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:

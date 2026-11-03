@@ -15,8 +15,8 @@ export const ACTION_SOURCE_LABELS: Record<ActionSource, string> = {
   cli: 'da riga di comando',
 }
 
-export function noteSourceLabel(fonte: ActionSource | null | undefined): string | null {
-  return fonte ? ACTION_SOURCE_LABELS[fonte] : null
+export function noteSourceLabel(fonte: string | null | undefined): string | null {
+  return fonte ? ((ACTION_SOURCE_LABELS as Record<string, string>)[fonte] ?? fonte) : null
 }
 
 /** Why a regeneration did not write a card, in a few words: the failures the writer

@@ -8,7 +8,8 @@ from fastapi import APIRouter, BackgroundTasks, Request, status
 from rebase_api.deps import CrmFilingDep, SessionDep, TrackerDep
 from rebase_api.ratelimit import spend_one
 from rebase_core.companies import CompanyService
-from rebase_core.schemas import Ack, CompanyCreate
+from rebase_core.company_schemas import CompanyCreate
+from rebase_core.schema_common import Ack
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])
 

@@ -16,16 +16,18 @@
 * **The daily cap** is the task's `daily_cap_eur`, summed over every purpose (`run`,
   `prova`, `eval`) of that task since midnight in Rome, where the day of the people running
   rebase begins (`team_caps.py` counts the same day; it is not imported here because it
-  reaches the seam this module feeds).
+  reaches the seam this module feeds). What counts is what was answered plus the **holds**
+  of the calls in flight: `reserve` places one before the network call under a lock on the
+  task (`ai_spend.py`), so concurrent calls cannot all pass the cap, and `record_usage`
+  with its `hold_id` settles it into the call's real row (REB-889).
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, time
-from decimal import Decimal
+from decimal import ROUND_UP, Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -39,10 +41,21 @@ from rebase_core.ai_schemas import (
     SpendRow,
     TaskRead,
 )
+from rebase_core.ai_spend import (
+    BATCH_HOLD_TTL,
+    HOLD_TTL,
+    ROME,
+    place_hold,
+    release_hold,
+    settled,
+    spent_since_midnight,
+)
 from rebase_core.audit import AdminActionRead, AdminActionService, field_changes, utcnow
 from rebase_core.config import Settings
 from rebase_core.errors import (
     InvalidState,
+    LlmCapReached,
+    LlmNotConfigured,
     NotFound,
     SecretsKeyMissing,
     ValidationFailed,
@@ -62,7 +75,6 @@ from rebase_core.models import (
 )
 from rebase_core.secrets import last_four, seal, secrets_key_bytes, unseal
 
-ROME = ZoneInfo("Europe/Rome")
 # `AdminAction.entity_id` is a UUID and the configuration is not a row: one fixed id.
 AI_CONFIG_ENTITY = "ai_config"
 AI_CONFIG_ENTITY_ID = uuid5(NAMESPACE_URL, "https://letsrebase.com/hub/ai_config")
@@ -127,8 +139,18 @@ def key_hint(last4: str) -> str:
     return f"configurata, finisce con …{last4}"
 
 
-def rome_midnight(now: datetime) -> datetime:
-    return datetime.combine(now.astimezone(ROME).date(), time.min, tzinfo=ROME)
+def _thinking_price(price: AiPrice) -> Decimal:
+    """Thinking is billed at its own price, or at the output price when it has none."""
+    if price.thinking_eur_per_mtok is not None:
+        return price.thinking_eur_per_mtok
+    return price.output_eur_per_mtok
+
+
+def _require_usage(task: str, purpose: str) -> None:
+    if task not in AI_TASKS:
+        raise ValidationFailed("ai_usage", "task", f"compito sconosciuto: {task}")
+    if purpose not in AI_USAGE_PURPOSES:
+        raise ValidationFailed("ai_usage", "purpose", f"scopo sconosciuto: {purpose}")
 
 
 def _require_provider(provider: str) -> None:
@@ -229,7 +251,7 @@ class AiConfigService:
         row = self.session.get(AiProvider, provider)
         if row is None or row.key_ciphertext is None or row.key_nonce is None:
             return None
-        return unseal(row.key_ciphertext, row.key_nonce, secrets_key_bytes(self.settings))
+        return unseal(row.key_ciphertext, row.key_nonce, secrets_key_bytes(self.settings), provider)
 
     def trail(self, limit: int = 50) -> list[AdminActionRead]:
         """The `ai_config` entries of the trail, newest first, each with the admin's name
@@ -241,9 +263,10 @@ class AiConfigService:
         )
 
     def spent_today(self, task: str) -> Decimal:
-        """What the task spent since midnight in Rome, every purpose together. An unpriced
-        call adds nothing here (it has no cost), which is why `can_call` refuses a model
-        with no price rather than let it spend unseen."""
+        """What the task spent since midnight in Rome, every purpose together: the calls
+        answered and the holds of the calls in flight (`reserve`). An unpriced call adds
+        nothing here (it has no cost), which is why `can_call` refuses a model with no price
+        rather than let it spend unseen."""
         return self._spent(task, self.now())
 
     def can_call(self, task: str) -> tuple[bool, str | None]:
@@ -266,7 +289,7 @@ class AiConfigService:
         if not cleaned:
             raise ValidationFailed("ai_provider", "key", "la chiave è vuota")
         row = self._provider(provider)
-        row.key_ciphertext, row.key_nonce = seal(cleaned, secret)
+        row.key_ciphertext, row.key_nonce = seal(cleaned, secret, provider)
         row.key_last4 = last_four(cleaned)
         row.saved_by = admin_id
         row.saved_at = self.now()
@@ -403,6 +426,7 @@ class AiConfigService:
         priced_as: str | None = None,
         batch: bool = False,
         commit: bool = True,
+        hold_id: UUID | None = None,
     ) -> AiUsage:
         """Writes one call's row and commits it on its own, so a failure further up never
         loses what was spent. `model` is what answered, as shown; the price is its row's,
@@ -418,11 +442,11 @@ class AiConfigService:
         (`batch`, REB-853) is billed at `BATCH_DISCOUNT` of every one of those rates, the way
         Anthropic bills a Message Batch: input, output, thinking and cache reads alike.
         `commit` false leaves the row in the caller's transaction, for a caller that must
-        commit it together with something else (a batch's `usage_recorded`)."""
-        if task not in AI_TASKS:
-            raise ValidationFailed("ai_usage", "task", f"compito sconosciuto: {task}")
-        if purpose not in AI_USAGE_PURPOSES:
-            raise ValidationFailed("ai_usage", "purpose", f"scopo sconosciuto: {purpose}")
+        commit it together with something else (a batch's `usage_recorded`). `hold_id` is the
+        hold `reserve` placed for this call: its row is the one written, so the call is in
+        the books once, at its real cost; a hold that is gone (past its TTL and cleaned up)
+        is written anew, since the answer is paid for."""
+        _require_usage(task, purpose)
         price = self.session.get(AiPrice, (provider, model))
         if price is None and priced_as is not None:
             price = self.session.get(AiPrice, (provider, priced_as))
@@ -431,12 +455,7 @@ class AiConfigService:
             cost = (
                 input_tokens * price.input_eur_per_mtok
                 + output_tokens * price.output_eur_per_mtok
-                + thinking_tokens
-                * (
-                    price.thinking_eur_per_mtok
-                    if price.thinking_eur_per_mtok is not None
-                    else price.output_eur_per_mtok
-                )
+                + thinking_tokens * _thinking_price(price)
                 + cache_read_tokens
                 * (
                     price.cache_read_eur_per_mtok
@@ -447,25 +466,83 @@ class AiConfigService:
             if batch:
                 cost *= BATCH_DISCOUNT
             cost = cost.quantize(_COST_PLACES)
-        usage = AiUsage(
-            at=self.now(),
+        usage = self.session.get(AiUsage, hold_id) if hold_id is not None else None
+        if usage is None or usage.reserved_until is None:
+            usage = AiUsage(task=task, purpose=purpose, priced=False)
+            self.session.add(usage)
+        usage.at = self.now()
+        usage.provider = provider
+        usage.model = model
+        usage.input_tokens = input_tokens
+        usage.output_tokens = output_tokens
+        usage.thinking_tokens = thinking_tokens
+        usage.cache_read_tokens = cache_read_tokens
+        usage.cost_eur = cost
+        usage.priced = price is not None
+        usage.freelancer_id = freelancer_id
+        usage.batch = batch
+        usage.reserved_until = None
+        if commit:
+            self.session.commit()
+        return usage
+
+    def estimate_call(
+        self, provider: str, model: str, input_tokens: int, max_output_tokens: int
+    ) -> Decimal:
+        """What a call of at most `max_output_tokens` of answer (thinking included: it is
+        inside the ceiling) on `input_tokens` of input can cost, at the model's price: every
+        input token at the input price, every allowed output token at the dearer of the
+        output and thinking prices, rounded up. Over rather than under: a cache read is
+        cheaper than the input price it is estimated at. `LlmNotConfigured` without a price
+        row (`can_call` refuses that first)."""
+        price = self.session.get(AiPrice, (provider, model))
+        if price is None:
+            raise LlmNotConfigured(NO_PRICE)
+        output_price = max(price.output_eur_per_mtok, _thinking_price(price))
+        cost = (input_tokens * price.input_eur_per_mtok + max_output_tokens * output_price) / _MTOK
+        return cost.quantize(_COST_PLACES, rounding=ROUND_UP)
+
+    def reserve(
+        self,
+        task: str,
+        purpose: str,
+        provider: str,
+        model: str,
+        estimate: Decimal,
+        *,
+        batch: bool = False,
+    ) -> UUID:
+        """Holds `estimate` euros of the task's daily cap for a call about to go out and
+        returns the hold's id, committed, or raises `LlmCapReached` when what is spent and
+        held plus `estimate` does not fit (`ai_spend.place_hold`: the check and the insert
+        are one transaction under a lock on the task, so concurrent calls cannot all pass).
+        After the answer, `record_usage(hold_id=...)` settles the hold into the call's row;
+        when the call fails, `release` gives it back. `batch` holds are for a Message Batch
+        and last until its answers are recorded. Commits the session."""
+        _require_usage(task, purpose)
+        row = self.session.get(AiTask, task)
+        if row is None:
+            raise NotFound("ai_task", task)
+        hold_id = place_hold(
+            self.session,
             task=task,
             purpose=purpose,
             provider=provider,
             model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            thinking_tokens=thinking_tokens,
-            cache_read_tokens=cache_read_tokens,
-            cost_eur=cost,
-            priced=price is not None,
-            freelancer_id=freelancer_id,
+            estimate=estimate,
+            cap=row.daily_cap_eur,
+            now=self.now(),
+            ttl=BATCH_HOLD_TTL if batch else HOLD_TTL,
             batch=batch,
         )
-        self.session.add(usage)
-        if commit:
-            self.session.commit()
-        return usage
+        if hold_id is None:
+            raise LlmCapReached(CAP_REACHED)
+        return hold_id
+
+    def release(self, hold_id: UUID, *, commit: bool = True) -> None:
+        """Gives a hold back, for a call that failed or a batch whose answers are in;
+        `commit` false leaves the delete in the caller's transaction."""
+        release_hold(self.session, hold_id, commit=commit)
 
     def seed_from_env(
         self,
@@ -490,7 +567,7 @@ class AiConfigService:
         row = self._provider("anthropic")
         if row.key_ciphertext is not None:
             raise InvalidState("La chiave di anthropic c'è già: il seed non la sovrascrive")
-        row.key_ciphertext, row.key_nonce = seal(key, secret)
+        row.key_ciphertext, row.key_nonce = seal(key, secret, "anthropic")
         row.key_last4 = last_four(key)
         row.saved_by = admin_id
         row.saved_at = self.now()
@@ -565,9 +642,10 @@ class AiConfigService:
         ).all()
         try:
             for row in rows:
-                assert row.key_ciphertext is not None and row.key_nonce is not None
-                clear = unseal(row.key_ciphertext, row.key_nonce, old_key)
-                row.key_ciphertext, row.key_nonce = seal(clear, new_key)
+                if row.key_ciphertext is None or row.key_nonce is None:
+                    continue
+                clear = unseal(row.key_ciphertext, row.key_nonce, old_key, row.provider)
+                row.key_ciphertext, row.key_nonce = seal(clear, new_key, row.provider)
                 count += 1
             self.session.commit()
         except Exception:
@@ -624,11 +702,13 @@ class AiConfigService:
             if row.updated_by is not None and (user := self.session.get(User, row.updated_by))
         }
         return [
-            SourceSwitchRead(
-                kind=row.kind,  # type: ignore[arg-type]
-                enabled=row.enabled,
-                updated_at=row.updated_at,
-                updated_by_name=names.get(row.updated_by) if row.updated_by else None,
+            SourceSwitchRead.model_validate(
+                {
+                    "kind": row.kind,
+                    "enabled": row.enabled,
+                    "updated_at": row.updated_at,
+                    "updated_by_name": names.get(row.updated_by) if row.updated_by else None,
+                }
             )
             for row in rows
         ]
@@ -650,12 +730,7 @@ class AiConfigService:
         return None
 
     def _spent(self, task: str, now: datetime) -> Decimal:
-        total = self.session.scalar(
-            select(func.coalesce(func.sum(AiUsage.cost_eur), 0)).where(
-                AiUsage.task == task, AiUsage.at >= rome_midnight(now)
-            )
-        )
-        return Decimal(total or 0)
+        return spent_since_midnight(self.session, task, now)
 
     def _task_read(self, row: AiTask, now: datetime) -> TaskRead:
         spent = self._spent(row.task, now)
@@ -683,7 +758,7 @@ class AiConfigService:
                 func.count(),
                 func.coalesce(func.sum(case((AiUsage.priced.is_(False), 1), else_=0)), 0),
             )
-            .where(AiUsage.at >= start)
+            .where(AiUsage.at >= start, settled())
             .group_by(AiUsage.task, AiUsage.provider)
             .order_by(AiUsage.task, AiUsage.provider)
         ).all()

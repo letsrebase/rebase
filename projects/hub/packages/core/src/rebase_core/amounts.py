@@ -14,7 +14,7 @@ in `apps/web/src/lib/amount_cases.json`:
 
 Precision is not the parser's business: the schemas refuse more than two decimals where a
 value is stored. The multipart wizard (`rebase_api.routers.freelancers`), the MCP tools and
-`MatchService.proposal` read an amount through it, so «1.500» is 1500 whichever door it
+`MatchDrafts.proposal` read an amount through it, so «1.500» is 1500 whichever door it
 came in by.
 """
 

@@ -6,14 +6,14 @@ import hmac
 import time
 
 import pytest
-from campaign_fixtures import campaign_row, clean  # noqa: F401
+from campaign_fixtures import RESEND_TEST_SECRET, campaign_row, clean  # noqa: F401
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.optouts import OptoutService
 from rebase_core.campaigns.webhook import apply_event, verify_signature
 from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient
 
-SECRET = "whsec_" + base64.b64encode(b"k" * 24).decode()
+SECRET = RESEND_TEST_SECRET
 
 
 def signed(body: bytes, *, svix_id: str = "msg_1", at: int | None = None) -> tuple[str, str, str]:

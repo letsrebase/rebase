@@ -10,8 +10,14 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_core.schemas import SignupAck, SignupCreate, SignupListItem, SignupRead, SignupUtm
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import (
+    SignupAck,
+    SignupCreate,
+    SignupListItem,
+    SignupRead,
+    SignupUtm,
+)
 
 
 def _create(email: str, **extra: object) -> SignupCreate:

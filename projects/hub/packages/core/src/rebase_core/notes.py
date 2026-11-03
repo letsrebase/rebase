@@ -29,7 +29,8 @@ from rebase_core.models import (
     Note,
     User,
 )
-from rebase_core.schemas import NoteRead, clean_multiline, note_is_editable
+from rebase_core.note_schemas import NoteRead, note_is_editable
+from rebase_core.schema_common import clean_multiline
 
 ENTITY = "nota"
 NOT_EDITABLE = (

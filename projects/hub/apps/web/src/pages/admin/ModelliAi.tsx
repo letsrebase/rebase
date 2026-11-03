@@ -240,11 +240,11 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
   }
   if (!stale.data) return <p className="px-6 py-4 text-sm text-muted-foreground">Caricamento…</p>
   const data: AiStaleCards = stale.data
+  // A start while a run or an unapplied batch is on is a 409: the API's sentence is shown by
+  // the form's own error line below, so only a success is told here.
   const queued = start.isSuccess && (
     <p role="status" className="px-6 pt-4 text-sm">
-      {start.data.queued === 0
-        ? 'Una rigenerazione è già in corso: attendi che finisca prima di avviarne un’altra.'
-        : `${start.data.queued} ${start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in background.`}
+      {`${start.data.queued} ${start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in background.`}
     </p>
   )
   const running = data.batch && (
@@ -758,7 +758,7 @@ function registroLabel(entry: AiAuditAction): string {
     case 'ai_key':
       return p.azione === 'seed' ? `Chiave ${provider} importata dalla configurazione precedente` : `Chiave ${provider} sostituita`
     case 'ai_switch': {
-      const on = p.after?.enabled === true
+      const on = typeof p.after === 'object' && p.after.enabled === true
       return p.source
         ? `Fonte «${SOURCE_LABELS[p.source] ?? p.source}» ${on ? 'accesa' : 'spenta'}`
         : `${provider} ${on ? 'acceso' : 'spento'}`
@@ -815,6 +815,8 @@ function registroLabel(entry: AiAuditAction): string {
       }
       return `Rigenerazione conclusa: ${parts.join(', ')}`
     }
+    default:
+      return entry.kind
   }
 }
 

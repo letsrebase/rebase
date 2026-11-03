@@ -111,7 +111,7 @@ HAS_PARTITA_IVA = (
     "attività professionale."
 )
 # An ordinary letter for someone whose saved tax data have no partita IVA is refused, on
-# `regime`, by `MatchService.check`, `preview` and `create`, and by
+# `regime`, by `MatchDrafts.check`, `preview` and `MatchService.create`, and by
 # `SigningService.send_match` when the partita IVA was removed after the draft.
 ORDINARY_NEEDS_PARTITA_IVA = (
     'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione occasionale" '

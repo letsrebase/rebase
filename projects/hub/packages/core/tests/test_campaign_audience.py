@@ -19,11 +19,11 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     lead,
     person,
 )
-from sqlalchemy import event
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 import rebase_core.campaigns.audience as audience_module
-from rebase_core.campaigns.actions import done_at, snapshot
+from rebase_core.campaigns.actions import CV_NOTE_PREFIX, _card, done_at, done_at_many, snapshot
 from rebase_core.campaigns.audience import (
     REASON_ADMIN,
     REASON_BOUNCED,
@@ -37,14 +37,22 @@ from rebase_core.campaigns.audience import (
 from rebase_core.campaigns.schemas import ScheduleRequest
 from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.campaigns.service import CampaignService
-from rebase_core.campaigns.states import JOURNEY_STATES, PHASE_ONE_STATES, candidates_for_state
+from rebase_core.campaigns.states import (
+    JOURNEY_STATES,
+    PHASE_ONE_STATES,
+    Candidate,
+    candidates_for_state,
+)
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.models import (
     CAMPAIGN_ACTIONS,
     CAMPAIGN_DESTINATIONS,
     CampaignOptout,
     CampaignRecipient,
+    Company,
     Login,
+    Note,
+    User,
 )
 from rebase_core.notes import NoteService
 
@@ -429,7 +437,7 @@ def test_the_follow_ups_preview_and_schedule_survive_a_broken_parent_row(
     assert scheduled.stato == "programmata"
 
 
-def test_a_non_parse_error_from_done_at_propagates_instead_of_dropping_the_row(
+def test_a_non_parse_error_from_the_done_check_propagates_instead_of_dropping_the_row(
     clean: Session,  # noqa: F811  (fixture)
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -455,7 +463,7 @@ def test_a_non_parse_error_from_done_at_propagates_instead_of_dropping_the_row(
     def raising(*args: object, **kwargs: object) -> None:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(audience_module, "done_at", raising)
+    monkeypatch.setattr(audience_module, "done_at_many", raising)
     with pytest.raises(RuntimeError, match="boom"):
         waiting_rows(clean, parent)
 
@@ -566,7 +574,7 @@ def test_a_value_error_from_inside_done_at_propagates_too(
     def raising(*args: object, **kwargs: object) -> None:
         raise ValueError("not this row's own snapshot")
 
-    monkeypatch.setattr(audience_module, "done_at", raising)
+    monkeypatch.setattr(audience_module, "done_at_many", raising)
     with pytest.raises(ValueError, match="not this row's own snapshot"):
         waiting_rows(clean, parent)
 
@@ -612,3 +620,174 @@ def test_a_filtered_list_shows_a_scartato_card_as_excluded_even_when_it_asks_for
     campaign = campaign_row(clean, fonte="filtri", stato_percorso=None, filtri=filtri)
     rows = build_audience(clean, campaign, now=T0, gap_days=3)
     assert [(r.candidate.email, r.escluso) for r in rows] == [("no@studio.it", REASON_DISCARDED)]
+
+
+# ---- the done check reads once per kind of fact, not once per person (REB-891) -----------
+
+
+def _reference_done_at(
+    session: Session,
+    recipient: CampaignRecipient,
+    azione: str,
+    *,
+    since: datetime | None = None,
+    now: datetime | None = None,
+) -> datetime | None:
+    """`done_at` as it was before it was batched: up to three statements per row."""
+    prima = recipient.prima or {}
+    moment = since if since is not None else datetime.fromisoformat(prima["t"])
+    if azione == "entrato":
+        user_id = recipient.user_id or session.scalar(
+            select(User.id).where(func.lower(User.email) == recipient.email)
+        )
+        if user_id is None:
+            return None
+        return session.scalar(
+            select(func.min(Login.logged_at)).where(
+                Login.user_id == user_id, Login.logged_at > moment
+            )
+        )
+    if azione in ("cv", "scheda_completa", "profilo_creato"):
+        card = _card(session, recipient.email)
+        if card is None:
+            return None
+        if azione == "profilo_creato":
+            created = not prima.get("ha_scheda") and card.created_at > moment
+            return card.created_at if created else None
+        if azione == "cv":
+            if prima.get("ha_cv") or card.cv_size is None:
+                return None
+            noted = session.scalar(
+                select(func.min(Note.created_at)).where(
+                    Note.entity_type == "freelancer",
+                    Note.entity_id == card.id,
+                    Note.fonte == "persona",
+                    Note.eliminata_at.is_(None),
+                    Note.testo.startswith(CV_NOTE_PREFIX),
+                    Note.created_at > moment,
+                )
+            )
+            return noted or card.updated_at
+        if prima.get("completa") or card.cv_size is None or card.tariffa_giornaliera is None:
+            return None
+        return now or card.updated_at
+    if azione == "richiesta_aggiornata":
+        moments: list[datetime] = []
+        for company_id, was in (prima.get("richieste") or {}).items():
+            updated = session.scalar(select(Company.updated_at).where(Company.id == company_id))
+            if updated is not None and updated > max(datetime.fromisoformat(was), moment):
+                moments.append(updated)
+        return min(moments) if moments else None
+    if azione == "clic":
+        return recipient.primo_clic_at
+    return None
+
+
+def _a_waiting_crowd(session: Session) -> tuple[Any, list[CampaignRecipient]]:
+    """Cards and requests that moved after the list froze, and ones that did not, with a
+    recipient row for each, sent at `T0`."""
+    parent = campaign_row(session, azione="cv")
+    candidates_: list[Candidate] = []
+    for n in range(4):
+        person(session, f"nocv{n}@studio.it", cv=False)
+    for n in range(3):
+        person(session, f"done{n}@studio.it", logins=0)
+    lead(session, "lead@studio.it")
+    first = company(session, "azienda@studio.it")
+    company(session, "altra@studio.it")
+    for state in ("manca_cv", "completo", "lead", "azienda_aperta"):
+        candidates_ += candidates_for_state(session, state)
+    rows = []
+    for n, candidate in enumerate(candidates_):
+        row = recipient_for(session, candidate, snapshot(session, candidate, T0))
+        row.campaign_id, row.stato, row.inviata_at = parent.id, "inviata", T0
+        row.codice, row.disiscrizione_token = f"c{n}", f"t{n}"
+        session.add(row)
+        rows.append(row)
+    session.commit()
+    # After the snapshot: two CVs (one with the person's note), two logins (one before it),
+    # a card made by the lead, one request changed.
+    for email in ("nocv0@studio.it", "nocv1@studio.it"):
+        card = _card(session, email)
+        assert card is not None
+        card.cv_size, card.cv_filename, card.cv_bytes = 4, "cv.pdf", b"%PDF"
+    session.commit()
+    first_card = _card(session, "nocv0@studio.it")
+    assert first_card is not None
+    NoteService(session).add(
+        "freelancer",
+        first_card.id,
+        "CV caricato dalla persona",
+        autore_id=first_card.user_id,
+        fonte="persona",
+    )
+    done0 = session.scalar(select(User).where(User.email == "done0@studio.it"))
+    done1 = session.scalar(select(User).where(User.email == "done1@studio.it"))
+    assert done0 is not None and done1 is not None
+    session.add(Login(user_id=done0.id, logged_at=T0 + timedelta(hours=2)))
+    session.add(Login(user_id=done1.id, logged_at=T0 - timedelta(hours=2)))
+    person(session, "lead@studio.it", nome="Giulia")
+    first.durata = "18 mesi"
+    session.commit()
+    return parent, rows
+
+
+@pytest.mark.parametrize(
+    "azione",
+    ["entrato", "cv", "scheda_completa", "profilo_creato", "richiesta_aggiornata", "clic"],
+)
+def test_the_batched_done_check_answers_what_one_row_at_a_time_answered(
+    clean: Session,  # noqa: F811  (fixture)
+    azione: str,
+) -> None:
+    _, rows = _a_waiting_crowd(clean)
+    rows[0].primo_clic_at = T0 + timedelta(minutes=3)
+    clean.commit()
+    batched = done_at_many(clean, rows, azione, since=lambda row: row.inviata_at)
+    one_by_one = {
+        row.id: _reference_done_at(clean, row, azione, since=row.inviata_at) for row in rows
+    }
+    assert batched == one_by_one
+    if azione != "clic":
+        assert any(moment is not None for moment in batched.values())
+        assert any(moment is None for moment in batched.values())
+
+
+def test_waiting_rows_reads_a_fixed_number_of_statements(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    parent, rows = _a_waiting_crowd(clean)
+    by_azione: dict[str, int] = {}
+    for azione in ("entrato", "cv", "richiesta_aggiornata"):
+        parent.azione = azione
+        clean.commit()
+        with statements(clean) as few:
+            waiting_rows(clean, parent)
+        # The same list five times as long, every row a person of its own.
+        for n in range(len(rows) * 4):
+            person(clean, f"extra{azione}{n}@studio.it", cv=False)
+        extra = [
+            CampaignRecipient(
+                campaign_id=parent.id,
+                email=f"extra{azione}{n}@studio.it",
+                tipo="freelancer",
+                codice=f"x{n}"[:8],
+                prima={"t": T0.isoformat(), "ha_cv": False},
+                disiscrizione_token=f"x{azione}{n}",
+                stato="inviata",
+                inviata_at=T0,
+            )
+            for n in range(len(rows) * 4)
+        ]
+        clean.add_all(extra)
+        clean.commit()
+        with statements(clean) as many:
+            waiting_rows(clean, parent)
+        by_azione[azione] = len(many) - len(few)
+        clean.execute(
+            CampaignRecipient.__table__.delete().where(
+                CampaignRecipient.email.like(f"extra{azione}%")
+            )
+        )
+        clean.commit()
+    assert by_azione == {azione: 0 for azione in by_azione}

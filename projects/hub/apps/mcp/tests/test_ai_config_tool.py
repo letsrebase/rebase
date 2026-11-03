@@ -11,9 +11,9 @@ import pytest
 from mcp import Client
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp_tool_support import IVAN, _payload
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
-from test_tools import IVAN, _payload
 
 from rebase_core.admin_tokens import AdminTokenService
 from rebase_core.ai_config import (
@@ -132,7 +132,7 @@ async def test_list_ai_config_requires_an_admin_token(
         with session_factory(mcp_engine)() as session:
             _, raw = AdminTokenService(session).create(admin_with_key.id, "Claude Code")
         anonymous = httpx2.AsyncClient(
-            transport=httpx2.ASGITransport(app=app), base_url="http://prova"
+            transport=httpx2.ASGITransport(app=app), base_url="http://localhost"
         )
         refused = await anonymous.post(
             "/mcp",
@@ -143,10 +143,10 @@ async def test_list_ai_config_requires_an_admin_token(
         async with (
             httpx2.AsyncClient(
                 transport=httpx2.ASGITransport(app=app),
-                base_url="http://prova",
+                base_url="http://localhost",
                 headers={"Authorization": f"Bearer {raw}"},
             ) as authed,
-            streamable_http_client("http://prova/mcp", http_client=authed) as streams,
+            streamable_http_client("http://localhost/mcp", http_client=authed) as streams,
             ClientSession(streams[0], streams[1]) as session,
         ):
             await session.initialize()

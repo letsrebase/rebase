@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from api_responses import ok
 from fakes_cards import CARD, PERSONA, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
@@ -124,6 +125,11 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     assert latest["email"] == "ada@studio.it"
     assert latest["user_id"] == str(ada_user_id)
     assert people["ada@studio.it"] != str(ada_user_id)  # the freelancer id, not the user id
+    assert latest["freelancer_id"] == people["ada@studio.it"]
+    admin_user_id = api_session.scalar(select(User.id).where(User.role == "admin"))
+    perks.record_guide_download(admin_user_id)  # a person with no card: nothing to link to
+    again = client.get("/api/hub/perks/guide").json()["recenti"][0]
+    assert (again["user_id"], again["freelancer_id"]) == (str(admin_user_id), None)
     moments = [item["downloaded_at"] for item in stats["recenti"]]
     assert moments == sorted(moments, reverse=True)
 
@@ -370,9 +376,11 @@ def test_admins_list_stays_oldest_first_with_no_term(
 ) -> None:
     """ORB-123: REB-313's cursor keeps the admins list reading as a history."""
     _login(client, sender)
-    client.post(
-        "/api/hub/admins/promote",
-        json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+    ok(
+        client.post(
+            "/api/hub/admins/promote",
+            json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+        )
     )
     listed = client.get("/api/hub/admins").json()["items"]
     assert [row["email"] for row in listed] == [ADMIN_EMAIL, "grace@rebase.it"]

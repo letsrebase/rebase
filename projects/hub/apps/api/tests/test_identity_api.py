@@ -12,7 +12,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
@@ -128,12 +128,15 @@ def test_promoting_an_existing_member_opens_the_admin_routes_on_their_own_sessio
     _apply(client, "ada.reb278@studio.it")
     _enter(client, sender, "ada.reb278@studio.it")
     assert client.get("/api/hub/admins").status_code == 403
+    _bootstrap_admin(api_session, "boss.reb278@rebase.it")
+    boss = api_session.scalar(select(User).where(User.email == "boss.reb278@rebase.it"))
+    assert boss is not None
 
     from rebase_core.config import Settings
     from rebase_core.users import UserService
 
     UserService(api_session, Settings(_env_file=None)).promote(  # type: ignore[call-arg]
-        "ada.reb278@studio.it"
+        "ada.reb278@studio.it", admin_id=boss.id
     )
     api_session.commit()
 
@@ -180,3 +183,32 @@ def test_promote_and_demote_routes(
         "grace.reb278@studio.it"
     )
     assert len(sender.sent) == before
+
+
+def test_the_last_admin_cannot_be_demoted_and_every_change_of_role_is_signed(
+    client: TestClient, sender: RecordingSender, clean: None, api_session: Session
+) -> None:
+    _bootstrap_admin(api_session)
+    ivan = _enter(client, sender, "ivan.reb278@rebase.it")
+
+    refused = client.post(f"/api/hub/admins/{ivan['id']}/demote")
+    assert refused.status_code == 409
+    assert "ultimo amministratore" in refused.json()["detail"]
+
+    promoted = client.post(
+        "/api/hub/admins/promote",
+        json={"email": "lorenzo.reb278@rebase.it", "nome": "Lorenzo", "cognome": "Fiore"},
+    ).json()
+    assert client.post(f"/api/hub/admins/{promoted['id']}/demote").status_code == 200
+
+    trail = api_session.execute(
+        text(
+            "SELECT kind, admin_id::text AS admin_id, entity_id::text AS entity_id "
+            "FROM admin_actions "
+            "WHERE kind IN ('admin_promoted', 'admin_demoted') ORDER BY created_at, id"
+        )
+    ).all()
+    assert [(row.kind, row.admin_id, row.entity_id) for row in trail] == [
+        ("admin_promoted", ivan["id"], promoted["id"]),
+        ("admin_demoted", ivan["id"], promoted["id"]),
+    ]

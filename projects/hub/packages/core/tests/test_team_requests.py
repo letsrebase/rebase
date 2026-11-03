@@ -28,14 +28,9 @@ from rebase_core.bands import Band
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, TeamBuilderBusy, ValidationFailed
-from rebase_core.mail import (
-    AVAILABLE_GREEN,
-    CTA,
-    Mail,
-    RecordingSender,
-    team_availability_mail,
-    team_request_mail,
-)
+from rebase_core.mail import Mail, RecordingSender
+from rebase_core.mail_layout import AVAILABLE_GREEN, CTA
+from rebase_core.mail_team import team_availability_mail, team_request_mail
 from rebase_core.models import (
     AdminAction,
     Freelancer,
@@ -46,20 +41,22 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.team_builder import BUSY_SENTENCE
-from rebase_core.team_caps import proposals_today, require_daily_room
-from rebase_core.team_requests import (
+from rebase_core.team_availability import (
     ALREADY_CONTACTED,
-    ALREADY_REQUESTED,
     ANSWER_MAX_AGE,
-    NAMES_THE_COMPANY,
     NO_SENDER,
     NOBODY_TO_CONTACT,
+    REQUEST_CLOSED,
+    TeamAvailabilityService,
+)
+from rebase_core.team_builder import BUSY_SENTENCE
+from rebase_core.team_caps import proposals_today, require_daily_room
+from rebase_core.team_company_names import NAMES_THE_COMPANY, names_the_company
+from rebase_core.team_requests import (
+    ALREADY_REQUESTED,
     NOBODY_TO_HIRE,
     PROPOSAL_REFUSED,
-    REQUEST_CLOSED,
     TeamRequestService,
-    names_the_company,
 )
 from rebase_core.team_schemas import TeamRequestCreate, TeamRequestRead
 
@@ -111,8 +108,9 @@ def clean(hub_session: Session) -> Iterator[Session]:
 def logs(clean: Session, caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
     """`caplog` on this module's logger, after `clean`: Alembic's `fileConfig` disables
     every logger `alembic.ini` does not list, this one among them."""
-    logging.getLogger("rebase_core.team_requests").disabled = False
-    caplog.set_level(logging.INFO, logger="rebase_core.team_requests")
+    for name in ("rebase_core.team_requests", "rebase_core.team_availability"):
+        logging.getLogger(name).disabled = False
+        caplog.set_level(logging.INFO, logger=name)
     return caplog
 
 
@@ -652,8 +650,8 @@ def _mailer(
     *,
     tracker: Tracker | None = None,
     now: datetime = NOW,
-) -> TeamRequestService:
-    return TeamRequestService(
+) -> TeamAvailabilityService:
+    return TeamAvailabilityService(
         session,
         settings=SETTINGS,
         sender=sender if sender is not None else RecordingSender(),
@@ -863,7 +861,9 @@ def test_contact_needs_a_sender_and_an_open_request(clean: Session) -> None:
     admin = _user(clean, "ivan@rebase.it", role="admin")
 
     with pytest.raises(InvalidState) as unsent:
-        _service(clean).contact_talents(request.id, admin, only_silent=False)
+        TeamAvailabilityService(clean, settings=SETTINGS).contact_talents(
+            request.id, admin, only_silent=False
+        )
     assert unsent.value.message == NO_SENDER
 
     _service(clean).set_status(request.id, "chiusa", admin)
@@ -986,12 +986,12 @@ def test_availability_records_yes_and_no(clean: Session) -> None:
     assert service.answer(_token(sender.sent[0], "si"), "si") == "si"
     assert service.answer(_token(sender.sent[1], "no"), "no") == "no"
 
-    read = service.get(request.id)
+    read = service.requests.get(request.id)
     assert [(talent.risposta, talent.risposta_at) for talent in read.talenti] == [
         ("si", later),
         ("no", later),
     ]
-    [item] = service.list_recent(stato=None, origine=None).items
+    [item] = service.requests.list_recent(stato=None, origine=None).items
     assert (item.talenti_totale, item.talenti_si) == (2, 1)
     # Counted with the answer alone: no talent, no request, no address.
     assert [(event, properties) for event, _, properties in capture.calls] == [
@@ -1137,6 +1137,7 @@ def test_the_caps_have_their_defaults_and_reach_the_container() -> None:
     settings = _settings()
     assert settings.team_builder_concurrency == 4
     assert settings.team_builder_daily_cap == 300
+    assert settings.team_builder_client_daily_cap == 30
     compose = (HUB / "docker-compose.yml").read_text(encoding="utf-8")
     example = (HUB / ".env.example").read_text(encoding="utf-8")
     for name, default in (

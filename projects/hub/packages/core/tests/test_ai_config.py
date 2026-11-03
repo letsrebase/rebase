@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from admins import an_admin
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
@@ -40,9 +41,8 @@ def _settings(secrets_key: str = SECRETS_KEY) -> Settings:
 
 @pytest.fixture
 def admin(hub_engine: Engine, hub_session: Session) -> Iterator[User]:
-    row = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
-    hub_session.add(row)
-    hub_session.commit()
+    row = hub_session.get(User, an_admin(hub_session, cognome="Sala"))
+    assert row is not None
     yield row
     hub_session.rollback()
     # Back to what migration 0036 seeded, for the next test of this worker.

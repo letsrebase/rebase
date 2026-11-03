@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.linkedin import linkedin_key
 from rebase_core.models import Freelancer, Signup, User
-from rebase_core.schemas import SignupCreate, SignupList, SignupListItem, SignupRead
+from rebase_core.signup_schemas import SignupCreate, SignupList, SignupListItem, SignupRead
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 1000
@@ -59,7 +59,8 @@ class SignupService:
             # winner's row instead of reporting a conflict nobody caused.
             self.session.rollback()
             winner = self._find(email) or self._find_by_linkedin(data.linkedin_url)
-            assert winner is not None
+            if winner is None:  # the clash was on something else: not ours to hide
+                raise
             return _read(winner, nuova=False)
         return _read(row, nuova=True)
 

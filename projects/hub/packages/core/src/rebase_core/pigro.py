@@ -16,32 +16,22 @@ import json
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
-from rebase_core.http import MAX_BODY_BYTES, HttpCall
+from rebase_core.http import HttpCall
 from rebase_core.models import Freelancer, User
+from rebase_core.pigro_door import PigroDoor
+from rebase_core.schema_common import ResponseModel
 
 REGISTRY_PATH = "/api/tenants/"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 _CURSOR_ENTITY = "cursor"
 _CURSOR_INVALID = "cursore non valido"
-# What an admin reads when the CRM does not answer as it should: shared with the
-# engagements client (`rebase_core.engagements`, REB-498), so both say the same words.
-# `ANSWERED_STATUS` is a format, filled with the status the CRM answered.
-NOT_ANSWERING = "Pigro non risponde."
-ANSWERED_STATUS = "Pigro non ha risposto ({status})."
-TOO_LONG = "Pigro ha risposto qualcosa di troppo lungo."
-NOT_THE_SHAPE = "Pigro ha risposto qualcosa che non è un elenco."
-
-
-class PigroUnavailable(Exception):
-    """The CRM did not answer with a list: a status other than 200, or a body that is not
-    the registry. The message is the sentence the admin area shows."""
 
 
 class RegistryRow(BaseModel):
@@ -55,7 +45,7 @@ class RegistryRow(BaseModel):
     created_at: datetime
 
 
-class PigroMember(BaseModel):
+class PigroMember(ResponseModel):
     """The hub member who owns a space, enough to name them and link their card."""
 
     id: UUID
@@ -63,7 +53,7 @@ class PigroMember(BaseModel):
     cognome: str
 
 
-class PigroSpace(BaseModel):
+class PigroSpace(ResponseModel):
     slug: str
     owner_email: str
     created_at: datetime
@@ -73,7 +63,7 @@ class PigroSpace(BaseModel):
     membro: PigroMember | None
 
 
-class PigroSpaceList(BaseModel):
+class PigroSpaceList(ResponseModel):
     totale: int
     items: list[PigroSpace]
     next_cursor: str | None = None
@@ -108,32 +98,13 @@ class PigroRegistry:
     the hub's own; the CRM is only ever reached through `http`."""
 
     def __init__(self, settings: Settings, http: HttpCall) -> None:
-        self.settings = settings
-        self.http = http
-
-    def _base_url(self) -> str:
-        return self.settings.pigro_api_url.rstrip("/")
+        self.door = PigroDoor(settings.pigro_api_url, settings.pigro_registry_token, http)
 
     def _fetch_rows(self) -> list[RegistryRow]:
         """The registry's raw rows, exactly as `GET /api/tenants/` answers them: what
         `list_spaces` and `find_by_email` (REB-284) both read before matching it to the
         hub's own members, so the request and its error handling are typed once."""
-        headers = {
-            "Authorization": f"Bearer {self.settings.pigro_registry_token}",
-            "Accept": "application/json",
-        }
-        try:
-            status, body = self.http("GET", self._base_url() + REGISTRY_PATH, headers, b"")
-        except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
-            raise PigroUnavailable(NOT_ANSWERING) from exc
-        if status != 200:
-            raise PigroUnavailable(ANSWERED_STATUS.format(status=status))
-        if len(body) > MAX_BODY_BYTES:
-            raise PigroUnavailable(TOO_LONG)
-        try:
-            return _ROWS.validate_python(json.loads(body))
-        except (ValueError, ValidationError) as exc:
-            raise PigroUnavailable(NOT_THE_SHAPE) from exc
+        return self.door.get(REGISTRY_PATH, _ROWS.validate_json)
 
     def list_spaces(
         self,
@@ -170,7 +141,7 @@ class PigroRegistry:
                     slug=row.slug,
                     owner_email=row.owner_email,
                     created_at=row.created_at,
-                    url=f"{self._base_url()}/{row.slug}/app/",
+                    url=f"{self.door.url('')}/{row.slug}/app/",
                     membro=members.get(row.owner_email.lower()),
                 )
                 for row in page
@@ -192,7 +163,7 @@ class PigroRegistry:
             slug=row.slug,
             owner_email=row.owner_email,
             created_at=row.created_at,
-            url=f"{self._base_url()}/{row.slug}/app/",
+            url=f"{self.door.url('')}/{row.slug}/app/",
             membro=members.get(target),
         )
 

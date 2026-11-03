@@ -1,7 +1,7 @@
 """A talent's level as the hub reads it (REB-799): the years and the seniority of the
 anonymous card, and what an admin said instead.
 
-The prompt (`cards.py`) defines the bands, and `banded` is the parser's half of the same
+The prompt (`card_prompt.py`) defines the bands, and `banded` is the parser's half of the same
 rule: Claude is a poor judge of «mid or senior», and the audit found 39 «lead» cards out
 of 101, six of them with two to five years. So the seniority of a card is the band its
 `anni` falls in, `lead` being the one word a band alone cannot give: it needs `LEAD_FROM`

@@ -235,14 +235,15 @@ describe('the Modelli AI page (REB-833)', () => {
     await waitFor(() => expect(staleReads()).toBeGreaterThan(1))
   })
 
-  it('says a regeneration is already running when nothing was queued', async () => {
+  it('shows the 409 sentence of the API when a regeneration is already running', async () => {
     mount(CONFIG, {
       '/api/hub/admin/ai/cards/stale': () => answer(200, STALE),
-      '/api/hub/admin/ai/cards/regenerate-stale': () => answer(200, { queued: 0 }),
+      '/api/hub/admin/ai/cards/regenerate-stale': () =>
+        answer(409, { detail: 'Una rigenerazione delle schede è già in corso.' }),
     })
     const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
     await userEvent.setup().click(await section.findByRole('button', { name: 'Avvia rigenerazione' }))
-    expect(await section.findByText(/Una rigenerazione è già in corso/)).toBeInTheDocument()
+    expect(await section.findByText('Una rigenerazione delle schede è già in corso.')).toBeInTheDocument()
     expect(section.queryByText(/0 schede messe/)).toBeNull()
   })
 

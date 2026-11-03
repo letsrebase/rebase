@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, admin, applyAsFreelancer, matches, requestPeople } from './api'
+import { ApiError, admin, applyAsFreelancer, matches, member, requestPeople } from './api'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -51,6 +51,17 @@ describe('the api client', () => {
     await expect(admin.talent()).rejects.toMatchObject({ status: 429, message: /Riprova/ })
     spy.mockResolvedValueOnce(new Response('boom', { status: 500 }))
     await expect(admin.talent()).rejects.toMatchObject({ status: 500, message: /500/ })
+  })
+
+  it('shows the server sentence of a 429 as it is', async () => {
+    const sentence = 'Oggi abbiamo inviato troppi link di accesso. Riprova domani.'
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: sentence }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    await expect(member.requestLink('ada@studio.it')).rejects.toMatchObject({ status: 429, message: sentence })
   })
 
   it('sends the freelancer as multipart with the UTM and without empty optionals', async () => {

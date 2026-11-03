@@ -9,8 +9,9 @@ filter, never the member's own `/me/cv`.
 
 The builder inside is the public engine with the caller's name on it: `origine`
 `cloud` and the caller's user, behind the same slots of the process and the same daily
-cap as the public page (`propose_in_a_slot`), so a company cannot run up what a
-stranger cannot; its read keeps who each member is. No speed bump (`spend_one`): the
+cap as the public page (`rebase_core.team_slots`), so a company cannot run up what a
+stranger cannot; its read keeps who each member is. The public page's per-client share
+does not apply: the caller is admitted and signed in. No speed bump (`spend_one`): the
 caller is signed in and admitted, and a company asking for six talents in a minute is
 the page doing its job.
 
@@ -23,7 +24,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response, status
 
 from rebase_api.deps import (
     CloudDep,
@@ -35,10 +36,11 @@ from rebase_api.deps import (
     TrackerDep,
 )
 from rebase_api.downloads import cv_response
-from rebase_api.routers.team import propose_in_a_slot, send_request_mail
 from rebase_core.cloud import CloudTalentService
+from rebase_core.mail import send_after_response
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import (
+    CLOUD_REQUEST_ONE_OF,
     CloudRequestCreate,
     CloudTalentList,
     CloudTalentQuery,
@@ -73,22 +75,13 @@ def talent_cv(_: CloudDep, session: SessionDep, freelancer_id: UUID) -> Response
 def propose_in_the_cloud(
     data: TeamProposalCreate,
     caller: CloudDep,
-    session: SessionDep,
-    settings: SettingsDep,
     builder: TeamBuilderDep,
     slots: ProposalSlotsDep,
 ) -> TeamProposalRead:
     """«Proponi il team» and «Rigenera» in the cloud: the public route's answers (503
     off, 503 busy, 502, 422), with `previous_id` a cloud proposal of the caller's own."""
-    return propose_in_a_slot(
-        data,
-        origine="cloud",
-        user_id=caller.user_id,
-        company_id=caller.company_id,
-        session=session,
-        settings=settings,
-        builder=builder,
-        slots=slots,
+    return slots.propose(
+        builder, data, origine="cloud", user_id=caller.user_id, company_id=caller.company_id
     )
 
 
@@ -113,8 +106,7 @@ def request_in_the_cloud(
     service = TeamRequestService(session, settings=settings, tracker=tracker)
     if data.proposal_id is not None:
         read, mail = service.create_in_cloud(data.proposal_id, caller=caller)
-    else:
-        assert data.freelancer_id is not None  # `CloudRequestCreate` holds one of the two
+    elif data.freelancer_id is not None:
         read = service.create_for_talent(
             data.freelancer_id,
             azienda=caller.azienda,
@@ -124,8 +116,10 @@ def request_in_the_cloud(
             company_id=caller.company_id,
         )
         mail = service.request_mail(read)
+    else:  # `CloudRequestCreate` refuses this before the route runs
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, CLOUD_REQUEST_ONE_OF)
     if sender is None:
         _log.info("team request %s: no mail sender, not mailed", read.id)
     else:
-        background.add_task(send_request_mail, sender, mail, read.id)
+        background.add_task(send_after_response, sender, mail, f"team request {read.id}")
     return TeamRequestCreated(id=read.id)

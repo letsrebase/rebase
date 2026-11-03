@@ -40,19 +40,13 @@ from rebase_core.ai_config import AI_CONFIG_ENTITY, BATCH_DISCOUNT
 from rebase_core.ai_schemas import CardBatchRead
 from rebase_core.audit import utcnow
 from rebase_core.card_draft import CardDraft
-from rebase_core.cards import (
-    CARD_REGENERATED,
-    CARDS_REGENERATE,
-    NO_ANSWER_REASONS,
-    PROMPT_VERSION,
-    CardWriter,
-    Composed,
-    Fonte,
-    Outcome,
-    Regeneration,
-)
+from rebase_core.card_prompt import PROMPT_VERSION
+from rebase_core.card_regen import CARD_REGENERATED, CARDS_REGENERATE, NO_ANSWER_REASONS
+from rebase_core.card_types import Composed, Fonte, Outcome, Regeneration
+from rebase_core.card_writer import CardWriter
 from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable, NotFound
-from rebase_core.llm import BatchCall, BatchHandle, BatchOutcome, LlmRequest
+from rebase_core.llm import LlmRequest
+from rebase_core.llm_batch import BatchCall, BatchHandle, BatchOutcome
 from rebase_core.models import (
     CARD_BATCH_ACTIVE,
     AdminAction,
@@ -269,9 +263,9 @@ class CardBatches:
             if batch is None:
                 return BatchPolled("none")
             run, start = self._run_of(session, batch)
-            if batch.status == "submitting":
+            if batch.status == "submitting" or batch.handle is None:
+                # Never sent, or sent without a handle to read it back by: nothing to carry on.
                 return self._given_up(writer, batch, run, start)
-            assert batch.handle is not None
             if batch.submitted_at is not None and (
                 self.now() - batch.submitted_at > ACTIVE_GIVEN_UP_AFTER
             ):

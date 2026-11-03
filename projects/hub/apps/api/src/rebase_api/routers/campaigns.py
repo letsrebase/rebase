@@ -24,7 +24,7 @@ from rebase_core.campaigns.schemas import (
 from rebase_core.campaigns.sender import CampaignSender
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.config import Settings
-from rebase_core.schemas import Ack
+from rebase_core.schema_common import Ack
 
 public = APIRouter(prefix="/api/hub/campagne", tags=["hub-campaigns-public"])
 

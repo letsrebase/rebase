@@ -189,6 +189,9 @@ export function AdminAgenti() {
                         <TableCell>
                           <p className="font-medium">{row.nome}</p>
                           <p className="font-mono text-xs text-muted-foreground">{row.prefix}…</p>
+                          {row.expires_at && (
+                            <p className="text-xs text-muted-foreground">Scade il {formatDate(row.expires_at)}</p>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="pill">{row.revoked_at ? 'Revocato' : 'Attivo'}</Badge>

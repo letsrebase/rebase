@@ -3,7 +3,7 @@
  *  The field asks for the name after `linkedin.com/in/`, and people paste whatever
  *  their phone hands them instead: `linkedin.com/in/ada/`, `https://it.linkedin.com/
  *  in/ada?utm_source=share`. Both are read here, by the same rules as
- *  `rebase_core.schemas.normalise_linkedin`, which checks the value again: what this
+ *  `rebase_core.linkedin.normalise_linkedin`, which checks the value again: what this
  *  accepts, the API stores the same way. `linkedinProfile` is what is sent;
  *  `linkedinFieldValue` is what the field shows. */
 

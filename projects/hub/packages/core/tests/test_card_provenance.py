@@ -10,18 +10,17 @@ The model is a `RecordingCall` with canned drafts; GitHub and the pages are the 
 
 import json
 import re
-from collections.abc import Iterator
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from functools import partial
 from typing import Any
 from uuid import UUID
 
-import pytest
-from fakes_cards import CARD, FONTI, card_response, text_pdf
+from fakes_cards import CARD, FONTI, card_response
+from freelancer_fixtures import LINKS, apply_freelancer, card_writer, enable_sources
+from sources_fixtures import FakeFetcher, FakeGithub
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from test_hub_facts import _match
-from test_sources import FakeFetcher, FakeGithub
 
 from rebase_core.card_draft import (
     FONTI_FIELDS,
@@ -29,74 +28,32 @@ from rebase_core.card_draft import (
     conflicts,
     verify_fonti,
 )
-from rebase_core.cards import (
-    IDENTIFYING_AGAIN,
-    NEUTRAL_AGAIN,
-    CardWriter,
-    card_prompt,
-    source_keys,
-)
+from rebase_core.card_prompt import IDENTIFYING_AGAIN, NEUTRAL_AGAIN, card_prompt, source_keys
+from rebase_core.card_writer import CardWriter
 from rebase_core.cloud import CloudTalentService
 from rebase_core.cv_text import CvText
-from rebase_core.freelancers import FreelancerService
 from rebase_core.github_source import GithubSnapshot, Repo
 from rebase_core.hub_facts import HubFacts, MatchFact
 from rebase_core.llm import LlmMessage, RecordingCall
 from rebase_core.models import AdminAction, AiUsage, Freelancer, FreelancerCard
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.sources import SourceItem, SourceService, SourceSet
 from rebase_core.talenti import TalentiService
 from rebase_core.team_schemas import Card, CloudTalentQuery
 
 NOW = datetime(2026, 10, 27, 9, 0, tzinfo=UTC)
-CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS.")
-LINKS = ["https://github.com/adadev", "https://ada.example/portfolio"]
 EMPLOYER = "Initech Labs"
 
 
-@pytest.fixture
-def clean(hub_session: Session) -> Iterator[Session]:
-    yield hub_session
-    hub_session.rollback()
-    hub_session.execute(text("UPDATE ai_sources SET enabled = false, updated_by = NULL"))
-    for table in (
-        "admin_actions",
-        "ai_usage",
-        "notes",
-        "matches",
-        "companies",
-        "freelancers",
-        "users",
-    ):
-        hub_session.execute(text(f"DELETE FROM {table}"))
-    hub_session.commit()
-
-
 def _apply(session: Session, links: list[str] | None = None) -> UUID:
-    data = FreelancerCreate(
-        nome="Ada",
-        cognome="Lovelace",
-        email="ada@studio.it",
-        tariffa_giornaliera=Decimal("450.00"),
-        posizione="Backend developer",
-        remoto="remoto",
-        links=links if links is not None else LINKS,
-    )
-    read, _ = FreelancerService(session).apply(data, CV, "cv.pdf", "")
-    return read.id
+    return apply_freelancer(session, links=LINKS if links is None else links)
 
 
 def _sources(session: Session, *, on: tuple[str, ...] = ("github", "links")) -> SourceService:
-    for kind in on:
-        session.execute(text("UPDATE ai_sources SET enabled = true WHERE kind = :k"), {"k": kind})
-    session.commit()
+    enable_sources(session, *on)
     return SourceService(session, FakeFetcher(), FakeGithub(), lambda: NOW)
 
 
-def _writer(
-    session: Session, llm: RecordingCall, service: SourceService | None = None
-) -> CardWriter:
-    return CardWriter(session, llm, now=lambda: NOW, sources=service)
+_writer = partial(card_writer, now=NOW)
 
 
 def _stored(session: Session, freelancer_id: UUID) -> FreelancerCard:
@@ -208,14 +165,14 @@ def test_unknown_source_in_fonti_dropped() -> None:
     assert set(kept) == set(FONTI_FIELDS)
 
 
-def test_unknown_source_is_dropped_from_the_stored_card(clean: Session) -> None:
-    person = _apply(clean)
-    service = _sources(clean)
+def test_unknown_source_is_dropped_from_the_stored_card(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    service = _sources(clean_hub)
     answer = card_response(fonti=_fonti(ruolo=["cv", "link:9"], competenze=["cv", "github"]))
 
-    _writer(clean, RecordingCall([answer]), service).write(person)
+    _writer(clean_hub, RecordingCall([answer]), service).write(person)
 
-    stored = _stored(clean, person)
+    stored = _stored(clean_hub, person)
     assert stored.fonti is not None
     assert stored.fonti["ruolo"] == ["cv"]
     assert stored.fonti["competenze"] == ["cv", "github"]
@@ -232,49 +189,49 @@ def test_conflicts_name_only_a_hub_that_shows_more_work_than_the_card_counts() -
     assert conflicts(None, 100) == []  # the CV dates no role: the hub may give the years
 
 
-def test_card_follows_cv_dates_and_conflict_recorded(clean: Session) -> None:
-    person = _apply(clean)
-    row = clean.get(Freelancer, person)
+def test_card_follows_cv_dates_and_conflict_recorded(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    row = clean_hub.get(Freelancer, person)
     assert row is not None
-    _match(clean, row, inizio=date(2020, 1, 1), fine=date(2023, 12, 31))
-    clean.commit()
+    _match(clean_hub, row, inizio=date(2020, 1, 1), fine=date(2023, 12, 31))
+    clean_hub.commit()
     dated = {**CARD, "anni": 2, "seniority": "junior"}
 
-    _writer(clean, RecordingCall([card_response(dated)])).write(person)
+    _writer(clean_hub, RecordingCall([card_response(dated)])).write(person)
 
-    stored = _stored(clean, person)
+    stored = _stored(clean_hub, person)
     assert stored.card is not None and stored.card["anni"] == 2
     assert stored.conflicts == [{"kind": "anni_diversi", "anni_scheda": 2, "anni_hub": 4}]
     assert "hub" in (stored.source_hashes or {})
 
 
-def test_github_never_sets_anni(clean: Session) -> None:
+def test_github_never_sets_anni(clean_hub: Session) -> None:
     """A CV with undated roles and a GitHub account that is old: the model gives 12 years
     and says GitHub supports them. The code drops them and says so; the seniority is the
     reading of the responsibility, shown as uncertain."""
-    person = _apply(clean)
-    service = _sources(clean)
+    person = _apply(clean_hub)
+    service = _sources(clean_hub)
     answer = card_response({**CARD, "anni": 12, "seniority": "lead"}, fonti=_fonti(anni=["github"]))
 
-    _writer(clean, RecordingCall([answer]), service).write(person)
+    _writer(clean_hub, RecordingCall([answer]), service).write(person)
 
-    stored = _stored(clean, person)
+    stored = _stored(clean_hub, person)
     assert stored.card is not None
     assert stored.card["anni"] is None and stored.card["seniority"] == "senior"
     assert stored.conflicts == [{"kind": "anni_scartata", "anni_scheda": 12, "anni_hub": None}]
     assert stored.fonti is not None and stored.fonti["anni"] == []
-    read = CardWriter(clean, None).read(person)
+    read = CardWriter(clean_hub, None).read(person)
     assert read.card is not None and read.card.seniority_incerta
 
 
-def test_years_from_the_cv_are_kept_beside_a_source(clean: Session) -> None:
-    person = _apply(clean)
-    service = _sources(clean)
+def test_years_from_the_cv_are_kept_beside_a_source(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    service = _sources(clean_hub)
     answer = card_response(fonti=_fonti(anni=["cv", "github"]))
 
-    _writer(clean, RecordingCall([answer]), service).write(person)
+    _writer(clean_hub, RecordingCall([answer]), service).write(person)
 
-    stored = _stored(clean, person)
+    stored = _stored(clean_hub, person)
     assert stored.card is not None and stored.card["anni"] == CARD["anni"]
     assert stored.conflicts == []
 
@@ -286,9 +243,9 @@ def _says(**changes: Any) -> dict[str, Any]:
     return {**CARD, **changes}
 
 
-def test_employer_in_card_triggers_one_rewrite_then_fail(clean: Session) -> None:
-    person = _apply(clean)
-    first = _writer(clean, RecordingCall([card_response()])).write(person)
+def test_employer_in_card_triggers_one_rewrite_then_fail(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    first = _writer(clean_hub, RecordingCall([card_response()])).write(person)
     assert first.card is not None
     leaky = _says(ruolo=f"Backend developer in {EMPLOYER}")
     llm = RecordingCall(
@@ -298,7 +255,7 @@ def test_employer_in_card_triggers_one_rewrite_then_fail(clean: Session) -> None
         ]
     )
 
-    read = _writer(clean, llm).write(person, force=True)
+    read = _writer(clean_hub, llm).write(person, force=True)
 
     first_request, retry = llm.requests
     assert len(llm.requests) == 2
@@ -311,12 +268,12 @@ def test_employer_in_card_triggers_one_rewrite_then_fail(clean: Session) -> None
     assert read.card is not None and read.card.ruolo == CARD["ruolo"]
     assert read.error is not None and "datore di lavoro" in read.error
     assert EMPLOYER not in read.error
-    stored = _stored(clean, person)
+    stored = _stored(clean_hub, person)
     assert stored.error_cv_sha256 == stored.cv_sha256
 
 
-def test_employer_rewrite_that_fixes_it_is_the_card(clean: Session) -> None:
-    person = _apply(clean)
+def test_employer_rewrite_that_fixes_it_is_the_card(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
     llm = RecordingCall(
         [
             card_response(_says(sintesi=f"Nove anni da {EMPLOYER}."), employers=[EMPLOYER]),
@@ -324,71 +281,69 @@ def test_employer_rewrite_that_fixes_it_is_the_card(clean: Session) -> None:
         ]
     )
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.error is None and read.card is not None
-    stored = _stored(clean, person)
+    stored = _stored(clean_hub, person)
     assert stored.card == CARD
     assert (stored.input_tokens, stored.output_tokens) == (1200 + 1300, 180 + 90)
 
 
-def test_the_rewrite_cannot_forget_an_employer_the_first_answer_named(clean: Session) -> None:
+def test_the_rewrite_cannot_forget_an_employer_the_first_answer_named(clean_hub: Session) -> None:
     """The guard reads the employers of both answers: a rewrite that drops the name from
     its own list but still writes it is failed."""
-    person = _apply(clean)
+    person = _apply(clean_hub)
     leaky = _says(settori=[EMPLOYER])
     llm = RecordingCall(
         [card_response(leaky, employers=[EMPLOYER]), card_response(leaky, employers=[])]
     )
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.card is None and read.error is not None and "datore di lavoro" in read.error
 
 
-def test_repository_login_and_host_names_are_read_by_the_guard(clean: Session) -> None:
-    person = _apply(clean)
-    service = _sources(clean)
+def test_repository_login_and_host_names_are_read_by_the_guard(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    service = _sources(clean_hub)
     for leak in (
         _says(sintesi="Autore di ledger-core, una libreria."),
         _says(sintesi="Scrive come adadev."),
         _says(competenze=["Python", "ada.example"]),
     ):
         llm = RecordingCall([card_response(leak), card_response(leak)])
-        read = _writer(clean, llm, service).write(person, force=True)
+        read = _writer(clean_hub, llm, service).write(person, force=True)
         assert read.card is None and read.error is not None
         assert len(llm.requests) == 2
 
 
-def test_a_fork_is_not_the_persons_name(clean: Session) -> None:
+def test_a_fork_is_not_the_persons_name(clean_hub: Session) -> None:
     """A fork carries somebody else's project's name (`django-fork`): a card that says it
     is not leaking the person, and is not refused."""
-    person = _apply(clean)
+    person = _apply(clean_hub)
     github = FakeGithub(
         GithubSnapshot(
             login="adadev",
             repos=[Repo("django-fork", "", None, True, False, 0, None)],
         )
     )
-    for kind in ("github", "links"):
-        clean.execute(text("UPDATE ai_sources SET enabled = true WHERE kind = :k"), {"k": kind})
-    clean.commit()
-    service = SourceService(clean, FakeFetcher(), github, lambda: NOW)
+    enable_sources(clean_hub, "github", "links")
+    service = SourceService(clean_hub, FakeFetcher(), github, lambda: NOW)
     llm = RecordingCall([card_response(_says(sintesi="Contribuisce a django fork."))])
 
-    read = _writer(clean, llm, service).write(person)
+    read = _writer(clean_hub, llm, service).write(person)
 
     assert read.error is None and len(llm.requests) == 1
 
 
-def test_gender_and_leak_are_one_rewrite_with_both_corrections(clean: Session) -> None:
-    person = _apply(clean)
+def test_gender_and_leak_are_one_rewrite_with_both_corrections(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
     both = _says(ruolo=f"Sviluppatrice in {EMPLOYER}")
     llm = RecordingCall(
         [card_response(both, employers=[EMPLOYER]), card_response(input_tokens=1000)]
     )
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.error is None and len(llm.requests) == 2
     asked = llm.requests[1].messages[2].text
@@ -396,30 +351,30 @@ def test_gender_and_leak_are_one_rewrite_with_both_corrections(clean: Session) -
     assert "«sviluppatrice»" in asked and "Campi da correggere: ruolo." in asked
 
 
-def test_gender_rewrite_still_works(clean: Session) -> None:
-    person = _apply(clean)
+def test_gender_rewrite_still_works(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
     gendered = _says(sintesi="Lei è una sviluppatrice con nove anni di esperienza.")
     llm = RecordingCall([card_response(gendered), card_response()])
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.error is None and read.card is not None and len(llm.requests) == 2
     assert IDENTIFYING_AGAIN not in llm.requests[1].messages[2].text
 
 
-def test_employers_are_stored_only_with_the_persona(clean: Session) -> None:
+def test_employers_are_stored_only_with_the_persona(clean_hub: Session) -> None:
     """The companies the model names are the named card's `aziende` (REB-855): in the
     persona column of the card's row, and in no other column, usage record or audit entry,
     where a leak could start."""
-    person = _apply(clean)
+    person = _apply(clean_hub)
     named = card_response(employers=[EMPLOYER, "Globex Corporation"])
     llm = RecordingCall([named, named])
-    writer = _writer(clean, llm)
+    writer = _writer(clean_hub, llm)
 
     writer.compose(person)
     writer.write(person)
 
-    row = _stored(clean, person)
+    row = _stored(clean_hub, person)
     assert row.persona is not None and row.persona["aziende"] == [EMPLOYER, "Globex Corporation"]
     columns = {
         c.name: getattr(row, c.name)
@@ -428,19 +383,19 @@ def test_employers_are_stored_only_with_the_persona(clean: Session) -> None:
     }
     for secret in (EMPLOYER, "Globex"):
         assert secret not in json.dumps(columns, default=str)
-        for usage in clean.scalars(select(AiUsage)):
+        for usage in clean_hub.scalars(select(AiUsage)):
             assert secret not in repr(usage.__dict__)
-        for action in clean.scalars(select(AdminAction)):
+        for action in clean_hub.scalars(select(AdminAction)):
             assert secret not in json.dumps(action.payload, default=str)
 
 
-def test_a_draft_that_is_not_one_is_a_shape_failure(clean: Session) -> None:
+def test_a_draft_that_is_not_one_is_a_shape_failure(clean_hub: Session) -> None:
     """The private fields are part of the answer: a bare card, the version 1 answer, is no
     longer one."""
-    person = _apply(clean)
+    person = _apply(clean_hub)
     bare = card_response(text=json.dumps(CARD))
 
-    read = _writer(clean, RecordingCall([bare])).write(person)
+    read = _writer(clean_hub, RecordingCall([bare])).write(person)
 
     assert read.card is None and read.error == "La risposta di Claude non era una scheda valida."
 
@@ -448,21 +403,21 @@ def test_a_draft_that_is_not_one_is_a_shape_failure(clean: Session) -> None:
 # ---- what never leaves the admin's page ---------------------------------------------------
 
 
-def test_public_and_cloud_reads_have_no_fonti(clean: Session) -> None:
+def test_public_and_cloud_reads_have_no_fonti(clean_hub: Session) -> None:
     """The card as every reader but the admin's page gets it: `Card`'s fields and the
     level, from the catalogue, the cloud and the card read alike."""
-    person = _apply(clean)
-    service = _sources(clean)
-    _writer(clean, RecordingCall([card_response()]), service).write(person)
-    stored = _stored(clean, person)
+    person = _apply(clean_hub)
+    service = _sources(clean_hub)
+    _writer(clean_hub, RecordingCall([card_response()]), service).write(person)
+    stored = _stored(clean_hub, person)
     assert stored.fonti and stored.source_hashes and stored.prompt_version == 3
     assert set(Card.model_fields) == set(CARD)
     provenance = ("fonti", "source_hashes", "conflicts", "provenance", "prompt_version", "provider")
 
     reads = {
-        "cloud": CloudTalentService(clean).list(CloudTalentQuery()).items[0].model_dump(),
-        "catalogue": TalentiService(clean).list_recent().items[0].model_dump(),
-        "card": CardWriter(clean, None).read(person).model_dump(),
+        "cloud": CloudTalentService(clean_hub).list(CloudTalentQuery()).items[0].model_dump(),
+        "catalogue": TalentiService(clean_hub).list_recent().items[0].model_dump(),
+        "card": CardWriter(clean_hub, None).read(person).model_dump(),
     }
     for name, read in reads.items():
         assert "ruolo" in json.dumps(read, default=str), name
@@ -471,7 +426,7 @@ def test_public_and_cloud_reads_have_no_fonti(clean: Session) -> None:
             assert f'"{key}"' not in text_of_read, (name, key)
 
     # The admin's page has them, and only its route does.
-    admin = CardWriter(clean, None, sources=service).read_admin(person)
+    admin = CardWriter(clean_hub, None, sources=service).read_admin(person)
     assert admin.provenance is not None
     assert admin.provenance.prompt_version == 3
     assert admin.provenance.fonti["anni"] == ["cv"]
@@ -479,18 +434,18 @@ def test_public_and_cloud_reads_have_no_fonti(clean: Session) -> None:
     assert admin.provenance.stale is None
 
 
-def test_card_stored_before_version_2_reads_as_version_1(clean: Session) -> None:
-    person = _apply(clean)
-    _writer(clean, RecordingCall([card_response()])).write(person)
-    clean.execute(
+def test_card_stored_before_version_2_reads_as_version_1(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    _writer(clean_hub, RecordingCall([card_response()])).write(person)
+    clean_hub.execute(
         text(
             "UPDATE freelancer_cards SET prompt_version = NULL, provider = NULL, fonti = NULL, "
             "source_hashes = NULL, conflicts = NULL, thinking_tokens = NULL"
         )
     )
-    clean.commit()
+    clean_hub.commit()
 
-    admin = CardWriter(clean, None).read_admin(person)
+    admin = CardWriter(clean_hub, None).read_admin(person)
 
     assert admin.provenance is not None
     assert (admin.provenance.prompt_version, admin.provenance.fonti) == (1, {})
@@ -521,23 +476,23 @@ def test_the_prompt_asks_for_employers_from_every_source() -> None:
     assert "the CV or any source block names" in system
 
 
-def test_a_client_of_the_hub_in_the_card_is_one_rewrite_then_a_failure(clean: Session) -> None:
-    person = _apply(clean)
-    row = clean.get(Freelancer, person)
+def test_a_client_of_the_hub_in_the_card_is_one_rewrite_then_a_failure(clean_hub: Session) -> None:
+    person = _apply(clean_hub)
+    row = clean_hub.get(Freelancer, person)
     assert row is not None
-    _match(clean, row, nome_azienda="Zorgon Dynamics Srl", figura="Backend developer")
-    clean.commit()
+    _match(clean_hub, row, nome_azienda="Zorgon Dynamics Srl", figura="Backend developer")
+    clean_hub.commit()
     leaky = _says(sintesi="Ha lavorato per Zorgon Dynamics.")
     llm = RecordingCall([card_response(leaky), card_response(leaky)])
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.card is None and read.error is not None and len(llm.requests) == 2
     assert "Zorgon" not in read.error
 
 
 def test_the_sources_in_a_prompt_are_capped_in_total() -> None:
-    from rebase_core.cards import MAX_SOURCE_CHARS
+    from rebase_core.card_prompt import MAX_SOURCE_CHARS
 
     pages = [
         SourceItem("link", f"https://p{n}.example/", n, "x" * 20_000, "e" * 64, "ok", NOW)

@@ -77,6 +77,14 @@ class LlmUnavailable(DomainError):
     code = "llm_unavailable"
 
 
+class CvTextUnavailable(LlmUnavailable):
+    """The CV could not be read *now*, for a reason that is the host's and not the file's:
+    the parser process did not start, or was killed by a signal (`cv_text.extract_text`).
+    The same `code` as its parent, so a caller that already treats an outage as «try again
+    later» does: the card writer stores no hash for the CV, so the next pass tries it again,
+    where an unreadable file is never tried twice."""
+
+
 class LlmCapReached(LlmUnavailable):
     """The task's daily euro cap is spent (`ai_config.py`): the call was refused before
     any network. `message` is the sentence «Modelli AI» shows for the task. The same `code`

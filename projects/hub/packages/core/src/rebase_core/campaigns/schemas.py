@@ -25,7 +25,16 @@ from rebase_core.models import (
     CAMPAIGN_SUBJECT_MAX_LENGTH,
     CAMPAIGN_TEXT_MAX_LENGTH,
 )
+from rebase_core.schema_common import ResponseModel
 from rebase_core.search import SEARCH_MAX_LENGTH
+from rebase_core.vocabulary import (
+    CampaignAction,
+    CampaignDestination,
+    CampaignFonte,
+    CampaignState,
+    RecipientKind,
+    RecipientState,
+)
 
 # A filter's amount is kept like every other amount the hub stores: euro with cents at
 # most and never below zero, with no ceiling the editor's own field lacks. The editor
@@ -34,7 +43,7 @@ from rebase_core.search import SEARCH_MAX_LENGTH
 FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 
 
-class TalentiFiltri(BaseModel):
+class TalentiFiltri(ResponseModel):
     """The Talenti list's own filters (`GET /api/hub/talent`, `talenti.py:191`), stored
     on the campaign and replayed through `TalentiService` when the list is shown and when
     a mail is about to leave. `origine` is the marketing page the person started from
@@ -56,7 +65,7 @@ class TalentiFiltri(BaseModel):
     creato_a: datetime | None = None
 
 
-class AziendeFiltri(BaseModel):
+class AziendeFiltri(ResponseModel):
     """The company list's own filters (`companies.py:160`)."""
 
     lista: Literal["aziende"]
@@ -185,7 +194,7 @@ class NeverWriteRequest(BaseModel):
     email: EmailStr
 
 
-class CampaignCounts(BaseModel):
+class CampaignCounts(ResponseModel):
     destinatari: int = 0
     in_coda: int = 0
     inviate: int = 0
@@ -198,23 +207,23 @@ class CampaignCounts(BaseModel):
     azioni: int = 0
 
 
-class CampaignRead(BaseModel):
+class CampaignRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     nome: str
     slug: str
-    fonte: str
+    fonte: CampaignFonte
     stato_percorso: str | None
-    filtri: dict[str, object] | None
+    filtri: Filtri | None
     segue_id: UUID | None
     oggetto: str
     testo: str
     bottone_testo: str
-    bottone_meta: str
+    bottone_meta: CampaignDestination
     bottone_url: str | None = None
-    azione: str
-    stato: str
+    azione: CampaignAction
+    stato: CampaignState
     contenuto_at: datetime
     programmata_per: datetime | None
     prova_inviata_at: datetime | None
@@ -236,18 +245,21 @@ class CampaignListItem(CampaignRead):
     conteggi: CampaignCounts
 
 
-class CampaignList(BaseModel):
+class CampaignList(ResponseModel):
     items: list[CampaignListItem]
+    # Set only when a caller asked for a page (the MCP tools, REB-804): the admin screen
+    # reads the whole list.
+    next_cursor: str | None = None
 
 
-class RecipientRead(BaseModel):
+class RecipientRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     email: str
     nome: str | None
-    tipo: str
-    stato: str
+    tipo: RecipientKind
+    stato: RecipientState
     motivo: str | None
     inviata_at: datetime | None
     consegnata_at: datetime | None
@@ -262,26 +274,28 @@ class RecipientRead(BaseModel):
     azione_dalla_mail: bool = False
 
 
-class CampaignDetail(BaseModel):
+class CampaignDetail(ResponseModel):
     campagna: CampaignRead
     conteggi: CampaignCounts
     destinatari: list[RecipientRead]
+    # The cursor after the last recipient listed, when a page was asked for (REB-804).
+    next_cursor: str | None = None
 
 
-class AudienceRowRead(BaseModel):
+class AudienceRowRead(ResponseModel):
     email: str
     nome: str | None
-    tipo: str
+    tipo: RecipientKind
     escluso: str | None
 
 
-class AudiencePreview(BaseModel):
+class AudiencePreview(ResponseModel):
     righe: list[AudienceRowRead]
     incluse: int
     escluse: int
 
 
-class TemplateRead(BaseModel):
+class TemplateRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     stato_percorso: str
@@ -289,5 +303,5 @@ class TemplateRead(BaseModel):
     oggetto: str
     testo: str
     bottone_testo: str
-    bottone_meta: str
-    azione: str
+    bottone_meta: CampaignDestination
+    azione: CampaignAction

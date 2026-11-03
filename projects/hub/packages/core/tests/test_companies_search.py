@@ -9,8 +9,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.errors import ValidationFailed
-from rebase_core.schemas import CompanyCreate
 
 
 @pytest.fixture

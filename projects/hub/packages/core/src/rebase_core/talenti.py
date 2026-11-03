@@ -46,26 +46,28 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal, get_args
+from typing import Any, Literal, TypedDict, get_args
 from uuid import UUID
 
 from sqlalchemy import (
     ColumnElement,
     Numeric,
     Select,
-    Subquery,
     and_,
     case,
     exists,
     false,
     func,
+    literal,
     or_,
     select,
+    union_all,
 )
 from sqlalchemy.orm import Session, aliased, defer
 
-from rebase_core.bands import band_for
+from rebase_core.bands import Band, band_for
 from rebase_core.card_level import level
+from rebase_core.card_rows import card_emails, card_row_fields
 from rebase_core.duplicates import duplicates_of
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import LEAD_STATE
@@ -79,7 +81,6 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
-from rebase_core.schemas import TalentoList, TalentoOrigine, TalentoRead
 from rebase_core.search import (
     any_element_matches,
     escape_like,
@@ -87,6 +88,7 @@ from rebase_core.search import (
     similarity_score,
     string_field_matches,
 )
+from rebase_core.talent_schemas import TalentoList, TalentoOrigine, TalentoRead
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
@@ -120,18 +122,6 @@ def _card_only_active(*values: object) -> bool:
     return any(value not in (None, "") and value != () for value in values)
 
 
-def _card_emails() -> Subquery:
-    """Lowercased addresses that already have a card: a bare sign-up (ORB-163) is one
-    whose address is not among these. The same anti-join `FreelancerService._leads`
-    runs, written again here rather than imported, so this module reads the same
-    self-contained way every other service in this package does."""
-    return (
-        select(func.lower(User.email).label("email"))
-        .join(Freelancer, Freelancer.user_id == User.id)
-        .subquery()
-    )
-
-
 def signup_read(row: Signup) -> TalentoRead:
     """A bare sign-up as a row of the list: `stato` `lead`, `origine` `form`, none of
     the card's fields."""
@@ -158,12 +148,27 @@ def _card_texts(card: dict[str, Any], key: str) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
+class CardFields(TypedDict):
+    """What `card_fields` answers: the `TalentoRead` fields a card's own JSON fills."""
+
+    ruolo: str | None
+    seniority: str | None
+    anni: int | None
+    seniority_incerta: bool
+    competenze: list[str]
+    settori: list[str]
+    lingue: list[str]
+    luogo: str | None
+    sintesi: str | None
+    fascia: Band | None
+
+
 def card_fields(
     card: object,
     rate: Decimal | None,
     seniority_admin: str | None = None,
     anni_admin: int | None = None,
-) -> dict[str, Any]:
+) -> CardFields:
     """What a row says about the person from the anonymous card (REB-778, REB-798), and
     the client's price band of their rate: the one builder behind a row of the list and
     the MCP `get_talento`, so the two cannot disagree. `card` is the row's
@@ -192,23 +197,12 @@ def card_fields(
 
 
 def _card_read(row: Freelancer, user: User, card: object) -> TalentoRead:
-    """One freelancer as a row: the person and the card's own columns, then
-    `card_fields` for what the anonymous `card` says."""
+    """One freelancer as a row: the columns every card row carries (`card_row_fields`),
+    then `card_fields` for what the anonymous `card` says."""
     return TalentoRead(
-        id=row.id,
-        nome=user.nome,
-        cognome=user.cognome,
-        email=user.email,
-        linkedin_url=user.linkedin_url,
-        stato=row.stato,
+        **card_row_fields(row, user),
         origine=_ORIGIN_BY_COMPILATA_DA.get(row.compilata_da, "wizard"),
-        utm_source=row.utm_source,
-        created_at=row.created_at,
-        tariffa_giornaliera=row.tariffa_giornaliera,
-        remoto=row.remoto,
-        vetted_at=row.vetted_at,
         ha_scheda_anonima=isinstance(card, dict),
-        posizione=row.posizione,
         **card_fields(card, row.tariffa_giornaliera, row.seniority_admin, row.anni_admin),
     )
 
@@ -425,11 +419,14 @@ class _Filters:
         return not self.card_only and self.has_cv is not True
 
 
-def _card_stmt(f: _Filters) -> Select[Freelancer, User]:
+def _card_stmt(f: _Filters, *, counting: bool = False) -> Select[Freelancer, User]:
     """Every freelancer card, `stato` left for the caller to filter separately -- this
     statement backs both the listing and `_counts`' per-state `GROUP BY`, and the
-    counts must see every state at once."""
-    stmt = select(Freelancer, User).join(User, User.id == Freelancer.user_id)
+    counts must see every state at once. A count with no `q` reads nothing of the
+    person, so it leaves the `users` join out."""
+    stmt = select(Freelancer, User)
+    if not counting or f.q:
+        stmt = stmt.join(User, User.id == Freelancer.user_id)
     stmt = stmt.where(Freelancer.deleted_at.is_(None))
     if f.q:
         search_cols = (User.nome, User.cognome, User.email, Freelancer.posizione)
@@ -486,12 +483,12 @@ def _card_stmt(f: _Filters) -> Select[Freelancer, User]:
 
 
 def _bare_signups() -> Select[Signup]:
-    """Every bare sign-up (no card), the same anti-join `_card_emails` describes."""
-    card_emails = _card_emails()
+    """Every bare sign-up (no card), the same anti-join `card_emails` describes."""
+    addresses = card_emails()
     return (
         select(Signup)
-        .outerjoin(card_emails, card_emails.c.email == func.lower(Signup.email))
-        .where(card_emails.c.email.is_(None), ~card_by_linkedin())
+        .outerjoin(addresses, addresses.c.email == func.lower(Signup.email))
+        .where(addresses.c.email.is_(None), ~card_by_linkedin())
     )
 
 
@@ -511,8 +508,7 @@ def _lead_stmt(f: _Filters) -> Select[Signup]:
         stmt = stmt.where(Signup.utm_source == f.utm_source)
     if f.con_accessi is not None:
         # A lead has no `user_id` of its own; the address is the only thing it can be
-        # matched to a `users`/`logins` row by, the same lowercased join `_card_read`'s
-        # sibling `FreelancerService._signed_up` uses elsewhere in this package.
+        # matched to a `users`/`logins` row by.
         lead_user = aliased(User)
         login_exists = exists(
             select(Login.id)
@@ -748,19 +744,21 @@ class TalentiService:
         """How many rows sit in each state, `lead` included, with every filter but
         `stato` itself applied (REB-285) -- the numbers the admin area's tabs need
         beside the page, answering "how many if I picked this one" rather than "how
-        many exist at all"."""
-        grouped = self.session.execute(
-            _card_stmt(f)
+        many exist at all". One statement: the cards' `GROUP BY` and the leads' count
+        as a `UNION ALL`."""
+        cards = (
+            _card_stmt(f, counting=True)
             .with_only_columns(Freelancer.stato, func.count())
             .group_by(Freelancer.stato)
-        ).all()
-        by_state: dict[str, int] = {stato: count for stato, count in grouped}
+        )
+        statement = (
+            union_all(cards, _lead_stmt(f).with_only_columns(literal(LEAD_STATE), func.count()))
+            if f.leads_possible
+            else cards
+        )
+        by_state: dict[str, int] = {
+            stato: count for stato, count in self.session.execute(statement)
+        }
         counts = {stato: by_state.get(stato, 0) for stato in FREELANCER_STATES}
-
-        if f.leads_possible:
-            counts[LEAD_STATE] = (
-                self.session.scalar(_lead_stmt(f).with_only_columns(func.count())) or 0
-            )
-        else:
-            counts[LEAD_STATE] = 0
+        counts[LEAD_STATE] = by_state.get(LEAD_STATE, 0)
         return counts

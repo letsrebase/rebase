@@ -25,7 +25,9 @@ export interface paths {
          *     `_measure_the_conversion`. It is scheduled even for an address already on the list,
          *     because the browser fires its own event on the same submit and the two carry one id
          *     -- suppressing the server half would not remove that event, it would only remove the
-         *     half that survives an ad blocker.
+         *     half that survives an ad blocker. But only for a visitor who accepted the cookie
+         *     notice (`pixel_consent`): the event carries their address, user agent and click ids
+         *     to OpenAI, which is the same decision the browser pixel waits for.
          */
         post: operations["subscribe_api_community_signups_post"];
         delete?: never;
@@ -129,7 +131,10 @@ export interface paths {
         put?: never;
         /**
          * Demote Admin
-         * @description Sets `role = 'member'`, fully reversible since nothing is deleted.
+         * @description Sets `role = 'member'`, fully reversible since nothing is deleted. 409 with the
+         *     sentence for the last remaining admin, 422 for an address merged into somebody. Both
+         *     the promotion and the demotion are signed in the trail (`admin_promoted`,
+         *     `admin_demoted`), in the same transaction as the role.
          */
         post: operations["demote_admin_api_hub_admins__user_id__demote_post"];
         delete?: never;
@@ -826,7 +831,7 @@ export interface paths {
         put?: never;
         /**
          * Set Referral State
-         * @description `da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralService.
+         * @description `da_confermare` to `confermato` to `pagato`, one step at a time (`ReferralLedgerService.
          *     set_state`). Tracking only: nothing here pays anyone.
          */
         post: operations["set_referral_state_api_hub_referrals__reward_id__state_post"];
@@ -909,7 +914,7 @@ export interface paths {
          *     switches, tasks, prices, the evaluation set) and every regeneration of the cards, its
          *     start and its end, newest first, each with who did it. No personal data: the payloads
          *     carry counts, costs and the people's ids, never a name or a card's text. `limit` is
-         *     clamped to 1..200.
+         *     clamped to 200 by the trail.
          */
         get: operations["ai_audit_api_hub_admin_ai_audit_get"];
         put?: never;
@@ -1017,9 +1022,8 @@ export interface paths {
          *     sent as one Message Batch at half the price that the `cards` service applies when it
          *     ends (`AdminAction` `cards_regenerate` is written when the start begins, and
          *     `cards_regenerated` when it ends, each card `card_regenerated` in its talent's trail). A
-         *     start while
-         *     another is running, or a batch is not yet applied, answers `queued` 0. No model configured
-         *     answers the team builder's own 503, as «Rigenera scheda» does.
+         *     start while another is running, or a batch is not yet applied, answers 409. No model
+         *     configured answers the team builder's own 503, as «Rigenera scheda» does.
          */
         post: operations["regenerate_stale_api_hub_admin_ai_cards_regenerate_stale_post"];
         delete?: never;
@@ -1073,9 +1077,11 @@ export interface paths {
         put?: never;
         /**
          * Prova
-         * @description One call with the fixed prompt through the task's own provider, model and cap. A
-         *     provider that fails answers 200 with `error` set to the seam's fixed sentence (never
-         *     the provider's text, which could carry the key): the page shows it beside the button.
+         * @description One call with the fixed prompt through the task's own provider, model and cap: it
+         *     goes through the seam, so it reserves its worst case against the cap, spends it like any
+         *     call (the cap sums every purpose) and shows the cost of its own row. A provider that
+         *     fails answers 200 with `error` set to the seam's fixed sentence (never the provider's
+         *     text, which could carry the key): the page shows it beside the button.
          */
         post: operations["prova_api_hub_admin_ai_tasks__task__prova_post"];
         delete?: never;
@@ -2057,7 +2063,8 @@ export interface paths {
          * Propose Team
          * @description «Proponi il team» and «Rigenera» (`previous_id`, `nota`). 503 «Il team builder è
          *     spento.» without a key or with the switch off, 503 «Troppe richieste…» with every
-         *     slot taken or the day's proposals spent, 502 when Claude does not answer.
+         *     slot taken, the client's share of the day used or the day's proposals spent, 502 when
+         *     Claude does not answer.
          */
         post: operations["propose_team_api_hub_team_proposals_post"];
         delete?: never;
@@ -2371,6 +2378,15 @@ export interface components {
              */
             ok: boolean;
         };
+        /** AdminActionFailure */
+        AdminActionFailure: {
+            /** Freelancer Id */
+            freelancer_id: string;
+            /** Reason */
+            reason: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * AdminActionRead
          * @description One entry of the trail, as an admin reads it: who, when, what kind, and the
@@ -2383,15 +2399,21 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Entity Type */
-            entity_type: string;
+            /**
+             * Entity Type
+             * @enum {string}
+             */
+            entity_type: "freelancer" | "company" | "match" | "freelancer_fiscal" | "ai_config" | "card_eval" | "campaign" | "mcp_read";
             /**
              * Entity Id
              * Format: uuid
              */
             entity_id: string;
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "overridden" | "cleared" | "deleted" | "restored" | "match_created" | "match_cancelled" | "match_closed" | "fiscal_updated" | "documents_sent" | "document_cancelled" | "mail_resent" | "notice_recorded" | "vetted" | "pigro_link" | "talents_contacted" | "ai_key" | "ai_task" | "ai_price" | "ai_switch" | "merged" | "absorbed" | "unmerged" | "eval_add" | "eval_remove" | "eval_expected" | "eval_accept" | "eval_rate" | "cards_regenerate" | "cards_regenerated" | "card_regenerated" | "note_added" | "note_edited" | "note_deleted" | "status_changed" | "anon_cv_downloaded" | "crm_link" | "company_created" | "admin_promoted" | "admin_demoted";
             /**
              * Admin Id
              * Format: uuid
@@ -2399,8 +2421,118 @@ export interface components {
             admin_id: string;
             /** Admin Nome */
             admin_nome: string;
-            /** Payload */
+            /**
+             * AdminActionPayload
+             * @description What an entry carries beyond its kind. Which keys are there depends on the kind, so
+             *     none is required; the keys listed are the ones the admin pages read, and any other
+             *     key a writer adds is kept and sent as it is (`extra="allow"`). Ids are strings,
+             *     amounts decimal strings: that is how `sanitize_payload` stores them.
+             *
+             *     * a field override or clear (`field_changes`): `changed`, `before`, `after`;
+             *     * `vetted`: `vetted`; a note or status entry: `fonte`, `testo`, `nota_id`;
+             *     * `pigro_link`: `esito`, `errore`; `anon_cv_downloaded`: `riusato`;
+             *     * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `lasciati`,
+             *       `cv`, `scheda_da_rigenerare`, and `rimesse` on the undo;
+             *     * the AI audit (REB-861): `provider`, `model`, `source`, `azione`, `task`, and for a
+             *       card regeneration its start (`limit`, `queued`, `batch`, `batch_id`) and its end
+             *       (`start_action_id`, the counts, `cost_eur`, `failures`, `stop_reason`, ...).
+             */
             payload: {
+                /** Changed */
+                changed?: string[];
+                /** Before */
+                before?: {
+                    [key: string]: unknown;
+                } | string;
+                /** After */
+                after?: {
+                    [key: string]: unknown;
+                } | string;
+                /** Vetted */
+                vetted?: boolean;
+                /** Fonte */
+                fonte?: string;
+                /** Testo */
+                testo?: string;
+                /** Nota Id */
+                nota_id?: string;
+                /** Esito */
+                esito?: string;
+                /** Errore */
+                errore?: string | null;
+                /** Riusato */
+                riusato?: boolean;
+                /** Reason */
+                reason?: string;
+                /** Into Freelancer Id */
+                into_freelancer_id?: string;
+                /** From Freelancer Id */
+                from_freelancer_id?: string;
+                /** Moved */
+                moved?: {
+                    [key: string]: number | string[];
+                };
+                /** Lasciati */
+                lasciati?: {
+                    [key: string]: number;
+                };
+                /** Rimesse */
+                rimesse?: {
+                    [key: string]: number;
+                };
+                /** Cv */
+                cv?: string;
+                /** Scheda Da Rigenerare */
+                scheda_da_rigenerare?: boolean;
+                /** Action Id */
+                action_id?: string;
+                /** Provider */
+                provider?: string;
+                /** Model */
+                model?: string;
+                /** Source */
+                source?: string;
+                /** Azione */
+                azione?: string;
+                /** Task */
+                task?: string;
+                /** Limit */
+                limit?: number;
+                /** Queued */
+                queued?: number;
+                /** Batch */
+                batch?: boolean;
+                /** Batch Id */
+                batch_id?: string;
+                /** Start Action Id */
+                start_action_id?: string | null;
+                /** Written */
+                written?: number | null;
+                /** Failed */
+                failed?: number | null;
+                /** Superseded */
+                superseded?: number | null;
+                /** Skipped */
+                skipped?: number | null;
+                /** Errored */
+                errored?: number | null;
+                /** Cost Eur */
+                cost_eur?: string | null;
+                /** Unpriced */
+                unpriced?: number;
+                /** Failures */
+                failures?: components["schemas"]["AdminActionFailure"][] | null;
+                /** Start Missing */
+                start_missing?: boolean;
+                /** Stopped */
+                stopped?: boolean;
+                /** Stop Reason */
+                stop_reason?: string;
+                /** Left */
+                left?: number;
+                /** Batch Status */
+                batch_status?: string;
+            } & {
                 [key: string]: unknown;
             };
             /**
@@ -2419,7 +2551,7 @@ export interface components {
             /** Items */
             items: components["schemas"]["AdminRead"][];
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * AdminRead
@@ -2454,7 +2586,7 @@ export interface components {
             /** Items */
             items: components["schemas"]["AdminTokenRead"][];
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * AdminTokenRead
@@ -2479,6 +2611,8 @@ export interface components {
             last_used_at: string | null;
             /** Revoked At */
             revoked_at: string | null;
+            /** Expires At */
+            expires_at: string | null;
         };
         /** AiConfigRead */
         AiConfigRead: {
@@ -2513,8 +2647,11 @@ export interface components {
             email: string;
             /** Nome */
             nome: string | null;
-            /** Tipo */
-            tipo: string;
+            /**
+             * Tipo
+             * @enum {string}
+             */
+            tipo: "freelancer" | "lead" | "azienda" | "proprietario";
             /** Escluso */
             escluso: string | null;
         };
@@ -2522,7 +2659,7 @@ export interface components {
          * AziendeFiltri
          * @description The company list's own filters (`companies.py:160`).
          */
-        AziendeFiltri: {
+        "AziendeFiltri-Input": {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2544,6 +2681,33 @@ export interface components {
             creato_da?: string | null;
             /** Creato A */
             creato_a?: string | null;
+        };
+        /**
+         * AziendeFiltri
+         * @description The company list's own filters (`companies.py:160`).
+         */
+        "AziendeFiltri-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            lista: "aziende";
+            /** Stato */
+            stato: string | null;
+            /** Q */
+            q: string | null;
+            /** Budget Min */
+            budget_min: string | null;
+            /** Budget Max */
+            budget_max: string | null;
+            /** Periodo Da */
+            periodo_da: string | null;
+            /** Origine */
+            origine: string | null;
+            /** Creato Da */
+            creato_da: string | null;
+            /** Creato A */
+            creato_a: string | null;
         };
         /**
          * Band
@@ -2659,6 +2823,8 @@ export interface components {
             conteggi: components["schemas"]["CampaignCounts"];
             /** Destinatari */
             destinatari: components["schemas"]["RecipientRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** CampaignDraft */
         CampaignDraft: {
@@ -2672,7 +2838,7 @@ export interface components {
             /** Stato Percorso */
             stato_percorso?: string | null;
             /** Filtri */
-            filtri?: (components["schemas"]["TalentiFiltri"] | components["schemas"]["AziendeFiltri"]) | null;
+            filtri?: (components["schemas"]["TalentiFiltri-Input"] | components["schemas"]["AziendeFiltri-Input"]) | null;
             /**
              * Oggetto
              * @default
@@ -2705,6 +2871,8 @@ export interface components {
         CampaignList: {
             /** Items */
             items: components["schemas"]["CampaignListItem"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** CampaignListItem */
         CampaignListItem: {
@@ -2717,14 +2885,15 @@ export interface components {
             nome: string;
             /** Slug */
             slug: string;
-            /** Fonte */
-            fonte: string;
+            /**
+             * Fonte
+             * @enum {string}
+             */
+            fonte: "stato" | "filtri" | "lista";
             /** Stato Percorso */
             stato_percorso: string | null;
             /** Filtri */
-            filtri: {
-                [key: string]: unknown;
-            } | null;
+            filtri: (components["schemas"]["TalentiFiltri-Output"] | components["schemas"]["AziendeFiltri-Output"]) | null;
             /** Segue Id */
             segue_id: string | null;
             /** Oggetto */
@@ -2733,14 +2902,23 @@ export interface components {
             testo: string;
             /** Bottone Testo */
             bottone_testo: string;
-            /** Bottone Meta */
-            bottone_meta: string;
+            /**
+             * Bottone Meta
+             * @enum {string}
+             */
+            bottone_meta: "area" | "wizard" | "pigro" | "richiesta" | "link";
             /** Bottone Url */
-            bottone_url?: string | null;
-            /** Azione */
-            azione: string;
-            /** Stato */
-            stato: string;
+            bottone_url: string | null;
+            /**
+             * Azione
+             * @enum {string}
+             */
+            azione: "entrato" | "cv" | "scheda_completa" | "profilo_creato" | "richiesta_aggiornata" | "pigro_cliente" | "clic";
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "bozza" | "programmata" | "in_invio" | "inviata" | "annullata";
             /**
              * Contenuto At
              * Format: date-time
@@ -2777,7 +2955,7 @@ export interface components {
             /** Stato Percorso */
             stato_percorso?: string | null;
             /** Filtri */
-            filtri?: (components["schemas"]["TalentiFiltri"] | components["schemas"]["AziendeFiltri"]) | null;
+            filtri?: (components["schemas"]["TalentiFiltri-Input"] | components["schemas"]["AziendeFiltri-Input"]) | null;
             /** Oggetto */
             oggetto?: string | null;
             /** Testo */
@@ -2802,14 +2980,15 @@ export interface components {
             nome: string;
             /** Slug */
             slug: string;
-            /** Fonte */
-            fonte: string;
+            /**
+             * Fonte
+             * @enum {string}
+             */
+            fonte: "stato" | "filtri" | "lista";
             /** Stato Percorso */
             stato_percorso: string | null;
             /** Filtri */
-            filtri: {
-                [key: string]: unknown;
-            } | null;
+            filtri: (components["schemas"]["TalentiFiltri-Output"] | components["schemas"]["AziendeFiltri-Output"]) | null;
             /** Segue Id */
             segue_id: string | null;
             /** Oggetto */
@@ -2818,14 +2997,23 @@ export interface components {
             testo: string;
             /** Bottone Testo */
             bottone_testo: string;
-            /** Bottone Meta */
-            bottone_meta: string;
+            /**
+             * Bottone Meta
+             * @enum {string}
+             */
+            bottone_meta: "area" | "wizard" | "pigro" | "richiesta" | "link";
             /** Bottone Url */
-            bottone_url?: string | null;
-            /** Azione */
-            azione: string;
-            /** Stato */
-            stato: string;
+            bottone_url: string | null;
+            /**
+             * Azione
+             * @enum {string}
+             */
+            azione: "entrato" | "cv" | "scheda_completa" | "profilo_creato" | "richiesta_aggiornata" | "pigro_cliente" | "clic";
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "bozza" | "programmata" | "in_invio" | "inviata" | "annullata";
             /**
              * Contenuto At
              * Format: date-time
@@ -2882,21 +3070,21 @@ export interface components {
          */
         CardPersonaRead: {
             /** Nome */
-            nome?: string | null;
+            nome: string | null;
             /** Cognome */
-            cognome?: string | null;
+            cognome: string | null;
             /** Email */
-            email?: string | null;
+            email: string | null;
             /** Telefono */
-            telefono?: string | null;
+            telefono: string | null;
             /** Citta */
-            citta?: string | null;
+            citta: string | null;
             /** Linkedin Url */
-            linkedin_url?: string | null;
+            linkedin_url: string | null;
             /** Altri Link */
-            altri_link?: string[];
+            altri_link: string[];
             /** Aziende */
-            aziende?: string[];
+            aziende: string[];
         };
         /**
          * CardProvenance
@@ -2984,11 +3172,11 @@ export interface components {
          */
         ClienteDraft: {
             /** Cliente Ragione Sociale */
-            cliente_ragione_sociale?: string | null;
+            cliente_ragione_sociale: string | null;
             /** Cliente Piva */
-            cliente_piva?: string | null;
+            cliente_piva: string | null;
             /** Cliente Sede */
-            cliente_sede?: string | null;
+            cliente_sede: string | null;
         };
         /**
          * CloudRequestCreate
@@ -3044,7 +3232,7 @@ export interface components {
             vetted: boolean;
             card: components["schemas"]["CardRead"];
             /** Modalita */
-            modalita: string | null;
+            modalita: ("remoto" | "ibrido" | "in_sede") | null;
             fascia: components["schemas"]["Band"] | null;
             /** Ha Cv */
             ha_cv: boolean;
@@ -3091,7 +3279,7 @@ export interface components {
              * Format: email
              */
             email: string;
-            utm?: components["schemas"]["SignupUtm"] | null;
+            utm?: components["schemas"]["SignupUtm-Input"] | null;
             /** Distinct Id */
             distinct_id?: string | null;
             /** Rif */
@@ -3140,7 +3328,7 @@ export interface components {
              * Format: email
              */
             email: string;
-            utm?: components["schemas"]["SignupUtm"] | null;
+            utm?: components["schemas"]["SignupUtm-Input"] | null;
             /** Distinct Id */
             distinct_id?: string | null;
             /** Rif */
@@ -3196,7 +3384,7 @@ export interface components {
                 [key: string]: number;
             };
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * CompanyOverride
@@ -3266,38 +3454,44 @@ export interface components {
             durata: string;
             /** Budget Giornaliero */
             budget_giornaliero: string;
-            /** Remoto */
-            remoto: string;
+            /**
+             * Remoto
+             * @enum {string}
+             */
+            remoto: "remoto" | "ibrido" | "in_sede";
             /** Giorni Presenza */
             giorni_presenza: number | null;
             /** Numero Risorse */
             numero_risorse: number;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "nuovo" | "contattato" | "in_corso" | "chiuso";
             /** Crm Stato */
-            crm_stato?: string | null;
+            crm_stato: ("da_collegare" | "collegato" | "errore" | "rifiutato") | null;
             /** Crm Errore */
-            crm_errore?: string | null;
+            crm_errore: string | null;
             /** Crm Situazione */
-            crm_situazione?: string | null;
+            crm_situazione: string | null;
             /** Crm Deal Url */
-            crm_deal_url?: string | null;
+            crm_deal_url: string | null;
             /** Crm Attempted At */
-            crm_attempted_at?: string | null;
+            crm_attempted_at: string | null;
             /** Origine */
-            origine?: string | null;
+            origine: string | null;
             /** Utm Source */
-            utm_source?: string | null;
+            utm_source: string | null;
             /** Utm Medium */
-            utm_medium?: string | null;
+            utm_medium: string | null;
             /** Utm Campaign */
-            utm_campaign?: string | null;
+            utm_campaign: string | null;
             /** Utm Content */
-            utm_content?: string | null;
+            utm_content: string | null;
             /** Utm Term */
-            utm_term?: string | null;
+            utm_term: string | null;
             /** Utm Id */
-            utm_id?: string | null;
+            utm_id: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3309,10 +3503,10 @@ export interface components {
              */
             updated_at: string;
             /** Deleted At */
-            deleted_at?: string | null;
+            deleted_at: string | null;
             /** Note */
-            note?: components["schemas"]["NoteRead"][];
-            talent_cloud_grant?: components["schemas"]["TalentCloudGrantRead"] | null;
+            note: components["schemas"]["NoteRead"][];
+            talent_cloud_grant: components["schemas"]["TalentCloudGrantRead"] | null;
         };
         /**
          * CompanyUpdate
@@ -3377,8 +3571,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "quadro" | "lettera";
             /**
              * Regime
              * @enum {string}
@@ -3399,8 +3596,11 @@ export interface components {
             text_version: string;
             /** Testo Bozza */
             testo_bozza: boolean;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "generato" | "in_attesa" | "inviato" | "firmato" | "annullato" | "disdetto";
             /**
              * Created At
              * Format: date-time
@@ -3459,6 +3659,8 @@ export interface components {
             last_used_at: string | null;
             /** Revoked At */
             revoked_at: string | null;
+            /** Expires At */
+            expires_at: string | null;
             /** Token */
             token: string;
         };
@@ -3491,7 +3693,7 @@ export interface components {
             survivor: components["schemas"]["PersonRead"];
             assorbito: components["schemas"]["PersonRead"];
             /** Segnali */
-            segnali: string[];
+            segnali: ("linkedin" | "nome" | "telefono")[];
             /** Unibile */
             unibile: boolean;
         };
@@ -3568,7 +3770,7 @@ export interface components {
             freelancer_id: string;
             card: components["schemas"]["CardRead"] | null;
             /** Modalita */
-            modalita: string | null;
+            modalita: ("remoto" | "ibrido" | "in_sede") | null;
             fascia: components["schemas"]["Band"] | null;
             /** Cv Sha256 */
             cv_sha256: string | null;
@@ -3579,13 +3781,13 @@ export interface components {
             /** Error */
             error: string | null;
             /** Seniority Admin */
-            seniority_admin?: string | null;
+            seniority_admin: ("junior" | "mid" | "senior" | "lead") | null;
             /** Anni Admin */
-            anni_admin?: number | null;
-            provenance?: components["schemas"]["CardProvenance"] | null;
-            persona?: components["schemas"]["CardPersonaRead"] | null;
+            anni_admin: number | null;
+            provenance: components["schemas"]["CardProvenance"] | null;
+            persona: components["schemas"]["CardPersonaRead"] | null;
             /** Differenze */
-            differenze?: components["schemas"]["PersonaDifference"][];
+            differenze: components["schemas"]["PersonaDifference"][];
         };
         /**
          * FreelancerContracts
@@ -3633,7 +3835,7 @@ export interface components {
             /** Linkedin Url */
             linkedin_url: string | null;
             /** Telefono */
-            telefono?: string | null;
+            telefono: string | null;
             /** Cv Filename */
             cv_filename: string | null;
             /** Cv Mime */
@@ -3645,39 +3847,45 @@ export interface components {
             /** Posizione */
             posizione: string | null;
             /** Remoto */
-            remoto: string | null;
+            remoto: ("remoto" | "ibrido" | "in_sede") | null;
             /** Links */
             links: string[];
-            /** Stato */
-            stato: string;
-            /** Compilata Da */
-            compilata_da: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "nuovo" | "contattato" | "attivo" | "scartato";
+            /**
+             * Compilata Da
+             * @enum {string}
+             */
+            compilata_da: "persona" | "admin";
             /**
              * Accessi
              * @default 0
              */
             accessi: number;
             /** Ultimo Accesso */
-            ultimo_accesso?: string | null;
+            ultimo_accesso: string | null;
             /**
              * Provenienza
              * @default landing
              */
             provenienza: string;
             /** Origine */
-            origine?: string | null;
+            origine: string | null;
             /** Utm Source */
-            utm_source?: string | null;
+            utm_source: string | null;
             /** Utm Medium */
-            utm_medium?: string | null;
+            utm_medium: string | null;
             /** Utm Campaign */
-            utm_campaign?: string | null;
+            utm_campaign: string | null;
             /** Utm Content */
-            utm_content?: string | null;
+            utm_content: string | null;
             /** Utm Term */
-            utm_term?: string | null;
+            utm_term: string | null;
             /** Utm Id */
-            utm_id?: string | null;
+            utm_id: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3689,22 +3897,22 @@ export interface components {
              */
             updated_at: string;
             /** Deleted At */
-            deleted_at?: string | null;
+            deleted_at: string | null;
             /** Vetted At */
-            vetted_at?: string | null;
+            vetted_at: string | null;
             /** Seniority Admin */
-            seniority_admin?: string | null;
+            seniority_admin: ("junior" | "mid" | "senior" | "lead") | null;
             /** Anni Admin */
-            anni_admin?: number | null;
+            anni_admin: number | null;
             /** Note */
-            note?: components["schemas"]["NoteRead"][];
-            iscrizione_utm?: components["schemas"]["SignupUtm"] | null;
+            note: components["schemas"]["NoteRead"][];
+            iscrizione_utm: components["schemas"]["SignupUtm-Output"] | null;
             /** Ultimi Accessi */
-            ultimi_accessi?: components["schemas"]["LoginRead"][];
+            ultimi_accessi: components["schemas"]["LoginRead"][];
             /** Ultimi Download Guida */
-            ultimi_download_guida?: components["schemas"]["GuideDownloadRead"][];
+            ultimi_download_guida: components["schemas"]["GuideDownloadRead"][];
             /** Pigro Slug */
-            pigro_slug?: string | null;
+            pigro_slug: string | null;
             /** Completa */
             readonly completa: boolean;
         };
@@ -3753,7 +3961,7 @@ export interface components {
              */
             totale_lead: number;
             /** Lead */
-            lead?: components["schemas"]["SignupListItem"][];
+            lead: components["schemas"]["SignupListItem"][];
         };
         /**
          * FreelancerOverride
@@ -3819,7 +4027,7 @@ export interface components {
             /** Linkedin Url */
             linkedin_url: string | null;
             /** Telefono */
-            telefono?: string | null;
+            telefono: string | null;
             /** Cv Filename */
             cv_filename: string | null;
             /** Cv Mime */
@@ -3831,39 +4039,45 @@ export interface components {
             /** Posizione */
             posizione: string | null;
             /** Remoto */
-            remoto: string | null;
+            remoto: ("remoto" | "ibrido" | "in_sede") | null;
             /** Links */
             links: string[];
-            /** Stato */
-            stato: string;
-            /** Compilata Da */
-            compilata_da: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "nuovo" | "contattato" | "attivo" | "scartato";
+            /**
+             * Compilata Da
+             * @enum {string}
+             */
+            compilata_da: "persona" | "admin";
             /**
              * Accessi
              * @default 0
              */
             accessi: number;
             /** Ultimo Accesso */
-            ultimo_accesso?: string | null;
+            ultimo_accesso: string | null;
             /**
              * Provenienza
              * @default landing
              */
             provenienza: string;
             /** Origine */
-            origine?: string | null;
+            origine: string | null;
             /** Utm Source */
-            utm_source?: string | null;
+            utm_source: string | null;
             /** Utm Medium */
-            utm_medium?: string | null;
+            utm_medium: string | null;
             /** Utm Campaign */
-            utm_campaign?: string | null;
+            utm_campaign: string | null;
             /** Utm Content */
-            utm_content?: string | null;
+            utm_content: string | null;
             /** Utm Term */
-            utm_term?: string | null;
+            utm_term: string | null;
             /** Utm Id */
-            utm_id?: string | null;
+            utm_id: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3875,21 +4089,23 @@ export interface components {
              */
             updated_at: string;
             /** Deleted At */
-            deleted_at?: string | null;
+            deleted_at: string | null;
             /** Vetted At */
-            vetted_at?: string | null;
+            vetted_at: string | null;
             /** Seniority Admin */
-            seniority_admin?: string | null;
+            seniority_admin: ("junior" | "mid" | "senior" | "lead") | null;
             /** Anni Admin */
-            anni_admin?: number | null;
+            anni_admin: number | null;
             /** Note */
-            note?: components["schemas"]["NoteRead"][];
+            note: components["schemas"]["NoteRead"][];
             /** Completa */
             readonly completa: boolean;
         };
         /**
          * GuideDownloadRead
-         * @description One download, with the member's name for the admin's list.
+         * @description One download, with the member's name for the admin's list. `freelancer_id` is the
+         *     live card of that person, for the link to it; `None` for a company contact, who has
+         *     none.
          */
         GuideDownloadRead: {
             /**
@@ -3902,6 +4118,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+            /** Freelancer Id */
+            freelancer_id: string | null;
             /** Nome */
             nome: string;
             /** Cognome */
@@ -3951,67 +4169,67 @@ export interface components {
          */
         LetteraDraft: {
             /** Ruolo */
-            ruolo?: string | null;
+            ruolo: string | null;
             /** Attivita */
-            attivita?: string | null;
+            attivita: string | null;
             /** Risultati */
-            risultati?: string | null;
+            risultati: string | null;
             /** Accettazione */
-            accettazione?: string | null;
+            accettazione: string | null;
             /** Data Inizio */
-            data_inizio?: string | null;
+            data_inizio: string | null;
             /** Data Fine */
-            data_fine?: string | null;
+            data_fine: string | null;
             /** Impegno */
-            impegno?: string | null;
+            impegno: string | null;
             /** Periodo Verifica */
-            periodo_verifica?: string | null;
+            periodo_verifica: string | null;
             /** Luogo */
-            luogo?: string | null;
+            luogo: string | null;
             /** Coordinamento */
-            coordinamento?: string | null;
+            coordinamento: string | null;
             /** Referente Cliente */
-            referente_cliente?: string | null;
+            referente_cliente: string | null;
             /** Referente Rebase */
-            referente_rebase?: string | null;
+            referente_rebase: string | null;
             /** Modalita */
-            modalita?: ("a giornata" | "a corpo") | null;
+            modalita: ("a giornata" | "a corpo") | null;
             /** Compenso */
-            compenso?: string | null;
+            compenso: string | null;
             /** Unita */
-            unita?: string | null;
+            unita: string | null;
             /** Lavoro Extra */
-            lavoro_extra?: string | null;
+            lavoro_extra: string | null;
             /** Spese */
-            spese?: string | null;
+            spese: string | null;
             /** Giorni Pagamento */
-            giorni_pagamento?: number | null;
+            giorni_pagamento: number | null;
             /** Fine Mese */
-            fine_mese?: boolean | null;
+            fine_mese: boolean | null;
             /** Scadenze Fatturazione */
-            scadenze_fatturazione?: string | null;
+            scadenze_fatturazione: string | null;
             /** Giorni Preavviso */
-            giorni_preavviso?: number | null;
+            giorni_preavviso: number | null;
             /** Dati Personali */
-            dati_personali?: string | null;
+            dati_personali: string | null;
             /** Dati Finalita */
-            dati_finalita?: string | null;
+            dati_finalita: string | null;
             /** Dati Categorie */
-            dati_categorie?: string | null;
+            dati_categorie: string | null;
             /** Dati Interessati */
-            dati_interessati?: string | null;
+            dati_interessati: string | null;
             /** Dati Autorizzazione */
-            dati_autorizzazione?: string | null;
+            dati_autorizzazione: string | null;
             /** Esclusiva */
-            esclusiva?: string | null;
+            esclusiva: string | null;
             /** Portfolio */
-            portfolio?: string | null;
+            portfolio: string | null;
             /** Assicurazione */
-            assicurazione?: string | null;
+            assicurazione: string | null;
             /** Altre Condizioni */
-            altre_condizioni?: string | null;
+            altre_condizioni: string | null;
             /** Rapporti Precedenti */
-            rapporti_precedenti?: string | null;
+            rapporti_precedenti: string | null;
         };
         /**
          * LetteraFields
@@ -4100,7 +4318,7 @@ export interface components {
              * Format: email
              */
             email: string;
-            utm?: components["schemas"]["SignupUtm"] | null;
+            utm?: components["schemas"]["SignupUtm-Input"] | null;
         };
         /**
          * LoginRead
@@ -4131,19 +4349,19 @@ export interface components {
              */
             logged_at: string;
             /** Origine */
-            origine?: string | null;
+            origine: string | null;
             /** Utm Source */
-            utm_source?: string | null;
+            utm_source: string | null;
             /** Utm Medium */
-            utm_medium?: string | null;
+            utm_medium: string | null;
             /** Utm Campaign */
-            utm_campaign?: string | null;
+            utm_campaign: string | null;
             /** Utm Content */
-            utm_content?: string | null;
+            utm_content: string | null;
             /** Utm Term */
-            utm_term?: string | null;
+            utm_term: string | null;
             /** Utm Id */
-            utm_id?: string | null;
+            utm_id: string | null;
         };
         /**
          * LoginStats
@@ -4167,7 +4385,7 @@ export interface components {
             /** Recenti */
             recenti: components["schemas"]["LoginRead"][];
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * MatchCheck
@@ -4278,12 +4496,15 @@ export interface components {
             nome_azienda: string;
             /** Figura Richiesta */
             figura_richiesta: string;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "bozza" | "in_firma" | "attivo" | "concluso" | "annullato";
             /** Lettera Numero */
             lettera_numero: string | null;
             /** Lettera Stato */
-            lettera_stato: string | null;
+            lettera_stato: ("generato" | "in_attesa" | "inviato" | "firmato" | "annullato" | "disdetto") | null;
             /** Lettera Data Inizio */
             lettera_data_inizio: string | null;
             /** Lettera Data Fine */
@@ -4306,7 +4527,7 @@ export interface components {
             /** Giorni Previsti */
             giorni_previsti: number | null;
             /** Pigro Stato */
-            pigro_stato: string | null;
+            pigro_stato: ("da_collegare" | "collegato" | "errore" | "rifiutato") | null;
             /** Pigro Url */
             pigro_url: string | null;
             /** Referrals */
@@ -4369,8 +4590,11 @@ export interface components {
             cliente_piva: string;
             /** Cliente Sede */
             cliente_sede: string;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "bozza" | "in_firma" | "attivo" | "concluso" | "annullato";
             /**
              * Created At
              * Format: date-time
@@ -4404,7 +4628,7 @@ export interface components {
             /** Lettera Compenso */
             lettera_compenso: string | null;
             /** Pigro Stato */
-            pigro_stato: string | null;
+            pigro_stato: ("da_collegare" | "collegato" | "errore" | "rifiutato") | null;
             /** Pigro Slug */
             pigro_slug: string | null;
             /** Pigro Deal Id */
@@ -4436,8 +4660,11 @@ export interface components {
          *     can link to it.
          */
         MatchReferral: {
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "freelancer" | "company";
             /** Referrer Nome */
             referrer_nome: string;
             /** Referrer Freelancer Id */
@@ -4446,8 +4673,11 @@ export interface components {
             rate: string | null;
             /** Amount */
             amount: string | null;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "da_verificare" | "previsto" | "gia_maturato" | "da_confermare" | "confermato" | "pagato";
             /** Reward Id */
             reward_id: string | null;
         };
@@ -4468,7 +4698,7 @@ export interface components {
             /** Pigro Url */
             pigro_url: string | null;
             /** Pigro Stato */
-            pigro_stato: string | null;
+            pigro_stato: ("da_collegare" | "collegato" | "errore" | "rifiutato") | null;
             /** Giorni Previsti */
             giorni_previsti: number | null;
             /** Ore Previste */
@@ -4525,8 +4755,11 @@ export interface components {
             linkedin_url: string | null;
             /** Telefono */
             telefono: string | null;
-            /** Role */
-            role: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "member" | "admin";
             /**
              * Created At
              * Format: date-time
@@ -4540,19 +4773,19 @@ export interface components {
             /** Ha Scheda */
             ha_scheda: boolean;
             /** Cv Filename */
-            cv_filename?: string | null;
+            cv_filename: string | null;
             /** Cv Size */
-            cv_size?: number | null;
+            cv_size: number | null;
             /** Tariffa Giornaliera */
-            tariffa_giornaliera?: string | null;
+            tariffa_giornaliera: string | null;
             /** Posizione */
-            posizione?: string | null;
+            posizione: string | null;
             /** Remoto */
-            remoto?: string | null;
+            remoto: ("remoto" | "ibrido" | "in_sede") | null;
             /** Links */
-            links?: string[];
+            links: string[];
             /** Richieste */
-            richieste?: components["schemas"]["MemberRequest"][];
+            richieste: components["schemas"]["MemberRequest"][];
             /**
              * Talent Cloud
              * @default false
@@ -4578,8 +4811,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "quadro" | "lettera";
             /**
              * Regime
              * @enum {string}
@@ -4589,8 +4825,11 @@ export interface components {
             tipo: string;
             /** Numero */
             numero: string | null;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "generato" | "in_attesa" | "inviato" | "firmato" | "annullato" | "disdetto";
             /** Cliente */
             cliente: string | null;
             /** Inizio */
@@ -4625,9 +4864,9 @@ export interface components {
          */
         MemberContracts: {
             quadro: components["schemas"]["MemberContract"] | null;
-            quadro_occasionale?: components["schemas"]["MemberContract"] | null;
+            quadro_occasionale: components["schemas"]["MemberContract"] | null;
             /** Quadri Precedenti */
-            quadri_precedenti?: components["schemas"]["MemberContract"][];
+            quadri_precedenti: components["schemas"]["MemberContract"][];
             /** Lettere */
             lettere: components["schemas"]["MemberContract"][];
         };
@@ -4642,9 +4881,9 @@ export interface components {
             /** Membro */
             membro: boolean;
             /** Nome */
-            nome?: string | null;
+            nome: string | null;
             /** Cognome */
-            cognome?: string | null;
+            cognome: string | null;
         };
         /**
          * MemberLookupRequest
@@ -4682,8 +4921,11 @@ export interface components {
          *     real engagement: rebase's own margin on it is an admin-only number.
          */
         MemberReferralItem: {
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "freelancer" | "company";
             /** Nome */
             nome: string;
             /**
@@ -4692,7 +4934,7 @@ export interface components {
              */
             created_at: string;
             /** Stato */
-            stato: string | null;
+            stato: ("nuovo" | "contattato" | "attivo" | "scartato" | "in_corso" | "chiuso") | null;
         };
         /**
          * MemberRequest
@@ -4721,8 +4963,11 @@ export interface components {
             durata: string;
             /** Budget Giornaliero */
             budget_giornaliero: string;
-            /** Remoto */
-            remoto: string;
+            /**
+             * Remoto
+             * @enum {string}
+             */
+            remoto: "remoto" | "ibrido" | "in_sede";
             /** Giorni Presenza */
             giorni_presenza: number | null;
             /** Numero Risorse */
@@ -4785,8 +5030,11 @@ export interface components {
             lasciati: {
                 [key: string]: number;
             };
-            /** Cv */
-            cv: string;
+            /**
+             * Cv
+             * @enum {string}
+             */
+            cv: "nessuno" | "invariato" | "assorbita" | "ripristinato";
             /** Scheda Da Rigenerare */
             scheda_da_rigenerare: boolean;
         };
@@ -4839,7 +5087,7 @@ export interface components {
             /** Autore Id */
             autore_id: string | null;
             /** Fonte */
-            fonte: string | null;
+            fonte: ("web" | "mcp" | "persona" | "sistema") | null;
             /**
              * Created At
              * Format: date-time
@@ -4946,7 +5194,7 @@ export interface components {
             /** Items */
             items: components["schemas"]["PigroSpace"][];
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /** PriceBody */
         PriceBody: {
@@ -5046,10 +5294,16 @@ export interface components {
             email: string;
             /** Nome */
             nome: string | null;
-            /** Tipo */
-            tipo: string;
-            /** Stato */
-            stato: string;
+            /**
+             * Tipo
+             * @enum {string}
+             */
+            tipo: "freelancer" | "lead" | "azienda" | "proprietario";
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "in_coda" | "inviata" | "saltata" | "fallita";
             /** Motivo */
             motivo: string | null;
             /** Inviata At */
@@ -5142,8 +5396,11 @@ export interface components {
             referral_id: string;
             /** Reward Id */
             reward_id: string | null;
-            /** Kind */
-            kind: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "freelancer" | "company";
             /**
              * Referred Id
              * Format: uuid
@@ -5182,13 +5439,16 @@ export interface components {
             /** Reward Amount */
             reward_amount: string | null;
             /** Stato */
-            stato: string | null;
-            /** Referral Stato */
-            referral_stato: string;
+            stato: ("da_confermare" | "confermato" | "pagato") | null;
+            /**
+             * Referral Stato
+             * @enum {string}
+             */
+            referral_stato: "da_verificare" | "verificato";
             /** Verified At */
             verified_at: string | null;
             /** Verified Via */
-            verified_via: string | null;
+            verified_via: ("accesso" | "lettera" | "storico") | null;
             /** Note */
             note: string | null;
             /**
@@ -5379,7 +5639,7 @@ export interface components {
         SendReport: {
             match: components["schemas"]["MatchRead"];
             /** Inviato */
-            inviato: string | null;
+            inviato: ("quadro" | "lettera") | null;
             /** Mail Inviata */
             mail_inviata: boolean | null;
         };
@@ -5412,13 +5672,18 @@ export interface components {
             cognome: string;
             /** Linkedin Url */
             linkedin_url?: string | null;
-            utm?: components["schemas"]["SignupUtm"] | null;
+            utm?: components["schemas"]["SignupUtm-Input"] | null;
             /** Rif */
             rif?: string | null;
             /** Pixel Event Id */
             pixel_event_id?: string | null;
             /** Oppref */
             oppref?: string | null;
+            /**
+             * Pixel Consent
+             * @default false
+             */
+            pixel_consent: boolean;
         };
         /**
          * SignupList
@@ -5445,25 +5710,25 @@ export interface components {
              */
             created_at: string;
             /** Nome */
-            nome?: string | null;
+            nome: string | null;
             /** Cognome */
-            cognome?: string | null;
+            cognome: string | null;
             /** Linkedin Url */
-            linkedin_url?: string | null;
+            linkedin_url: string | null;
             /** Utm Source */
-            utm_source?: string | null;
+            utm_source: string | null;
             /** Utm Medium */
-            utm_medium?: string | null;
+            utm_medium: string | null;
             /** Utm Campaign */
-            utm_campaign?: string | null;
+            utm_campaign: string | null;
             /** Utm Content */
-            utm_content?: string | null;
+            utm_content: string | null;
             /** Utm Term */
-            utm_term?: string | null;
+            utm_term: string | null;
             /** Freelancer Id */
-            freelancer_id?: string | null;
+            freelancer_id: string | null;
             /** Utm Id */
-            utm_id?: string | null;
+            utm_id: string | null;
         };
         /**
          * SignupUtm
@@ -5471,7 +5736,7 @@ export interface components {
          *     bounded: an ad platform's macro left unexpanded (`{{AD_SET_ID}}`) is stored as the
          *     literal it arrived as, because that is what happened.
          */
-        SignupUtm: {
+        "SignupUtm-Input": {
             /** Utm Source */
             utm_source?: string | null;
             /** Utm Medium */
@@ -5486,6 +5751,28 @@ export interface components {
             utm_id?: string | null;
             /** Origine */
             origine?: string | null;
+        };
+        /**
+         * SignupUtm
+         * @description The attribution the landing read from its own URL, if any. Every key optional and
+         *     bounded: an ad platform's macro left unexpanded (`{{AD_SET_ID}}`) is stored as the
+         *     literal it arrived as, because that is what happened.
+         */
+        "SignupUtm-Output": {
+            /** Utm Source */
+            utm_source: string | null;
+            /** Utm Medium */
+            utm_medium: string | null;
+            /** Utm Campaign */
+            utm_campaign: string | null;
+            /** Utm Content */
+            utm_content: string | null;
+            /** Utm Term */
+            utm_term: string | null;
+            /** Utm Id */
+            utm_id: string | null;
+            /** Origine */
+            origine: string | null;
         };
         /**
          * SourceProvenance
@@ -5591,7 +5878,7 @@ export interface components {
             items: components["schemas"]["StaleCardRead"][];
             /** Batch Threshold */
             batch_threshold: number;
-            batch?: components["schemas"]["CardBatchRead"] | null;
+            batch: components["schemas"]["CardBatchRead"] | null;
         };
         /**
          * StatusChange
@@ -5645,11 +5932,11 @@ export interface components {
              */
             granted_at: string;
             /** Revoked By */
-            revoked_by?: string | null;
+            revoked_by: string | null;
             /** Revoked By Nome */
-            revoked_by_nome?: string | null;
+            revoked_by_nome: string | null;
             /** Revoked At */
-            revoked_at?: string | null;
+            revoked_at: string | null;
         };
         /**
          * TalentiFiltri
@@ -5659,7 +5946,7 @@ export interface components {
          *     (`home`, `pigrocrm`), stored under that key since before the list named it
          *     `pagina_origine` (REB-798); `audience._from_talenti` translates it on replay.
          */
-        TalentiFiltri: {
+        "TalentiFiltri-Input": {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -5691,6 +5978,45 @@ export interface components {
             creato_a?: string | null;
         };
         /**
+         * TalentiFiltri
+         * @description The Talenti list's own filters (`GET /api/hub/talent`, `talenti.py:191`), stored
+         *     on the campaign and replayed through `TalentiService` when the list is shown and when
+         *     a mail is about to leave. `origine` is the marketing page the person started from
+         *     (`home`, `pigrocrm`), stored under that key since before the list named it
+         *     `pagina_origine` (REB-798); `audience._from_talenti` translates it on replay.
+         */
+        "TalentiFiltri-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            lista: "talenti";
+            /** Stato */
+            stato: string | null;
+            /** Q */
+            q: string | null;
+            /** Posizione */
+            posizione: string | null;
+            /** Remoto */
+            remoto: string | null;
+            /** Tariffa Min */
+            tariffa_min: string | null;
+            /** Tariffa Max */
+            tariffa_max: string | null;
+            /** Origine */
+            origine: string | null;
+            /** Utm Source */
+            utm_source: string | null;
+            /** Has Cv */
+            has_cv: boolean | null;
+            /** Con Accessi */
+            con_accessi: boolean | null;
+            /** Creato Da */
+            creato_da: string | null;
+            /** Creato A */
+            creato_a: string | null;
+        };
+        /**
          * TalentoList
          * @description Newest-or-best-match first across both tables (REB-282; REB-285 adds search and
          *     the cursor), at most `limit` rows. `totale` counts every row every active filter
@@ -5710,7 +6036,7 @@ export interface components {
                 [key: string]: number;
             };
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * TalentoRead
@@ -5743,64 +6069,67 @@ export interface components {
              */
             id: string;
             /** Nome */
-            nome?: string | null;
+            nome: string | null;
             /** Cognome */
-            cognome?: string | null;
+            cognome: string | null;
             /** Email */
             email: string;
             /** Linkedin Url */
-            linkedin_url?: string | null;
-            /** Stato */
-            stato: string;
+            linkedin_url: string | null;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "nuovo" | "contattato" | "attivo" | "scartato" | "lead";
             /**
              * Origine
              * @enum {string}
              */
             origine: "form" | "wizard" | "admin";
             /** Utm Source */
-            utm_source?: string | null;
+            utm_source: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
             /** Tariffa Giornaliera */
-            tariffa_giornaliera?: string | null;
+            tariffa_giornaliera: string | null;
             /** Remoto */
-            remoto?: string | null;
+            remoto: ("remoto" | "ibrido" | "in_sede") | null;
             /** Vetted At */
-            vetted_at?: string | null;
+            vetted_at: string | null;
             /**
              * Ha Scheda Anonima
              * @default false
              */
             ha_scheda_anonima: boolean;
             /** Posizione */
-            posizione?: string | null;
+            posizione: string | null;
             /** Ruolo */
-            ruolo?: string | null;
+            ruolo: string | null;
             /** Seniority */
-            seniority?: string | null;
+            seniority: ("junior" | "mid" | "senior" | "lead") | null;
             /** Anni */
-            anni?: number | null;
+            anni: number | null;
             /**
              * Seniority Incerta
              * @default false
              */
             seniority_incerta: boolean;
             /** Competenze */
-            competenze?: string[];
+            competenze: string[];
             /** Luogo */
-            luogo?: string | null;
+            luogo: string | null;
             /** Settori */
-            settori?: string[];
+            settori: string[];
             /** Lingue */
-            lingue?: string[];
+            lingue: string[];
             /** Sintesi */
-            sintesi?: string | null;
-            fascia?: components["schemas"]["Band"] | null;
+            sintesi: string | null;
+            fascia: components["schemas"]["Band"] | null;
             /** Possibile Duplicato Di */
-            possibile_duplicato_di?: string[];
+            possibile_duplicato_di: string[];
         };
         /** TaskBody */
         TaskBody: {
@@ -5867,6 +6196,17 @@ export interface components {
             esito: "si" | "no" | "invalid";
         };
         /**
+         * TeamEconomics
+         * @description The team's bands from its members', per day and per month at `giorni_mese` days;
+         *     `None` when any member has no rate.
+         */
+        TeamEconomics: {
+            giorno: components["schemas"]["Band"] | null;
+            mese: components["schemas"]["Band"] | null;
+            /** Giorni Mese */
+            giorni_mese: number;
+        };
+        /**
          * TeamMemberRead
          * @description One person of a proposed team (§ 3.3): `posizione` is their index in this
          *     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
@@ -5883,9 +6223,9 @@ export interface components {
             /** Freelancer Id */
             freelancer_id: string | null;
             /** Nome */
-            nome?: string | null;
+            nome: string | null;
             /** Cognome */
-            cognome?: string | null;
+            cognome: string | null;
             /** Ruolo */
             ruolo: string;
             /** Motivazione */
@@ -5894,8 +6234,20 @@ export interface components {
             giorni_settimana: number | null;
             scheda: components["schemas"]["CardRead"];
             /** Modalita */
-            modalita: string | null;
+            modalita: ("remoto" | "ibrido" | "in_sede") | null;
             fascia: components["schemas"]["Band"] | null;
+        };
+        /**
+         * TeamPlace
+         * @description What the engine read about place in a proposal's description: whether the client
+         *     wants someone local, and where (`None` when no place was named, or on the public read
+         *     when the visitor did not write it).
+         */
+        TeamPlace: {
+            /** Locale */
+            locale: boolean;
+            /** Dove */
+            dove: string | null;
         };
         /**
          * TeamProposalCreate
@@ -5924,7 +6276,7 @@ export interface components {
             /** Items */
             items: components["schemas"]["TeamProposalListItem"][];
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * TeamProposalListItem
@@ -5952,12 +6304,15 @@ export interface components {
             nota: string | null;
             /** Previous Id */
             previous_id: string | null;
-            /** Origine */
-            origine: string;
+            /**
+             * Origine
+             * @enum {string}
+             */
+            origine: "pubblico" | "cloud" | "admin";
             /** User Id */
             user_id: string | null;
             /** Errore */
-            errore: string | null;
+            errore: ("llm_unavailable" | "team_builder_busy") | null;
             /** Riassunto */
             riassunto: string | null;
             /** Membri */
@@ -5999,12 +6354,11 @@ export interface components {
         /**
          * TeamProposalRead
          * @description A proposal as the page shows it (§ 3.3). `luogo` is what the engine read about
-         *     place in the description, `{"locale": bool, "dove": str | None}`, and stays on the
-         *     public read: it is the visitor's own words. `economia` is `{"giorno": Band | None,
-         *     "mese": Band | None, "giorni_mese": 22}`, the team's bands from its members',
-         *     `None` when any member has no rate. `descrizione` and `persone` are what the
-         *     proposal was asked with (REB-675): the public page opened on a proposal by its id
-         *     fills its box from them and sends them back on «Rigenera».
+         *     place in the description (`TeamPlace`), and stays on the public read: it is the
+         *     visitor's own words. `economia` is the team's bands from its members' (`TeamEconomics`).
+         *     `descrizione` and `persone` are what the proposal was asked with (REB-675): the public
+         *     page opened on a proposal by its id fills its box from them and sends them back on
+         *     «Rigenera».
          */
         TeamProposalRead: {
             /**
@@ -6018,20 +6372,17 @@ export interface components {
             persone: number | null;
             /** Riassunto */
             riassunto: string;
-            /** Luogo */
-            luogo: {
-                [key: string]: unknown;
-            };
+            luogo: components["schemas"]["TeamPlace"];
             /** Team */
             team: components["schemas"]["TeamMemberRead"][];
-            /** Economia */
-            economia: {
-                [key: string]: unknown;
-            };
+            economia: components["schemas"]["TeamEconomics"];
             /** Previous Id */
             previous_id: string | null;
-            /** Origine */
-            origine: string;
+            /**
+             * Origine
+             * @enum {string}
+             */
+            origine: "pubblico" | "cloud" | "admin";
             /**
              * Created At
              * Format: date-time
@@ -6081,7 +6432,7 @@ export interface components {
             /** Items */
             items: components["schemas"]["TeamRequestListItem"][];
             /** Next Cursor */
-            next_cursor?: string | null;
+            next_cursor: string | null;
         };
         /**
          * TeamRequestListItem
@@ -6096,10 +6447,16 @@ export interface components {
             id: string;
             /** Azienda */
             azienda: string;
-            /** Origine */
-            origine: string;
-            /** Stato */
-            stato: string;
+            /**
+             * Origine
+             * @enum {string}
+             */
+            origine: "pubblico" | "cloud";
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "nuova" | "contattata" | "chiusa";
             /**
              * Created At
              * Format: date-time
@@ -6138,8 +6495,11 @@ export interface components {
             riassunto: string | null;
             /** Descrizione */
             descrizione: string | null;
-            /** Origine */
-            origine: string;
+            /**
+             * Origine
+             * @enum {string}
+             */
+            origine: "pubblico" | "cloud";
             /** Azienda */
             azienda: string;
             /** Email */
@@ -6150,8 +6510,11 @@ export interface components {
             user_id: string | null;
             /** Company Id */
             company_id: string | null;
-            /** Stato */
-            stato: string;
+            /**
+             * Stato
+             * @enum {string}
+             */
+            stato: "nuova" | "contattata" | "chiusa";
             /** Note */
             note: string | null;
             /** Talenti */
@@ -6210,7 +6573,7 @@ export interface components {
             /** Mail Sent At */
             mail_sent_at: string | null;
             /** Risposta */
-            risposta: string | null;
+            risposta: ("si" | "no") | null;
             /** Risposta At */
             risposta_at: string | null;
             /** Contattabile */
@@ -6228,10 +6591,16 @@ export interface components {
             testo: string;
             /** Bottone Testo */
             bottone_testo: string;
-            /** Bottone Meta */
-            bottone_meta: string;
-            /** Azione */
-            azione: string;
+            /**
+             * Bottone Meta
+             * @enum {string}
+             */
+            bottone_meta: "area" | "wizard" | "pigro" | "richiesta" | "link";
+            /**
+             * Azione
+             * @enum {string}
+             */
+            azione: "entrato" | "cv" | "scheda_completa" | "profilo_creato" | "richiesta_aggiornata" | "pigro_cliente" | "clic";
         };
         /** TokenCreate */
         TokenCreate: {
@@ -6240,6 +6609,8 @@ export interface components {
              * @default Claude Code
              */
             nome: string;
+            /** Expires At */
+            expires_at?: string | null;
         };
         /** ValidationError */
         ValidationError: {

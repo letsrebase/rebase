@@ -25,6 +25,7 @@ from rebase_api.deps import (
     SessionOpenerDep,
     SettingsDep,
 )
+from rebase_api.params import Limit
 from rebase_core.ai_config import MAX_AMOUNT_EUR, AiConfigService
 from rebase_core.ai_schemas import (
     AiConfigRead,
@@ -36,9 +37,10 @@ from rebase_core.ai_schemas import (
     StaleCardsRead,
     TaskRead,
 )
+from rebase_core.ai_spend import settled
 from rebase_core.audit import AdminActionRead
 from rebase_core.card_batch import active_batch
-from rebase_core.cards import CardWriter, regenerate_after_response
+from rebase_core.card_writer import CardWriter, regenerate_after_response
 from rebase_core.crm_lead import (
     SAMPLE_DURATA,
     SAMPLE_FIGURA,
@@ -48,9 +50,10 @@ from rebase_core.crm_lead import (
     LeadDraftOut,
     lead_request,
 )
-from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff
+from rebase_core.errors import InvalidState, LlmUnavailable, NotFound, TeamBuilderOff
 from rebase_core.llm import LlmMessage, LlmRequest
 from rebase_core.models import AI_TASKS, AiUsage
+from rebase_core.schema_common import ResponseModel
 from rebase_core.sources import default_source_service
 
 router = APIRouter(prefix="/api/hub/admin/ai", tags=["hub-admin"])
@@ -104,7 +107,7 @@ class RegenerateBody(BaseModel):
     limit: int = Field(ge=1, le=REGENERATE_MAX)
 
 
-class ProvaRead(BaseModel):
+class ProvaRead(ResponseModel):
     answer: str
     latency_ms: int
     cost_eur: str | None
@@ -128,12 +131,12 @@ def read_config(admin: AdminDep, service: ServiceDep) -> AiConfigRead:
 
 
 @router.get("/audit", response_model=list[AdminActionRead])
-def ai_audit(admin: AdminDep, service: ServiceDep, limit: int = 50) -> list[AdminActionRead]:
+def ai_audit(admin: AdminDep, service: ServiceDep, limit: Limit = 50) -> list[AdminActionRead]:
     """«Registro» of «Modelli AI» (REB-861): what an admin did to the configuration (keys,
     switches, tasks, prices, the evaluation set) and every regeneration of the cards, its
     start and its end, newest first, each with who did it. No personal data: the payloads
     carry counts, costs and the people's ids, never a name or a card's text. `limit` is
-    clamped to 1..200."""
+    clamped to 200 by the trail."""
     return service.trail(limit)
 
 
@@ -202,15 +205,17 @@ def regenerate_stale(
     sent as one Message Batch at half the price that the `cards` service applies when it
     ends (`AdminAction` `cards_regenerate` is written when the start begins, and
     `cards_regenerated` when it ends, each card `card_regenerated` in its talent's trail). A
-    start while
-    another is running, or a batch is not yet applied, answers `queued` 0. No model configured
-    answers the team builder's own 503, as «Rigenera scheda» does."""
+    start while another is running, or a batch is not yet applied, answers 409. No model
+    configured answers the team builder's own 503, as «Rigenera scheda» does."""
     if llm is None:
         raise TeamBuilderOff("Il team builder è spento.")
     writer = CardWriter(session, None)
-    # A start while one is still inside its batch queues nothing: the cards it is writing
-    # are still stale until it saves them, and a second batch would pay for them again.
-    queued = 0 if writer.regeneration_running() else min(body.limit, len(writer.stale_cards()))
+    # `regeneration_running` reads the same advisory lock `regenerate_stale` takes for the
+    # whole run, so the lock stays the one guard: a start that loses the race to it still
+    # queues nothing and spends nothing (`regenerate_stale` returns at once without it).
+    if writer.regeneration_running():
+        raise InvalidState("Una rigenerazione delle schede è già in corso.")
+    queued = len(writer.stale_cards(body.limit))
     if queued:
         background.add_task(
             regenerate_after_response,
@@ -243,11 +248,14 @@ def prova(
     make_call: ProvaCallDep,
     task: str,
 ) -> ProvaRead:
-    """One call with the fixed prompt through the task's own provider, model and cap. A
-    provider that fails answers 200 with `error` set to the seam's fixed sentence (never
-    the provider's text, which could carry the key): the page shows it beside the button."""
+    """One call with the fixed prompt through the task's own provider, model and cap: it
+    goes through the seam, so it reserves its worst case against the cap, spends it like any
+    call (the cap sums every purpose) and shows the cost of its own row. A provider that
+    fails answers 200 with `error` set to the seam's fixed sentence (never the provider's
+    text, which could carry the key): the page shows it beside the button."""
     if task not in AI_TASKS:
         raise NotFound("ai_task", task)
+    began = service.now()
     started = time.monotonic()
     # The CRM draft's probe is the task itself on an invented request, so the page shows a
     # real draft; the others send the fixed one-word prompt.
@@ -272,9 +280,16 @@ def prova(
         )
     latency = round((time.monotonic() - started) * 1000)
     session.expire_all()
+    # The call's own row: the newest settled «Prova» of the task since this call began. A
+    # hold is not a call, and an earlier probe is not this one.
     usage = session.scalars(
         select(AiUsage)
-        .where(AiUsage.task == task, AiUsage.purpose == "prova")
+        .where(
+            AiUsage.task == task,
+            AiUsage.purpose == "prova",
+            AiUsage.at >= began,
+            settled(),
+        )
         .order_by(AiUsage.at.desc())
         .limit(1)
     ).first()

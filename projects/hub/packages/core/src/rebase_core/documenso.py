@@ -14,6 +14,7 @@ Everything goes through the `HttpCall` seam, so the tests hand `FakeDocumenso`. 
 refusal becomes `DocumensoFailed` carrying Documenso's `message` alone.
 """
 
+import http.client
 import json
 import secrets
 from collections.abc import Sequence
@@ -61,6 +62,10 @@ META: dict[str, Any] = {
 }
 COMPLETED, REJECTED, CANCELLED = "completed", "rejected", "cancelled"
 UNREACHABLE = "Documenso non risponde: riprova tra qualche minuto."
+# What `urllib` raises with no answer: a refused connection, a DNS miss or a timeout
+# (`URLError`, `TimeoutError` and `ConnectionError` are all `OSError`), and a reply cut off
+# or malformed mid-read (`http.client.HTTPException`). Anything else is a bug, not an outage.
+_NETWORK_ERRORS = (OSError, http.client.HTTPException)
 UNREADABLE = "Documenso ha dato una risposta che non riconosco: riprova tra qualche minuto."
 
 
@@ -146,10 +151,17 @@ def _json_body(value: dict[str, Any]) -> bytes:
     return json.dumps(value).encode()
 
 
+# Quote and line breaks: what could close `filename="..."` early or end its header line.
+_HEADER_BREAKERS = {ord(char): None for char in '"\r\n'}
+
+
 def _multipart(payload: dict[str, Any], filename: str, pdf: bytes) -> tuple[str, bytes]:
     """`payload` as a JSON string and the PDF as `files`, the two parts the create takes.
     The file name is the hub's own (`lettera-di-incarico-2026-001.pdf`), ASCII, and
-    becomes the envelope item's title and the sealed copy's name with `_signed`."""
+    becomes the envelope item's title and the sealed copy's name with `_signed`; the
+    characters that would end the quoted header value or the header line are dropped, so
+    no name can add a header or a part of its own."""
+    filename = filename.translate(_HEADER_BREAKERS)
     boundary = f"rebase-{secrets.token_hex(12)}"
     head = (
         f"--{boundary}\r\n"
@@ -271,7 +283,7 @@ class DocumensoClient:
             headers["Content-Type"] = content_type
         try:
             status, answer = self.http(method, f"{self.api}{path}", headers, body)
-        except Exception as exc:  # urllib raises on a refused connection or a timeout
+        except _NETWORK_ERRORS as exc:
             raise DocumensoFailed(UNREACHABLE, f"{method} {path}: {exc!r}") from exc
         if status == NETWORK_ERROR_STATUS:
             raise DocumensoFailed(UNREACHABLE, f"{method} {path}: no response")

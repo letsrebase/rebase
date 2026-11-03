@@ -106,6 +106,7 @@ def test_upgrade_creates_four_tables_and_columns(hub_postgres: Any) -> None:
                 "priced",
                 "freelancer_id",
                 "batch",  # 0041 (REB-853): the call went through a batch API
+                "reserved_until",  # 0047: the row is a spend hold, not an answered call
             }
             index = connection.execute(
                 text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_ai_usage_task_at'")

@@ -18,7 +18,7 @@ from rebase_core.analytics import (
     tracker_from_settings,
 )
 from rebase_core.config import Settings
-from rebase_core.schemas import SignupUtm
+from rebase_core.signup_schemas import SignupUtm
 
 
 class FakeCapture:
