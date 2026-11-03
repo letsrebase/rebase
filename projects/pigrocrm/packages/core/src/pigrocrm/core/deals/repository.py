@@ -92,7 +92,9 @@ class DealRepository:
 
     def replace_value_lines(self, deal_id: UUID, lines: list[DealValueLine]) -> None:
         """Replaces the whole list. The old rows are deleted and flushed before the new ones
-        go in, so `(deal_id, position)` stays unique."""
+        go in, so `(deal_id, position)` stays unique. The deal row is locked first: two
+        writers replacing one deal's lines take turns instead of colliding on that key."""
+        self.session.execute(select(Deal.id).where(Deal.id == deal_id).with_for_update())
         self.session.execute(delete(DealValueLine).where(DealValueLine.deal_id == deal_id))
         self.session.flush()
         self.session.add_all(lines)

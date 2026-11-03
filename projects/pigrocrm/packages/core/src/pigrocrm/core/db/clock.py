@@ -69,6 +69,21 @@ def add_months(day: date, months: int) -> date:
     return date(year, month + 1, min(day.day, month_bounds(year, month + 1)[1].day))
 
 
+def stepped_dates(start: date, last: date, step: int) -> list[date]:
+    """`start` and every `step` months after it, up to `last` inclusive. Each date is counted
+    from `start`, never from the previous one: stepping from a clamped date would carry the
+    clamp forward (31 January, then the 28th of every later month). The one stepper a deal's
+    lines and a contract's recurring fees share, so both price a term identically."""
+    days: list[date] = []
+    index = 0
+    day = start
+    while day <= last:
+        days.append(day)
+        index += 1
+        day = add_months(start, index * step)
+    return days
+
+
 def month_bounds(year: int, month: int) -> tuple[date, date]:
     """The first and last day of a month, both inclusive.
 
