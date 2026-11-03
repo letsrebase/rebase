@@ -129,6 +129,17 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
 }
 
 /**
+ * Kinds whose `from`/`to` were `da`/`a` before the English rename (migration 0068). The
+ * shape check below only ever matched the English keys, so these rendered through the
+ * generic «Da: … · A: …» line, the rule included; they keep doing so.
+ */
+const GENERIC_FROM_TO_KINDS: Record<string, true> = {
+  state_changed: true,
+  day_state_changed: true,
+  'automation.stage_moved': true,
+}
+
+/**
  * The one piece of detail worth a second line, per payload shape rather than per
  * `kind` string -- checked this way because the payload's *shape*, not the kind,
  * is what actually determines what there is to say, and a `kind` this build has
@@ -158,7 +169,7 @@ function ActivityDetail({ kind, payload }: { kind: string; payload: ActivityEntr
     )
   }
 
-  if ('from' in payload && 'to' in payload) {
+  if ('from' in payload && 'to' in payload && GENERIC_FROM_TO_KINDS[kind] !== true) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
         Da <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'from', payload.from)}</strong> a{' '}
