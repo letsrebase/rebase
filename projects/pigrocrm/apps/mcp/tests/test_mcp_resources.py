@@ -26,7 +26,7 @@ async def test_a_zero_valued_deal_shows_zero_not_a_dash(server, mcp_session: Ses
     customer = CustomerService(mcp_session).create(CustomerCreate(legal_name="Pro Bono Srl"), SETUP)
     deal = DealService(mcp_session).create(
         DealCreate(
-            nome="Consulenza gratuita",
+            name="Consulenza gratuita",
             customer_id=customer.id,
             expected_value=Decimal("0.00"),
             budgeted_hours=Decimal("0.00"),

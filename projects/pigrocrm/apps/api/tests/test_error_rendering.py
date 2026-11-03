@@ -107,10 +107,10 @@ def test_a_duplicate_stage_code_answers_the_conflict_code_and_names_the_stage_co
 ) -> None:
     """The duplicate-stage conflict used to carry the stage's own code as `code` and
     overwrite the problem's: a client branching on `code == "conflict"` saw `"lead"`."""
-    stage = {"nome": "Prima", "position": 90, "code": "stage-dup-test"}
+    stage = {"name": "Prima", "position": 90, "code": "stage-dup-test"}
     assert logged_in.post("/api/pipeline-stages", json=stage).status_code == 201
     response = logged_in.post(
-        "/api/pipeline-stages", json={**stage, "nome": "Seconda", "position": 91}
+        "/api/pipeline-stages", json={**stage, "name": "Seconda", "position": 91}
     )
 
     assert response.status_code == 409, response.text

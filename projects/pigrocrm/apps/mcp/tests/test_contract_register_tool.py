@@ -51,7 +51,7 @@ async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_se
     billed = WorkUnit(
         contract_id=contract.id,
         invoice_line_id=line.id,
-        data=date(2026, 10, 7),
+        date=date(2026, 10, 7),
         quantity=Decimal("1.50"),
         description="Giornata",
         status="worked",
@@ -62,7 +62,7 @@ async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_se
     mcp_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=date(2026, 10, 8),
+            date=date(2026, 10, 8),
             quantity=Decimal("1.00"),
             description="Non ancora fatturata",
             status="worked",
@@ -78,7 +78,7 @@ async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_se
 
     body = result.structured_content
     assert body["quantity_total"] == "1.50"
-    assert [v["data"] for v in body["entries"]] == ["2026-10-07"]
+    assert [v["date"] for v in body["entries"]] == ["2026-10-07"]
     assert body["without_approval"] == 1
 
 

@@ -76,7 +76,7 @@ async def test_a_tool_whose_fields_are_parameters_refuses_a_call_that_gives_none
 
 class _Row(BaseModel):
     id: str
-    nome: str
+    name: str
     note: str | None
     value: str
     updated_at: str
@@ -90,7 +90,7 @@ class _Detail(_Row):
 def test_report_lists_what_differs_and_what_was_cleared() -> None:
     before = _Detail(
         id="1",
-        nome="Vecchio",
+        name="Vecchio",
         note="da togliere",
         value="10.00",
         updated_at="ieri",
@@ -98,7 +98,7 @@ def test_report_lists_what_differs_and_what_was_cleared() -> None:
     )
     after = _Row(
         id="1",
-        nome="Nuovo",
+        name="Nuovo",
         note=None,
         value="10.00",
         updated_at="today",
@@ -109,9 +109,9 @@ def test_report_lists_what_differs_and_what_was_cleared() -> None:
 
     # `only_in_detail` is on one side only and `updated_at` is bookkeeping: neither is
     # a change. A custom field that appeared or emptied is.
-    assert result["changed"] == ["custom_fields.canale", "custom_fields.sede", "nome", "note"]
+    assert result["changed"] == ["custom_fields.canale", "custom_fields.sede", "name", "note"]
     assert result["cleared"] == {"custom_fields.sede": "Roma", "note": "da togliere"}
-    assert result["nome"] == "Nuovo"
+    assert result["name"] == "Nuovo"
 
 
 async def _create(client: Client, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -138,7 +138,7 @@ async def _deal(client: Client, customer_id: str) -> dict[str, Any]:
         client,
         "create_deal",
         {
-            "nome": "Progetto",
+            "name": "Progetto",
             "customer_id": customer_id,
             "expected_value": "1000.00",
             "expected_close_date": "2026-12-31",
@@ -205,11 +205,11 @@ async def test_a_value_that_is_not_new_is_not_reported_as_changed(
             "update_deal",
             {
                 "deal_id": deal["id"],
-                "changes": {"nome": "Rinominato", "expected_value": deal["expected_value"]},
+                "changes": {"name": "Rinominato", "expected_value": deal["expected_value"]},
             },
         )
 
-    assert result["changed"] == ["nome"]
+    assert result["changed"] == ["name"]
     assert result["cleared"] == {}
 
 
@@ -218,7 +218,7 @@ async def test_clearing_a_person_field_is_reported(server) -> None:
         person = await _create(
             client,
             "create_person",
-            {"nome": "Mario", "last_name": "Rossi", "role": "CTO"},
+            {"first_name": "Mario", "last_name": "Rossi", "role": "CTO"},
         )
         result = await _create(
             client, "update_person", {"person_id": person["id"], "changes": {"role": None}}
@@ -234,7 +234,7 @@ async def test_detaching_a_person_from_a_customer_is_reported_as_cleared(server)
         person = await _create(
             client,
             "create_person",
-            {"nome": "Mario", "last_name": "Rossi", "customer_id": customer["id"]},
+            {"first_name": "Mario", "last_name": "Rossi", "customer_id": customer["id"]},
         )
         result = await _create(
             client, "update_person", {"person_id": person["id"], "changes": {"detach": True}}
@@ -309,7 +309,7 @@ async def test_update_task_advertises_its_fields(server) -> None:
 async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
     server, mcp_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
 ) -> None:
-    category = CostCategory(nome="Software", position=0)
+    category = CostCategory(name="Software", position=0)
     mcp_session.add(category)
     mcp_session.flush()
     async with Client(server) as client:
@@ -319,7 +319,7 @@ async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-03-10",
+                "date": "2026-03-10",
                 "hours": "2.00",
                 "description": "Sviluppo",
                 "note_interne": "da rivedere",
@@ -335,7 +335,7 @@ async def test_clearing_a_cost_and_a_time_entry_field_is_reported(
             "create_cost",
             {
                 "category_id": str(category.id),
-                "data": "2026-03-10",
+                "date": "2026-03-10",
                 "amount": "50.00",
                 "description": "Licenza",
                 "supplier": "Acme",

@@ -260,7 +260,7 @@ _INTERNE: dict[Method, str] = {
         "`packages/core/tests/test_in_transaction_callers.py` lo impone sull'AST di ogni "
         "sito di chiamata dei tre pacchetti: un tool che la esponesse sarebbe esattamente "
         "il bypass di autorizzazione che quella guardia esiste per impedire. Lo spostamento "
-        "di stage resta raggiungibile dall'agente sotto il suo nome vero, `move_deal`, "
+        "di stage resta raggiungibile dall'agente sotto il suo name vero, `move_deal`, "
         "che autorizza, registra e committa"
     ),
     ("LegalEntityService", "as_template_values"): "alimenta il renderer dei template",
@@ -270,7 +270,7 @@ _INTERNE: dict[Method, str] = {
         "non e' un'azione a se'"
     ),
     ("LegalEntityService", "resolve"): (
-        "lettura interna: la riga che un `legal_entity_id` nomina, o la predefinita quando e' "
+        "lettura interna: la riga che un `legal_entity_id` nomina, o la is_default quando e' "
         "`None`; e' cio' che ogni servizio chiama per se', e `describe_legal_entity` la espone"
     ),
     ("LegalEntityService", "single"): (
@@ -453,7 +453,7 @@ _CREDENZIALI: dict[Method, str] = {
     ("EmailSendService", "send"): (
         "**l'invio non sara' mai un tool**, ed e' la decisione permanente di questa "
         "fetta: B2-10 l'ha confermata invece di riaprirla. Un'email che parte "
-        "dall'indirizzo del titolare parla in suo nome a un cliente, non si richiama, e "
+        "dall'indirizzo del titolare parla in suo name a un cliente, non si richiama, e "
         "il destinatario e' una persona esterna al CRM: stessa famiglia di "
         "`GmailOAuthService.disconnect`, con in piu' che un agente che tenesse la "
         "*lettura* della posta e l'*invio* sullo stesso canale avrebbe la sorgente di "
@@ -610,7 +610,7 @@ _CONFIGURATION: dict[Method, str] = {
         "fact, for every user, is what `describe_slack` reads"
     ),
     ("LegalEntityService", "set_default"): (
-        "Impostazioni → Aziende: quale azienda e' la predefinita decide a chi vanno le "
+        "Impostazioni → Aziende: quale azienda e' la is_default decide a chi vanno le "
         "letture implicite di tutto lo spazio (REB-616, spec 2026-10-03 §3); una scelta "
         "dell'amministratore dal pannello, non di un agente"
     ),
@@ -642,7 +642,7 @@ _CONFIGURATION: dict[Method, str] = {
         "e' la stessa famiglia di `PipelineService.update`, un grado piu' seria. Un agente "
         "che potesse spegnere A1 e poi spostare un deal non lascerebbe traccia della "
         "differenza fra «l'automazione non e' scattata» e «l'ho disattivata io». "
-        "L'esclusione non e' cautela di questo file: e' l'unico nome di "
+        "L'esclusione non e' cautela di questo file: e' l'unico name di "
         "`MCP_EXCLUDED_SLICE6` (packages/core/tests/test_architecture.py), che la spec "
         "§11.1 fissa a esattamente uno, e la lettura corrispondente -- "
         "`describe_automations` -- ha un tool, quindi all'agente resta visibile tutto "
@@ -753,12 +753,12 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "read by the `status_customer` prompt for the receivables of one customer; an agent "
         "already reads them through `list_invoices` and `get_receivables_dashboard`"
     ),
-    ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
+    ("ContractEmailService", "create"): "il testo che esce a name del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",
     ("ContractEmailService", "prepare"): "prepara una bozza con gli allegati d'archivio e "
     "precede l'invio, che non ha un tool MCP e non lo avra' mai (routers/email_drafts.py)",
-    ("ContractRegisterService", "csv_filename"): "il nome del file che build_csv consegna",
+    ("ContractRegisterService", "csv_filename"): "il name del file che build_csv consegna",
     ("CustomerService", "create_from_suggestions"): (
         "crea insieme, in una transazione, i clienti spuntati nella lista delle proposte "
         "Gmail della Home e di Clienti (REB-223): un agente crea gli stessi clienti e le "
@@ -799,7 +799,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "servizio, non il CRM, e l'unico adapter che vi arriva e' `POST /api/tenants`"
     ),
     ("TenantService", "availability"): (
-        "la domanda che la pagina di iscrizione fa mentre la persona scrive il nome: senza "
+        "la domanda che la pagina di iscrizione fa mentre la persona scrive il name: senza "
         "actor, sul registro degli spazi, non sul CRM"
     ),
     ("TenantService", "get"): (
@@ -893,7 +893,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     #     operazione e' il progetto: la revisione e' cio' che rende accettabile l'invio, e
     #     una bozza e' l'artefatto che la rende economica;
     #   * non si espone niente che *tocchi una bozza che l'agente non ha scritto*, e
-    #     niente che scriva una richiesta di denaro a nome del titolare.
+    #     niente che scriva una richiesta di denaro a name del titolare.
     ("EmailDraftService", "update"): "riscrivere una bozza che l'agente non ha scritto "
     "romperebbe l'unica garanzia su cui poggia `draft_email`: che il testo che parte sia "
     "il testo che una persona ha letto. Un agente che potesse riscrivere una bozza gia' "
@@ -916,7 +916,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "e' concessa qui",
     ("PaymentRemindersService", "create_reminder"): "**preparare un sollecito non e' preparare "
     "un'email**, ed e' qui che passa la riga fra questa esclusione e `draft_email`. Il "
-    "testo non e' neutro: e' una richiesta di denaro a nome del titolare, con il suo IBAN "
+    "testo non e' neutro: e' una richiesta di denaro a name del titolare, con il suo IBAN "
     "dentro. E prepararlo *consuma* una delle tre posizioni che il registro concede per "
     "fattura (spec 7.3): un agente che preparasse solleciti spenderebbe il tetto che "
     "impedisce a una fattura contestata di diventare una persecuzione automatica, senza "
@@ -989,7 +989,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # Vale la pena dirlo perche' una categoria vuota lasciata in piedi "per il prossimo che
 # serve" e' esattamente il posto dove una decisione non presa si nasconde: l'elenco qui
 # sopra contiene solo scelte definitive, e chi ne aggiunge una provvisoria deve riaprire
-# un blocco a se' con il proprio nome, non riempire uno gia' pronto.
+# un blocco a se' con il proprio name, non riempire uno gia' pronto.
 #
 # Il task 4 di questa stessa fetta (9B) aveva aperto un blocco cosi', `_IN_ATTESA_
 # DI_DRIVE_T7`, con una sola voce, `("GoogleDriveAccountService", "health")`: la

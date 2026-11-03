@@ -35,12 +35,12 @@ def test_twenty_concurrent_writes_all_succeed(
     barrier = threading.Barrier(CONCURRENCY)
     names = [f"Concorrente {uuid4()}" for _ in range(CONCURRENCY)]
 
-    def write(nome: str) -> str:
+    def write(name: str) -> str:
         barrier.wait(timeout=30)
         with provider.scope():
             return str(
                 CustomerService(context.session)
-                .create(CustomerCreate(legal_name=nome), context.actor)
+                .create(CustomerCreate(legal_name=name), context.actor)
                 .id
             )
 

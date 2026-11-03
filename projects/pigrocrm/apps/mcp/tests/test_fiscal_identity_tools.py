@@ -182,19 +182,19 @@ async def test_an_admin_agent_opens_to_second_legal_entity_with_its_profile(
         created = await client.call_tool(
             "create_legal_entity",
             {
-                "data": {"nome": "rebase ltd", "legal_name": "Rebase Ltd", "country": "GB"},
+                "data": {"name": "rebase ltd", "legal_name": "Rebase Ltd", "country": "GB"},
                 "tax_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
             },
         )
         assert not created.is_error, created.content[0].text
         nuova = created.structured_content
-        assert (nuova["nome"], nuova["predefinita"], nuova["active"]) == ("rebase ltd", False, True)
+        assert (nuova["name"], nuova["is_default"], nuova["active"]) == ("rebase ltd", False, True)
         listed = await client.call_tool("list_legal_entities", {})
         rows = listed.structured_content
         if isinstance(rows, dict):
             # A list result reaches the wire wrapped under `result`.
             rows = rows["result"]
-        assert [a["nome"] for a in rows] == ["Studio Verdi", "rebase ltd"]
+        assert [a["name"] for a in rows] == ["Studio Verdi", "rebase ltd"]
         profile = await client.call_tool(
             "describe_fiscal_profile", {"legal_entity_id": nuova["id"]}
         )
@@ -202,7 +202,7 @@ async def test_an_admin_agent_opens_to_second_legal_entity_with_its_profile(
         refused = await client.call_tool(
             "create_legal_entity",
             {
-                "data": {"nome": "terza", "legal_name": "Terza Srl"},
+                "data": {"name": "terza", "legal_name": "Terza Srl"},
                 "tax_profile": {
                     "pack_id": "non-it",
                     "default_vat_rate": "20.00",
@@ -223,7 +223,7 @@ async def test_to_collaborator_agent_cannot_open_an_legal_entity(
         refused = await client.call_tool(
             "create_legal_entity",
             {
-                "data": {"nome": "x", "legal_name": "X Ltd", "country": "GB"},
+                "data": {"name": "x", "legal_name": "X Ltd", "country": "GB"},
                 "tax_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
             },
         )

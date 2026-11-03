@@ -99,6 +99,8 @@ async def insufficient_privilege_handler(request: Request, exc: Exception) -> JS
 def _italian_message(error: dict[str, Any]) -> str:
     """The sentence the UI shows for one request error: pydantic's own `msg` is English
     (`Field required`), and `fieldErrorFrom` puts it under the input as it is."""
+    if error.get("type") == "extra_forbidden":
+        return "campo non riconosciuto"
     loc = error.get("loc") or ()
     failed = validation_failed_from_error(error, field=str(loc[-1]) if loc else "valore")  # type: ignore[arg-type]
     reason = str(failed.details["reason"])

@@ -33,7 +33,7 @@ def _payload(result: Any) -> Any:
 
 @pytest.fixture
 def admin(mcp_session: Session):
-    return make_user(mcp_session, email="mario@example.it", nome="Mario")
+    return make_user(mcp_session, email="mario@example.it", name="Mario")
 
 
 def _server(mcp_session: Session, actor: Actor, tmp_path: Path, **overrides: object) -> Any:
@@ -65,7 +65,7 @@ async def test_describe_slack_is_present_only_with_a_slack_app(
 async def test_an_agent_reads_who_is_matched_and_never_the_token(
     mcp_session: Session, admin: Any, tmp_path: Path
 ) -> None:
-    ada = make_user(mcp_session, email="ada@example.it", nome="Ada", role="collaborator")
+    ada = make_user(mcp_session, email="ada@example.it", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     connect(mcp_session, fake, admin)
@@ -78,7 +78,7 @@ async def test_an_agent_reads_who_is_matched_and_never_the_token(
     assert health["configured"] is True
     assert health["workspace"]["team_name"] == "Acme Test"
     assert health["workspace"]["status"] == "active"
-    states = {member["nome"]: member["state"] for member in health["members"]}
+    states = {member["name"]: member["state"] for member in health["members"]}
     assert states == {"Mario": "matched", "Ada": "unmatched"}
     assert str(ada.id) in {member["user_id"] for member in health["members"]}
     everything = json.dumps(health) + str(raw)

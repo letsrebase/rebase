@@ -32,7 +32,7 @@ def test_health_is_unchanged_by_a_broken_gmail_credential(
     """
     user = User(
         email="gmail-broken@example.it",
-        nome="Utente",
+        name="Utente",
         password_hash="x",
         role="admin",
         active=True,

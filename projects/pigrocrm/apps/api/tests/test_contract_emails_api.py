@@ -25,7 +25,7 @@ BODY = "Gentile {{cliente}}, fattura {{numero_fattura}} di {{importo}}, registro
 
 def _template(logged_in: TestClient, contract: dict[str, Any], **overrides: Any) -> dict[str, Any]:
     payload = {
-        "nome": "Fattura mensile",
+        "name": "Fattura mensile",
         "oggetto": "Fattura {{numero_fattura}}",
         "corpo": BODY,
         "allegati": ["fattura_pdf", "registro_pdf"],
@@ -41,7 +41,7 @@ def _issued_invoice(logged_in: TestClient, api_session: Session, contract: dict[
         api_session.add(
             WorkUnit(
                 contract_id=UUID(contract["id"]),
-                data=day,
+                date=day,
                 quantity=Decimal("1.00"),
                 description="Giornata",
                 status="worked",
@@ -60,16 +60,16 @@ def test_a_template_is_saved_and_an_unknown_variable_is_a_422(
     template = _template(logged_in, contract)
     assert template["allegati"] == ["fattura_pdf", "registro_pdf"]
     listed = logged_in.get(f"/api/contracts/{contract['id']}/email-templates").json()
-    assert [t["nome"] for t in listed] == ["Fattura mensile"]
+    assert [t["name"] for t in listed] == ["Fattura mensile"]
 
     refused = logged_in.post(
         f"/api/contracts/{contract['id']}/email-templates",
-        json={"nome": "Rotto", "oggetto": "x", "corpo": "{{inventata}}"},
+        json={"name": "Rotto", "oggetto": "x", "corpo": "{{inventata}}"},
     )
     assert refused.status_code == 422, refused.text
     duplicate = logged_in.post(
         f"/api/contracts/{contract['id']}/email-templates",
-        json={"nome": "fattura mensile", "oggetto": "x", "corpo": "y"},
+        json={"name": "fattura mensile", "oggetto": "x", "corpo": "y"},
     )
     assert duplicate.status_code == 409, duplicate.text
 
@@ -78,7 +78,7 @@ def test_the_variables_a_template_may_name_are_listed(
     logged_in: TestClient, contract: dict[str, Any]
 ) -> None:
     names = [
-        v["nome"]
+        v["name"]
         for v in logged_in.get(f"/api/contracts/{contract['id']}/email-template-variables").json()
     ]
     assert "invoice_number" in names and "emittente.ragione_sociale" in names
@@ -115,7 +115,7 @@ def test_a_draft_invoice_cannot_be_previewed(
     api_session.add(
         WorkUnit(
             contract_id=UUID(contract["id"]),
-            data=date(2026, 10, 7),
+            date=date(2026, 10, 7),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="worked",
@@ -139,7 +139,7 @@ def test_a_reader_cannot_save_a_template(
         json={
             "email": "lettore@pigro.it",
             "password": "supersegreta1",
-            "nome": "L",
+            "name": "L",
             "role": "readonly",
         },
     )
@@ -151,6 +151,6 @@ def test_a_reader_cannot_save_a_template(
         == 200
     )
     response = reader.post(
-        f"/api/contracts/{contract['id']}/{path}", json={"nome": "x", "subject": "x", "body": "y"}
+        f"/api/contracts/{contract['id']}/{path}", json={"name": "x", "subject": "x", "body": "y"}
     )
     assert response.status_code == 403, response.text

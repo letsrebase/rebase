@@ -15,7 +15,7 @@ COLLABORATOR = {"email": "collab@pigro.it", "password": "supersegreta1"}
 def _create_collaborator(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
         "/api/users",
-        json={**COLLABORATOR, "nome": "Collaboratrice", "role": "collaborator"},
+        json={**COLLABORATOR, "name": "Collaboratrice", "role": "collaborator"},
     )
     assert response.status_code == 201, response.text
     body: dict[str, Any] = response.json()
@@ -35,7 +35,7 @@ def test_the_owner_sees_their_tokens_whole_life_on_their_own_timeline(
     """Issuing a PAT, using it, and revoking it are three separate events, and until
     R5 all three were invisible. `pat_first_used` is recorded by `resolve()` itself,
     so it appears here only because the token really did authenticate a request."""
-    created = logged_in.post("/api/tokens", json={"nome": "Claude locale"})
+    created = logged_in.post("/api/tokens", json={"name": "Claude locale"})
     assert created.status_code == 201, created.text
     token = created.json()["token"]
 
@@ -54,7 +54,7 @@ def test_the_timeline_never_carries_the_token_it_describes(
 ) -> None:
     """The endpoint is the widest audience the audit payload will ever have. The raw
     value is returned exactly once, by the create call; it must not come back here."""
-    token = logged_in.post("/api/tokens", json={"nome": "Claude locale"}).json()["token"]
+    token = logged_in.post("/api/tokens", json={"name": "Claude locale"}).json()["token"]
     logged_in.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
 
     response = logged_in.get(f"/api/users/{admin_user.id}/timeline")
@@ -143,7 +143,7 @@ def test_a_deleted_stages_timeline_is_the_only_record_that_it_existed(
     stage itself proves it, so the timeline entry has to stand on its own."""
     stage = logged_in.post(
         "/api/pipeline-stages",
-        json={"nome": "Da eliminare", "position": 8, "code": "da_eliminare"},
+        json={"name": "Da eliminare", "position": 8, "code": "da_eliminare"},
     ).json()
 
     assert logged_in.delete(f"/api/pipeline-stages/{stage['id']}").status_code == 204
@@ -151,7 +151,7 @@ def test_a_deleted_stages_timeline_is_the_only_record_that_it_existed(
     assert logged_in.get(f"/api/pipeline-stages/{stage['id']}/timeline").status_code == 200
     entries = logged_in.get(f"/api/pipeline-stages/{stage['id']}/timeline").json()
     assert [e["kind"] for e in entries] == ["deleted", "created"]
-    assert entries[0]["payload"] == {"nome": "Da eliminare", "code": "da_eliminare", "type": "open"}
+    assert entries[0]["payload"] == {"name": "Da eliminare", "code": "da_eliminare", "type": "open"}
 
 
 def test_a_timeline_still_refuses_an_out_of_range_limit(

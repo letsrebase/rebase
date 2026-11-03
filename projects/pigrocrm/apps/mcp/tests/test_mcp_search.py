@@ -54,12 +54,12 @@ async def test_search_everything_returns_the_four_groups(
     assert customer is not None
 
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": "ACME"})
+        result = await client.call_tool("search_everything", {"term": "ACME"})
 
     payload = _payload(result)
-    assert [group["entity"] for group in payload["gruppi"]] == _ENTITIES
-    assert payload["gruppi"][0]["hits"][0]["id"] == seeded_customer_id
-    assert payload["gruppi"][0]["hits"][0]["label"] == customer.legal_name
+    assert [group["entity"] for group in payload["groups"]] == _ENTITIES
+    assert payload["groups"][0]["hits"][0]["id"] == seeded_customer_id
+    assert payload["groups"][0]["hits"][0]["label"] == customer.legal_name
 
 
 async def test_the_score_survives_as_a_string_and_not_as_a_float(
@@ -74,9 +74,9 @@ async def test_the_score_survives_as_a_string_and_not_as_a_float(
     renders a `Decimal` as a string regardless. The safeguard is the schema type.
     """
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": "ACME"})
+        result = await client.call_tool("search_everything", {"term": "ACME"})
 
-    score = _payload(result)["gruppi"][0]["hits"][0]["score"]
+    score = _payload(result)["groups"][0]["hits"][0]["score"]
     assert isinstance(score, str), type(score)
     assert score == "0.8000"
 
@@ -104,9 +104,9 @@ async def test_the_docstring_example_actually_works(server: Any, mcp_session: Se
     mcp_session.flush()
 
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": _DOCSTRING_FRAGMENT})
+        result = await client.call_tool("search_everything", {"term": _DOCSTRING_FRAGMENT})
 
-    customers = _payload(result)["gruppi"][0]
+    customers = _payload(result)["groups"][0]
     assert [hit["label"] for hit in customers["hits"]] == ["Frammento Srl"]
     assert customers["hits"][0]["field"] == "vat_number"
     assert customers["hits"][0]["sottotitolo"] == _DOCSTRING_VAT_NUMBER
@@ -123,7 +123,7 @@ async def test_the_docstring_promises_the_example_it_is_tested_against(server: A
     description = tool.description or ""
     assert _DOCSTRING_FRAGMENT in description and _DOCSTRING_VAT_NUMBER in description, description
     assert "3 caratteri" in description, description
-    assert "total_and_a_minimum" in description, description
+    assert "total_is_minimum" in description, description
     # The fifth branch, since Task C12. A docstring naming four entity classes when the
     # tool searches five is how an agent concludes an invoice does not exist rather than
     # that it did not look -- the same silent partial result the branch was added to close,
@@ -136,18 +136,18 @@ async def test_a_two_character_term_is_a_domain_error_not_a_scan(server: Any) ->
     """`_guard` converts the pydantic failure into a message the agent can act on, instead
     of the SDK rejecting it with one we did not write.
 
-    `deadline` is a bare `str` at the tool boundary precisely so this happens: typed with a
+    `term` is a bare `str` at the tool boundary precisely so this happens: typed with a
     length bound, the SDK's own pre-call `validate_arguments` would refuse it before the
     guard ran, and the agent would get a raw English pydantic dump with a link in it.
     """
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": "ab"})
+        result = await client.call_tool("search_everything", {"term": "ab"})
 
     assert result.is_error
     rendered = result.content[0].text
     # The offending field is named: `fieldErrorFrom` in the web client and an agent both
     # read it, and "something was wrong" is not an instruction.
-    assert "deadline" in rendered, rendered
+    assert "term" in rendered, rendered
     assert "3" in rendered, rendered
     # Ours, not the SDK's: `errors.py`'s own remediation line for `validation_failed`.
     assert "Correggi il valore indicato e riprova." in rendered, rendered
@@ -174,11 +174,11 @@ async def test_a_truncated_count_is_declared_to_the_agent_as_a_minimum(
     mcp_session.flush()
 
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": "Moltissimi"})
+        result = await client.call_tool("search_everything", {"term": "Moltissimi"})
 
-    customers = _payload(result)["gruppi"][0]
+    customers = _payload(result)["groups"][0]
     assert customers["total"] == COUNT_CEILING
-    assert customers["total_and_a_minimum"] is True
+    assert customers["total_is_minimum"] is True
     assert len(customers["hits"]) == 5
 
 
@@ -198,8 +198,8 @@ async def test_the_limit_argument_is_honoured(server: Any, mcp_session: Session)
     mcp_session.flush()
 
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": "Limitabile", "limit": 3})
+        result = await client.call_tool("search_everything", {"term": "Limitabile", "limit": 3})
 
-    customers = _payload(result)["gruppi"][0]
+    customers = _payload(result)["groups"][0]
     assert len(customers["hits"]) == 3
     assert customers["total"] == 12

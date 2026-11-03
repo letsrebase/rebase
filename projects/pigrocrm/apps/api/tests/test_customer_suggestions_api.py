@@ -111,10 +111,10 @@ def test_the_proposals_answer_what_the_mailbox_wrote_to(
     assert response.status_code == 200, response.text
     body = response.json()
     assert [proposal["domain"] for proposal in body] == ["acme.it"]
-    assert body[0]["nome"] == "Acme"
+    assert body[0]["first_name"] == "Acme"
     assert body[0]["conversations"] == 2
     assert body[0]["people"] == [
-        {"address": "marco@acme.it", "nome": "Marco Bianchi", "already_in_directory": False}
+        {"address": "marco@acme.it", "first_name": "Marco Bianchi", "already_in_directory": False}
     ]
     # Headers only, and not a word of what was written.
     assert "riservato" not in response.text
@@ -149,7 +149,7 @@ def test_ticked_proposals_are_created_with_their_people(
                 {
                     "domain": "acme.it",
                     "legal_name": "Acme S.r.l.",
-                    "people": [{"address": "marco@acme.it", "nome": "Marco Bianchi"}],
+                    "people": [{"address": "marco@acme.it", "first_name": "Marco Bianchi"}],
                 },
                 {"domain": "studio-rossi.it", "legal_name": "Studio Rossi"},
             ]
@@ -160,7 +160,7 @@ def test_ticked_proposals_are_created_with_their_people(
     created = response.json()
     assert [row["legal_name"] for row in created] == ["Acme S.r.l.", "Studio Rossi"]
     person = api_session.execute(select(Person).where(Person.email == "marco@acme.it")).scalar_one()
-    assert (person.nome, person.last_name) == ("Marco", "Bianchi")
+    assert (person.first_name, person.last_name) == ("Marco", "Bianchi")
     assert str(person.customer_id) == created[0]["id"]
 
 

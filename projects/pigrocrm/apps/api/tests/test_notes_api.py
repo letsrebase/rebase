@@ -22,8 +22,8 @@ def _stages(api_session: Session) -> None:
 
 def _records(client: TestClient) -> dict[str, str]:
     customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
-    deal = client.post("/api/deals", json={"nome": "Sito", "customer_id": customer.json()["id"]})
-    person = client.post("/api/people", json={"nome": "Anna"})
+    deal = client.post("/api/deals", json={"name": "Sito", "customer_id": customer.json()["id"]})
+    person = client.post("/api/people", json={"first_name": "Anna"})
     for response in (customer, deal, person):
         assert response.status_code == 201, response.text
     return {
@@ -42,7 +42,7 @@ def test_a_note_is_added_listed_edited_and_deleted(logged_in: TestClient, collec
     assert added.status_code == 201, added.text
     note = added.json()
     assert note["text"] == "Prima nota"
-    assert (note["author"], note["author_id"], note["source"]) == (me["nome"], me["id"], "web")
+    assert (note["author"], note["author_id"], note["source"]) == (me["name"], me["id"], "web")
     assert note["editable"] is True and note["edited_at"] is None
 
     second = logged_in.post(f"/api/{collection}/{record}/notes", json={"text": "Seconda"}).json()
@@ -52,7 +52,7 @@ def test_a_note_is_added_listed_edited_and_deleted(logged_in: TestClient, collec
     edited = logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Corretta"})
     assert edited.status_code == 200, edited.text
     assert edited.json()["text"] == "Corretta"
-    assert edited.json()["edited_by"] == me["nome"] and edited.json()["edited_at"]
+    assert edited.json()["edited_by"] == me["name"] and edited.json()["edited_at"]
 
     deleted = logged_in.delete(f"/api/notes/{second['id']}")
     assert deleted.status_code == 204
@@ -86,7 +86,7 @@ def test_a_collaborator_reads_the_admins_note_and_cannot_change_it(
     note = logged_in.post(f"/api/customers/{record}/notes", json={"text": "Dell'admin"}).json()
     UserService(api_session).create(
         UserCreate(
-            email="collega@pigro.it", password=PASSWORD, nome="Collega", role="collaborator"
+            email="collega@pigro.it", password=PASSWORD, name="Collega", role="collaborator"
         ),
         Actor.system(),
     )
@@ -113,9 +113,9 @@ def test_create_takes_a_note_as_the_first_note_and_the_records_no_longer_carry_o
     )
     deal = logged_in.post(
         "/api/deals",
-        json={"nome": "Sito", "customer_id": customer.json()["id"], "note": "Primo contatto"},
+        json={"name": "Sito", "customer_id": customer.json()["id"], "note": "Primo contatto"},
     )
-    person = logged_in.post("/api/people", json={"nome": "Anna", "note": "Referente"})
+    person = logged_in.post("/api/people", json={"first_name": "Anna", "note": "Referente"})
     for response, collection in ((customer, "customers"), (deal, "deals"), (person, "people")):
         assert response.status_code == 201, response.text
         assert "note" not in response.json()

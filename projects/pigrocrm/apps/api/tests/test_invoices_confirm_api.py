@@ -269,7 +269,7 @@ def test_a_collaborator_cannot_confirm(
         json={
             "email": email,
             "password": "supersegreta1",
-            "nome": "Test",
+            "name": "Test",
             "role": "collaborator",
         },
     )

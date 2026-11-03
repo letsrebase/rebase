@@ -65,26 +65,26 @@ def test_a_nul_byte_in_any_customer_field_is_rejected_not_500(logged_in: TestCli
 
 
 # Every plain `str`/`str | None` field on PersonCreate (people/schemas.py).
-PERSON_STRING_FIELDS = ["nome", "last_name", "email", "phone", "role", "linkedin", "note"]
+PERSON_STRING_FIELDS = ["first_name", "last_name", "email", "phone", "role", "linkedin", "note"]
 
 
 def test_a_nul_byte_in_any_person_field_is_rejected_not_500(logged_in: TestClient) -> None:
     for field in PERSON_STRING_FIELDS:
-        body = {"nome": "Mario", field: NUL}
+        body = {"first_name": "Mario", field: NUL}
         response = logged_in.post("/api/people", json=body)
         assert response.status_code == 422, f"{field}: {response.status_code} {response.text}"
 
 
-# Every plain `str`/`str | None` field on DealCreate (deals/schemas.py). `nome` is
+# Every plain `str`/`str | None` field on DealCreate (deals/schemas.py). `name` is
 # required, `customer_id`/`pipeline_stage_id`/`owner_id` are UUID, `probability` is
 # int, `expected_close_date` is a date -- none of those are in scope for SafeStr.
-DEAL_STRING_FIELDS = ["nome", "note"]
+DEAL_STRING_FIELDS = ["name", "note"]
 
 
 def test_a_nul_byte_in_any_deal_field_is_rejected_not_500(logged_in: TestClient) -> None:
     customer_id = _seed_customer(logged_in)
     for field in DEAL_STRING_FIELDS:
-        body = {"nome": "Progetto", "customer_id": customer_id, field: NUL}
+        body = {"name": "Progetto", "customer_id": customer_id, field: NUL}
         response = logged_in.post("/api/deals", json=body)
         assert response.status_code == 422, f"{field}: {response.status_code} {response.text}"
 
@@ -111,13 +111,13 @@ def test_a_nul_byte_inside_a_field_definitions_option_is_rejected_not_500(
 
 
 def test_a_nul_byte_in_a_new_users_nome_is_rejected_not_500(logged_in: TestClient) -> None:
-    body = {"email": "new@pigro.it", "password": "supersegreta1", "nome": NUL}
+    body = {"email": "new@pigro.it", "password": "supersegreta1", "name": NUL}
     response = logged_in.post("/api/users", json=body)
     assert response.status_code == 422, response.text
 
 
 def test_a_nul_byte_in_a_tokens_nome_is_rejected_not_500(logged_in: TestClient) -> None:
-    response = logged_in.post("/api/tokens", json={"nome": NUL})
+    response = logged_in.post("/api/tokens", json={"name": NUL})
     assert response.status_code == 422, response.text
 
 
@@ -131,7 +131,7 @@ def test_pipeline_stage_position_far_beyond_the_bound_is_422_not_500(
     reached Postgres raw as `psycopg.errors.NumericValueOutOfRange` (`integer out of
     range`) -- an `Integer` column can hold at most ~2.1 billion, and 2**40 is
     roughly 500 times that."""
-    response = logged_in.post("/api/pipeline-stages", json={"nome": "X", "position": 2**40})
+    response = logged_in.post("/api/pipeline-stages", json={"name": "X", "position": 2**40})
     assert response.status_code == 422, response.text
 
 
@@ -149,14 +149,14 @@ def test_field_definition_position_far_beyond_the_bound_is_422_not_500(
     assert response.status_code == 422, response.text
 
 
-# --- Item 4 (CRITICAL): UserCreate.nome had no max_length -------------------------
+# --- Item 4 (CRITICAL): UserCreate.name had no max_length -------------------------
 
 
 def test_a_users_nome_over_the_column_width_is_422_not_500(logged_in: TestClient) -> None:
     """Mirrors `users.name`'s column width (String(200), auth/models.py). Before
     this fix, an over-length value reached `flush()` as a raw, session-poisoning
     `sqlalchemy.exc.DataError` (`StringDataRightTruncation`)."""
-    body = {"email": "long@pigro.it", "password": "supersegreta1", "nome": "x" * 201}
+    body = {"email": "long@pigro.it", "password": "supersegreta1", "name": "x" * 201}
     response = logged_in.post("/api/users", json=body)
     assert response.status_code == 422, response.text
 

@@ -42,7 +42,7 @@ def deal_with_hours(mcp_session: Session, seeded_deal_id, seeded_user_id):
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=TODAY,
+            date=TODAY,
             hours=Decimal("4.00"),
             description="Analisi",
             applied_rate=Decimal("100.000000"),

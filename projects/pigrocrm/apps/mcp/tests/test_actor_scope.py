@@ -89,7 +89,7 @@ def _messages(exc: BaseException) -> list[str]:
 async def test_the_actor_stamped_on_the_request_is_what_the_tool_sees() -> None:
     provider = RequestActorProvider()
     starlette = _http_app(_server(provider))
-    assert await _call(_stamping(starlette, ADA), starlette) == "mcp:collaboratore"
+    assert await _call(_stamping(starlette, ADA), starlette) == "mcp:collaborator"
 
 
 @pytest.mark.asyncio

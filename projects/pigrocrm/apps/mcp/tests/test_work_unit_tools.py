@@ -54,7 +54,7 @@ def _record(session: Session, contract: UUID, day: date) -> UUID:
         .create(
             WorkUnitCreate(
                 contract_id=contract,
-                data=day,
+                date=day,
                 quantity=Decimal("0.50"),
                 description="Revisione",
                 status="worked",
@@ -116,7 +116,7 @@ def test_the_ledger_writes_refuse_an_agent_credential(
         WorkUnitService(mcp_session).create(
             WorkUnitCreate(
                 contract_id=contract_id,
-                data=date(2026, 3, 3),
+                date=date(2026, 3, 3),
                 quantity=Decimal("1.00"),
                 description="Giornata",
                 status="worked",

@@ -89,7 +89,7 @@ def gmail_actor(mcp_session: Session) -> Actor:
     user = User(
         email="agent-owner@example.test",
         password_hash="x",
-        nome="Owner",
+        name="Owner",
         role="admin",
         active=True,
     )

@@ -18,7 +18,7 @@ def _payload(result):
 
 
 def _server_for(session: Session, role: str = "collaborator"):
-    user = User(email=f"a-{uuid4()}@example.test", password_hash="x", nome="A", role=role)
+    user = User(email=f"a-{uuid4()}@example.test", password_hash="x", name="A", role=role)
     session.add(user)
     session.flush()
     actor = Actor(id=user.id, type="mcp", role=role)  # type: ignore[arg-type]

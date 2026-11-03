@@ -46,7 +46,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-analytics-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": PASSWORD, "nome": "Test", "role": role},
+        json={"email": email, "password": PASSWORD, "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -117,7 +117,7 @@ def _seed_deal_and_user(
         },
     )
     assert customer.status_code == 201, customer.text
-    body: dict[str, Any] = {"nome": "Progetto", "customer_id": customer.json()["id"]}
+    body: dict[str, Any] = {"name": "Progetto", "customer_id": customer.json()["id"]}
     if budgeted_hours is not None:
         body["budgeted_hours"] = budgeted_hours
     if budgeted_value is not None:
@@ -129,7 +129,7 @@ def _seed_deal_and_user(
         json={
             "email": f"worker-analytics-{id(logged_in)}@pigro.it",
             "password": PASSWORD,
-            "nome": "Worker",
+            "name": "Worker",
             "role": "collaborator",
         },
     )
@@ -151,7 +151,7 @@ def _log_hours(
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": TODAY.isoformat(),
+            "date": TODAY.isoformat(),
             "hours": hours,
             "description": "Sviluppo",
             "applied_rate": rate,
@@ -537,7 +537,7 @@ def test_an_entry_from_another_deal_is_a_422_naming_the_field(logged_in: TestCli
     other = logged_in.post(
         "/api/deals",
         json={
-            "nome": "Altro progetto",
+            "name": "Altro progetto",
             "customer_id": logged_in.get(f"/api/deals/{deal_id}").json()["customer_id"],
         },
     )
@@ -714,7 +714,7 @@ def test_the_openapi_document_describes_the_base_parameter_in_italian(
 # --- one azienda at a time for the taxes, every azienda for the cash (REB-631) ---------
 
 LTD = {
-    "nome": "rebase ltd",
+    "name": "rebase ltd",
     "legal_name": "Rebase Ltd",
     "country": "GB",
     "fiscal_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
@@ -898,7 +898,7 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     api_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=TODAY,
+            date=TODAY,
             quantity=Decimal("1.00"),
             description="Giornata di consulenza",
             status="worked",

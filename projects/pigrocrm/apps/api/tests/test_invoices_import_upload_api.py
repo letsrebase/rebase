@@ -186,7 +186,7 @@ def test_to_customer_of_another_legal_entity_is_to_422_that_names_the_party_and_
     ltd = logged_in.post(
         "/api/legal-entities",
         json={
-            "nome": "acme ltd",
+            "name": "acme ltd",
             "legal_name": "Acme Ltd",
             "vat_number": "GB123456789",
             "country": "GB",

@@ -204,7 +204,7 @@ async def _owner_server(mcp_session, tmp_path):
     from pigrocrm_mcp.server import build_server
 
     def member(key: str) -> User:
-        user = User(email=f"{key}@example.test", password_hash="x", nome=key, role="admin")
+        user = User(email=f"{key}@example.test", password_hash="x", name=key, role="admin")
         mcp_session.add(user)
         mcp_session.flush()
         return user

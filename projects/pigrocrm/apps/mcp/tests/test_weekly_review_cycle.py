@@ -130,10 +130,10 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
         # concerned and never collide with a seeded `lead`/`vinto` on the unique index.
         # `position` well past the defaults, so nothing already there is reordered.
         open = PipelineStage(
-            nome=STAGE_OPEN, position=920, default_probability=50, type="open", code=None
+            name=STAGE_OPEN, position=920, default_probability=50, type="open", code=None
         )
         won = PipelineStage(
-            nome=STAGE_WON, position=921, default_probability=100, type="won", code=None
+            name=STAGE_WON, position=921, default_probability=100, type="won", code=None
         )
         customer = Customer(
             legal_name=CUSTOMER, vat_number=VAT_NUMBER, country="IT", custom_fields={}
@@ -142,7 +142,7 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
         session.flush()
 
         deal = Deal(
-            nome=STALLED_DEAL,
+            name=STALLED_DEAL,
             customer_id=customer.id,
             pipeline_stage_id=open.id,
             expected_value=Decimal("18000.00"),
@@ -194,9 +194,9 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
             # Children before parents, and every clause scoped to this file's own prefix:
             # a wholesale delete would take another file's committed rows with it.
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone: `describe_automations` creates the
     # single row on demand and this file never changes it, so what would be left behind is a
@@ -244,10 +244,10 @@ async def test_the_agent_runs_the_weekly_review_end_to_end(cycle_server: Corpus)
         #    neither the briefing nor the dashboard payload, which is what makes this a
         #    *resolution* and not a lookup of something already in hand.
         assert FRAMMENTO not in briefing
-        found = await client.call_tool("search_everything", {"deadline": FRAMMENTO})
+        found = await client.call_tool("search_everything", {"term": FRAMMENTO})
         assert not found.is_error, str(found.content)
         customers = next(
-            group for group in _payload(found)["gruppi"] if group["entity"] == "customer"
+            group for group in _payload(found)["groups"] if group["entity"] == "customer"
         )
         assert CUSTOMER in [hit["label"] for hit in customers["hits"]]
         assert str(cycle_server.customer_id) in [hit["id"] for hit in customers["hits"]]

@@ -54,7 +54,7 @@ def _upsert(**parts: dict[str, Any]) -> dict[str, Any]:
     """The body of spec § 2.3, with any part's fields overridden by name -- the same
     shape as `test_engagements.py`'s own `_upsert`, as JSON rather than a model."""
     body: dict[str, dict[str, Any]] = {
-        "freelancer": {"email": FREELANCER_EMAIL, "nome": "Ada", "last_name": "Lovelace"},
+        "freelancer": {"email": FREELANCER_EMAIL, "first_name": "Ada", "last_name": "Lovelace"},
         "letter": {
             "number": "3/2026",
             "role": "Backend developer",
@@ -149,7 +149,7 @@ def _log_hours(settings: Settings, slug: str, deal_id: UUID, day: date, descript
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=admin.id,
-                data=day,
+                date=day,
                 hours=Decimal("8.00"),
                 description=description,
             ),

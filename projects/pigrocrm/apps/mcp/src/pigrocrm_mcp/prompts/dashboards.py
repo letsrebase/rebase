@@ -271,7 +271,7 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
     # Names, not identifiers: a list of UUIDs is a section nobody can answer from. The feed
     # carries fifty rows and can name the same deal many times, so the names are resolved in
     # one batch, deduplicated in feed order and capped.
-    feed = [a.entity_id for a in board.recent_task if a.entity_type == "deal"]
+    feed = [a.entity_id for a in board.recent_activity if a.entity_type == "deal"]
     deals = DealService(context.session).get_many(set(feed), context.actor)
     seen: list[str] = []
     for deal_id in feed:

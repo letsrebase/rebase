@@ -52,7 +52,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         scrive «2026/7», «7/2026» o «007»: trova quella fattura, senza anno in ogni anno.
 
         Servono almeno 3 caratteri. Dà fino a `limit` risultati per classe e il conteggio reale;
-        se `total_and_a_minimum` è true il conteggio è un minimo e il resto sta nell'elenco della
+        se `total_is_minimum` è true il conteggio è un minimo e il resto sta nell'elenco della
         singola entità. `legal_entity_id` restringe clienti, persone (via il cliente), deal,
         documenti e fatture a quell'azienda, ma non le attività, che non ne hanno; omesso, cerca in
         tutto lo spazio. Non cerca contratti, costi, proposte né posta.

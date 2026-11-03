@@ -122,7 +122,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         # connection, and a second one would wait on its unique index for the whole
         # test, so this one is named on each invoice below instead of being found.
         legal_entity_id = committed_default_legal_entity(
-            session, nome=f"{_PREFIX} Azienda", predefinita=False
+            session, name=f"{_PREFIX} Azienda", is_default=False
         )
         assert legal_entity_id is not None
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
@@ -130,7 +130,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         session.add(customer)
         session.flush()
         open = Deal(
-            nome=f"{_PREFIX} aperto",
+            name=f"{_PREFIX} aperto",
             customer_id=customer.id,
             pipeline_stage_id=stages["lead"].id,
             expected_value=Decimal("1000.00"),
@@ -139,9 +139,9 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         )
         session.add(open)
         won = Deal(
-            nome=f"{_PREFIX} vinto",
+            name=f"{_PREFIX} vinto",
             customer_id=customer.id,
-            pipeline_stage_id=stages["vinto"].id,
+            pipeline_stage_id=stages["won"].id,
             expected_value=Decimal("5000.00"),
             probability=100,
             closed_at=today_local(),
@@ -165,7 +165,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         # is deliberately load-bearing on six figures at once: `pnl.in_progress` (its deal
         # sits on an open stage), `issued_invoices`, `unpaid`, `expired`, and two of
         # the three operational signals -- `invoiced_unwon` and
-        # `scaduto_non_incassato`. Without it, the money-as-a-string test below would be
+        # `overdue_unpaid`. Without it, the money-as-a-string test below would be
         # asserting the type of `"0.00"` on every path, which a dashboard wired to nothing
         # at all would pass just as well.
         #
@@ -245,7 +245,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage))
             remove_legal_entity(session, legal_entity_id)
@@ -501,9 +501,9 @@ def test_every_signal_carries_a_drill_through_link(
     body = logged_in.get("/api/dashboard/operational").json()
     assert [s["code"] for s in body["signals"]] == [
         "invoiced_unwon",
-        "vinto_da_fatturare",
-        "scaduto_non_incassato",
-        "concentrazione_sopra_soglia",
+        "won_to_invoice",
+        "overdue_unpaid",
+        "concentration_above_threshold",
     ]
     assert all(s["link"] for s in body["signals"])
     # The corpus's invoice makes two of the four non-zero, so the links below are being
@@ -513,7 +513,7 @@ def test_every_signal_carries_a_drill_through_link(
     # `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, below.
     counts = {s["code"]: s["count"] for s in body["signals"]}
     assert counts["invoiced_unwon"] >= 1
-    assert counts["scaduto_non_incassato"] >= 1
+    assert counts["overdue_unpaid"] >= 1
 
 
 def test_every_signal_link_names_a_filter_the_api_actually_declares(
@@ -529,7 +529,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     OpenAPI schema of the list endpoint it corresponds to, then sent for real: declared,
     accepted, and narrowing. A parameter FastAPI does not declare is one it ignores.
 
-    `concentrazione_sopra_soglia` is not in this loop, by design and not by omission: its
+    `concentration_above_threshold` is not in this loop, by design and not by omission: its
     own link is the concentration table itself, not a filtered list -- there is no
     "customers over the threshold" endpoint for a query parameter to narrow, so it would
     fail this loop's `items` assumption for a reason unrelated to the one the loop checks.
@@ -541,7 +541,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     assert body["signals"], "no signals, so this test proved nothing"
 
     for signal in body["signals"]:
-        if signal["code"] == "concentrazione_sopra_soglia":
+        if signal["code"] == "concentration_above_threshold":
             continue
         parts = urlsplit(signal["link"])
         target = SIGNAL_LINK_TARGETS[parts.path]
@@ -583,7 +583,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
         # The corpus's own azienda (non-default, see `dashboard_corpus`), named on the
         # row since the column default only knows a default.
         legal_entity_id = session.execute(
-            select(LegalEntity.id).where(LegalEntity.nome == f"{_PREFIX} Azienda")
+            select(LegalEntity.id).where(LegalEntity.name == f"{_PREFIX} Azienda")
         ).scalar_one()
         customer_id = customer.id
         session.add(
@@ -608,7 +608,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
         session.commit()
     try:
         body = logged_in.get("/api/dashboard/operational").json()
-        signal = next(s for s in body["signals"] if s["code"] == "concentrazione_sopra_soglia")
+        signal = next(s for s in body["signals"] if s["code"] == "concentration_above_threshold")
         assert signal["link"] == "/app/?tab=economica"
 
         threshold = logged_in.get("/api/settings/space").json()["preferred_concentration_threshold"]

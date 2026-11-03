@@ -40,14 +40,14 @@ from pigrocrm_api.ratelimit import reset_rate_limit
 from pigrocrm_api.sessions import get_sender
 
 SLUG = "identita-prova"
-SIGNUP = {"slug": SLUG, "nome": "Ada Lovelace", "email": "ada@identita.it"}
+SIGNUP = {"slug": SLUG, "name": "Ada Lovelace", "email": "ada@identita.it"}
 WIZARD_SIGNUP = {**SIGNUP, "member": False}
 
 # A second tenant, provisioned only by the tests that need to prove the scan reaches
 # more than one space: Grace's own, never Ada's, so a test can invite Ada into it
 # without Ada ever being its creator (design §3's own widening past `Tenant.owner_email`).
 SLUG2 = "identita-prova-2"
-OWNER2 = {"slug": SLUG2, "nome": "Grace Hopper", "email": "grace@identita.it", "member": False}
+OWNER2 = {"slug": SLUG2, "name": "Grace Hopper", "email": "grace@identita.it", "member": False}
 
 
 def _cookie_path(set_cookie_header: str) -> str | None:
@@ -213,7 +213,7 @@ def test_login_mints_the_identity_cookie_only_for_an_address_a_link_has_proven(
         json={
             "email": "b@identita.it",
             "password": "lunghissima1",
-            "nome": "B",
+            "name": "B",
             "role": "collaborator",
         },
     )
@@ -250,7 +250,7 @@ def test_login_mints_the_identity_cookie_only_for_an_address_a_link_has_proven(
 def test_accept_invite_mints_the_identity_cookie(spaces_client: TestClient) -> None:
     recording = _sign_up_and_verify(spaces_client)
     invite = spaces_client.post(
-        f"/{SLUG}/api/users/invites", json={"email": "invitato@identita.it", "nome": "Invitato"}
+        f"/{SLUG}/api/users/invites", json={"email": "invitato@identita.it", "name": "Invitato"}
     )
     assert invite.status_code == 201, invite.text
     invite_token = _token_from(recording.sent[0].text)
@@ -295,7 +295,7 @@ def test_accepting_an_invitation_links_to_an_existing_identity_across_spaces(
     slug_b = "identita-prova-b"
     signup_b = {
         "slug": slug_b,
-        "nome": "Titolare B",
+        "name": "Titolare B",
         "email": "titolare@identita.it",
         "member": False,
     }
@@ -303,7 +303,7 @@ def test_accepting_an_invitation_links_to_an_existing_identity_across_spaces(
         recording_b = _sign_up_and_verify(spaces_client, slug=slug_b, signup=signup_b)
 
         invite = spaces_client.post(
-            f"/{slug_b}/api/users/invites", json={"email": shared_email, "nome": "Condivisa"}
+            f"/{slug_b}/api/users/invites", json={"email": shared_email, "name": "Condivisa"}
         )
         assert invite.status_code == 201, invite.text
         invite_token = _token_from(recording_b.sent[0].text)
@@ -408,7 +408,7 @@ def test_the_identity_cookie_mint_never_fails_a_login_when_the_registry_is_unrea
         json={
             "email": "c@identita.it",
             "password": "lunghissima1",
-            "nome": "C",
+            "name": "C",
             "role": "collaborator",
         },
     )
@@ -460,7 +460,7 @@ def test_spaces_lists_a_created_space_and_one_only_entered_by_invitation(
     try:
         recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
         invite = grace.post(
-            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "name": "Ada"}
         )
         assert invite.status_code == 201, invite.text
         invite_token = _token_from(recording.sent[0].text)
@@ -487,7 +487,7 @@ def test_spaces_stops_listing_a_space_once_the_row_there_is_deactivated(
     try:
         recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
         invite = grace.post(
-            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "name": "Ada"}
         )
         assert invite.status_code == 201, invite.text
         invite_token = _token_from(recording.sent[0].text)
@@ -594,7 +594,7 @@ def test_enter_answers_404_for_a_deactivated_row(
     try:
         recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
         invite = grace.post(
-            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "name": "Ada"}
         )
         assert invite.status_code == 201, invite.text
         invite_token = _token_from(recording.sent[0].text)
@@ -622,7 +622,7 @@ def test_enter_opens_the_space_with_a_fresh_pair_scoped_to_its_own_path(
     try:
         recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
         invite = grace.post(
-            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "name": "Ada"}
         )
         assert invite.status_code == 201, invite.text
         invite_token = _token_from(recording.sent[0].text)
@@ -666,7 +666,7 @@ def root_admin(api_engine: Engine) -> Iterator[UserRead]:
             UserCreate(
                 email=ROOT_ADMIN["email"],
                 password=ROOT_ADMIN["password"],
-                nome="Radice",
+                name="Radice",
                 role="admin",
             ),
             Actor.system(),
@@ -734,7 +734,7 @@ def test_spaces_lists_the_root_first_under_its_own_name(
     try:
         recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
         invite = grace.post(
-            f"/{SLUG2}/api/users/invites", json={"email": ROOT_ADMIN["email"], "nome": "Radice"}
+            f"/{SLUG2}/api/users/invites", json={"email": ROOT_ADMIN["email"], "name": "Radice"}
         )
         assert invite.status_code == 201, invite.text
         invite_token = _token_from(recording.sent[0].text)
@@ -914,16 +914,16 @@ def _expire_invitations(settings: Settings, slug: str) -> None:
         engine.dispose()
 
 
-def _graces_invitation_to_ada(grace: TestClient, nome: str | None = "Ada") -> tuple[str, str]:
+def _graces_invitation_to_ada(grace: TestClient, first_name: str | None = "Ada") -> tuple[str, str]:
     """Grace opens SLUG2 and invites Ada, who has no account there. The mail never
     reaches the test (nothing reads it), as for the person this fix is for. Returns the
     token the mail carried and the name its inviter goes by."""
     recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
     invite = grace.post(
-        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": nome}
+        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "name": name}
     )
     assert invite.status_code == 201, invite.text
-    return _token_from(recording.sent[0].text), grace.get(f"/{SLUG2}/api/auth/me").json()["nome"]
+    return _token_from(recording.sent[0].text), grace.get(f"/{SLUG2}/api/auth/me").json()["name"]
 
 
 def test_spaces_lists_an_invitation_held_in_a_space_the_address_has_no_account_in(
@@ -943,7 +943,7 @@ def test_spaces_lists_an_invitation_held_in_a_space_the_address_has_no_account_i
             "role": "collaborator",
             "invitation": True,
             "invited_from": inviter,
-            "nome": "Ada",
+            "name": "Ada",
         }
     finally:
         _drop_second_tenant(container_settings)
@@ -952,11 +952,11 @@ def test_spaces_lists_an_invitation_held_in_a_space_the_address_has_no_account_i
 def test_an_invitation_that_carries_no_name_lists_without_one(
     spaces_client: TestClient, container_settings: Settings
 ) -> None:
-    """Nothing is made up for the acceptance page to ask: a row with no `nome` is the one
+    """Nothing is made up for the acceptance page to ask: a row with no `name` is the one
     whose page will want a name."""
     grace = spaces_client
     try:
-        _, inviter = _graces_invitation_to_ada(grace, nome=None)
+        _, inviter = _graces_invitation_to_ada(grace, name=None)
         ada = TestClient(grace.app, base_url="https://testserver")
         _sign_up_and_verify(ada)
         rows = {row["slug"]: row for row in ada.get("/api/identity/spaces").json()}
@@ -992,7 +992,7 @@ def test_an_invitation_found_in_the_chooser_is_accepted_on_the_spaces_own_page(
 
         peek = ada.get(f"/{SLUG2}/api/auth/invite", params={"t": raw})
         assert peek.status_code == 200, peek.text
-        assert peek.json()["nome"] == "Ada"
+        assert peek.json()["name"] == "Ada"
         # Asking did not spend it, and did not give Ada a seat in the space.
         assert {
             row["slug"]: row.get("invitation", False)
@@ -1090,14 +1090,14 @@ def _second_space(client: TestClient, email: str) -> None:
     """The second signup of the same browser: the name is the only thing that differs."""
     created = client.post(
         "/api/tenants/",
-        json={"slug": SLUG2, "nome": "Secondo spazio", "email": email, "member": False},
+        json={"slug": SLUG2, "name": "Secondo spazio", "email": email, "member": False},
     )
     assert created.status_code == 201, created.text
 
 
 def _invite_in_second_space(client: TestClient) -> Response:
     return client.post(
-        f"/{SLUG2}/api/users/invites", json={"email": "collega@identita.it", "nome": "Collega"}
+        f"/{SLUG2}/api/users/invites", json={"email": "collega@identita.it", "name": "Collega"}
     )
 
 

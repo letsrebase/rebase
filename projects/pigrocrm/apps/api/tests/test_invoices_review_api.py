@@ -121,7 +121,7 @@ def test_a_collaborator_cannot_review(
         json={
             "email": email,
             "password": "supersegreta1",
-            "nome": "Test",
+            "name": "Test",
             "role": "collaborator",
         },
     )

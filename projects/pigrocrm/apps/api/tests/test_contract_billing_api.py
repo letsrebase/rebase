@@ -25,7 +25,7 @@ def contract(logged_in: TestClient) -> dict[str, Any]:
 def _day(api_session: Session, contract: dict[str, Any], day: date, quantity: str = "1.00") -> UUID:
     row = WorkUnit(
         contract_id=UUID(contract["id"]),
-        data=day,
+        date=day,
         quantity=Decimal(quantity),
         description="Giornata di consulenza",
         status="worked",
@@ -110,7 +110,7 @@ def test_a_collaborator_may_read_what_is_ready_but_not_bill_it(
         json={
             "email": "collaboratore-fatturazione@pigro.it",
             "password": "supersegreta1",
-            "nome": "Test",
+            "name": "Test",
             "role": "collaborator",
         },
     )
@@ -142,7 +142,7 @@ def test_the_register_json_csv_and_pdf_agree_on_the_month(
     assert register.status_code == 200, register.text
     body = register.json()
     assert body["quantity_total"] == "1.50"
-    assert [v["data"] for v in body["entries"]] == ["2026-10-07", "2026-10-08"]
+    assert [v["date"] for v in body["entries"]] == ["2026-10-07", "2026-10-08"]
     assert invoice["taxable_amount"] == "750.00"
 
     csv = logged_in.get(f"/api/contracts/{contract['id']}/register/csv", params=period)

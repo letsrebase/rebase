@@ -94,8 +94,8 @@ async def test_describe_template_reports_the_variables_before_anyone_is_asked(
         result = await client.call_tool("describe_template", {"template_id": seeded_template_id})
 
     described = _payload(result)
-    assert [v["nome"] for v in described["variables"]] == ["subject"]
-    assert described["nome"] == "Consulenza CTO"
+    assert [v["name"] for v in described["variables"]] == ["subject"]
+    assert described["name"] == "Consulenza CTO"
 
 
 @needs_binaries
@@ -375,7 +375,7 @@ def _connected_drive(session: Session) -> GoogleDriveAccount:
     """
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
         role="admin",
         active=True,
@@ -510,7 +510,7 @@ async def test_binding_hours_to_a_draft_writes_through_the_servers_own_storage(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
+            date=date(2026, 3, 2),
             hours=Decimal("4.00"),
             description="Analisi",
             billable=True,

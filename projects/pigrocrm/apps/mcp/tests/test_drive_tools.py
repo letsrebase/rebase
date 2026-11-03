@@ -41,7 +41,7 @@ def drive_actor(mcp_session: Session) -> Actor:
     user = User(
         email="drive-owner@example.test",
         password_hash="x",
-        nome="Owner",
+        name="Owner",
         role="admin",
         active=True,
     )

@@ -69,10 +69,10 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         # `position` well past the defaults, so the ordering of anything already there is
         # left alone.
         open = PipelineStage(
-            nome=STAGE_OPEN, position=900, default_probability=50, type="open", code=None
+            name=STAGE_OPEN, position=900, default_probability=50, type="open", code=None
         )
         won = PipelineStage(
-            nome=STAGE_WON, position=901, default_probability=100, type="won", code=None
+            name=STAGE_WON, position=901, default_probability=100, type="won", code=None
         )
         session.add_all([open, won])
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
@@ -80,7 +80,7 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         session.flush()
         session.add(
             Deal(
-                nome=f"{_PREFIX} aperto",
+                name=f"{_PREFIX} aperto",
                 customer_id=customer.id,
                 pipeline_stage_id=open.id,
                 expected_value=Decimal("1000.00"),
@@ -90,7 +90,7 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         )
         session.add(
             Deal(
-                nome=f"{_PREFIX} vinto",
+                name=f"{_PREFIX} vinto",
                 customer_id=customer.id,
                 pipeline_stage_id=won.id,
                 expected_value=Decimal("5000.00"),
@@ -106,9 +106,9 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         )
     finally:
         with factory() as session:
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone. `describe_automations` creates the
     # single row on demand and this file never changes it, so what would be left behind is

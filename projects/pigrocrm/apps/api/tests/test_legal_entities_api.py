@@ -18,7 +18,7 @@ from pigrocrm.core.legal_entities.models import LegalEntity
 
 def _second_legal_entity(session: Session, **overrides: Any) -> str:
     values: dict[str, Any] = {
-        "nome": "rebase",
+        "name": "rebase",
         "legal_name": "Rebase S.r.l.",
         "vat_number": "09876543210",
         "country": "IT",
@@ -31,7 +31,7 @@ def _second_legal_entity(session: Session, **overrides: Any) -> str:
 
 
 LTD = {
-    "nome": "rebase ltd",
+    "name": "rebase ltd",
     "legal_name": "Rebase Ltd",
     "vat_number": "GB123456789",
     "country": "GB",
@@ -47,12 +47,12 @@ def test_post_creates_to_second_legal_entity_born_with_its_profile(logged_in: Te
     created = logged_in.post("/api/legal-entities", json=LTD)
     assert created.status_code == 201, created.text
     body = created.json()
-    assert (body["nome"], body["predefinita"], body["active"]) == ("rebase ltd", False, True)
+    assert (body["name"], body["is_default"], body["active"]) == ("rebase ltd", False, True)
     assert body["vat_number"] == "GB123456789"
     profile = logged_in.get(f"/api/legal-entities/{body['id']}/fiscal-profile")
     assert profile.status_code == 200, profile.text
     assert (profile.json()["pack_id"], profile.json()["regime_code"]) == ("non-it", None)
-    listed = [a["nome"] for a in logged_in.get("/api/legal-entities").json()]
+    listed = [a["name"] for a in logged_in.get("/api/legal-entities").json()]
     assert listed == ["Spazio di prova", "rebase ltd"]
 
 
@@ -64,9 +64,9 @@ def test_to_refused_profile_leaves_no_legal_entity_behind(logged_in: TestClient)
     assert refused.status_code == 422, refused.text
     assert refused.json()["field"] == "apply_stamp_duty"
     assert len(logged_in.get("/api/legal-entities").json()) == 1
-    # And `nome` is required on creation, where the single profile derived it.
+    # And `name` is required on creation, where the single profile derived it.
     unnamed = logged_in.post(
-        "/api/legal-entities", json={k: v for k, v in LTD.items() if k != "nome"}
+        "/api/legal-entities", json={k: v for k, v in LTD.items() if k != "name"}
     )
     assert unnamed.status_code == 422, unnamed.text
 
@@ -81,10 +81,10 @@ def test_a_deactivation_answers_how_many_customers_still_point_at_the_row(
     logged_in: TestClient,
 ) -> None:
     second = logged_in.post("/api/legal-entities", json=LTD).json()["id"]
-    for nome in ("Uno Ltd", "Due Ltd"):
+    for name in ("Uno Ltd", "Due Ltd"):
         customer = logged_in.post(
             "/api/customers",
-            json={"legal_name": nome, "country": "GB", "legal_entity_id": second},
+            json={"legal_name": name, "country": "GB", "legal_entity_id": second},
         )
         assert customer.status_code == 201, customer.text
     gone = logged_in.delete(f"/api/legal-entities/{second}")
@@ -101,10 +101,10 @@ def test_the_old_routes_are_gone_with_no_alias(logged_in: TestClient) -> None:
 def test_the_list_has_the_default_first_and_hides_an_inactive_one(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    second = _second_legal_entity(api_session, nome="alfa", active=False)
+    second = _second_legal_entity(api_session, name="alfa", active=False)
     listed = logged_in.get("/api/legal-entities").json()
-    assert [a["nome"] for a in listed] == ["Spazio di prova"]
-    assert listed[0]["predefinita"] is True
+    assert [a["name"] for a in listed] == ["Spazio di prova"]
+    assert listed[0]["is_default"] is True
     everyone = logged_in.get("/api/legal-entities", params={"include_inactive": "true"}).json()
     assert [a["id"] for a in everyone] == [listed[0]["id"], second]
 
@@ -122,9 +122,9 @@ def test_a_put_replaces_the_row_and_derives_the_short_name(logged_in: TestClient
         json={"legal_name": "Studio Rossi di Mario Rossi", "vat_number": "01234567890"},
     )
     assert saved.status_code == 200, saved.text
-    assert saved.json()["nome"] == "Studio Rossi di Mario Rossi"
+    assert saved.json()["name"] == "Studio Rossi di Mario Rossi"
     assert saved.json()["vat_number"] == "01234567890"
-    assert saved.json()["predefinita"] is True
+    assert saved.json()["is_default"] is True
 
 
 def test_a_readonly_member_reads_the_list_and_cannot_write(
@@ -147,8 +147,8 @@ def test_the_default_moves_and_the_old_default_cannot_be_deactivated_first(
     assert refused.json()["field"] == "active"
     moved = logged_in.post(f"/api/legal-entities/{second}/default")
     assert moved.status_code == 200, moved.text
-    assert moved.json()["predefinita"] is True
-    assert logged_in.get(f"/api/legal-entities/{first}").json()["predefinita"] is False
+    assert moved.json()["is_default"] is True
+    assert logged_in.get(f"/api/legal-entities/{first}").json()["is_default"] is False
     gone = logged_in.delete(f"/api/legal-entities/{first}")
     assert gone.status_code == 200, gone.text
     assert gone.json()["active"] is False
@@ -200,7 +200,7 @@ def test_a_foreign_fiscal_profile_has_no_regime_code_and_an_italian_one_requires
 ) -> None:
     """REB-620, spec §1.3: the `non-it` pack is saved with no RF code; the Italian pack
     without one is refused naming the field, by the service and not by the schema."""
-    foreign = _second_legal_entity(api_session, nome="ltd", legal_name="Rebase Ltd", country="GB")
+    foreign = _second_legal_entity(api_session, name="ltd", legal_name="Rebase Ltd", country="GB")
     saved = logged_in.put(
         f"/api/legal-entities/{foreign}/fiscal-profile",
         json={

@@ -34,7 +34,7 @@ def _deal(client: TestClient) -> str:
     """A deal, and the pipeline it needs to exist in: a deal with no stage is refused,
     so the seed is part of the fixture rather than an assumption about the database."""
     assert client.post("/api/pipeline-stages/seed").status_code == 200
-    created = client.post("/api/deals", json={"nome": "Progetto", "customer_id": _customer(client)})
+    created = client.post("/api/deals", json={"name": "Progetto", "customer_id": _customer(client)})
     assert created.status_code == 201, created.text
     return str(created.json()["id"])
 
@@ -107,7 +107,7 @@ def test_the_calendar_shows_the_hours_of_whoever_is_asking(
         json={
             "deal_id": deal_id,
             "user_id": _me(logged_in),
-            "data": FIRST.isoformat(),
+            "date": FIRST.isoformat(),
             "hours": "8.00",
             "description": "Giornata",
         },
@@ -252,7 +252,7 @@ def test_a_day_can_carry_hours_a_commitment_and_nothing_else_it_did_not_earn(
         json={
             "deal_id": deal_id,
             "user_id": _me(logged_in),
-            "data": FIRST.isoformat(),
+            "date": FIRST.isoformat(),
             "hours": "4.00",
             "description": "Mezza",
         },

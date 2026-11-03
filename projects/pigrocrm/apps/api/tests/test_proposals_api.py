@@ -52,7 +52,7 @@ def _work_unit_body(document_id: str, contract_id: str, **overrides: Any) -> dic
         "confidence": "0.90",
         "proposed_fields": {
             "contract_id": contract_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "quantity": "1.00",
             "description": "Giornata di consulenza",
             "approval": {
@@ -231,7 +231,7 @@ def test_list_filters_by_status(logged_in: TestClient) -> None:
             excerpt="seconda",
             proposed_fields={
                 **_work_unit_body(document_id, contract_id)["proposed_fields"],
-                "data": "2026-03-06",
+                "date": "2026-03-06",
             },
         ),
     ).json()
@@ -251,7 +251,7 @@ def test_list_orders_decided_proposals_newest_decision_first(logged_in: TestClie
     ids = []
     for day in ("2026-03-05", "2026-03-06", "2026-03-07"):
         body = _work_unit_body(document_id, contract_id, excerpt=day)
-        body["proposed_fields"]["data"] = day
+        body["proposed_fields"]["date"] = day
         ids.append(logged_in.post("/api/proposals", json=body).json()["id"])
     # The first and the last to arrive are decided, the last one most recently; the middle
     # one is left waiting.
@@ -310,7 +310,7 @@ def test_an_agent_token_can_never_decide_a_proposal(
     proposal_id = logged_in.post(
         "/api/proposals", json=_work_unit_body(document_id, contract_id)
     ).json()["id"]
-    token = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    token = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
     monkeypatch.setattr(
         "pigrocrm.core.auth.pat_service.get_settings",
         lambda: Settings(_env_file=None, mcp_full_access=full_access),  # type: ignore[call-arg]

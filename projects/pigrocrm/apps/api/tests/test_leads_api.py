@@ -38,9 +38,9 @@ MARIA = "maria.rossi@acme.it"
 def _body(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "legal_entity": "Acme S.r.l.",
-        "contact_person": {"nome": "Maria", "last_name": "Rossi", "email": MARIA},
+        "contact_person": {"first_name": "Maria", "last_name": "Rossi", "email": MARIA},
         "deal": {
-            "nome": "Acme S.r.l.: Backend developer",
+            "name": "Acme S.r.l.: Backend developer",
             "expected_value": "24000.00",
             "note": "Richiesta dell'azienda.",
         },
@@ -78,7 +78,7 @@ def _serving(settings: Settings, *, provision: bool = True) -> Iterator[TestClie
     if provision:
         with session_factory(registry)() as session:
             TenantService(session, settings).provision(
-                TenantSignup(slug=SLUG, nome="rebase", email="spazio@studio.it")
+                TenantSignup(slug=SLUG, name="rebase", email="spazio@studio.it")
             )
     try:
         with TestClient(app, base_url="https://testserver") as client:
@@ -207,11 +207,11 @@ def test_an_explicit_deal_is_linked_and_a_missing_one_is_422(
 @pytest.mark.parametrize(
     "bad",
     [
-        {"contact_person": {"nome": "Maria", "email": "non-un-indirizzo"}},
+        {"contact_person": {"name": "Maria", "email": "non-un-indirizzo"}},
         {"legal_entity": ""},
         {"extra": "sorpresa"},
-        {"deal": {"nome": "x" * 256}},
-        {"deal": {"nome": "ok", "expected_value": "1000000000000.00"}},
+        {"deal": {"name": "x" * 256}},
+        {"deal": {"name": "ok", "expected_value": "1000000000000.00"}},
     ],
 )
 def test_a_body_that_does_not_validate_is_422(lead_client: TestClient, bad: dict[str, Any]) -> None:
