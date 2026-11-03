@@ -62,7 +62,7 @@ def _customer(session: Session, **overrides: object) -> Customer:
         "legal_name": "Esempio Servizi S.r.l.",
         "vat_number": CUSTOMER_VAT_NUMBER,
         "address": "Piazza dei Modelli 4",
-        "cap": "00187",
+        "postal_code": "00187",
         "city": "Roma",
         "province": "RM",
         "country": "IT",

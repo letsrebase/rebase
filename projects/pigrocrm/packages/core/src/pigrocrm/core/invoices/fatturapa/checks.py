@@ -8,7 +8,6 @@ from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa.constants import (
     ADDRESS_MAX,
     BASIC_LATIN_RE,
-    CAP_RE,
     CITY_MAX,
     CODE_PROJECT_CODE_MAX,
     CODE_TENDER_CODE_MAX,
@@ -25,6 +24,7 @@ from pigrocrm.core.invoices.fatturapa.constants import (
     LATIN_RE,
     LEGAL_REFERENCE_MAX,
     MEMO_MAX,
+    POSTAL_CODE_RE,
     PROVINCE_RE,
     RECIPIENT_ENTITY,
     UNIT_OF_MEASURE_MAX,
@@ -49,7 +49,7 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     missing a CAP would already own a register number that can never produce a valid
     file, and the only remaining remedy would be an annulment.
 
-    The previous system guessed `address`, `cap`, `city` and `province` out of one free-text
+    The previous system guessed `address`, `postal_code`, `city` and `province` out of one free-text
     field with a regex over Italian street prefixes. They are four real columns on
     `customers`; nothing is guessed, and a missing one refuses.
     """
@@ -68,11 +68,11 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     # makes `Provincia` optional precisely so that a London address is not forced to
     # invent one. Requiring it of everybody is what made a foreign customer
     # unrepresentable -- along with the outright refusal that used to stand here, which
-    # this replaces. `cap` is not required outside Italy either, since `CAP` carries the
+    # this replaces. `postal_code` is not required outside Italy either, since `CAP` carries the
     # `00000` placeholder there. `city` is required of everybody: the schema's
     # `Comune` is one to sixty characters with no `minOccurs="0"`, and leaving it out
     # of this list let an emission through that the writer could never serialise.
-    required = ("address", "cap", "city", "province") if italian else ("address", "city")
+    required = ("address", "postal_code", "city", "province") if italian else ("address", "city")
     for field in required:
         if not (getattr(party, field) or "").strip():
             raise ValidationFailed(
@@ -95,7 +95,7 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     # whole reason for existing is that `InvoiceService.issue` calls it before consuming
     # a register number. Presence alone was not enough: `customers.legal_name` is
     # `String(255)` against FPR12's 80, `address` and `city` are `String(255)` and
-    # `String(120)` against 60, and `cap` is `String(10)` where the schema wants exactly
+    # `String(120)` against 60, and `postal_code` is `String(10)` where the schema wants exactly
     # five digits. So an ordinary customer — a long consortium name, a mistyped CAP —
     # passed this check, the emission committed, and every later `export_xml` raised
     # forever, leaving annulment as the only remedy. A refusal before the number is spent
@@ -116,10 +116,14 @@ def check_widths(party: PartySnapshot, entity: str, italian: bool) -> None:
     # `00000` placeholder in `CAP` and the real one at the end of `Indirizzo`, measured
     # above. Inside Italy the schema's five digits are the customer's own CAP and a
     # mistyped one is refused before it costs a register number.
-    cap = (party.cap or "").strip()
-    if italian and not CAP_RE.fullmatch(cap):
+    postal_code = (party.postal_code or "").strip()
+    if italian and not POSTAL_CODE_RE.fullmatch(postal_code):
         raise ValidationFailed(
-            entity, "cap", "CAP non valido", expected="esattamente 5 cifre", in_words=True
+            entity,
+            "postal_code",
+            "CAP non valido",
+            expected="esattamente 5 cifre",
+            in_words=True,
         )
 
     # `Provincia` is written only for an Italian address (the specifications fill it only

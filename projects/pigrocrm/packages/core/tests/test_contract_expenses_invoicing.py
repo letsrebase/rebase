@@ -49,7 +49,7 @@ def _install_fiscal_and_legal_entity_profiles(session: Session) -> None:
             vat_number="01234567890",
             tax_code="HMCRFT00A01H501K",
             address="Via Vittorio Veneto 12",
-            cap="20124",
+            postal_code="20124",
             city="Milano",
             province="MI",
             country="IT",

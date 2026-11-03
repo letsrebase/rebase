@@ -45,7 +45,7 @@ CUSTOMER_STRING_FIELDS = [
     "sdi_code",
     "certified_email",
     "address",
-    "cap",
+    "postal_code",
     "city",
     "province",
     "country",

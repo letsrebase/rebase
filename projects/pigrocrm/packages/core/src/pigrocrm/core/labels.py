@@ -259,14 +259,14 @@ def entity_not_found(entity: str, identifier: str) -> str:
 
 # The fields a person fixes on the way to a FatturaPA, as a refusal names them: the record
 # and the field in the words of the screen where it is edited («cliente, CAP»), where the
-# machine path was `customer.cap`. The machine `entity` and `field` stay in the error's
+# machine path was `customer.postal_code`. The machine `entity` and `field` stay in the error's
 # details; only the sentence is in words.
 _PARTY_NOUN: dict[str, str] = {"legal_entity": "azienda emittente", "customer": "cliente"}
 
 _PARTY_FIELD: dict[str, str] = {
     "legal_name": "ragione sociale",
     "address": "indirizzo",
-    "cap": "CAP",
+    "postal_code": "CAP",
     "city": "comune",
     "province": "provincia",
     "country": "nazione",

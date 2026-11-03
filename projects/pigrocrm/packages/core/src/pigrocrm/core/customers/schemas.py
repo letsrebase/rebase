@@ -24,7 +24,7 @@ TAX_CODE_MAX_LENGTH = 16
 SDI_CODE_MAX_LENGTH = 7
 CERTIFIED_EMAIL_MAX_LENGTH = 320
 ADDRESS_MAX_LENGTH = 255
-CAP_MAX_LENGTH = 10
+POSTAL_CODE_MAX_LENGTH = 10
 CITY_MAX_LENGTH = 120
 PROVINCE_MAX_LENGTH = 2
 COUNTRY_MAX_LENGTH = 2
@@ -59,7 +59,7 @@ class CustomerCreate(BaseModel):
     sdi_code: SafeStr | None = None
     certified_email: SafeStr | None = Field(default=None, max_length=CERTIFIED_EMAIL_MAX_LENGTH)
     address: SafeStr | None = Field(default=None, max_length=ADDRESS_MAX_LENGTH)
-    cap: SafeStr | None = Field(default=None, max_length=CAP_MAX_LENGTH)
+    postal_code: SafeStr | None = Field(default=None, max_length=POSTAL_CODE_MAX_LENGTH)
     city: SafeStr | None = Field(default=None, max_length=CITY_MAX_LENGTH)
     province: SafeStr | None = Field(default=None, max_length=PROVINCE_MAX_LENGTH)
     country: SafeStr = Field(default="IT", max_length=COUNTRY_MAX_LENGTH)
@@ -101,7 +101,7 @@ class CustomerUpdate(BaseModel):
     sdi_code: SafeStr | None = None
     certified_email: SafeStr | None = Field(default=None, max_length=CERTIFIED_EMAIL_MAX_LENGTH)
     address: SafeStr | None = Field(default=None, max_length=ADDRESS_MAX_LENGTH)
-    cap: SafeStr | None = Field(default=None, max_length=CAP_MAX_LENGTH)
+    postal_code: SafeStr | None = Field(default=None, max_length=POSTAL_CODE_MAX_LENGTH)
     city: SafeStr | None = Field(default=None, max_length=CITY_MAX_LENGTH)
     province: SafeStr | None = Field(default=None, max_length=PROVINCE_MAX_LENGTH)
     country: SafeStr | None = Field(default=None, max_length=COUNTRY_MAX_LENGTH)
@@ -130,7 +130,7 @@ class CustomerRead(BaseModel):
     sdi_code: str | None
     certified_email: str | None
     address: str | None
-    cap: str | None
+    postal_code: str | None
     city: str | None
     province: str | None
     country: str

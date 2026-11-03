@@ -116,6 +116,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   payment_terms: 'Condizioni pagamento',
   phone: 'Telefono',
   position: 'Posizione',
+  postal_code: 'CAP',
   pre_authorized: 'Pre autorizzata',
   previous_contract_id: 'Contratto precedente id',
   previous_valid_from: 'Precedente valido da',

@@ -82,7 +82,7 @@ def _address_line(customer: CustomerRead) -> str:
     comune would go, and empty parentheses -- noise a model has to read past
     before it can act. With nothing but a country, this renders as `IT` alone.
     """
-    locality = " ".join(part for part in (customer.cap, customer.city) if part)
+    locality = " ".join(part for part in (customer.postal_code, customer.city) if part)
     if customer.province:
         locality = f"{locality} ({customer.province})".strip()
     if customer.country:

@@ -83,7 +83,7 @@ def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no
             vat_number="01234567890",
             tax_code="HMCRFT00A01H501K",
             address="Via Vittorio Veneto 12",
-            cap="20124",
+            postal_code="20124",
             city="Milano",
             province="MI",
             country="IT",
@@ -100,7 +100,7 @@ def _customer(db_session: Session, **overrides: object) -> UUID:
         "vat_number": "12345678901",
         "sdi_code": "ABCDEFG",
         "address": "Corso Italia 5",
-        "cap": "00100",
+        "postal_code": "00100",
         "city": "Roma",
         "province": "RM",
         "country": "IT",
@@ -384,7 +384,7 @@ def test_to_customer_with_neither_sdi_nor_certified_email_is_refused_before_the_
     )
 
 
-@pytest.mark.parametrize("field", ["cap", "city", "address", "province"])
+@pytest.mark.parametrize("field", ["postal_code", "city", "address", "province"])
 def test_a_missing_address_part_is_refused_by_name(
     service: InvoiceService, db_session: Session, field: str
 ) -> None:
@@ -434,7 +434,7 @@ def test_a_draft_whose_customer_changed_country_is_refused_before_the_number_is_
     assert customer is not None
     customer.country = "GB"
     customer.province = ""
-    customer.cap = "00000"
+    customer.postal_code = "00000"
     customer.sdi_code = None
     db_session.flush()
 
@@ -618,7 +618,7 @@ def test_a_foreign_customer_with_no_usable_fiscal_identity_is_refused_before_the
         vat_number=None,
         tax_code="DE12345678901",
         sdi_code=None,
-        cap="EC1V 9HL",
+        postal_code="EC1V 9HL",
         city="London",
         province=None,
         country="GB",

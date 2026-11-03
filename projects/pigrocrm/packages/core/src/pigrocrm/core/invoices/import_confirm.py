@@ -231,7 +231,7 @@ def map_parsed_party_to_customer(party: ParsedInvoiceParty) -> CustomerCreate:
         vat_number=normalise_fiscal_id(party.vat_number),
         tax_code=normalise_fiscal_id(party.tax_code),
         address=party.address,
-        cap=party.cap,
+        postal_code=party.postal_code,
         city=party.city,
         province=party.province,
         country=party.country,

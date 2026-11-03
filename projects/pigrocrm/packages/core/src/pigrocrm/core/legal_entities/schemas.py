@@ -13,7 +13,7 @@ NAME_MAX_LENGTH = 80
 LEGAL_NAME_MAX_LENGTH = 255
 TAX_CODE_MAX_LENGTH = 16
 ADDRESS_MAX_LENGTH = 255
-CAP_MAX_LENGTH = 10
+POSTAL_CODE_MAX_LENGTH = 10
 CITY_MAX_LENGTH = 120
 PROVINCE_MAX_LENGTH = 2
 COUNTRY_MAX_LENGTH = 2
@@ -54,7 +54,7 @@ class LegalEntityFields(BaseModel):
     vat_number: SafeStr | None = None
     tax_code: SafeStr | None = Field(default=None, max_length=TAX_CODE_MAX_LENGTH)
     address: SafeStr | None = Field(default=None, max_length=ADDRESS_MAX_LENGTH)
-    cap: SafeStr | None = Field(default=None, max_length=CAP_MAX_LENGTH)
+    postal_code: SafeStr | None = Field(default=None, max_length=POSTAL_CODE_MAX_LENGTH)
     city: SafeStr | None = Field(default=None, max_length=CITY_MAX_LENGTH)
     province: SafeStr | None = Field(default=None, max_length=PROVINCE_MAX_LENGTH)
     country: SafeStr = Field(default="IT", max_length=COUNTRY_MAX_LENGTH)
@@ -115,7 +115,7 @@ class LegalEntityRead(BaseModel):
     vat_number: str | None
     tax_code: str | None
     address: str | None
-    cap: str | None
+    postal_code: str | None
     city: str | None
     province: str | None
     country: str

@@ -64,7 +64,7 @@ def _second(session: Session) -> LegalEntity:
         website="https://rebase.example",
         email_signature="Rebase, con affetto",
         address="Via Po 1",
-        cap="10100",
+        postal_code="10100",
         city="Torino",
         province="TO",
     )

@@ -37,7 +37,7 @@ LEGAL_ENTITY = PartySnapshot(
     sdi_code=None,
     certified_email="studiorossi@pec.it",
     address="Via Vittorio Veneto 12",
-    cap="20124",
+    postal_code="20124",
     city="Milano",
     province="MI",
     country="IT",
@@ -72,7 +72,7 @@ def _customer(**overrides: object) -> PartySnapshot:
         "sdi_code": "ABCDEFG",
         "certified_email": None,
         "address": "Corso Italia 5",
-        "cap": "00100",
+        "postal_code": "00100",
         "city": "Roma",
         "province": "RM",
         "country": "IT",
@@ -440,7 +440,7 @@ def test_to_customer_with_neither_sdi_nor_certified_email_is_refused_by_field_na
     assert caught.value.details["field"] == "sdi_code"
 
 
-@pytest.mark.parametrize("field", ["address", "cap", "city", "province"])
+@pytest.mark.parametrize("field", ["address", "postal_code", "city", "province"])
 def test_a_missing_address_part_is_refused_by_field_name(field: str) -> None:
     """These are four real columns on `customers`. The previous system guessed them out of one
     free-text address with a regex over Italian street prefixes."""
@@ -455,15 +455,15 @@ def test_a_missing_address_part_is_refused_by_field_name(field: str) -> None:
 
 
 def test_a_cap_that_is_not_five_digits_is_refused() -> None:
-    """FPR12's CAP is exactly `[0-9]{5}`, while `customers.cap` is String(10)."""
+    """FPR12's CAP is exactly `[0-9]{5}`, while `customers.postal_code` is String(10)."""
     with pytest.raises(ValidationFailed) as caught:
         InvoicePaExporter().to_bytes(
             _invoice(
                 [_line(1, "Consulenza", "1.000000", "100.000000", "100.00")],
-                customer=_customer(cap="2012"),
+                customer=_customer(postal_code="2012"),
             )
         )
-    assert caught.value.details["field"] == "cap"
+    assert caught.value.details["field"] == "postal_code"
 
 
 def test_a_denomination_longer_than_the_schema_allows_is_refused_not_truncated() -> None:
@@ -639,7 +639,7 @@ def _customer_foreign(**overrides: object) -> PartySnapshot:
         "sdi_code": None,
         "certified_email": None,
         "address": "1 Example Street",
-        "cap": "00000",
+        "postal_code": "00000",
         "city": "London",
         "province": "",
         "country": "GB",
@@ -791,7 +791,7 @@ def test_a_foreign_postcode_is_written_as_00000_and_kept_in_the_address() -> Non
     forever. The convention is applied by the writer, whatever the customer row holds:
     a London company keeps its postcode in the record, the PDF prints it, and the XML
     carries it at the end of `Indirizzo` so the document does not lose it."""
-    customer = _customer_foreign(cap="EC1V 9HL")
+    customer = _customer_foreign(postal_code="EC1V 9HL")
     check_party_exportable(customer, "customer")
 
     xml = InvoicePaExporter().to_bytes(
@@ -813,7 +813,7 @@ def test_a_foreign_postcode_already_stored_as_the_convention_is_not_repeated() -
     xml = InvoicePaExporter().to_bytes(
         _invoice(
             [_line(1, "Advisory", "1.000000", "100.000000", "100.00")],
-            customer=_customer_foreign(cap="00000"),
+            customer=_customer_foreign(postal_code="00000"),
         )
     )
     headquarters = etree.fromstring(xml).find(".//CessionarioCommittente/Sede")
@@ -825,7 +825,7 @@ def test_a_foreign_postcode_already_stored_as_the_convention_is_not_repeated() -
 def test_a_foreign_address_without_a_postcode_is_still_exportable() -> None:
     """A postcode is not something every country has, so its absence outside Italy is
     not an omission: `CAP` is the placeholder and `Indirizzo` is the address alone."""
-    customer = _customer_foreign(cap="")
+    customer = _customer_foreign(postal_code="")
     check_party_exportable(customer, "customer")
     xml = InvoicePaExporter().to_bytes(
         _invoice([_line(1, "Advisory", "1.000000", "100.000000", "100.00")], customer=customer)
@@ -842,7 +842,7 @@ def test_a_province_stored_on_a_foreign_address_is_not_written() -> None:
     of an Italian province, and a county or a state written there would be a false
     statement to the SdI. So whatever the record holds for a foreign customer, the
     element is omitted, and its shape is not a reason to refuse the emission."""
-    customer = _customer_foreign(cap="EC1V 9HL", province="Greater London")
+    customer = _customer_foreign(postal_code="EC1V 9HL", province="Greater London")
     check_party_exportable(customer, "customer")
     xml = InvoicePaExporter().to_bytes(
         _invoice([_line(1, "Advisory", "1.000000", "100.000000", "100.00")], customer=customer)
@@ -860,7 +860,7 @@ def test_the_legal_entity_s_italian_address_is_untouched_by_the_foreign_conventi
     xml = InvoicePaExporter().to_bytes(
         _invoice(
             [_line(1, "Advisory", "1.000000", "100.000000", "100.00")],
-            customer=_customer_foreign(cap="EC1V 9HL"),
+            customer=_customer_foreign(postal_code="EC1V 9HL"),
         )
     )
     headquarters = etree.fromstring(xml).find(".//CedentePrestatore/Sede")
@@ -875,8 +875,8 @@ def test_an_italian_cap_that_is_not_five_digits_is_still_refused_before_the_numb
     address only. An Italian customer with a British-looking postcode is a data error
     and is refused by the pre-check, not written as `00000`."""
     with pytest.raises(ValidationFailed) as caught:
-        check_party_exportable(_customer(cap="EC1V 9HL"), "customer")
-    assert caught.value.details["field"] == "cap"
+        check_party_exportable(_customer(postal_code="EC1V 9HL"), "customer")
+    assert caught.value.details["field"] == "postal_code"
 
 
 def test_a_foreign_address_too_long_to_carry_its_postcode_is_refused_before_the_number() -> None:
@@ -887,7 +887,7 @@ def test_a_foreign_address_too_long_to_carry_its_postcode_is_refused_before_the_
     address text."""
     long = "Flat 12, Bartholomew House, 20-22 Old Street, Clerkenwell"
     assert len(long) <= ADDRESS_MAX < len(f"{long}, EC1V 9HL")
-    customer = _customer_foreign(address=long, cap="EC1V 9HL")
+    customer = _customer_foreign(address=long, postal_code="EC1V 9HL")
 
     with pytest.raises(ValidationFailed) as caught:
         check_party_exportable(customer, "customer")
@@ -903,7 +903,7 @@ def test_a_foreign_address_too_long_to_carry_its_postcode_is_refused_before_the_
 def test_to_missing_city_is_refused_outside_italy_as_well() -> None:
     """`Comune` is `String60LatinType`, one to sixty characters, and has no
     `minOccurs="0"`: the schema wants a city for every address. The pre-check dropped it
-    from the mandatory list for a foreign party along with `cap` and `province`, which
+    from the mandatory list for a foreign party along with `postal_code` and `province`, which
     let an emission through that `export_xml` could never serialise. Same hole as the
     postcode, closed the same way."""
     with pytest.raises(ValidationFailed) as caught:
@@ -932,10 +932,10 @@ def test_a_name_too_long_for_the_schema_is_refused_by_the_pre_check() -> None:
 
 
 def test_a_cap_that_is_not_five_digits_is_refused_by_the_pre_check() -> None:
-    """`customers.cap` is `String(10)`; the schema wants exactly five digits."""
+    """`customers.postal_code` is `String(10)`; the schema wants exactly five digits."""
     with pytest.raises(ValidationFailed) as caught:
-        check_party_exportable(_customer(cap="2012"), "customer")
-    assert caught.value.details["field"] == "cap"
+        check_party_exportable(_customer(postal_code="2012"), "customer")
+    assert caught.value.details["field"] == "postal_code"
 
 
 # --- ORB-56: the pre-check refuses what the writer refuses ----------------------------

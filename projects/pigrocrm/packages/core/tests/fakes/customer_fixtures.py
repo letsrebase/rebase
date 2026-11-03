@@ -30,7 +30,7 @@ def make_customer_with_address(session: Session, **overrides: object) -> Custome
     values: dict[str, object] = {
         "legal_name": f"Cliente {uuid4()}",
         "address": "Piazza dei Modelli 4",
-        "cap": "00187",
+        "postal_code": "00187",
         "city": "Roma",
         "province": "RM",
         "country": "IT",

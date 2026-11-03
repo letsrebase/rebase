@@ -47,7 +47,7 @@ def legal_entity(logged_in: TestClient) -> dict[str, Any]:
             "vat_number": SUPPLIER_VAT_NUMBER,
             "tax_code": SUPPLIER_CF,
             "address": "Via delle Officine 10",
-            "cap": "20121",
+            "postal_code": "20121",
             "city": "Milano",
             "province": "MI",
             "country": "IT",
@@ -65,7 +65,7 @@ def customer(logged_in: TestClient) -> dict[str, Any]:
             "legal_name": "Esempio Servizi S.r.l.",
             "vat_number": CUSTOMER_VAT_NUMBER,
             "address": "Piazza dei Modelli 4",
-            "cap": "00187",
+            "postal_code": "00187",
             "city": "Roma",
             "province": "RM",
             "country": "IT",
@@ -160,7 +160,7 @@ def test_no_matching_customer_reports_needs_customer_confirmation_and_writes_not
         json={
             "legal_name": "Cliente Senza Match",
             "address": "Via Roma 1",
-            "cap": "00100",
+            "postal_code": "00100",
             "city": "Roma",
             "province": "RM",
             "country": "IT",
@@ -186,7 +186,7 @@ def test_an_explicit_customer_id_resolves_needs_customer_confirmation(
         json={
             "legal_name": "Cliente Caricatore",
             "address": "Via Roma 1",
-            "cap": "00100",
+            "postal_code": "00100",
             "city": "Roma",
             "province": "RM",
             "country": "IT",
@@ -197,7 +197,7 @@ def test_an_explicit_customer_id_resolves_needs_customer_confirmation(
         json={
             "legal_name": "Cliente Scelto",
             "address": "Via Milano 2",
-            "cap": "20100",
+            "postal_code": "20100",
             "city": "Milano",
             "province": "MI",
             "country": "IT",
@@ -226,7 +226,7 @@ def test_create_customer_writes_one_new_customer_for_the_whole_batch(
         json={
             "legal_name": "Cliente Caricatore",
             "address": "Via Roma 1",
-            "cap": "00100",
+            "postal_code": "00100",
             "city": "Roma",
             "province": "RM",
             "country": "IT",

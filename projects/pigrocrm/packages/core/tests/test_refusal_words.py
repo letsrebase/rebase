@@ -34,7 +34,7 @@ def _party(**overrides: object) -> PartySnapshot:
         "sdi_code": "ABCDEFG",
         "certified_email": None,
         "address": "Corso Italia 5",
-        "cap": "00100",
+        "postal_code": "00100",
         "city": "Roma",
         "province": "RM",
         "country": "IT",
@@ -51,7 +51,12 @@ def _party(**overrides: object) -> PartySnapshot:
 )
 @pytest.mark.parametrize(
     ("field", "word"),
-    [("address", "indirizzo"), ("cap", "CAP"), ("city", "comune"), ("province", "provincia")],
+    [
+        ("address", "indirizzo"),
+        ("postal_code", "CAP"),
+        ("city", "comune"),
+        ("province", "provincia"),
+    ],
 )
 def test_a_missing_required_field_names_the_party_and_the_field_in_words(
     entity: str, noun: str, field: str, word: str
@@ -79,9 +84,9 @@ def test_the_legal_name_and_the_country_are_named_in_words_too() -> None:
 
 
 def test_a_malformed_cap_and_province_read_in_words() -> None:
-    with pytest.raises(ValidationFailed) as cap:
-        check_party_exportable(_party(cap="1234"), "customer")
-    assert cap.value.message == "cliente, CAP: CAP non valido"
+    with pytest.raises(ValidationFailed) as postal_code:
+        check_party_exportable(_party(postal_code="1234"), "customer")
+    assert postal_code.value.message == "cliente, CAP: CAP non valido"
 
     with pytest.raises(ValidationFailed) as province:
         check_party_exportable(_party(province="Roma"), "legal_entity")
@@ -89,7 +94,7 @@ def test_a_malformed_cap_and_province_read_in_words() -> None:
 
 
 def test_a_foreign_address_does_not_need_a_province_or_a_cap() -> None:
-    check_party_exportable(_party(country="GB", cap="", province=""), "customer")
+    check_party_exportable(_party(country="GB", postal_code="", province=""), "customer")
 
 
 def test_the_recipient_routing_and_identity_read_in_words() -> None:

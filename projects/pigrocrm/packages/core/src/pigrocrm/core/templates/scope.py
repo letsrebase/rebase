@@ -4,7 +4,7 @@ The model and the schemas are English, but what a person types in a template is 
 (`{{cliente.ragione_sociale}}`, `{{emittente.partita_iva}}`) and stays so: templates are
 content, and the stored ones already say it this way. Every scope builder keeps reading
 the English fields and renames the *keys* it hands to the renderer through `italian_keys`.
-A field that is not listed keeps its name (`cap`, `email`, `logo_key`).
+A field that is not listed keeps its name (`email`, `logo_key`).
 """
 
 from typing import Any
@@ -17,6 +17,7 @@ PARTY_KEYS: dict[str, str] = {
     "sdi_code": "codice_sdi",
     "certified_email": "pec",
     "address": "indirizzo",
+    "postal_code": "cap",
     "city": "comune",
     "province": "provincia",
     "country": "nazione",

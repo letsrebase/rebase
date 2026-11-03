@@ -27,7 +27,7 @@ const BASE_CUSTOMER: Customer = {
   sdi_code: null,
   certified_email: null,
   address: null,
-  cap: null,
+  postal_code: null,
   city: null,
   province: null,
   country: 'IT',

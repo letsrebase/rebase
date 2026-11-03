@@ -29,7 +29,7 @@ const LEGAL_ENTITY: LegalEntityRecord = {
   vat_number: '12345678901',
   tax_code: null,
   address: 'Via Roma 1',
-  cap: '20100',
+  postal_code: '20100',
   city: 'Milano',
   province: 'MI',
   country: 'IT',

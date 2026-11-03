@@ -35,7 +35,7 @@ function legal_entity(id: string, name: string, overrides: Partial<LegalEntityRe
     vat_number: null,
     tax_code: null,
     address: null,
-    cap: null,
+    postal_code: null,
     city: null,
     province: null,
     country: 'IT',
