@@ -53,13 +53,13 @@ def _refuse_other_day(settings: Settings, data: date | None, dry_run: bool) -> b
     """`--date` evaluates another day, and only as a rehearsal: a real pass of another
     day would write against today's reminders and task."""
     if data is not None and data != today_local(settings) and not dry_run:
-        print("--data cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
+        print("--date cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
         return True
     return False
 
 
 def digest(
-    settings: Settings, *, slug: str | None, data: date | None, forza: bool, dry_run: bool
+    settings: Settings, *, slug: str | None, data: date | None, force: bool, dry_run: bool
 ) -> int:
     """`pigrocrm digest`: the weekly report of the root installation and of every space in
     the registry (spec 2026-09-16 §3.4, REB-263). One run a week, Monday morning (the
@@ -116,7 +116,7 @@ def digest(
                             target.label,
                             target.owner_email,
                             week,
-                            forza=forza,
+                            force=force,
                             dry_run=dry_run,
                         )
                     if not dry_run:

@@ -7,8 +7,8 @@ pack (`PACK_IT_FLAT_RATE`) **and** carries the flat-rate regime's regime code (`
 `RF19`). A legal entity on an ordinary regime (`RF01`), on the foreign pack, or with no profile
 at all gets nothing, and a space none of whose legal entities qualifies skips both types.
 
-**One ceiling, the revenue one.** The pack declares two: `soglia_ricavi` (85,000, the regime
-is lost from the next year) and `soglia_fuoriuscita_immediata` (100,000, lost at once). Both
+**One ceiling, the revenue one.** The pack declares two: `revenue_ceiling` (85,000, the regime
+is lost from the next year) and `immediate_exit_ceiling` (100,000, lost at once). Both
 types read the first, and the text of the reminder names the second when the figures are
 close to it, because that is the one that costs the regime this year.
 
@@ -50,8 +50,8 @@ from pigrocrm.core.reminders.detectors.space import admins_seeing
 APPROACHING = REMINDER_TYPES["ceiling_approaching"]
 OVERRUN = REMINDER_TYPES["year_end_overrun_projected"]
 
-REVENUE_CEILING = "soglia_ricavi"
-IMMEDIATE_CEILING = "soglia_fuoriuscita_immediata"
+REVENUE_CEILING = "revenue_ceiling"
+IMMEDIATE_CEILING = "immediate_exit_ceiling"
 
 _HUNDRED = Decimal(100)
 

@@ -19,7 +19,7 @@ REMINDERS_PATH = "/app/reminders"
 NOTIFICATIONS_PATH = "/app/settings/notifications"
 
 _PATHS: dict[str, Callable[[UUID], str]] = {
-    # An task has no page of its own: the list opens it in a dialog.
+    # A task has no page of its own: the list opens it in a dialog.
     "task": lambda id_: f"/app/activities?open={id_}",
     "deal": lambda id_: f"/app/deal/{id_}",
     "customer": lambda id_: f"/app/customers/{id_}",

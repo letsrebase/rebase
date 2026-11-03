@@ -263,7 +263,7 @@ def test_the_period_rows_honour_the_customer_filter(
     db_session.add(other_customer)
     db_session.flush()
     other_deal = Deal(
-        nome="Progetto altrui",
+        name="Progetto altrui",
         customer_id=other_customer.id,
         pipeline_stage_id=mine.pipeline_stage_id,
         probability=10,

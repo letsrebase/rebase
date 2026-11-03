@@ -102,7 +102,7 @@ class CalendarService:
         # the per-deal figures here and separately in SQL would be two totals of the same
         # hours, which is how they begin to disagree.
         for bucket in days.values():
-            bucket.hours = sum_hours(riga.hours for riga in bucket.per_deal)
+            bucket.hours = sum_hours(line.hours for line in bucket.per_deal)
 
         for row in self.tasks.in_range(date_from, date_to):
             # `in_range` filters on `scadenza IS NOT NULL`, so this is never None -- and

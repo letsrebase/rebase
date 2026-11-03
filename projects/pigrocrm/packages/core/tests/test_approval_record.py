@@ -63,7 +63,7 @@ def _day(session: Session, contract: Contract, day: date, status: str) -> UUID:
         .create(
             WorkUnitCreate(
                 contract_id=contract.id,
-                data=day,
+                date=day,
                 quantity=Decimal("1.00"),
                 description="Giornata",
                 status=status,  # type: ignore[arg-type]

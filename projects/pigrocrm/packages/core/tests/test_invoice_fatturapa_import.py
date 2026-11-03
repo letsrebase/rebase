@@ -101,12 +101,12 @@ def test_parse_maps_the_real_fixture_into_a_complete_parsed_invoice() -> None:
     assert invoice.customer.city == "Roma"
 
     assert len(invoice.lines) == 1
-    riga = invoice.lines[0]
-    assert riga.description == "Consulenza professionale - marzo 2026"
-    assert riga.quantity == Decimal("5.000000")
-    assert riga.unit_price == Decimal("200.000000")
-    assert riga.total_price == Decimal("1000.00")
-    assert riga.vat_rate == Decimal("0.00")
+    line = invoice.lines[0]
+    assert line.description == "Consulenza professionale - marzo 2026"
+    assert line.quantity == Decimal("5.000000")
+    assert line.unit_price == Decimal("200.000000")
+    assert line.total_price == Decimal("1000.00")
+    assert line.vat_rate == Decimal("0.00")
 
     assert len(invoice.recaps) == 1
     recap = invoice.recaps[0]
@@ -126,16 +126,16 @@ def test_parse_maps_the_real_fixture_into_a_complete_parsed_invoice() -> None:
     assert invoice.social_security_pension_fund == []
 
     # The due date comes straight from the document, for every instalment.
-    assert len(invoice.termini_payment) == 1
-    termini = invoice.termini_payment[0]
-    assert termini.payment_terms == "TP02"
-    assert len(termini.rate) == 1
-    rata = termini.rate[0]
-    assert rata.due_date.isoformat() == "2026-04-14"
-    assert rata.due_date_origin == "document"
-    assert rata.amount == Decimal("1000.00")
-    assert rata.payment_method == "MP05"
-    assert rata.iban == "IT60X0542811101000000123456"
+    assert len(invoice.payment_terms) == 1
+    payment_block = invoice.payment_terms[0]
+    assert payment_block.payment_terms == "TP02"
+    assert len(payment_block.rate) == 1
+    installment = payment_block.rate[0]
+    assert installment.due_date.isoformat() == "2026-04-14"
+    assert installment.due_date_origin == "document"
+    assert installment.amount == Decimal("1000.00")
+    assert installment.payment_method == "MP05"
+    assert installment.iban == "IT60X0542811101000000123456"
 
     assert invoice.transmission.send_sequential
 
@@ -197,7 +197,7 @@ _DEFAULT_RECAP = (
     "<DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA>"
     "<ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo>"
 )
-_DEFAULT_RIGA = (
+_DEFAULT_LINE = (
     "<DettaglioLinee><Descrizione>Consulenza</Descrizione>"
     "<PrezzoUnitario>100.00</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
     "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
@@ -212,10 +212,10 @@ _DEFAULT_PAYMENT = (
 
 def _invoice_xml(
     *,
-    buyer_identificativi: str = _DEFAULT_BUYER_ID,
+    buyer_identifiers: str = _DEFAULT_BUYER_ID,
     sdi_document_type: str = "TD01",
     amount_total_document: str | None = "122.00",
-    lines: str = _DEFAULT_RIGA,
+    lines: str = _DEFAULT_LINE,
     recaps: str = _DEFAULT_RECAP,
     data_stamp_duty: str = "",
     data_pension_fund: str = "",
@@ -249,7 +249,7 @@ def _invoice_xml(
     </CedentePrestatore>
     <CessionarioCommittente>
       <DatiAnagrafici>
-        {buyer_identificativi}
+        {buyer_identifiers}
         <Anagrafica><Denominazione>Cliente Test S.p.A.</Denominazione></Anagrafica>
       </DatiAnagrafici>
       <Sede><Indirizzo>Via Cliente 2</Indirizzo><CAP>00200</CAP><Comune>Milano</Comune></Sede>
@@ -285,14 +285,14 @@ def test_the_common_case_to_company_customer_identified_by_id_tax_vat() -> None:
 
 
 def test_an_individual_customer_identified_only_by_tax_code() -> None:
-    xml = _invoice_xml(buyer_identificativi="<CodiceFiscale>RSSMRA80A01H501U</CodiceFiscale>")
+    xml = _invoice_xml(buyer_identifiers="<CodiceFiscale>RSSMRA80A01H501U</CodiceFiscale>")
     [invoice] = parse(xml)
     assert invoice.customer.vat_number is None
     assert invoice.customer.tax_code == "RSSMRA80A01H501U"
 
 
 def test_to_customer_with_neither_id_tax_vat_nor_tax_code_is_rejected() -> None:
-    xml = _invoice_xml(buyer_identificativi="")
+    xml = _invoice_xml(buyer_identifiers="")
     with pytest.raises(InvoicePaFormatError, match="neither IdFiscaleIVA nor CodiceFiscale"):
         parse(xml)
 
@@ -309,7 +309,7 @@ def test_to_document_missing_amount_total_document_is_rejected() -> None:
         parse(xml)
 
 
-def test_to_document_with_no_detail_linee_is_rejected_rather_than_producing_no_lines() -> None:
+def test_to_document_with_no_detail_lines_is_rejected_rather_than_producing_no_lines() -> None:
     with pytest.raises(InvoicePaFormatError, match="DettaglioLinee"):
         parse(_invoice_xml(lines=""))
 
@@ -337,7 +337,7 @@ def test_a_non_iso_issue_date_is_rejected_as_fatturapa_format_error_not_a_bare_v
         parse(xml.encode("utf-8"))
 
 
-def test_to_not_integer_days_termini_payment_is_rejected_as_fatturapa_format_error() -> None:
+def test_to_not_integer_days_payment_terms_is_rejected_as_fatturapa_format_error() -> None:
     xml = _invoice_xml(
         data_payment=(
             "<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento>"
@@ -359,17 +359,17 @@ def test_a_malformed_decimal_is_rejected_as_fatturapa_format_error(malformed: st
     """`Decimal()` accepts `NaN`, an exponent form, underscores and non-ASCII digits;
     `1E999999999` then raises `InvalidOperation` out of `quantize`, a bare 500 for a
     caller that only handles `InvoicePaFormatError`. The lexical form is checked first."""
-    riga = (
+    line_xml = (
         "<DettaglioLinee><Descrizione>Consulenza</Descrizione>"
         f"<PrezzoUnitario>{malformed}</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
         "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
     )
     with pytest.raises(InvoicePaFormatError):
-        parse(_invoice_xml(lines=riga))
+        parse(_invoice_xml(lines=line_xml))
 
 
 @pytest.mark.parametrize("malformed", ["1_0", "\u0663\u0660", "1E2", "99999999999"])
-def test_to_malformed_days_termini_payment_is_rejected_as_fatturapa_format_error(
+def test_to_malformed_days_payment_terms_is_rejected_as_fatturapa_format_error(
     malformed: str,
 ) -> None:
     xml = _invoice_xml(
@@ -408,10 +408,10 @@ def test_an_instalment_expressed_as_relative_terms_computes_a_due_date() -> None
         )
     )
     [invoice] = parse(xml)
-    [termini] = invoice.termini_payment
-    [rata] = termini.rate
-    assert rata.due_date.isoformat() == "2026-04-14"
-    assert rata.due_date_origin == "calculated"
+    [payment_block] = invoice.payment_terms
+    [installment] = payment_block.rate
+    assert installment.due_date.isoformat() == "2026-04-14"
+    assert installment.due_date_origin == "calculated"
 
 
 def test_every_payment_terms_block_keeps_its_own_condition_code_and_instalments() -> None:
@@ -428,8 +428,8 @@ def test_every_payment_terms_block_keeps_its_own_condition_code_and_instalments(
         )
     )
     [invoice] = parse(xml)
-    assert [t.payment_terms for t in invoice.termini_payment] == ["TP01", "TP02"]
-    assert [t.rate[0].payment_method for t in invoice.termini_payment] == ["MP05", "MP08"]
+    assert [t.payment_terms for t in invoice.payment_terms] == ["TP01", "TP02"]
+    assert [t.rate[0].payment_method for t in invoice.payment_terms] == ["MP05", "MP08"]
 
 
 def test_stamp_duty_and_social_charge_are_absent_not_defaulted_when_the_document_carries_none() -> (
@@ -477,12 +477,12 @@ def test_taxable_amount_and_vat_amount_sum_every_tax_summary_block_for_to_mixed_
 
 
 def test_quantity_defaults_to_one_when_the_document_omits_it() -> None:
-    riga = (
+    line_xml = (
         "<DettaglioLinee><Descrizione>Consulenza a corpo</Descrizione>"
         "<PrezzoUnitario>100.00</PrezzoUnitario><PrezzoTotale>100.00</PrezzoTotale>"
         "<AliquotaIVA>22.00</AliquotaIVA></DettaglioLinee>"
     )
-    [invoice] = parse(_invoice_xml(lines=riga))
+    [invoice] = parse(_invoice_xml(lines=line_xml))
     assert invoice.lines[0].quantity == Decimal("1")
 
 

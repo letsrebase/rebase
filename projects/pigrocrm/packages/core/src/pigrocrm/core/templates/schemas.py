@@ -36,7 +36,7 @@ TemplateType = Literal[
     "payment_reminder",
 ]
 
-# Mirrors `Template.nome`'s column width (models.py). Without this an over-length
+# Mirrors `Template.name`'s column width (models.py). Without this an over-length
 # value reaches Postgres and raises sqlalchemy.exc.DataError -- not a subclass of
 # IntegrityError, so the service's `except IntegrityError` around the unique-name
 # constraint would not catch it.
@@ -55,7 +55,7 @@ VARIABLE_LABEL_MAX_LENGTH = 120
 class TemplateVariable(BaseModel):
     """One entry of `declared_variables`: a variable the compilation form asks the
     user to fill in before rendering (spec 4.3) -- declared, not deduced. Shaped to
-    match `templates.renderer.DeclaredVariable` field-for-field (`nome`, `label`,
+    match `templates.renderer.DeclaredVariable` field-for-field (`name`, `label`,
     `type`, `required`), which is what `TemplateService.preview` builds from this
     on its way into `render_template`; `options` is the one addition, carrying a
     `select`/`multiselect` variable's own choices for the form to render, the same
@@ -152,10 +152,10 @@ class TemplateDescription(BaseModel):
     # declared_paths's `root`), each as a list of segments: describe answers "what
     # must the caller supply", and a caller supplies root-level values, never a
     # loop-relative one -- `{{nome}}` inside an `#each righe` body describes the
-    # shape of each element of `lines`, not something provided directly. That split
+    # shape of each element of `righe`, not something provided directly. That split
     # belongs to `declared_paths` and stays there; this field never mixes the two
     # back together. A superset of `variables`'s own names, since it also includes
-    # context paths like `customer.legal_name` or `emittente.vat_number` that a
+    # context paths like `cliente.ragione_sociale` or `emittente.partita_iva` that a
     # caller must supply even though no compilation-form field exists for them.
     used_journeys: list[list[str]]
     # Declared (in `variables`) but never referenced by any root-level path: a

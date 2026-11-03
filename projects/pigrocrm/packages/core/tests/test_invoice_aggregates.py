@@ -23,7 +23,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
-from orologio import TODAY_IN_ITALY, TODAY_OF_PROCESSO, congela
+from frozen_clock import TODAY_IN_ITALY, TODAY_OF_PROCESS, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -232,8 +232,8 @@ def test_overdue_is_measured_against_the_emitters_day(
 
     Three implementations, three different totals, one assertion.
     """
-    congela(monkeypatch)
-    _invoice(db_session, customer, total="1220.00", due_date=TODAY_OF_PROCESSO)
+    freeze(monkeypatch)
+    _invoice(db_session, customer, total="1220.00", due_date=TODAY_OF_PROCESS)
     _invoice(db_session, customer, total="610.00", due_date=TODAY_IN_ITALY)
 
     repo = InvoiceRepository(db_session)
@@ -244,7 +244,7 @@ def test_overdue_is_measured_against_the_emitters_day(
 # --- counts -------------------------------------------------------------------------
 
 
-def test_count_emesse_in_periodo_counts_by_data_emissione(
+def test_count_issued_in_period_counts_by_issue_date(
     db_session: Session, customer: Customer
 ) -> None:
     _invoice(db_session, customer, issue_date=date(2026, 3, 10))
@@ -284,9 +284,9 @@ def _seeded_stages(db_session: Session) -> dict[str, UUID]:
     return {s.code: s.id for s in service.list() if s.code is not None}
 
 
-def _deal(db_session: Session, customer: Customer, nome: str, stage_id: UUID) -> Deal:
+def _deal(db_session: Session, customer: Customer, name: str, stage_id: UUID) -> Deal:
     deal = Deal(
-        nome=nome,
+        name=name,
         customer_id=customer.id,
         pipeline_stage_id=stage_id,
         probability=50,
@@ -483,13 +483,13 @@ def test_unpaid_for_customer_honours_its_limit(db_session: Session, customer: Cu
 def test_the_week_reads_split_issued_collected_and_due(
     db_session: Session, customer: Customer
 ) -> None:
-    """The four lists and the sum §3.2 adds for the weekly report's «Da incassare»,
-    «Emesse questa settimana», «Incassate questa settimana» and «in scadenza nei prossimi
-    sette giorni» sections (§3.1).
+    """The four lists and the sum §3.2 adds for the weekly report's "to collect",
+    "issued this week", "collected this week" and "due in the next
+    seven days" sections (§3.1).
 
     Each read is attributed to its own date -- `issue_date`, `payment_date`,
     `due_date` -- not to when the row was written, and none of the five is a fourth
-    definition of "issued" or "receivable": the two `list_*_in_periodo` and the sum share
+    definition of "issued" or "receivable": the two `list_*_in_period` and the count share
     `_issued_filter()` with `count_issued_in_period`, and `list_overdue` and
     `list_in_due_date` share `_receivable_filter()` with `sum_unpaid`, exactly as
     this file's other tests require.

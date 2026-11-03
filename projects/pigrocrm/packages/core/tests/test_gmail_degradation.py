@@ -413,7 +413,7 @@ def test_health_on_an_installation_with_no_account_is_empty_not_an_error(
 ) -> None:
     """An installation that never connected Gmail has nothing to say about Gmail. A
     banner there would be an error message for a feature nobody switched on."""
-    user = User(email="solo@example.it", nome="Solo", password_hash="x", role="admin", active=True)
+    user = User(email="solo@example.it", name="Solo", password_hash="x", role="admin", active=True)
     db_session.add(user)
     db_session.flush()
     health = _service(db_session).health(Actor(id=user.id, type="user", role="admin"))

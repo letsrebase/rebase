@@ -105,14 +105,14 @@ def number_complete(year: int, number: int) -> str:
     return f"{year}/{number}"
 
 
-def proforma_reference(year: int, sequenza: int) -> str:
+def proforma_reference(year: int, sequence: int) -> str:
     """`PROV-{year}-{sequenza:04d}`.
 
     The non-numeric prefix is load-bearing: no fiscal-number pattern can accept it, so
     a proforma cannot be read as an invoice by any regex, in this codebase or in a
     spreadsheet somebody builds later.
     """
-    return f"PROV-{year}-{sequenza:04d}"
+    return f"PROV-{year}-{sequence:04d}"
 
 
 __all__ = [

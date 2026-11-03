@@ -84,9 +84,9 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         session.add(customer)
         session.flush()
 
-        def deal(nome: str, stage: str, **extra: object) -> Deal:
+        def deal(name: str, stage: str, **extra: object) -> Deal:
             row = Deal(
-                nome=f"{_PREFIX} {nome}",
+                name=f"{_PREFIX} {name}",
                 customer_id=customer.id,
                 pipeline_stage_id=stages[stage].id,
                 expected_value=Decimal("1000.00"),
@@ -109,11 +109,11 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         lost = deal("lost", "lost", closed_at=today_local())
         session.flush()
 
-        def document(nome: str, *, type: str = "offer", **extra: object) -> None:
+        def document(name: str, *, type: str = "offer", **extra: object) -> None:
             session.add(
                 Document(
                     type=type,
-                    title=f"{_PREFIX} {nome}",
+                    title=f"{_PREFIX} {name}",
                     status_since=today_local(),
                     current_version=1,
                     custom_fields={},
@@ -157,7 +157,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     finally:
         with factory() as session:
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage))
             session.commit()
@@ -206,12 +206,12 @@ def test_the_open_deals_card_excludes_the_soft_deleted_deal_on_both_sides(
         page = DealService(session).list(
             DealListQuery(stage_id=seeded.stage_ids["lead"], limit=_ALL), READONLY
         )
-    nomi = {item.nome for item in page.items}
-    assert f"{_PREFIX} aperto cancellato" not in nomi
-    assert card.number == len(nomi)
+    names = {item.name for item in page.items}
+    assert f"{_PREFIX} aperto cancellato" not in names
+    assert card.number == len(names)
 
 
-# -- card: offerte in attesa -> /app/documents?tipo=offerta&stato=inviata ---------
+# -- card: pending offers -> /app/documents?type=offer&status=sent --------------
 
 
 def test_the_pending_offers_card_equals_its_document_list(seeded: Seeded) -> None:
@@ -242,7 +242,7 @@ def test_the_pending_offers_list_drops_the_row_that_differs_only_in_type_or_stat
     assert titles == {f"{_PREFIX} inviata {index}" for index in range(3)}
 
 
-# -- card: offerta accettata, deal non vinto -> ?solo_deal_non_vinto=true ---------
+# -- card: accepted offer, deal not won -> ?unwon_only=true ----------------------
 
 
 def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> None:

@@ -36,7 +36,7 @@ class LegalEntityFields(BaseModel):
     carries since REB-622, and the body `LegalEntityCreate` extends, since a row being
     created has no version to have been built on.
 
-    `nome` is optional on purpose: a space with one legal entity never typed one, and the
+    `name` is optional on purpose: a space with one legal entity never typed one, and the
     service derives it from `legal_name` (cut to the column width) when it is
     missing, which is also what the migration did for the row every space already had.
 

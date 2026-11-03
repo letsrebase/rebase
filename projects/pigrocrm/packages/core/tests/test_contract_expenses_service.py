@@ -43,7 +43,7 @@ def _contract(db_session: Session, *, expense_policy: dict[str, object] | None =
 
 
 def _category(db_session: Session, *, archived: bool = False) -> CostCategory:
-    category = CostCategory(nome=f"Categoria {uuid4()}", position=0, archived=archived)
+    category = CostCategory(name=f"Categoria {uuid4()}", position=0, archived=archived)
     db_session.add(category)
     db_session.flush()
     return category
@@ -59,7 +59,7 @@ def _document(db_session: Session, contract: Contract) -> Document:
 def _create_data(category_id, **overrides: object) -> ContractExpenseCreate:
     payload: dict[str, object] = {
         "category_id": category_id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "amount": Decimal("100.00"),
         "description": "Biglietto treno",
     }
@@ -87,7 +87,7 @@ def test_create_reports_flagged_not_reimbursable_without_failing_the_write(
 ) -> None:
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category = _category(db_session)
     expense = ContractExpenseService(db_session).create(
@@ -158,7 +158,7 @@ def test_update_recomputes_reimbursable_when_pre_authorized_changes(
 ) -> None:
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category = _category(db_session)
     service = ContractExpenseService(db_session)

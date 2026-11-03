@@ -21,7 +21,7 @@ SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
 def _user(session: Session, email: str = "ada@x.it") -> UserService:
     service = UserService(session)
     service.create(
-        UserCreate(email=email, password="lunghissima1", nome="Ada", role="admin"),
+        UserCreate(email=email, password="lunghissima1", name="Ada", role="admin"),
         Actor.system(),
     )
     return service
@@ -91,7 +91,7 @@ def test_an_expired_or_unknown_or_inactive_link_answers_none(db_session: Session
     # REB-292: Ada is the space's only admin, and even the system actor may not
     # take the last one. A survivor first; this test is about the link, not the guard.
     service.create(
-        UserCreate(email="superstite@x.it", password=None, nome="S", role="admin"),
+        UserCreate(email="superstite@x.it", password=None, name="S", role="admin"),
         Actor.system(),
     )
     user = UserRepository(db_session).get_by_email("ada@x.it")

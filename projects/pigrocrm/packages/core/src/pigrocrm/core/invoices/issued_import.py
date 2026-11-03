@@ -326,19 +326,19 @@ class IssuedInvoiceImporter:
         )
 
     def _add_lines(self, invoice: Invoice, data: InvoiceImport) -> None:
-        for index, riga in enumerate(data.lines, start=1):
+        for index, line in enumerate(data.lines, start=1):
             self.ctx.repo.add_line(
                 InvoiceLine(
                     invoice_id=invoice.id,
                     line_number=index,
-                    description=riga.description,
-                    quantity=riga.quantity,
-                    unit_of_measure=riga.unit_of_measure,
-                    unit_price=riga.unit_price,
-                    total_price=riga.total_price,
-                    vat_rate=riga.vat_rate,
-                    vat_nature=riga.vat_nature,
-                    legal_reference=riga.legal_reference,
+                    description=line.description,
+                    quantity=line.quantity,
+                    unit_of_measure=line.unit_of_measure,
+                    unit_price=line.unit_price,
+                    total_price=line.total_price,
+                    vat_rate=line.vat_rate,
+                    vat_nature=line.vat_nature,
+                    legal_reference=line.legal_reference,
                 )
             )
 

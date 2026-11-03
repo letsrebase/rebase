@@ -10,8 +10,8 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from frozen_clock import freeze_today
 from lxml import etree
-from orologio import fissa_today
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -52,16 +52,16 @@ TODAY = today_local()
 
 @pytest.fixture(autouse=True)
 def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
-    fissa_today(monkeypatch, TODAY)
+    freeze_today(monkeypatch, TODAY)
 
 
 # The other end of the legal issue window. `issue()` refuses a `issue_date` after
-# today *and* one before 1 January, so `CAPODANNO` and `TODAY` are the only pair of dates
+# today *and* one before 1 January, so `NEW_YEARS_DAY` and `TODAY` are the only pair of dates
 # guaranteed to be accepted whatever day the suite runs on. The obvious "some date in
 # this year" -- `date(TODAY.year, 6, 1)`, which these tests used to spell -- is in the
 # future from 1 January to 31 May and is refused by the *other* limit, so writing it that
 # way only moves the annual failure from one January to five months of winter.
-CAPODANNO = date(TODAY.year, 1, 1)
+NEW_YEARS_DAY = date(TODAY.year, 1, 1)
 # On 1 January those two are the same date: the register is one day old and the whole
 # legal window is a single day, so there is no *pair* of dates for a rule about ordering
 # between them to be about. The two tests that need two are skipped on that one day
@@ -69,7 +69,7 @@ CAPODANNO = date(TODAY.year, 1, 1)
 # the closed-year check, which reports the same `field`, so the assertions below would
 # still pass while proving nothing at all.
 DUE_DATE_LEGAL = pytest.mark.skipif(
-    TODAY == CAPODANNO,
+    TODAY == NEW_YEARS_DAY,
     reason="il 1 gennaio l'unica data di emissione ammessa e' quella di oggi",
 )
 
@@ -150,7 +150,7 @@ def test_the_counter_row_is_created_on_first_use_and_then_incremented(
     service.issue(_draft(service, customer_id), InvoiceIssue(), ADMIN)
     service.issue(_draft(service, customer_id), InvoiceIssue(), ADMIN)
     stored = db_session.execute(
-        text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
+        text("SELECT last_number FROM invoice_counters WHERE year = :year"),
         {"year": TODAY.year},
     ).scalar_one()
     assert stored == 2
@@ -202,9 +202,9 @@ def test_back_dating_inside_the_current_year_is_allowed(
     service: InvoiceService, db_session: Session
 ) -> None:
     invoice = service.issue(
-        _draft(service, _customer(db_session)), InvoiceIssue(issue_date=CAPODANNO), ADMIN
+        _draft(service, _customer(db_session)), InvoiceIssue(issue_date=NEW_YEARS_DAY), ADMIN
     )
-    assert invoice.issue_date == CAPODANNO
+    assert invoice.issue_date == NEW_YEARS_DAY
     assert invoice.year == TODAY.year
 
 
@@ -243,11 +243,11 @@ def test_the_register_must_stay_chronologically_monotonic(
     with pytest.raises(ValidationFailed) as caught:
         service.issue(
             _draft(service, customer_id),
-            InvoiceIssue(issue_date=CAPODANNO),
+            InvoiceIssue(issue_date=NEW_YEARS_DAY),
             ADMIN,
         )
     assert caught.value.details["field"] == "issue_date"
-    # The message, not only the field: `CAPODANNO` is a legal date on its own, so the
+    # The message, not only the field: `NEW_YEARS_DAY` is a legal date on its own, so the
     # only refusal it can draw is this one. Asserting the field alone would also accept
     # the closed-year refusal, which is what a back-date across 31 December would raise.
     assert "cronologicamente monotono" in caught.value.message
@@ -257,7 +257,7 @@ def test_the_same_date_as_the_previous_invoice_is_allowed(
     service: InvoiceService, db_session: Session
 ) -> None:
     customer_id = _customer(db_session)
-    same = CAPODANNO
+    same = NEW_YEARS_DAY
     service.issue(_draft(service, customer_id), InvoiceIssue(issue_date=same), ADMIN)
     assert (
         service.issue(_draft(service, customer_id), InvoiceIssue(issue_date=same), ADMIN).number
@@ -290,8 +290,8 @@ def test_the_due_date_follows_the_customer_terms(
 def test_a_due_date_written_on_the_draft_wins_over_the_terms(
     service: InvoiceService, db_session: Session
 ) -> None:
-    """A person who typed a date meant it. On a proforma it travels to the fattura born
-    from it; on a draft fattura it stays on the row. Cleared, the terms decide again."""
+    """A person who typed a date meant it. On a proforma it travels to the invoice born
+    from it; on a draft invoice it stays on the row. Cleared, the terms decide again."""
     emisfera = _customer(db_session, payment_days=30, payment_end_of_month=True)
     proforma = service.create(
         InvoiceCreate(
@@ -370,14 +370,14 @@ def test_to_customer_with_neither_sdi_nor_certified_email_is_refused_before_the_
     # And nothing was consumed: the counter row does not even exist yet.
     assert (
         db_session.execute(
-            text("SELECT count(*) FROM invoice_counters WHERE anno = :anno"),
+            text("SELECT count(*) FROM invoice_counters WHERE year = :year"),
             {"year": TODAY.year},
         ).scalar_one()
         == 1
     )
     assert (
         db_session.execute(
-            text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
+            text("SELECT last_number FROM invoice_counters WHERE year = :year"),
             {"year": TODAY.year},
         ).scalar_one()
         == 0
@@ -417,7 +417,7 @@ def test_a_foreign_customer_is_issued_rather_than_refused_by_name(
     issued = service.issue(_draft(service, customer_id), InvoiceIssue(), ADMIN)
 
     assert issued.status == "issued"
-    assert issued.number is not None, "una fattura estera consuma un numero come le altre"
+    assert issued.number is not None, "a foreign invoice consumes a number like any other"
 
 
 def test_a_draft_whose_customer_changed_country_is_refused_before_the_number_is_spent(
@@ -444,7 +444,7 @@ def test_a_draft_whose_customer_changed_country_is_refused_before_the_number_is_
     assert "sostituisci le righe" in str(caught.value)
     assert (
         db_session.execute(
-            text("SELECT count(*) FROM invoices WHERE numero IS NOT NULL AND anno = :anno"),
+            text("SELECT count(*) FROM invoices WHERE number IS NOT NULL AND year = :year"),
             {"year": TODAY.year},
         ).scalar_one()
         == 0
@@ -457,8 +457,8 @@ def test_a_draft_whose_customer_changed_country_is_refused_before_the_number_is_
     )
     issued = service.issue(invoice_id, InvoiceIssue(), ADMIN)
     assert issued.status == "issued"
-    (riga,) = service.lines(issued.id, ADMIN)
-    assert riga.vat_nature == "N2.1"
+    (line,) = service.lines(issued.id, ADMIN)
+    assert line.vat_nature == "N2.1"
 
 
 def test_issuing_requires_admin_not_merely_write(
@@ -497,7 +497,7 @@ def test_a_customer_who_moves_does_not_rewrite_an_issued_invoice(
     invoice_id = _draft(service, customer_id)
     service.issue(invoice_id, InvoiceIssue(), ADMIN)
     db_session.execute(
-        text("UPDATE customers SET comune = 'Torino' WHERE id = :id"), {"id": customer_id}
+        text("UPDATE customers SET city = 'Torino' WHERE id = :id"), {"id": customer_id}
     )
     stored = db_session.execute(
         text("SELECT snapshot FROM invoices WHERE id = :id"), {"id": invoice_id}
@@ -558,7 +558,7 @@ def _nothing_consumed(db_session: Session) -> None:
     """The counter row exists, because the lock creates it, and it still says zero."""
     assert (
         db_session.execute(
-            text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
+            text("SELECT last_number FROM invoice_counters WHERE year = :year"),
             {"year": TODAY.year},
         ).scalar_one()
         == 0
@@ -713,7 +713,7 @@ def test_to_invoice_issued_from_to_proforma_inherits_the_period_and_takes_its_ow
 ) -> None:
     """The period is a fact about the work and travels with it; the date is a fact
     about the register and is decided at issue (spec 6.2). A proforma dated last year
-    becomes a fattura dated today, for that year's August work."""
+    becomes a invoice dated today, for that year's August work."""
     customer_id = _customer(db_session)
     proforma = service.create(
         InvoiceCreate(
@@ -842,7 +842,7 @@ def test_the_purchase_order_is_frozen_at_issue_like_the_memo(
 def test_to_invoice_issued_from_to_proforma_answers_the_proforma_s_order(
     service: InvoiceService, db_session: Session
 ) -> None:
-    """The order is the customer's and the fattura answers it, so it travels from the
+    """The order is the customer's and the invoice answers it, so it travels from the
     proforma like the period does; the consumed proforma is frozen with it."""
     customer_id = _customer(db_session)
     proforma = service.create(
@@ -885,7 +885,7 @@ def test_an_order_number_the_xml_cannot_carry_is_refused_before_the_number_is_sp
     customer_id = _customer(db_session)
     draft_id = _draft(service, customer_id)
     db_session.execute(
-        text("UPDATE invoices SET ordine_numero = 'Ordine citt\u00e0 5' WHERE id = :id"),
+        text("UPDATE invoices SET purchase_order_number = 'Ordine citt\u00e0 5' WHERE id = :id"),
         {"id": draft_id},
     )
     db_session.expire_all()

@@ -296,11 +296,11 @@ def members(db_session: Session) -> dict[str, User]:
     """Two members of the space, one of them deactivated afterwards by the test that
     needs it: the one who changes things in a browser and the one whose agent does."""
     made: dict[str, User] = {}
-    for key, nome in (("web", "Giulia Bianchi"), ("mcp", "Marco Verdi")):
+    for key, name in (("web", "Giulia Bianchi"), ("mcp", "Marco Verdi")):
         user = User(
             email=f"{key}-{uuid4()}@example.test",
             password_hash="x",
-            nome=nome,
+            name=name,
             role="admin",
         )
         db_session.add(user)
@@ -352,7 +352,7 @@ def _customer_notes(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tup
 
 def _person(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
     service = PersonService(session)
-    person = service.create(PersonCreate(nome="Anna"), actor)
+    person = service.create(PersonCreate(first_name="Anna"), actor)
     service.update(person.id, PersonUpdate(role="CTO"), actor)
     service.soft_delete(person.id, actor)
     service.restore(person.id, actor)
@@ -363,11 +363,11 @@ def _deal(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
     service = DealService(session)
     deal = service.create(
         DealCreate(
-            nome="Progetto", customer_id=ctx["seed_customer"], pipeline_stage_id=ctx["open"]
+            name="Progetto", customer_id=ctx["seed_customer"], pipeline_stage_id=ctx["open"]
         ),
         actor,
     )
-    service.update(deal.id, DealUpdate(nome="Progetto bis"), actor)
+    service.update(deal.id, DealUpdate(name="Progetto bis"), actor)
     service.move_stage(deal.id, ctx["won"], actor)
     service.soft_delete(deal.id, actor)
     service.restore(deal.id, actor)
@@ -383,7 +383,7 @@ def _task(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
     service.cancel(created.id, actor)
     service.soft_delete(created.id, actor)
     service.restore(created.id, actor)
-    return "attivita", created.id
+    return "task", created.id
 
 
 def _time_entry(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UUID]:
@@ -392,7 +392,7 @@ def _time_entry(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[s
         TimeEntryCreate(
             deal_id=ctx["seed_deal"],
             user_id=ctx["worker"],
-            data=date(2026, 3, 10),
+            date=date(2026, 3, 10),
             hours=Decimal("2.00"),
             description="Analisi",
             applied_rate=Decimal("80.000000"),
@@ -411,7 +411,7 @@ def _cost(session: Session, actor: Actor, ctx: dict[str, UUID]) -> tuple[str, UU
         CostCreate(
             deal_id=ctx["seed_deal"],
             category_id=ctx["category"],
-            data=date(2026, 3, 10),
+            date=date(2026, 3, 10),
             amount=Decimal("12.50"),
             description="Licenza",
         ),
@@ -453,7 +453,7 @@ SCENARIOS: dict[str, tuple[Scenario, set[str]]] = {
         _deal,
         {"created", "updated", "stage_changed", "deleted", "restored"},
     ),
-    "attivita through every state": (
+    "task through every state": (
         _task,
         {"created", "updated", "completed", "reopened", "cancelled", "archived", "restored"},
     ),

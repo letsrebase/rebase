@@ -42,11 +42,11 @@ def slack_client(fake: FakeSlack) -> SlackClient:
 
 
 def make_user(
-    session: Session, *, email: str | None = None, nome: str = "Mario Rossi", role: str = "admin"
+    session: Session, *, email: str | None = None, name: str = "Mario Rossi", role: str = "admin"
 ) -> User:
     user = User(
         email=email or f"user-{uuid4().hex[:8]}@example.it",
-        nome=nome,
+        name=name,
         password_hash="x",
         role=role,
         active=True,

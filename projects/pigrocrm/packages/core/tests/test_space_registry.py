@@ -44,7 +44,7 @@ def provisioned(settings: Settings) -> Iterator[str]:
     registry = ensure_tenants_database(settings)
     with session_factory(registry)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=SLUG, nome="Ada", email="ada@studio.it")
+            TenantSignup(slug=SLUG, name="Ada", email="ada@studio.it")
         )
     try:
         yield SLUG
@@ -168,7 +168,7 @@ def test_a_space_pool_is_small_and_the_least_recently_used_engine_is_disposed(
     registry_engine = ensure_tenants_database(settings)
     with session_factory(registry_engine)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=second, nome="Bea", email="bea@studio.it")
+            TenantSignup(slug=second, name="Bea", email="bea@studio.it")
         )
     registry = SpaceRegistry(settings, max_open_spaces=1)
     try:

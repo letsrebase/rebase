@@ -20,8 +20,8 @@ day-to-day record like a customer or a deal, so it follows the same rule here.
   already splits them (root vs. loop-relative). This is what makes an MCP
   `describe_template` tool worth calling at all: without the paths half, an agent
   would learn only about the handful of variables a human is meant to fill in and
-  have no way to know the template also needs, say, `customer.legal_name` or
-  `emittente.vat_number` supplied by whatever calls `preview`/renders the document.
+  have no way to know the template also needs, say, `cliente.ragione_sociale` or
+  `emittente.partita_iva` supplied by whatever calls `preview`/renders the document.
 - `preview` compiles a template's `body_markdown` against caller-supplied values
   and returns the compiled Markdown itself, as a plain `str` (not a PDF -- PDF
   rendering is `pigrocrm.core.render.pdf`, not built yet -- and not wrapped in a
@@ -66,15 +66,15 @@ def _conflicting_name(name: str) -> Conflict:
 
 # The default offer a space is born with (spec 2026-09-12 §6.5). Flat variables on
 # purpose: a declared variable is one field of the compilation form, so the body cannot
-# iterate a list the way `render/assets/template-offer.md` does with `offer.lines`.
-# `customer.*`, `emittente.*` and `today` come from `DocumentTemplating.template_scope`.
+# iterate a list the way `render/assets/template-offer.md` does with `offerta.righe`.
+# `cliente.*`, `emittente.*` and `oggi` come from `DocumentTemplating.template_scope`.
 OFFER_TEMPLATE_NAME = "Offerta"
 OFFER_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"name": "subject", "label": "Oggetto", "type": "text", "required": True},
+    {"name": "oggetto", "label": "Oggetto", "type": "text", "required": True},
     {"name": "ambito", "label": "Ambito e obiettivi", "type": "textarea", "required": True},
     {"name": "attivita", "label": "Attività", "type": "textarea", "required": True},
     {
-        "name": "fee",
+        "name": "compenso",
         "label": "Condizioni economiche",
         "type": "textarea",
         "required": True,
@@ -99,7 +99,7 @@ class TemplateService:
         # Fails fast, at save time, naming the offending template line -- rather
         # than at the first `preview`/render, which could be long after whoever
         # wrote the template has moved on. `parse_template` already raises
-        # `ValidationFailed(entity="template", field="corpo_markdown", ...)` itself
+        # `ValidationFailed(entity="template", field="body_markdown", ...)` itself
         # (parser.py's own ENTITY/FIELD constants), so there is nothing to catch or
         # re-wrap here.
         parse_template(data.body_markdown)
@@ -239,9 +239,9 @@ class TemplateService:
         return tuple(
             DeclaredVariable(
                 name=v["name"],
-                label=v["etichetta"],
-                type=v["tipo"],
-                required=v["obbligatoria"],
+                label=v["label"],
+                type=v["type"],
+                required=v["required"],
             )
             for v in template.declared_variables
         )

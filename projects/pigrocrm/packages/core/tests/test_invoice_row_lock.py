@@ -66,7 +66,7 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
     with factory() as probe:
         original = (
             probe.execute(
-                text(f"SELECT {', '.join(identity_columns)} FROM emitter_profile WHERE predefinita")
+                text(f"SELECT {', '.join(identity_columns)} FROM legal_entities WHERE is_default")
             )
             .mappings()
             .one()
@@ -127,12 +127,12 @@ def committed_draft(db_engine: Engine) -> Iterator[tuple[sessionmaker[Session], 
                 cleaner.execute(text("DELETE FROM invoices WHERE id = :id"), {"id": invoice_id})
             cleaner.execute(text("DELETE FROM invoice_counters"))
             cleaner.execute(text("DELETE FROM fiscal_profile"))
-            cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
+            cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
             cleaner.execute(
                 text(
-                    "UPDATE emitter_profile SET "
+                    "UPDATE legal_entities SET "
                     + ", ".join(f"{name} = :{name}" for name in identity_columns)
-                    + " WHERE predefinita"
+                    + " WHERE is_default"
                 ),
                 dict(original),
             )
@@ -208,7 +208,7 @@ def test_annul_and_mark_transmitted_racing_on_one_invoice_leave_exactly_one_winn
             try:
                 _service(session, tmp_path).mark_transmitted_externally(
                     invoice_id,
-                    InvoiceTransmitted(data=today_local()),
+                    InvoiceTransmitted(date=today_local()),
                     ADMIN,
                 )
             except Exception:
@@ -273,7 +273,7 @@ def test_two_xml_exports_racing_on_one_invoice_file_one_document(
             stored = reader.get(Invoice, invoice_id)
             assert stored is not None
             documents = (
-                reader.execute(text("SELECT id FROM documents WHERE tipo = 'fattura_xml'"))
+                reader.execute(text("SELECT id FROM documents WHERE type = 'invoice_xml'"))
                 .scalars()
                 .all()
             )
@@ -289,14 +289,14 @@ def test_two_xml_exports_racing_on_one_invoice_file_one_document(
             cleaner.execute(
                 text(
                     "DELETE FROM activities WHERE entity_type = 'document' AND entity_id IN "
-                    "(SELECT id FROM documents WHERE tipo = 'fattura_xml')"
+                    "(SELECT id FROM documents WHERE type = 'invoice_xml')"
                 )
             )
             cleaner.execute(
                 text(
                     "DELETE FROM document_versions WHERE document_id IN "
-                    "(SELECT id FROM documents WHERE tipo = 'fattura_xml')"
+                    "(SELECT id FROM documents WHERE type = 'invoice_xml')"
                 )
             )
-            cleaner.execute(text("DELETE FROM documents WHERE tipo = 'fattura_xml'"))
+            cleaner.execute(text("DELETE FROM documents WHERE type = 'invoice_xml'"))
             cleaner.commit()

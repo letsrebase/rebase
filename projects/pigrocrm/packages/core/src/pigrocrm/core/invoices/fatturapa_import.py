@@ -500,7 +500,7 @@ def _map_body(header: etree._Element, body: etree._Element) -> ParsedInvoice:
             _map_pension_fund(pension_fund)
             for pension_fund in _children(document, "DatiCassaPrevidenziale")
         ],
-        termini_payment=[_map_payment(payment) for payment in _children(body, "DatiPagamento")],
+        payment_terms=[_map_payment(payment) for payment in _children(body, "DatiPagamento")],
         transmission=ParsedInvoiceTransmission(
             id_transmitter=_fiscal_id(id_transmitter, context="DatiTrasmissione.IdTrasmittente"),
             send_sequential=_required_text(

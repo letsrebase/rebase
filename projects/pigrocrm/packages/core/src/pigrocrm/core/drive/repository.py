@@ -61,7 +61,7 @@ class DriveRepository:
         return found[0] if found is not None else None
 
     def storage_holder(self) -> tuple[GoogleDriveAccount, str] | None:
-        """`storage_account`'s own row, with the admin's `nome` beside it -- what an
+        """`storage_account`'s own row, with the admin's `name` beside it -- what an
         admin's Drive page names as whose account holds the space's write folder
         (REB-562, `GoogleDriveAccountService.health`'s `space_storage`). The `users`
         join `storage_account` already makes to decide eligibility is the one that

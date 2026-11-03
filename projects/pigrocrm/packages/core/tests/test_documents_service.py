@@ -206,7 +206,7 @@ def test_list_filters_by_customer_and_by_deal(
     service: DocumentService, customer: Customer, db_session: Session
 ) -> None:
     stage = PipelineService(db_session).seed_defaults(ADMIN)[0]
-    deal = Deal(nome="D", customer_id=customer.id, pipeline_stage_id=stage.id)
+    deal = Deal(name="D", customer_id=customer.id, pipeline_stage_id=stage.id)
     db_session.add(deal)
     db_session.flush()
     service.create(DocumentCreate(customer_id=customer.id, type="document", title="C"), ADMIN)

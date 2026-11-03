@@ -28,7 +28,7 @@ READER = Actor(id=None, type="user", role="readonly")
 def _create(service, category_id, **overrides):
     payload = {
         "category_id": category_id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "amount": Decimal("120.00"),
         "description": "Licenza annuale",
     }
@@ -83,13 +83,13 @@ def test_a_write_into_a_closed_period_is_refused_both_ways(
 ) -> None:
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     service = CostService(db_session)
-    cost = _create(service, seeded_category_id, data=date(2026, 4, 5))
+    cost = _create(service, seeded_category_id, date=date(2026, 4, 5))
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=3), admin)
 
     with pytest.raises(Conflict):
-        _create(service, seeded_category_id, data=date(2026, 3, 5))
+        _create(service, seeded_category_id, date=date(2026, 3, 5))
     with pytest.raises(Conflict):
-        service.update(cost.id, CostUpdate(data=date(2026, 3, 5)), WRITER)
+        service.update(cost.id, CostUpdate(date=date(2026, 3, 5)), WRITER)
 
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=4), admin)
     with pytest.raises(Conflict):
@@ -129,8 +129,8 @@ def test_the_list_is_ordered_by_date_descending(
 ) -> None:
     service = CostService(db_session)
     for day in (5, 20, 12):
-        _create(service, seeded_category_id, data=date(2026, 3, day))
-    assert [c.data.day for c in service.list(CostListQuery(), READER).items] == [20, 12, 5]
+        _create(service, seeded_category_id, date=date(2026, 3, day))
+    assert [c.date.day for c in service.list(CostListQuery(), READER).items] == [20, 12, 5]
 
 
 def test_a_cursor_that_names_no_cost_is_refused_not_read_as_the_first_page(

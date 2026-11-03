@@ -30,6 +30,7 @@ from pigrocrm.core.legal_entities.assets import logo_file_in
 from pigrocrm.core.money import round_money
 from pigrocrm.core.render.pdf import ASSETS_DIR, logo_flags, render_pdf
 from pigrocrm.core.templates.renderer import render_template
+from pigrocrm.core.templates.scope import CUSTOMER_KEYS, LEGAL_ENTITY_KEYS, TAX_KEYS, italian_keys
 
 # One template for the fattura and the proforma, with the declaration under a
 # condition: two files that were meant to stay identical drifted once (ORB-102), and a
@@ -163,21 +164,21 @@ def address_display(party: dict[str, Any]) -> str:
     than printing them empty: the same defect in the domestic case.
     """
     country = (party.get("country") or "").strip().upper()
-    pezzi = [
-        pezzo
-        for pezzo in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
-        if pezzo
+    pieces = [
+        piece
+        for piece in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
+        if piece
     ]
     province = (party.get("province") or "").strip().upper()
     if country == "IT" and province:
-        pezzi.append(f"({province})")
+        pieces.append(f"({province})")
     if country:
-        pezzi.append(country)
+        pieces.append(country)
     address = (party.get("address") or "").strip()
-    resto = " ".join(pezzi)
-    if address and resto:
-        return f"{address}, {resto}"
-    return address or resto
+    rest = " ".join(pieces)
+    if address and rest:
+        return f"{address}, {rest}"
+    return address or rest
 
 
 def identifier_vat(party: dict[str, Any]) -> str:
@@ -219,39 +220,39 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
     legal_entity = snapshot.legal_entity.model_dump(mode="json")
     customer = snapshot.customer.model_dump(mode="json")
     tax = snapshot.tax.model_dump(mode="json")
-    code_recipient = (customer.get("codice_sdi") or "").strip() or (
-        CODE_RECIPIENT_FALLBACK if (customer.get("pec") or "").strip() else _EMPTY
+    code_recipient = (customer.get("sdi_code") or "").strip() or (
+        CODE_RECIPIENT_FALLBACK if (customer.get("certified_email") or "").strip() else _EMPTY
     )
     customer_address = address_display(customer)
     stamp_duty_declaration = stamp_duty_declaration_virtual(export.stamp_duty) or _EMPTY
     proforma = reference is not None
-    regime_code = (tax.get("codice_regime") or "").strip()
-    code_payment = (tax.get("modalita_pagamento") or "").strip()
+    regime_code = (tax.get("regime_code") or "").strip()
+    code_payment = (tax.get("payment_method") or "").strip()
     iban = (tax.get("iban") or "").strip()
     return {
         "emittente": {
-            **legal_entity,
+            **italian_keys(legal_entity, LEGAL_ENTITY_KEYS),
             "identificativo_iva": identifier_vat(legal_entity),
             "indirizzo_display": address_display(legal_entity),
         },
         "cliente": {
-            **customer,
+            **italian_keys(customer, CUSTOMER_KEYS),
             "codice_destinatario": code_recipient,
             "indirizzo_display": customer_address,
             # Two lines, bar-separated, as the register prints its Committente block.
             "riga_identita": _bars(
-                customer.get("ragione_sociale") or _EMPTY,
+                customer.get("legal_name") or _EMPTY,
                 _labelled("IVA", identifier_vat(customer)),
-                _labelled("CF", (customer.get("codice_fiscale") or "").strip()),
+                _labelled("CF", (customer.get("tax_code") or "").strip()),
             ),
             "riga_recapiti": _bars(
                 customer_address,
-                _labelled("PEC", (customer.get("pec") or "").strip()),
+                _labelled("PEC", (customer.get("certified_email") or "").strip()),
                 _labelled("Codice destinatario", code_recipient),
             ),
         },
         "fiscale": {
-            **tax,
+            **italian_keys(tax, TAX_KEYS),
             "regime_display": _bars_space(regime_code, Regimes.get(regime_code, _EMPTY)),
         },
         "pagamento": {
@@ -300,12 +301,12 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
         },
         "righe": [
             {
-                "numero_linea": str(riga.line_number),
-                "descrizione": riga.description,
-                "iva": format_vat(riga.vat_rate, riga.vat_nature),
-                "prezzo_totale": format_euro(riga.total_price),
+                "numero_linea": str(line.line_number),
+                "descrizione": line.description,
+                "iva": format_vat(line.vat_rate, line.vat_nature),
+                "prezzo_totale": format_euro(line.total_price),
             }
-            for riga in export.lines
+            for line in export.lines
         ],
     }
 
@@ -352,9 +353,9 @@ def _declaration_regime(export: InvoiceForExport) -> str:
     small and under the rule: a flat-rate regime invoice has to say why it carries no VAT.
     """
     distinct: list[str] = []
-    for riga in export.lines:
-        if riga.legal_reference and riga.legal_reference not in distinct:
-            distinct.append(riga.legal_reference)
+    for line in export.lines:
+        if line.legal_reference and line.legal_reference not in distinct:
+            distinct.append(line.legal_reference)
     if distinct:
         return " ".join(distinct)
     return export.snapshot.tax.legal_reference or _EMPTY

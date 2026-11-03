@@ -127,7 +127,7 @@ def test_parse_nests_blocks() -> None:
 def test_parse_rejects_an_unclosed_block_naming_the_line() -> None:
     with pytest.raises(ValidationFailed) as excinfo:
         parse_template("prima\n{{#if x}}mai chiuso\n")
-    assert excinfo.value.details["field"] == "corpo_markdown"
+    assert excinfo.value.details["field"] == "body_markdown"
     assert "riga 2" in excinfo.value.details["reason"]
     assert "#if" in excinfo.value.details["reason"]
 

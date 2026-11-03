@@ -122,7 +122,7 @@ def logo_flags(logo: str | None) -> dict[str, bool]:
 def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
     """The Typst page header, filled from the emitter profile. `logo` is the media file
     the job carries for this legal entity (`MEDIA_LOGO_PNG`, `MEDIA_LOGO_SVG`) or `None`,
-    which draws the `legal_name` in type where the image would be.
+    which draws the `ragione_sociale` in type where the image would be.
 
     Rendered through the same engine as the document body, so the issuer's own values
     get the same escaping -- an `@` in an email address is a Typst reference and would

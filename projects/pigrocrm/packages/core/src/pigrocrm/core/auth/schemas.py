@@ -31,7 +31,7 @@ NAME_MAX_LENGTH = 200
 
 
 class InvitationCreate(BaseModel):
-    """The body of `POST /api/users/invites` (spec 2026-09-17 §3). `nome` is optional:
+    """The body of `POST /api/users/invites` (spec 2026-09-17 §3). `name` is optional:
     the acceptance page asks for one when the invitation carried none, so an address
     the admin knows only as an address is invitable. `email` is an `EmailStr` and not
     a `SafeStr` here: like `UserCreate`'s, email-validator refuses a NUL byte (and

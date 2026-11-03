@@ -92,7 +92,7 @@ def test_the_term_is_refused_without_an_end_or_when_it_overlaps() -> None:
     assert backwards.value.field == "end"
 
 
-def test_fine_and_durata_together_are_refused() -> None:
+def test_end_and_duration_together_are_refused() -> None:
     import pydantic
 
     with pytest.raises(pydantic.ValidationError):

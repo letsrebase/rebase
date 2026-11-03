@@ -148,8 +148,8 @@ def build_recap(lines: Sequence[ComputedLine]) -> tuple[RecapGroup, ...]:
     they are stated here rather than discovered on the first rejected file.
     """
     grouped: dict[tuple[Decimal, str | None], list[ComputedLine]] = {}
-    for riga in lines:
-        grouped.setdefault((riga.vat_rate, riga.vat_nature), []).append(riga)
+    for line in lines:
+        grouped.setdefault((line.vat_rate, line.vat_nature), []).append(line)
 
     groups: list[RecapGroup] = []
     for (rate, vat_nature), members in sorted(

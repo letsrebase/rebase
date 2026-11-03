@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from orologio import TODAY_IN_ITALY, TODAY_OF_PROCESSO, congela
+from frozen_clock import TODAY_IN_ITALY, TODAY_OF_PROCESS, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -50,7 +50,7 @@ def _deal(
     expected_close_date: date | None = None,
 ) -> Deal:
     row = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stage_id,
         expected_value=Decimal(value) if value is not None else None,
@@ -112,7 +112,7 @@ def test_pipeline_summary_includes_the_closed_stages_last(
     not pipeline. The card that reads this then stopped at the last open stage and never
     said where the work ended up, which is the one thing a pipeline exists to answer --
     so since 2026-09-09 the closed stages are returned too, each carrying its
-    `stage_type` so the renderer can group them by that rather than by a `nome` the user
+    `stage_type` so the renderer can group them by that rather than by a `name` the user
     is free to rename. What they count is what sits in the stage *today*: there is no
     period filter in this query and never was, and the period question belongs to
     `closed_in_period` on the same card.
@@ -194,7 +194,7 @@ def test_stages_come_back_in_pipeline_order(
     fails both assertions.
     """
     db_session.add(
-        PipelineStage(nome="Ricontatto", position=-1, default_probability=5, type="open")
+        PipelineStage(name="Ricontatto", position=-1, default_probability=5, type="open")
     )
     db_session.flush()
 
@@ -397,7 +397,7 @@ def test_pending_offers_carries_the_age_in_days(
     only way this assertion says anything: against the real clock every candidate
     implementation agrees.
     """
-    congela(monkeypatch)
+    freeze(monkeypatch)
     _offer(db_session, customer, "Offerta ferma", status_since=date(2025, 12, 25))
 
     rows = DocumentRepository(db_session).pending_offers()
@@ -405,7 +405,7 @@ def test_pending_offers_carries_the_age_in_days(
     assert rows[0].title == "Offerta ferma"
     assert rows[0].status_since == date(2025, 12, 25)
     assert rows[0].days == (TODAY_IN_ITALY - date(2025, 12, 25)).days
-    assert rows[0].days != (TODAY_OF_PROCESSO - date(2025, 12, 25)).days
+    assert rows[0].days != (TODAY_OF_PROCESS - date(2025, 12, 25)).days
 
 
 def test_pending_offers_ignores_offers_in_any_other_state(

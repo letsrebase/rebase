@@ -108,7 +108,7 @@ def test_an_unconfigured_legal_entities_refuses_to_classify_at_all() -> None:
 
 
 def test_the_file_lands_on_the_legal_entity_whose_identifier_matches_among_several() -> None:
-    """REB-619, spec §1.5: a space with two aziende, the supplier names the second."""
+    """REB-619, spec §1.5: a space with two legal entities, the supplier names the second."""
     humancraft = _legal_entity(vat_number="01234567890", tax_code="HMCRFT00A01H501K")
     rebase = _legal_entity(legal_name="Rebase S.r.l.", vat_number="09876543210", tax_code=None)
     supplier = _party(vat_number="IT09876543210", tax_code=None)
@@ -235,22 +235,22 @@ def test_existing_by_number_finds_the_row_at_that_natural_key_and_nothing_else(
 def test_incoming_reports_incoming_skipped_whatever_the_register_holds() -> None:
     [invoice] = parse(_fixture(CONSULTING))
     legal_entity = _legal_entity(vat_number="09876543210", tax_code="RSSMRA80A01H501U")
-    outcome, azienda = classify_parsed_invoice(
+    outcome, matched = classify_parsed_invoice(
         invoice,
         [legal_entity],
         existing_for=lambda _a: Invoice(xml_hash_sha256="irrelevant, never reached"),
         content=b"irrelevant",
     )
-    assert (outcome, azienda) == ("incoming_skipped", None)
+    assert (outcome, matched) == ("incoming_skipped", None)
 
 
 def test_an_outgoing_invoice_not_on_record_is_ready() -> None:
     [invoice] = parse(_fixture(CONSULTING))
     legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
-    outcome, azienda = classify_parsed_invoice(
+    outcome, matched = classify_parsed_invoice(
         invoice, [legal_entity], existing_for=lambda _a: None, content=_fixture(CONSULTING)
     )
-    assert (outcome, azienda) == ("ready", legal_entity)
+    assert (outcome, matched) == ("ready", legal_entity)
 
 
 def test_an_outgoing_invoice_with_a_matching_stored_hash_is_already_present() -> None:
@@ -258,10 +258,10 @@ def test_an_outgoing_invoice_with_a_matching_stored_hash_is_already_present() ->
     legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
     content = _fixture(CONSULTING)
     existing = Invoice(xml_hash_sha256=_digest(content))
-    outcome, azienda = classify_parsed_invoice(
+    outcome, matched = classify_parsed_invoice(
         invoice, [legal_entity], existing_for=lambda _a: existing, content=content
     )
-    assert (outcome, azienda) == ("already_present", legal_entity)
+    assert (outcome, matched) == ("already_present", legal_entity)
 
 
 def test_an_outgoing_invoice_with_a_different_stored_hash_is_conflict() -> None:

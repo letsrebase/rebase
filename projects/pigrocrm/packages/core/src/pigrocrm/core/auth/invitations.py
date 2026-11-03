@@ -332,7 +332,7 @@ class InvitationService:
 
         The conditional `UPDATE` is what makes two racing clicks create exactly one
         user: both pass the reads, `UserService.create`'s own unique email index lets
-        one win, and this is the belt behind that brace. `nome` is required when the
+        one win, and this is the belt behind that brace. `name` is required when the
         invitation carried none; an empty effective name never reaches the column.
 
         Bound to the system actor's scope first (REB-634): this runs on a public route,

@@ -81,7 +81,7 @@ class Space:
         return {r.user_id: r.severity for r in evaluation.reminders if r.type == type_key}
 
     def user(self, role: str = "admin") -> User:
-        user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", role=role)
+        user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
         self.session.add(user)
         self.session.flush()
         return user
@@ -134,11 +134,11 @@ def _admin() -> Actor:
 @pytest.fixture
 def space(db_session: Session) -> Space:
     legal_entity = db_session.scalars(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).one()
     users = []
     for role in ("admin", "admin", "collaborator"):
-        user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", role=role)
+        user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
         db_session.add(user)
         users.append(user)
     db_session.flush()
@@ -230,7 +230,7 @@ def test_the_text_names_the_immediate_exit_ceiling_when_it_is_near(space: Space)
 def test_the_ceiling_is_one_reminder_by_legal_entity_and_belongs_to_to_flat_rate_one(
     space: Space,
 ) -> None:
-    other = LegalEntity(nome="Seconda", legal_name="Seconda Srl", active=True)
+    other = LegalEntity(name="Seconda", legal_name="Seconda Srl", active=True)
     space.session.add(other)
     space.session.flush()
     FiscalProfileService(space.session).upsert(
@@ -263,7 +263,7 @@ def test_to_foreign_to_missing_or_an_inactive_legal_entity_has_no_ceiling(space:
     space.session.flush()
     assert space.told("ceiling_approaching") != {}
 
-    inactive = LegalEntity(nome="Chiusa", legal_name="Chiusa Srl", active=False)
+    inactive = LegalEntity(name="Chiusa", legal_name="Chiusa Srl", active=False)
     space.session.add(inactive)
     space.session.flush()
     FiscalProfileService(space.session).upsert(
@@ -285,7 +285,7 @@ def test_to_foreign_to_missing_or_an_inactive_legal_entity_has_no_ceiling(space:
 def test_to_scoped_admin_is_told_only_of_the_legal_entities_their_scope_covers(
     space: Space,
 ) -> None:
-    other = LegalEntity(nome="Seconda", legal_name="Seconda Srl", active=True)
+    other = LegalEntity(name="Seconda", legal_name="Seconda Srl", active=True)
     space.session.add(other)
     space.session.flush()
     apply_scope(space.session, space.other_admin, [other.id])
@@ -571,7 +571,7 @@ def test_a_proposal_counts_its_days_in_the_installations_zone_not_in_utc(space: 
 
 
 def test_to_proposal_is_told_to_the_admins_who_see_its_contracts_legal_entity(space: Space) -> None:
-    other = LegalEntity(nome="Seconda", legal_name="Seconda Srl", active=True)
+    other = LegalEntity(name="Seconda", legal_name="Seconda Srl", active=True)
     space.session.add(other)
     space.session.flush()
     apply_scope(space.session, space.other_admin, [other.id])

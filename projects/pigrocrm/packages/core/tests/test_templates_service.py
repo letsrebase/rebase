@@ -22,11 +22,11 @@ READONLY = Actor(id=None, type="user", role="readonly")
 
 def _create(**overrides: object) -> TemplateCreate:
     payload: dict[str, object] = {
-        "nome": "Offerta Standard",
-        "tipo": "offerta",
-        "corpo_markdown": "Gentile {{cliente.ragione_sociale}}, offerta di {{importo}}.",
-        "variabili_dichiarate": [
-            {"nome": "importo", "etichetta": "Importo", "tipo": "currency", "obbligatoria": True}
+        "name": "Offerta Standard",
+        "type": "offer",
+        "body_markdown": "Gentile {{cliente.ragione_sociale}}, offerta di {{importo}}.",
+        "declared_variables": [
+            {"name": "importo", "label": "Importo", "type": "currency", "required": True}
         ],
     }
     payload.update(overrides)
@@ -35,9 +35,9 @@ def _create(**overrides: object) -> TemplateCreate:
 
 def test_create_persists_a_template(db_session: Session) -> None:
     template = TemplateService(db_session).create(_create(), ADMIN)
-    assert template.nome == "Offerta Standard"
+    assert template.name == "Offerta Standard"
     assert template.active is True
-    assert template.declared_variables[0].nome == "amount"
+    assert template.declared_variables[0].name == "importo"
 
 
 def test_create_rejects_a_syntactically_invalid_body(db_session: Session) -> None:
@@ -46,18 +46,18 @@ def test_create_rejects_a_syntactically_invalid_body(db_session: Session) -> Non
     assert excinfo.value.details["entity"] == "template"
 
 
-def test_create_rejects_a_duplicate_nome(db_session: Session) -> None:
+def test_create_rejects_a_duplicate_name(db_session: Session) -> None:
     service = TemplateService(db_session)
     service.create(_create(), ADMIN)
     with pytest.raises(Conflict):
         service.create(_create(), ADMIN)
 
 
-def test_create_rejects_a_case_only_duplicate_nome(db_session: Session) -> None:
+def test_create_rejects_a_case_only_duplicate_name(db_session: Session) -> None:
     service = TemplateService(db_session)
     service.create(_create(), ADMIN)
     with pytest.raises(Conflict):
-        service.create(_create(nome="OFFERTA STANDARD"), ADMIN)
+        service.create(_create(name="OFFERTA STANDARD"), ADMIN)
 
 
 def test_create_converts_a_true_insert_race_into_a_clean_conflict(
@@ -65,11 +65,11 @@ def test_create_converts_a_true_insert_race_into_a_clean_conflict(
 ) -> None:
     """Mirrors test_emitter.py's identical race test: forces the pre-check
     (`get_by_name`) to report "no such template" for two successive creates, so only
-    the database's own `uq_templates_nome` functional unique index stops the second
+    the database's own `uq_templates_name` functional unique index stops the second
     -- proving the whole mutation, not just the pre-check, converts a real
     constraint violation into a clean `Conflict`."""
     service = TemplateService(db_session)
-    monkeypatch.setattr(TemplateRepository, "get_by_name", lambda self, nome: None)
+    monkeypatch.setattr(TemplateRepository, "get_by_name", lambda self, name: None)
     service.create(_create(), ADMIN)
     with pytest.raises(Conflict):
         service.create(_create(), ADMIN)
@@ -92,8 +92,8 @@ def test_get_missing_template_raises_not_found(db_session: Session) -> None:
 def test_update_renames_a_template(db_session: Session) -> None:
     service = TemplateService(db_session)
     created = service.create(_create(), ADMIN)
-    updated = service.update(created.id, TemplateUpdate(nome="Offerta Rivista"), ADMIN)
-    assert updated.nome == "Offerta Rivista"
+    updated = service.update(created.id, TemplateUpdate(name="Offerta Rivista"), ADMIN)
+    assert updated.name == "Offerta Rivista"
     assert updated.body_markdown == created.body_markdown
 
 
@@ -102,16 +102,16 @@ def test_update_to_a_case_only_variant_of_its_own_name_is_not_a_conflict(
 ) -> None:
     service = TemplateService(db_session)
     created = service.create(_create(), ADMIN)
-    updated = service.update(created.id, TemplateUpdate(nome="OFFERTA STANDARD"), ADMIN)
-    assert updated.nome == "OFFERTA STANDARD"
+    updated = service.update(created.id, TemplateUpdate(name="OFFERTA STANDARD"), ADMIN)
+    assert updated.name == "OFFERTA STANDARD"
 
 
 def test_update_to_another_templates_name_is_a_conflict(db_session: Session) -> None:
     service = TemplateService(db_session)
     service.create(_create(), ADMIN)
-    other = service.create(_create(nome="Contratto Base"), ADMIN)
+    other = service.create(_create(name="Contratto Base"), ADMIN)
     with pytest.raises(Conflict):
-        service.update(other.id, TemplateUpdate(nome="Offerta Standard"), ADMIN)
+        service.update(other.id, TemplateUpdate(name="Offerta Standard"), ADMIN)
 
 
 def test_update_rejects_a_syntactically_invalid_body(db_session: Session) -> None:
@@ -123,14 +123,14 @@ def test_update_rejects_a_syntactically_invalid_body(db_session: Session) -> Non
 
 def test_update_missing_template_raises_not_found(db_session: Session) -> None:
     with pytest.raises(NotFound):
-        TemplateService(db_session).update(uuid4(), TemplateUpdate(nome="X"), ADMIN)
+        TemplateService(db_session).update(uuid4(), TemplateUpdate(name="X"), ADMIN)
 
 
 def test_update_requires_admin(db_session: Session) -> None:
     service = TemplateService(db_session)
     created = service.create(_create(), ADMIN)
     with pytest.raises(PermissionDenied):
-        service.update(created.id, TemplateUpdate(nome="X"), READONLY)
+        service.update(created.id, TemplateUpdate(name="X"), READONLY)
 
 
 def test_deactivate_then_activate_round_trips(db_session: Session) -> None:
@@ -156,7 +156,7 @@ def _list_query(**overrides: object) -> TemplateListQuery:
 def test_list_hides_inactive_templates_by_default(db_session: Session) -> None:
     service = TemplateService(db_session)
     active = service.create(_create(), ADMIN)
-    inactive = service.create(_create(nome="Contratto Base"), ADMIN)
+    inactive = service.create(_create(name="Contratto Base"), ADMIN)
     service.deactivate(inactive.id, ADMIN)
 
     page = service.list(_list_query(), ADMIN)
@@ -166,34 +166,34 @@ def test_list_hides_inactive_templates_by_default(db_session: Session) -> None:
     assert {item.id for item in page_all.items} == {active.id, inactive.id}
 
 
-def test_list_search_matches_nome_case_insensitively(db_session: Session) -> None:
+def test_list_search_matches_name_case_insensitively(db_session: Session) -> None:
     service = TemplateService(db_session)
     service.create(_create(), ADMIN)
-    service.create(_create(nome="Contratto Base"), ADMIN)
+    service.create(_create(name="Contratto Base"), ADMIN)
 
-    page = service.list(_list_query(search="offer"), ADMIN)
-    assert [item.nome for item in page.items] == ["Offerta Standard"]
+    page = service.list(_list_query(search="offerta"), ADMIN)
+    assert [item.name for item in page.items] == ["Offerta Standard"]
 
 
 def test_describe_reports_the_compilation_form_and_the_root_paths_needed(
     db_session: Session,
 ) -> None:
-    # `lines`/`nome`/`prezzo` are loop-relative (inside the `#each` body): describe
-    # answers "what must the caller supply at the root", so only `sconto`, `lines`
-    # itself (the array a caller supplies) and `customer.nome` -- all root-level --
+    # `righe`/`nome`/`prezzo` are loop-relative (inside the `#each` body): describe
+    # answers "what must the caller supply at the root", so only `sconto`, `righe`
+    # itself (the array a caller supplies) and `cliente.name` -- all root-level --
     # should appear in `used_journeys`; `nome`/`prezzo` describe the shape of each
-    # element of `lines`, never something a caller provides directly.
+    # element of `righe`, never something a caller provides directly.
     body = (
         "{{#if sconto}}Sconto applicato{{/if}}\n"
         "{{#each righe}}- {{nome}}: {{prezzo}}\n{{/each}}\n"
-        "Cliente: {{cliente.nome}}"
+        "Cliente: {{cliente.name}}"
     )
     service = TemplateService(db_session)
     created = service.create(
         _create(
             body_markdown=body,
             declared_variables=[
-                {"nome": "sconto", "etichetta": "Sconto", "tipo": "checkbox", "obbligatoria": False}
+                {"name": "sconto", "label": "Sconto", "type": "checkbox", "required": False}
             ],
         ),
         ADMIN,
@@ -201,25 +201,25 @@ def test_describe_reports_the_compilation_form_and_the_root_paths_needed(
 
     description = service.describe(created.id, ADMIN)
 
-    assert description.variables[0].nome == "sconto"
+    assert description.variables[0].name == "sconto"
     assert description.used_journeys == [["sconto"], ["righe"], ["cliente", "nome"]]
     assert description.variables_not_used == []
 
 
 def test_describe_flags_a_declared_variable_the_body_never_uses(db_session: Session) -> None:
     service = TemplateService(db_session)
-    # Default BODY references `customer.legal_name` and `amount` only, so a
+    # Default BODY references `cliente.ragione_sociale` and `importo` only, so a
     # second declared variable the body never mentions must be flagged.
     created = service.create(
         _create(
             declared_variables=[
                 {
-                    "nome": "amount",
+                    "name": "importo",
                     "label": "Importo",
                     "type": "currency",
                     "required": True,
                 },
-                {"nome": "inutile", "label": "Inutile", "type": "text", "required": False},
+                {"name": "inutile", "label": "Inutile", "type": "text", "required": False},
             ]
         ),
         ADMIN,
@@ -246,7 +246,7 @@ def test_preview_renders_compiled_markdown(db_session: Session) -> None:
 
     markdown = service.preview(
         created.id,
-        {"customer": {"legal_name": "ACME Srl"}, "amount": "1500"},
+        {"cliente": {"ragione_sociale": "ACME Srl"}, "importo": "1500"},
         ADMIN,
     )
 
@@ -260,9 +260,9 @@ def test_preview_fails_precisely_when_a_required_declared_variable_is_missing(
     created = service.create(_create(), ADMIN)
 
     with pytest.raises(ValidationFailed) as excinfo:
-        service.preview(created.id, {"customer": {"legal_name": "ACME Srl"}}, ADMIN)
+        service.preview(created.id, {"cliente": {"ragione_sociale": "ACME Srl"}}, ADMIN)
 
-    assert excinfo.value.details["field"] == "amount"
+    assert excinfo.value.details["field"] == "importo"
 
 
 def test_preview_fails_precisely_on_an_unresolved_path(db_session: Session) -> None:
@@ -270,7 +270,7 @@ def test_preview_fails_precisely_on_an_unresolved_path(db_session: Session) -> N
     created = service.create(_create(), ADMIN)
 
     with pytest.raises(ValidationFailed) as excinfo:
-        service.preview(created.id, {"amount": "1.500,00"}, ADMIN)
+        service.preview(created.id, {"importo": "1.500,00"}, ADMIN)
 
     assert excinfo.value.details["field"] == "cliente.ragione_sociale"
 
@@ -282,7 +282,7 @@ def test_preview_missing_template_raises_not_found(db_session: Session) -> None:
 
 def test_a_select_variable_without_options_is_rejected() -> None:
     with pytest.raises(ValueError):
-        TemplateVariable(nome="colore", label="Colore", type="select", required=False)
+        TemplateVariable(name="colore", label="Colore", type="select", required=False)
 
 
 def test_declared_variables_is_a_public_method_that_drops_options(db_session: Session) -> None:
@@ -298,10 +298,10 @@ def test_declared_variables_is_a_public_method_that_drops_options(db_session: Se
         _create(
             declared_variables=[
                 {
-                    "nome": "colore",
-                    "etichetta": "Colore",
-                    "tipo": "select",
-                    "obbligatoria": True,
+                    "name": "colore",
+                    "label": "Colore",
+                    "type": "select",
+                    "required": True,
                     "options": ["rosso", "blu"],
                 }
             ]
@@ -314,16 +314,16 @@ def test_declared_variables_is_a_public_method_that_drops_options(db_session: Se
     declared = service.declared_variables(template)
 
     assert declared == (
-        DeclaredVariable(nome="colore", label="Colore", type="select", required=True),
+        DeclaredVariable(name="colore", label="Colore", type="select", required=True),
     )
 
 
 # --- the default offer (spec 2026-09-12 §6.5) --------------------------------------
 
-# What the body may read without the form asking for it: `customer` and `emittente`
-# come from `DocumentTemplating.template_scope`, and so does `today`.
+# What the body may read without the form asking for it: `cliente` and `emittente`
+# come from `DocumentTemplating.template_scope`, and so does `oggi`.
 _SCOPE_PREFIXES = ("cliente.", "emittente.")
-_SCOPE_KEYS = {"today"}
+_SCOPE_KEYS = {"oggi"}
 
 
 def test_seed_creates_a_default_offer_a_space_can_render_without_editing(
@@ -331,10 +331,10 @@ def test_seed_creates_a_default_offer_a_space_can_render_without_editing(
 ) -> None:
     service = TemplateService(db_session)
     created = service.seed_defaults(ADMIN)
-    offer = next(t for t in created if t.nome == OFFER_TEMPLATE_NAME)
-    assert offer.type == "offerta"
+    offer = next(t for t in created if t.name == OFFER_TEMPLATE_NAME)
+    assert offer.type == "offer"
     assert offer.active is True
-    declared = {v.nome for v in offer.declared_variables}
+    declared = {v.name for v in offer.declared_variables}
     assert declared == {"oggetto", "ambito", "attivita", "compenso", "pagamento"}
     # Every placeholder in the body is either declared or supplied by the document
     # scope, so the first render of a fresh space cannot fail on a missing variable.
@@ -349,11 +349,11 @@ def test_seed_skips_the_offer_when_a_template_with_that_name_exists(
 ) -> None:
     service = TemplateService(db_session)
     service.create(
-        TemplateCreate(nome=OFFER_TEMPLATE_NAME, type="offer", body_markdown="mia"),
+        TemplateCreate(name=OFFER_TEMPLATE_NAME, type="offer", body_markdown="mia"),
         ADMIN,
     )
     created = service.seed_defaults(ADMIN)
-    assert OFFER_TEMPLATE_NAME not in {t.nome for t in created}
+    assert OFFER_TEMPLATE_NAME not in {t.name for t in created}
     kept = TemplateRepository(db_session).get_by_name(OFFER_TEMPLATE_NAME)
     assert kept is not None and kept.body_markdown == "mia"
 
@@ -362,10 +362,10 @@ def test_the_default_offer_renders_with_the_five_answers_and_the_document_scope(
     db_session: Session,
 ) -> None:
     """What `DocumentService.create_from_template` does with it: the declared answers
-    plus `customer`, `emittente` and `today` from the record. No hole, no error."""
+    plus `cliente`, `emittente` and `oggi` from the record. No hole, no error."""
     service = TemplateService(db_session)
     created = service.seed_defaults(ADMIN)
-    offer = next(t for t in created if t.nome == OFFER_TEMPLATE_NAME)
+    offer = next(t for t in created if t.name == OFFER_TEMPLATE_NAME)
     row = TemplateRepository(db_session).get(offer.id)
     assert row is not None
     scope = {

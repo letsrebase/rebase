@@ -36,12 +36,12 @@ def test_an_empty_space_gets_stages_templates_and_categories(db_session: Session
 
 def test_a_table_that_is_not_empty_is_left_alone(db_session: Session) -> None:
     TemplateService(db_session).create(
-        TemplateCreate(nome="Il mio contratto", type="contract", body_markdown="x"), ADMIN
+        TemplateCreate(name="Il mio contratto", type="contract", body_markdown="x"), ADMIN
     )
     report = ensure_defaults(db_session)
     # Templates: the one row the person made, and nothing added beside it.
     assert report.templates == 0
-    assert [t.nome for t in db_session.scalars(select(Template)).all()] == ["Il mio contratto"]
+    assert [t.name for t in db_session.scalars(select(Template)).all()] == ["Il mio contratto"]
     # The other two families were empty and are seeded regardless.
     assert report.stages == len(DEFAULT_STAGES)
     assert report.categories == len(SEED_CATEGORIES)
@@ -70,11 +70,11 @@ def test_to_space_with_no_legal_entity_gets_one_named_after_the_space(db_session
     from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 
     _bare(db_session)
-    report = ensure_defaults(db_session, nome="Studio Ada")
+    report = ensure_defaults(db_session, name="Studio Ada")
     assert report.legal_entities == 1
     legal_entity = LegalEntityRepository(db_session).default()
     assert legal_entity is not None
-    assert (legal_entity.legal_name, legal_entity.nome, legal_entity.predefinita) == (
+    assert (legal_entity.legal_name, legal_entity.name, legal_entity.is_default) == (
         "Studio Ada",
         "Studio Ada",
         True,
@@ -93,7 +93,7 @@ def test_to_space_that_has_its_legal_entity_keeps_it_whatever_the_name_says(
     # which file ran before this one. Identity is what the claim is about anyway.
     before = LegalEntityRepository(db_session).default()
     assert before is not None
-    report = ensure_defaults(db_session, nome="Un altro nome")
+    report = ensure_defaults(db_session, name="Un altro nome")
     assert report.legal_entities == 0
     legal_entity = LegalEntityRepository(db_session).default()
     assert legal_entity is not None

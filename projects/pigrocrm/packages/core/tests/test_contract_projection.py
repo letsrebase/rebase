@@ -69,7 +69,7 @@ def _assumption(**overrides: object) -> RenewalAssumption:
 def test_monthly_cadence_generates_one_occurrence_per_month_through_the_horizon() -> None:
     card = _rate_card(delivery_period="monthly", valid_from=date(2026, 1, 1))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2026, 4, 1))
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 1),
         date(2026, 2, 1),
         date(2026, 3, 1),
@@ -83,7 +83,7 @@ def test_quarterly_cadence_steps_three_months() -> None:
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 1),
         date(2026, 4, 1),
         date(2026, 7, 1),
@@ -97,7 +97,7 @@ def test_annual_cadence_steps_twelve_months_clamping_the_day_of_month() -> None:
     below via a day-31 start stepping into February."""
     card = _rate_card(delivery_period="annual", valid_from=date(2026, 1, 31))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2028, 1, 31))
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 31),
         date(2027, 1, 31),
         date(2028, 1, 31),
@@ -107,7 +107,7 @@ def test_annual_cadence_steps_twelve_months_clamping_the_day_of_month() -> None:
 def test_a_day_31_start_clamps_into_a_short_month_and_returns_to_the_31st() -> None:
     card = _rate_card(delivery_period="monthly", valid_from=date(2026, 1, 31))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2026, 4, 30))
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 31),
         date(2026, 2, 28),
         date(2026, 3, 31),
@@ -118,7 +118,7 @@ def test_a_day_31_start_clamps_into_a_short_month_and_returns_to_the_31st() -> N
 def test_one_off_disbursement_produces_exactly_one_occurrence() -> None:
     card = _rate_card(delivery_period="one_off", valid_from=date(2026, 3, 15))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2028, 1, 1))
-    assert [o.data for o in occurrences] == [date(2026, 3, 15)]
+    assert [o.date for o in occurrences] == [date(2026, 3, 15)]
 
 
 def test_one_off_starting_after_the_horizon_produces_nothing() -> None:
@@ -150,14 +150,14 @@ def test_the_cards_own_valid_to_bounds_its_occurrences() -> None:
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
-    assert [o.data for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
+    assert [o.date for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
 
 
 def test_the_contracts_own_fine_bounds_occurrences_even_for_an_open_ended_card() -> None:
     contract = _contract(end=date(2026, 3, 1))
     card = _rate_card(valid_from=date(2026, 1, 1), valid_to=None)
     occurrences = generate_recurring_fee_occurrences(contract, [card], through=date(2026, 12, 31))
-    assert [o.data for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
+    assert [o.date for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
 
 
 def test_a_card_starting_after_the_horizon_contributes_nothing() -> None:
@@ -173,15 +173,15 @@ def test_a_card_starting_after_the_horizon_contributes_nothing() -> None:
 
 def test_schedule_end_is_the_fixed_terms_own_fine_regardless_of_occurrences() -> None:
     contract = _contract(end=date(2026, 12, 31))
-    occurrences = [RecurringFeeOccurrence(data=date(2026, 3, 1), amount=Decimal("1.00"))]
+    occurrences = [RecurringFeeOccurrence(date=date(2026, 3, 1), amount=Decimal("1.00"))]
     assert schedule_end(contract, date(2026, 7, 1), occurrences) == date(2026, 12, 31)
 
 
 def test_schedule_end_for_an_open_ended_contract_is_its_last_occurrence() -> None:
     contract = _contract(end=None)
     occurrences = [
-        RecurringFeeOccurrence(data=date(2026, 3, 1), amount=Decimal("1.00")),
-        RecurringFeeOccurrence(data=date(2026, 9, 1), amount=Decimal("1.00")),
+        RecurringFeeOccurrence(date=date(2026, 3, 1), amount=Decimal("1.00")),
+        RecurringFeeOccurrence(date=date(2026, 9, 1), amount=Decimal("1.00")),
     ]
     assert schedule_end(contract, date(2026, 1, 1), occurrences) == date(2026, 9, 1)
 

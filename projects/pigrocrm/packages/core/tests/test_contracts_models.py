@@ -45,16 +45,16 @@ def test_a_contract_can_be_created_read_and_carries_its_defaults(db_session: Ses
     assert contract.previous_contract_id is None
 
 
-# ---- ck_contracts_tipo_rinnovo -----------------------------------------------------
+# ---- ck_contracts_renewal_type -----------------------------------------------------
 
 
 def test_renewal_type_is_constrained_to_the_closed_set(db_session: Session) -> None:
     customer = make_customer(db_session)
     with pytest.raises(IntegrityError):
-        _contract(db_session, customer, renewal_type="rinnovo_magico")
+        _contract(db_session, customer, renewal_type="magic_renewal")
 
 
-# ---- ck_contracts_preavviso_rinnovo_required ---------------------------------------
+# ---- ck_contracts_notice_renewal_required ---------------------------------------
 
 
 def test_renewal_notice_days_required_unless_renewal_type_is_none(
@@ -83,7 +83,7 @@ def test_renewal_notice_days_supplied_for_to_real_renewal_type_is_accepted(
     assert contract.renewal_notice_days == 60
 
 
-def test_preavviso_rinnovo_giorni_absent_is_fine_when_renewal_type_is_nessuno(
+def test_renewal_notice_days_absent_is_fine_when_renewal_type_is_none(
     db_session: Session,
 ) -> None:
     customer = make_customer(db_session)
@@ -215,7 +215,7 @@ def test_minimum_hours_is_accepted_on_to_type_hourly_card(db_session: Session) -
     customer = make_customer(db_session)
     contract = _contract(db_session, customer)
     rate_card = _rate_card(
-        db_session, contract, type="hourly", unit="ora", minimum_hours=Decimal("4.00")
+        db_session, contract, type="hourly", unit="hour", minimum_hours=Decimal("4.00")
     )
     assert rate_card.minimum_hours == Decimal("4.00")
 

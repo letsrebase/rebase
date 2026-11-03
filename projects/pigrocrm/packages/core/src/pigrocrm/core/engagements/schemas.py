@@ -17,7 +17,7 @@ from pigrocrm.core.notes.schemas import NOTE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
 
 NAME_MAX_LENGTH = 120  # the hub's NAME_MAX_LENGTH
-SPACE_NAME_MAX_LENGTH = 200  # TenantSignup.nome
+SPACE_NAME_MAX_LENGTH = 200  # TenantSignup.name
 # The deal's name carries the role and the company cut to these, so the longest letter
 # (a 20-character number, a 200-character role, a 255-character company) still fits
 # `deals.name`'s 255.
@@ -43,9 +43,9 @@ class EngagementLetter(BaseModel):
 
     number: SafeStr = Field(min_length=1, max_length=20)
     role: SafeStr = Field(min_length=1, max_length=200)
-    legal_entity: SafeStr = Field(min_length=1, max_length=255)
+    company_name: SafeStr = Field(min_length=1, max_length=255)
     start_date: dt.date
-    data_fine: dt.date | None = None
+    end_date: dt.date | None = None
     # The daily fee, as the letter prints it.
     fee: Decimal = Field(gt=0, max_digits=9, decimal_places=2)
     expected_days: int | None = Field(default=None, ge=1, le=366)
@@ -179,7 +179,7 @@ class LeadDeal(BaseModel):
     expected_close_date: dt.date | None = None
     # The hub's longest note is about 6,000 characters (its fields are bounded); a sentence
     # is added to it, so the room under the note's own bound is kept.
-    note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH - 1_000)
+    notes: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH - 1_000)
 
 
 class LeadUpsert(BaseModel):
@@ -188,8 +188,8 @@ class LeadUpsert(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    legal_entity: SafeStr = Field(min_length=1, max_length=LEAD_COMPANY_MAX_LENGTH)
-    contact_person: LeadContactPerson
+    company: SafeStr = Field(min_length=1, max_length=LEAD_COMPANY_MAX_LENGTH)
+    contact: LeadContactPerson
     deal: LeadDeal
     deal_id: UUID | None = None
 

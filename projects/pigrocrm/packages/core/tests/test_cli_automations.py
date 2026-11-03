@@ -64,7 +64,7 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     try:
         migrate_to_head(configured, configured.database_url)
         with _engine(configured.database_url) as engine, session_factory(engine)() as session:
-            committed_default_legal_entity(session, nome="Radice")
+            committed_default_legal_entity(session, name="Radice")
             session.commit()
         yield configured
     finally:
@@ -85,7 +85,7 @@ def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     try:
         for slug in SPACES:
             service.provision(
-                TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"{slug}@studio.it")
+                TenantSignup(slug=slug, name=f"Studio {slug}", email=f"{slug}@studio.it")
             )
         yield
     finally:
@@ -136,8 +136,8 @@ def _an_overdue_invoice_in_every_space(settings: Settings, spaces: None) -> Iter
     yield
     for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, engine.begin() as connection:
-            connection.execute(text("delete from activities where entity_type = 'attivita'"))
-            connection.execute(text("delete from attivita"))
+            connection.execute(text("delete from activities where entity_type = 'task'"))
+            connection.execute(text("delete from tasks"))
             connection.execute(text("delete from automation_config"))
             connection.execute(text("delete from reminder_job_run"))
             connection.execute(text("delete from invoices"))
@@ -175,7 +175,7 @@ def test_the_command_opens_one_task_in_the_root_and_in_every_space(
 
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
-        assert f"{label}: fattura_scaduta aperte 1, già aperte 0" in out
+        assert f"{label}: overdue_invoice aperte 1, già aperte 0" in out
         assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
         assert _count(settings, None if label == "root" else label) == 1
 
@@ -183,7 +183,7 @@ def test_the_command_opens_one_task_in_the_root_and_in_every_space(
 def test_a_run_moves_the_clock_of_every_space_it_walked(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """REB-764: the row Impostazioni → Esecuzioni and `job_late` read."""
+    """REB-764: the row the Settings → Runs page and `job_late` read."""
     assert cli.main(["automations"]) == 0
 
     for slug in (None, *SPACES):
@@ -234,9 +234,9 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
     assert cli.main(["automations", "--slug", UNO]) == 1, "the ping should not say it is fine"
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{UNO}: frozen_clock non scritto (RuntimeError)"]
     assert "secret" not in captured.err
-    assert f"{UNO}: fattura_scaduta aperte 1" in captured.out, "the pass itself worked"
+    assert f"{UNO}: overdue_invoice aperte 1" in captured.out, "the pass itself worked"
     assert _clock(settings, UNO) is None
 
 
@@ -249,7 +249,7 @@ def test_the_second_run_opens_nothing_new(
 
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
-        assert f"{label}: fattura_scaduta aperte 0, già aperte 1" in out
+        assert f"{label}: overdue_invoice aperte 0, già aperte 1" in out
         assert _count(settings, None if label == "root" else label) == 1
 
 
@@ -259,7 +259,7 @@ def test_a_rehearsal_says_what_it_would_open_and_writes_nothing(
     assert cli.main(["automations", "--dry-run", "--slug", UNO]) == 0
 
     out = capsys.readouterr().out
-    assert f"{UNO}: fattura_scaduta aperte 1, già aperte 0 (prova)" in out
+    assert f"{UNO}: overdue_invoice aperte 1, già aperte 0 (prova)" in out
     assert "root:" not in out and DUE not in out
     assert _count(settings, UNO) == 0
 
@@ -270,14 +270,14 @@ def test_a_switched_off_rule_is_reported_and_opens_nothing(
     with _engine(_url(settings, UNO)) as engine, engine.begin() as connection:
         connection.execute(
             text(
-                "insert into automation_config (id, a5_fattura_scaduta) "
+                "insert into automation_config (id, a5_overdue_invoice) "
                 "values (gen_random_uuid(), false)"
             )
         )
 
     assert cli.main(["automations", "--slug", UNO]) == 0
 
-    assert f"{UNO}: fattura_scaduta disattivata" in capsys.readouterr().out
+    assert f"{UNO}: overdue_invoice disattivata" in capsys.readouterr().out
     assert _count(settings, UNO) == 0
 
 
@@ -285,7 +285,7 @@ def test_another_day_is_only_a_rehearsal(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert cli.main(["automations", "--date", "2030-01-01"]) == 2
-    assert "--data cambia il giorno" in capsys.readouterr().err
+    assert "--date cambia il giorno" in capsys.readouterr().err
 
 
 def test_an_unknown_slug_is_an_error(capsys: pytest.CaptureFixture[str]) -> None:

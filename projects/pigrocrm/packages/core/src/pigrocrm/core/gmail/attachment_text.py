@@ -78,7 +78,7 @@ class AttachmentText:
     without the warning cannot be built by forgetting a field -- the same construction
     `FileText` uses, for the same reason."""
 
-    nome_file: str
+    file_name: str
     mime: str
     size: int
     text: str
@@ -110,7 +110,7 @@ class GmailAttachmentService:
         self.accounts = GoogleAccountService(session, settings=settings)
 
     def attachment_text(
-        self, message_id: UUID, nome_file: str, actor: Actor, *, max_bytes: int | None = None
+        self, message_id: UUID, file_name: str, actor: Actor, *, max_bytes: int | None = None
     ) -> AttachmentText:
         """The text of the attachment called `nome_file` on an archived message.
 
@@ -149,7 +149,7 @@ class GmailAttachmentService:
         payload = self.transport.json(
             "GET", message_get_url(row.gmail_message_id), token=token, what=_WHAT_MESSAGE
         )
-        part = self._part(payload, nome_file)
+        part = self._part(payload, file_name)
         body = part.get("body") or {}
         size = int(body.get("size") or 0)
         limit = self.settings.gmail_attachment_max_bytes
@@ -160,7 +160,7 @@ class GmailAttachmentService:
             raise Conflict(
                 ENTITY,
                 _TOO_MUCH_LARGE.format(size=size, max_bytes=limit),
-                nome_file=nome_file,
+                file_name=file_name,
                 size=size,
             )
         attachment_id = str(body.get("attachmentId") or "")
@@ -169,7 +169,7 @@ class GmailAttachmentService:
             # to hand over whole; there is nothing to fetch and nothing was lost, but
             # saying so is better than fetching an empty id and reporting a file with no
             # text.
-            raise Conflict(ENTITY, _WITHOUT_BYTE.format(name=nome_file), nome_file=nome_file)
+            raise Conflict(ENTITY, _WITHOUT_BYTE.format(name=file_name), file_name=file_name)
         fetched = self.transport.json(
             "GET",
             attachment_get_url(row.gmail_message_id, attachment_id),
@@ -183,7 +183,7 @@ class GmailAttachmentService:
             max_bytes=self.settings.document_text_max_bytes if max_bytes is None else max_bytes,
         )
         return AttachmentText(
-            nome_file=str(part.get("filename") or nome_file),
+            file_name=str(part.get("filename") or file_name),
             mime=excerpt.mime,
             # Gmail's declared size when it gave one, the bytes that actually arrived
             # otherwise: a `size` of zero on a part that carried a megabyte is a payload
@@ -195,7 +195,7 @@ class GmailAttachmentService:
 
     # ---- internals -------------------------------------------------------------------
 
-    def _part(self, payload: dict[str, Any], nome_file: str) -> dict[str, Any]:
+    def _part(self, payload: dict[str, Any], file_name: str) -> dict[str, Any]:
         """The part of the payload whose `filename` is the one asked for.
 
         Walks the tree rather than the top-level `parts` list: an attachment inside a
@@ -203,7 +203,7 @@ class GmailAttachmentService:
         answer "no such attachment" about a file the same message's own `attachments`
         field lists.
         """
-        wanted = nome_file.strip()
+        wanted = file_name.strip()
         if not wanted:
             raise ValidationFailed(ENTITY, "nome_file", "serve il nome dell'allegato da leggere")
         present: list[str] = []

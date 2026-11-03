@@ -49,9 +49,9 @@ def _is_empty(session: Session, model: type[PipelineStage | Template | CostCateg
 def ensure_defaults(session: Session, *, name: str | None = None) -> DefaultsReport:
     """On a session of one space (never of the registry). Commits, through the seeds.
 
-    `nome` is what the legal entity row is called when there is none yet: the space's own
+    `name` is what the legal entity row is called when there is none yet: the space's own
     name at provisioning, its slug from `ensure-space-defaults`. A space that already
-    has its row keeps it untouched, whatever `nome` says.
+    has its row keeps it untouched, whatever `name` says.
     """
     actor = Actor.system()
     stages = templates = categories = legal_entities = 0

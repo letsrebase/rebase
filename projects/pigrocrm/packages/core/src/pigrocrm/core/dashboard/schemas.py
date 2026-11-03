@@ -266,7 +266,7 @@ class OperationalDashboard(BaseModel):
     **No new economic total.** The only money here is `backlog.accrued_value`, which
     belongs to `AnalyticsService` and is labelled accrued value, never revenue.
 
-    Four signals now: REB-371 adds `concentrazione_sopra_soglia` beside the original
+    Four signals now: REB-371 adds `concentration_above_threshold` beside the original
     three, once `AnalyticsRepository.revenue_by_customer` (REB-370) existed and a
     preferred-share threshold could be configured for it
     (`Settings.preferred_concentration_threshold`). §6.2's own *fourth* signal is a

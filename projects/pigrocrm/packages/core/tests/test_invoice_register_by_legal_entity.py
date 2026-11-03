@@ -1,9 +1,9 @@
-"""The register, the import and the regime per azienda (REB-619, spec 2026-10-03
+"""The register, the import and the regime per legal entity (REB-619, spec 2026-10-03
 §1.3, §1.4, §1.5, §8 «Register»).
 
-A space with two aziende: each keeps a yearly counter of its own, an import lands on
-the azienda whose P.IVA issued the file, and a foreign azienda issues a PDF with no
-bollo and no FatturaPA. The second azienda is written by row here, since no route or
+A space with two legal entities: each keeps a yearly counter of its own, an import lands on
+the legal entity whose P.IVA issued the file, and a foreign legal entity issues a PDF with no
+bollo and no FatturaPA. The second legal entity is written by row here, since no route or
 tool creates one before milestone 5 (§9), and a draft is moved onto it by row for the
 same reason: the customer chain that assigns it is milestone 3.
 """
@@ -57,12 +57,12 @@ FIXTURE_CF = "BNCCHR85M41H501Z"
 
 @pytest.fixture
 def service(db_session: Session, local_storage: LocalFileStorage) -> InvoiceService:
-    """The default azienda with an identity the FatturaPA checks accept, and its
+    """The default legal entity with an identity the FatturaPA checks accept, and its
     profile; the fixture's P.IVA is deliberately *not* this one, so a test that wants
-    the file to land on the second azienda gives that one the fixture's ids."""
+    the file to land on the second legal entity gives that one the fixture's ids."""
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            nome="humancraft",
+            name="humancraft",
             legal_name="Studio Rossi",
             vat_number="09876543210",
             tax_code="HMCRFT00A01H501K",
@@ -105,7 +105,7 @@ def _default_id(session: Session) -> UUID:
 def _second_legal_entity(session: Session, **overrides: object) -> LegalEntity:
     """An Italian SRL beside the default, with a fiscal profile of its own."""
     values: dict[str, object] = {
-        "nome": "rebase",
+        "name": "rebase",
         "legal_name": "Rebase S.r.l.",
         "vat_number": FIXTURE_VAT_NUMBER,
         "tax_code": FIXTURE_CF,
@@ -130,7 +130,7 @@ def _foreign_legal_entity(session: Session) -> LegalEntity:
     """A company established abroad, on the `non-it` pack: no regime code, 20% as
     the rate it enters, nothing of the forfettario's arithmetic."""
     row = LegalEntity(
-        nome="rebase ltd",
+        name="rebase ltd",
         legal_name="Rebase Ltd",
         vat_number="GB123456789",
         country="GB",
@@ -157,7 +157,7 @@ def _draft_on(
     service: InvoiceService, session: Session, customer_id: UUID, legal_entity: LegalEntity | None
 ) -> UUID:
     """A draft, moved onto `legal_entity` by row: the service writes every new document on
-    the default azienda until milestone 3 derives it from the customer."""
+    the default legal entity until milestone 3 derives it from the customer."""
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
@@ -216,10 +216,10 @@ def test_two_legal_entities_issue_in_the_same_year_and_both_get_number_one(
     second_counter = db_session.get(InvoiceCounter, (second.id, YEAR))
     assert default_counter is not None and default_counter.last_number == 1
     assert second_counter is not None and second_counter.last_number == 1
-    # The frozen issuer is the azienda the document belongs to, not the default.
+    # The frozen issuer is the legal entity the document belongs to, not the default.
     row = db_session.get(Invoice, other.id)
     assert row is not None and row.snapshot is not None
-    assert row.snapshot["emittente"]["legal_name"] == "Rebase S.r.l."
+    assert row.snapshot["legal_entity"]["legal_name"] == "Rebase S.r.l."
     # And the next one on the default goes to 2, untouched by the other register.
     again = service.issue(_draft_on(service, db_session, customer_id, None), InvoiceIssue(), ADMIN)
     assert again.number == 2
@@ -235,7 +235,7 @@ def test_an_artifact_of_the_second_legal_entity_lives_under_its_own_prefix(
     artifact = service.export_xml(issued.id, ADMIN)
     key = db_session.execute(
         text(
-            "SELECT storage_key FROM document_versions WHERE document_id = :id AND numero = :numero"
+            "SELECT storage_key FROM document_versions WHERE document_id = :id AND number = :number"
         ),
         {"id": artifact.document_id, "number": artifact.version_number},
     ).scalar_one()
@@ -260,7 +260,7 @@ def _customer_of(session: Session, legal_entity_id: UUID) -> UUID:
 def test_an_import_may_take_to_number_the_other_legal_entity_already_issued(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """Spec §8: the default issued 1 natively this year; the second azienda's register
+    """Spec §8: the default issued 1 natively this year; the second legal entity's register
     is empty, so importing its own 1 is history, not a number above a native one."""
     second = _second_legal_entity(db_session)
     native = service.issue(_draft_on(service, db_session, customer_id, None), InvoiceIssue(), ADMIN)
@@ -279,7 +279,7 @@ def test_an_import_may_take_to_number_the_other_legal_entity_already_issued(
 def test_an_import_refuses_to_customer_of_another_legal_entity_or_an_archived_one(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """REB-784: `import_issued` named for an azienda takes only that azienda's customers,
+    """REB-784: `import_issued` named for a legal entity takes only that legal entity's customers,
     the rule the FatturaPA confirmation already holds (REB-783); nothing is written."""
     second = _second_legal_entity(db_session)
     own = _customer_of(db_session, second.id)
@@ -341,7 +341,7 @@ def test_gaps_are_declared_and_read_by_legal_entity(
 
 
 def test_the_lock_of_one_legal_entity_does_not_block_the_other(db_engine: Engine) -> None:
-    """Two sessions, two aziende (spec §8): while one holds its counter, the other's
+    """Two sessions, two legal entities (spec §8): while one holds its counter, the other's
     counter is taken at once, and a third session on the first's waits. Committed
     rows and real transactions, since one connection cannot contend with itself."""
     factory = session_factory(db_engine)
@@ -349,10 +349,10 @@ def test_the_lock_of_one_legal_entity_does_not_block_the_other(db_engine: Engine
         # Inactive, so that while they exist no import in this worker's database can
         # match them; `lock_counter` does not care, it is the row that is the lock.
         one = LegalEntity(
-            nome="uno", legal_name="Uno S.r.l.", vat_number="11111111111", active=False
+            name="uno", legal_name="Uno S.r.l.", vat_number="11111111111", active=False
         )
         two = LegalEntity(
-            nome="due", legal_name="Due S.r.l.", vat_number="22222222222", active=False
+            name="due", legal_name="Due S.r.l.", vat_number="22222222222", active=False
         )
         setup.add_all([one, two])
         setup.commit()
@@ -370,7 +370,7 @@ def test_the_lock_of_one_legal_entity_does_not_block_the_other(db_engine: Engine
     finally:
         # Every session is closed whatever its rollback does, and the second delete
         # runs whatever the first did: a teardown that stops halfway leaves two
-        # aziende and a lock row in a database the next file shares.
+        # legal entities and a lock row in a database the next file shares.
         for session in sessions:
             try:
                 session.rollback()
@@ -379,12 +379,12 @@ def test_the_lock_of_one_legal_entity_does_not_block_the_other(db_engine: Engine
         with factory() as cleanup:
             try:
                 cleanup.execute(
-                    text("DELETE FROM invoice_counters WHERE azienda_id IN (:a, :b)"),
+                    text("DELETE FROM invoice_counters WHERE legal_entity_id IN (:a, :b)"),
                     {"a": one_id, "b": two_id},
                 )
             finally:
                 cleanup.execute(
-                    text("DELETE FROM emitter_profile WHERE id IN (:a, :b)"),
+                    text("DELETE FROM legal_entities WHERE id IN (:a, :b)"),
                     {"a": one_id, "b": two_id},
                 )
                 cleanup.commit()
@@ -410,12 +410,12 @@ def test_the_review_names_the_legal_entity_the_file_was_issued_by(
     assert row.legal_entity_id == second.id
 
 
-def test_the_confirm_writes_the_invoice_on_the_matched_aziendas_register(
+def test_the_confirm_writes_the_invoice_on_the_matched_legal_entity_register(
     service: InvoiceService, db_session: Session, local_storage: LocalFileStorage, customer_id: UUID
 ) -> None:
     second = _second_legal_entity(db_session)
-    # The customer the person chose is on the azienda the file landed on: the confirmation
-    # refuses one of another azienda (REB-783).
+    # The customer the person chose is on the legal entity the file landed on: the confirmation
+    # refuses one of another legal entity (REB-783).
     chosen = db_session.get(Customer, customer_id)
     assert chosen is not None
     chosen.legal_entity_id = second.id
@@ -448,15 +448,15 @@ def test_to_foreign_legal_entity_is_never_to_candidate_issuer_of_to_fatturapa_fi
     assert _default_id(db_session) in {a.id for a in candidates}
 
 
-# --- the foreign azienda -----------------------------------------------------------
+# --- the foreign legal entity -----------------------------------------------------------
 
 
 def test_to_foreign_legal_entity_issues_to_pdf_with_no_stamp_duty_and_refuses_the_xml(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     foreign = _foreign_legal_entity(db_session)
-    # Born on the default azienda, as every draft is until milestone 3, then moved by
-    # row; the lines are replaced once it is the foreign azienda's, since a 20% rate is
+    # Born on the default legal entity, as every draft is until milestone 3, then moved by
+    # row; the lines are replaced once it is the foreign legal entity's, since a 20% rate is
     # the foreign regime's answer and the forfettario's refusal.
     draft = service.create(
         InvoiceCreate(
@@ -488,7 +488,7 @@ def test_to_foreign_legal_entity_issues_to_pdf_with_no_stamp_duty_and_refuses_th
     assert row.snapshot is not None
     assert row.snapshot["tax"]["pack_id"] == "non-it"
     assert row.snapshot["tax"]["regime_code"] is None
-    assert row.snapshot["emittente"]["legal_name"] == "Rebase Ltd"
+    assert row.snapshot["legal_entity"]["legal_name"] == "Rebase Ltd"
     scope = invoice_pdf.build_scope(service.artifacts.for_export(row), reference=None)
     assert scope["invoice"]["stamp_duty_declaration"] == ""
     with pytest.raises(Conflict) as caught:
@@ -501,7 +501,7 @@ def test_to_foreign_legal_entity_issues_to_pdf_with_no_stamp_duty_and_refuses_th
 def test_a_foreign_profile_has_no_regime_code_and_an_italian_one_requires_it(
     db_session: Session,
 ) -> None:
-    foreign = LegalEntity(nome="ltd", legal_name="Rebase Ltd", country="GB")
+    foreign = LegalEntity(name="ltd", legal_name="Rebase Ltd", country="GB")
     db_session.add(foreign)
     db_session.flush()
     profiles = FiscalProfileService(db_session)
@@ -533,7 +533,7 @@ def test_a_foreign_vat_number_longer_than_eleven_characters_is_kept(
     db_session: Session,
 ) -> None:
     """REB-615 refused it in words until the column widened; it fits now."""
-    foreign = LegalEntity(nome="sarl", legal_name="Rebase SARL", country="FR")
+    foreign = LegalEntity(name="sarl", legal_name="Rebase SARL", country="FR")
     db_session.add(foreign)
     db_session.flush()
     read = LegalEntityService(db_session).update(
@@ -547,7 +547,7 @@ def test_a_foreign_vat_number_longer_than_eleven_characters_is_kept(
 def test_to_space_with_one_legal_entity_sees_nothing_change(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """Every call without an azienda is the default's: the one-azienda path of before."""
+    """Every call without a legal entity is the default's: the one-legal entity path of before."""
     issued = service.issue(_draft_on(service, db_session, customer_id, None), InvoiceIssue(), ADMIN)
     assert issued.number == 1 and issued.legal_entity_id == _default_id(db_session)
     assert service.undeclared_gaps(YEAR) == []
@@ -561,7 +561,7 @@ def test_to_foreign_legal_entity_issues_without_the_sdis_checks_on_the_parties_o
 ) -> None:
     """The SdI's rules (a complete address, a routing code, Latin text) are the XML's;
     a foreign PDF has none of them. The same draft under the Italian default is
-    refused, which is what shows the skip is the foreign azienda's and not a loosening."""
+    refused, which is what shows the skip is the foreign legal entity's and not a loosening."""
     foreign = _foreign_legal_entity(db_session)
     bare = Customer(legal_name="Overseas Ltd", country="GB")
     db_session.add(bare)
@@ -604,8 +604,8 @@ def test_the_frozen_snapshot_and_not_the_live_profile_decides_the_xml(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     """`export_xml` reads the pack off the row's snapshot: a document issued abroad
-    stays refused after its azienda's profile turns Italian, and one issued in Italy
-    still exports after its azienda's profile turns foreign."""
+    stays refused after its legal entity's profile turns Italian, and one issued in Italy
+    still exports after its legal entity's profile turns foreign."""
     foreign = _foreign_legal_entity(db_session)
     draft = _draft_on(service, db_session, customer_id, foreign)
     service.replace_lines(

@@ -8,7 +8,7 @@ generator promises holds at any scale and is checked on SMALL (REB-597).
 
 # Top-level, not `from .corpus import ...`: none of this repository's three test roots
 # has an `__init__.py`, so a relative import has no parent package to resolve against.
-# `orologio.py` and `periodo_fiscale.py` are the shipped precedent for a shared test
+# `frozen_clock.py` and `periodo_fiscale.py` are the shipped precedent for a shared test
 # helper module, and `corpus` is likewise unique across all three roots.
 from corpus import KNOWN_LEGAL_NAME, KNOWN_VAT_NUMBER, REFERENCE, SMALL, build_corpus
 from sqlalchemy import func, select

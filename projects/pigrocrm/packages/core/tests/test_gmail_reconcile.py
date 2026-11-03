@@ -378,7 +378,9 @@ def test_a_gmail_that_rewrote_our_message_id_still_does_not_report_a_delivered_m
     # look for this conversation at all -- which is the fallback's real limit and not
     # something to paper over here.
     db_session.add(
-        Person(customer_id=draft.entity_id, nome="Ada", last_name="Rossi", email="ada@acme.it")
+        Person(
+            customer_id=draft.entity_id, first_name="Ada", last_name="Rossi", email="ada@acme.it"
+        )
     )
     db_session.commit()
     fake = _lost_answer(True, rewrites_message_id=True)

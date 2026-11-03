@@ -85,7 +85,7 @@ def _day(
 ) -> WorkUnit:
     work_unit = WorkUnit(
         contract_id=contract.id,
-        data=day,
+        date=day,
         quantity=Decimal(q),
         description="Giornata di consulenza",
         status=status,
@@ -234,7 +234,7 @@ def test_an_hourly_card_does_not_price_a_day_so_the_day_counts_as_uncovered(
     )
     service.issue(invoice.id, InvoiceIssue(issue_date=date(YEAR, 3, 31)), ADMIN)
     card.type = "hourly"
-    card.unit = "ora"
+    card.unit = "hour"
     db_session.flush()
 
     analysis = AnalyticsService(db_session).days_analysis(
@@ -261,7 +261,7 @@ def test_a_day_written_off_as_unbillable_still_counts_as_recorded(db_session: Se
     assert march.register == Decimal("1.00")
 
 
-def test_another_aziendas_filter_leaves_the_days_and_the_rate_out(
+def test_another_legal_entitys_filter_leaves_the_days_and_the_rate_out(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _invoice_service(db_session, local_storage)
@@ -370,15 +370,15 @@ def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(
     service = AnalyticsService(db_session)
     with pytest.raises(ValidationFailed) as only_from:
         service.days_analysis(READER, date_from=date(YEAR, 1, 1))
-    assert only_from.value.details["field"] == "a"
+    assert only_from.value.details["field"] == "to"
     with pytest.raises(ValidationFailed) as backwards:
         service.days_analysis(READER, date(YEAR, 3, 1), date(YEAR, 1, 1))
-    assert backwards.value.details["field"] == "da"
+    assert backwards.value.details["field"] == "from"
     with pytest.raises(ValidationFailed) as too_long:
         service.days_analysis(READER, date(2016, 1, 1), date(2026, 1, 31))
-    assert too_long.value.details["field"] == "a"
+    assert too_long.value.details["field"] == "to"
     with pytest.raises(ValidationFailed) as too_early:
         service.days_analysis(READER, date(1, 1, 1), date(1, 1, 31))
-    assert too_early.value.details["field"] == "da"
+    assert too_early.value.details["field"] == "from"
     # Exactly ten years is the largest period admitted.
     assert len(service.days_analysis(READER, date(2016, 2, 1), date(2026, 1, 31)).months) == 120

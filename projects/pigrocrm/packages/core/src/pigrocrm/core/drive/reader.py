@@ -160,14 +160,14 @@ class DriveEntry:
 
     `size` is `None` and not `0` for a folder or a native Google file: those have
     no bytes on Drive to measure, and `0` would say "an empty file", which is a
-    different and false statement. Same for `modificato_il`, which Drive can omit.
+    different and false statement. Same for `modified_at`, which Drive can omit.
     """
 
     id: str
     name: str
     mime: str
     size: int | None
-    modificato_il: datetime | None
+    modified_at: datetime | None
     folder: bool
 
 
@@ -230,7 +230,7 @@ class DriveReader:
 
         It exists because two callers need a *name* and there was no way to ask for
         one. An import records where a document came from -- `{"drive_file_id": ...,
-        "mime": ..., "nome": ...}` -- and "a file was uploaded" is not an answer to
+        "mime": ..., "name": ...}` -- and "a file was uploaded" is not an answer to
         "where did this come from?" years later; and `describe_roots` below needs the
         name of a folder that has no listable parent to have appeared in.
         """
@@ -657,7 +657,7 @@ def _entry(item: dict[str, Any]) -> DriveEntry:
         name=str(item.get("name") or ""),
         mime=mime,
         size=_as_int(item.get("size")),
-        modificato_il=_moment(item.get("modifiedTime")),
+        modified_at=_moment(item.get("modifiedTime")),
         folder=mime == FOLDER_MIME,
     )
 

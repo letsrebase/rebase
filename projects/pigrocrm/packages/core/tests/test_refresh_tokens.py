@@ -25,7 +25,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 def _make_user(db_session: Session, email: str = "refresh@test.it"):
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Refresh", role="admin"), ADMIN
+        UserCreate(email=email, password="supersegreta1", name="Refresh", role="admin"), ADMIN
     )
 
 
@@ -297,7 +297,7 @@ def test_two_concurrent_consumes_of_the_same_jti_do_not_both_succeed(
             UserCreate(
                 email=f"race-{uuid4()}@test.it",
                 password="supersegreta1",
-                nome="Race",
+                name="Race",
                 role="admin",
             ),
             ADMIN,

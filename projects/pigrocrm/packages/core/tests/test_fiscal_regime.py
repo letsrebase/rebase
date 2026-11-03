@@ -57,9 +57,9 @@ def test_resolve_regime_picks_the_strategy_from_the_code() -> None:
 
 def test_a_regime_belongs_to_its_own_pack_only() -> None:
     """REB-760: `RF01` is the ordinary regime of `it-standard` and `RF19` the
-    forfettario of `it-flat-rate`. The pairing is refused both ways, naming the field and
-    the codes the pack does carry, so an ordinary azienda is never held to the
-    forfettario's ceilings by a pack it was left on."""
+    flat-rate regime of `it-flat-rate`. The pairing is refused both ways, naming the field and
+    the codes the pack does carry, so an ordinary legal entity is never held to the
+    flat-rate ceilings by a pack it was left on."""
     with pytest.raises(ValidationFailed) as ordinary:
         resolve_regime("RF01", "it-flat-rate")
     assert ordinary.value.details["field"] == "regime_code"
@@ -102,7 +102,7 @@ def test_flat_rate_forces_zero_rate_with_the_vat_nature_and_the_reference() -> N
     assert reference == DEFAULT_LEGAL_REFERENCE
 
 
-def test_flat_rate_gives_an_extra_eu_customer_n_2_1_and_operazione_not_soggetta() -> None:
+def test_flat_rate_gives_an_extra_eu_customer_n_2_1_and_operation_not_subject() -> None:
     """A service to a business established outside Italy is outside the scope of
     Italian VAT (art. 7-ter DPR 633/1972), which the SdI codes as `N2.1`; `N2.2` and
     the L. 190/2014 declaration are the domestic answer. ORB-32: the accountant's tool
@@ -121,7 +121,7 @@ def test_flat_rate_gives_an_extra_eu_customer_n_2_1_and_operazione_not_soggetta(
     assert "forfettario" in reference
 
 
-def test_flat_rate_gives_an_eu_customer_n_2_1_and_inversione_contabile() -> None:
+def test_flat_rate_gives_an_eu_customer_n_2_1_and_reverse_charge() -> None:
     """Art. 21 c. 6-bis lett. a): a taxable customer in another member state gets the
     same `N2.1` but the annotation "inversione contabile", because that customer
     self-assesses the VAT at home. The wording is the only thing that differs."""
@@ -188,8 +188,8 @@ def test_the_non_resident_references_fit_the_fpr12_width(text: str) -> None:
 
 
 def test_flat_rate_accepts_an_explicit_zero_and_refuses_anything_else() -> None:
-    """Two SdI checks applied as a pair: a zero rate without a Natura is rejected,
-    and a Natura with a non-zero rate is rejected. Whoever does not know that
+    """Two SdI checks applied as a pair: a zero rate without a VAT nature is rejected,
+    and a VAT nature with a non-zero rate is rejected. Whoever does not know that
     discovers the second only after fixing the first."""
     assert FLAT_RATE.resolve_line_vat(Decimal("0.00"), _profile(), country_customer="IT")[
         0

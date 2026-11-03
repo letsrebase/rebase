@@ -211,7 +211,7 @@ def test_the_receivable_predicate_is_defined_once() -> None:
 
 def test_no_dashboard_query_restates_the_receivable_predicate() -> None:
     """The four readings this page is made of all spell `*_receivable_filter()` and
-    none writes `stato_pagamento == "da_incassare"` by hand."""
+    none writes `payment_status == "unpaid"` by hand."""
     source = (_CORE / "invoices" / "repository.py").read_text(encoding="utf-8")
     for name in (
         "def ageing_receivables",
@@ -223,4 +223,4 @@ def test_no_dashboard_query_restates_the_receivable_predicate() -> None:
         end = source.index("\n    def ", start + 1)
         body = source[start:end]
         assert "_receivable_filter()" in body, name
-        assert 'stato_pagamento == "da_incassare"' not in body, name
+        assert 'payment_status == "unpaid"' not in body, name

@@ -34,7 +34,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 READONLY = Actor(id=None, type="system", role="readonly")
 
 PDF = b"%PDF-1.4 l'originale che il cliente ha in mano"
-ORIGIN = {"drive_file_id": "1PreventivoPdfXXXX", "nome": "Fattura 7.pdf"}
+ORIGIN = {"drive_file_id": "1PreventivoPdfXXXX", "name": "Fattura 7.pdf"}
 
 
 def _customer_id(session: Session) -> UUID:

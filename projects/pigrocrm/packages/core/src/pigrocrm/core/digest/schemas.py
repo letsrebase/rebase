@@ -10,7 +10,7 @@ and the two properties at the bottom are predicates over fields rather than sums
 `DigestService` copies each number from the repository or the service that owns it, so
 there is no second place a total of this report can be worked out and disagree. The same
 rule `core/dashboard/` is held to by an AST scan, applied here by construction --
-`vinto_da_fatturare` is the dashboard's own count, `accrued_value` is
+`won_to_invoice` is the dashboard's own count, `accrued_value` is
 `AnalyticsService`'s, and the two month totals are two calls to one register sum with two
 windows.
 
@@ -192,7 +192,7 @@ class WeeklyDigest(BaseModel):
 
     # 6. In pipeline.
     pipeline: list[DigestStage]
-    deal_mossi: list[DigestDealMove]
+    deal_moves: list[DigestDealMove]
     offers_pending: list[DigestOffer]
 
     # 7. Da sistemare.
@@ -212,7 +212,7 @@ class WeeklyDigest(BaseModel):
         closes with the «settimana ferma» line and the ready-made prompt, and it is the
         week the report is most worth sending.
         """
-        return not self.issued and not self.paid and not self.deal_mossi and self.hours is None
+        return not self.issued and not self.paid and not self.deal_moves and self.hours is None
 
     @property
     def empty(self) -> bool:
@@ -234,7 +234,7 @@ class WeeklyDigest(BaseModel):
             and not self.issued
             and not self.paid
             and not self.pipeline
-            and not self.deal_mossi
+            and not self.deal_moves
             and not self.offers_pending
             and not self.signals
             and self.tasks.empty

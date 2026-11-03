@@ -47,11 +47,9 @@ def _groups(results: SearchResults) -> dict[str, SearchGroup]:
     return {group.entity: group for group in results.groups}
 
 
-def _search(session: Session, deadline: str, limit: int = 5) -> dict[str, SearchGroup]:
+def _search(session: Session, term: str, limit: int = 5) -> dict[str, SearchGroup]:
     return _groups(
-        SearchService(session).search_everything(
-            SearchQuery(deadline=deadline, limit=limit), READONLY
-        )
+        SearchService(session).search_everything(SearchQuery(term=term, limit=limit), READONLY)
     )
 
 
@@ -80,14 +78,14 @@ def test_every_group_is_present_even_when_empty(db_session: Session) -> None:
     the start and the fan-out never queried it, so an invoice number came back as
     «Nessun risultato» -- an empty group and a group that was never asked, rendering the
     same, which is exactly what this assertion exists to prevent."""
-    results = SearchService(db_session).search_everything(SearchQuery(deadline="zzzqqq"), READONLY)
+    results = SearchService(db_session).search_everything(SearchQuery(term="zzzqqq"), READONLY)
     assert [group.entity for group in results.groups] == [
         "customer",
         "person",
         "deal",
         "document",
         "invoice",
-        "attivita",
+        "task",
     ]
     # Every member of `SearchEntity`, not a list that happens to be six long: a seventh
     # entity declared and not searched would be the same defect again.
@@ -133,13 +131,13 @@ def test_the_count_is_the_same_predicate_as_the_hits(db_session: Session) -> Non
                 custom_fields={},
             )
         )
-    cancellata = Customer(legal_name="Vulcano Cancellata Srl", country="IT", custom_fields={})
-    db_session.add(cancellata)
+    deleted_customer = Customer(legal_name="Vulcano Cancellata Srl", country="IT", custom_fields={})
+    db_session.add(deleted_customer)
     db_session.add(
         Customer(legal_name="Quadrifoglio Logistica Spa", country="IT", custom_fields={})
     )
     db_session.flush()
-    cancellata.deleted_at = datetime.now(UTC)
+    deleted_customer.deleted_at = datetime.now(UTC)
     db_session.flush()
 
     customers = _search(db_session, "Vulcano", limit=20)["customer"]
@@ -174,7 +172,7 @@ def test_every_returned_hit_is_above_the_floor(db_session: Session) -> None:
     user to ignore the palette."""
     build_corpus(db_session, SMALL)
     results = SearchService(db_session).search_everything(
-        SearchQuery(deadline="ingegneria", limit=20), READONLY
+        SearchQuery(term="ingegneria", limit=20), READONLY
     )
     assert any(group.hits for group in results.groups), "nothing matched, so nothing was tested"
     for group in results.groups:
@@ -253,7 +251,7 @@ def test_people_are_found_by_first_name_by_surname_and_by_email(
     db_session: Session,
 ) -> None:
     db_session.add(
-        Person(nome="Ludovica", last_name="Ferraresi", email="lf@studio.example", custom_fields={})
+        Person(name="Ludovica", last_name="Ferraresi", email="lf@studio.example", custom_fields={})
     )
     db_session.flush()
 
@@ -266,7 +264,7 @@ def test_people_are_found_by_first_name_by_surname_and_by_email(
 def test_a_person_without_a_surname_has_a_label_and_no_trailing_space(
     db_session: Session,
 ) -> None:
-    db_session.add(Person(nome="Ludovica", last_name=None, custom_fields={}))
+    db_session.add(Person(name="Ludovica", last_name=None, custom_fields={}))
     db_session.flush()
     group = _search(db_session, "Ludovi")["person"]
     assert group.hits[0].label == "Ludovica"
@@ -280,7 +278,7 @@ def test_a_deal_hit_carries_its_customer_as_the_subtitle(db_session: Session) ->
     assert customer is not None
     db_session.add(
         Deal(
-            nome="Rifacimento cabina elettrica",
+            name="Rifacimento cabina elettrica",
             customer_id=customer.id,
             pipeline_stage_id=ids.stage_open_id,
             probability=50,
@@ -316,21 +314,19 @@ def test_a_two_character_term_is_refused_by_the_schema() -> None:
     """The server-side half of the three-character rule. The palette does not send it,
     and an agent that does gets a named validation error rather than a table scan."""
     with pytest.raises(pydantic.ValidationError):
-        SearchQuery(deadline="ab")
+        SearchQuery(term="ab")
 
 
 def test_the_term_is_stripped_before_it_is_matched(db_session: Session) -> None:
     """A palette sends what the user typed, spaces included, and a leading space would
     otherwise turn a prefix match into a substring one -- a different score for the same
-    intention. The echoed `deadline` is the stripped one, because that is what was
+    intention. The echoed `term` is the stripped one, because that is what was
     searched for."""
     db_session.add(Customer(legal_name="Vulcano Srl", country="IT", custom_fields={}))
     db_session.flush()
 
-    results = SearchService(db_session).search_everything(
-        SearchQuery(deadline="  Vulcano  "), READONLY
-    )
-    assert results.deadline == "Vulcano"
+    results = SearchService(db_session).search_everything(SearchQuery(term="  Vulcano  "), READONLY)
+    assert results.term == "Vulcano"
     assert _groups(results)["customer"].hits[0].score == Decimal("0.8000")
 
 
@@ -338,8 +334,8 @@ def test_a_readonly_actor_can_search(db_session: Session) -> None:
     """Search is a read, and slice 4 §11 gives every dashboard read to every role. There
     is no new authorisation rule in this slice (§13)."""
     build_corpus(db_session, SMALL)
-    results = SearchService(db_session).search_everything(SearchQuery(deadline="Rossi"), READONLY)
-    assert results.deadline == "Rossi"
+    results = SearchService(db_session).search_everything(SearchQuery(term="Rossi"), READONLY)
+    assert results.term == "Rossi"
     assert _groups(results)["customer"].total > 0
 
 

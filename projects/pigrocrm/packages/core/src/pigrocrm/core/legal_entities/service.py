@@ -22,6 +22,7 @@ from pigrocrm.core.legal_entities.schemas import (
     LegalEntityRead,
     LegalEntityUpsert,
 )
+from pigrocrm.core.templates.scope import LEGAL_ENTITY_KEYS, italian_keys
 from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
@@ -212,7 +213,8 @@ class LegalEntityService:
         business (and `LegalEntityRead` already drops nothing else).
         """
         profile = self.get(actor, legal_entity_id)
-        return {"emittente": profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))}
+        fields = profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
+        return {"emittente": italian_keys(fields, LEGAL_ENTITY_KEYS)}
 
     # -- writes --------------------------------------------------------------
 

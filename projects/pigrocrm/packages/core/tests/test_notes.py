@@ -26,8 +26,8 @@ SYSTEM = Actor.system()
 REBASE = Actor.rebase()
 
 
-def _member(session: Session, nome: str, role: str = "collaborator") -> User:
-    user = User(email=f"{uuid4()}@example.test", password_hash="x", nome=nome, role=role)
+def _member(session: Session, name: str, role: str = "collaborator") -> User:
+    user = User(email=f"{uuid4()}@example.test", password_hash="x", name=name, role=role)
     session.add(user)
     session.flush()
     return user
@@ -47,11 +47,11 @@ def records(db_session: Session, customer_id: UUID, seeded_open_stage_id: UUID) 
     """One record of each kind a thread hangs on."""
     deal = DealService(db_session).create(
         DealCreate(
-            nome="Progetto", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
+            name="Progetto", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
         ),
         SYSTEM,
     )
-    person = PersonService(db_session).create(PersonCreate(nome="Anna"), SYSTEM)
+    person = PersonService(db_session).create(PersonCreate(first_name="Anna"), SYSTEM)
     return {"customer": customer_id, "deal": deal.id, "person": person.id}
 
 
@@ -349,8 +349,8 @@ def test_the_first_note_on_creation_is_bounded_like_any_note() -> None:
 
     for create in (
         lambda note: CustomerCreate(legal_name="A", note=note),
-        lambda note: PersonCreate(nome="A", note=note),
-        lambda note: DealCreate(nome="A", customer_id=uuid4(), note=note),
+        lambda note: PersonCreate(first_name="A", note=note),
+        lambda note: DealCreate(name="A", customer_id=uuid4(), note=note),
     ):
         create("x" * NOTE_MAX_LENGTH)
         with pytest.raises(ValidationError):
@@ -381,14 +381,16 @@ def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
     )
     deal = DealService(db_session).create(
         DealCreate(
-            nome="Progetto",
+            name="Progetto",
             customer_id=customer.id,
             pipeline_stage_id=seeded_open_stage_id,
             note="Primo contatto.",
         ),
         actor,
     )
-    person = PersonService(db_session).create(PersonCreate(nome="Anna", note="Referente."), actor)
+    person = PersonService(db_session).create(
+        PersonCreate(first_name="Anna", note="Referente."), actor
+    )
     service = NoteService(db_session)
 
     for kind, record, text in (
@@ -415,7 +417,7 @@ def test_an_absent_or_blank_note_on_creation_makes_no_note(
 def test_a_creation_that_fails_leaves_no_note(db_session: Session) -> None:
     with pytest.raises(NotFound):
         DealService(db_session).create(
-            DealCreate(nome="Senza cliente", customer_id=uuid4(), note="Non deve restare"), SYSTEM
+            DealCreate(name="Senza cliente", customer_id=uuid4(), note="Non deve restare"), SYSTEM
         )
     assert db_session.query(Note).filter(Note.text == "Non deve restare").count() == 0
 
@@ -439,4 +441,4 @@ def test_the_note_is_not_a_native_field_any_more() -> None:
 
     for kind in ("customer", "person", "deal"):
         assert "note" not in native_fields(kind)
-    assert "note" in native_fields("attivita")
+    assert "note" in native_fields("task")

@@ -435,22 +435,22 @@ class AnalyticsService:
                     # active one's coefficients (spec §1.9, review of REB-630). The
                     # two nets below are read off the same figure, so they are that
                     # legal entity's too.
-                    per_fisco = (
+                    per_tax_office = (
                         pension_fund
                         if base == "collection" and pension_fund.legal_entity_id == owner.id
                         else self.cash_overview(year, actor, "collection", owner.id)
                     )
                     tax = self.get_fiscal_estimate(
-                        year, actor, revenue=per_fisco.paid, legal_entity_id=owner.id
+                        year, actor, revenue=per_tax_office.paid, legal_entity_id=owner.id
                     )
                     projected_tax = self.get_fiscal_estimate(
-                        year, actor, revenue=per_fisco.projected, legal_entity_id=owner.id
+                        year, actor, revenue=per_tax_office.projected, legal_entity_id=owner.id
                     )
                     if tax.due_total is not None:
-                        net = round_money(per_fisco.actual_gross - tax.due_total)
+                        net = round_money(per_tax_office.actual_gross - tax.due_total)
                     if projected_tax.due_total is not None:
                         projected_net = round_money(
-                            per_fisco.projected_gross - projected_tax.due_total
+                            per_tax_office.projected_gross - projected_tax.due_total
                         )
             except NotFound:
                 # No fiscal profile yet, or no legal entity at all: the page says so and

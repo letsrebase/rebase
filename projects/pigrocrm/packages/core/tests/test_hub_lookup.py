@@ -59,9 +59,9 @@ class FakeHub:
 
 
 def test_a_member_comes_back_with_the_two_names_and_one_post_left_with_the_bearer() -> None:
-    hub = FakeHub(body={"member": True, "nome": "Ada", "last_name": "Lovelace"})
+    hub = FakeHub(body={"member": True, "first_name": "Ada", "last_name": "Lovelace"})
     found = lookup_member(_settings(), "  Ada@Studio.it ", http=hub)
-    assert found == MemberLookup(member=True, nome="Ada", last_name="Lovelace")
+    assert found == MemberLookup(member=True, first_name="Ada", last_name="Lovelace")
     # The address is in the body and nowhere in the URL: no access log keeps it.
     assert [(m, u) for m, u, _, _ in hub.calls] == [
         ("POST", f"https://letsrebase.com{LOOKUP_PATH}")
@@ -73,7 +73,7 @@ def test_a_member_comes_back_with_the_two_names_and_one_post_left_with_the_beare
 
 
 def test_a_non_member_is_a_plain_false() -> None:
-    hub = FakeHub(body={"member": False, "nome": None, "last_name": None})
+    hub = FakeHub(body={"member": False, "first_name": None, "last_name": None})
     assert lookup_member(_settings(), "nessuno@example.org", http=hub) == MemberLookup(member=False)
 
 
@@ -106,13 +106,13 @@ def test_a_body_that_is_not_the_shape_or_is_too_long_is_not_a_member() -> None:
     assert lookup_member(_settings(), "ada@studio.it", http=wrong_shape) == MemberLookup(
         member=False
     )
-    too_long = FakeHub(body={"member": True, "nome": "A" * MAX_BODY_BYTES, "last_name": "L"})
+    too_long = FakeHub(body={"member": True, "first_name": "A" * MAX_BODY_BYTES, "last_name": "L"})
     assert len(too_long.body) > MAX_BODY_BYTES
     assert lookup_member(_settings(), "ada@studio.it", http=too_long) == MemberLookup(member=False)
 
 
 def test_without_a_token_or_a_url_or_an_address_the_hub_is_never_asked() -> None:
-    hub = FakeHub(body={"member": True, "nome": "Ada", "last_name": "Lovelace"})
+    hub = FakeHub(body={"member": True, "first_name": "Ada", "last_name": "Lovelace"})
     assert lookup_member(_settings(registry_token=""), "ada@studio.it", http=hub) == MemberLookup(
         member=False
     )
@@ -148,7 +148,7 @@ class _Redirecting(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        answer = json.dumps({"member": True, "nome": "Ada", "last_name": "Lovelace"}).encode()
+        answer = json.dumps({"member": True, "first_name": "Ada", "last_name": "Lovelace"}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(answer)))

@@ -221,10 +221,10 @@ def excluded_from_coefficient_base(
     invoices of `year`, the same universe `AnalyticsRepository.annual_revenue` sums,
     identified by `description_line`, the one stable marker available without a new
     `InvoiceLine`/`Invoice` column (see `pack.py::StatutoryCharge`'s own docstring)."""
-    marcatori = tuple(
+    markers = tuple(
         charge.description_line for charge in pack.charges if not charge.count_by_the_coefficient
     )
-    if not marcatori:
+    if not markers:
         return ZERO_MONEY
     return round_money(
         Decimal(
@@ -233,7 +233,7 @@ def excluded_from_coefficient_base(
                 .join(Invoice, InvoiceLine.invoice_id == Invoice.id)
                 .where(
                     *_issued_invoice_filter(year, legal_entity_id),
-                    charge_line_clause(marcatori),
+                    charge_line_clause(markers),
                 )
             ).scalar_one()
         )

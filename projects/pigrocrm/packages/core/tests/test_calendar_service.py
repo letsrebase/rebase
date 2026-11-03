@@ -33,7 +33,7 @@ def calendar(db_session: Session) -> CalendarService:
 
 
 @pytest.fixture
-def attivita(db_session: Session) -> TaskService:
+def tasks(db_session: Session) -> TaskService:
     return TaskService(db_session)
 
 
@@ -53,7 +53,7 @@ def _log(
         TimeEntry(
             deal_id=deal_id,
             user_id=user_id,
-            data=day,
+            date=day,
             hours=Decimal(hours),
             description=description,
             applied_rate=Decimal("80.000000"),
@@ -121,7 +121,7 @@ def test_a_day_carries_its_total_and_its_breakdown_by_deal(
     db_session.add(customer)
     db_session.flush()
     second = Deal(
-        nome="Secondo progetto",
+        name="Secondo progetto",
         customer_id=customer.id,
         pipeline_stage_id=seeded_open_stage_id,
         probability=10,
@@ -136,14 +136,14 @@ def test_a_day_carries_its_total_and_its_breakdown_by_deal(
     day = calendar.month(Month, ADMIN).days[0]
 
     assert day.hours == Decimal("9.00")
-    assert {(riga.deal_name, riga.hours) for riga in day.per_deal} == {
+    assert {(line.deal_name, line.hours) for line in day.per_deal} == {
         ("Progetto di prova", Decimal("8.00")),
         ("Secondo progetto", Decimal("1.00")),
     }
     # The client's name travels with the deal, so a cell can read «Acme · Progetto di prova» and
     # not just the project. The seeded deal's own customer is named with a uuid by the
     # fixture, so what is asserted is that it is there at all.
-    per_deal = {riga.deal_name: riga.customer for riga in day.per_deal}
+    per_deal = {line.deal_name: line.customer for line in day.per_deal}
     assert per_deal["Secondo progetto"] == "Secondo cliente"
     assert per_deal["Progetto di prova"]
 
@@ -176,7 +176,7 @@ def test_the_hours_can_be_scoped_to_one_person(
     other = User(
         email=f"altro-{uuid4()}@example.test",
         password_hash="x",
-        nome="Altro",
+        name="Altro",
         role="collaborator",
     )
     db_session.add(other)
@@ -195,22 +195,22 @@ def test_the_hours_can_be_scoped_to_one_person(
 
 
 def test_an_activity_with_a_date_lands_on_its_day(
-    calendar: CalendarService, attivita: TaskService
+    calendar: CalendarService, tasks: TaskService
 ) -> None:
-    attivita.create(TaskCreate(title="Sollecitare Rossi", due_date=date(2026, 9, 18)), ADMIN)
+    tasks.create(TaskCreate(title="Sollecitare Rossi", due_date=date(2026, 9, 18)), ADMIN)
 
     month = calendar.month(Month, ADMIN)
 
     assert [day.day for day in month.days] == [date(2026, 9, 18)]
-    assert [item.title for item in month.days[0].attivita] == ["Sollecitare Rossi"]
+    assert [item.title for item in month.days[0].tasks] == ["Sollecitare Rossi"]
 
 
 def test_an_activity_without_a_date_is_outside_the_grid(
-    calendar: CalendarService, attivita: TaskService
+    calendar: CalendarService, tasks: TaskService
 ) -> None:
     """The decision of §3.2, seen from the calendar: it cannot be drawn in a cell, it is
     not late and it is not for today. A NULL is not zero days."""
-    attivita.create(TaskCreate(title="Chiedere il codice SDI"), ADMIN)
+    tasks.create(TaskCreate(title="Chiedere il codice SDI"), ADMIN)
 
     month = calendar.month(Month, ADMIN)
 
@@ -219,35 +219,31 @@ def test_an_activity_without_a_date_is_outside_the_grid(
 
 
 def test_a_completed_undated_activity_is_not_in_the_section_either(
-    calendar: CalendarService, attivita: TaskService
+    calendar: CalendarService, tasks: TaskService
 ) -> None:
     """That section is a list of things still to do; a completed one is history."""
-    created = attivita.create(TaskCreate(title="Fatto e senza data"), ADMIN)
-    attivita.complete(created.id, ADMIN)
+    created = tasks.create(TaskCreate(title="Fatto e senza data"), ADMIN)
+    tasks.complete(created.id, ADMIN)
 
     assert calendar.month(Month, ADMIN).task_without_due_date == []
 
 
 def test_a_completed_activity_with_a_date_stays_on_its_day(
-    calendar: CalendarService, attivita: TaskService
+    calendar: CalendarService, tasks: TaskService
 ) -> None:
     """Its state travels with it, so the grid can draw «done» differently -- hiding it
     would make the calendar say the work was never done."""
-    created = attivita.create(TaskCreate(title="Fatto", due_date=date(2026, 9, 18)), ADMIN)
-    attivita.complete(created.id, ADMIN)
+    created = tasks.create(TaskCreate(title="Fatto", due_date=date(2026, 9, 18)), ADMIN)
+    tasks.complete(created.id, ADMIN)
 
     day = calendar.month(Month, ADMIN).days[0]
 
-    assert [(item.title, item.status) for item in day.attivita] == [("Fatto", "completed")]
+    assert [(item.title, item.status) for item in day.tasks] == [("Fatto", "completed")]
 
 
-def test_an_archived_activity_is_in_no_month(
-    calendar: CalendarService, attivita: TaskService
-) -> None:
-    created = attivita.create(
-        TaskCreate(title="Creata per errore", due_date=date(2026, 9, 18)), ADMIN
-    )
-    attivita.soft_delete(created.id, ADMIN)
+def test_an_archived_activity_is_in_no_month(calendar: CalendarService, tasks: TaskService) -> None:
+    created = tasks.create(TaskCreate(title="Creata per errore", due_date=date(2026, 9, 18)), ADMIN)
+    tasks.soft_delete(created.id, ADMIN)
 
     assert calendar.month(Month, ADMIN).days == []
 
@@ -305,7 +301,7 @@ def _contract_day(db_session: Session, day: date, status: str = "worked") -> UUI
     db_session.flush()
     day = WorkUnit(
         contract_id=contract.id,
-        data=day,
+        date=day,
         quantity=Decimal("0.50"),
         description="Revisione",
         status=status,

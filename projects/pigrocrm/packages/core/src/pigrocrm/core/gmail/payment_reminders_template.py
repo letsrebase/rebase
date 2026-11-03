@@ -98,7 +98,7 @@ PAYMENT_REMINDER_DECLARED_VARIABLES: tuple[DeclaredVariable, ...] = (
     ),
     # Optional: an emitter profile saved before this column existed has no signature
     # block, and a reminder with no free-text signature is still a correct reminder --
-    # `emittente.legal_name` is always there under it.
+    # `emittente.ragione_sociale` is always there under it.
     DeclaredVariable(name="firma_email", label="Firma", type="text", required=False),
 )
 

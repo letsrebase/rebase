@@ -10,7 +10,7 @@ def invitation_mail(
     to: str, space: str, invited_from: str, url: str, *, name: str | None = None, days: int
 ) -> Mail:
     """A space gains a person (spec 2026-09-17 §5): who invited them, the space, the
-    link, and that no password is involved. `nome` is the person's own name when the
+    link, and that no password is involved. `name` is the person's own name when the
     admin typed one; the greeting stays anonymous when nobody knows it, exactly like
     `welcome_mail`'s. The window and the single use are stated plainly, and ignoring
     an unexpected mail is fine -- the same sentence `magic_link_mail` uses for the

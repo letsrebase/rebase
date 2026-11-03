@@ -155,7 +155,7 @@ class RegisterGaps:
             f"il registro importato ha buchi non dichiarati ai numeri {shown}: "
             "dichiarali (o importali) prima di riprendere a emettere",
             year=year,
-            numeri=gaps,
+            numbers=gaps,
         )
 
 

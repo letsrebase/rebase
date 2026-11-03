@@ -38,8 +38,8 @@ def test_revenue_equals_the_invoices_behind_it_to_the_cent(
 
     expected = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-            "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+            "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"id": deal_id},
@@ -84,7 +84,7 @@ def test_the_whole_pl_reconciles_with_independent_sql(
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=seeded_user_id,
-                data=date(2026, 3, 4),
+                date=date(2026, 3, 4),
                 hours=hours,
                 description="Lavoro",
                 billable=billable,
@@ -99,7 +99,7 @@ def test_the_whole_pl_reconciles_with_independent_sql(
             CostCreate(
                 deal_id=deal_id,
                 category_id=seeded_category_id,
-                data=date(2026, 3, 1),
+                date=date(2026, 3, 1),
                 amount=amount,
                 description="Spesa",
             ),
@@ -110,22 +110,22 @@ def test_the_whole_pl_reconciles_with_independent_sql(
 
     revenue = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-            "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+            "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"id": deal_id},
     ).scalar_one()
-    costi = db_session.execute(
+    costs = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(importo), 0) FROM costs WHERE deal_id = :id AND deleted_at IS NULL"
+            "SELECT COALESCE(SUM(amount), 0) FROM costs WHERE deal_id = :id AND deleted_at IS NULL"
         ),
         {"id": deal_id},
     ).scalar_one()
     lines_cost = db_session.execute(
         text(
-            "SELECT ore, costo_applicato FROM time_entries "
-            "WHERE deal_id = :id AND deleted_at IS NULL AND costo_applicato IS NOT NULL"
+            "SELECT hours, applied_cost FROM time_entries "
+            "WHERE deal_id = :id AND deleted_at IS NULL AND applied_cost IS NOT NULL"
         ),
         {"id": deal_id},
     ).all()
@@ -138,9 +138,9 @@ def test_the_whole_pl_reconciles_with_independent_sql(
     )
 
     assert pnl.revenue == Decimal(revenue) == Decimal("1583.83")
-    assert pnl.direct_costs == Decimal(costi) == Decimal("489.95")
+    assert pnl.direct_costs == Decimal(costs) == Decimal("489.95")
     assert pnl.work_cost == work
-    assert pnl.gross_margin == Decimal(revenue) - Decimal(costi) - work
+    assert pnl.gross_margin == Decimal(revenue) - Decimal(costs) - work
     # Not the rounding of the exact sum: 7.33 x 31.75 = 232.7275 -> 232.73 per row.
     assert pnl.work_cost == Decimal("232.73") + Decimal("79.38") + Decimal("39.69")
     assert pnl.total_hours == Decimal("14.08")
@@ -162,8 +162,8 @@ def test_it_follows_taxable_amount_and_not_total(
     deal_id = deal_with_vat_invoice
     taxable_amount, total = db_session.execute(
         text(
-            "SELECT SUM(imponibile), SUM(totale) FROM invoices "
-            "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT SUM(taxable_amount), SUM(total) FROM invoices "
+            "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"id": deal_id},
@@ -184,7 +184,7 @@ def test_a_soft_deleted_invoice_leaves_the_figure(
     deal_id = deal_with_mixed_invoices
     before = AnalyticsService(db_session).deal_pnl(deal_id, READER).revenue
     deleted = db_session.execute(
-        text("UPDATE invoices SET deleted_at = now() WHERE deal_id = :id AND stato = 'bozza'"),
+        text("UPDATE invoices SET deleted_at = now() WHERE deal_id = :id AND status = 'draft'"),
         {"id": deal_id},
     ).rowcount
     db_session.flush()
@@ -218,7 +218,7 @@ def test_the_stated_figure_does_not_move_when_a_rate_moves(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("4.00"),
             description="Sviluppo",
         ),
@@ -266,7 +266,7 @@ def test_an_hour_on_a_draft_invoice_is_neither_revenue_nor_lost(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("2.00"),
             description="Sviluppo",
             applied_rate=Decimal("100.000000"),

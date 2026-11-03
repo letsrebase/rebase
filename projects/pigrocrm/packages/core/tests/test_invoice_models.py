@@ -16,7 +16,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.invoices.models import Invoice, InvoiceCounter, InvoiceLine
+from pigrocrm.core.invoices.models import (
+    PROFORMA_SEQUENCE_NAME,
+    Invoice,
+    InvoiceCounter,
+    InvoiceLine,
+)
 
 
 @pytest.fixture
@@ -375,8 +380,8 @@ def test_the_proforma_sequence_exists_and_never_repeats(db_session: Session) -> 
     """A `SEQUENCE` is the right tool *here* and the wrong one for the fiscal number,
     for the same property: `nextval()` does not roll back. On a proforma a gap means
     nothing, and in exchange the counter serialises nobody."""
-    first = db_session.execute(text("SELECT nextval('proforma_riferimento_seq')")).scalar_one()
-    second = db_session.execute(text("SELECT nextval('proforma_riferimento_seq')")).scalar_one()
+    first = db_session.execute(text(f"SELECT nextval('{PROFORMA_SEQUENCE_NAME}')")).scalar_one()
+    second = db_session.execute(text(f"SELECT nextval('{PROFORMA_SEQUENCE_NAME}')")).scalar_one()
     assert second == first + 1
 
 

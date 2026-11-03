@@ -2,7 +2,7 @@
 unbilled `work_units` proposes a day-to-line mapping -- exercised end to end through
 `InvoiceService.review_import`, the FPR12 fixture REB-363/364/365 already use
 (`fpr-12-march-consulting.xml`: `issue_date=2026-03-15`, one line,
-`quantity=5.000000` giorni, `total_price=1000.00`, cliente PIVA `09876543210`), and
+`quantity=5.000000` days, `total_price=1000.00`, customer VAT number `09876543210`), and
 a real `Contract`/`RateCard`/`WorkUnit` set -- the same fixture-reuse and
 read-only/idempotence discipline `test_invoice_import_review.py` already holds
 `review_content` to, extended onto the day-mapping proposal this issue adds.
@@ -39,7 +39,7 @@ SUPPLIER_CF = "BNCCHR85M41H501Z"
 # what resolves `matched_customer_id`, the day-mapping proposal's own prerequisite.
 CUSTOMER_VAT_NUMBER = "09876543210"
 # The fixture's own single line: 5 giorni at EUR 200.00/giorno, EUR 1000.00 total.
-DATA_EMISSIONE = date(2026, 3, 15)
+ISSUE_DATE = date(2026, 3, 15)
 
 
 def _fixture(name: str) -> bytes:
@@ -120,7 +120,7 @@ def _rate_card(session: Session, contract: Contract, **overrides: object) -> Rat
 def _work_unit(session: Session, contract: Contract, **overrides: object) -> WorkUnit:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "data": date(2026, 3, 1),
+        "date": date(2026, 3, 1),
         "quantity": Decimal("1.00"),
         "description": "Giornata di consulenza",
         "status": "worked",
@@ -135,7 +135,7 @@ def _work_unit(session: Session, contract: Contract, **overrides: object) -> Wor
 def _five_unbilled_days(session: Session, contract: Contract) -> list[WorkUnit]:
     """5 giorni, one per day, 2026-03-01 through 2026-03-05 -- exactly what the
     fixture's own single line (`quantity=5.000000`) bills."""
-    return [_work_unit(session, contract, data=date(2026, 3, day)) for day in range(1, 6)]
+    return [_work_unit(session, contract, date=date(2026, 3, day)) for day in range(1, 6)]
 
 
 def test_a_day_rate_contracts_recorded_unbilled_days_propose_a_mapping(
@@ -224,7 +224,7 @@ def test_no_day_mapping_when_the_contracts_rate_card_is_not_day_rate(
         contract,
         type="hourly",
         amount=Decimal("90.00"),
-        unit="ora",
+        unit="hour",
     )
     document_id = _document(db_session, local_storage, customer)
 
@@ -297,7 +297,7 @@ def test_a_day_after_the_issue_date_is_excluded_but_an_exact_match_among_the_res
     days = _five_unbilled_days(db_session, contract)
     # A sixth day, worked after the invoice's own issue date -- never eligible for
     # a mapping proposed *by* that invoice.
-    _work_unit(db_session, contract, data=date(2026, 4, 1))
+    _work_unit(db_session, contract, date=date(2026, 4, 1))
     document_id = _document(db_session, local_storage, customer)
 
     [row] = InvoiceService(db_session, local_storage).review_import([document_id], ADMIN)

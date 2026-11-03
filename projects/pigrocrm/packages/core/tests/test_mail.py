@@ -152,7 +152,7 @@ def test_the_invitation_mail_names_the_inviter_and_the_window() -> None:
     days and one use, and the ignore-it reassurance. The greeting carries the
     person's name only when the admin typed one."""
     url = "https://pigro.test/studio-ada/app/invite?t=abc"
-    mail = invitation_mail("luca@x.it", "studio-ada", "Ada", url, nome="Luca", days=7)
+    mail = invitation_mail("luca@x.it", "studio-ada", "Ada", url, name="Luca", days=7)
     assert mail.to == "luca@x.it"
     assert mail.subject == "Sei stato invitato in studio-ada su PigroCRM"
     assert mail.text.startswith("Ciao Luca,")
@@ -161,10 +161,10 @@ def test_the_invitation_mail_names_the_inviter_and_the_window() -> None:
     assert "Se non te lo aspettavi, ignora questa mail" in mail.text
     assert mail.html is not None and "Entra nello spazio" in mail.html
     # No name on the invitation: the greeting stays anonymous, like `welcome_mail`'s.
-    quiet = invitation_mail("x@x.it", "s", "Ada", url, nome=None, days=7)
+    quiet = invitation_mail("x@x.it", "s", "Ada", url, name=None, days=7)
     assert quiet.text.startswith("Ciao,\n")
     # A space or an inviter that tried to close the tag is escaped in the HTML.
-    hostile = invitation_mail("x@x.it", 's"><script>', 'A"><i>', url, nome=None, days=7)
+    hostile = invitation_mail("x@x.it", 's"><script>', 'A"><i>', url, name=None, days=7)
     assert (
         hostile.html is not None and "<script>" not in hostile.html and '"><i>' not in hostile.html
     )
@@ -180,7 +180,7 @@ def _invoice(
     number: str = "2026/1",
     customer: str = "Cliente Prova",
     amount: Decimal = Decimal("0"),
-    data: date = date(2026, 9, 8),
+    date_: date = date(2026, 9, 8),
     status: str = "issued",
     # `PaymentStatus`'s own two values, and this is the one an issued invoice carries
     # until somebody pays it. Not a word of its own: the mail now reads this column to
@@ -194,7 +194,7 @@ def _invoice(
         number=number,
         customer=customer,
         amount=amount,
-        data=data,
+        date=date_,
         status=status,
         payment_status=payment_status,
         transmitted=transmitted,
@@ -215,7 +215,7 @@ def digest_with(
     total_hours: Decimal | None = None,
     days_without_hours: int = 0,
     pipeline: int = 0,
-    deal_mossi: int = 0,
+    deal_moves: int = 0,
     offers: int = 0,
     signals: int = 0,
 ) -> WeeklyDigest:
@@ -267,9 +267,9 @@ def digest_with(
             DigestStage(stage_name=f"Fase {i}", number=1, total_value=Decimal("100"))
             for i in range(pipeline)
         ],
-        deal_mossi=[
+        deal_moves=[
             DigestDealMove(deal_id=uuid4(), title=f"Deal {i}", stage_name="Vinto", when=_WEEK_START)
-            for i in range(deal_mossi)
+            for i in range(deal_moves)
         ],
         offers_pending=[
             DigestOffer(document_id=uuid4(), title=f"Offerta {i}", days=3) for i in range(offers)
@@ -327,7 +327,7 @@ def test_an_issued_row_prints_the_state_that_tells_the_three_apart() -> None:
     """§3.1 item 3: «Numero, cliente, importo, stato (emessa, trasmessa, incassata)».
 
     `status` alone cannot say it, and printing it was printing the heading twice: the
-    section's own predicate is `stato = 'emessa'`, so every row of it carried that one
+    section's own predicate is `status = 'issued'`, so every row of it carried that one
     word whatever had happened to the invoice since. The three words come from three
     places -- `payment_status`, `transmitted_externally_at` and `status` -- and this is
     the test that they do.
@@ -357,8 +357,8 @@ def test_an_issued_row_prints_the_state_that_tells_the_three_apart() -> None:
     # Only the issued rows: «Incassate questa settimana» is a list of what arrived, and
     # the state of an invoice that has been paid says nothing a reader of that heading
     # does not already know.
-    incassate = digest_mail("a@b.it", digest_with(paid=1), public_url="https://x")
-    assert "2026/1 — Cliente Prova — 0,00 € — mar 8 set\n" in incassate.text
+    collected = digest_mail("a@b.it", digest_with(paid=1), public_url="https://x")
+    assert "2026/1 — Cliente Prova — 0,00 € — mar 8 set\n" in collected.text
 
 
 def test_external_values_are_escaped() -> None:
@@ -379,7 +379,7 @@ def test_the_overdue_list_links_to_the_full_list() -> None:
         "a@b.it", digest_with(expired=Decimal("100")), public_url="https://pigro.test/ada"
     )
     assert mail.html is not None
-    assert "https://pigro.test/ada/app/invoices?scadute=true&da=digest" in mail.text
+    assert "https://pigro.test/ada/app/invoices?overdue=true&da=digest" in mail.text
 
 
 def test_a_quiet_week_offers_the_assistant() -> None:
@@ -412,12 +412,12 @@ def test_the_pipeline_section_links_to_the_pipeline() -> None:
     assert "https://pigro.test/ada/app/deal?da=digest" in mail.html
 
 
-def test_da_emettere_only_appears_with_something_to_bill() -> None:
+def test_to_issue_only_appears_with_something_to_bill() -> None:
     still = digest_mail("a@b.it", digest_with(), public_url="https://x")
     assert "Da emettere" not in still.html
     mail = digest_mail("a@b.it", digest_with(won_to_invoice=2), public_url="https://x")
     assert "Da emettere" in mail.html and "2 deal vinti da fatturare" in mail.text
-    assert "https://x/app/deal/list?da_fatturare=true&da=digest" in mail.text
+    assert "https://x/app/deal/list?to_invoice=true&da=digest" in mail.text
     # The hours link is `/app/hours` bare: `routes/app/hours.tsx` declares no `validateSearch`,
     # so a `?invoiced=false` would be dropped on arrival and the link would promise a
     # filtered list nobody ever sees. Only `da=digest` survives the trip.
@@ -426,7 +426,7 @@ def test_da_emettere_only_appears_with_something_to_bill() -> None:
     )
     assert "8 ore fatturabili non fatturate" in hours.text
     assert "https://x/app/hours?da=digest" in hours.text
-    assert "fatturato=false" not in hours.text
+    assert "invoiced=false" not in hours.text
 
 
 def test_a_debt_due_today_says_so_instead_of_counting_zero_days() -> None:

@@ -191,7 +191,7 @@ class TimeEntryService:
         accepts tomorrow, which is the forecast this slice says it does not make."""
         if day > today_local():
             raise ValidationFailed(
-                ENTITY, "data", "data futura", expected="una data non successiva a oggi"
+                ENTITY, "date", "data futura", expected="una data non successiva a oggi"
             )
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:

@@ -25,6 +25,7 @@ from pigrocrm.core.legal_entities.assets import logo_file_in
 from pigrocrm.core.render.pdf import build_header, render_pdf
 from pigrocrm.core.templates.models import Template
 from pigrocrm.core.templates.renderer import render_template
+from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys
 
 # The template types a `documents` row can legitimately be created from. Derived from
 # `DocumentType` itself, never retyped, so a value added there is covered here by
@@ -44,7 +45,7 @@ class DocumentTemplating:
         turned into `TemplateVariable` objects). This needs the live ORM row instead:
         `declared_variables` reads `template.declared_variables` as the raw list of
         dicts JSONB actually stores, and `template.body_markdown`/`template.type`/
-        `template.nome` feed straight into rendering. Going through
+        `template.name` feed straight into rendering. Going through
         `templates.repo.get` directly is what `TemplateService.declared_variables`
         itself documents as the expected call shape for a `Template` already in hand.
         """
@@ -74,11 +75,11 @@ class DocumentTemplating:
         variables: dict[str, Any],
         actor: Actor,
     ) -> dict[str, Any]:
-        """What a template can read: the caller's variables, plus `customer` and
+        """What a template can read: the caller's variables, plus `cliente` and
         `emittente` from the record itself.
 
         The caller's own keys go in first and the record's go in second, so a caller
-        cannot shadow `customer` or `emittente` with values of their own -- an offer
+        cannot shadow `cliente` or `emittente` with values of their own -- an offer
         must state the customer the document is filed under, not the one whoever
         pressed the button typed.
         """
@@ -90,7 +91,11 @@ class DocumentTemplating:
             "emittente"
         ]
         scope["cliente"] = (
-            CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
+            italian_keys(
+                CustomerRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
+            )
+            if customer
+            else {}
         )
         # `today_local()`, never a bare `date.today()`: see `db/clock.py`. `{{oggi}}` is
         # the date a template prints on the document itself. On a host that is not running

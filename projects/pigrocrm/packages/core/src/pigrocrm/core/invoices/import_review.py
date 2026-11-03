@@ -96,7 +96,7 @@ class InvoiceReviewRequest(BaseModel):
     """One or more `document_id`s, never raw bytes -- the MCP rule
     (`tools/families/documents.py`'s own "the download of bytes never goes through MCP")
     applied symmetrically to the *input* side, and the same shape `InvoiceImport.
-    pdf_sorgente` already uses for a `documents` row that is already on file."""
+    pdf_source` already uses for a `documents` row that is already on file."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -248,9 +248,9 @@ def _propose_day_mappings(
         return none_per_line
     return [
         propose_day_mapping(
-            riga.quantity, riga.total_price, invoice.issue_date, eligible_days, rate_cards
+            line.quantity, line.total_price, invoice.issue_date, eligible_days, rate_cards
         )
-        for riga in invoice.lines
+        for line in invoice.lines
     ]
 
 

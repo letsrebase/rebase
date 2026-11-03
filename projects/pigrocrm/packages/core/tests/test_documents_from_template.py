@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from orologio import TODAY_IN_ITALY, congela
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -54,11 +54,11 @@ def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Custome
     )
     template = TemplateService(db_session).create(
         TemplateCreate(
-            nome="Consulenza CTO",
+            name="Consulenza CTO",
             type="offer",
             body_markdown=BODY,
             declared_variables=[
-                TemplateVariable(nome="offer", label="Offerta", type="text", required=True),
+                TemplateVariable(name="offerta", label="Offerta", type="text", required=True),
             ],
         ),
         ADMIN,
@@ -74,7 +74,7 @@ def _payload(customer: Customer, template: object, **overrides: object) -> Docum
         "template_id": template.id,  # type: ignore[attr-defined]
         "customer_id": customer.id,
         "title": "Offerta 2026-01",
-        "variables": {"offer": {"data": "10/08/2026", "subject": "Advisory"}},
+        "variables": {"offerta": {"data": "10/08/2026", "oggetto": "Advisory"}},
     }
     values.update(overrides)
     return DocumentFromTemplate(**values)  # type: ignore[arg-type]
@@ -97,7 +97,7 @@ def test_the_version_keeps_the_template_and_the_variables_for_regeneration(setup
     assert version.template_id == template.id  # type: ignore[attr-defined]
     stored = service.repo.version(document.id, 1)
     assert stored is not None
-    assert stored.variables["offer"]["subject"] == "Advisory"
+    assert stored.variables["offerta"]["oggetto"] == "Advisory"
     assert "Advisory" in stored.markdown_source
 
 
@@ -141,7 +141,7 @@ def test_a_missing_required_variable_fails_before_anything_is_written(setup: tup
     service, customer, template = setup
     with pytest.raises(ValidationFailed) as excinfo:
         service.create_from_template(_payload(customer, template, variables={}), ADMIN)
-    assert excinfo.value.details["field"] == "offer"
+    assert excinfo.value.details["field"] == "offerta"
     assert service.list.__self__ is service  # sanity: the service is intact
     from pigrocrm.core.documents.schemas import DocumentListQuery
 
@@ -280,7 +280,7 @@ def test_the_automations_entry_precedes_the_documents_own(
     PipelineService(db_session).seed_defaults(ADMIN)
     stages = {s.code: s for s in PipelineService(db_session).list() if s.code is not None}
     deal = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
         probability=10,
@@ -320,8 +320,8 @@ def test_today_defaults_to_italys_own_day_not_the_processs(
     )
     template = TemplateService(db_session).create(
         TemplateCreate(
-            nome="Offerta datata",
-            type="offerta",
+            name="Offerta datata",
+            type="offer",
             body_markdown="Milano, {{oggi}}\n",
             declared_variables=[],
         ),
@@ -332,7 +332,7 @@ def test_today_defaults_to_italys_own_day_not_the_processs(
     db_session.flush()
     service = DocumentService(db_session, LocalFileStorage(tmp_path))
 
-    congela(monkeypatch, documents_service_module)
+    freeze(monkeypatch, documents_service_module)
     document = service.create_from_template(
         DocumentFromTemplate(
             template_id=template.id, customer_id=customer.id, title="Offerta", variables={}
@@ -353,11 +353,11 @@ def test_to_payment_reminder_template_cannot_become_to_document(
     """`TemplateType` and `DocumentType` used to be one Literal, so copying
     `template.type` onto `Document.type` could not go wrong. Slice 5 widened the
     template side with `email` and `payment_reminder`; `DocumentRead.type` is a plain `str`,
-    so without an explicit check the copy succeeds and a "sollecito" document appears
+    so without an explicit check the copy succeeds and a "payment_reminder" document appears
     in the customer's document list, with a body that is an email."""
     service, customer, _ = setup
     payment_reminder = TemplateService(db_session).create(
-        TemplateCreate(nome="Sollecito", type="payment_reminder", body_markdown="Gentile cliente,"),
+        TemplateCreate(name="Sollecito", type="payment_reminder", body_markdown="Gentile cliente,"),
         ADMIN,
     )
     with pytest.raises(ValidationFailed) as excinfo:

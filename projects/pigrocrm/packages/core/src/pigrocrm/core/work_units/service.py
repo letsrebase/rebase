@@ -233,8 +233,8 @@ class WorkUnitService:
             raise Conflict(
                 WORK_UNIT_ENTITY,
                 f"una giornata '{origin}' non puo' passare a '{new_status}'",
-                date_from=origin,
-                date_to=new_status,
+                from_status=origin,
+                to_status=new_status,
             )
         set_transition_context(self.session, actor, reason)
         # The trigger is the authority, and the check above only gives the common refusal a
@@ -245,7 +245,7 @@ class WorkUnitService:
             lambda exc: Conflict(
                 WORK_UNIT_ENTITY,
                 f"la giornata non puo' passare a '{new_status}': e' cambiata nel frattempo",
-                date_to=new_status,
+                to_status=new_status,
             ),
         ):
             work_unit.status = new_status
@@ -276,8 +276,8 @@ class WorkUnitService:
             raise Conflict(
                 WORK_UNIT_ENTITY,
                 f"una giornata '{work_unit.status}' non puo' passare a '{new_status}' da qui",
-                date_from=work_unit.status,
-                date_to=new_status,
+                from_status=work_unit.status,
+                to_status=new_status,
             )
         return self.transition(work_unit_id, new_status, actor, reason)
 

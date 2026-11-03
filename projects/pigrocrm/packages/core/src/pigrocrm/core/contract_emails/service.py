@@ -50,23 +50,23 @@ CONTRACT_ENTITY = "contract"
 
 # One declaration per variable: its name, label, whether a template must be given it, and the
 # sample the save check renders it with. The editor lists them, the save check renders against
-# the samples, and `_values` supplies the real ones. `due_date` is optional because an invoice
+# the samples, and `_values` supplies the real ones. `scadenza` is optional because an invoice
 # need not have one.
 _FIELDS: tuple[tuple[str, str, bool, str], ...] = (
-    ("customer", "Cliente", True, "Acme S.r.l."),
-    ("contract", "Contratto", True, "Consulenza"),
-    ("period", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
-    ("invoice_number", "Numero della fattura", True, "2026/12"),
-    ("invoice_date", "Data della fattura", True, "31/10/2026"),
-    ("amount", "Totale della fattura", True, "1.250,00 €"),
-    ("work_units", "Giornate in fattura", True, "2.50"),
-    ("due_date", "Scadenza", False, "30/11/2026"),
+    ("cliente", "Cliente", True, "Acme S.r.l."),
+    ("contratto", "Contratto", True, "Consulenza"),
+    ("periodo", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
+    ("numero_fattura", "Numero della fattura", True, "2026/12"),
+    ("data_fattura", "Data della fattura", True, "31/10/2026"),
+    ("importo", "Totale della fattura", True, "1.250,00 €"),
+    ("giornate", "Giornate in fattura", True, "2.50"),
+    ("scadenza", "Scadenza", False, "30/11/2026"),
 )
 TEMPLATE_VARIABLES: tuple[DeclaredVariable, ...] = tuple(
     DeclaredVariable(name, label, "text", required) for name, label, required, _ in _FIELDS
 )
 # `emittente.*` is the legal entity's own identity, the same scope every template reads.
-_LEGAL_ENTITY_SAMPLE = {"legal_name": "Studio Rossi", "phone": "", "website": ""}
+_LEGAL_ENTITY_SAMPLE = {"ragione_sociale": "Studio Rossi", "telefono": "", "sito_web": ""}
 LEGAL_ENTITY_VARIABLES = tuple(f"emittente.{name}" for name in _LEGAL_ENTITY_SAMPLE)
 
 _SAMPLE: dict[str, Any] = {

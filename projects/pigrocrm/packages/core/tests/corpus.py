@@ -179,7 +179,7 @@ def _stages(session: Session) -> tuple[UUID, UUID, UUID]:
         if existing is None:
             existing = PipelineStage(
                 code=code,
-                nome=nome,
+                name=nome,
                 position=position,
                 default_probability=probability,
                 type=type,

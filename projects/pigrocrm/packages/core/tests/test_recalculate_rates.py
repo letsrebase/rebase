@@ -32,7 +32,7 @@ def _log(service, deal_id, user_id, day, hours="8.00"):
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=user_id,
-            data=date(2026, 3, day),
+            date=date(2026, 3, day),
             hours=Decimal(hours),
             description=f"Giorno {day}",
         ),
@@ -93,7 +93,7 @@ def test_an_entry_with_a_rate_written_on_it_keeps_that_rate(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
+            date=date(2026, 3, 2),
             hours=Decimal("2.00"),
             description="Omaggio",
             applied_rate=Decimal("0.000000"),
@@ -199,4 +199,4 @@ def test_an_inverted_interval_is_a_validation_failure(
             RecalculateRatesRequest(date_from=date(2026, 3, 10), date_to=date(2026, 3, 1)),
             admin,
         )
-    assert excinfo.value.details["field"] == "a"
+    assert excinfo.value.details["field"] == "to"

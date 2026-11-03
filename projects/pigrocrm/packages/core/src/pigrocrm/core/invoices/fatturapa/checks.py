@@ -58,7 +58,7 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
         raise ValidationFailed(
             entity, "country", "codice paese non valido", expected="due lettere ISO 3166-1"
         )
-    italiano = country == "IT"
+    italian = country == "IT"
 
     # `province` is required for an Italian address and meaningless outside one: FPR12
     # makes `Provincia` optional precisely so that a London address is not forced to
@@ -68,8 +68,8 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     # `00000` placeholder there. `city` is required of everybody: the schema's
     # `Comune` is one to sixty characters with no `minOccurs="0"`, and leaving it out
     # of this list let an emission through that the writer could never serialise.
-    obbligatori = ("address", "cap", "city", "province") if italiano else ("address", "city")
-    for field in obbligatori:
+    required = ("address", "cap", "city", "province") if italian else ("address", "city")
+    for field in required:
         if not (getattr(party, field) or "").strip():
             raise ValidationFailed(
                 entity,
@@ -91,11 +91,11 @@ def check_party_exportable(party: PartySnapshot, entity: str) -> None:
     # passed this check, the emission committed, and every later `export_xml` raised
     # forever, leaving annulment as the only remedy. A refusal before the number is spent
     # costs the user one correction; a refusal after costs them a hole in the register.
-    check_widths(party, entity, italiano)
+    check_widths(party, entity, italian)
     _check_latin(party, entity)
 
 
-def check_widths(party: PartySnapshot, entity: str, italiano: bool) -> None:
+def check_widths(party: PartySnapshot, entity: str, italian: bool) -> None:
     """The FPR12 patterns that a database column is too loose to enforce.
 
     The widths of the free-text fields used to be measured here, with a message of
@@ -108,14 +108,14 @@ def check_widths(party: PartySnapshot, entity: str, italiano: bool) -> None:
     # above. Inside Italy the schema's five digits are the customer's own CAP and a
     # mistyped one is refused before it costs a register number.
     cap = (party.cap or "").strip()
-    if italiano and not CAP_RE.fullmatch(cap):
+    if italian and not CAP_RE.fullmatch(cap):
         raise ValidationFailed(entity, "cap", "CAP non valido", expected="esattamente 5 cifre")
 
     # `Provincia` is written only for an Italian address (the specifications fill it only
     # when `Nazione` is `IT`), so a county or a state stored there for a foreign customer
     # is neither emitted nor a reason to refuse.
     province = (party.province or "").strip().upper()
-    if italiano and province and not PROVINCE_RE.fullmatch(province):
+    if italian and province and not PROVINCE_RE.fullmatch(province):
         raise ValidationFailed(entity, "province", "sigla non valida", expected="due lettere")
 
 
@@ -313,26 +313,26 @@ def check_document_text_exportable(
     """
     if (memo or "").strip():
         check_text(memo or "", "Causale", entity="invoice", field="memo", max_length=MEMO_MAX)
-    for riga in lines:
+    for line in lines:
         check_text(
-            riga.description,
+            line.description,
             "Descrizione",
             entity="invoice_line",
             field="description",
             max_length=DESCRIPTION_MAX,
         )
-        if (riga.unit_of_measure or "").strip():
+        if (line.unit_of_measure or "").strip():
             check_text(
-                riga.unit_of_measure or "",
+                line.unit_of_measure or "",
                 "UnitaMisura",
                 entity="invoice_line",
                 field="unit_of_measure",
                 max_length=UNIT_OF_MEASURE_MAX,
                 pattern=BASIC_LATIN_RE,
             )
-        if riga.legal_reference:
+        if line.legal_reference:
             check_text(
-                riga.legal_reference,
+                line.legal_reference,
                 "RiferimentoNormativo",
                 entity="fiscal_profile",
                 field="legal_reference",

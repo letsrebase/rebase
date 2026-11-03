@@ -18,9 +18,9 @@ from pigrocrm.core.invoices.totals import (
     format_amount_8,
     format_rate,
     line_total,
-    round_money,
     sum_totals,
 )
+from pigrocrm.core.money import round_money
 
 
 def _line(

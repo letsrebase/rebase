@@ -10,7 +10,7 @@ from pigrocrm.core.digest.models import Digest
 
 
 def test_a_user_receives_the_digest_unless_told_otherwise(db_session: Session) -> None:
-    user = User(email=f"digest-{uuid4().hex}@example.it", nome="Ada", role="admin")
+    user = User(email=f"digest-{uuid4().hex}@example.it", name="Ada", role="admin")
     db_session.add(user)
     db_session.flush()
     assert user.weekly_digest is True

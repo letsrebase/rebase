@@ -32,7 +32,7 @@ def test_an_incomplete_deal_does_not_lie(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("20.00"),
             description="Sviluppo",
             applied_rate=Decimal("100.000000"),
@@ -65,7 +65,7 @@ def test_costs_of_an_uninvoiced_deal_still_appear(
         CostCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("500.00"),
             description="Licenze",
         ),
@@ -87,7 +87,7 @@ def test_labour_cost_includes_non_billable_hours(
             TimeEntryCreate(
                 deal_id=seeded_deal_id,
                 user_id=seeded_user_id,
-                data=date(2026, 3, 4),
+                date=date(2026, 3, 4),
                 hours=Decimal("2.00"),
                 description="x",
                 billable=billable,
@@ -111,7 +111,7 @@ def test_unpriced_hours_are_counted_and_excluded_never_valued_at_zero(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("5.00"),
             description="senza tariffa",
         ),
@@ -138,7 +138,7 @@ def test_the_three_states(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("2.00"),
             description="x",
             applied_rate=Decimal("100.000000"),
@@ -172,7 +172,7 @@ def test_the_stamp_duty_is_not_a_deal_cost(
     from sqlalchemy import text
 
     stamp_duty = db_session.execute(
-        text("SELECT SUM(bollo) FROM invoices WHERE deal_id = :id"),
+        text("SELECT SUM(stamp_duty) FROM invoices WHERE deal_id = :id"),
         {"id": deal_with_stamp_duty_invoice},
     ).scalar_one()
     assert stamp_duty == Decimal("2.00"), "the fixture must produce an invoice bearing stamp duty"
@@ -194,12 +194,12 @@ def test_no_path_lets_the_same_expense_in_twice(
     construction: `costs` is money out to third parties, labour cost derives from
     `time_entries`. An external consultant who invoices you their hours is a `cost` in
     "Consulenza esterna", and their hours -- if you record them -- carry
-    `costo_applicato = NULL`."""
+    `applied_cost = NULL`."""
     CostService(db_session).create(
         CostCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("1000.00"),
             description="Consulente esterno",
         ),
@@ -209,7 +209,7 @@ def test_no_path_lets_the_same_expense_in_twice(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
+            date=date(2026, 3, 2),
             hours=Decimal("10.00"),
             description="ore del consulente",
         ),
@@ -228,7 +228,7 @@ def test_margin_percentage_when_there_is_revenue(
         CostCreate(
             deal_id=deal_with_mixed_invoices,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("583.83"),
             description="Licenze",
         ),

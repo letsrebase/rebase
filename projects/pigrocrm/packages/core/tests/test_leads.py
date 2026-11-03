@@ -65,14 +65,14 @@ def _body(**parts: Any) -> LeadUpsert:
     body: dict[str, Any] = {
         "legal_entity": "Acme S.r.l.",
         "contact_person": {
-            "nome": "Maria",
+            "first_name": "Maria",
             "last_name": "Rossi",
             "email": MARIA,
             "phone": "+39 02 1234567",
             "linkedin_url": "https://www.linkedin.com/in/maria-rossi",
         },
         "deal": {
-            "nome": "Acme S.r.l.: Backend developer",
+            "name": "Acme S.r.l.: Backend developer",
             "expected_value": "24000.00",
             "expected_close_date": "2099-01-15",
             "note": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
@@ -106,7 +106,7 @@ def door(db_engine: Engine) -> Iterator[Door]:
     registry = ensure_tenants_database(settings)
     with session_factory(registry)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=SLUG, nome="rebase", email="spazio@studio.it")
+            TenantSignup(slug=SLUG, name="rebase", email="spazio@studio.it")
         )
     try:
         yield Door(settings, registry)
@@ -140,11 +140,15 @@ def _customer(space: Session, name: str = "Rossi Costruzioni S.r.l.") -> UUID:
     return CustomerService(space).create(CustomerCreate(legal_name=name), Actor.system()).id
 
 
-def _person(space: Session, email: str, customer_id: UUID | None, nome: str = "Maria") -> UUID:
+def _person(
+    space: Session, email: str, customer_id: UUID | None, first_name: str = "Maria"
+) -> UUID:
     return (
         PersonService(space)
         .create(
-            PersonCreate(nome=nome, last_name="Rossi", email=email, customer_id=customer_id),
+            PersonCreate(
+                first_name=first_name, last_name="Rossi", email=email, customer_id=customer_id
+            ),
             Actor.system(),
         )
         .id
@@ -155,7 +159,7 @@ def _deal(space: Session, customer_id: UUID, note: str | None = None) -> UUID:
     return (
         DealService(space)
         .create(
-            DealCreate(nome="Trattativa in corso", customer_id=customer_id, note=note),
+            DealCreate(name="Trattativa in corso", customer_id=customer_id, note=note),
             Actor.system(),
         )
         .id
@@ -176,12 +180,12 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
         assert customer.legal_name == "Acme S.r.l."
         [customer_note] = texts(space, "customer", customer.id)
         assert "hub" in customer_note
-        assert (person.nome, person.last_name, person.email) == ("Maria", "Rossi", MARIA)
+        assert (person.first_name, person.last_name, person.email) == ("Maria", "Rossi", MARIA)
         assert person.phone == "+39 02 1234567"
         assert person.linkedin == "https://www.linkedin.com/in/maria-rossi"
         assert person.customer_id == customer.id
         assert deal.customer_id == customer.id
-        assert deal.nome == "Acme S.r.l.: Backend developer"
+        assert deal.name == "Acme S.r.l.: Backend developer"
         assert deal.expected_value == Decimal("24000.00")
         assert deal.expected_close_date == date(2099, 1, 15)
         assert deal.hourly_rate is None and deal.budgeted_hours is None
@@ -236,7 +240,7 @@ def test_an_existing_person_is_reused_whatever_the_case_of_the_address(door: Doo
         # The older, mixed-case address of the same person at another live customer:
         # the oldest one wins, so this one is created after and loses.
         other_customer = _customer(space, "Altra S.r.l.")
-        _person(space, MARIA, other_customer, nome="Mariella")
+        _person(space, MARIA, other_customer, first_name="Mariella")
 
     answer = door.service().file(uuid4(), _body(contact_person={"email": MARIA.upper()}))
 
@@ -320,7 +324,7 @@ def test_the_same_email_and_another_request_is_a_second_deal_on_the_same_custome
     door: Door,
 ) -> None:
     first = door.service().file(uuid4(), _body())
-    second = door.service().file(uuid4(), _body(deal={"nome": "Acme S.r.l.: Frontend"}))
+    second = door.service().file(uuid4(), _body(deal={"name": "Acme S.r.l.: Frontend"}))
 
     assert second.created is True
     assert second.deal_id != first.deal_id
@@ -473,7 +477,7 @@ def test_two_requests_of_one_person_at_once_make_one_customer_and_two_deals(door
     def file(name: str) -> None:
         try:
             barrier.wait(timeout=30)
-            answers.append(door.service().file(uuid4(), _body(deal={"nome": name})))
+            answers.append(door.service().file(uuid4(), _body(deal={"name": name})))
         except BaseException as exc:  # noqa: BLE001 -- carried to the main thread
             errors.append(exc)
 

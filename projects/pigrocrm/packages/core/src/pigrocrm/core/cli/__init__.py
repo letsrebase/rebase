@@ -138,7 +138,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return gmail_sync(settings, args.email)
         case "digest":
             return digest(
-                settings, slug=args.slug, data=args.data, forza=args.forza, dry_run=args.dry_run
+                settings, slug=args.slug, data=args.data, force=args.force, dry_run=args.dry_run
             )
         case "reminders":
             return reminders(settings, slug=args.slug, data=args.data, dry_run=args.dry_run)
