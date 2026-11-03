@@ -383,7 +383,7 @@ def test_the_timeline_records_what_happened_to_it(
         {"id": str(created.id)},
     ).scalars()
 
-    assert list(kinds) == ["created", "completed", "riaperta", "cancelled"]
+    assert list(kinds) == ["created", "completed", "reopened", "cancelled"]
 
 
 # --- the Oggi panel (spec 2026-09-03 §5, REB-725) ---------------------------------------

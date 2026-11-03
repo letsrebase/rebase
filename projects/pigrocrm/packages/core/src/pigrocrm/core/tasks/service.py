@@ -269,7 +269,7 @@ class TaskService:
         row.status = "open"
         row.completed_at = None
         self._flush_or_conflict(row.id)
-        self.activities.record(ENTITY, row.id, "riaperta", actor)
+        self.activities.record(ENTITY, row.id, "reopened", actor)
         self.session.commit()
         return TaskRead.model_validate(row)
 
