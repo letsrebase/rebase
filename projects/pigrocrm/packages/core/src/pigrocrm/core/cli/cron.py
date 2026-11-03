@@ -36,7 +36,6 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
-from pigrocrm.core.labels import DIGEST_SKIP, TASK_RULE, label
 from pigrocrm.core.mail import sender_from_settings
 from pigrocrm.core.reminders.jobs import AUTOMATIONS_JOB, DIGEST_JOB, REMINDER_PASS_JOB
 from pigrocrm.core.reminders.push import push_sender_from_settings
@@ -157,8 +156,7 @@ def _print_digest_outcome(outcome: DigestOutcome, *, dry_run: bool) -> None:
     elif outcome.outcome == "no_recipient":
         print(f"{outcome.slug}: no recipient")
     else:
-        reason = label(DIGEST_SKIP, outcome.reason)
-        print(f"{outcome.slug}: skipped ({reason})", file=sys.stderr)
+        print(f"{outcome.slug}: skipped ({outcome.reason})", file=sys.stderr)
 
 
 def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run: bool) -> int:
@@ -297,9 +295,8 @@ def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) ->
     suffix = " (dry run)" if dry_run else ""
     for rule in report.rules:
         if rule.disabled:
-            print(f"{slug}: {label(TASK_RULE, rule.rule)} disabled")
+            print(f"{slug}: {rule.rule} disabled")
         else:
             print(
-                f"{slug}: {label(TASK_RULE, rule.rule)} opened {rule.open}, already open "
-                f"{rule.already_open}{suffix}"
+                f"{slug}: {rule.rule} opened {rule.open}, already open {rule.already_open}{suffix}"
             )

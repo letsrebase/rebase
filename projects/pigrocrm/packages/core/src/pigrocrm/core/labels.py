@@ -173,15 +173,6 @@ REMINDER_TYPE: dict[str, str] = {
 # (`web`, `mcp`, `rebase`) were English words already.
 NOTE_SOURCE: dict[str, str] = {"system": "sistema"}
 
-# Why a digest was skipped, as the cron's log line prints it (`saltato (titolare_mancante)`);
-# an exception's type name is its own word and passes through `label` unchanged.
-DIGEST_SKIP: dict[str, str] = {
-    "owner_missing": "titolare_mancante",
-    "owner_disabled": "titolare_disattivato",
-    "send_rejected": "invio_rifiutato",
-    "send_not_configured": "invio_non_configurato",
-}
-
 # The `activities.kind` of the events that were named in Italian, as a timeline line prints
 # them. The three kinds of a task (`completed`, `cancelled`, `reopened`) are not here: they
 # share their English word with the kinds of other entities, and no card prints a task's.

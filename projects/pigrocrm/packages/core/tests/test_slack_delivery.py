@@ -623,8 +623,8 @@ def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
     )
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "root: promemoria 3, nuovi 2, chiusi 0, slack 2, email 1"
-    assert lines[1] == "root: promemoria 3, nuovi 2, chiusi 0 (prova)"
+    assert lines[0] == "root: reminders 3, new 2, closed 0, slack 2, email 1"
+    assert lines[1] == "root: reminders 3, new 2, closed 0 (dry run)"
 
 
 # --- a channel's write cannot take the pass down ---------------------------------------

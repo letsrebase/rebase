@@ -281,7 +281,7 @@ def test_the_cli_furnishes_an_existing_space_that_has_nothing(
             monkeypatch.setattr(cli, "get_settings", lambda: settings)
             assert cli.main(["ensure-space-defaults"]) == 0
             out = capsys.readouterr().out
-            assert slug in out and "stati 6" in out and "categorie 5" in out
+            assert slug in out and "statuses 6" in out and "categories 5" in out
             with space.connect() as connection:
                 assert (
                     connection.execute(text("select count(*) from pipeline_stages")).scalar() == 6
@@ -293,7 +293,7 @@ def test_the_cli_furnishes_an_existing_space_that_has_nothing(
                 assert connection.execute(text("select count(*) from templates")).scalar() == 3
             # A second run has nothing to do and says so.
             assert cli.main(["ensure-space-defaults"]) == 0
-            assert "già a posto" in capsys.readouterr().out
+            assert "already in place" in capsys.readouterr().out
         finally:
             space.dispose()
     finally:
@@ -336,9 +336,9 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_furnishes_the_others(
             ghost_lines = [line for line in captured.err.splitlines() if line.startswith(ghost)]
             # The migration comes first (ORB-189), so a database that does not exist
             # fails there, once, and is not furnished either.
-            assert ghost_lines == [f"{ghost}: non migrato (OperationalError)"]
-            assert f"{slug}: stati 6" in captured.out
-            assert f"{slug}: schema già a" in captured.out
+            assert ghost_lines == [f"{ghost}: not migrated (OperationalError)"]
+            assert f"{slug}: statuses 6" in captured.out
+            assert f"{slug}: schema already at" in captured.out
         finally:
             space.dispose()
     finally:
@@ -402,8 +402,8 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
             monkeypatch.setattr(cli, "get_settings", lambda: settings)
             assert cli.main(["ensure-space-defaults"]) == 0
             out = capsys.readouterr().out
-            assert f"{slug}: schema migrato da {behind} a {head}" in out
-            assert f"{slug}: stati 6" in out
+            assert f"{slug}: schema migrated from {behind} to {head}" in out
+            assert f"{slug}: statuses 6" in out
             with space.connect() as connection:
                 assert (
                     connection.execute(text("select version_num from alembic_version")).scalar()
@@ -425,7 +425,7 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
                 )
             # The next boot has nothing to migrate and says so.
             assert cli.main(["ensure-space-defaults"]) == 0
-            assert f"{slug}: schema già a {head}" in capsys.readouterr().out
+            assert f"{slug}: schema already at {head}" in capsys.readouterr().out
         finally:
             space.dispose()
     finally:
@@ -446,7 +446,7 @@ def test_the_cli_never_fails_the_boot_when_the_registry_is_unreachable(
     monkeypatch.setattr(cli, "get_settings", lambda: unreachable)
     assert cli.main(["ensure-space-defaults"]) == 0
     err = capsys.readouterr().err
-    assert "registro degli spazi non raggiungibile (" in err and "x:y" not in err
+    assert "space registry unreachable (" in err and "x:y" not in err
 
 
 def test_a_failing_seed_undoes_the_space_and_frees_the_name(
