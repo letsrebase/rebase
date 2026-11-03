@@ -358,8 +358,34 @@ export interface paths {
         /** List Deals */
         get: operations["list_deals_api_deals_get"];
         put?: never;
-        /** Create */
+        /**
+         * Create
+         * @description Creates a deal. Its value is written as `value_lines`; `expected_value` is derived from
+         *     them and cannot be sent.
+         */
         post: operations["create_api_deals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deals/value-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Value Preview
+         * @description The total, the one-off figure and the monthly recurring figure a list of value lines
+         *     would give, with the same checks a write applies. Writes nothing: a form calls it as the
+         *     lines are typed, so the browser never adds or multiplies money.
+         */
+        post: operations["value_preview_api_deals_value_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -373,7 +399,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get */
+        /**
+         * Get
+         * @description One deal with its value lines; the list carries only the figures.
+         */
         get: operations["get_api_deals__deal_id__get"];
         put?: never;
         post?: never;
@@ -381,7 +410,10 @@ export interface paths {
         delete: operations["soft_delete_api_deals__deal_id__delete"];
         options?: never;
         head?: never;
-        /** Update */
+        /**
+         * Update
+         * @description Updates a deal. `value_lines`, when sent, replaces the whole list.
+         */
         patch: operations["update_api_deals__deal_id__patch"];
         trace?: never;
     };
@@ -6996,8 +7028,8 @@ export interface components {
             customer_id: string;
             /** Pipeline Stage Id */
             pipeline_stage_id?: string | null;
-            /** Expected Value */
-            expected_value?: number | string | null;
+            /** Value Lines */
+            value_lines?: components["schemas"]["DealValueLineIn"][] | null;
             /** Probability */
             probability?: number | null;
             /** Expected Close Date */
@@ -7019,6 +7051,75 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * DealDetailRead
+         * @description The single-deal read: the list shape and the lines behind its figures.
+         */
+        DealDetailRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Pipeline Stage Id
+             * Format: uuid
+             */
+            pipeline_stage_id: string;
+            /** Expected Value */
+            expected_value: string | null;
+            /** One Off Value */
+            one_off_value?: string | null;
+            /** Monthly Recurring Value */
+            monthly_recurring_value?: string | null;
+            /** Probability */
+            probability: number;
+            /** Expected Close Date */
+            expected_close_date: string | null;
+            /** Owner Id */
+            owner_id: string | null;
+            /** Budgeted Hours */
+            budgeted_hours: string | null;
+            /** Budgeted Value */
+            budgeted_value: string | null;
+            /** Hourly Rate */
+            hourly_rate: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** Customer Legal Name */
+            customer_legal_name?: string | null;
+            /** Custom Fields */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Value Lines
+             * @default []
+             */
+            value_lines: components["schemas"]["DealValueLineRead"][];
         };
         /** DealPage */
         DealPage: {
@@ -7101,6 +7202,10 @@ export interface components {
             pipeline_stage_id: string;
             /** Expected Value */
             expected_value: string | null;
+            /** One Off Value */
+            one_off_value?: string | null;
+            /** Monthly Recurring Value */
+            monthly_recurring_value?: string | null;
             /** Probability */
             probability: number;
             /** Expected Close Date */
@@ -7170,8 +7275,8 @@ export interface components {
         DealUpdate: {
             /** Name */
             name?: string | null;
-            /** Expected Value */
-            expected_value?: number | string | null;
+            /** Value Lines */
+            value_lines?: components["schemas"]["DealValueLineIn"][] | null;
             /** Probability */
             probability?: number | null;
             /** Expected Close Date */
@@ -7188,6 +7293,69 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * DealValueLineIn
+         * @description One line of a deal's value, as written. A deal's total is never supplied: it is what
+         *     the lines add up to (`pigrocrm.core.deals.value`).
+         */
+        DealValueLineIn: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "flat" | "day" | "hour";
+            /**
+             * Delivery Period
+             * @enum {string}
+             */
+            delivery_period: "one_off" | "monthly" | "annual";
+            /** Unit Price */
+            unit_price: number | string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number | string;
+            /** Start */
+            start?: string | null;
+            /** Duration Months */
+            duration_months?: number | null;
+        };
+        /** DealValueLineRead */
+        DealValueLineRead: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "flat" | "day" | "hour";
+            /**
+             * Delivery Period
+             * @enum {string}
+             */
+            delivery_period: "one_off" | "monthly" | "annual";
+            /** Unit Price */
+            unit_price: string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: string;
+            /** Start */
+            start?: string | null;
+            /** Duration Months */
+            duration_months?: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Position */
+            position: number;
         };
         /**
          * DiscoveredCorrespondent
@@ -12360,6 +12528,26 @@ export interface components {
             default_hourly_cost?: number | string | null;
         };
         /**
+         * ValuePreviewIn
+         * @description What a form asks `POST /api/deals/value-preview` with: the lines as typed and the
+         *     deal's expected close date, which the lines with no start follow.
+         */
+        ValuePreviewIn: {
+            /** Value Lines */
+            value_lines: components["schemas"]["DealValueLineIn"][];
+            /** Expected Close Date */
+            expected_close_date?: string | null;
+        };
+        /** ValuePreviewRead */
+        ValuePreviewRead: {
+            /** Expected Value */
+            expected_value: string | null;
+            /** One Off Value */
+            one_off_value: string | null;
+            /** Monthly Recurring Value */
+            monthly_recurring_value: string | null;
+        };
+        /**
          * WeekHours
          * @description §6's first two rows, assembled whole by `TimeEntryRepository`.
          *
@@ -16184,7 +16372,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DealRead"];
+                    "application/json": components["schemas"]["DealDetailRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    value_preview_api_deals_value_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValuePreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValuePreviewRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -16303,7 +16612,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DealRead"];
+                    "application/json": components["schemas"]["DealDetailRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -16543,7 +16852,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DealRead"];
+                    "application/json": components["schemas"]["DealDetailRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

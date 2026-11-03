@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, toProblem, unwrap } from '@/lib/api'
@@ -26,6 +26,10 @@ import { queryKeys } from '@/lib/query'
  */
 export type Deal = components['schemas']['DealRead']
 export type Stage = components['schemas']['PipelineStageRead']
+/** The single-deal read: a `Deal` plus the value lines behind its three figures. */
+export type DealDetailData = components['schemas']['DealDetailRead']
+export type ValuePreview = components['schemas']['ValuePreviewRead']
+type ValueLineBody = components['schemas']['DealValueLineIn']
 
 /**
  * The tone a pipeline stage reads as in a `StatusPill` (design spec §4), keyed on the
@@ -138,6 +142,31 @@ export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
     queryKey: queryKeys.deal(dealId),
     queryFn: () =>
       unwrap(api.GET('/api/deals/{deal_id}', { params: { path: { deal_id: dealId } } })),
+  })
+}
+
+/**
+ * The three figures a list of value lines would give, from the server: the browser adds and
+ * multiplies no money (`POST /api/deals/value-preview` applies the checks a write applies).
+ * `lines` empty means nothing to ask. The previous answer stays up while the next one loads,
+ * so the figures do not flash away on every keystroke; the caller debounces `lines`.
+ */
+export function useValuePreview(
+  lines: ValueLineBody[],
+  expectedCloseDate: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled: enabled && lines.length > 0,
+    queryKey: ['deal-value-preview', lines, expectedCloseDate] as const,
+    queryFn: () =>
+      unwrap(
+        api.POST('/api/deals/value-preview', {
+          body: { value_lines: lines, expected_close_date: expectedCloseDate },
+        }),
+      ),
+    placeholderData: keepPreviousData,
+    retry: false,
   })
 }
 

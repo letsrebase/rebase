@@ -11,19 +11,27 @@ import { Timeline } from '@/components/Timeline'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
+import { formatItalianQuantity, MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useCustomer } from '@/features/customers/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useMemberDirectory } from '@/features/users/directory'
 import { DealForm, dealToFormValues } from '@/features/deals/DealForm'
 import { DealStageBar } from '@/features/deals/DealStageBar'
-import { displayNative, formatDate, formatHours, formatMoney } from '@/features/deals/columns'
+import {
+  displayNative,
+  formatDate,
+  formatDealValue,
+  formatHours,
+  formatMoney,
+} from '@/features/deals/columns'
 import {
   useDeal,
   useDeleteDeal,
   useMoveDeal,
   useStages,
   useUpdateDeal,
+  type DealDetailData,
   type Stage,
 } from '@/features/deals/queries'
 import { DocumentsTab } from '@/features/documents/DocumentsTab'
@@ -56,6 +64,70 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h3>
       {children}
     </section>
+  )
+}
+
+/** What «Nuova proforma» starts the first line at: the one-off value, which is what is billed
+ *  up front, and nothing when it is zero or absent (a deal of fees only has nothing to bill
+ *  yet). The total would bill every month of a fee at once. */
+function proformaAmount(oneOff: string | null | undefined): string {
+  return oneOff == null || scaledFromDecimalString(oneOff, MONEY_SCALE) === 0 ? '' : oneOff
+}
+
+const UNIT_LABEL = { flat: 'a corpo', day: 'giorni', hour: 'ore' } as const
+const PERIOD_LABEL = { one_off: 'una tantum', monthly: 'ogni mese', annual: 'ogni anno' } as const
+
+type ValueLine = DealDetailData['value_lines'][number]
+
+/** One line as a sentence, from the line's own fields: «600 € × 4 giorni · ogni mese · 12 mesi».
+ *  Nothing is multiplied here; the figures above are the server's. */
+function describeLine(line: ValueLine): string {
+  const price = formatMoney(line.unit_price)
+  const parts = [
+    line.unit === 'flat'
+      ? price
+      : `${price} × ${formatItalianQuantity(line.quantity)} ${UNIT_LABEL[line.unit]}`,
+    PERIOD_LABEL[line.delivery_period],
+  ]
+  if (line.delivery_period !== 'one_off' || line.unit !== 'flat') {
+    parts.push(
+      line.duration_months == null
+        ? 'senza scadenza'
+        : `${line.duration_months} ${line.duration_months === 1 ? 'mese' : 'mesi'}`,
+    )
+  }
+  if (line.start) parts.push(`dal ${formatDate(line.start)}`)
+  return parts.join(' · ')
+}
+
+/** The deal's value: the total, its two parts, and the lines behind them. */
+function ValueSection({ deal }: { deal: DealDetailData }) {
+  return (
+    <Section title="Valore">
+      <Row label="Valore previsto" value={formatMoney(deal.expected_value)} />
+      <p className="pb-2 text-xs text-muted-foreground">
+        Valore lordo, IVA esclusa. Un canone senza scadenza conta 12 mesi.
+      </p>
+      <Row label="Una tantum" value={formatMoney(deal.one_off_value ?? null)} />
+      <Row
+        label="Ricorrente al mese"
+        value={
+          deal.monthly_recurring_value == null
+            ? '—'
+            : `${formatMoney(deal.monthly_recurring_value)}/mese`
+        }
+      />
+      {deal.value_lines.length > 0 && (
+        <ul className="mt-2 space-y-2" aria-label="Righe di valore">
+          {deal.value_lines.map((line, index) => (
+            <li key={line.id} className="rounded-md border p-2">
+              <p className="font-medium">{line.description || `Riga ${index + 1}`}</p>
+              <p className="text-muted-foreground">{describeLine(line)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   )
 }
 
@@ -198,7 +270,7 @@ export function DealDetail() {
   // one its customer had when it was created (spec §1.7), so the header says it.
   const subtitle = [
     deal.customer_legal_name,
-    formatMoney(deal.expected_value),
+    formatDealValue(deal),
     legal_entity.several ? legal_entity.byId(deal.legal_entity_id)?.name : undefined,
   ]
     .filter((part): part is string => typeof part === 'string' && part !== '' && part !== '—')
@@ -231,7 +303,7 @@ export function DealDetail() {
               <NewProformaButton
                 customerId={deal.customer_id}
                 dealId={deal.id}
-                prefill={{ description: deal.name, amount: deal.expected_value ?? '' }}
+                prefill={{ description: deal.name, amount: proformaAmount(deal.one_off_value) }}
               />
               {/* Two outcomes, top right, only while the deal is still open: closing it
                   is the decision this page exists for, but «una sola cosa forte per
@@ -294,7 +366,6 @@ export function DealDetail() {
                 <CardContent className="space-y-5 pt-6">
                   <Section title="Riepilogo">
                     <Row label="Responsabile" value={directory.nameOf(deal.owner_id) ?? '—'} />
-                    <Row label="Valore previsto" value={formatMoney(deal.expected_value)} />
                     <Row label="Probabilità" value={`${deal.probability}%`} />
                     <Row label="Chiusura prevista" value={formatDate(deal.expected_close_date)} />
                     {deal.closed_at !== null && (
@@ -313,6 +384,8 @@ export function DealDetail() {
                       }
                     />
                   </Section>
+
+                  <ValueSection deal={deal} />
 
                   <Section title="Preventivo">
                     <Row label="Ore preventivate" value={formatHours(deal.budgeted_hours)} />
