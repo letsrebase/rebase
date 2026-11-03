@@ -15,6 +15,7 @@ from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.identity.models import Identity
 from pigrocrm.core.identity.service import IdentityService
+from pigrocrm.core.labels import TEMPLATE_TYPE, label
 from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.tenants import ensure_defaults, ensure_tenants_database
@@ -32,7 +33,7 @@ def seed_templates(settings: Settings) -> int:
     ):
         created = TemplateService(session).seed_defaults(Actor.system())
     for template in created:
-        print(f"creato: {template.name} ({template.type})")
+        print(f"creato: {template.name} ({label(TEMPLATE_TYPE, template.type)})")
     if not created:
         print("nessun template da creare: sono già presenti")
     return 0

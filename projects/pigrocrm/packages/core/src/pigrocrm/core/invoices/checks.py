@@ -12,6 +12,7 @@ from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.invoices.constants import ENTITY, ZERO
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.schemas import YEAR_MAX, YEAR_MIN, InvoiceImport
+from pigrocrm.core.labels import INVOICE_STATUS, label
 from pigrocrm.core.money import round_money
 
 # What stays writable once a `invoice` has left the `draft` state (spec 4). Everything
@@ -35,7 +36,8 @@ def require_editable(invoice: Invoice, field: str) -> None:
         raise ImmutableField(
             ENTITY,
             field,
-            f"una fattura in stato '{invoice.status}' e' un documento fiscale: "
+            f"una fattura in stato '{label(INVOICE_STATUS, invoice.status)}' e' un documento "
+            f"fiscale: "
             "si corregge con un annullamento e una nuova emissione, non con una modifica",
         )
 
@@ -110,7 +112,7 @@ def check_issuable(source: Invoice, *, from_proforma: bool) -> None:
     elif source.status != "draft":
         raise Conflict(
             ENTITY,
-            f"una fattura in stato '{source.status}' e' gia' stata emessa: "
+            f"una fattura in stato '{label(INVOICE_STATUS, source.status)}' e' gia' stata emessa: "
             "una correzione e' un annullamento e una nuova fattura",
             status_current=source.status,
         )

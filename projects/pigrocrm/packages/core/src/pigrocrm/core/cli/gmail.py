@@ -21,6 +21,7 @@ from pigrocrm.core.gmail.schemas import SyncReport
 from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.labels import USER_ROLE, label
 from pigrocrm.core.reminders.jobs import GMAIL_SYNC_JOB
 from pigrocrm.core.tenants import SpaceRegistry
 
@@ -268,7 +269,8 @@ def _cron_actor(session: Session, account: GoogleAccount) -> Actor:
     if not actor.can_write:
         raise Conflict(
             "google_account",
-            f"il titolare della casella ha il ruolo {user.role} e non può sincronizzarla: "
+            f"il titolare della casella ha il ruolo {label(USER_ROLE, user.role)} e non può "
+            f"sincronizzarla: "
             "il cron non agisce con più diritti del titolare",
         )
     return actor

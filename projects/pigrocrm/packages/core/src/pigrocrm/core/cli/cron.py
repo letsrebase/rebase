@@ -36,6 +36,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
+from pigrocrm.core.labels import TASK_RULE, label
 from pigrocrm.core.mail import sender_from_settings
 from pigrocrm.core.reminders.jobs import AUTOMATIONS_JOB, DIGEST_JOB, REMINDER_PASS_JOB
 from pigrocrm.core.reminders.push import push_sender_from_settings
@@ -295,6 +296,9 @@ def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) ->
     suffix = " (prova)" if dry_run else ""
     for rule in report.rules:
         if rule.disabled:
-            print(f"{slug}: {rule.rule} disattivata")
+            print(f"{slug}: {label(TASK_RULE, rule.rule)} disattivata")
         else:
-            print(f"{slug}: {rule.rule} aperte {rule.open}, già aperte {rule.already_open}{suffix}")
+            print(
+                f"{slug}: {label(TASK_RULE, rule.rule)} aperte {rule.open}, già aperte "
+                f"{rule.already_open}{suffix}"
+            )

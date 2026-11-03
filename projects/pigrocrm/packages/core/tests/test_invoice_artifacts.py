@@ -31,6 +31,7 @@ from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.labels import INVOICE_TYPE, label
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -520,7 +521,7 @@ def test_an_invoices_pdf_document_refuses_a_version_that_is_not_a_pdf(
         service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
     assert excinfo.value.details["field"] == "content_type"
     assert excinfo.value.details["expected"] == "application/pdf"
-    assert f"il PDF di una {type}:" in excinfo.value.details["reason"]
+    assert f"il PDF di una {label(INVOICE_TYPE, type)}:" in excinfo.value.details["reason"]
     assert service.documents.get(pdf.document_id, ADMIN).current_version == pdf.version_number
     content, content_type, _ = service.download(invoice_id, "pdf", ADMIN)
     assert content_type == "application/pdf"

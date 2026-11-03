@@ -27,6 +27,7 @@ from pigrocrm.core.documents.schemas import TITLE_MAX_LENGTH
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.labels import WORK_UNIT_STATUS, label
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.work_units.models import (
     WORK_UNIT_ENTRY_STATUSES,
@@ -163,7 +164,8 @@ class WorkUnitService:
             raise ValidationFailed(
                 WORK_UNIT_ENTITY,
                 "status",
-                f"una giornata non si crea direttamente in stato '{data.status}'",
+                f"una giornata non si crea direttamente in stato "
+                f"'{label(WORK_UNIT_STATUS, data.status)}'",
                 expected=f"uno tra {sorted(WORK_UNIT_ENTRY_STATUSES)}",
             )
         if ContractRepository(self.session).get(data.contract_id) is None:
@@ -232,7 +234,8 @@ class WorkUnitService:
         ):
             raise Conflict(
                 WORK_UNIT_ENTITY,
-                f"una giornata '{origin}' non puo' passare a '{new_status}'",
+                f"una giornata '{label(WORK_UNIT_STATUS, origin)}' non puo' passare a "
+                f"'{label(WORK_UNIT_STATUS, new_status)}'",
                 from_status=origin,
                 to_status=new_status,
             )
@@ -244,7 +247,8 @@ class WorkUnitService:
             self.session,
             lambda exc: Conflict(
                 WORK_UNIT_ENTITY,
-                f"la giornata non puo' passare a '{new_status}': e' cambiata nel frattempo",
+                f"la giornata non puo' passare a '{label(WORK_UNIT_STATUS, new_status)}': e' "
+                f"cambiata nel frattempo",
                 to_status=new_status,
             ),
         ):
@@ -275,7 +279,8 @@ class WorkUnitService:
         if new_status not in allowed_actions(work_unit.status):
             raise Conflict(
                 WORK_UNIT_ENTITY,
-                f"una giornata '{work_unit.status}' non puo' passare a '{new_status}' da qui",
+                f"una giornata '{label(WORK_UNIT_STATUS, work_unit.status)}' non puo' passare a "
+                f"'{label(WORK_UNIT_STATUS, new_status)}' da qui",
                 from_status=work_unit.status,
                 to_status=new_status,
             )
@@ -476,7 +481,7 @@ class ApprovalService:
             if day is None or day.contract_id != data.contract_id:
                 raise NotFound(WORK_UNIT_ENTITY, day_id)
             if day.status not in APPROVABLE_STATUSES or day.approval_id is not None:
-                refused.append(f"{day.date.isoformat()} ({day.status})")
+                refused.append(f"{day.date.isoformat()} ({label(WORK_UNIT_STATUS, day.status)})")
             days.append(day)
         if refused:
             raise Conflict(

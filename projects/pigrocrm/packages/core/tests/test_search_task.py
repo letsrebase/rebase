@@ -78,7 +78,7 @@ def test_a_closed_one_is_found_and_says_it_is_closed(db_session: Session) -> Non
 
     group = _group(db_session, "settembre")
 
-    assert [hit.subtitle for hit in group.hits] == ["completed"]
+    assert [hit.subtitle for hit in group.hits] == ["completata"]
 
 
 def test_an_archived_one_is_not_found(db_session: Session) -> None:

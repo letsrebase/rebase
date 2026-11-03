@@ -35,6 +35,7 @@ from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.labels import APPROVAL_CHANNEL, INVOICE_STATUS, WORK_UNIT_STATUS, label
 from pigrocrm.core.money import round_money
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.work_units.models import Approval, WorkUnit
@@ -98,7 +99,7 @@ def _approval_reference(detail: WorkUnitDetail) -> list[str]:
     if approval is None:
         return ["Nessuna approvazione in archivio."]
     lines = [
-        f"Canale: {approval.channel}",
+        f"Canale: {label(APPROVAL_CHANNEL, approval.channel)}",
         f"Mittente: {approval.sender}",
         f"Ricevuta il: {_iso(approval.received_at)}",
     ]
@@ -115,7 +116,10 @@ def _proof_label(unit: WorkUnit, approvals: dict[UUID, Approval]) -> str:
     approval = approvals.get(unit.approval_id)
     if approval is None:
         return "approvazione non leggibile"
-    return f"approvazione {approval.channel} di {approval.sender}, {approval.received_at.date()}"
+    return (
+        f"approvazione {label(APPROVAL_CHANNEL, approval.channel)} di {approval.sender}, "
+        f"{approval.received_at.date()}"
+    )
 
 
 def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str, list[str]]:
@@ -150,7 +154,10 @@ def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str,
             total += unit.quantity
         mark = " <- questa giornata" if unit.id == detail.id else ""
         proof = _proof_label(unit, approvals)
-        lines.append(f"{unit.date.isoformat()}  {unit.quantity}  {unit.status}  ({proof}){mark}")
+        lines.append(
+            f"{unit.date.isoformat()}  {unit.quantity}  {label(WORK_UNIT_STATUS, unit.status)}  "
+            f"({proof}){mark}"
+        )
     lines.append(
         f"Totale giornate del mese: {total} (approvate, lavorate, contestate, fatturate, pagate)"
     )
@@ -171,7 +178,7 @@ def _invoice_lines(session: Session, detail: WorkUnitDetail) -> list[str]:
     number = f"{invoice.year}/{invoice.number}" if invoice.number is not None else "bozza"
     issued = f", emessa il {invoice.issue_date.isoformat()}" if invoice.issue_date else ""
     return [
-        f"Fattura {number} ({invoice.status}{issued})",
+        f"Fattura {number} ({label(INVOICE_STATUS, invoice.status)}{issued})",
         f"Riga {line.line_number}: {line.description}",
         f"Importo della riga: {round_money(line.total_price)} EUR",
     ]
@@ -189,7 +196,7 @@ def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -
                 f"Cliente: {detail.customer_name}",
                 f"Descrizione: {detail.description}",
                 f"Quantità: {detail.quantity}",
-                f"Stato: {detail.status}",
+                f"Stato: {label(WORK_UNIT_STATUS, detail.status)}",
                 *([f"Note: {detail.note}"] if detail.note else []),
             ],
         ),
@@ -198,7 +205,8 @@ def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -
         *_section(
             "Storico della giornata",
             [
-                f"{_iso(t.created_at)}  {t.previous_status or '-'} -> {t.new_status}  "
+                f"{_iso(t.created_at)}  {label(WORK_UNIT_STATUS, t.previous_status) or '-'} -> "
+                f"{label(WORK_UNIT_STATUS, t.new_status)}  "
                 f"({_actor_label(t.actor)})  {t.reason}"
                 for t in detail.transitions
             ],

@@ -39,6 +39,7 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceUpdate,
     PaymentState,
 )
+from pigrocrm.core.labels import INVOICE_STATUS, label
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.work_units.release import (
     DELETED_DRAFT_REASON,
@@ -158,7 +159,8 @@ class InvoiceDrafting:
             raise ImmutableField(
                 ENTITY,
                 sorted(frozen)[0],
-                f"campo congelato su un documento in stato '{invoice.status}'",
+                f"campo congelato su un documento in stato "
+                f"'{label(INVOICE_STATUS, invoice.status)}'",
             )
         if "issue_date" in changes:
             # Editable only on a proforma, and only ever to another date: a fattura's date
@@ -256,7 +258,7 @@ class InvoiceDrafting:
         if invoice.status != "draft":
             raise Conflict(
                 ENTITY,
-                f"da '{invoice.status}' non si puo' passare a 'confermata'",
+                f"da '{label(INVOICE_STATUS, invoice.status)}' non si puo' passare a 'confermata'",
                 status_current=invoice.status,
             )
         if not ctx.repo.lines(invoice.id):

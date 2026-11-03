@@ -19,9 +19,7 @@ from pigrocrm.core.documents.schemas import (
     DocumentVersionRead,
 )
 from pigrocrm.core.errors import Conflict, ValidationFailed
-
-# What a person reads for the stored `invoices.type` value.
-_INVOICE_TYPE_LABELS = {"invoice": "fattura", "proforma": "proforma"}
+from pigrocrm.core.labels import INVOICE_TYPE, label
 
 # The leading bytes a file of each sniffable type starts with. A declared type is a
 # claim by the uploader; these are what the bytes say. Plain text, Markdown and XML have
@@ -200,7 +198,7 @@ class DocumentUploads:
             raise ValidationFailed(
                 ENTITY,
                 "content_type",
-                f"questo documento e' il PDF di una {_INVOICE_TYPE_LABELS.get(type, type)}: "
+                f"questo documento e' il PDF di una {label(INVOICE_TYPE, type)}: "
                 "una nuova versione deve essere "
                 f"un PDF, non {content_type}",
                 expected="application/pdf",

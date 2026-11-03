@@ -204,7 +204,7 @@ def test_an_undeclared_transition_is_refused(setup: tuple) -> None:
     )
     with pytest.raises(Conflict) as excinfo:
         service.set_offer_state(document.id, "accepted", ADMIN)
-    assert "draft" in excinfo.value.details["reason"]
+    assert "bozza" in excinfo.value.details["reason"]
 
 
 def test_an_accepted_offer_is_terminal(setup: tuple) -> None:
@@ -363,6 +363,6 @@ def test_to_payment_reminder_template_cannot_become_to_document(
     with pytest.raises(ValidationFailed) as excinfo:
         service.create_from_template(_payload(customer, payment_reminder), ADMIN)
     assert excinfo.value.details["field"] == "template_id"
-    assert "payment_reminder" in excinfo.value.details["reason"]
+    assert "sollecito" in excinfo.value.details["reason"]
     # Nothing was left behind by the refusal.
     assert service.list(DocumentListQuery(customer_id=customer.id), ADMIN).items == []
