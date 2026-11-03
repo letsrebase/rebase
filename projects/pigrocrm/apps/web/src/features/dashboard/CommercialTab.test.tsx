@@ -186,9 +186,9 @@ describe('CommercialTab', () => {
   })
 
   it('scales every bar against the widest stage, closed ones included', async () => {
-    // Vinto (8) is the widest row, and it is a closed one. Scaling the open stages
+    // «Vinto» (8) is the widest row, and it is a closed one. Scaling the open stages
     // against the widest *open* stage would draw a four-deal Lead as a full bar beside an
-    // eight-deal Vinto, which is a chart that lies about the two it puts side by side.
+    // eight-deal «Vinto», which is a chart that lies about the two it puts side by side.
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     renderTab()
     await screen.findByRole('table', { name: /pipeline per stato/i })

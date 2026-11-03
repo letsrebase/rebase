@@ -64,8 +64,8 @@ async function scopeFromTheTeamPanel(page: Page, name: string, keep: string): Pr
   await page.getByRole('menuitem', { name: 'Aziende…' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText(`Aziende di ${name}`)
-  // Every azienda but `keep` unchecked: a stack kept alive between runs may hold more
-  // active aziende than the two this spec makes, and B must end up with exactly one.
+  // Every legal entity but `keep` unchecked: a stack kept alive between runs may hold more
+  // active legal entities than the two this spec makes, and B must end up with exactly one.
   for (const box of await dialog.getByRole('checkbox').all()) {
     const id = await box.getAttribute('id')
     const label = id ? await dialog.locator(`label[for="${id}"]`).textContent() : null
@@ -95,7 +95,7 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
   const ltdCustomer = await createCustomer(page.request, `Ltd Cliente ${STAMP}`, ltdId)
 
   // B, created by A with a password (no mail leaves the e2e stack), then scoped to
-  // «Scope Ltd» from the Team panel: the row said «Tutte», it says the azienda now.
+  // «Scope Ltd» from the Team panel: the row said «Tutte», it says the legal entity now.
   const created = await page.request.post('/api/users', {
     data: { email: B_EMAIL, password: B_PASSWORD, name: `Bea ${STAMP}`, role: 'collaborator' },
   })
@@ -106,14 +106,14 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
   const bPage = await context.newPage()
   try {
     await login(bPage, B_EMAIL, B_PASSWORD)
-    // The sidebar: the azienda's name where the selector would be, and no selector.
+    // The sidebar: the legal entity's name where the selector would be, and no selector.
     await expect(bPage.getByLabel('Azienda')).toContainText(LTD)
     await expect(bPage.getByRole('combobox', { name: 'Azienda' })).toHaveCount(0)
     // The customers list: B's azienda's row and not A's.
     await bPage.goto('/app/customers')
     await expect(bPage.getByText(`Ltd Cliente ${STAMP}`)).toBeVisible()
     await expect(bPage.getByText(`Studio Cliente ${STAMP}`)).toHaveCount(0)
-    // By id: the other azienda's row does not exist for B, and the one B may see does.
+    // By id: the other legal entity's row does not exist for B, and the one B may see does.
     expect((await bPage.request.get(`/api/customers/${studioCustomer}`)).status()).toBe(404)
     expect((await bPage.request.get(`/api/customers/${ltdCustomer}`)).status()).toBe(200)
     expect((await bPage.request.get(`/api/legal-entities/${studio!.id}`)).status()).toBe(404)
@@ -122,8 +122,8 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
     expect(me.legal_entities).toEqual([ltdId])
   } finally {
     await context.close()
-    // Back to one active azienda for the other specs; B keeps a scope that names an
-    // inactive azienda, which the Team panel reads as «nessuna azienda attiva».
+    // Back to one active legal entity for the other specs; B keeps a scope that names an
+    // inactive legal entity, which the Team panel reads as «nessuna azienda attiva».
     const deactivated = await page.request.delete(`/api/legal-entities/${ltdId}`)
     expect(deactivated.status(), await deactivated.text()).toBe(200)
     await page.goto('/app/settings/users')

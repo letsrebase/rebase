@@ -305,8 +305,8 @@ def test_an_agent_credential_without_full_access_is_forbidden(
 def test_no_legal_entities_configured_refuses_rather_than_guesses(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    # Since REB-615 every space has its azienda from the first boot, so «not configured»
-    # is an azienda with neither fiscal id, and the refusal names that field rather
+    # Since REB-615 every space has its legal entity from the first boot, so «not configured»
+    # is a legal entity with neither fiscal id, and the refusal names that field rather
     # than a missing row: the import never guesses which P.IVA is ours.
     document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     with pytest.raises(ValidationFailed) as caught:

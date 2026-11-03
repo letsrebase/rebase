@@ -37,14 +37,14 @@ export function FiscalPanel({ legalEntityId }: { legalEntityId: string }) {
         // not an error here (`useFiscalProfile` maps it to `null`, "not configured yet"),
         // so that only fires on a *real* failure: the row may well exist and simply be
         // unreadable, and rendering the blank form in that state invites somebody to
-        // fill it in and press Salva, a PUT of every key over a profile the panel was
+        // fill it in and press «Salva», a PUT of every key over a profile the panel was
         // never able to show them. A refetch that fails *after* a read succeeded leaves
         // the form up, with the error above it: a draft and a stale refusal survive a
         // «Ricarica» that did not answer (REB-622).
-        // Keyed on the azienda alone, so the form seeds at mount rather than in an
+        // Keyed on the legal entity alone, so the form seeds at mount rather than in an
         // effect and a profile that appears under it (another admin's first save) is a
         // row that arrived, which the form follows while untouched and adopts on
-        // «Ricarica», never a remount that drops the draft. Two aziende without a
+        // «Ricarica», never a remount that drops the draft. Two legal entities without a
         // profile still get a form each.
         <FiscalForm key={legalEntityId} legalEntityId={legalEntityId} profile={profile.data ?? null} />
       )}

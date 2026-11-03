@@ -79,7 +79,7 @@ export function InvoicesList({ overdue }: { overdue?: boolean }) {
   // count and the list start disagreeing on an invoice due today.
   //
   // «Tutte» is every document that stands on its own. A consumed proforma does not: its
-  // number lives on the fattura it became, and listing both doubled every issued proforma
+  // number lives on the invoice it became, and listing both doubled every issued proforma
   // (ORB-169). So with no state chosen the server leaves them out; the «Consumata» chip
   // asks for exactly them and gets them.
   //
@@ -100,8 +100,8 @@ export function InvoicesList({ overdue }: { overdue?: boolean }) {
   // With the customer: this is the one screen that mixes every customer's invoices, so
   // a row has to say whose it is (ORB-98). The Fatture tab on a customer's or a deal's
   // page draws the same columns without it -- see `InvoicesTab`.
-  // And the azienda's name beside the number, only under «Tutte le aziende» from the
-  // second azienda on (REB-625): with one selected the sidebar already says whose.
+  // And the legal entity's name beside the number, only under «Tutte le aziende» from the
+  // second legal entity on (REB-625): with one selected the sidebar already says whose.
   const columns = buildInvoiceColumns({ customer: true, legal_entities: useLegalEntitiesToName() })
 
   return (

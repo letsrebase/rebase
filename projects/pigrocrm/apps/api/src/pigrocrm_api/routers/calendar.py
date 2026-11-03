@@ -25,8 +25,8 @@ def month(
     # own. A boolean and not a `user_id`, because «somebody else's hours» is not a
     # question this screen asks: the register at /app/hours already filters by person.
     all: Annotated[bool, Query()] = False,
-    # The sidebar's azienda (REB-624): the hours through their deal, the invoices by
-    # their own column; the activities have no azienda and are always the space's.
+    # The sidebar's legal entity (REB-624): the hours through their deal, the invoices by
+    # their own column; the activities have no legal entity and are always the space's.
     legal_entity_id: Annotated[
         UUID | None, Query(description="Solo le ore e le fatture di questa azienda; omesso, tutte")
     ] = None,

@@ -140,8 +140,8 @@ export function EconomicTab({
 }) {
   const year = yearOf(period)
   const query = useEconomicOverview(year, base)
-  // «Tutte» on a space with several aziende (REB-632, spec §1.9): the cash adds up on
-  // the server, the taxes do not, so the tab draws the estimate once per azienda and
+  // «Tutte» on a space with several legal entities (REB-632, spec §1.9): the cash adds up on
+  // the server, the taxes do not, so the tab draws the estimate once per legal entity and
   // names which legal entity each concentration share belongs to. With one legal entity, or one
   // selected, the page reads as it always did.
   const { legal_entities, selected, several, byId } = useLegalEntity()

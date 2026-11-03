@@ -108,7 +108,7 @@ export function SettingsLayout() {
   }
 
   // REB-294: the tab strip is the table, not a private list. A non-admin who got past
-  // the gate above sees `profilo` and, as a collaboratore, `drive` (REB-457), and
+  // the gate above sees `profilo` and, as a collaborator, `drive` (REB-457), and
   // nothing else: every other tab's services gate their writes on `require_admin`,
   // which is what `canSeeSettingsTab` encodes. The same function filters the sidebar's
   // «Impostazioni» sub-items and the profile menu's own entries, so none can drift.

@@ -57,8 +57,8 @@ export function useCustomers(
   params: CustomersListParams = {},
   options: { enabled?: boolean } = {},
 ) {
-  // The sidebar's azienda, when one is selected (REB-625): on every picker that offers
-  // the space's customers, which under azienda A are A's. An azienda the caller names is
+  // The sidebar's legal entity, when one is selected (REB-625): on every picker that offers
+  // the space's customers, which under azienda A are A's. A legal entity the caller names is
   // its own scope and wins over the sidebar's.
   const sidebarScoped = useLegalEntityScope(params)
   const scoped = params.legal_entity_id === undefined ? sidebarScoped : params
@@ -89,7 +89,7 @@ export function useCustomerPages(params: Pick<CustomersListParams, 'search'> = {
 export function useCustomer(customerId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
     // `enabled` for a caller that only sometimes needs the row (the proforma dialog's
-    // issuing azienda, REB-626); an empty id must never produce a request (residuo B1).
+    // issuing legal entity, REB-626); an empty id must never produce a request (residuo B1).
     enabled: (options.enabled ?? true) && customerId !== '',
     queryKey: queryKeys.customer(customerId),
     queryFn: () =>

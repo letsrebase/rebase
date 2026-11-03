@@ -116,7 +116,7 @@ export function buildInvoiceColumns(
       header: 'Descrizione',
       id: 'description',
       accessorFn: (row) => description(row),
-      // The one flexible column in this table (ORB-130). A causale runs to 200
+      // The one flexible column in this table (ORB-130). A memo (causale) runs to 200
       // characters, and a column sized to its content, or even to a fixed maximum,
       // pushed the other eight past the frame at 1440px (measured: 24rem left the table
       // 280px wider than its box). So it is sized the other way round: the header asks

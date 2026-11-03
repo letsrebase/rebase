@@ -67,7 +67,7 @@ PUBLISHING_DECORATORS = {
 }  # fmt: skip
 
 _WORD_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
-_QUOTED_RE = re.compile(r"`[^`\n]*`|\"[^\"]{0,400}\"|«[^»]{0,400}»|“[^”]{0,400}”|'[^'\n]{2,}'")
+_QUOTED_RE = re.compile(r"`[^`]{0,200}`|\"[^\"]{0,400}\"|«[^»]{0,400}»|“[^”]{0,400}”|'[^'\n]{2,}'")
 _URL_RE = re.compile(r"\S+://\S+")
 _CODEISH_RE = re.compile(r"\S*[_/\\.:()\[\]{}=<>$#@]\S*")
 _ACCENT_RE = re.compile(r"[àèéìíòóùú]")
@@ -110,7 +110,7 @@ def _fold(word: str) -> str:
 
 def italian_score(text: str) -> tuple[float, list[str]]:
     """How Italian a comment reads, and the words that say so."""
-    for noun in allowlist.PROPER_NOUNS:
+    for noun in (*allowlist.PROPER_NOUNS, *allowlist.PROSE_TERMS):
         text = text.replace(noun, " ")
     text = _QUOTED_RE.sub(" ", text)
     text = _URL_RE.sub(" ", text)
@@ -124,7 +124,7 @@ def italian_score(text: str) -> tuple[float, list[str]]:
         folded = _fold(raw)
         if folded in vocabulary.STOPWORDS:
             if folded in vocabulary.AMBIGUOUS_STOPWORDS:
-                score += 0.25
+                score += 0.1
             else:
                 score += 1
             hits.append(raw)
@@ -160,7 +160,11 @@ def skipped(path: str) -> bool:
 
 def allowed(path: str, kind: str, word: str) -> bool:
     for regex, entry in _ALLOW:
-        if kind in entry.kinds and regex.match(path) and (entry.words is None or word in entry.words):
+        if (
+            kind in entry.kinds
+            and regex.match(path)
+            and (entry.words is None or word in entry.words)
+        ):
             return True
     return False
 
@@ -178,7 +182,32 @@ def _check_comment(path: str, line: int, text: str, what: str, out: list[Finding
     flagged, hits = comment_is_italian(text)
     if flagged and not all(allowed(path, "comment", _fold(h)) for h in hits):
         sample = " ".join(text.split())[:70]
-        out.append(Finding(path, line, "comment", hits[0], f"Italian {what}: \"{sample}\" ({', '.join(hits[:4])})"))
+        out.append(
+            Finding(
+                path,
+                line,
+                "comment",
+                hits[0],
+                f'Italian {what}: "{sample}" ({", ".join(hits[:4])})',
+            )
+        )
+
+
+def join_runs(comments: list[tuple[str, int, bool]]) -> list[tuple[str, int]]:
+    """Comments on consecutive lines are one passage: a quotation or a sentence wraps.
+
+    Each item is (text, first line, whether it stands alone on its line); a trailing
+    comment after code is its own passage.
+    """
+    runs: list[tuple[str, int]] = []
+    end = -1
+    for text, line, standalone in sorted(comments, key=lambda c: c[1]):
+        if standalone and runs and line == end + 1:
+            runs[-1] = (runs[-1][0] + "\n" + text, runs[-1][1])
+        else:
+            runs.append((text, line))
+        end = line + text.count("\n") if standalone else -1
+    return runs
 
 
 def _publishing(node: ast.AST) -> bool:
@@ -198,11 +227,16 @@ def scan_python(path: str, source: str, out: list[Finding]) -> None:
         return
     import keyword
 
+    comments: list[tuple[str, int, bool]] = []
     for tok in tokens:
         if tok.type == tokenize.NAME and not keyword.iskeyword(tok.string):
             _check_name(path, tok.start[0], tok.string, "identifier", out)
         elif tok.type == tokenize.COMMENT:
-            _check_comment(path, tok.start[0], tok.string.lstrip("#"), "comment", out)
+            comments.append(
+                (tok.string.lstrip("#"), tok.start[0], tok.line.lstrip().startswith("#"))
+            )
+    for text, line in join_runs(comments):
+        _check_comment(path, line, text, "comment", out)
     try:
         tree = ast.parse(source)
     except SyntaxError as error:
@@ -221,10 +255,13 @@ def scan_python(path: str, source: str, out: list[Finding]) -> None:
 
 
 def scan_hash_comments(path: str, source: str, out: list[Finding]) -> None:
+    comments: list[tuple[str, int, bool]] = []
     for number, line in enumerate(source.splitlines(), 1):
         stripped = line.strip()
         if stripped.startswith("#") and not stripped.startswith("#!"):
-            _check_comment(path, number, stripped.lstrip("#"), "comment", out)
+            comments.append((stripped.lstrip("#"), number, True))
+    for text, line in join_runs(comments):
+        _check_comment(path, line, text, "comment", out)
 
 
 def scan_typescript(paths: list[str], root: Path, out: list[Finding]) -> None:
@@ -239,14 +276,17 @@ def scan_typescript(paths: list[str], root: Path, out: list[Finding]) -> None:
         # One argv of every TypeScript file is long; the OS limit is far above it.
     )
     if node.returncode != 0:
-        sys.exit(f"english-lint: ts_scan.mjs failed (is `pnpm install` done?):\n{node.stderr.strip()}")
+        sys.exit(
+            f"english-lint: ts_scan.mjs failed (is `pnpm install` done?):\n{node.stderr.strip()}"
+        )
     for path, found in json.loads(node.stdout).items():
         if "error" in found:
             out.append(Finding(path, 1, "identifier", "", f"cannot parse: {found['error']}"))
             continue
         for name, line, _col in found["identifiers"]:
             _check_name(path, line, name, "identifier", out)
-        for text, line, _col in found["comments"]:
+        runs = [(text, line, True) for text, line, _col in found["comments"]]
+        for text, line in join_runs(runs):
             _check_comment(path, line, text, "comment", out)
 
 
@@ -257,7 +297,9 @@ def tracked_files(root: Path, selection: list[str]) -> list[str]:
     try:
         listing = subprocess.run(
             ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", *selection],
-            cwd=root, capture_output=True, check=True,
+            cwd=root,
+            capture_output=True,
+            check=True,
         ).stdout.decode()
         return [p for p in listing.split("\0") if p and (root / p).is_file()]
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -274,11 +316,17 @@ def tracked_files(root: Path, selection: list[str]) -> list[str]:
 
 
 def changed_files(root: Path) -> list[str]:
-    base = subprocess.run(
-        ["git", "merge-base", "HEAD", "origin/main"], cwd=root, capture_output=True, text=True
-    ).stdout.strip() or "HEAD"
+    base = (
+        subprocess.run(
+            ["git", "merge-base", "HEAD", "origin/main"], cwd=root, capture_output=True, text=True
+        ).stdout.strip()
+        or "HEAD"
+    )
     diff = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=d", base], cwd=root, capture_output=True, text=True
+        ["git", "diff", "--name-only", "--diff-filter=d", base],
+        cwd=root,
+        capture_output=True,
+        text=True,
     ).stdout.split()
     return [p for p in diff if (root / p).is_file()]
 
@@ -304,8 +352,14 @@ def lint(root: Path, files: list[str]) -> list[Finding]:
             scan_python(path, (root / path).read_text(encoding="utf8", errors="replace"), findings)
         elif suffix in TS_SUFFIXES:
             typescript.append(path)
-        elif suffix in HASH_COMMENT_SUFFIXES or name in HASH_COMMENT_NAMES or name.endswith(".env.example"):
-            scan_hash_comments(path, (root / path).read_text(encoding="utf8", errors="replace"), findings)
+        elif (
+            suffix in HASH_COMMENT_SUFFIXES
+            or name in HASH_COMMENT_NAMES
+            or name.endswith(".env.example")
+        ):
+            scan_hash_comments(
+                path, (root / path).read_text(encoding="utf8", errors="replace"), findings
+            )
     scan_typescript(typescript, root, findings)
     return sorted(findings, key=lambda f: (f.path, f.line, f.kind, f.word))
 
@@ -317,10 +371,20 @@ def directory_of(path: str, depth: int = 5) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("paths", nargs="*", help="files or directories (default: every tracked file)")
-    parser.add_argument("--root", default=None, help="repository root (default: the one containing this file)")
-    parser.add_argument("--summary", action="store_true", help="print counts per directory, not each finding")
-    parser.add_argument("--changed", action="store_true", help="only files changed since the merge base with origin/main")
+    parser.add_argument(
+        "paths", nargs="*", help="files or directories (default: every tracked file)"
+    )
+    parser.add_argument(
+        "--root", default=None, help="repository root (default: the one containing this file)"
+    )
+    parser.add_argument(
+        "--summary", action="store_true", help="print counts per directory, not each finding"
+    )
+    parser.add_argument(
+        "--changed",
+        action="store_true",
+        help="only files changed since the merge base with origin/main",
+    )
     parser.add_argument("--depth", type=int, default=5, help="directory depth of --summary")
     args = parser.parse_args(argv)
 

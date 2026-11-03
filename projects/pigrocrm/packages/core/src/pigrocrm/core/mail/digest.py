@@ -46,8 +46,8 @@ def _overdue_total(digest: WeeklyDigest) -> Decimal:
 
 
 def digest_subject(digest: WeeklyDigest) -> str:
-    """The week's non-zero facts, in the fixed order spec 2026-09-16 §3.1 gives: fatture
-    emesse, da incassare, ore registrate, offerte in attesa, deal mossi. «La tua
+    """The week's non-zero facts, in the fixed order spec 2026-09-16 §3.1 gives: issued
+    invoices, unpaid, hours logged, offers pending, deals moved. «La tua
     settimana in PigroCRM» when none of the five has anything to say."""
     parti: list[str] = []
     if digest.issued:
@@ -99,7 +99,7 @@ def _status_readable(inv: DigestInvoice) -> str:
 
 
 def _invoice_line(inv: DigestInvoice, extra: str = "") -> str:
-    """The four things every invoice row shows -- numero, cliente, importo, data --
+    """The four things every invoice row shows -- number, customer, amount, date --
     plus whichever one extra fact the section is about (§3.1 item 3: «Numero, cliente,
     importo, stato»). Not yet escaped: the caller decides, once, whether this line is
     going into the text or the html."""

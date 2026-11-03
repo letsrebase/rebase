@@ -99,6 +99,20 @@ ALLOW: tuple[Allow, ...] = (
         "column names the migration renames.",
         kinds=frozenset({"identifier"}),
     ),
+    Allow(
+        "infra/origin/nginx/000-default.conf",
+        "The comments name the vhost files firma.letsrebase.conf and vault.letsrebase.conf, "
+        "whose names are host names.",
+        _words("firma"),
+        frozenset({"comment"}),
+    ),
+    Allow(
+        "projects/pigrocrm/packages/core/tests/test_fields_dynamic.py",
+        "`settore` is a user's own custom-field key, which the model builder turns into an "
+        "attribute; users' custom-field keys stay as written.",
+        _words("settore"),
+        frozenset({"identifier"}),
+    ),
     # --- Words that are Italian and English at once --------------------------------
     Allow(
         "**",
@@ -106,6 +120,13 @@ ALLOW: tuple[Allow, ...] = (
         _words("pigro pigrocrm"),
     ),
 )
+
+# Names of Italian legal and fiscal things an English comment may use as they are: there is
+# no English word for them (the identifier is `vat_number`, `tax_code`, `tender_code`, and
+# the glossary maps each). Removed from a comment before it is read, never from a name.
+PROSE_TERMS: tuple[str, ...] = (
+    "partita IVA", "P.IVA", "codice fiscale", "codice destinatario", "CIG", "CUP",
+)  # fmt: skip
 
 # Proper nouns that contain an Italian word: removed from a name before it is split.
 # FatturaPA is the name of the format the SdI specifies, not an Italian word to translate.

@@ -109,7 +109,7 @@ compose file: the deploy passes `--env-file` explicitly and never rsyncs one.
 The first administrator, once the stack is up:
 
 ```
-docker compose -p rebase exec api uv run --no-sync rebase setrole --email you@example.com --role admin --name Jane --last-name Doe
+docker compose -p rebase exec api uv run --no-sync rebase setrole --email you@example.com --role admin --first-name Jane --last-name Doe
 ```
 
 Creates the `users` row if none exists yet and sends the same magic link everyone

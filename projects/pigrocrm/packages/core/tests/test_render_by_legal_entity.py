@@ -123,7 +123,7 @@ def test_to_document_renders_from_its_own_legal_entity_with_its_logo(
     assert '#image("./media/logo.svg"' in seen["header"]
     assert seen["media"] == {"logo.svg": SVG}
 
-    # The default azienda has no logo: its documents set the name in type.
+    # The default legal entity has no logo: its documents set the name in type.
     acme = _customer_of(db_session, _default(db_session).id, "Acme")
     service.create_from_template(
         DocumentFromTemplate(
@@ -218,7 +218,7 @@ def test_to_mail_speaks_for_the_legal_entity_of_its_record(
 
     drafts = EmailDraftService(db_session, settings=SETTINGS)
     assert drafts._domain("customer", customer_id) == "rebase.example"
-    # The default azienda's site for a record with none; the admitted fallback without.
+    # The default legal entity's site for a record with none; the admitted fallback without.
     default.website = None
     db_session.flush()
     assert drafts._domain("person", loose.id) == "localhost.invalid"
@@ -278,7 +278,7 @@ def test_to_reminder_s_draft_speaks_for_the_invoice_s_legal_entity_even_after_th
     db_session.add(draft)
     db_session.flush()
     repo = GmailRepository(db_session)
-    # The customer is azienda B's now; the reminder still signs as A, who issued.
+    # The customer is legal entity B's now; the reminder still signs as A, who issued.
     assert repo.legal_entity_for("customer", customer_id).id == second.id  # type: ignore[union-attr]
     assert repo.legal_entity_for_draft(draft).id == default.id  # type: ignore[union-attr]
     # And the Message-ID domain the reminder's draft is minted with is A's site.
@@ -287,8 +287,8 @@ def test_to_reminder_s_draft_speaks_for_the_invoice_s_legal_entity_even_after_th
     drafts = EmailDraftService(db_session, settings=SETTINGS)
     assert drafts._domain("customer", customer_id, default.id) == "studio.example"
     assert drafts._domain("customer", customer_id) == "rebase.example"
-    # And the draft a reminder creates, handed the invoice's azienda as the reminder
-    # does, stores a Message-ID under that azienda's domain.
+    # And the draft a reminder creates, handed the invoice's legal entity as the reminder
+    # does, stores a Message-ID under that legal entity's domain.
     created = drafts.create(
         EmailDraftCreate(
             entity_type="customer",

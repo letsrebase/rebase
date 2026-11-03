@@ -176,8 +176,8 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
       string,
       { body: { fiscal_profile: Record<string, unknown>; country: string } },
     ]
-    // The ordinary regime at the standard rate carries no natura (the SdI discards one
-    // beside a non-zero rate) and none of the forfettario's three income parameters,
+    // The ordinary regime at the standard rate carries no VAT nature (the SdI discards one
+    // beside a non-zero rate) and none of the flat-rate regime's three income parameters,
     // which the server would otherwise default and the estimate would compute from.
     expect(init.body.fiscal_profile).toEqual({
       pack_id: 'it-standard',

@@ -68,15 +68,15 @@ export function CeilingPanel({
   title,
 }: {
   year: number
-  /** One azienda's ceilings, by id; omitted, the sidebar's selection. */
+  /** One legal entity's ceilings, by id; omitted, the sidebar's selection. */
   legalEntityId?: string
-  /** Shown beside the year in the heading: the azienda's name in «tutte». */
+  /** Shown beside the year in the heading: the legal entity's name in «tutte». */
   title?: string
 }) {
   const headroom = useCeilingHeadroom(year, legalEntityId)
-  // The azienda the figures are of: the block's own, else the sidebar's. It keys the
+  // The legal entity the figures are of: the block's own, else the sidebar's. It keys the
   // simulator, so switching the sidebar starts the form over instead of asking the new
-  // azienda a question typed for the old one.
+  // legal entity a question typed for the old one.
   const { selected } = useLegalEntity()
   const legal_entity = legalEntityId ?? selected
   const capped = useCappedContracts(legal_entity)

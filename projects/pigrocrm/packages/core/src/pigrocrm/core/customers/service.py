@@ -216,12 +216,12 @@ class CustomerService:
         Each customer is created as «Nuovo cliente» creates one (`_insert`, its own
         "created" activity), with the proposal's domain as its website, which is what
         discovery and the backfill read a customer's domain from. Each person is created
-        as the Persone page creates one, attached to it. A domain the CRM already files
+        as the «Persone» page creates one, attached to it. A domain the CRM already files
         under a customer is refused rather than duplicated, so a second click on the same
         proposal cannot make a second Acme; a person whose address is already in the
         address book is left where it is. Only addresses at the proposal's own domain are
         accepted. The batch is not checked against a fresh proposal read, which would
-        spend the owner's quota again; it grants nothing «Nuovo cliente» and the Persone
+        spend the owner's quota again; it grants nothing «Nuovo cliente» and the «Persone»
         page do not already grant the same person.
         """
         actor.require_write("create_customer")

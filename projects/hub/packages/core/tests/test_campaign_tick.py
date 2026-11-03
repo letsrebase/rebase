@@ -55,8 +55,8 @@ def scheduled_filters(session: Session, clock: Clock, *emails: str) -> Campaign:
     service = CampaignService(session, SETTINGS, clock=clock)
     who = admin(session)
     for email in emails:
-        # A card *with* a CV: a filtri campaign (no completeness filter) reaches it
-        # regardless, but it must not also match a `missing_cv` stato campaign scheduled
+        # A card *with* a CV: a `filters` campaign (no completeness filter) reaches it
+        # regardless, but it must not also match a `missing_cv` status campaign scheduled
         # afterwards in the same test: the two would otherwise double-book the address.
         person(session, email)
     created = service.create(

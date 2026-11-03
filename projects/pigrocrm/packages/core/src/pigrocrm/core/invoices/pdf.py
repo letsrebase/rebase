@@ -289,7 +289,7 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
             # The register printed no totals block: the payment table carries the
             # amount. It comes back only when there is something the payment row does
             # not say, VAT to show, so a flat-rate regime invoice matches the register and an
-            # ordinario one still shows its tax. The stamp is never a row here: the total
+            # ordinary one still shows its tax. The stamp is never a row here: the total
             # does not include it (`totals.py`) and the emitter bears it, so a `2,00 €`
             # line under Imposta would read as charged to the customer; the declaration
             # under the rule is where it is stated. A `bool`, the one non-string in this

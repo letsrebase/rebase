@@ -129,7 +129,7 @@ export function CustomerForm({
 }: Props) {
   const [values, setValues] = useState<CustomerFormValues>(initial ?? DEFAULT_CREATE_VALUES)
   const isCreate = initial === undefined
-  // «Azienda» from the second azienda on (REB-626, spec §1.6): while creating, the one
+  // «Azienda» from the second legal entity on (REB-626, spec §1.6): while creating, the one
   // the nation proposes is shown live until the person picks one by hand, and what the
   // form shows is what is sent, so the saved customer carries it. While editing the
   // stored one is shown and sent only if changed.
@@ -141,10 +141,10 @@ export function CustomerForm({
     legal_entity.several && isCreate && (chosenLegalEntity === undefined || chosenLegalEntity === null),
   )
   const shownLegalEntity = chosenLegalEntity ?? (isCreate ? (proposal.data?.id ?? '') : '')
-  // A customer whose azienda has since been deactivated is stranded: nothing new can
+  // A customer whose legal entity has since been deactivated is stranded: nothing new can
   // be created under it until it moves (spec §3), so the picker is drawn for it even
-  // when one active azienda is left and the selector elsewhere has gone (Greptile, PR
-  // #509). It then offers the active aziende and shows no current value, since the
+  // when one active legal entity is left and the selector elsewhere has gone (Greptile, PR
+  // #509). It then offers the active legal entities and shows no current value, since the
   // deactivated one is not among them.
   const initialLegalEntity = initial?.native.legal_entity_id
   const stranded =
@@ -155,7 +155,7 @@ export function CustomerForm({
   const showLegalEntityPicker = legal_entity.several || stranded
   // `legal_entity_id` has its own picker below and no control in `DynamicForm`, so it is kept
   // out of the flattened values: a tenant's custom field of the same name would
-  // otherwise display the chosen azienda's id as if it were its own value (Greptile,
+  // otherwise display the chosen legal entity's id as if it were its own value (Greptile,
   // PR #509).
   const { legal_entity_id: _pickedElsewhere, owner_id: _ownerElsewhere, ...nativeForForm } = values.native
   void _pickedElsewhere
@@ -206,7 +206,7 @@ export function CustomerForm({
   function submit() {
     // `legal_entity_id` and `owner_id` are decided below from what their pickers show, not
     // from the seeded value: re-sending an unchanged id would be refused the day that
-    // azienda is deactivated.
+    // legal entity is deactivated.
     const body = toRequestBody(values, {
       fields: NATIVE_FIELDS,
       initial,

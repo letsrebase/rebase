@@ -262,9 +262,9 @@ function NewProformaDialog({
   const [rows, setRows] = useState<DraftRow[]>(() => [firstRow(prefill)])
   const [errors, setErrors] = useState<Errors>({})
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  // Which azienda will issue (REB-626, spec §1.7): the deal's when one is chosen, the
+  // Which legal entity will issue (REB-626, spec §1.7): the deal's when one is chosen, the
   // customer's otherwise, the same rule `InvoiceService.create` applies. Read only from
-  // the second azienda on; on the fixed variants both reads are the page's own cache hits.
+  // the second legal entity on; on the fixed variants both reads are the page's own cache hits.
   const legal_entity = useLegalEntity()
   const issuingCustomer = useCustomer(customerId, { enabled: legal_entity.several })
   const issuingDeal = useDeal(dealId, { enabled: legal_entity.several })

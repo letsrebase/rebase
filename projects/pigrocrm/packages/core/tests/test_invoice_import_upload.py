@@ -545,9 +545,9 @@ def test_an_invoice_the_register_schema_refuses_is_a_conflict_and_does_not_stop_
     start = base.index("<DettaglioLinee>")
     end = base.index("</DettaglioLinee>") + len("</DettaglioLinee>")
     many = base[:start] + base[start:end] * 201 + base[end:]
-    # The long one last: `rollback()` in this fixture's savepoint also takes back the azienda
+    # The long one last: `rollback()` in this fixture's savepoint also takes back the legal entity
     # `_svc` created, so a file after it could not be classified, which production's
-    # committed azienda never suffers.
+    # committed legal entity never suffers.
     files = [("normale.xml", _year(2)["IT01234567890_00002.xml"]), ("lunga.xml", many.encode())]
     create = {"09876543210": UploadedPartyDecision(create_customer=True)}
     customers = _customer_count(db_session)
