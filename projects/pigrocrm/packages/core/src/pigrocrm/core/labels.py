@@ -206,6 +206,99 @@ ACTIVITY_KIND: dict[str, str] = {
     "slack.workspace_disconnected": "slack.workspace_scollegato",
 }
 
+# What a person calls each kind of record `NotFound` names, with the ending the participle
+# takes («non trovato», «non trovata»). The entity in the error's details stays the machine
+# name; only the sentence is in words. An entity without a row reads under its own name.
+ENTITY_NOUN: dict[str, tuple[str, str]] = {
+    "approval": ("approvazione", "a"),
+    "clause_note": ("nota su una clausola", "a"),
+    "contract": ("contratto", "o"),
+    "contract_email_template": ("modello di email del contratto", "o"),
+    "contract_expense": ("spesa del contratto", "a"),
+    "cost": ("costo", "o"),
+    "cost_category": ("categoria di costo", "a"),
+    "customer": ("cliente", "o"),
+    "deal": ("deal", "o"),
+    "document": ("documento", "o"),
+    "document_blob": ("file del documento", "o"),
+    "document_version": ("versione del documento", "a"),
+    "drive_file": ("file di Drive", "o"),
+    "email_draft": ("bozza di email", "a"),
+    "engagement": ("incarico", "o"),
+    "field_definition": ("campo personalizzato", "o"),
+    "fiscal_profile": ("profilo fiscale", "o"),
+    "gmail_message": ("email", "a"),
+    "google_account": ("account Google", "o"),
+    "invitation": ("invito", "o"),
+    "invoice": ("fattura", "a"),
+    "invoice_artifact": ("file della fattura", "o"),
+    "legal_entity": ("azienda", "a"),
+    "note": ("nota", "a"),
+    "period_lock": ("mese chiuso", "o"),
+    "person": ("persona", "a"),
+    "personal_access_token": ("token", "o"),
+    "pipeline_stage": ("stato della pipeline", "o"),
+    "proposal": ("proposta", "a"),
+    "rate_card": ("scheda tariffaria", "a"),
+    "renewal_assumption": ("assunzione di rinnovo", "a"),
+    "task": ("attività", "a"),
+    "template": ("template", "o"),
+    "tenant": ("spazio", "o"),
+    "time_entry": ("voce di ore", "a"),
+    "timer": ("timer", "o"),
+    "user": ("utente", "o"),
+    "work_unit": ("giornata", "a"),
+}
+
+
+def entity_not_found(entity: str, identifier: str) -> str:
+    """«cliente 0199-abc non trovato»: the sentence of a record that is not there."""
+    noun, ending = ENTITY_NOUN.get(entity, (entity, "o"))
+    return f"{noun} {identifier} non trovat{ending}"
+
+
+# The fields a person fixes on the way to a FatturaPA, as a refusal names them: the record
+# and the field in the words of the screen where it is edited («cliente, CAP»), where the
+# machine path was `customer.cap`. The machine `entity` and `field` stay in the error's
+# details; only the sentence is in words.
+_PARTY_NOUN: dict[str, str] = {"legal_entity": "azienda emittente", "customer": "cliente"}
+
+_PARTY_FIELD: dict[str, str] = {
+    "legal_name": "ragione sociale",
+    "address": "indirizzo",
+    "cap": "CAP",
+    "city": "comune",
+    "province": "provincia",
+    "country": "nazione",
+    "vat_number": "partita IVA",
+    "tax_code": "codice fiscale",
+    "email": "email",
+    "certified_email": "PEC",
+    "sdi_code": "codice destinatario (SDI)",
+}
+
+FIELD_PATH: dict[str, str] = {
+    **{
+        f"{entity}.{field}": f"{noun}, {word}"
+        for entity, noun in _PARTY_NOUN.items()
+        for field, word in _PARTY_FIELD.items()
+    },
+    "invoice.lines": "fattura, righe",
+    "invoice.memo": "fattura, causale",
+    "invoice.purchase_order_number": "fattura, numero dell'ordine",
+    "invoice.purchase_order_project_code": "fattura, codice CUP",
+    "invoice.purchase_order_tender_code": "fattura, codice CIG",
+    "invoice_line.description": "riga di fattura, descrizione",
+    "invoice_line.unit_of_measure": "riga di fattura, unità di misura",
+    "fiscal_profile.legal_reference": "profilo fiscale, riferimento normativo",
+    "fiscal_profile.regime_code": "profilo fiscale, codice regime",
+}
+
+
+def field_path(entity: str, field: str) -> str:
+    """The words for `entity.field` when `FIELD_PATH` has them, the dotted machine path when not."""
+    return FIELD_PATH.get(f"{entity}.{field}", f"{entity}.{field}")
+
 
 def label(vocabulary: dict[str, str], code: str | None) -> str:
     """The Italian word for `code`, or the code itself when the vocabulary has none."""

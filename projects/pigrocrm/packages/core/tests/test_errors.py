@@ -49,8 +49,8 @@ def test_not_found_records_which_entity_and_which_id() -> None:
 def test_not_found_message_and_str() -> None:
     """Error message is available on .message and str(exc)."""
     err = NotFound("deal", "0199-abc")
-    assert err.message == "deal 0199-abc not found"
-    assert str(err) == "deal 0199-abc not found"
+    assert err.message == "deal 0199-abc non trovato"
+    assert str(err) == "deal 0199-abc non trovato"
 
 
 def test_validation_failed_message_and_str() -> None:

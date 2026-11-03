@@ -177,6 +177,7 @@ class InvoiceArtifacts:
                 "il nome del file XML richiede un codice fiscale o una partita IVA "
                 "validi dell'emittente",
                 expected="11 cifre oppure 16 caratteri",
+                in_words=True,
             )
         return sdi_filename(id_tax, year, number)
 

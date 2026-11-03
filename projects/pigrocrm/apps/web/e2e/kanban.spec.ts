@@ -116,7 +116,9 @@ test('a move the server refuses puts the card back in its original column and sa
   // a loose "something failed". The PATCH itself already resolved (this is
   // its own response's toast) while the *follow-up* GET above is still parked,
   // so nothing about the corrective refetch has run yet.
-  await expect(page.getByText(new RegExp(`pipeline_stage ${stage.id} not found`, 'i'))).toBeVisible()
+  await expect(
+    page.getByText(new RegExp(`stato della pipeline ${stage.id} non trovato`, 'i')),
+  ).toBeVisible()
 
   // The immediate rollback, observed while the self-healing refetch is still
   // being held back on purpose: if `onError`'s own cache restore had been
