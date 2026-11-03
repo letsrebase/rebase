@@ -30,7 +30,7 @@ const GRACE_ID = '9d0c1a2b-2222-4222-8222-000000000002'
  *  company. */
 const ADA = {
   freelancer_id: ADA_ID,
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   links: ['https://github.com/ada', 'javascript:alert(1)'],
@@ -47,7 +47,7 @@ const ADA = {
   },
   mode: 'remote',
   band: { min: 500, max: 650 },
-  ha_cv: true,
+  has_cv: true,
   daily_rate: '463.21',
   status: 'active',
   note: 'Nota riservata dell’admin',
@@ -57,7 +57,7 @@ const ADA = {
 
 const GRACE = {
   freelancer_id: GRACE_ID,
-  nome: 'Grace',
+  first_name: 'Grace',
   last_name: 'Hopper',
   linkedin_url: null,
   links: [],
@@ -74,7 +74,7 @@ const GRACE = {
   },
   mode: null,
   band: null,
-  ha_cv: false,
+  has_cv: false,
 }
 
 const LIST = { items: [ADA, GRACE], roles: ['Backend developer', 'Frontend developer'], capped: false }
@@ -82,12 +82,12 @@ const LIST = { items: [ADA, GRACE], roles: ['Backend developer', 'Frontend devel
 const PROPOSAL = {
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
   summary: 'Una web app per i clienti di una fintech: chi fa il backend.',
-  location: { locale: false, dove: null },
+  location: { on_site: false, place: null },
   team: [
     {
-      posizione: 1,
+      position: 1,
       freelancer_id: ADA_ID,
-      nome: 'Ada',
+      first_name: 'Ada',
       last_name: 'Lovelace',
       role: 'Backend developer',
       reasoning: 'Ha costruito le API di pagamento di due banche.',

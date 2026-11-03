@@ -153,7 +153,7 @@ def _landing_page(session: Session, actor: Actor | None) -> str:
     # door they pressed. Read after `complete`, which never creates a customer, so the
     # answer is the one the person saw before leaving for Google. A space with work in it
     # sends an admin to the settings page, as it always has, and anybody else to «Primi
-    # passi»: a collaboratore may connect their own mailbox (`require_write`) but may not
+    # passi»: a collaborator may connect their own mailbox (`require_write`) but may not
     # open Impostazioni, which would answer the consent with «Accesso riservato».
     #
     # With no actor (REB-446) the page is «Primi passi», whoever started the flow and

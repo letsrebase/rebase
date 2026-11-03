@@ -6,12 +6,12 @@ import { useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, requestPeople, type CompanyRequest } from '@/lib/api'
 import { TEAM_BUILDER_ORIGIN } from '@/lib/format'
 import { resolveAttribution, resolveReferral } from '@/lib/utm'
-import { clearDraft, loadDraft, saveDraft } from '@/wizard/draft'
+import { clearDraft, loadDraft, saveDraft, type DraftRenames } from '@/wizard/draft'
 import { ChoiceField, LongTextField, TextField } from '@/wizard/fields'
 import { screensFromFields, Wizard, type Field } from '@/wizard/Wizard'
 
 /** The blank starting shape, exported so a page that never asks the identity fields
- *  (`member/NewRequestCompany.tsx`, REB-381) can still satisfy `CompanyRequest`'s
+ *  (`member/NewCompanyRequest.tsx`, REB-381) can still satisfy `CompanyRequest`'s
  *  full shape without retyping every key. */
 export const EMPTY: CompanyRequest = {
   company_name: '',
@@ -263,13 +263,33 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
     },
     summary: (value) =>
       value.headcount
-        ? `${value.headcount} ${value.headcount === '1' ? 'person' : 'people'}`
+        ? `${value.headcount} ${value.headcount === '1' ? 'persona' : 'persone'}`
         : '',
   },
 ]
 
 export const COMPANY_SCREENS = screensFromFields(COMPANY_FIELDS)
 export const COMPANY_DRAFT_KEY = 'rebase.wizard.company'
+/** What a draft saved before the 2026-11 rename calls its answers. */
+const COMPANY_DRAFT_RENAMES: DraftRenames = {
+  known: Object.keys(EMPTY),
+  fields: {
+    'nome_azienda': 'company_name',
+    'figura_richiesta': 'requested_role',
+    'referente_nome': 'contact_first_name',
+    'referente_cognome': 'contact_last_name',
+    'telefono': 'phone',
+    'progetto': 'project',
+    'periodo_da': 'period_from',
+    'durata': 'duration',
+    'budget_giornaliero': 'daily_budget',
+    'remoto': 'remote',
+    'giorni_presenza': 'onsite_days',
+    'numero_risorse': 'headcount',
+  },
+}
+/** The key before the 2026-11 rename (`azienda`): read for 30 days, then dropped. */
+export const PREVIOUS_COMPANY_DRAFT_KEY = 'rebase.wizard.azienda'
 
 /** Above the first question, as on the freelance side (REB-215): what this is and how
  *  long it takes, before a company is asked its name. */
@@ -326,7 +346,7 @@ export function CompanyWizard() {
   // is whatever this page was opened with.
   const searchStr = useLocation({ select: (location) => location.searchStr })
   const analytics = useWizardAnalytics('company', searchStr)
-  const [draft] = useState(() => loadDraft<CompanyRequest>(COMPANY_DRAFT_KEY))
+  const [draft] = useState(() => loadDraft<CompanyRequest>(COMPANY_DRAFT_KEY, PREVIOUS_COMPANY_DRAFT_KEY, COMPANY_DRAFT_RENAMES))
   const [value, setValue] = useState<CompanyRequest>(() => ({ ...EMPTY, ...draft?.value }))
   const [index, setIndex] = useState(draft?.index ?? 0)
   const [resumed, setResumed] = useState(draft !== null)
@@ -344,7 +364,7 @@ export function CompanyWizard() {
   }, [value, index])
 
   function restart() {
-    clearDraft(COMPANY_DRAFT_KEY)
+    clearDraft(COMPANY_DRAFT_KEY, PREVIOUS_COMPANY_DRAFT_KEY)
     setValue(EMPTY)
     setIndex(0)
     setResumed(false)
@@ -365,7 +385,7 @@ export function CompanyWizard() {
         resolveReferral(searchStr),
       )
       sent.current = true
-      clearDraft(COMPANY_DRAFT_KEY)
+      clearDraft(COMPANY_DRAFT_KEY, PREVIOUS_COMPANY_DRAFT_KEY)
       analytics.completed()
       void navigate({ to: '/thanks', search: { who: 'company' } })
     } catch (error) {

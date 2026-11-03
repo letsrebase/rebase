@@ -24,7 +24,7 @@ import { ME_KEY } from '@/lib/me'
 
 const IVAN = {
   id: 'a1',
-  nome: 'Ivan',
+  first_name: 'Ivan',
   last_name: 'Fiore',
   email: 'ivan@rebase.it',
   linkedin_url: null,
@@ -35,14 +35,14 @@ const IVAN = {
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   links: [],
   complete: false,
   has_company: false,
   requests: [],
 }
-const ADA = { ...IVAN, id: 'f1', nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', role: 'member' }
+const ADA = { ...IVAN, id: 'f1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', role: 'member' }
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -121,7 +121,7 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('a1', { email: 'ivan@rebase.it', nome: 'Ivan', role: 'admin' })
+    expect(identifyUser).toHaveBeenCalledWith('a1', { email: 'ivan@rebase.it', first_name: 'Ivan', role: 'admin' })
   })
 
   it('identifies a member once, with role member (REB-280 widening, done here already)', async () => {
@@ -129,7 +129,7 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount('/me')
     await screen.findAllByText('Ada Lovelace')
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('f1', { email: 'ada@studio.it', nome: 'Ada', role: 'member' })
+    expect(identifyUser).toHaveBeenCalledWith('f1', { email: 'ada@studio.it', first_name: 'Ada', role: 'member' })
   })
 
   it('identifies the same admin once, however many times the session is fetched again', async () => {

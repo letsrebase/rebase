@@ -15,7 +15,7 @@ from rebase_core.models import User
 
 @pytest.fixture
 def ivan(hub_engine: Engine, hub_session: Session) -> Iterator[User]:
-    row = User(email="ivan@rebase.it", nome="Ivan", last_name="Fiore", role="admin")
+    row = User(email="ivan@rebase.it", first_name="Ivan", last_name="Fiore", role="admin")
     hub_session.add(row)
     hub_session.commit()
     yield row
@@ -29,7 +29,7 @@ def test_a_token_is_minted_once_and_resolves_to_its_admin(ivan: User, hub_sessio
     tokens = AdminTokenService(hub_session)
     read, raw = tokens.create(ivan.id, "  Claude Code ")
     assert raw.startswith(TOKEN_PREFIX) and len(raw) > 30
-    assert read.nome == "Claude Code"
+    assert read.name == "Claude Code"
     assert read.prefix == raw[:12] and read.last_used_at is None and read.revoked_at is None
     stored = hub_session.execute(text("SELECT token_hash, prefix FROM admin_tokens")).one()
     assert raw not in stored[0] and stored[1] == read.prefix
@@ -59,7 +59,7 @@ def test_every_failure_of_resolve_is_the_same_sentence(ivan: User, hub_session: 
 
     _, again = tokens.create(ivan.id, "Cursor")
     hub_session.execute(
-        text("UPDATE users SET attivo = false WHERE id = :id"), {"id": str(ivan.id)}
+        text("UPDATE users SET active = false WHERE id = :id"), {"id": str(ivan.id)}
     )
     hub_session.commit()
     with pytest.raises(ValidationFailed) as refused:
@@ -102,7 +102,7 @@ def test_search_hits_a_partial_token_name(ivan: User, hub_session: Session) -> N
     tokens.create(ivan.id, "Cursor desktop")
 
     by_name = tokens.list_page(ivan.id, q="Claude")
-    assert [item.nome for item in by_name.items] == ["Claude Code laptop"]
+    assert [item.name for item in by_name.items] == ["Claude Code laptop"]
 
 
 def test_the_cursor_walks_every_token_once_with_no_dupes_or_gaps(

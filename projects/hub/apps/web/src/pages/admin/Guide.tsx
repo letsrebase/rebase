@@ -54,11 +54,11 @@ export function AdminGuide() {
                               params={{ id: download.freelancer_id }}
                               className="font-medium hover:underline"
                             >
-                              {download.nome} {download.last_name}
+                              {download.first_name} {download.last_name}
                             </Link>
                           ) : (
                             <span className="font-medium">
-                              {download.nome} {download.last_name}
+                              {download.first_name} {download.last_name}
                             </span>
                           )}
                           <p className="text-xs text-muted-foreground">{download.email}</p>

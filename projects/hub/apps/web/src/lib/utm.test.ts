@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { afterEach, beforeEach } from 'vitest'
-import { LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY, LOGIN_ATTRIBUTION_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY, UTM_STORAGE_KEY, loginAttribution, readOrigin, readReferral, readUtm, recallUtm, rememberLoginAttribution, rememberUtm, resolveAttribution, resolveOrigin, resolveReferral, resolveUtm } from './utm'
+import { LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY, LEGACY_UTM_STORAGE_KEY, LOGIN_ATTRIBUTION_KEY, ORIGIN_STORAGE_KEY, PREVIOUS_ORIGIN_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY, REFERRAL_STORAGE_KEY, UTM_STORAGE_KEY, loginAttribution, readOrigin, readReferral, readUtm, recallUtm, rememberLoginAttribution, rememberUtm, resolveAttribution, resolveOrigin, resolveReferral, resolveUtm } from './utm'
 
 describe('readUtm', () => {
   it('keeps the six UTM keys and nothing else', () => {
@@ -48,16 +48,16 @@ describe('the page the person started from (ORB-167)', () => {
   beforeEach(() => window.sessionStorage.clear())
   afterEach(() => window.sessionStorage.clear())
 
-  it('reads `da=` when it is a slug, and nothing else', () => {
-    expect(readOrigin('?da=pigrocrm&utm_source=linkedin')).toBe('pigrocrm')
-    expect(readOrigin('?da=home')).toBe('home')
-    expect(readOrigin('?da=%3Cscript%3E')).toBeNull()
-    expect(readOrigin('?da=')).toBeNull()
+  it('reads `from=` when it is a slug, and nothing else', () => {
+    expect(readOrigin('?from=pigrocrm&utm_source=linkedin')).toBe('pigrocrm')
+    expect(readOrigin('?from=home')).toBe('home')
+    expect(readOrigin('?from=%3Cscript%3E')).toBeNull()
+    expect(readOrigin('?from=')).toBeNull()
     expect(readOrigin('')).toBeNull()
   })
 
   it('prefers the URL, remembers it for the tab, and falls back to the tab', () => {
-    expect(resolveOrigin('?da=pigrocrm')).toBe('pigrocrm')
+    expect(resolveOrigin('?from=pigrocrm')).toBe('pigrocrm')
     expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBe('pigrocrm')
     expect(resolveOrigin('?perk=guida')).toBe('pigrocrm')
     window.sessionStorage.setItem(ORIGIN_STORAGE_KEY, 'not a slug!')
@@ -65,7 +65,7 @@ describe('the page the person started from (ORB-167)', () => {
   })
 
   it('folds the page into the attribution an application sends', () => {
-    expect(resolveAttribution('?utm_source=linkedin&da=home')).toEqual({ utm_source: 'linkedin', origin: 'home' })
+    expect(resolveAttribution('?utm_source=linkedin&from=home')).toEqual({ utm_source: 'linkedin', origin: 'home' })
     window.sessionStorage.clear()
     expect(resolveAttribution('')).toEqual({})
   })
@@ -75,15 +75,15 @@ describe('a member’s own link (P-REB-44)', () => {
   beforeEach(() => window.sessionStorage.clear())
   afterEach(() => window.sessionStorage.clear())
 
-  it('reads `rif=` when it looks like a code, and nothing else', () => {
-    expect(readReferral('?rif=ABC123&utm_source=linkedin')).toBe('ABC123')
-    expect(readReferral('?rif=%3Cscript%3E')).toBeNull()
-    expect(readReferral('?rif=')).toBeNull()
+  it('reads `ref=` when it looks like a code, and nothing else', () => {
+    expect(readReferral('?ref=ABC123&utm_source=linkedin')).toBe('ABC123')
+    expect(readReferral('?ref=%3Cscript%3E')).toBeNull()
+    expect(readReferral('?ref=')).toBeNull()
     expect(readReferral('')).toBeNull()
   })
 
   it('prefers the URL, remembers it for the tab, and falls back to the tab', () => {
-    expect(resolveReferral('?rif=ABC123')).toBe('ABC123')
+    expect(resolveReferral('?ref=ABC123')).toBe('ABC123')
     expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
     expect(resolveReferral('?perk=guida')).toBe('ABC123')
     window.sessionStorage.setItem(REFERRAL_STORAGE_KEY, 'not a code!')
@@ -91,7 +91,7 @@ describe('a member’s own link (P-REB-44)', () => {
   })
 
   it('never rides inside the UTM attribution an application sends', () => {
-    expect(resolveAttribution('?rif=ABC123&utm_source=linkedin')).toEqual({ utm_source: 'linkedin' })
+    expect(resolveAttribution('?ref=ABC123&utm_source=linkedin')).toEqual({ utm_source: 'linkedin' })
   })
 })
 
@@ -103,7 +103,7 @@ describe('what a login sends, remembered for the tab by the login page only (REB
   })
 
   it('sends and remembers the campaign of its own URL, the page included', () => {
-    expect(loginAttribution('?utm_campaign=outreach-2026-09-r2&utm_term=11425b70&da=home')).toEqual({
+    expect(loginAttribution('?utm_campaign=outreach-2026-09-r2&utm_term=11425b70&from=home')).toEqual({
       utm_campaign: 'outreach-2026-09-r2',
       utm_term: '11425b70',
       origin: 'home',
@@ -123,7 +123,7 @@ describe('what a login sends, remembered for the tab by the login page only (REB
 
   it('keeps the campaign when a later visit brings only the page', () => {
     rememberLoginAttribution('?utm_campaign=outreach&utm_term=11425b70')
-    expect(loginAttribution('?da=home')).toEqual({
+    expect(loginAttribution('?from=home')).toEqual({
       utm_campaign: 'outreach',
       utm_term: '11425b70',
       origin: 'home',
@@ -136,11 +136,11 @@ describe('what a login sends, remembered for the tab by the login page only (REB
   })
 
   it('takes the page alone when the tab remembers no campaign', () => {
-    expect(loginAttribution('?da=pigrocrm')).toEqual({ origin: 'pigrocrm' })
+    expect(loginAttribution('?from=pigrocrm')).toEqual({ origin: 'pigrocrm' })
   })
 
   it('drops the page of an older campaign when a new campaign arrives without one', () => {
-    rememberLoginAttribution('?utm_campaign=first&da=home')
+    rememberLoginAttribution('?utm_campaign=first&from=home')
     expect(loginAttribution('?utm_campaign=second')).toEqual({ utm_campaign: 'second' })
     expect(loginAttribution('')).toEqual({ utm_campaign: 'second' })
   })
@@ -160,7 +160,7 @@ describe('what a login sends, remembered for the tab by the login page only (REB
   })
 
   it('reads a remembered value back through the same checks as a URL', () => {
-    window.sessionStorage.setItem(LOGIN_ATTRIBUTION_KEY, 'utm_campaign=ok&gclid=x&da=%3Cscript%3E')
+    window.sessionStorage.setItem(LOGIN_ATTRIBUTION_KEY, 'utm_campaign=ok&gclid=x&from=%3Cscript%3E')
     expect(loginAttribution('')).toEqual({ utm_campaign: 'ok' })
   })
 
@@ -181,7 +181,7 @@ describe('the keys a tab opened before the rename still holds (REB-668)', () => 
   afterEach(() => window.sessionStorage.clear())
 
   it('names the keys rebase.*, and the old ones orbiters.*', () => {
-    expect([UTM_STORAGE_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY]).toEqual(['rebase.utm', 'rebase.da', 'rebase.ref'])
+    expect([UTM_STORAGE_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY]).toEqual(['rebase.utm', 'rebase.from', 'rebase.ref'])
     expect([LEGACY_UTM_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY]).toEqual(['orbiters.utm', 'orbiters.da', 'orbiters.rif'])
   })
 
@@ -218,8 +218,8 @@ describe('the keys a tab opened before the rename still holds (REB-668)', () => 
     window.sessionStorage.setItem(LEGACY_ORIGIN_STORAGE_KEY, 'home')
     window.sessionStorage.setItem(LEGACY_REFERRAL_STORAGE_KEY, 'OLD1')
     resolveUtm('?utm_source=linkedin')
-    resolveOrigin('?da=pigrocrm')
-    resolveReferral('?rif=NEW1')
+    resolveOrigin('?from=pigrocrm')
+    resolveReferral('?ref=NEW1')
     expect(window.sessionStorage.getItem(UTM_STORAGE_KEY)).toBe('utm_source=linkedin')
     expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBe('pigrocrm')
     expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('NEW1')
@@ -238,5 +238,79 @@ describe('the keys a tab opened before the rename still holds (REB-668)', () => 
     } finally {
       refuse.mockRestore()
     }
+  })
+})
+
+describe('the names of the 2026-11 English rename (links and keys already out in the world)', () => {
+  beforeEach(() => window.sessionStorage.clear())
+  afterEach(() => {
+    window.sessionStorage.clear()
+    vi.useRealTimers()
+  })
+
+  it('still accepts `da=` (the page) and `rif=` (the referral code), and the new names win', () => {
+    expect(readOrigin('?da=pigrocrm')).toBe('pigrocrm')
+    expect(readReferral('?rif=ABC123')).toBe('ABC123')
+    expect(readOrigin('?da=home&from=pigrocrm')).toBe('pigrocrm')
+    expect(readReferral('?rif=OLD1&ref=NEW1')).toBe('NEW1')
+    expect(resolveAttribution('?utm_source=linkedin&da=home&rif=ABC123')).toEqual({ utm_source: 'linkedin', origin: 'home' })
+    expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBe('home')
+    expect(resolveReferral('?rif=ABC123')).toBe('ABC123')
+    expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
+  })
+
+  it('writes the new names', () => {
+    expect([ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY]).toEqual(['rebase.from', 'rebase.ref'])
+    expect([PREVIOUS_ORIGIN_STORAGE_KEY, PREVIOUS_REFERRAL_STORAGE_KEY]).toEqual(['rebase.da', 'rebase.rif'])
+    loginAttribution('?utm_source=mail&da=home')
+    expect(window.sessionStorage.getItem(LOGIN_ATTRIBUTION_KEY)).toBe('utm_source=mail&from=home')
+  })
+
+  it('reads a login attribution stored under the old `da` name', () => {
+    window.sessionStorage.setItem(LOGIN_ATTRIBUTION_KEY, 'utm_source=mail&da=home')
+    expect(loginAttribution('')).toEqual({ utm_source: 'mail', origin: 'home' })
+  })
+
+  it('reads rebase.da and rebase.rif once, moves them to rebase.from and rebase.ref, and drops the old ones', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-20T10:00:00Z'))
+    window.sessionStorage.setItem(PREVIOUS_ORIGIN_STORAGE_KEY, 'pigrocrm')
+    window.sessionStorage.setItem(PREVIOUS_REFERRAL_STORAGE_KEY, 'ABC123')
+    expect(resolveOrigin('')).toBe('pigrocrm')
+    expect(resolveReferral('')).toBe('ABC123')
+    expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBe('pigrocrm')
+    expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
+    expect(window.sessionStorage.getItem(PREVIOUS_ORIGIN_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(PREVIOUS_REFERRAL_STORAGE_KEY)).toBeNull()
+  })
+
+  it('prefers the new key when both exist, and still checks the shape of the old one', () => {
+    window.sessionStorage.setItem(ORIGIN_STORAGE_KEY, 'home')
+    window.sessionStorage.setItem(PREVIOUS_ORIGIN_STORAGE_KEY, 'pigrocrm')
+    expect(resolveOrigin('')).toBe('home')
+    window.sessionStorage.clear()
+    window.sessionStorage.setItem(PREVIOUS_REFERRAL_STORAGE_KEY, 'not a code!')
+    expect(resolveReferral('')).toBeNull()
+  })
+
+  it('writes the new key only, dropping the old one a tab still held', () => {
+    window.sessionStorage.setItem(PREVIOUS_ORIGIN_STORAGE_KEY, 'home')
+    window.sessionStorage.setItem(PREVIOUS_REFERRAL_STORAGE_KEY, 'OLD1')
+    resolveOrigin('?from=pigrocrm')
+    resolveReferral('?ref=NEW1')
+    expect(window.sessionStorage.getItem(PREVIOUS_ORIGIN_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(PREVIOUS_REFERRAL_STORAGE_KEY)).toBeNull()
+  })
+
+  it('stops reading the old keys after 30 days (2026-12-03) and drops them', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-12-03T00:00:01Z'))
+    window.sessionStorage.setItem(PREVIOUS_ORIGIN_STORAGE_KEY, 'pigrocrm')
+    window.sessionStorage.setItem(PREVIOUS_REFERRAL_STORAGE_KEY, 'ABC123')
+    expect(resolveOrigin('')).toBeNull()
+    expect(resolveReferral('')).toBeNull()
+    expect(window.sessionStorage.getItem(PREVIOUS_ORIGIN_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(PREVIOUS_REFERRAL_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(ORIGIN_STORAGE_KEY)).toBeNull()
   })
 })

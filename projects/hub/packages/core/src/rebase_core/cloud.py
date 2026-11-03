@@ -1,9 +1,9 @@
 """The talent cloud's door (REB-518, spec § 4.1): an admin opens the private talent cloud
-from a company request's page to that request's referente, and closes it again.
+from a company request's page to that request's contact person, and closes it again.
 
-**One live grant per person and company.** A grant is the referente's `user_id` and the
+**One live grant per person and company.** A grant is the contact person's `user_id` and the
 request's `company_id`; `uq_talent_cloud_grants_user_company_live` holds one live row
-per pair. A second «Apri il talent cloud» on the same request, a double click in two
+per pair. A second «open the talent cloud» action on the same request, a double click in two
 sessions included, answers the grant already there and mails nobody; a person behind
 two companies holds two grants, and the cloud is open while any of them is live. What a
 person proposes in the cloud (D3) is attributed to their newest live grant's company,
@@ -14,15 +14,15 @@ grant whose request is soft-deleted opens nothing (`for_user`), and cannot be op
 closed from a page the admin no longer reaches; restoring the request opens it again.
 
 **The mail is built here and sent by the caller**, after its response: a new grant
-answers the referente's «Il talent cloud di rebase è aperto per …» beside the read, an
+answers the contact person's mail saying the cloud is open beside the read, an
 answered one no mail at all. Nothing here logs a name or an address.
 
 **The cloud itself** (REB-519, spec § 4.2) is `CloudTalentService`, below: the talents
 by name for whoever holds a live grant, filtered, vetted first then by name, at most
 `CLOUD_LIST_CAP`; the CV of one of them; and who is asking, for the requests the cloud
 files with no form. One filter, `team_catalogue.cloud_visible`, decides who is in the
-cloud for the list, the CV and «Richiedi» alike, and one sentence, «Profilo non
-disponibile.», answers any id outside it, so the answer never says why.
+cloud for the list, the CV and «Richiedi» alike, and one sentence (the profile is not
+available) answers any id outside it, so the answer never says why.
 """
 
 import logging
@@ -116,7 +116,7 @@ class TalentCloudService:
             return self._reads([existing])[0], None
         mail = talent_cloud_opened_mail(
             user.email,
-            nome=user.nome,
+            first_name=user.first_name,
             company=company.company_name,
             url=f"{settings.hub_url.rstrip('/')}/me/cloud",
         )
@@ -244,13 +244,13 @@ class TalentCloudService:
                     user_id=row.user_id,
                     company_id=row.company_id,
                     company=company.company_name,
-                    contact_person=f"{user.nome} {user.last_name}".strip(),
+                    contact_person=f"{user.first_name} {user.last_name}".strip(),
                     email=user.email,
                     granted_by=row.granted_by,
-                    granted_by_name=granted_by.nome if granted_by is not None else None,
+                    granted_by_name=granted_by.first_name if granted_by is not None else None,
                     granted_at=row.granted_at,
                     revoked_by=row.revoked_by,
-                    revoked_by_name=revoked_by.nome if revoked_by is not None else None,
+                    revoked_by_name=revoked_by.first_name if revoked_by is not None else None,
                     revoked_at=row.revoked_at,
                 )
             )
@@ -369,8 +369,10 @@ def _cloud_roles(session: Session) -> list[str]:
     # `astext` of a JSON path is untyped, and a select of it is a select of unknown shape
     # whose `scalars()` SQLAlchemy 2.1 cannot type: the annotation says what the path
     # answers, `None` included, for a card with no `role`.
-    ruolo: ColumnElement[str | None] = FreelancerCard.card["role"].astext
-    roles = session.scalars(cloud_visible(select(ruolo).select_from(Freelancer)).distinct()).all()
+    role_path: ColumnElement[str | None] = FreelancerCard.card["role"].astext
+    roles = session.scalars(
+        cloud_visible(select(role_path).select_from(Freelancer)).distinct()
+    ).all()
     return sorted({role for role in roles if role}, key=str.casefold)
 
 
@@ -405,7 +407,7 @@ class CloudTalentService:
         card that no longer validates is left out and logged by id, as the catalogue
         leaves it out; the cap counts the valid ones, out of `CLOUD_LIST_SLACK` rows
         more than it, and `capped` says there were more valid ones than it shows. The
-        CV's bytes are never read here: `ha_cv` is asked of the database."""
+        CV's bytes are never read here: `has_cv` is asked of the database."""
         stmt = cloud_visible(
             select(
                 Freelancer.id,
@@ -417,8 +419,8 @@ class CloudTalentService:
                     Freelancer.cv_bytes.is_not(None),
                     Freelancer.cv_filename.is_not(None),
                     Freelancer.cv_mime.is_not(None),
-                ).label("ha_cv"),
-                User.nome,
+                ).label("has_cv"),
+                User.first_name,
                 User.last_name,
                 User.linkedin_url,
                 FreelancerCard.card,
@@ -430,7 +432,7 @@ class CloudTalentService:
             stmt.order_by(
                 Freelancer.vetted_at.is_(None),
                 func.lower(User.last_name),
-                func.lower(User.nome),
+                func.lower(User.first_name),
                 Freelancer.id,
             ).limit(CLOUD_LIST_CAP + CLOUD_LIST_SLACK)
         ).all()
@@ -446,7 +448,7 @@ class CloudTalentService:
             items.append(
                 CloudTalentRead(
                     freelancer_id=row.id,
-                    nome=row.nome,
+                    first_name=row.first_name,
                     last_name=row.last_name,
                     linkedin_url=row.linkedin_url,
                     links=list(row.links or []),
@@ -454,7 +456,7 @@ class CloudTalentService:
                     card=card.model_copy(update={"location": None}),
                     mode=row.remote,
                     band=band_for(row.daily_rate),
-                    ha_cv=bool(row.ha_cv),
+                    has_cv=bool(row.has_cv),
                 )
             )
         return CloudTalentList(

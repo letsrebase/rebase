@@ -169,8 +169,8 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
         with engine.begin() as connection:
             connection.execute(text(WORK_UNIT_TRIGGER_SQL))
             connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
-            # The row-level policies of 0048 (REB-633) as 0068 leaves them
-            # (REB-898, with 0049's fast path), the other DDL `create_all` cannot express: read from the
+            # The row-level policies of 0048 (REB-633) as 0068 leaves them (REB-898, with
+            # 0049's fast path), the other DDL `create_all` cannot express: read from the
             # revisions themselves, so the template and production cannot disagree on a
             # predicate. The suite's user is a superuser, which
             # Postgres keeps outside every policy, so no existing test sees them; the

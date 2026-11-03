@@ -8,7 +8,7 @@ export const CAMPAIGN_STATE_LABELS: Record<CampaignStatus, string> = {
   cancelled: 'Annullata',
 }
 
-export const ActionLabels: Record<CampaignAction, string> = {
+export const ACTION_LABELS: Record<CampaignAction, string> = {
   signed_in: 'È entrato nell’area',
   cv: 'Ha caricato il CV',
   card_complete: 'Ha completato la scheda',
@@ -28,15 +28,15 @@ export const META_LABELS: Partial<Record<CampaignMeta, string>> = {
 }
 
 export const RECIPIENT_STATE_LABELS: Record<RecipientStatus, string> = {
-  in_coda: 'In coda',
+  queued: 'In coda',
   sent: 'Inviata',
   skipped: 'Saltata',
   failed: 'Fallita',
 }
 
 /** The server's rule (`campaigns/render.py:personalise`), for the preview on screen. */
-export function personalise(text: string, nome: string | null): string {
-  if (nome) return text.replaceAll('{nome}', nome)
+export function personalise(text: string, name: string | null): string {
+  if (name) return text.replaceAll('{nome}', name)
   return text.replaceAll(' {nome}', '').replaceAll('{nome}', '')
 }
 
@@ -50,12 +50,12 @@ export function oneLine(text: string): string {
 /** The subject a person receives (`campaigns/render.py:render`): the name on one line,
  *  a name that is nothing once trimmed counting as missing, then the whole subject on
  *  one line too. */
-export function subjectFor(subject: string, nome: string | null): string {
-  return oneLine(personalise(subject, oneLine(nome ?? '') || null))
+export function subjectFor(subject: string, name: string | null): string {
+  return oneLine(personalise(subject, oneLine(name ?? '') || null))
 }
 
 /** Today and the current time in Europe/Rome, as the «Programma» inputs want them. */
-export function romeToday(now = new Date()): { day: string; ora: string } {
+export function romeToday(now = new Date()): { day: string; time: string } {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Rome',
@@ -69,7 +69,7 @@ export function romeToday(now = new Date()): { day: string; ora: string } {
       .formatToParts(now)
       .map((part) => [part.type, part.value]),
   )
-  return { day: `${parts.year}-${parts.month}-${parts.day}`, ora: `${parts.hour}:${parts.minute}` }
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` }
 }
 
 const QUARTER_HOUR_MS = 15 * 60 * 1000
@@ -77,14 +77,14 @@ const QUARTER_HOUR_MS = 15 * 60 * 1000
 /** What «Programma» proposes when it is chosen: an hour from now, rounded up to the
  *  next quarter hour, as a Rome day and time. Rome's offset is whole hours, so the
  *  quarter hours are the same instants in UTC and in Rome. */
-export function defaultSchedule(now = new Date()): { day: string; ora: string } {
+export function defaultSchedule(now = new Date()): { day: string; time: string } {
   const inAnHour = now.getTime() + 60 * 60 * 1000
   return romeToday(new Date(Math.ceil(inAnHour / QUARTER_HOUR_MS) * QUARTER_HOUR_MS))
 }
 
 /** The server's column limits (`rebase_core/models.py`, `CAMPAIGN_*_MAX_LENGTH`), so
  *  a field stops where the API would refuse it instead of failing the save. */
-export const CAMPAIGN_MAX_LENGTH = { nome: 120, subject: 200, text: 5000, button_text: 60, button_url: 500 } as const
+export const CAMPAIGN_MAX_LENGTH = { name: 120, subject: 200, text: 5000, button_text: 60, button_url: 500 } as const
 
 const romeDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long', year: 'numeric' })
 const romeClock = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -134,7 +134,7 @@ export function romeTime(iso: string): string {
 
 /** «1 persona», «83 persone»: the count on the send button. */
 export function peopleLabel(count: number): string {
-  return `${count} ${count === 1 ? 'person' : 'people'}`
+  return `${count} ${count === 1 ? 'persona' : 'persone'}`
 }
 
 const scheduleDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
@@ -142,9 +142,9 @@ const scheduleDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'UTC', weekday:
 /** The «Programma» inputs as the send button says them, «lun 28 set, 09:00». The
  *  inputs already hold a Rome day and time, so the day is formatted as a calendar
  *  date (at UTC) and never shifted through the browser's own zone. */
-export function scheduleLabel(giorno: string, ora: string): string {
-  const [year, month, day] = giorno.split('-').map(Number)
-  return `${scheduleDay.format(new Date(Date.UTC(year!, month! - 1, day!)))}, ${ora}`
+export function scheduleLabel(date: string, time: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return `${scheduleDay.format(new Date(Date.UTC(year!, month! - 1, day!)))}, ${time}`
 }
 
 const POLL_MS = 10_000
@@ -171,7 +171,7 @@ export function listRefetchEvery(items: readonly Pick<Campaign, 'status'>[]): nu
 }
 
 /** The campaign page's figure for the action, once done. */
-export const ActionDoneLabels: Record<CampaignAction, string> = {
+export const ACTION_DONE_LABELS: Record<CampaignAction, string> = {
   signed_in: 'Sono entrati',
   cv: 'Hanno caricato il CV',
   card_complete: 'Hanno completato la scheda',
@@ -181,7 +181,7 @@ export const ActionDoneLabels: Record<CampaignAction, string> = {
   click: 'Hanno cliccato il link',
 }
 
-const ActionShort: Record<CampaignAction, string> = {
+const ACTION_SHORT: Record<CampaignAction, string> = {
   signed_in: 'entrati',
   cv: 'CV caricati',
   card_complete: 'schede completate',
@@ -202,8 +202,8 @@ export function share(part: number, whole: number): string | undefined {
  *  something did. For `signed_in`, entering is the action, and for `click` the click is
  *  (REB-530), so each is said once. */
 export function outcomeLine(c: CampaignCounts, action: CampaignAction): string {
-  const parts = [`${c.sent} inviate`, `${c.delivered} consegnate`, `${c.clicked} clic`, `${c.income} entrati`]
-  if (action !== 'signed_in' && action !== 'click') parts.push(`${c.actions} ${ActionShort[action]}`)
+  const parts = [`${c.sent} inviate`, `${c.delivered} consegnate`, `${c.clicked} clic`, `${c.entered} entrati`]
+  if (action !== 'signed_in' && action !== 'click') parts.push(`${c.actions} ${ACTION_SHORT[action]}`)
   if (c.bounced) parts.push(`${c.bounced} rimbalzate`)
   if (c.skipped) parts.push(`${c.skipped} saltate`)
   if (c.failed) parts.push(`${c.failed} fallite`)

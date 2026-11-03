@@ -575,7 +575,8 @@ def call_for_task(
     *,
     model_factory: ModelFactory = build_model,
 ) -> LlmCall | None:
-    """The seam for `task` (`card`, `team_proposal`, `anonymous_cv` or `crm_lead`), or `None` when it
+    """The seam for `task` (`card`, `team_proposal`, `anonymous_cv` or `crm_lead`), or `None` when
+    it
     cannot answer at all: the task off, its provider off or without a key. The callers
     then refuse with their own sentence. A cap reached or a missing price still gives a
     call, which refuses when it is made, with the reason «Modelli AI» shows."""

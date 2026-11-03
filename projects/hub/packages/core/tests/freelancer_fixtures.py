@@ -74,7 +74,7 @@ def apply_freelancer(
     email: str = "ada@studio.it",
     cv: bytes | None = CV,
     last_name: str = "Lovelace",
-    nome: str = "Ada",
+    first_name: str = "Ada",
     *,
     links: list[str] | None = None,
     phone: str | None = None,
@@ -82,11 +82,11 @@ def apply_freelancer(
     """A freelancer through the wizard's own service, with a CV (`None`: without one) and
     no links unless given; `phone` is written on the person afterwards."""
     data = FreelancerCreate(
-        nome=nome,
+        first_name=first_name,
         last_name=last_name,
         email=email,
         daily_rate=Decimal("450.00"),
-        posizione="Backend developer",
+        job_title="Backend developer",
         remote="remote",
         links=links or [],
     )
@@ -94,7 +94,7 @@ def apply_freelancer(
     read, _ = service.apply(data) if cv is None else service.apply(data, cv, "cv.pdf", "")
     if phone is not None:
         session.execute(
-            text("UPDATE users SET telefono = :t WHERE email = :e"), {"t": phone, "e": email}
+            text("UPDATE users SET phone = :t WHERE email = :e"), {"t": phone, "e": email}
         )
         session.commit()
     return read.id

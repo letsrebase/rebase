@@ -51,7 +51,7 @@ CURRENCY = "EUR"
 DESCRIPTION_MAX_LENGTH = 1000
 MEMO_MAX_LENGTH = 200
 
-# `DatiOrdineAcquisto` (REB-693): IdDocumento is String20Type, CodiceCIG and CodiceCUP
+# `DatiOrdineAcquisto` (REB-693): IdDocumento is String20Type, `CodiceCIG` and `CodiceCUP`
 # are String15Type. The columns mirror them like every width above.
 PURCHASE_ORDER_NUMBER_MAX_LENGTH = 20
 ORDER_CODE_MAX_LENGTH = 15

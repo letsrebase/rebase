@@ -25,12 +25,12 @@ from rebase_core.vocabulary import ReferralKind, ReferralState, ReferredStatus, 
 RATE_MAX = Decimal("1")
 
 # What a match's referred side shows: the referral still unproved, what it would earn
-# (`previsto`), what an earlier match already earned (`already_accrued`), or the reward's own
+# (`expected`), what an earlier match already earned (`already_accrued`), or the reward's own
 # state. Written only by `ReferralService.for_matches`.
-EXPECTED = "previsto"
+EXPECTED = "expected"
 ALREADY_ACCRUED = "already_accrued"
 # `verified_via` of a referral: the proof that made it `verified` (`models.referrals`).
-VERIFIED_VIA = ("accesso", "letter", "storico")
+VERIFIED_VIA = ("login", "letter", "history")
 VerifiedVia = Annotated[str, Field(json_schema_extra=enum_of(VERIFIED_VIA))]
 MatchReferralState = Annotated[
     str,
@@ -48,7 +48,7 @@ class MemberReferralItem(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     kind: ReferralKind
-    nome: str
+    first_name: str
     created_at: datetime
     status: ReferredStatus | None
 
@@ -83,7 +83,7 @@ class MatchReferral(ResponseModel):
     """One referred side of a match, as the admin's «Match» list reads it (REB-609).
     `status` is a reward's own state once one exists for this referral and its letter
     belongs to this match (`to_confirm`, `confirmed`, `paid`, with the real `rate`
-    and `amount`); `previsto` while no reward exists yet, with the projection the current
+    and `amount`); `expected` while no reward exists yet, with the projection the current
     rate and the match's own numbers give (`amount` is `None` when there is nothing to
     project: no base, a cancelled match, one whose letter is already out of the
     running); `already_accrued` when the referral already paid on another match, since a

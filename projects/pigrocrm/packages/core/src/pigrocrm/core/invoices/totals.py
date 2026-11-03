@@ -160,8 +160,8 @@ def build_recap(lines: Sequence[ComputedLine]) -> tuple[RecapGroup, ...]:
             RecapGroup(
                 vat_rate=rate,
                 vat_nature=vat_nature,
-                # Every member of a group shares a natura, and the regime derives the
-                # normative reference from the natura, so the first member's value is
+                # Every member of a group shares a VAT nature, and the regime derives the
+                # normative reference from the VAT nature, so the first member's value is
                 # the group's value by construction.
                 legal_reference=members[0].legal_reference,
                 taxable_amount=round_money(taxable_amount),

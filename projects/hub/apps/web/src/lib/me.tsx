@@ -108,12 +108,12 @@ export function useLogout() {
  *  caller checks that first (`Area.tsx`, `Edit.tsx`). */
 export function toApplication(me: Me): FreelancerApplication {
   return {
-    nome: me.nome,
+    first_name: me.first_name,
     last_name: me.last_name,
     email: me.email,
     linkedin_url: linkedinFieldValue(me.linkedin_url ?? ''),
     daily_rate: me.daily_rate ?? '',
-    posizione: me.posizione ?? '',
+    job_title: me.job_title ?? '',
     remote: me.remote ?? '',
     links: me.links,
     cv: null,
@@ -123,11 +123,11 @@ export function toApplication(me: Me): FreelancerApplication {
 /** What `PATCH /me` takes, trimmed the way the wizard trims before posting. */
 export function toUpdate(value: FreelancerApplication): MemberUpdate {
   return {
-    nome: value.nome.trim(),
+    first_name: value.first_name.trim(),
     last_name: value.last_name.trim(),
     linkedin_url: linkedinProfile(value.linkedin_url) || null,
     daily_rate: sentAmount(value.daily_rate),
-    posizione: value.posizione.trim(),
+    job_title: value.job_title.trim(),
     remote: value.remote as MemberUpdate['remote'],
     links: value.links.map((link) => link.trim()).filter(Boolean),
   }
@@ -160,7 +160,7 @@ export function toCompanyApplication(request: MemberRequest): CompanyRequest {
  *  eight project answers, trimmed the way the wizard trims before posting;
  *  `onsite_days` blank means "not ibrido", the same null-when-empty conversion
  *  `requestPeople` makes on the public wizard's side. `EditCompany.tsx` sends it
- *  to the `PATCH`, `NewRequestCompany.tsx` to the `POST` -- the payload shape is
+ *  to the `PATCH`, `NewCompanyRequest.tsx` to the `POST` -- the payload shape is
  *  identical, only the route differs. */
 export function toCompanyUpdate(value: CompanyRequest): CompanyUpdate {
   return {

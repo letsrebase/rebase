@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { admin, type DuplicateList, type MergeResult } from './api'
 
 /** The one cache entry every duplicate mark reads and the merge invalidates (REB-800). */
-export const DUPLICATES_KEY = ['talenti-duplicati'] as const
+export const DUPLICATES_KEY = ['talent-duplicates'] as const
 
-/** `GET /api/hub/talent/duplicati`. A failed read leaves the marks off: they are a hint
+/** `GET /api/hub/talent/duplicates`. A failed read leaves the marks off: they are a hint
  *  beside a list that works without them, never a reason to break it. */
 export function useDuplicates() {
   return useQuery({ queryKey: DUPLICATES_KEY, queryFn: () => admin.duplicates() })
@@ -22,7 +22,7 @@ function rows(count: number): string {
 /** The line shown once a merge went through: what moved, and the one thing left to do. */
 export function mergeResultLine(result: MergeResult): string {
   const moved = Object.values(result.moved).reduce((total, count) => total + count, 0)
-  const stayed = Object.values(result.left).reduce((total, count) => total + count, 0)
+  const stayed = Object.values(result.left_behind).reduce((total, count) => total + count, 0)
   const parts = [`Unite: ${rows(moved)}.`]
   if (stayed > 0) {
     parts.push(
@@ -31,6 +31,6 @@ export function mergeResultLine(result: MergeResult): string {
         : `${stayed} righe sono rimaste dov’erano perché la scheda tenuta ne aveva già una uguale.`,
     )
   }
-  if (result.card_from_regenerate) parts.push('La scheda anonima va riscritta.')
+  if (result.card_to_regenerate) parts.push('La scheda anonima va riscritta.')
   return parts.join(' ')
 }

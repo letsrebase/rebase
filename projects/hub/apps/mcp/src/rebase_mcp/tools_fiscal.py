@@ -13,7 +13,7 @@ from rebase_mcp.tools_common import (
     to_uuid,
 )
 
-TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
+TAX_DATA_SAVED = {"tax_data": "saved"}
 
 
 def register(mcp: MCPServer, deps: Deps) -> None:

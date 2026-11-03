@@ -55,7 +55,7 @@ from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.audience import REASON_DONE, REASON_NOT_LISTED, candidates, exclusions
 from rebase_core.campaigns.outcome import stamp_outcomes
 from rebase_core.campaigns.render import RenderTarget, render
-from rebase_core.campaigns.sender import SHARE_MONTHLY, CampaignSender
+from rebase_core.campaigns.sender import QUOTA_MONTHLY, CampaignSender
 from rebase_core.config import Settings
 from rebase_core.models import Campaign, CampaignRecipient
 from rebase_core.team_caps import ROME, rome_midnight
@@ -78,8 +78,8 @@ STALLED_LIST = "la lista non si legge"
 # other stops on the page («Invio fermo: ...»), with when the rest leaves. The first is
 # ours and ends at midnight in Rome; the second is Resend's, whose day may not start at
 # the same minute, so the pass keeps trying every minute with no attempt counted.
-STALLED_SHARE_DAY = "Resend ha esaurito la quota di oggi: il resto parte appena la rinnova"
-STALLED_SHARE_MONTH = "Resend ha esaurito la quota del mese: il resto parte quando si rinnova"
+STALLED_QUOTA_DAY = "Resend ha esaurito la quota di oggi: il resto parte appena la rinnova"
+STALLED_QUOTA_MONTH = "Resend ha esaurito la quota del mese: il resto parte quando si rinnova"
 
 _log = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ class TickResult:
     sent: int = 0
     skipped: int = 0
     failed: int = 0
-    stampate: int = 0
+    stamped: int = 0
 
 
 def run_tick(
@@ -130,7 +130,7 @@ def run_tick(
                     session.rollback()
                     _log.error("campaign %s failed this tick: %s", campaign_id, type(exc).__name__)
             try:
-                result.stampate = stamp_outcomes(session, now=clock())
+                result.stamped = stamp_outcomes(session, now=clock())
             except Exception as exc:  # the outcome must never stop a send (R14)
                 session.rollback()
                 _log.error("outcome stamping failed this tick: %s", type(exc).__name__)
@@ -144,7 +144,7 @@ def campaign_room(session: Session, settings: Settings, now: datetime) -> int:
     """How many more campaign mails may leave today (REB-779): the day's ceiling, less
     the reserve for the mails that are not campaigns, less the rows sent since midnight
     in Rome across every campaign. Never below zero."""
-    ceiling = max(settings.resend_daily_share - settings.campaign_daily_reserve, 0)
+    ceiling = max(settings.resend_daily_quota - settings.campaign_daily_reserve, 0)
     sent = session.scalar(
         select(func.count())
         .select_from(CampaignRecipient)
@@ -159,7 +159,7 @@ def campaign_room(session: Session, settings: Settings, now: datetime) -> int:
 def held_sentence(settings: Settings, now: datetime) -> str:
     """What the page says when the ceiling holds the rest: the number and the day and
     hour it leaves, the next midnight in Rome."""
-    ceiling = max(settings.resend_daily_share - settings.campaign_daily_reserve, 0)
+    ceiling = max(settings.resend_daily_quota - settings.campaign_daily_reserve, 0)
     tomorrow = datetime.combine(
         rome_midnight(now).date() + timedelta(days=1), day_time.min, tzinfo=ROME
     )
@@ -247,7 +247,7 @@ def _send(
         row = session.scalars(
             select(CampaignRecipient)
             .where(
-                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.status == "in_coda"
+                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.status == "queued"
             )
             .order_by(CampaignRecipient.id)
             .limit(1)
@@ -259,7 +259,7 @@ def _send(
         if row.resend_id is not None or webhook_moment is not None:
             # Resend's webhook already told us this row's own mail (matched by the `r`
             # tag, `webhook.py`): an earlier tick sent it and died between Resend's
-            # answer and its own commit, leaving the row `in_coda` forever after. The
+            # answer and its own commit, leaving the row `queued` forever after. The
             # retried `Idempotency-Key` would answer harmlessly for 24 hours, but past
             # that Resend forgets the key and a bare retry would send a second mail
             # (DECISIONS.md, the retry row). Trust what the webhook already knows
@@ -308,7 +308,7 @@ def _send(
                 continue
             target = RenderTarget(
                 email=row.email,
-                nome=row.nome,
+                name=row.name,
                 code=row.code,
                 token=row.unsubscribe_token,
                 recipient_id=str(row.id),
@@ -322,7 +322,7 @@ def _send(
             session.commit()
             continue
         if campaign_room(session, settings, clock()) == 0:
-            # The day's ceiling (REB-779): the row stays `in_coda` with no attempt
+            # The day's ceiling (REB-779): the row stays `queued` with no attempt
             # counted, and the first pass after midnight in Rome sends it.
             session.commit()  # releases the row's lock; nothing was written
             _stall(session, campaign.id, held_sentence(settings, clock()), clock())
@@ -333,17 +333,17 @@ def _send(
             # row did nothing wrong. Same stop as the ceiling, tried again next pass.
             session.commit()
             _log.error("campaign %s stopped this tick: Resend quota", campaign.id)
-            monthly = outcome.detail == SHARE_MONTHLY
+            monthly = outcome.detail == QUOTA_MONTHLY
             _stall(
                 session,
                 campaign.id,
-                STALLED_SHARE_MONTH if monthly else STALLED_SHARE_DAY,
+                STALLED_QUOTA_MONTH if monthly else STALLED_QUOTA_DAY,
                 clock(),
             )
             return
         if outcome.outcome == "stop":
             # Resend refused the key or the domain: every other row would get the same
-            # answer. Stop this campaign's pass with the row still `in_coda` and no
+            # answer. Stop this campaign's pass with the row still `queued` and no
             # attempt counted; the campaign stays `sending` and the next tick tries
             # again, so fixing the key resumes the send. The status alone is logged,
             # and the stop is stored on the campaign for its page (REB-524).

@@ -30,7 +30,7 @@ import { Header } from './list-kit'
 
 const ROUTE = '/signedIn/admin/matches/$id/report'
 const ALL_LABEL = "Tutto l'incarico"
-const PERIOD_ID = 'consuntivo-periodo'
+const PERIOD_ID = 'report-period'
 
 /** «ACME Srl · Backend developer · lettera n. 2026-001», the card's own title and the
  *  letter it runs on. */
@@ -124,7 +124,7 @@ function Report({
         <p className="text-sm text-muted-foreground">Nessuna ora in questo periodo.</p>
       ) : (
         <>
-          <Section id="consuntivo-giorni" title="Per giorno">
+          <Section id="report-days" title="Per giorno">
             <Frame label="Ore per giorno">
               <TableHeader>
                 <TableRow>
@@ -136,8 +136,8 @@ function Report({
               </TableHeader>
               <TableBody>
                 {days.map((day) => (
-                  <TableRow key={day.data}>
-                    <TableCell>{formatDay(day.data, true)}</TableCell>
+                  <TableRow key={day.date}>
+                    <TableCell>{formatDay(day.date, true)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatDecimal(day.hours)}</TableCell>
                     <TableCell className="min-w-64 whitespace-normal">{day.descriptions.join(' · ')}</TableCell>
                     <TableCell className={day.invoices.length === 0 ? 'text-muted-foreground' : undefined}>
@@ -149,7 +149,7 @@ function Report({
             </Frame>
           </Section>
           <div className="grid gap-6 lg:grid-cols-2">
-            <Section id="consuntivo-settimane" title="Per settimana">
+            <Section id="report-weeks" title="Per settimana">
               <Frame label="Ore per settimana">
                 <TableHeader>
                   <TableRow>
@@ -160,14 +160,14 @@ function Report({
                 <TableBody>
                   {perWeek(days).map((week) => (
                     <TableRow key={week.week}>
-                      <TableCell>{`${formatDay(week.da)} – ${formatDay(week.a)}`}</TableCell>
+                      <TableCell>{`${formatDay(week.from_date)} – ${formatDay(week.to_date)}`}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatDecimal(week.hours)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Frame>
             </Section>
-            <Section id="consuntivo-mesi" title="Per mese">
+            <Section id="report-months" title="Per mese">
               <Frame label="Ore per mese">
                 <TableHeader>
                   <TableRow>
@@ -188,7 +188,7 @@ function Report({
           </div>
         </>
       )}
-      <Section id="consuntivo-fatture" title="Fatture">
+      <Section id="report-invoices" title="Fatture">
         {invoices.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura in questo periodo.</p>
         ) : (
@@ -207,7 +207,7 @@ function Report({
                 // Two drafts not numbered yet are both «senza numero».
                 <TableRow key={`${invoiceLabel(invoice)}-${index}`}>
                   <TableCell className="font-medium">{invoiceLabel(invoice)}</TableCell>
-                  <TableCell>{invoice.data ? formatDay(invoice.data) : '—'}</TableCell>
+                  <TableCell>{invoice.date ? formatDay(invoice.date) : '—'}</TableCell>
                   <TableCell>{INVOICE_STATE_LABELS[invoice.status] ?? invoice.status}</TableCell>
                   <TableCell>{PAYMENT_STATE_LABELS[invoice.payment_status] ?? invoice.payment_status}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatDecimal(invoice.hours)}</TableCell>
@@ -228,7 +228,7 @@ function Report({
  * nowhere; the period selector, kept in the URL as `?month=`, slices it here
  * (`lib/report.ts`), so changing the month asks nothing more of the CRM.
  */
-export function AdminActuals() {
+export function AdminMatchReport() {
   const { id } = useParams({ from: ROUTE })
   const search = useSearch({ from: ROUTE })
   const navigate = useNavigate()

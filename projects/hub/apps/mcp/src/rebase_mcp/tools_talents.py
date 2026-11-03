@@ -64,7 +64,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         status: str | None = None,
         q: str | None = None,
         cursor: str | None = None,
-        posizione: str | None = None,
+        job_title: str | None = None,
         remote: str | None = None,
         min_rate: str | None = None,
         max_rate: str | None = None,
@@ -97,9 +97,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         `seniority_uncertain` vera il CV non data nessun ruolo e il livello è solo una
         lettura delle responsabilità. `fields` sceglie i campi per nome e
         dà solo quelli (con `id`), interi: `["email", "settori", "lingue", "fascia"]`,
-        con `skills` e `profile_summary` intere se le nomini; `["tutti"]` dà la riga
+        con `skills` e `profile_summary` intere se le nomini; `["all"]` dà la riga
         completa, con `email`, `linkedin_url`, `origin`, `utm_source`, `created_at`,
-        `vetted_at`, `has_anonymous_card`, `posizione`. Dal più recente, o dal più
+        `vetted_at`, `has_anonymous_card`, `job_title`. Dal più recente, o dal più
         pertinente quando `q` restringe. L'`id` di una riga va a `get_talent`, che per un
         lead risponde la riga stessa; la scheda di un lead si crea con
         `create_freelancer_from_signup`.
@@ -111,7 +111,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         `senior`, `lead`); `min_years` e `max_years` per anni di esperienza della scheda
         (estremi compresi); `industries` e `languages` per i settori e le lingue della scheda
         (ogni termine deve comparire, come `skills`: `["fintech"]`,
-        `["inglese"]`); `location` per il luogo della scheda (`"Milano"`); `posizione` per
+        `["inglese"]`); `location` per il luogo della scheda (`"Milano"`); `job_title` per
         il ruolo dichiarato; `remote` per disponibilità (remoto/ibrido/in_sede);
         `min_rate` e `max_rate` per tariffa a giornata (stringa, «500», «450.50»
         o all'italiana «1.500», «1.234,50»); `origin` per come è nata la riga (`form`
@@ -129,7 +129,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         escludono i lead; `origin=form` esclude invece ogni scheda.
 
         `sort`: `recent` (più nuovi prima, anche se `q` cerca), `rate_asc`,
-        `rate_desc`, `experience_years_asc`, `experience_years_desc`. Ordinando per tariffa o per anni
+        `rate_desc`, `experience_years_asc`, `experience_years_desc`. Ordinando per tariffa o per
+        anni
         restano solo le schede che quel valore ce l'hanno (niente lead, niente schede
         senza tariffa o senza anni), e `total` e `by_status` contano quelle. Senza
         `sort`: dal più recente, o dal più pertinente quando `q` cerca.
@@ -147,7 +148,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         place = search_term(location)
         for field, value in (
             ("status", status),
-            ("posizione", posizione),
+            ("job_title", job_title),
             ("remote", remote),
             ("origin", origin),
             ("origin_page", origin_page),
@@ -157,20 +158,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             ("cursor", cursor),
         ):
             bounded(value, field)
-        created_from = moment(created_from, "created_from")
-        created_to = moment(created_to, "created_to")
+        created_after = moment(created_from, "created_from")
+        created_before = moment(created_to, "created_to")
         rate_from = number(min_rate, "min_rate")
         rate_to = number(max_rate, "max_rate")
 
         def call(session: Session) -> CallToolResult:
             # The fields first: a misspelt name costs no query.
-            fields = row_fields(fields)
+            selected = row_fields(fields)
             page = TalentsService(session).list_recent(
                 limit=max(1, min(limit, TALENTS_LIMIT_MAX)),
                 status=status,
                 q=term,
                 cursor=cursor,
-                posizione=posizione,
+                job_title=job_title,
                 remote=remote,
                 min_rate=rate_from,
                 max_rate=rate_to,
@@ -179,8 +180,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                 utm_source=utm_source,
                 has_cv=has_cv,
                 with_logins=with_logins,
-                created_from=created_from,
-                created_to=created_to,
+                created_from=created_after,
+                created_to=created_before,
                 skills=skills,
                 location=place,
                 seniority=levels,
@@ -191,7 +192,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                 card=card,
                 sort=sort,
             )
-            if fields is not None and "email" in fields:
+            if selected is not None and "email" in selected:
                 deps.record_read(
                     session,
                     READ_ENTITY,
@@ -199,7 +200,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                     EMAILS_READ,
                     {"tool": "list_talents", "lines": len(page.items)},
                 )
-            return compact_result(talents_page(page.model_dump(mode="json"), fields))
+            return compact_result(talents_page(page.model_dump(mode="json"), selected))
 
         return deps.call(call)
 

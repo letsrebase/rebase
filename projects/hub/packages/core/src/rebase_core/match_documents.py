@@ -77,7 +77,7 @@ class MatchDocuments:
             "firma-professionista": None,
         }
 
-    def quadro_data(
+    def framework_date(
         self, user: User, fiscal: FreelancerFiscal, today: date, regime: str
     ) -> dict[str, Value]:
         """The framework agreement's fields. The occasional text prints no partita IVA
@@ -106,7 +106,7 @@ class MatchDocuments:
     ) -> dict[str, Value]:
         """A letter's own fields that must always be today's, not the draft's: the
         framework agreement's signature date, the freelancer's name, and the identifier
-        the letter prints, the partita IVA on an ordinary letter and the codice fiscale on
+        the letter prints, the `partita IVA` on an ordinary letter and the `codice fiscale` on
         an occasional one (REB-687). Shared by `_letter_date` (`create`) and
         `data_for_sending` (a send), so a field added to one cannot print stale data on
         the other (REB-406)."""
@@ -121,7 +121,7 @@ class MatchDocuments:
             **identifier,
         }
 
-    def lettera_data(
+    def letter_date(
         self,
         user: User,
         fiscal: FreelancerFiscal,
@@ -134,7 +134,7 @@ class MatchDocuments:
         return {
             **self.rebase_fields(),
             **data.letter.to_fields(),
-            "number": number,
+            "numero": number,
             **self.letter_party_fields(user, fiscal, signed, data.regime),
             "cliente-ragione-sociale": data.customer.customer_legal_name,
             "cliente-piva": data.customer.customer_vat_number,
@@ -184,7 +184,7 @@ class MatchDocuments:
         freelancer, user = freelancer_row(self.session, document.freelancer_id)
         fiscal = fiscal_row(self.session, freelancer.id)
         if document.kind == FRAMEWORK:
-            return self.quadro_data(user, fiscal, today, document.regime)
+            return self.framework_date(user, fiscal, today, document.regime)
         signed = signed_on(framework) if framework is not None else None
         return {
             **document.data,
@@ -206,7 +206,7 @@ class MatchDocuments:
             renderer,
             FRAMEWORK,
             regime,
-            self.quadro_data(user, fiscal, self.today(), regime),
+            self.framework_date(user, fiscal, self.today(), regime),
             freelancer.id,
             None,
             None,

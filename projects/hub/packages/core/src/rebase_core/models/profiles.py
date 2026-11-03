@@ -30,7 +30,7 @@ TALENT_STATES = (*FREELANCER_STATES, "lead")
 # Who wrote the seven answers last (ORB-155): the person, through the wizard or the
 # member area, or an admin, from what the public web says about a signup. Research never
 # overwrites `person`; the person's own words win.
-COMPILATA_DA = ("person", "admin")
+FILLED_BY = ("person", "admin")
 COMPANY_STATES = ("new", "contacted", "in_progress", "closed")
 REMOTE_OPTIONS = ("remote", "hybrid", "on_site")
 # The floor and ceiling of `Company.onsite_days` (REB-380): a work week, never "the
@@ -87,12 +87,12 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     Since ORB-155 a card can also be born from a signup, with what an admin found on
     the public web: a name, a LinkedIn profile, a position, some links. The CV, the rate,
     the position and the remote option are therefore nullable -- nothing public states
-    them -- and the person completes the card from the member area. `compilata_da` says
+    them -- and the person completes the card from the member area. `filled_by` says
     who wrote the answers last, so research can tell a card it may replace from one it
     may not. Migration 0007 loosened the columns; the wizard still requires all of them.
 
     Since REB-278 the identity is `users`: `user_id` is `NOT NULL UNIQUE`, at most one
-    card per person. Migration B (REB-281) drops the card's own `nome`/`last_name`/
+    card per person. Migration B (REB-281) drops the card's own `first_name`/`last_name`/
     `email`/`linkedin_url`, which `FreelancerService` kept in step with the linked
     `users` row only for as long as both copies existed: `users` is now the one place
     a name or an address lives, read through a join wherever the card is."""
@@ -114,11 +114,11 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     cv_mime: Mapped[str | None] = mapped_column(String(CV_MIME_MAX_LENGTH), default=None)
     cv_size: Mapped[int | None] = mapped_column(Integer, default=None)
     daily_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
-    posizione: Mapped[str | None] = mapped_column(String(JOB_TITLE_MAX_LENGTH), default=None)
+    job_title: Mapped[str | None] = mapped_column(String(JOB_TITLE_MAX_LENGTH), default=None)
     remote: Mapped[str | None] = mapped_column(String(10), default=None)
     links: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="new")
-    compilata_da: Mapped[str] = mapped_column(String(10), nullable=False, default="person")
+    filled_by: Mapped[str] = mapped_column(String(10), nullable=False, default="person")
     # `None` while the card is live; a moment once an admin soft-deletes it (REB-347).
     # Never a hard delete -- see `AdminAction`, whose "deleted"/"restored" entries are
     # what makes flipping this back to `None` a real undo rather than a fresh guess.
@@ -138,30 +138,31 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     __table_args__ = (
         Index("ix_freelancers_created_at", "created_at"),
         CheckConstraint(
-            "stato IN ('nuovo', 'contattato', 'attivo', 'scartato')", name="ck_freelancers_stato"
+            "status IN ('new', 'contacted', 'active', 'discarded')", name="ck_freelancers_status"
         ),
-        CheckConstraint("compilata_da IN ('persona', 'admin')", name="ck_freelancers_compilata_da"),
+        CheckConstraint("filled_by IN ('person', 'admin')", name="ck_freelancers_filled_by"),
         CheckConstraint(
-            "remoto IS NULL OR remoto IN ('remoto', 'ibrido', 'in_sede')",
-            name="ck_freelancers_remoto",
+            "remote IS NULL OR remote IN ('remote', 'hybrid', 'on_site')",
+            name="ck_freelancers_remote",
         ),
         CheckConstraint(
             "seniority_admin IS NULL OR seniority_admin IN ('junior', 'mid', 'senior', 'lead')",
             name="ck_freelancers_seniority_admin",
         ),
         CheckConstraint(
-            "anni_admin IS NULL OR (anni_admin >= 0 AND anni_admin <= 60)",
+            "experience_years_admin IS NULL OR "
+            "(experience_years_admin >= 0 AND experience_years_admin <= 60)",
             name="ck_freelancers_experience_years_admin_range",
         ),
         Index("uq_freelancers_user_id", "user_id", unique=True),
-        # Trigram search on the merged talenti list (REB-285): `nome`/`last_name`/
-        # `email` live on `users` (indexed there); `posizione` is the one searchable
+        # Trigram search on the merged talents list (REB-285): `first_name`/`last_name`/
+        # `email` live on `users` (indexed there); `job_title` is the one searchable
         # field that lives here. Migration 0013 creates the GIN index.
         Index(
             "ix_freelancers_job_title_trgm",
-            "posizione",
+            "job_title",
             postgresql_using="gin",
-            postgresql_ops={"posizione": "gin_trgm_ops"},
+            postgresql_ops={"job_title": "gin_trgm_ops"},
         ),
     )
 
@@ -171,10 +172,10 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     long, and what a day is worth to them. Several rows per company are fine -- a company
     has several projects -- so nothing is unique here but the id.
 
-    Since REB-278 `user_id` points at the referente's `users` row, not unique -- a
+    Since REB-278 `user_id` points at the contact person's `users` row, not unique -- a
     person files several requests over time. Migration B (REB-281) drops the row's own
     `contact_person`/`email`, which duplicated the linked `users` row only for the A-to-B
-    window: the referente's name and address are read off `users` now, one place for
+    window: the contact person's name and address are read off `users` now, one place for
     every request the same person ever filed, not a free-text copy each request could
     drift from.
 
@@ -184,9 +185,9 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     (`REMOTE_OPTIONS`, mirroring `Freelancer.remote`'s shape), `onsite_days`
     (nullable, `NULL` unless `remote` is `'hybrid'`, tied to it by
     `ck_companies_onsite_days_together` the same "together or neither" shape
-    `pigrocrm`'s own `payment_days`/`pagamento_fine_mese` pair uses), `headcount`
+    `pigrocrm`'s own `payment_days`/`payment_end_of_month` pair uses), `headcount`
     (how many people the request needs) and `requested_role` (the role, free text
-    like `Freelancer.posizione`, with the same trigram index for the admin's search)."""
+    like `Freelancer.job_title`, with the same trigram index for the admin's search)."""
 
     __tablename__ = "companies"
 
@@ -219,10 +220,10 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     __table_args__ = (
         Index("ix_companies_created_at", "created_at"),
         CheckConstraint(
-            "stato IN ('nuovo', 'contattato', 'in_corso', 'chiuso')", name="ck_companies_stato"
+            "status IN ('new', 'contacted', 'in_progress', 'closed')", name="ck_companies_status"
         ),
-        CheckConstraint("remoto IN ('remoto', 'ibrido', 'in_sede')", name="ck_companies_remoto"),
-        # Trigram search (REB-285): `nome`/`contact_person`/`email` are the linked `users`
+        CheckConstraint("remote IN ('remote', 'hybrid', 'on_site')", name="ck_companies_remote"),
+        # Trigram search (REB-285): `first_name`/`contact_person`/`email` are the linked `users`
         # row's own (indexed there); `company_name`, `project` and `requested_role`
         # (REB-380) are this table's. Migration 0013/0016 create the GIN indexes.
         Index(
@@ -244,19 +245,18 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
             postgresql_ops={"requested_role": "gin_trgm_ops"},
         ),
         CheckConstraint(
-            "giorni_presenza IS NULL OR "
-            f"(giorni_presenza >= {ONSITE_DAYS_MIN} "
-            f"AND giorni_presenza <= {ONSITE_DAYS_MAX})",
+            "onsite_days IS NULL OR "
+            f"(onsite_days >= {ONSITE_DAYS_MIN} "
+            f"AND onsite_days <= {ONSITE_DAYS_MAX})",
             name="ck_companies_onsite_days_range",
         ),
         CheckConstraint(
-            "(remoto = 'ibrido') = (giorni_presenza IS NOT NULL)",
+            "(remote = 'hybrid') = (onsite_days IS NOT NULL)",
             name="ck_companies_onsite_days_together",
         ),
-        CheckConstraint("numero_risorse >= 1", name="ck_companies_headcount_positive"),
+        CheckConstraint("headcount >= 1", name="ck_companies_headcount_positive"),
         CheckConstraint(
-            "crm_stato IS NULL OR crm_stato IN "
-            "('da_collegare', 'collegato', 'errore', 'rifiutato')",
+            "crm_status IS NULL OR crm_status IN ('to_link', 'linked', 'error', 'rejected')",
             name="ck_companies_crm_status",
         ),
     )

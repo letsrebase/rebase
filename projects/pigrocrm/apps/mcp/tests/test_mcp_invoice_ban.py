@@ -126,8 +126,8 @@ FORBIDDEN = (
     # reports, gated the same way as `import_issued_invoice` itself.
     "confirm_invoice_import",
     # None of these three fiscal: reading
-    # the titolare's Google Drive (slice 9 §4.2). Like `discover_gmail_correspondents`
-    # they spend the titolare's quota under the titolare's OAuth consent, and unlike
+    # the owner's Google Drive (slice 9 §4.2). Like `discover_gmail_correspondents`
+    # they spend the owner's quota under the owner's OAuth consent, and unlike
     # every other entry here what they *return* is the content of a personal Drive --
     # where the folder of another job, the rent contract and the photos of somebody's
     # children live next to the client's contract. The confinement to
@@ -153,7 +153,7 @@ FORBIDDEN = (
 # The reason they are banned anyway is the reason this file's own subject exists: a
 # personal access token is accepted on every REST route, and `PATCH
 # /api/drive/account/roots` is a REST route. Without the ban an agent token could
-# repoint the roots at any folder of the titolare's Drive -- making every confinement
+# repoint the roots at any folder of the owner's Drive -- making every confinement
 # `core/drive/reader.py` enforces true of a folder list the agent chose -- or disconnect
 # the account and take the CRM's own document store offline. `apps/api/tests/
 # test_drive_api.py` pins all three at the route.

@@ -30,7 +30,7 @@ function NoteItem({
   const [asking, setAsking] = useState(false)
   const [draft, setDraft] = useState(note.text)
   const edit = useMutation({
-    mutationFn: (testo: string) => admin.editNote(note.id, testo),
+    mutationFn: (text: string) => admin.editNote(note.id, text),
     onSuccess: (edited) => {
       setEditing(false)
       onEdited(edited)
@@ -175,7 +175,7 @@ export function Notes({
 }) {
   const [draft, setDraft] = useState('')
   const add = useMutation({
-    mutationFn: (testo: string) => admin.addNote(kind, id, testo),
+    mutationFn: (text: string) => admin.addNote(kind, id, text),
     onSuccess: (created) => {
       setDraft('')
       onChange((previous) => [created, ...previous])

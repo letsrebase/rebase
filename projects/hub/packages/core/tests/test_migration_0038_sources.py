@@ -113,6 +113,8 @@ def test_upgrade_is_idempotent(hub_postgres: Any) -> None:
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)
         engine = create_engine(url, future=True)
+        # The deploy that retries runs on 0038's own schema, 0049's English names undone.
+        command.downgrade(config, REVISION)
         with engine.begin() as connection:
             # An admin's switch survives the revision running again over its own tables.
             connection.execute(text("UPDATE ai_sources SET enabled = true WHERE kind = 'github'"))
@@ -156,7 +158,7 @@ def test_constraints_hold(hub_postgres: Any) -> None:
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
         with Session(engine) as session:
-            user = User(email="a@x.it", nome="A", last_name="B")
+            user = User(email="a@x.it", first_name="A", last_name="B")
             session.add(user)
             session.flush()
             row = Freelancer(user_id=user.id)

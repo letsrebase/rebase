@@ -135,7 +135,7 @@ class RegenerationTrail(CardBase):
         model: str | None = None,
     ) -> None:
         """What became of the card a person asked to have written, signed in the talent's
-        trail (`card_regenerated`): written (`scritta`) or not (`non_scritta`, with the
+        trail (`card_regenerated`): written (`written`) or not (`not_written`, with the
         reason: a `Failure`, `superseded` or one of `NO_ANSWER_REASONS`), by which door, the
         model, the prompt version and what the calls cost (the `ai_usage` rows of the person
         since the write began). No personal data and no card text: ours, never the model's
@@ -157,7 +157,7 @@ class RegenerationTrail(CardBase):
             "bulk": run.bulk,
             "prompt_version": PROMPT_VERSION,
             "model": model or None,
-            "outcome": "scritta" if written else "non_scritta",
+            "outcome": "written" if written else "not_written",
             "cost_eur": cost,
         }
         if run.bulk:
@@ -246,7 +246,7 @@ class RegenerationTrail(CardBase):
         for freelancer_id, payload in cards.items():
             cost += Decimal(str(payload.get("cost_eur") or 0))
             unpriced += int(payload.get("unpriced") or 0)
-            if payload.get("outcome") == "scritta":
+            if payload.get("outcome") == "written":
                 written += 1
                 continue
             reason = str(payload.get("reason"))

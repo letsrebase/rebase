@@ -20,6 +20,7 @@ from signing_fixtures import (
     _draft,
     _envelope_of,
     _framework_of,
+    _framework_of_regime,
     _letter_of,
     _occasional_draft,
     _sent,
@@ -92,7 +93,7 @@ def test_signing_from_settings_builds_the_service_this_environment_configures(
 
 
 @pytest.mark.parametrize(
-    ("first", "other"), [("occasional", "partita_iva"), ("partita_iva", "occasional")]
+    ("first", "other"), [("occasional", "vat_registered"), ("vat_registered", "occasional")]
 )
 def test_a_framework_signature_releases_only_the_letters_of_its_own_regime(
     clean: Session, first: str, other: str
@@ -103,13 +104,13 @@ def test_a_framework_signature_releases_only_the_letters_of_its_own_regime(
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     signing = _signing(clean, renderer, fake, sender)
     matches = {
-        "partita_iva": _draft(clean, renderer, freelancer_id, company_id, admin_id),
+        "vat_registered": _draft(clean, renderer, freelancer_id, company_id, admin_id),
         "occasional": _occasional_draft(clean, renderer, freelancer_id, company_id, admin_id),
     }
     for match in matches.values():
         assert signing.send_match(match.id, admin_id).sent == "framework"
 
-    _sign(signing, fake, _framework_of(clean, freelancer_id, first))
+    _sign(signing, fake, _framework_of_regime(clean, freelancer_id, first))
 
     assert _letter_of(clean, matches[first].id).status == "sent"
     assert _letter_of(clean, matches[other].id).status == "pending"
@@ -128,10 +129,10 @@ def test_an_occasional_letter_waits_while_only_the_ordinary_framework_is_active(
     report = signing.send_match(match.id, admin_id)
 
     assert (report.sent, report.match.letter.status) == ("framework", "pending")
-    assert _framework_of(clean, freelancer_id, "occasional").status == "sent"
+    assert _framework_of_regime(clean, freelancer_id, "occasional").status == "sent"
     # The ordinary agreement's own copy is stored and mailed already, so only a waiting
     # letter could still bring it into the sweep.
-    ordinary.signed_pdf = b"%PDF-firmato"
+    ordinary.signed_pdf = b"%PDF-signed"
     ordinary.signed_copy_to_freelancer_at = NOW
     ordinary.signed_copy_to_rebase_at = NOW
     clean.commit()
@@ -178,7 +179,7 @@ def test_an_occasional_documents_names_are_its_own_on_documenso_and_in_the_mail(
         "Da firmare: contratto quadro rebase per prestazioni occasionali"
     )
 
-    _sign(signing, fake, _framework_of(clean, freelancer_id, "occasional"))
+    _sign(signing, fake, _framework_of_regime(clean, freelancer_id, "occasional"))
 
     letter = _letter_of(clean, match.id)
     letter_envelope = list(fake.envelopes.values())[-1]
@@ -196,9 +197,9 @@ def test_an_occasional_documents_names_are_its_own_on_documenso_and_in_the_mail(
 def test_an_occasional_match_goes_out_and_comes_back_on_the_occasional_texts(
     clean: Session,
 ) -> None:
-    """A freelancer with no partita IVA, sent an occasional match from start to finish:
+    """A freelancer with no `partita IVA`, sent an occasional match from start to finish:
     the framework agreement leaves first, then its signature releases the letter, each
-    typeset from its occasional text and printing the codice fiscale, never a partita
+    typeset from its occasional text and printing the `codice fiscale`, never a partita
     IVA."""
     admin_id, freelancer_id, company_id = _setup_occasional(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -212,7 +213,7 @@ def test_an_occasional_match_goes_out_and_comes_back_on_the_occasional_texts(
     assert data["professionista-cf"] == "LVLDAA85T50H501Z"
     assert "professionista-piva" not in data
 
-    _sign(signing, fake, _framework_of(clean, freelancer_id, "occasional"))
+    _sign(signing, fake, _framework_of_regime(clean, freelancer_id, "occasional"))
 
     assert _letter_of(clean, match.id).status == "sent"
     document, data = renderer.calls[-1]
@@ -228,7 +229,7 @@ def test_an_occasional_match_goes_out_and_comes_back_on_the_occasional_texts(
 
 def test_an_ordinary_draft_whose_vat_number_was_removed_does_not_leave(clean: Session) -> None:
     """The tax data changed after the draft, so the ordinary framework
-    agreement would leave with a blank partita IVA: refused with the sentence «Crea
+    agreement would leave with a blank `partita IVA`: refused with the sentence «Crea
     match» shows on `regime`, and nothing reaches Documenso or the mailbox."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()

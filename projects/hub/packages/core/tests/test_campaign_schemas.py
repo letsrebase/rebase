@@ -23,11 +23,11 @@ TALENTS_FILTERS = {
     "list": "talents",
     "status": "active",
     "q": "react",
-    "posizione": "Frontend",
+    "job_title": "Frontend",
     "remote": "hybrid",
     "min_rate": "300.00",
     "max_rate": "500.00",
-    "origin": "home",
+    "origin_page": "home",
     "utm_source": "linkedin",
     "has_cv": True,
     "with_logins": False,
@@ -89,7 +89,7 @@ def test_a_filter_amount_with_cents_is_kept_as_it_is_however_large() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["nome", "source", "subject", "text", "button_text", "button_meta", "action"],
+    ["name", "source", "subject", "text", "button_text", "button_meta", "action"],
 )
 def test_a_patch_refuses_an_explicit_null_on_a_not_nullable_field_naming_it(field: str) -> None:
     """Every field of `_NOT_NULLABLE` is `NOT NULL` in `models.py`'s `Campaign` (REB-550,
@@ -107,7 +107,7 @@ def test_a_patch_leaving_a_field_out_is_not_the_same_as_sending_it_null() -> Non
     out -- if it did, every one of the seven fields below would raise, since none of
     them is set. That the patch validates at all pins it."""
     patch = CampaignPatch.model_validate({"subject": "Nuovo oggetto"})
-    assert patch.nome is None and patch.source is None and patch.action is None
+    assert patch.name is None and patch.source is None and patch.action is None
     assert patch.text is None and patch.button_text is None and patch.button_meta is None
 
 
@@ -126,21 +126,21 @@ DRAFT = {
 }
 
 
-@pytest.mark.parametrize("nome", ["", "   ", "\t \n"])
-def test_a_blank_name_is_refused_on_create_and_on_update_with_a_sentence(nome: str) -> None:
+@pytest.mark.parametrize("name", ["", "   ", "\t \n"])
+def test_a_blank_name_is_refused_on_create_and_on_update_with_a_sentence(name: str) -> None:
     """REB-524: `min_length=1` ran before the service stripped the name, so a name of
     spaces was stored empty. The name is stripped first and then checked, and the
-    refusal is an Italian sentence naming the field, with `nome` last in `loc` as the
+    refusal is an Italian sentence naming the field, with `name` last in `loc` as the
     web reads it (`detail[].loc[-1]`)."""
-    for shape, body in ((CampaignDraft, {**DRAFT, "nome": nome}), (CampaignPatch, {"nome": nome})):
+    for shape, body in ((CampaignDraft, {**DRAFT, "name": name}), (CampaignPatch, {"name": name})):
         with pytest.raises(ValidationError) as refused:
             shape.model_validate(body)
         (error,) = refused.value.errors()
-        assert error["loc"][-1] == "nome"
+        assert error["loc"][-1] == "name"
         assert error["msg"] == NAME_IS_BLANK
         assert "nome" in NAME_IS_BLANK
 
 
 def test_a_name_is_stored_without_its_surrounding_spaces() -> None:
-    assert CampaignDraft.model_validate({**DRAFT, "nome": "  Manca il CV "}).nome == "Manca il CV"
-    assert CampaignPatch.model_validate({"nome": " Autunno  "}).nome == "Autunno"
+    assert CampaignDraft.model_validate({**DRAFT, "name": "  Manca il CV "}).name == "Manca il CV"
+    assert CampaignPatch.model_validate({"name": " Autunno  "}).name == "Autunno"

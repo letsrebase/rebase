@@ -56,15 +56,15 @@ def clean(api_session: Session) -> Iterator[None]:
     api_session.commit()
 
 
-def _apply(client: TestClient, email: str, nome: str = "Ada") -> None:
+def _apply(client: TestClient, email: str, first_name: str = "Ada") -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": nome,
+            "first_name": first_name,
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
@@ -96,7 +96,7 @@ def _enter(
     client: TestClient, sender: RecordingSender, email: str
 ) -> tuple[dict[str, object], httpx.Response]:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     entered = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert entered.status_code == 200, entered.text
@@ -120,7 +120,7 @@ def test_a_link_asked_with_a_campaign_writes_it_on_the_login(
     unknown = client.post("/api/hub/auth/link", json={"email": "nessuno@studio.it", "utm": utm})
     assert known.status_code == unknown.status_code == 202
     assert known.json() == unknown.json()
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -209,7 +209,7 @@ def _tight_budget(client: TestClient, api_session: Session, room: int) -> None:
     )
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined,call-arg]
         _env_file=None,
-        resend_daily_share=100_000,
+        resend_daily_quota=100_000,
         campaign_daily_reserve=50_000,
         public_mail_daily_budget=max(used + room, 1),
     )
@@ -267,16 +267,16 @@ def test_one_person_asking_again_and_again_stops_at_their_own_cap_in_silence(
     assert "daily cap" in caplog.text and "ada@studio.it" not in caplog.text
 
 
-def _reapply(client: TestClient, email: str, nome: str) -> int:
+def _reapply(client: TestClient, email: str, first_name: str) -> int:
     """An application, without a CV, from an address that is already on file."""
     return client.post(
         "/api/hub/freelancers",
         data={
-            "nome": nome,
+            "first_name": first_name,
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
     ).status_code
@@ -317,10 +317,10 @@ def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_
     # The name before REB-668 is dropped in the same answer, so a browser that still holds
     # it does not keep two cookies for one session.
     assert any(line.startswith("orbiters_user=") and "max-age=0" in line for line in set_cookies)
-    assert client.get("/api/hub/me").json()["nome"] == "Ada"
+    assert client.get("/api/hub/me").json()["first_name"] == "Ada"
 
     # The same link a second time opens nothing.
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     again = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert again.status_code == 401
@@ -369,7 +369,7 @@ def test_a_session_opened_under_the_old_cookie_name_stays_signed_in_and_moves_to
 
     me = client.get("/api/hub/me")
     assert me.status_code == 200
-    assert me.json()["nome"] == "Ada"
+    assert me.json()["first_name"] == "Ada"
     moved = _set_cookies(me)
     adopted = next(line for line in moved if line.startswith("rebase_user="))
     assert adopted.startswith(f"rebase_user={raw.lower()};")  # lower-cased with the line
@@ -380,14 +380,14 @@ def test_a_session_opened_under_the_old_cookie_name_stays_signed_in_and_moves_to
     client.cookies.clear()
     client.cookies.set("rebase_user", raw)
     again = client.get("/api/hub/me")
-    assert again.status_code == 200 and again.json()["nome"] == "Ada"
+    assert again.status_code == 200 and again.json()["first_name"] == "Ada"
     assert _set_cookies(again) == []
 
 
 def test_an_admin_session_under_the_old_cookie_name_still_opens_the_admin_routes(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     _enter(client, sender, ADMIN_EMAIL)
     assert client.get("/api/hub/freelancers").status_code == 200
@@ -406,7 +406,7 @@ def test_the_new_cookie_name_wins_when_a_browser_sends_both(
     client.cookies.set("orbiters_user", "a-token-that-opens-nothing")
 
     me = client.get("/api/hub/me")
-    assert me.status_code == 200 and me.json()["nome"] == "Ada"
+    assert me.status_code == 200 and me.json()["first_name"] == "Ada"
     assert _set_cookies(me) == []
 
 
@@ -422,7 +422,7 @@ def test_a_stale_new_cookie_does_not_hide_a_live_session_under_the_old_name(
     client.cookies.set("rebase_user", "a-token-that-opens-nothing")
 
     me = client.get("/api/hub/me")
-    assert me.status_code == 200 and me.json()["nome"] == "Ada"
+    assert me.status_code == 200 and me.json()["first_name"] == "Ada"
     assert any(line.startswith(f"rebase_user={raw.lower()};") for line in _set_cookies(me))
 
 
@@ -492,11 +492,11 @@ def test_a_cv_filename_outside_latin_1_still_downloads_instead_of_500(
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Cheng",
+            "first_name": "Cheng",
             "last_name": "Wei",
             "email": "cheng@studio.it",
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("简历📄.pdf", PDF, "application/pdf")},
@@ -522,11 +522,11 @@ def test_an_accented_cv_filename_keeps_its_real_name_in_filename_star(
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Niccolò",
+            "first_name": "Niccolò",
             "last_name": "Forlì",
             "email": "niccolo@studio.it",
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Niccolò Forlì.pdf", PDF, "application/pdf")},
@@ -614,11 +614,11 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     refused = client.patch(
         "/api/hub/me",
         json={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "linkedin_url": "https://example.com/in/ada",
             "daily_rate": "500",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
             "links": [],
         },
@@ -629,17 +629,17 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     changed = client.patch(
         "/api/hub/me",
         json={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "linkedin_url": None,
             "daily_rate": "500",
-            "posizione": "Staff engineer",
+            "job_title": "Staff engineer",
             "remote": "hybrid",
             "links": ["https://github.com/ada"],
         },
     )
     assert changed.status_code == 200, changed.text
-    assert changed.json()["posizione"] == "Staff engineer"
+    assert changed.json()["job_title"] == "Staff engineer"
 
     new_pdf = PDF + b"\n% v2\n"
     replaced = client.put(
@@ -654,7 +654,7 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     # test about the admin's view of the thread, not about the rate limit's budget.
 
     # The admin reads the thread the member wrote into.
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     # Log the member out first, so the freelancer thread below is read as the admin,
     # not as Ada still holding the earlier session; REB-278's unified identity puts
@@ -664,7 +664,7 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     _enter(client, sender, ADMIN_EMAIL)
     assert client.get("/api/hub/me").json()["role"] == "admin"
     listed = client.get("/api/hub/freelancers").json()["items"]
-    assert len(listed) == 1 and listed[0]["posizione"] == "Staff engineer"
+    assert len(listed) == 1 and listed[0]["job_title"] == "Staff engineer"
     thread = client.get(f"/api/hub/freelancers/{listed[0]['id']}/notes").json()
     assert [comment["text"] for comment in thread] == [
         "CV aggiornato dalla persona",
@@ -700,9 +700,9 @@ def test_replacing_the_cv_schedules_the_card_write(
 def test_a_member_never_sees_another_members_row(
     client: TestClient, sender: RecordingSender, clean: None
 ) -> None:
-    _apply(client, "ada@studio.it", nome="Ada")
-    _apply(client, "grace@studio.it", nome="Grace")
-    assert _enter(client, sender, "grace@studio.it")[0]["nome"] == "Grace"
+    _apply(client, "ada@studio.it", first_name="Ada")
+    _apply(client, "grace@studio.it", first_name="Grace")
+    assert _enter(client, sender, "grace@studio.it")[0]["first_name"] == "Grace"
     assert client.get("/api/hub/me").json()["email"] == "grace@studio.it"
     # There is no route that takes an id: the only row reachable is the session's.
     assert client.get("/api/hub/me/00000000-0000-7000-8000-000000000000").status_code == 404
@@ -730,10 +730,10 @@ def test_the_member_area_lists_every_request_newest_first_without_the_admins_wor
 ) -> None:
     _request_company(client, duration="1 mese", requested_role="Data engineer")
     _request_company(client, duration="3 mesi")
-    api_session.execute(text("UPDATE companies SET stato = 'in_corso'"))
+    api_session.execute(text("UPDATE companies SET status = 'in_progress'"))
     api_session.execute(
         text(
-            "INSERT INTO notes (id, entity_type, entity_id, testo, autore) "
+            "INSERT INTO notes (id, entity_type, entity_id, text, author) "
             "SELECT gen_random_uuid(), 'company', id, 'da richiamare', 'Ivan' FROM companies"
         )
     )
@@ -781,7 +781,7 @@ def test_a_company_contact_edits_their_most_recent_request(
     # `POST /auth/link` and `POST /auth/enter` both spend from the public bucket this
     # test's two `_request_company` calls already drew on; a fresh minute here keeps
     # the test about the thread, not about the rate limit's budget.
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
@@ -820,7 +820,7 @@ def test_a_company_contact_edits_an_older_request_by_its_id(
         (older["id"], "8 mesi"),
     ]
 
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
@@ -862,7 +862,7 @@ def test_a_request_by_id_is_a_404_for_somebody_elses_and_for_a_deleted_one(
     assert [item["id"] for item in client.get("/api/hub/me").json()["requests"]] == [older["id"]]
 
     untouched = api_session.execute(
-        text("SELECT durata FROM companies WHERE id = :id"), {"id": theirs}
+        text("SELECT duration FROM companies WHERE id = :id"), {"id": theirs}
     ).scalar_one()
     assert untouched == "7 mesi"
 
@@ -919,7 +919,7 @@ def test_a_company_contact_files_an_additional_request(
     assert body["requests"][0]["requested_role"] == "Data engineer"
 
     # An admin sees two rows, the same company's name on both, the older untouched.
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
     _enter(client, sender, ADMIN_EMAIL)
@@ -980,14 +980,14 @@ def test_a_member_completes_the_card_an_admin_drafted(
     from rebase_core.signup_schemas import SignupCreate
 
     signup = SignupService(api_session).subscribe(
-        SignupCreate(email="ada@studio.it", nome="Ada", last_name="Lovelace")
+        SignupCreate(email="ada@studio.it", first_name="Ada", last_name="Lovelace")
     )
-    admin = User(email="claude@rebase.it", nome="Claude", last_name="", role="admin")
+    admin = User(email="claude@rebase.it", first_name="Claude", last_name="", role="admin")
     api_session.add(admin)
     api_session.commit()
     FreelancerService(api_session).draft_from_signup(
         signup.id,
-        FreelancerDraft(nome="Ada", last_name="Lovelace", sources=["https://ada.dev"]),
+        FreelancerDraft(first_name="Ada", last_name="Lovelace", sources=["https://ada.dev"]),
         admin.id,
         "web",
     )
@@ -998,11 +998,11 @@ def test_a_member_completes_the_card_an_admin_drafted(
     answered = client.patch(
         "/api/hub/me",
         json={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "linkedin_url": None,
             "daily_rate": "500",
-            "posizione": "CTO",
+            "job_title": "CTO",
             "remote": "hybrid",
             "links": [],
         },
@@ -1025,7 +1025,7 @@ def test_a_login_shows_up_on_the_admin_side(
     assert client.post("/api/hub/me/logout").status_code == 204
     # The session is gone; the login stays.
     assert client.get("/api/hub/logins").status_code == 401
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     _enter(client, sender, ADMIN_EMAIL)
     stats = client.get("/api/hub/logins").json()
@@ -1089,16 +1089,16 @@ def test_the_member_lookup_names_a_member_and_says_no_to_anyone_else(
 
     member = _ask(client, "  ada@studio.IT ", Authorization=bearer)
     assert member.status_code == 200, member.text
-    assert member.json() == {"member": True, "nome": "Ada", "last_name": "Lovelace"}
+    assert member.json() == {"member": True, "first_name": "Ada", "last_name": "Lovelace"}
 
     unknown = _ask(client, "nessuno@example.org", Authorization=bearer)
     assert unknown.status_code == 200, unknown.text
-    assert unknown.json() == {"member": False, "nome": None, "last_name": None}
+    assert unknown.json() == {"member": False, "first_name": None, "last_name": None}
 
     # Not an address at all: still a `false`, the CRM decides what to make of the input.
     assert _ask(client, "non-una-mail", Authorization=bearer).json() == {
         "member": False,
-        "nome": None,
+        "first_name": None,
         "last_name": None,
     }
     # No body, or the address in the query string instead: a 422, never a lookup.
@@ -1129,6 +1129,6 @@ def test_a_second_request_from_the_member_area_is_queued_for_the_crm(
     assert created.status_code == 201, created.text
     assert len(crm_filings) == len(first) + 1
     row = api_session.execute(
-        text("SELECT crm_stato FROM companies WHERE id = :id"), {"id": crm_filings[-1]}
+        text("SELECT crm_status FROM companies WHERE id = :id"), {"id": crm_filings[-1]}
     ).scalar_one()
     assert row == "to_link"

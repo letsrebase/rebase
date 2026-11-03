@@ -104,7 +104,7 @@ def test_to_foreign_legal_entity_keeps_to_vat_number_that_is_not_italian_in_shap
     db_session: Session,
 ) -> None:
     # A nine-digit British VAT number: `normalise_fiscal_id` would return None for it,
-    # which is exactly why a foreign azienda goes through `normalise_foreign_fiscal_id`.
+    # which is exactly why a foreign legal entity goes through `normalise_foreign_fiscal_id`.
     read = LegalEntityService(db_session).upsert_default(
         _upsert(country="GB", vat_number="GB 123 4567 89"), ADMIN
     )
@@ -188,11 +188,11 @@ def test_email_signature_is_bounded_and_rejects_to_nul_byte() -> None:
         _upsert(email_signature="Mario\x00Rossi")
 
 
-# -- several aziende (REB-615) -------------------------------------------------
+# -- several legal entities (REB-615) -------------------------------------------------
 #
-# No `create` exists before milestone 5 (spec 2026-10-03 §9), so a second azienda is
+# No `create` exists before milestone 5 (spec 2026-10-03 §9), so a second legal entity is
 # written by row here, which is what the migration of milestone 3 will also do. The
-# point of these tests is that two rows already behave as two aziende: two fiscal
+# point of these tests is that two rows already behave as two legal entities: two fiscal
 # profiles apart, one default, a deactivation that refuses the default.
 
 
@@ -346,7 +346,7 @@ def test_a_lower_case_country_code_does_not_make_an_italian_p_iva_foreign(
     assert read.country == "IT"
 
 
-# --- creation, the single-azienda resolution and the deactivation count (REB-630) -----
+# --- creation, the single-legal entity resolution and the deactivation count (REB-630) -----
 
 
 def _create(**overrides: object) -> LegalEntityCreate:
@@ -432,8 +432,8 @@ def test_single_resolves_the_only_legal_entity_and_never_picks_between_two(
     assert refused.value.details["entity"] == "analytics"
     assert refused.value.details["field"] == "legal_entity_id"
     assert service.require_single(second.id, entity="analytics").id == second.id
-    # A deactivated azienda no longer makes the choice ambiguous: the sidebar does not
-    # offer it, and the one active azienda is again the one every read means.
+    # A deactivated legal entity no longer makes the choice ambiguous: the sidebar does not
+    # offer it, and the one active legal entity is again the one every read means.
     service.deactivate(second.id, ADMIN)
     assert service.require_single(None, entity="analytics").id == first.id
 

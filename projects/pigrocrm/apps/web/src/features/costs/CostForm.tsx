@@ -147,9 +147,9 @@ export function CostForm({
   const busy = create.isPending || update.isPending || remove.isPending
   const fieldError = problem ? fieldErrorFrom(problem) : null
   const categoryId = (values.native.category_id as string | undefined) ?? ''
-  // «Azienda» only for a cost with no deal and from the second azienda on (REB-626, spec
+  // «Azienda» only for a cost with no deal and from the second legal entity on (REB-626, spec
   // §1.7): a cost on a deal is that deal's azienda's and the server would refuse another,
-  // while a general expense is shared («Condivisa», `null`) unless one azienda owns it.
+  // while a general expense is shared («Condivisa», `null`) unless one legal entity owns it.
   const legal_entity = useLegalEntity()
   const legalEntityId = (values.native.legal_entity_id as string | null | undefined) ?? SHARED
   // Kept out of the flattened values, like the customer form does: a custom field a

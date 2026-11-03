@@ -82,7 +82,7 @@ export function AdminCampaigns() {
                   <TableRow key={item.id}>
                     <TableCell>
                       <Link to="/admin/campaigns/$id" params={{ id: item.id }} className="font-medium hover:underline">
-                        {item.nome}
+                        {item.name}
                       </Link>
                       <p className="text-xs text-muted-foreground">{item.subject}</p>
                     </TableCell>

@@ -89,12 +89,16 @@ class StubCall:
 
 @pytest.fixture
 def admin(client: TestClient, api_session: Session) -> Iterator[User]:
-    row = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+    row = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     api_session.add(row)
     api_session.commit()
     overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
     overrides[get_admin] = lambda: AdminRead(
-        id=row.id, email=row.email, nome=row.nome, active=True, created_at=datetime.now(UTC)
+        id=row.id,
+        email=row.email,
+        first_name=row.first_name,
+        active=True,
+        created_at=datetime.now(UTC),
     )
     overrides[get_settings] = lambda: Settings(secrets_key=SECRETS_KEY, _env_file=None)  # type: ignore[call-arg]
     yield row
@@ -179,11 +183,11 @@ def test_anonymous_gets_401_on_every_route(
 def member(client: TestClient, api_session: Session, sender: RecordingSender) -> Iterator[User]:
     """A signed-in member who is not an admin: a real session through the magic link, with
     `get_admin` not overridden, which is the point."""
-    row = User(email="ada.member@studio.it", nome="Ada", last_name="Lovelace", role="member")
+    row = User(email="ada.member@studio.it", first_name="Ada", last_name="Lovelace", role="member")
     api_session.add(row)
     api_session.commit()
     assert client.post("/api/hub/auth/link", json={"email": row.email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     assert client.get("/api/hub/me").json()["role"] == "member"
@@ -464,11 +468,11 @@ def written_cards(admin: User, api_session: Session) -> Iterator[list[Any]]:
     people = []
     for n in range(1, 4):
         data = FreelancerCreate(
-            nome=f"Persona{n}",
+            first_name=f"Persona{n}",
             last_name=f"Cognome{n}",
             email=f"persona{n}@studio.it",
             daily_rate=Decimal("450.00"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
         )
         read, _ = FreelancerService(api_session).apply(
@@ -498,7 +502,7 @@ def test_stale_cards_lists_the_count_the_cost_and_the_reason(
     assert (body["count"], body["by_reason"]) == (2, {"prompt": 2})
     assert (body["batch_threshold"], body["batch"]) == (10, None)
     assert body["estimated_cost_eur"] is None  # no `card` call recorded yet: never «free»
-    assert sorted(item["nome"] for item in body["items"]) == [
+    assert sorted(item["first_name"] for item in body["items"]) == [
         "Persona1 Cognome1",
         "Persona2 Cognome2",
     ]

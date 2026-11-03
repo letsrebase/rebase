@@ -191,7 +191,7 @@ function useInvoicesPaged(filters: InvoicesListFilters): InvoicesListResult {
  * however many pages are loaded (REB-231).
  */
 export function useInvoicesList(filters: InvoicesListFilters = {}): InvoicesListResult {
-  // The sidebar's azienda (REB-625) on this page only: the owner tab below passes a
+  // The sidebar's legal entity (REB-625) on this page only: the owner tab below passes a
   // customer or a deal, whose invoices are theirs whatever the sidebar says.
   return useInvoicesPaged(useLegalEntityScope(filters))
 }
@@ -239,8 +239,8 @@ export function useFiscalProfile(legalEntityId: string) {
     queryKey: queryKeys.fiscalProfile(legalEntityId),
     queryFn: async (): Promise<FiscalProfile | null> => {
       // A 404 here means "not configured yet", which is a legitimate state and not an
-      // error: the azienda exists, its fiscal profile is saved from this screen once
-      // (REB-615: the profile belongs to the azienda, `GET /api/aziende/{id}/fiscal-profile`).
+      // error: the legal entity exists, its fiscal profile is saved from this screen once
+      // (REB-615: the profile belongs to the legal entity, `GET /api/aziende/{id}/fiscal-profile`).
       const { data, error, response } = await api.GET('/api/legal-entities/{legal_entity_id}/fiscal-profile', {
         params: { path: { legal_entity_id: legalEntityId } },
       })

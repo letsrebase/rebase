@@ -45,9 +45,9 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
   const [stale, setStale] = useState<StalePhase>('none')
   const [adopt, setAdopt] = useState(false)
   const [reloading, setReloading] = useState(false)
-  // What leaving the forfettario empties, kept aside while the choice is unsaved: a
-  // person who looks at another regime and comes back finds their natura, declaration
-  // and bollo switch as they were, not the blanks a save would have written.
+  // What leaving the flat-rate regime empties, kept aside while the choice is unsaved: a
+  // person who looks at another regime and comes back finds their VAT nature, declaration
+  // and stamp duty switch as they were, not the blanks a save would have written.
   const [kept, setKept] = useState<Pick<
     Values,
     'default_vat_nature' | 'legal_reference' | 'apply_stamp_duty'

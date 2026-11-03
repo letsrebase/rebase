@@ -98,12 +98,12 @@ def test_engine_maps_the_answer_to_freelancers(clean_hub: Session) -> None:
     )
 
     assert read.summary == SUMMARY
-    assert read.location.model_dump() == {"locale": False, "dove": None}
+    assert read.location.model_dump() == {"on_site": False, "place": None}
     assert read.origin == "admin"
     assert read.previous_id is None
     assert read.created_at == NOW
     first, second = read.team
-    assert (first.posizione, first.freelancer_id, first.role) == (
+    assert (first.position, first.freelancer_id, first.role) == (
         1,
         frontend,
         "Frontend developer",
@@ -113,7 +113,7 @@ def test_engine_maps_the_answer_to_freelancers(clean_hub: Session) -> None:
         {**CARD, "role": "Frontend developer", "location": "Milano"}
     )
     assert (first.mode, first.band) == ("hybrid", Band(min=400, max=500))  # 420
-    assert (second.posizione, second.freelancer_id, second.week_days) == (2, backend, None)
+    assert (second.position, second.freelancer_id, second.week_days) == (2, backend, None)
     assert (second.mode, second.band) == ("remote", Band(min=500, max=650))  # 630
     assert read.economics == TeamEconomics(
         day=Band(min=900, max=1150), month=Band(min=900 * 22, max=1150 * 22), days_month=22
@@ -164,12 +164,12 @@ def test_engine_drops_unknown_and_repeated_positions(
         TeamProposalCreate(description=DESCRIPTION), origin="admin", user_id=None
     )
 
-    assert [(m.posizione, m.freelancer_id, m.role) for m in read.team] == [
+    assert [(m.position, m.freelancer_id, m.role) for m in read.team] == [
         (1, first, "Backend developer"),
         (2, second, "Frontend developer"),
     ]
     [row] = proposal_rows(clean_hub)
-    assert [member["posizione"] for member in row.team] == [1, 2]
+    assert [member["position"] for member in row.team] == [1, 2]
     assert "'t99'" in logs.text and "'t0'" in logs.text and "not in the catalogue" in logs.text
     # An id that is not a position is the model's own text: it is not written down.
     assert "not a position" in logs.text and "Lovelace" not in logs.text
@@ -194,15 +194,15 @@ def test_engine_keeps_remote_members_on_a_local_need(
         "competenze lavora in sede, quindi le persone proposte lavorano da remoto o non "
         "hanno indicato come lavorano."
     )
-    llm = RecordingCall([proposal_response(team, summary=sentence, locale=True, dove="Torino")])
+    llm = RecordingCall([proposal_response(team, summary=sentence, on_site=True, place="Torino")])
 
     local = make_builder(clean_hub, llm).propose(
         TeamProposalCreate(description=DESCRIPTION), origin="admin", user_id=None
     )
 
-    assert local.location.model_dump() == {"locale": True, "dove": "Torino"}
+    assert local.location.model_dump() == {"on_site": True, "place": "Torino"}
     assert local.summary == sentence
-    assert [(m.posizione, m.freelancer_id, m.mode) for m in local.team] == [
+    assert [(m.position, m.freelancer_id, m.mode) for m in local.team] == [
         (1, remote, "remote"),
         (2, unknown, None),
         (3, hybrid, "hybrid"),
@@ -216,7 +216,7 @@ def test_a_team_dropped_whole_carries_the_hubs_sentence(clean_hub: Session) -> N
     it, the page says nobody fits rather than describing people who are not there."""
     a_talent(clean_hub, 1, remote="remote")
     team = [team_member("t9"), team_member("t12")]
-    llm = RecordingCall([proposal_response(team, locale=False, dove="Bari")])
+    llm = RecordingCall([proposal_response(team, on_site=False, place="Bari")])
 
     read = make_builder(clean_hub, llm).propose(
         TeamProposalCreate(description=DESCRIPTION), origin="public", user_id=None
@@ -226,7 +226,7 @@ def test_a_team_dropped_whole_carries_the_hubs_sentence(clean_hub: Session) -> N
     assert read.economics.model_dump() == {"day": None, "month": None, "days_month": 22}
     [row] = proposal_rows(clean_hub)
     assert (row.summary, row.team) == (NO_FIT_SENTENCE, [])
-    assert row.location == {"locale": False, "dove": "Bari"}
+    assert row.location == {"on_site": False, "place": "Bari"}
 
 
 def test_a_member_gone_during_the_call_is_dropped(clean_hub: Session) -> None:
@@ -254,7 +254,7 @@ def test_a_member_gone_during_the_call_is_dropped(clean_hub: Session) -> None:
 def test_an_empty_team_when_nobody_fits(clean_hub: Session) -> None:
     a_talent(clean_hub, 1)
     sentence = "Nessun profilo lavora in sede a Bari: il team resta da comporre."
-    llm = RecordingCall([proposal_response([], summary=sentence, locale=True, dove="Bari")])
+    llm = RecordingCall([proposal_response([], summary=sentence, on_site=True, place="Bari")])
 
     read = make_builder(clean_hub, llm).propose(
         TeamProposalCreate(
@@ -265,7 +265,10 @@ def test_an_empty_team_when_nobody_fits(clean_hub: Session) -> None:
     )
 
     assert (read.summary, read.team) == (sentence, [])
-    assert read.location.model_dump() == {"locale": True, "dove": "Bari"}  # the visitor's own word
+    assert read.location.model_dump() == {
+        "on_site": True,
+        "place": "Bari",
+    }  # the visitor's own word
     assert read.economics.model_dump() == {"day": None, "month": None, "days_month": 22}
 
 
@@ -311,17 +314,17 @@ def test_engine_refuses_when_off(
     [
         (proposal_response(stop_reason="refusal", refusal_category="cyber"), "cyber"),
         (
-            proposal_response(text='{"riassunto": "Un\'azienda', stop_reason="max_tokens"),
+            proposal_response(text='{"summary": "Un\'azienda', stop_reason="max_tokens"),
             "max_tokens",
         ),
         (proposal_response(text="Ecco il team che propongo"), "not the shape"),
-        (proposal_response(text='{"riassunto": "Un team", "team": []}'), "not the shape"),
+        (proposal_response(text='{"summary": "Un team", "team": []}'), "not the shape"),
         (
             proposal_response(
                 text=json.dumps(
                     {
                         "summary": SUMMARY,
-                        "location": {"locale": False, "dove": None},
+                        "location": {"on_site": False, "place": None},
                         "team": [],
                         "costo": 1000,
                     }
@@ -548,17 +551,17 @@ def test_proposal_row_keeps_the_tokens_and_origin(clean_hub: Session) -> None:
     assert (row.origin, row.user_id, row.created_at) == ("cloud", owner, NOW)
     assert (row.description, row.note, row.previous_id) == (DESCRIPTION, None, None)
     assert row.summary == SUMMARY
-    assert row.location == {"locale": False, "dove": None}
+    assert row.location == {"on_site": False, "place": None}
     assert row.team == [
         {
-            "posizione": 1,
+            "position": 1,
             "freelancer_id": str(first),
             "role": "Backend developer",
             "reasoning": team_member("t1")["reasoning"],
             "week_days": 5,
         },
         {
-            "posizione": 2,
+            "position": 2,
             "freelancer_id": str(second),
             "role": "Tech lead",
             "reasoning": team_member("t1")["reasoning"],
@@ -652,7 +655,7 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean_hub: Sess
     # words, and the old sentence is gone.
     rules = llm.requests[0].system
     assert "excludes nobody" in rules and "propose nobody" not in rules
-    assert "a null modalita is unknown, never remote" in rules
+    assert "a null mode is unknown, never remote" in rules
     # The event tells the asked number from the proposed one, and the row keeps the
     # asked one (0028), `NULL` when nobody asked.
     assert [(p["people"], p["persone_richieste"]) for _, _, p in capture.calls] == [

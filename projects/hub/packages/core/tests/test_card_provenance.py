@@ -62,7 +62,7 @@ def _stored(session: Session, freelancer_id: UUID) -> FreelancerCard:
     return row
 
 
-def _sources(**fields: list[str]) -> dict[str, list[str]]:
+def _field_sources(**fields: list[str]) -> dict[str, list[str]]:
     return {**SOURCES, **fields}
 
 
@@ -156,7 +156,7 @@ def test_prompt_injection_text_in_source_is_in_wrapped_block_only() -> None:
 
 
 def test_unknown_source_in_sources_dropped() -> None:
-    claimed = _sources(role=["cv", "link:9"], skills=["github", "link:2", "github", "hub"])
+    claimed = _field_sources(role=["cv", "link:9"], skills=["github", "link:2", "github", "hub"])
 
     kept = verify_sources(claimed, {"cv", "github", "link:1"})
 
@@ -168,7 +168,7 @@ def test_unknown_source_in_sources_dropped() -> None:
 def test_unknown_source_is_dropped_from_the_stored_card(clean_hub: Session) -> None:
     person = _apply(clean_hub)
     service = _sources(clean_hub)
-    answer = card_response(sources=_sources(role=["cv", "link:9"], skills=["cv", "github"]))
+    answer = card_response(sources=_field_sources(role=["cv", "link:9"], skills=["cv", "github"]))
 
     _writer(clean_hub, RecordingCall([answer]), service).write(person)
 
@@ -219,7 +219,7 @@ def test_github_never_sets_years(clean_hub: Session) -> None:
     service = _sources(clean_hub)
     answer = card_response(
         {**CARD, "experience_years": 12, "seniority": "lead"},
-        sources=_sources(experience_years=["github"]),
+        sources=_field_sources(experience_years=["github"]),
     )
 
     _writer(clean_hub, RecordingCall([answer]), service).write(person)
@@ -242,7 +242,7 @@ def test_github_never_sets_years(clean_hub: Session) -> None:
 def test_years_from_the_cv_are_kept_beside_a_source(clean_hub: Session) -> None:
     person = _apply(clean_hub)
     service = _sources(clean_hub)
-    answer = card_response(sources=_sources(experience_years=["cv", "github"]))
+    answer = card_response(sources=_field_sources(experience_years=["cv", "github"]))
 
     _writer(clean_hub, RecordingCall([answer]), service).write(person)
 
@@ -276,7 +276,7 @@ def test_employer_in_card_triggers_one_rewrite_then_fail(clean_hub: Session) -> 
     assert len(llm.requests) == 2
     assert retry.messages[2].role == "user"
     assert IDENTIFYING_AGAIN in retry.messages[2].text
-    assert "Campi da correggere: ruolo." in retry.messages[2].text
+    assert "Campi da correggere: role." in retry.messages[2].text
     assert EMPLOYER not in retry.messages[2].text  # fields, never the word
     assert first_request.system == retry.system
     # The card of the same CV stays, with the sentence of ours beside it.
@@ -363,7 +363,7 @@ def test_gender_and_leak_are_one_rewrite_with_both_corrections(clean_hub: Sessio
     assert read.error is None and len(llm.requests) == 2
     asked = llm.requests[1].messages[2].text
     assert NEUTRAL_AGAIN in asked and IDENTIFYING_AGAIN in asked
-    assert "«sviluppatrice»" in asked and "Campi da correggere: ruolo." in asked
+    assert "«sviluppatrice»" in asked and "Campi da correggere: role." in asked
 
 
 def test_gender_rewrite_still_works(clean_hub: Session) -> None:
@@ -449,7 +449,7 @@ def test_public_and_cloud_reads_have_no_sources(clean_hub: Session) -> None:
     admin = CardWriter(clean_hub, None, sources=service).read_admin(person)
     assert admin.provenance is not None
     assert admin.provenance.prompt_version == 3
-    assert admin.provenance.sources["experience_years"] == ["cv"]
+    assert admin.provenance.field_sources["experience_years"] == ["cv"]
     assert [s.key for s in admin.provenance.sources] == ["github", "link:1"]
     assert admin.provenance.stale is None
 
@@ -459,7 +459,7 @@ def test_card_stored_before_version_2_reads_as_version_1(clean_hub: Session) -> 
     _writer(clean_hub, RecordingCall([card_response()])).write(person)
     clean_hub.execute(
         text(
-            "UPDATE freelancer_cards SET prompt_version = NULL, provider = NULL, fonti = NULL, "
+            "UPDATE freelancer_cards SET prompt_version = NULL, provider = NULL, sources = NULL, "
             "source_hashes = NULL, conflicts = NULL, thinking_tokens = NULL"
         )
     )
@@ -468,7 +468,7 @@ def test_card_stored_before_version_2_reads_as_version_1(clean_hub: Session) -> 
     admin = CardWriter(clean_hub, None).read_admin(person)
 
     assert admin.provenance is not None
-    assert (admin.provenance.prompt_version, admin.provenance.sources) == (1, {})
+    assert (admin.provenance.prompt_version, admin.provenance.field_sources) == (1, {})
     assert admin.provenance.stale == "prompt"
 
 

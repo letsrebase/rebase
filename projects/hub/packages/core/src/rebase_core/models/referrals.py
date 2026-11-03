@@ -21,8 +21,8 @@ from rebase_core.models.identity import REFERRAL_CODE_LENGTH
 REFERRAL_KINDS = ("freelancer", "company")
 # A referral is `to_verify` from signup until the referred person proves they hold the
 # address it was posted with (REB-658), and only then `verified`; `verified_via` says
-# which proof: `accesso` (a magic-link login after the referral was recorded), `letter`
-# (a referred freelancer's own signature of a letter) or `storico` (a referral that
+# which proof: `login` (a magic-link login after the referral was recorded), `letter`
+# (a referred freelancer's own signature of a letter) or `history` (a referral that
 # already counted before this state existed, migration 0030).
 REFERRAL_STATES = ("to_verify", "verified")
 REWARD_STATES = ("to_confirm", "confirmed", "paid")
@@ -68,10 +68,10 @@ class Referral(Base, PrimaryKeyMixin, TimestampMixin):
         Index("ix_referrals_referrer", "referrer_user_id", "created_at"),
         CheckConstraint("kind IN ('freelancer', 'company')", name="ck_referrals_kind"),
         CheckConstraint(
-            "(stato = 'da_verificare' AND verified_at IS NULL AND verified_via IS NULL) "
-            "OR (stato = 'verificato' AND verified_at IS NOT NULL "
+            "(status = 'to_verify' AND verified_at IS NULL AND verified_via IS NULL) "
+            "OR (status = 'verified' AND verified_at IS NOT NULL "
             "AND verified_via IS NOT NULL "
-            "AND verified_via IN ('accesso', 'lettera', 'storico'))",
+            "AND verified_via IN ('login', 'letter', 'history'))",
             name="ck_referrals_verification",
         ),
     )
@@ -112,7 +112,7 @@ class ReferralReward(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         Index("uq_referral_rewards_referral_id", "referral_id", unique=True),
         CheckConstraint(
-            "stato IN ('da_confermare', 'confermato', 'pagato')",
+            "status IN ('to_confirm', 'confirmed', 'paid')",
             name="ck_referral_rewards_status",
         ),
         CheckConstraint(

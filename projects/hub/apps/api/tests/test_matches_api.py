@@ -58,7 +58,7 @@ def renderer(client: TestClient) -> Iterator[FakeRenderer]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -95,7 +95,7 @@ def test_an_admin_matches_a_card_with_a_request_and_downloads_both_pdfs(
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/fiscal").json() is None
     saved = client.put(f"/api/hub/freelancers/{freelancer_id}/fiscal", json=FISCAL)
     assert saved.status_code == 200, saved.text
-    assert saved.json()["partita_iva"] == "01234567890"
+    assert saved.json()["vat_number"] == "01234567890"
 
     prefill = client.get(
         f"/api/hub/freelancers/{freelancer_id}/matches/prefill", params={"company_id": company_id}
@@ -278,7 +278,7 @@ def test_the_preview_renders_a_document_without_saving_or_numbering_it(
     assert preview.status_code == 200, preview.text
     assert preview.content.startswith(b"%PDF-")
     assert renderer.calls[-1][0] == "engagement-letter"
-    assert renderer.calls[-1][1]["number"] is None
+    assert renderer.calls[-1][1]["numero"] is None
     framework = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/preview",
         params={"document": "framework"},
@@ -324,18 +324,18 @@ def test_a_closed_request_and_a_fee_the_law_refuses_are_422s_on_their_field(
     assert closed.json()["detail"][0]["loc"] == ["body", "company_id"]
 
 
-def test_an_end_date_before_the_start_names_data_fine(
+def test_an_end_date_before_the_start_names_end_date(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    backwards = {**LETTER, "data_fine": "2026-09-01"}
+    backwards = {**LETTER, "end_date": "2026-09-01"}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "customer": CUSTOMER, "letter": backwards},
     )
     assert refused.status_code == 422
     detail = refused.json()["detail"][0]
-    assert detail["loc"][-1] == "data_fine"
+    assert detail["loc"][-1] == "end_date"
     assert detail["msg"] == "la fine prevista viene prima dell'inizio"
 
 
@@ -406,7 +406,7 @@ def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(
     )
     again = client.post(f"/api/hub/matches/{match['id']}/cancel")
     assert again.status_code == 409
-    assert "draft" in again.json()["detail"]
+    assert "bozza" in again.json()["detail"]
 
 
 def test_a_soft_deleted_freelancer_hides_all_four_match_routes(
@@ -463,7 +463,9 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     (`company_daily_budget`, through `reward_base`): the figure it yields may
     travel, the budget and the base it is a share of may not."""
     freelancer_id, company_id = ready(client, sender)
-    referrer = User(email="mario@community.it", nome="Mario", last_name="Rossi", role="member")
+    referrer = User(
+        email="mario@community.it", first_name="Mario", last_name="Rossi", role="member"
+    )
     api_session.add(referrer)
     api_session.commit()
     service = ReferralService(api_session)
@@ -493,7 +495,7 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
         "referrer_freelancer_id": None,
         "rate": "0.3000",
         "amount": "98.33",
-        "status": "previsto",
+        "status": "expected",
         "reward_id": None,
     }
     assert row["company_id"] == company_id
@@ -523,7 +525,7 @@ def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_fi
     assert row["company_name"] == "ACME Srl"
     assert row["number_letter"] == match["letter"]["number"]
     assert BUDGET not in listed.text
-    assert not any(key in row for key in ("tax_code", "partita_iva", "domicile", "certified_email"))
+    assert not any(key in row for key in ("tax_code", "vat_number", "domicile", "certified_email"))
 
     by_state = client.get("/api/hub/matches", params={"status": "draft"})
     assert by_state.status_code == 200
@@ -607,7 +609,7 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
         ),
         "required_framework": True,
         "missing_tax_data": False,
-        "regime": "partita_iva",
+        "regime": "vat_registered",
     }
     assert BUDGET not in checked.text
     assert renderer.calls == []
@@ -666,25 +668,25 @@ def test_without_the_cookie_the_check_is_a_401(client: TestClient, admin: None) 
 
 INVOICE = {
     "id": "0192e0a0-0000-7000-8000-0000000f0012",
-    "kind": "fattura",
+    "type": "fattura",
     "year": 2026,
     "number": 12,
     "status": "emessa",
-    "payment_status": "from_unpaid",
-    "data": "2026-10-31",
+    "payment_status": "unpaid",
+    "date": "2026-10-31",
 }
 # The CRM's report of the deal (its door's `GET .../report`): one row per time entry.
 CRM_REPORT = {
     "slug": "ada-lovelace",
     "deal_url": DEAL_URL,
-    "deal": {"id": str(DEAL), "nome": "Lettera n. 2026-001", "status": "in_progress"},
-    "giorni": [
-        {"data": "2026-10-01", "hours": "8.00", "description": "Setup", "fattura": INVOICE},
-        {"data": "2026-10-02", "hours": "4.00", "description": "API", "fattura": None},
+    "deal": {"id": str(DEAL), "name": "Lettera n. 2026-001", "status": "in_progress"},
+    "days": [
+        {"date": "2026-10-01", "hours": "8.00", "description": "Setup", "invoice": INVOICE},
+        {"date": "2026-10-02", "hours": "4.00", "description": "API", "invoice": None},
     ],
-    "hours_total": "12.00",
-    "invoiced_hours": "8.00",
-    "hours_uninvoiced": "4.00",
+    "total_hours": "12.00",
+    "billed_hours": "8.00",
+    "unbilled_hours": "4.00",
     "invoices": [{**INVOICE, "hours": "8.00"}],
 }
 
@@ -822,7 +824,7 @@ def test_get_report_answers_the_grouped_report(
     pigro.answers = [(200, json.dumps(CRM_REPORT).encode())]
 
     answered = client.get(
-        f"/api/hub/matches/{match_id}/report", params={"da": "2026-10-01", "a": "2026-10-31"}
+        f"/api/hub/matches/{match_id}/report", params={"from": "2026-10-01", "to": "2026-10-31"}
     )
 
     assert answered.status_code == 200, answered.text
@@ -839,29 +841,36 @@ def test_get_report_answers_the_grouped_report(
         "hours_uninvoiced": "4.00",
         "by_day": [
             {
-                "data": "2026-10-01",
+                "date": "2026-10-01",
                 "hours": "8.00",
                 "descriptions": ["Setup"],
                 "invoices": ["12/2026"],
                 "hours_by_invoice": [{"number": "12/2026", "kind": "fattura", "hours": "8.00"}],
             },
             {
-                "data": "2026-10-02",
+                "date": "2026-10-02",
                 "hours": "4.00",
                 "descriptions": ["API"],
                 "invoices": [],
                 "hours_by_invoice": [],
             },
         ],
-        "by_week": [{"week": "2026-W40", "da": "2026-09-28", "a": "2026-10-04", "hours": "12.00"}],
+        "by_week": [
+            {
+                "week": "2026-W40",
+                "from_date": "2026-09-28",
+                "to_date": "2026-10-04",
+                "hours": "12.00",
+            }
+        ],
         "by_month": [{"month": "2026-10", "hours": "12.00"}],
         "invoices": [
             {
                 "number": "12/2026",
                 "kind": "fattura",
-                "data": "2026-10-31",
+                "date": "2026-10-31",
                 "status": "emessa",
-                "payment_status": "from_unpaid",
+                "payment_status": "unpaid",
                 "hours": "8.00",
             }
         ],
@@ -869,7 +878,7 @@ def test_get_report_answers_the_grouped_report(
     [(method, url, _headers, _sent)] = pigro.calls
     assert (method, url) == (
         "GET",
-        f"{PIGRO}/api/rebase/engagements/{match_id}/report?from=2026-10-01&a=2026-10-31",
+        f"{PIGRO}/api/rebase/engagements/{match_id}/report?from=2026-10-01&to=2026-10-31",
     )
 
 
@@ -976,23 +985,23 @@ def test_the_link_reads_through_the_long_seam_in_production(api_session: Session
         assert signing.engagements.door.http is expected
 
 
-@pytest.mark.parametrize("partita_iva", [None, "", "   "])
-def test_tax_data_may_be_saved_without_a_partita_iva(
+@pytest.mark.parametrize("vat_number", [None, "", "   "])
+def test_tax_data_may_be_saved_without_a_vat_number(
     client: TestClient, admin: None, sender: RecordingSender, vat_number: str | None
 ) -> None:
     """REB-687: omitted, null or blank is no partita IVA; given, it still has 11 digits."""
     login(client, sender)
     freelancer_id = apply_freelancer(client)
     url = f"/api/hub/freelancers/{freelancer_id}/fiscal"
-    saved = client.put(url, json={**FISCAL, "partita_iva": vat_number})
+    saved = client.put(url, json={**FISCAL, "vat_number": vat_number})
     assert saved.status_code == 200, saved.text
-    assert saved.json()["partita_iva"] is None
-    omitted = client.put(url, json={k: v for k, v in FISCAL.items() if k != "partita_iva"})
+    assert saved.json()["vat_number"] is None
+    omitted = client.put(url, json={k: v for k, v in FISCAL.items() if k != "vat_number"})
     assert omitted.status_code == 200, omitted.text
-    assert omitted.json()["partita_iva"] is None
-    short = client.put(url, json={**FISCAL, "partita_iva": "0123"})
+    assert omitted.json()["vat_number"] is None
+    short = client.put(url, json={**FISCAL, "vat_number": "0123"})
     assert short.status_code == 422
-    assert short.json()["detail"][0]["loc"][-1] == "partita_iva"
+    assert short.json()["detail"][0]["loc"][-1] == "vat_number"
 
 
 def test_to_match_for_to_member_without_to_vat_number_is_occasional_end_to_end(
@@ -1003,7 +1012,7 @@ def test_to_match_for_to_member_without_to_vat_number_is_occasional_end_to_end(
     as its own type."""
     freelancer_id, company_id = ready(client, sender)
     fiscal = client.put(
-        f"/api/hub/freelancers/{freelancer_id}/fiscal", json={**FISCAL, "partita_iva": None}
+        f"/api/hub/freelancers/{freelancer_id}/fiscal", json={**FISCAL, "vat_number": None}
     )
     assert fiscal.status_code == 200, fiscal.text
     prefill = client.get(
@@ -1032,10 +1041,10 @@ def test_to_match_for_to_member_without_to_vat_number_is_occasional_end_to_end(
     created = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=occasional)
     assert created.status_code == 201, created.text
     letter = created.json()["letter"]
-    assert (letter["regime"], letter["kind"]) == ("occasional", "Lettera di incarico occasionale")
+    assert (letter["regime"], letter["label"]) == ("occasional", "Lettera di incarico occasionale")
     page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
     assert page["framework"] is None
-    assert page["occasional_framework"]["kind"] == "Contratto quadro per prestazioni occasionali"
+    assert page["occasional_framework"]["label"] == "Contratto quadro per prestazioni occasionali"
     pdf = client.get(f"/api/hub/contract-documents/{letter['id']}/pdf")
     assert (
         f"lettera-di-incarico-occasionale-{letter['number']}.pdf"

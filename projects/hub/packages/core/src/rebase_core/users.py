@@ -60,7 +60,7 @@ LINKEDIN_TAKEN = (
 )
 ADMIN_LIST_LIMIT_DEFAULT = 100
 ADMIN_LIST_LIMIT_MAX = 500
-_ADMIN_SEARCH_COLUMNS = (User.nome, User.last_name, User.email)
+_ADMIN_SEARCH_COLUMNS = (User.first_name, User.last_name, User.email)
 _LINK_REQUEST_THROTTLE_SECONDS = 60
 
 
@@ -157,7 +157,7 @@ class UserService:
     def get_or_create(
         self,
         email: str,
-        nome: str = "",
+        first_name: str = "",
         last_name: str = "",
         linkedin_url: str | None = None,
         phone: str | None = None,
@@ -187,7 +187,7 @@ class UserService:
         taken = self.by_linkedin(linkedin_url) is not None
         row = User(
             email=email.strip().lower(),
-            nome=nome,
+            first_name=first_name,
             last_name=last_name,
             linkedin_url=None if taken else linkedin_url,
             phone=phone,
@@ -215,7 +215,7 @@ class UserService:
         """Every admin (ORB-123): oldest first with no search term, so the page still
         reads as a history -- the same order `AdminService.list` gave `admin_users`,
         now a filter on `users` -- or best-match first once `q` narrows it (REB-313,
-        the same search-and-cursor shape REB-285 gives Talenti and Aziende).
+        the same search-and-cursor shape REB-285 gives Talents and Companies).
         `next_cursor` is `None` on the last page."""
         limit = max(1, min(limit, ADMIN_LIST_LIMIT_MAX))
         term = (q or "").strip()
@@ -256,7 +256,7 @@ class UserService:
     def promote(
         self,
         email: str,
-        nome: str | None = None,
+        first_name: str | None = None,
         last_name: str | None = None,
         *,
         admin_id: UUID,
@@ -276,12 +276,12 @@ class UserService:
         created = row is None
         was = None if row is None else row.role
         if row is None:
-            nome, last_name = (nome or "").strip(), (last_name or "").strip()
-            if not nome or not last_name:
+            first_name, last_name = (first_name or "").strip(), (last_name or "").strip()
+            if not first_name or not last_name:
                 raise ValidationFailed(
-                    ENTITY, "nome", "servono nome e cognome per un indirizzo nuovo"
+                    ENTITY, "first_name", "servono nome e cognome per un indirizzo nuovo"
                 )
-            row = User(email=email.strip().lower(), nome=nome, last_name=last_name)
+            row = User(email=email.strip().lower(), first_name=first_name, last_name=last_name)
             self.session.add(row)
         row.role = "admin"
         if was != "admin":
@@ -326,7 +326,7 @@ class UserService:
         return row
 
     def set_role(
-        self, email: str, role: str, nome: str = "", last_name: str = ""
+        self, email: str, role: str, first_name: str = "", last_name: str = ""
     ) -> tuple[User, bool]:
         """`rebase setrole`'s own shape: a minimal row created when none exists
         (`nome`/`last_name` required for it), the role set either way."""
@@ -336,12 +336,12 @@ class UserService:
         self._refuse_merged(row)
         created = row is None
         if row is None:
-            nome, last_name = nome.strip(), last_name.strip()
-            if not nome or not last_name:
+            first_name, last_name = first_name.strip(), last_name.strip()
+            if not first_name or not last_name:
                 raise ValidationFailed(
-                    ENTITY, "nome", "servono nome e cognome per un indirizzo nuovo"
+                    ENTITY, "first_name", "servono nome e cognome per un indirizzo nuovo"
                 )
-            row = User(email=email.strip().lower(), nome=nome, last_name=last_name)
+            row = User(email=email.strip().lower(), first_name=first_name, last_name=last_name)
             self.session.add(row)
         row.role = role
         self.session.commit()

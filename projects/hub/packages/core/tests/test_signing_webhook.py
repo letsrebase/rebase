@@ -349,8 +349,8 @@ def test_finish_confirms_only_after_locking_the_freelancer_row(
         worker_session.close()
         probe.close()
     clean.expire_all()
-    quadro = _framework_of(clean, freelancer_id)
-    assert (quadro.status, quadro.signed_at) == ("signed", SIGNED_AT)
+    framework = _framework_of(clean, freelancer_id)
+    assert (framework.status, framework.signed_at) == ("signed", SIGNED_AT)
 
 
 def test_finish_releases_a_waiting_letter_only_after_locking_the_freelancer_row(

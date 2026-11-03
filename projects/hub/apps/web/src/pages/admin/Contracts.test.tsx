@@ -39,14 +39,14 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-const PERSON = { id: 'f1', nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' }
+const PERSON = { id: 'f1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' }
 // Each fixture carries the sentence and the actions the core's `match_words` answers for
 // its state: the page renders them and decides nothing of its own.
 const FRAMEWORK = {
   id: 'd1',
   kind: 'framework',
-  regime: 'partita_iva',
-  kind: 'Contratto quadro',
+  regime: 'vat_registered',
+  label: 'Contratto quadro',
   freelancer_id: 'f1',
   match_id: null,
   number: null,
@@ -73,7 +73,7 @@ const LETTER = {
   ...FRAMEWORK,
   id: 'd2',
   kind: 'letter',
-  kind: 'Lettera di incarico',
+  label: 'Lettera di incarico',
   match_id: 'm1',
   number: '2026-001',
   status: 'generated',
@@ -283,10 +283,10 @@ describe('«Match e contratti» as cards (REB-477)', () => {
   it.each(FRAMEWORK_CASES)(
     'a framework agreement «$pill» reads its sentence and offers exactly the core’s next step',
     async ({ status, pill, situation, next_action, other_actions, primary, more }) => {
-      const quadro = { ...FRAMEWORK, status, situation, next_action, other_actions }
+      const frameworkDoc = { ...FRAMEWORK, status, situation, next_action, other_actions }
       routeFetch({
         'GET /api/hub/freelancers/f1': PERSON,
-        'GET /api/hub/freelancers/f1/matches': { ...PAGE, framework: quadro, frameworks: [quadro] },
+        'GET /api/hub/freelancers/f1/matches': { ...PAGE, framework: frameworkDoc, frameworks: [frameworkDoc] },
       })
       mount('/admin/freelance/f1/contracts')
       const card = await frameworkCard()
@@ -587,11 +587,11 @@ describe('«Match e contratti» as cards (REB-477)', () => {
   })
 
   it('leaves out, without failing, an action the card has no call for and one it does not know', async () => {
-    const quadro = { ...OUT, next_action: 'close', other_actions: ['send', 'sospendi', 'status_refresh'] }
+    const frameworkDoc = { ...OUT, next_action: 'close', other_actions: ['send', 'sospendi', 'status_refresh'] }
     const match = { ...MATCH, next_action: 'sospendi', other_actions: ['record_notice', 'sospendi', 'cancel'] }
     routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
-      'GET /api/hub/freelancers/f1/matches': { ...PAGE, framework: quadro, frameworks: [quadro], matches: [match] },
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, framework: frameworkDoc, frameworks: [frameworkDoc], matches: [match] },
     })
     mount('/admin/freelance/f1/contracts')
     const framework = await frameworkCard()
@@ -654,8 +654,8 @@ describe('«Match e contratti» as cards (REB-477)', () => {
     const spy = routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
       'GET /api/hub/freelancers/f1/matches': () => {
-        const quadro = cancelled ? gone : OUT
-        return { ...PAGE, framework: quadro, frameworks: [quadro] }
+        const frameworkDoc = cancelled ? gone : OUT
+        return { ...PAGE, framework: frameworkDoc, frameworks: [frameworkDoc] }
       },
       'POST /api/hub/contract-documents/d1/cancel': () => {
         cancelled = true
@@ -1023,13 +1023,13 @@ describe('a match’s link to Pigro on its card (REB-502)', () => {
 })
 
 describe('one framework agreement per regime (REB-687)', () => {
-  const OCCASIONAL = { ...OUT, id: 'd9', regime: 'occasional', kind: 'Contratto quadro per prestazioni occasionali' }
+  const OCCASIONAL = { ...OUT, id: 'd9', regime: 'occasional', label: 'Contratto quadro per prestazioni occasionali' }
   const LETTER_OCCASIONAL = {
     ...LETTER,
     id: 'd8',
     number: '2026-002',
     regime: 'occasional',
-    kind: 'Lettera di incarico occasionale',
+    label: 'Lettera di incarico occasionale',
   }
   const MATCH_OCCASIONAL = { ...MATCH, id: 'm2', company_name: 'Verdi Snc', letter: LETTER_OCCASIONAL }
   const BOTH = {
@@ -1091,7 +1091,7 @@ describe('one framework agreement per regime (REB-687)', () => {
       ...FRAMEWORK,
       id: 'd9',
       regime: 'occasional',
-      kind: 'Contratto quadro per prestazioni occasionali',
+      label: 'Contratto quadro per prestazioni occasionali',
       draft_text: false,
       new_version: false,
     }

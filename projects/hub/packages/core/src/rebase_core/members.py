@@ -34,27 +34,27 @@ from rebase_core.users import UserService, refuse_linkedin_conflict
 ENTITY = "freelancer"
 # What the note calls each field, in the admin's language, in the wizard's order.
 FIELD_LABELS: dict[str, str] = {
-    "nome": "nome",
-    "last_name": "last_name",
+    "first_name": "nome",
+    "last_name": "cognome",
     "linkedin_url": "profilo LinkedIn",
     "daily_rate": "tariffa giornaliera",
-    "posizione": "posizione",
+    "job_title": "posizione",
     "remote": "modalità di lavoro",
     "links": "link",
 }
 # The three fields a freelancer card shares with its `users` row: since migration B
 # (REB-281) they live on `users` alone, so a change here writes there instead of the
 # card, and `GET /me` never reads a stale name the person just corrected.
-_IDENTITY_FIELDS = ("nome", "last_name", "linkedin_url")
+_IDENTITY_FIELDS = ("first_name", "last_name", "linkedin_url")
 
 COMPANY_ENTITY = "company"
 # What the note calls each field, in the admin's language, in the wizard's order
 # (REB-314; REB-380 adds the last four): the eight a company contact may change about
 # one of their requests.
 COMPANY_FIELD_LABELS: dict[str, str] = {
-    "project": "project",
+    "project": "progetto",
     "period_from": "data di inizio",
-    "duration": "duration",
+    "duration": "durata",
     "daily_budget": "budget giornaliero",
     "remote": "modalità di lavoro",
     "onsite_days": "giorni in sede",
@@ -65,17 +65,17 @@ COMPANY_FIELD_LABELS: dict[str, str] = {
 
 def _to_profile(row: Freelancer, user: User) -> MemberProfile:
     """`MemberProfile`, identity read off the linked `users` row since REB-281 dropped
-    the card's own `nome`/`last_name`/`email`/`linkedin_url`."""
+    the card's own `first_name`/`last_name`/`email`/`linkedin_url`."""
     return MemberProfile(
         id=row.id,
-        nome=user.nome,
+        first_name=user.first_name,
         last_name=user.last_name,
         email=user.email,
         linkedin_url=user.linkedin_url,
         cv_filename=row.cv_filename,
         cv_size=row.cv_size,
         daily_rate=row.daily_rate,
-        posizione=row.posizione,
+        job_title=row.job_title,
         remote=row.remote,
         links=list(row.links),
         created_at=row.created_at,
@@ -166,7 +166,7 @@ class MemberService:
         card = self.card_for_user(user_id)
         return MeRead(
             id=user.id,
-            nome=user.nome,
+            first_name=user.first_name,
             last_name=user.last_name,
             email=user.email,
             linkedin_url=user.linkedin_url,
@@ -178,7 +178,7 @@ class MemberService:
             cv_filename=card.cv_filename if card else None,
             cv_size=card.cv_size if card else None,
             daily_rate=card.daily_rate if card else None,
-            posizione=card.posizione if card else None,
+            job_title=card.job_title if card else None,
             remote=card.remote if card else None,
             links=list(card.links) if card else [],
             requests=[MemberRequest.model_validate(row) for row in self.requests_for_user(user_id)],
@@ -197,7 +197,7 @@ class MemberService:
         if result is None:
             return MemberLookup(member=False)
         _row, user = result
-        return MemberLookup(member=True, nome=user.nome, last_name=user.last_name)
+        return MemberLookup(member=True, first_name=user.first_name, last_name=user.last_name)
 
     # ---- what they see and change -----------------------------------------------------
 
@@ -227,10 +227,10 @@ class MemberService:
             if getattr(target, field) != value:
                 setattr(target, field, value)
                 changed.append(label)
-        taken_over = row.compilata_da != "person"
+        taken_over = row.filled_by != "person"
         if not changed and not taken_over:
             return _to_profile(row, user)
-        row.compilata_da = "person"
+        row.filled_by = "person"
         try:
             self.session.commit()
         except IntegrityError as exc:
@@ -278,7 +278,7 @@ class MemberService:
     def create_additional_request(
         self, user_id: UUID, payload: CompanyFields
     ) -> tuple[MeRead, UUID]:
-        """A signed-in referente files a genuinely new request instead of correcting
+        """A signed-in requester files a genuinely new request instead of correcting
         one of theirs (REB-381): a fresh `Company` row, not an edit, so every request
         already on file stands exactly as it was -- admin-editable, like any other. The
         company's own name is read off the newest live request and carried forward,
@@ -330,7 +330,7 @@ class MemberService:
             len(content),
         )
         row.cv_uploaded_at = utcnow()
-        row.compilata_da = "person"
+        row.filled_by = "person"
         self.session.commit()
         self._note(
             user, row, "CV caricato dalla persona" if first else "CV aggiornato dalla persona"

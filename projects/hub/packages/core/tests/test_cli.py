@@ -230,7 +230,7 @@ def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
     monkeypatch.setattr(
         tick_module,
         "run_tick",
-        lambda *_a, **_k: TickResult(campaigns=1, sent=2, skipped=1, failed=0, stampate=3),
+        lambda *_a, **_k: TickResult(campaigns=1, sent=2, skipped=1, failed=0, stamped=3),
     )
     assert main(["campaigns-tick"]) == 0
     assert (
@@ -346,8 +346,8 @@ class _FakeRegeneratingWriter(_FakeCardWriter):
 def regen_admin(eval_db: Session) -> UUID:
     """The settings point at the test database, where an administrator and a member exist:
     the command resolves `--admin` against it. Cleaned by `eval_db`."""
-    admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
-    member = User(email="ada@example.org", nome="Ada", last_name="Lovelace", role="member")
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
+    member = User(email="ada@example.org", first_name="Ada", last_name="Lovelace", role="member")
     eval_db.add_all([admin, member])
     eval_db.commit()
     return admin.id
@@ -715,7 +715,7 @@ def test_ai_verify_prints_the_report_and_never_the_key(
 ) -> None:
     key = "AIza-test-key-not-real-9876"
     with Session(hub_engine) as session:
-        admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+        admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
         session.add(admin)
         session.commit()
         AiConfigService(session, cli_ai.get_settings()).save_key(admin.id, "google", key)
@@ -808,11 +808,11 @@ def _person(
 ) -> UUID:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name=last_name,
             email=email,
             daily_rate=Decimal("450.00"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
         ),
         _CV,
@@ -1070,7 +1070,7 @@ def token_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Se
         lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
     )
     session = session_factory(hub_engine)()
-    session.add(User(email="ivan@rebase.it", nome="Ivan", last_name="", role="admin"))
+    session.add(User(email="ivan@rebase.it", first_name="Ivan", last_name="", role="admin"))
     session.commit()
     yield session
     session.rollback()

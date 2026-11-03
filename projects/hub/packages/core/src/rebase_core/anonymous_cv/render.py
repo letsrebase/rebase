@@ -52,26 +52,26 @@ SENIORITY_LABELS = {"junior": "Junior", "mid": "Mid", "senior": "Senior", "lead"
 
 FOOTER = "Profilo proposto da rebase · ciao@letsrebase.com · letsrebase.com"
 
-# The sections' headings in the CV's language (`AnonymousCv.lingua`); each of
-# `other_sections` is headed by its own `titolo`, or by `altre` when it has none.
+# The sections' headings in the CV's language (`AnonymousCv.language`); each of
+# `other_sections` is headed by its own `title`, or by `other` when it has none.
 HEADINGS: dict[str, dict[str, str]] = {
     "it": {
-        "sommario": "Profilo",
-        "esperienze": "Esperienze",
+        "summary": "Profilo",
+        "experience": "Esperienze",
         "skills": "Competenze",
-        "formazione": "Formazione",
-        "certificazioni": "Certificazioni",
+        "education": "Formazione",
+        "certifications": "Certificazioni",
         "languages": "Lingue",
-        "altre": "Altro",
+        "other": "Altro",
     },
     "en": {
-        "sommario": "Profile",
-        "esperienze": "Experience",
+        "summary": "Profile",
+        "experience": "Experience",
         "skills": "Skills",
-        "formazione": "Education",
-        "certificazioni": "Certifications",
+        "education": "Education",
+        "certifications": "Certifications",
         "languages": "Languages",
-        "altre": "Other",
+        "other": "Other",
     },
 }
 
@@ -172,7 +172,7 @@ def _document(cv: AnonymousCv, head: CvHead) -> dict[str, object]:
     """What `cv.typ` reads: the CV as validated, the head's words, the brand's colours."""
     return {
         "cv": cv.model_dump(mode="json"),
-        "head": {"riga": head_line(head, cv.language), "ref": f"Rif. {head.ref}"},
+        "head": {"line": head_line(head, cv.language), "ref": f"Rif. {head.ref}"},
         "headings": HEADINGS[cv.language],
         "footer": FOOTER,
         "palette": palette(),

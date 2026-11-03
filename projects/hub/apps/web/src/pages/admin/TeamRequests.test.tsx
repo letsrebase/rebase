@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TeamRequestsFilters } from '@/lib/api'
 import { strParam } from '@/router'
-import { AdminRequestsTeam } from './TeamRequests'
+import { AdminTeamRequests } from './TeamRequests'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -26,7 +26,7 @@ const ACME = {
   created_at: '2026-09-25T10:00:00Z',
   contacted_at: null,
   total_talents: 3,
-  self_talents: 1,
+  yes_talents: 1,
 }
 
 const BIANCHI = {
@@ -38,7 +38,7 @@ const BIANCHI = {
   created_at: '2026-09-20T10:00:00Z',
   contacted_at: '2026-09-21T10:00:00Z',
   total_talents: 2,
-  self_talents: 0,
+  yes_talents: 0,
 }
 
 /** Mirrors `Matches.test.tsx`'s own `mount`: the pathless `signedIn` id, `/admin/team`
@@ -49,7 +49,7 @@ function mount(path: string) {
   const list = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/team',
-    component: AdminRequestsTeam,
+    component: AdminTeamRequests,
     validateSearch: (search: Record<string, unknown>): TeamRequestsFilters => ({
       status: strParam(search.status),
     }),
@@ -127,15 +127,15 @@ describe('«Richieste team» (REB-514, spec § 3.5)', () => {
 
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Acme S.r.l.' })).toBeNull())
     expect(screen.getByRole('link', { name: 'Bianchi Srl' })).toBeInTheDocument()
-    expect(spy.mock.calls.some((call) => String(call[0]) === '/api/hub/team/requests?status=contattata')).toBe(true)
+    expect(spy.mock.calls.some((call) => String(call[0]) === '/api/hub/team/requests?status=contacted')).toBe(true)
     expect(router.state.location.search).toEqual({ status: 'contacted' })
   })
 
   it('reads the state back out of a URL a link already carries', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { items: [BIANCHI], next_cursor: null }))
-    mount('/admin/team?status=chiusa')
+    mount('/admin/team?status=closed')
     await screen.findByRole('link', { name: 'Bianchi Srl' })
-    expect(spy).toHaveBeenCalledWith('/api/hub/team/requests?status=chiusa', expect.anything())
+    expect(spy).toHaveBeenCalledWith('/api/hub/team/requests?status=closed', expect.anything())
     const pills = screen.getByRole('group', { name: 'Filtra per stato' })
     expect(within(pills).getByRole('button', { name: 'Chiusa' })).toHaveAttribute('data-variant', 'default')
   })
@@ -172,7 +172,7 @@ describe('«Richieste team» (REB-514, spec § 3.5)', () => {
 
   it('names the filter when a state leaves nothing', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { items: [], next_cursor: null }))
-    mount('/admin/team?status=chiusa')
+    mount('/admin/team?status=closed')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 

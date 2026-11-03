@@ -15,6 +15,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from rebase_core.contract_schemas import (
+    Day,
     ReportDay,
     ReportDayInvoice,
     ReportInvoice,
@@ -24,7 +25,7 @@ from rebase_core.contract_schemas import (
 from rebase_core.contracts.fields import CENT
 
 HOURS_PER_DAY = Decimal(8)
-# The CRM's own cap on a report's period, `a - da` in days: a longer span it refuses, so
+# The CRM's own cap on a report's period, `to - from` in days: a longer span it refuses, so
 # a longer engagement is read in consecutive windows of this size.
 REPORT_MAX_DAYS = 800
 
@@ -33,15 +34,15 @@ def _hours(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-def report_windows(da: date, a: date) -> list[tuple[date, date]]:
-    """`[da, a]` in consecutive windows the CRM accepts: `[da, da + 800]`, then from the
-    next day on, the last one ending on `a`."""
+def report_windows(from_date: date, to_date: date) -> list[tuple[date, date]]:
+    """`[from_date, to_date]` in consecutive windows the CRM accepts: `[from_date,
+    from_date + 800]`, then from the next day on, the last one ending on `to_date`."""
     windows = []
-    start = da
+    start = from_date
     while True:
-        end = min(start + timedelta(days=REPORT_MAX_DAYS), a)
+        end = min(start + timedelta(days=REPORT_MAX_DAYS), to_date)
         windows.append((start, end))
-        if end >= a:
+        if end >= to_date:
             return windows
         start = end + timedelta(days=1)
 
@@ -50,19 +51,19 @@ class _CrmInvoice(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: UUID | None = None
-    kind: str
+    type: str
     year: int | None = None
     number: int | None = None
     status: str
     payment_status: str
-    data: date | None = None
+    date: Day | None = None
     hours: Decimal | None = None
 
 
 class _CrmEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    data: date
+    date: Day
     hours: Decimal
     description: str | None = None
     invoice: _CrmInvoice | None = None
@@ -76,8 +77,8 @@ class CrmReport(BaseModel):
 
     deal: dict[str, Any] | None = None
     days: list[_CrmEntry]
-    invoiced_hours: Decimal
-    hours_uninvoiced: Decimal
+    billed_hours: Decimal
+    unbilled_hours: Decimal
     invoices: list[_CrmInvoice] = Field(default_factory=list)
 
 
@@ -98,8 +99,8 @@ def join_windows(windows: list[CrmReport]) -> CrmReport:
     return CrmReport(
         deal=windows[-1].deal,
         days=[entry for window in windows for entry in window.days],
-        invoiced_hours=sum((window.invoiced_hours for window in windows), Decimal(0)),
-        hours_uninvoiced=sum((window.hours_uninvoiced for window in windows), Decimal(0)),
+        billed_hours=sum((window.billed_hours for window in windows), Decimal(0)),
+        unbilled_hours=sum((window.unbilled_hours for window in windows), Decimal(0)),
         invoices=list(invoices.values()),
     )
 
@@ -112,7 +113,7 @@ def _invoice_number(invoice: _CrmInvoice) -> str:
 
 def _invoice_label(invoice: _CrmInvoice) -> str:
     number = _invoice_number(invoice)
-    return number if invoice.kind == "fattura" else f"{invoice.kind} {number}"
+    return number if invoice.type == "fattura" else f"{invoice.type} {number}"
 
 
 def _labels(entries: Iterable[_CrmEntry]) -> list[str]:
@@ -127,11 +128,11 @@ def _hours_per_invoice(entries: Iterable[_CrmEntry]) -> list[ReportDayInvoice]:
     hours: dict[tuple[str, str], Decimal] = {}
     for entry in entries:
         if entry.invoice is not None:
-            key = (_invoice_number(entry.invoice), entry.invoice.kind)
+            key = (_invoice_number(entry.invoice), entry.invoice.type)
             hours[key] = hours.get(key, Decimal(0)) + entry.hours
     return [
-        ReportDayInvoice(number=number, kind=kind, hours=_hours(ore))
-        for (number, kind), ore in hours.items()
+        ReportDayInvoice(number=number, kind=kind, hours=_hours(invoice_hours))
+        for (number, kind), invoice_hours in hours.items()
     ]
 
 
@@ -146,11 +147,11 @@ def group_report(crm: dict[str, Any], expected_days: int | None) -> dict[str, An
 
 def group(report: CrmReport, expected_days: int | None) -> dict[str, Any]:
     by_day: dict[date, list[_CrmEntry]] = {}
-    for entry in sorted(report.days, key=lambda row: row.data):
-        by_day.setdefault(entry.data, []).append(entry)
-    per_giorno = [
+    for entry in sorted(report.days, key=lambda row: row.date):
+        by_day.setdefault(entry.date, []).append(entry)
+    per_day = [
         ReportDay(
-            data=day,
+            date=day,
             hours=_hours(sum((e.hours for e in entries), Decimal(0))),
             descriptions=[
                 e.description.strip()
@@ -164,12 +165,12 @@ def group(report: CrmReport, expected_days: int | None) -> dict[str, Any]:
     ]
     weeks: dict[tuple[int, int], Decimal] = {}
     months: dict[tuple[int, int], Decimal] = {}
-    for day in per_giorno:
-        iso = day.data.isocalendar()
+    for day in per_day:
+        iso = day.date.isocalendar()
         weeks[(iso.year, iso.week)] = weeks.get((iso.year, iso.week), Decimal(0)) + day.hours
-        month = (day.data.year, day.data.month)
+        month = (day.date.year, day.date.month)
         months[month] = months.get(month, Decimal(0)) + day.hours
-    total = _hours(sum((day.hours for day in per_giorno), Decimal(0)))
+    total = _hours(sum((day.hours for day in per_day), Decimal(0)))
     expected_hours = _hours(expected_days * HOURS_PER_DAY) if expected_days else None
     return {
         "expected_days": expected_days,
@@ -177,14 +178,14 @@ def group(report: CrmReport, expected_days: int | None) -> dict[str, Any]:
         "hours_total": total,
         "equivalent_days": _hours(total / HOURS_PER_DAY),
         "progress": _hours(total / expected_hours * 100) if expected_hours else None,
-        "invoiced_hours": _hours(report.invoiced_hours),
-        "hours_uninvoiced": _hours(report.hours_uninvoiced),
-        "by_day": per_giorno,
+        "invoiced_hours": _hours(report.billed_hours),
+        "hours_uninvoiced": _hours(report.unbilled_hours),
+        "by_day": per_day,
         "by_week": [
             ReportWeek(
                 week=f"{year}-W{week:02d}",
-                da=date.fromisocalendar(year, week, 1),
-                a=date.fromisocalendar(year, week, 7),
+                from_date=date.fromisocalendar(year, week, 1),
+                to_date=date.fromisocalendar(year, week, 7),
                 hours=_hours(hours),
             )
             for (year, week), hours in sorted(weeks.items())
@@ -196,8 +197,8 @@ def group(report: CrmReport, expected_days: int | None) -> dict[str, Any]:
         "invoices": [
             ReportInvoice(
                 number=_invoice_number(invoice),
-                kind=invoice.kind,
-                data=invoice.data,
+                kind=invoice.type,
+                date=invoice.date,
                 status=invoice.status,
                 payment_status=invoice.payment_status,
                 hours=_hours(invoice.hours or Decimal(0)),

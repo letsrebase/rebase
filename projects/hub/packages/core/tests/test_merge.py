@@ -94,7 +94,9 @@ def settings(hub_engine: Engine) -> Settings:
 
 
 def _user(session: Session, email: str, **extra: Any) -> User:
-    user = User(email=email, nome=extra.pop("nome", "Ada"), last_name="Lovelace", **extra)
+    user = User(
+        email=email, first_name=extra.pop("first_name", "Ada"), last_name="Lovelace", **extra
+    )
     session.add(user)
     session.flush()
     return user
@@ -119,7 +121,7 @@ def _card(
 
 
 def _admin(session: Session) -> User:
-    return _user(session, "admin@rebase.it", nome="Root", role="admin")
+    return _user(session, "admin@rebase.it", first_name="Root", role="admin")
 
 
 def _company(session: Session, user: User) -> Company:
@@ -187,7 +189,7 @@ def _pair(session: Session) -> tuple[Freelancer, Freelancer, User, User, User]:
 
 def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -> dict[str, UUID]:
     """One row of every relation, hung on B and on B's person."""
-    other_user = _user(session, "altro@studio.it", nome="Altro")
+    other_user = _user(session, "altro@studio.it", first_name="Altro")
     other = _card(session, other_user, cv=None, uploaded=None)
     company = _company(session, b_user)
     ids: dict[str, UUID] = {"companies": company.id}
@@ -268,10 +270,10 @@ def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -
     session.add(
         Campaign(
             created_by=admin.id,
-            nome="c",
+            name="c",
             slug="c",
             source="status",
-            journey_status="scheda_vuota_nuovi",
+            journey_status="card_empty_new",
             subject="o",
             text="t",
             button_text="b",
@@ -323,7 +325,7 @@ def test_every_relation_of_the_absorbed_person_moves_to_the_survivor(clean: Sess
 
     done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
 
-    assert done.moved == dict.fromkeys(ids, 1) and done.left == {}
+    assert done.moved == dict.fromkeys(ids, 1) and done.left_behind == {}
     for relation in RELATIONS:
         model = relation.column.class_
         holder = clean.scalar(
@@ -370,7 +372,7 @@ def test_the_newest_cv_stays_and_the_older_file_stays_reachable_on_the_absorbed_
     a, b, _, _, admin = _pair(clean)
     done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
-    assert done.cv == "invariato"
+    assert done.cv == "kept"
     assert clean.get(Freelancer, a.id).cv_bytes == PDF  # type: ignore[union-attr]
     assert clean.get(Freelancer, b.id).cv_bytes == OLD_PDF  # type: ignore[union-attr]
 
@@ -386,14 +388,14 @@ def test_when_the_absorbed_cv_is_newer_the_cv_and_its_card_swap(clean: Session) 
     done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
 
-    assert done.cv == "assorbita"
+    assert done.cv == "absorbed"
     survivor, absorbed = clean.get(Freelancer, a.id), clean.get(Freelancer, b.id)
     assert survivor is not None and absorbed is not None
     assert (survivor.cv_bytes, absorbed.cv_bytes) == (OLD_PDF, PDF)
     assert clean.get(FreelancerCard, a.id).card == {"role": "Dev"}  # type: ignore[union-attr]
     assert clean.get(FreelancerCard, b.id).card == {"role": "Old"}  # type: ignore[union-attr]
     # The survivor's card describes a CV that is not the one it holds now: flagged.
-    assert done.card_from_regenerate is True
+    assert done.card_to_regenerate is True
 
 
 def test_a_survivor_with_a_cv_and_no_card_is_flagged_and_a_failure_is_cleared(
@@ -409,7 +411,7 @@ def test_a_survivor_with_a_cv_and_no_card_is_flagged_and_a_failure_is_cleared(
     done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     card = clean.get(FreelancerCard, a.id)
-    assert done.card_from_regenerate is True
+    assert done.card_to_regenerate is True
     assert card is not None and (card.error, card.error_cv_sha256) == (None, None)
 
 
@@ -421,13 +423,13 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
     b_user = _user(
         clean, "vecchia@studio.it", linkedin_url="https://www.linkedin.com/in/ada", phone="333"
     )
-    a = _card(clean, a_user, created=NOW, posizione=None, utm_source=None)
+    a = _card(clean, a_user, created=NOW, job_title=None, utm_source=None)
     b = _card(
         clean,
         b_user,
         created=NOW - timedelta(days=40),
         uploaded=NOW - timedelta(days=40),
-        posizione="Backend",
+        job_title="Backend",
         daily_rate=Decimal("400"),
         utm_source="linkedin",
         status="contacted",
@@ -437,7 +439,7 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
     clean.expire_all()
     survivor = clean.get(Freelancer, a.id)
     assert survivor is not None
-    assert (survivor.posizione, survivor.daily_rate) == ("Backend", Decimal("400.00"))
+    assert (survivor.job_title, survivor.daily_rate) == ("Backend", Decimal("400.00"))
     assert (survivor.utm_source, survivor.status) == ("linkedin", "contacted")
     user = clean.get(User, a_user.id)
     assert user is not None
@@ -458,11 +460,11 @@ def test_the_absorbed_address_still_logs_in_as_the_survivor_and_the_wizard_finds
     assert token.user_id == a_user.id
     read, created = FreelancerService(clean).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name="Lovelace",
             email="vecchia@studio.it",
             daily_rate=Decimal("450"),
-            posizione="Backend",
+            job_title="Backend",
             remote="remote",
         )
     )
@@ -471,14 +473,14 @@ def test_the_absorbed_address_still_logs_in_as_the_survivor_and_the_wizard_finds
 
 def test_a_referral_the_survivor_already_has_stays_with_the_absorbed_card(clean: Session) -> None:
     a, b, a_user, b_user, admin = _pair(clean)
-    referrer = _user(clean, "r@studio.it", nome="Rita")
+    referrer = _user(clean, "r@studio.it", first_name="Rita")
     own = Referral(referrer_user_id=referrer.id, kind="freelancer", entity_id=a.id, code="AAA")
     theirs = Referral(referrer_user_id=referrer.id, kind="freelancer", entity_id=b.id, code="BBB")
     clean.add_all([own, theirs])
     clean.commit()
     done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
-    assert done.left == {"referral_received": 1} and done.moved == {}
+    assert done.left_behind == {"referral_received": 1} and done.moved == {}
     assert clean.get(Referral, theirs.id).entity_id == b.id  # type: ignore[union-attr]
 
 
@@ -495,7 +497,7 @@ def test_a_talent_already_on_the_same_team_request_is_not_moved_twice(clean: Ses
     )
     clean.commit()
     done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
-    assert done.left == {"team_request_talents": 1}
+    assert done.left_behind == {"team_request_talents": 1}
 
 
 def test_refused_when_both_have_a_live_framework_agreement_of_the_same_regime(
@@ -604,7 +606,7 @@ def test_undo_restores_a_swapped_cv_and_the_survivors_filled_fields(clean: Sessi
     a, b, _, _, admin = _pair(clean)
     a.cv_uploaded_at = NOW - timedelta(days=90)
     b.cv_uploaded_at = NOW
-    b.posizione, a.posizione = "Backend", None
+    b.job_title, a.job_title = "Backend", None
     clean.add(FreelancerCard(freelancer_id=b.id, cv_sha256="b" * 64, card={"role": "Dev"}))
     clean.commit()
     service = PersonMergeService(clean)
@@ -613,7 +615,7 @@ def test_undo_restores_a_swapped_cv_and_the_survivors_filled_fields(clean: Sessi
     clean.expire_all()
     assert clean.get(Freelancer, a.id).cv_bytes == PDF  # type: ignore[union-attr]
     assert clean.get(Freelancer, b.id).cv_bytes == OLD_PDF  # type: ignore[union-attr]
-    assert clean.get(Freelancer, a.id).posizione is None  # type: ignore[union-attr]
+    assert clean.get(Freelancer, a.id).job_title is None  # type: ignore[union-attr]
     assert clean.get(FreelancerCard, b.id).card == {"role": "Dev"}  # type: ignore[union-attr]
     assert clean.get(FreelancerCard, a.id) is None
 
@@ -786,24 +788,24 @@ def test_a_code_of_the_absorbed_person_credits_the_survivor(clean: Session) -> N
 def test_undo_keeps_what_the_survivor_changed_since_the_merge(clean: Session) -> None:
     a, b, a_user, b_user, admin = _pair(clean)
     b_user.phone = "333"
-    b.posizione, a.posizione = "Backend", None
+    b.job_title, a.job_title = "Backend", None
     clean.commit()
     service = PersonMergeService(clean)
     done = service.merge(a.id, b.id, admin.id)
     # After the merge the survivor's own edits: a new phone number and a new position.
     clean.get(User, a_user.id).phone = "444"  # type: ignore[union-attr]
-    clean.get(Freelancer, a.id).posizione = "Tech lead"  # type: ignore[union-attr]
+    clean.get(Freelancer, a.id).job_title = "Tech lead"  # type: ignore[union-attr]
     clean.commit()
     back = service.undo(done.action_id, admin.id)
     clean.expire_all()
     assert clean.get(User, a_user.id).phone == "444"  # type: ignore[union-attr]
-    assert clean.get(Freelancer, a.id).posizione == "Tech lead"  # type: ignore[union-attr]
-    assert back.left == {"phone": 1, "fields": 1}
+    assert clean.get(Freelancer, a.id).job_title == "Tech lead"  # type: ignore[union-attr]
+    assert back.left_behind == {"phone": 1, "fields": 1}
 
 
 def test_undo_is_refused_once_the_survivor_was_itself_merged_away(clean: Session) -> None:
     a, b, a_user, _, admin = _pair(clean)
-    c_user = _user(clean, "terza@studio.it", nome="Terza")
+    c_user = _user(clean, "terza@studio.it", first_name="Terza")
     c = _card(clean, c_user, uploaded=NOW + timedelta(days=1), created=NOW + timedelta(days=1))
     clean.commit()
     service = PersonMergeService(clean)

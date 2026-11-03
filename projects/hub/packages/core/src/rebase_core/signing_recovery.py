@@ -412,7 +412,7 @@ class SigningRecovery:
             kind=document.kind,
             number=document.number,
             attachment=attachment,
-            nome=user.nome,
+            first_name=user.first_name,
             last_name=user.last_name,
             for_rebase=not to_freelancer,
             regime=document.regime,

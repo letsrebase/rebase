@@ -67,7 +67,7 @@ def text_pdf(line: str) -> bytes:
 # The persona a CV that states nothing about who the person is answers (REB-855): every
 # field empty, the shape every provider's strict output takes.
 NO_PERSON: dict[str, Any] = {
-    "nome": None,
+    "first_name": None,
     "last_name": None,
     "email": None,
     "phone": None,
@@ -78,7 +78,7 @@ NO_PERSON: dict[str, Any] = {
 
 # A CV that states its contacts, for the tests that read the named card.
 PERSON: dict[str, Any] = {
-    "nome": "Ada",
+    "first_name": "Ada",
     "last_name": "Lovelace",
     "email": "Ada.Lovelace@Example.org",
     "phone": "+39 333 123 4567",

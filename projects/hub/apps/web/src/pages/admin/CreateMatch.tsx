@@ -15,13 +15,13 @@ import {
   type Regime,
 } from '@/lib/api'
 import {
-  OtherTermsFields,
-  CustomerEmpty,
-  CustomerFields,
+  OTHER_TERMS_FIELDS,
+  CUSTOMER_EMPTY,
+  CUSTOMER_FIELDS,
   DRAFT_SAVED,
   FISCAL_EMPTY,
   FISCAL_FIELDS,
-  LetterEmpty,
+  LETTER_EMPTY,
   customerComplete,
   customerForm,
   draftFromFiscal,
@@ -57,7 +57,7 @@ const REQUEST_FIELD = 'company_id'
 // «Tipo di lettera» (REB-687): an ordinary letter without a partita IVA is refused on it.
 const REGIME_FIELD = 'regime'
 const onStepOne = (field: string) =>
-  field === REQUEST_FIELD || field === REGIME_FIELD || CustomerFields.has(field) || FISCAL_FIELDS.has(field)
+  field === REQUEST_FIELD || field === REGIME_FIELD || CUSTOMER_FIELDS.has(field) || FISCAL_FIELDS.has(field)
 
 // A fee the API would refuse or read as another number (three decimals, English
 // notation) is refused on «Condizioni» before any request, in the words every amount
@@ -83,8 +83,8 @@ export function AdminCreateMatch() {
   const queryClient = useQueryClient()
   const person = useQuery({ queryKey: keys.freelancer(id), queryFn: () => admin.freelancer(id) })
   // One id per wizard run (REB-406): mounting this page is starting one over, and the
-  // page always navigates away once a match is written. Sent with both «Salva senza
-  // inviare» and «Invia per la firma», so a retry after the response is lost (a network
+  // page always navigates away once a match is written. Sent with both the save-only
+  // button and the send-for-signature one, so a retry after the response is lost (a network
   // drop, not the 503 `sendNow` already recovers from with `created`) writes nothing
   // new: the server returns the match already written under it.
   const [matchId] = useState(() => crypto.randomUUID())
@@ -105,11 +105,11 @@ export function AdminCreateMatch() {
   // a save landing refills every other one and leaves these as typed.
   const fiscalTyped = useRef(new Set<FiscalKey>())
   const [editFiscal, setEditFiscal] = useState(false)
-  const [customer, setCustomer] = useState<CustomerForm>(CustomerEmpty)
+  const [customer, setCustomer] = useState<CustomerForm>(CUSTOMER_EMPTY)
   const [editCustomer, setEditCustomer] = useState(false)
   // «Tipo di lettera» (REB-687): the prefill proposes it, the admin may change it.
-  const [regime, setRegime] = useState<Regime>('partita_iva')
-  const [lettera, setLetter] = useState<LetterForm>(LetterEmpty)
+  const [regime, setRegime] = useState<Regime>('vat_registered')
+  const [letter, setLetter] = useState<LetterForm>(LETTER_EMPTY)
   // «Giorni previsti» (REB-497): the match's, so beside the letter's form, never in it.
   const [days, setDays] = useState('')
   const [dayRate, setDayRate] = useState('')
@@ -146,7 +146,7 @@ export function AdminCreateMatch() {
           company_id: company.id,
           regime,
           customer: toCustomer(customer),
-          letter: letterToSend(lettera),
+          letter: letterToSend(letter),
           expected_days: expectedDaysToSend(days),
         }
       : null
@@ -255,8 +255,8 @@ export function AdminCreateMatch() {
     onError: (error, sent) => {
       if (shown.current.step !== 1 || shown.current.request !== JSON.stringify(sent)) return
       if (!(error instanceof ApiError)) return
-      if (error.fields.some((field) => OtherTermsFields.has(field))) setOtherOpen(true)
-      if (error.fields.some((field) => CustomerFields.has(field))) setEditCustomer(true)
+      if (error.fields.some((field) => OTHER_TERMS_FIELDS.has(field))) setOtherOpen(true)
+      if (error.fields.some((field) => CUSTOMER_FIELDS.has(field))) setEditCustomer(true)
       if (error.fields.some((field) => FISCAL_FIELDS.has(field))) setEditFiscal(true)
       if (error.fields.some(onStepOne)) setStep(0)
     },
@@ -293,8 +293,8 @@ export function AdminCreateMatch() {
     (sendFailure && created
       ? { ...sendFailure, message: `${sendFailure.message} La bozza è salvata: la trovi in «Match e contratti».` }
       : sendFailure)
-  const name = person.data ? `${person.data.nome} ${person.data.last_name}` : ''
-  const nome = person.data?.nome ?? ''
+  const name = person.data ? `${person.data.first_name} ${person.data.last_name}` : ''
+  const firstName = person.data?.first_name ?? ''
 
   function select(item: Company) {
     // A check that refused the request picked before is not about this pick.
@@ -321,7 +321,7 @@ export function AdminCreateMatch() {
   }
 
   function submitTerms() {
-    if (feeRefused(lettera.fee)) {
+    if (feeRefused(letter.fee)) {
       check.reset()
       setFeeFailure(FEE_REFUSED)
       return
@@ -351,7 +351,7 @@ export function AdminCreateMatch() {
         </h2>
         {step === 0 && (
           <WhoStep
-            nome={nome}
+            firstName={firstName}
             selected={company}
             onSelect={select}
             loaded={loaded}
@@ -380,7 +380,7 @@ export function AdminCreateMatch() {
         )}
         {step === 1 && (
           <TermsStep
-            form={lettera}
+            form={letter}
             onChange={setLetter}
             expectedDays={days}
             onExpectedDays={setDays}
@@ -398,7 +398,7 @@ export function AdminCreateMatch() {
           <ReviewStep
             review={review}
             expectedDays={expectedDaysToSend(days)}
-            nome={nome}
+            firstName={firstName}
             regime={regime}
             onBack={() => {
               setReview(null)

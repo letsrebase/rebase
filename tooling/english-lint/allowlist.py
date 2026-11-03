@@ -64,50 +64,54 @@ ALLOW: tuple[Allow, ...] = (
     # --- Published product surface -------------------------------------------------
     Allow(
         "projects/pigrocrm/packages/core/src/pigrocrm/core/invoices/fatturapa/**",
-        "FatturaPA XML element names are fixed by the SdI specification: the tags the "
-        "module builds and reads are Italian, and so are the helpers named after them.",
+        "FatturaPA XML element names are fixed by the SdI specification, and the "
+        "docstrings that list the schema's sequence name them as written.",
         _words(
-            "cedente prestatore cessionario committente imponibile imposta aliquota "
-            "natura riepilogo dettaglio linee causale bollo importo divisa numero data "
-            "dati generali documento trasmissione trasmittente formato progressivo "
-            "codice destinatario pec anagrafica denominazione nome cognome sede "
-            "indirizzo civico cap comune provincia nazione fiscale idpaese idcodice "
-            "regime fiscale ritenuta cassa previdenziale rivalsa scadenza pagamento "
-            "condizioni modalita beneficiario iban sconto maggiorazione quantita unita "
-            "misura prezzo unitario totale riferimento normativo amministrazione "
-            "ordine acquisto cig cup"
+            "anagrafica divisa numero data natura imponibile imposta aliquota descrizione "
+            "causale bollo importo codice fiscale dati ritenuta cassa riepilogo "
+            "scadenza pagamento sede partita quantita"
         ),
-    ),
-    Allow(
-        "projects/pigrocrm/packages/core/src/pigrocrm/core/templates/**",
-        "Document template variables are typed by users (`{{cliente.provincia}}`): the "
-        "scope builders keep producing the Italian variable names from English fields.",
-        _words("cliente clienti persona persone azienda offerta contratto fattura"),
-        frozenset({"identifier"}),
+        frozenset({"comment"}),
     ),
     # --- External links that must keep working ------------------------------------
     Allow(
         "projects/pigrocrm/apps/web/src/routes/**",
-        "Redirect stubs for browser routes already in bookmarks and sent mails "
-        "(`/app/clienti`, `/app/fatture`, ...): the file path is the old URL.",
-        kinds=frozenset({"path"}),
+        "The CRM's redirect stubs for browser routes already in bookmarks and sent mails "
+        "(`/app/clienti`, `/app/fatture`, `/app/oggi`, ...): under file-based routing the "
+        "file path is the old URL, so the stub's file name stays Italian.",
+        _words(
+            "calendario clienti lista documenti entra fatture impostazioni automazioni "
+            "campi categorie costo emittente fiscale periodi profilo spazio tariffe utenti "
+            "oggi persone registrati aziende avvisi"
+        ),
+        frozenset({"path"}),
     ),
     Allow(
-        "projects/hub/apps/web/src/routes/**",
-        "Redirect stubs for hub browser routes linked from sent mails (`/hub/entra`, "
-        "`/hub/accedi`, `/hub/disiscrizione`, ...): the file path is the old URL.",
-        kinds=frozenset({"path"}),
+        "projects/hub/deploy/firma.letsrebase.conf",
+        "The vhost file is named after the host it serves, firma.letsrebase.com, the DNS "
+        "record Documenso answers on; the host name is outside this repository.",
+        _words("firma"),
+        frozenset({"path"}),
     ),
     Allow(
-        "projects/hub/apps/web/src/pages/**",
-        "Hub page modules whose file name is the route the page is mounted at.",
-        kinds=frozenset({"path"}),
+        "projects/hub/packages/core/tests/test_migration_0049_english_names.py",
+        "Builds rows on the pre-rename schema, so its keyword arguments are the old Italian "
+        "column names the migration renames.",
+        kinds=frozenset({"identifier"}),
     ),
     Allow(
-        "projects/website/**",
-        "The website's pages are Italian URLs (`/guida`, `/termini`, `/privacy`) that "
-        "are indexed or linked from outside; the `/termini` 301 stays.",
-        kinds=frozenset({"path"}),
+        "infra/origin/nginx/000-default.conf",
+        "The comments name the vhost files firma.letsrebase.conf and vault.letsrebase.conf, "
+        "whose names are host names.",
+        _words("firma"),
+        frozenset({"comment"}),
+    ),
+    Allow(
+        "projects/pigrocrm/packages/core/tests/test_fields_dynamic.py",
+        "`settore` is a user's own custom-field key, which the model builder turns into an "
+        "attribute; users' custom-field keys stay as written.",
+        _words("settore"),
+        frozenset({"identifier"}),
     ),
     # --- Words that are Italian and English at once --------------------------------
     Allow(
@@ -116,6 +120,13 @@ ALLOW: tuple[Allow, ...] = (
         _words("pigro pigrocrm"),
     ),
 )
+
+# Names of Italian legal and fiscal things an English comment may use as they are: there is
+# no English word for them (the identifier is `vat_number`, `tax_code`, `tender_code`, and
+# the glossary maps each). Removed from a comment before it is read, never from a name.
+PROSE_TERMS: tuple[str, ...] = (
+    "partita IVA", "P.IVA", "codice fiscale", "codice destinatario", "CIG", "CUP",
+)  # fmt: skip
 
 # Proper nouns that contain an Italian word: removed from a name before it is split.
 # FatturaPA is the name of the format the SdI specifies, not an Italian word to translate.

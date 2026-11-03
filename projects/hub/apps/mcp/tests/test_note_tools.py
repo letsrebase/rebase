@@ -65,7 +65,7 @@ async def test_a_note_is_edited_and_deleted_over_mcp_and_the_trail_names_the_doo
         )
         assert (edited["text"], edited["edited_by"]) == ("Dopo.", "Ivan Sala")
         gone = _payload(await client.call_tool("delete_note", {"note_id": note["id"]}))
-        assert gone == {"nota": note["id"], "cancellata": True}
+        assert gone == {"note": note["id"], "deleted": True}
         detail = _payload(
             await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
         )

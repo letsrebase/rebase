@@ -28,7 +28,7 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -39,7 +39,7 @@ def admin(api_session: Session) -> Iterator[None]:
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -50,11 +50,11 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> str:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
@@ -98,10 +98,10 @@ def test_an_admin_overrides_a_freelancer_field_and_reads_the_audit_trail(
 
     overridden = client.patch(
         f"/api/hub/freelancers/{freelancer_id}/override",
-        json={"posizione": "Tech lead", "daily_rate": "600"},
+        json={"job_title": "Tech lead", "daily_rate": "600"},
     )
     assert overridden.status_code == 200, overridden.text
-    assert overridden.json()["posizione"] == "Tech lead"
+    assert overridden.json()["job_title"] == "Tech lead"
 
     trail = client.get(f"/api/hub/freelancers/{freelancer_id}/audit")
     assert trail.status_code == 200
@@ -109,7 +109,7 @@ def test_an_admin_overrides_a_freelancer_field_and_reads_the_audit_trail(
     assert len(entries) == 1
     assert entries[0]["kind"] == "overridden"
     assert entries[0]["admin_name"] == "Ivan"
-    assert entries[0]["payload"]["before"]["posizione"] == "Backend developer"
+    assert entries[0]["payload"]["before"]["job_title"] == "Backend developer"
 
 
 def test_overriding_a_freelancer_identity_field_moves_it_onto_the_linked_user(
@@ -119,11 +119,11 @@ def test_overriding_a_freelancer_identity_field_moves_it_onto_the_linked_user(
     freelancer_id = _apply(client)
 
     overridden = client.patch(
-        f"/api/hub/freelancers/{freelancer_id}/override", json={"nome": "Grace"}
+        f"/api/hub/freelancers/{freelancer_id}/override", json={"first_name": "Grace"}
     )
-    assert overridden.status_code == 200 and overridden.json()["nome"] == "Grace"
+    assert overridden.status_code == 200 and overridden.json()["first_name"] == "Grace"
     user_id = api_session.scalar(select(Freelancer.user_id).where(Freelancer.id == freelancer_id))
-    assert api_session.get(User, user_id).nome == "Grace"
+    assert api_session.get(User, user_id).first_name == "Grace"
 
 
 def test_overriding_a_required_field_to_null_is_a_422(
@@ -173,14 +173,14 @@ def test_an_admin_reverts_a_freelancer_override_from_its_audit_entry(
     freelancer_id = _apply(client)
     ok(
         client.patch(
-            f"/api/hub/freelancers/{freelancer_id}/override", json={"posizione": "Tech lead"}
+            f"/api/hub/freelancers/{freelancer_id}/override", json={"job_title": "Tech lead"}
         )
     )
     action_id = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()[0]["id"]
 
     reverted = client.post(f"/api/hub/freelancers/{freelancer_id}/audit/{action_id}/revert")
     assert reverted.status_code == 200
-    assert reverted.json()["posizione"] == "Backend developer"
+    assert reverted.json()["job_title"] == "Backend developer"
 
 
 def test_reverting_a_delete_entry_is_refused(

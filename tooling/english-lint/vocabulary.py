@@ -16,7 +16,12 @@ Three sets, all lowercase:
   Italian word from the sets above, or an accented letter.
 """
 
-WORDS: frozenset[str] = frozenset(
+
+def _split(text: str) -> frozenset[str]:
+    return frozenset(text.split())
+
+
+WORDS: frozenset[str] = _split(
     """
 accaduti accedi accessi accesso accettata accettate accettati accettazione acquisto
 adesso adottata agenti aggiorna aggiornate aggiungi aggiunta agosto aliquota allegati
@@ -102,7 +107,7 @@ tuttavia tutte tutti tutto ultima ultimi ultimo unibile unibili unita unitario u
 usate usati utente utenti utilizzo vai valide valido valore valute variabile variabili
 vecchia vecchio verbale verifica verificare verificata verificato versione verso viaggi
 vicino vinti vinto virtuale visibile viste voce voci vuota vuoto
-""".split()
+"""
 )
 
 STEMS: tuple[str, ...] = (
@@ -129,7 +134,7 @@ STEMS: tuple[str, ...] = (
     "registrazion",
 )
 
-STOPWORDS: frozenset[str] = frozenset(
+STOPWORDS: frozenset[str] = _split(
     """
 il lo gli della delle dello dei degli nella nelle nello nei negli alla alle allo agli
 dalla dalle dallo dai dagli sul sulla sulle sui che cui chi non sono siamo siete era
@@ -138,10 +143,13 @@ senza gia piu molto tutto tutti tutte ogni questo questa questi queste quello qu
 quelli loro nostro nostra vostro suo sua suoi sue come quando dove mentre dopo prima
 oppure invece cioe ovvero tuttavia comunque pero ma se si ci vi lui lei noi voi
 un uno una per con tra fra del dal nel sul
-""".split()
+"""
 )
 
 # Words of the stop list that are ordinary English or code words: they count for half.
-AMBIGUOUS_STOPWORDS: frozenset[str] = frozenset(
-    "non per con tra fra del dal nel sul se si ci vi lo un uno una chi era come ma lui lei noi voi dove mentre".split()
+AMBIGUOUS_STOPWORDS: frozenset[str] = _split(
+    """
+non per con tra fra del dal nel sul se si ci vi lo un uno una chi era come ma lui lei noi
+voi dove mentre
+"""
 )

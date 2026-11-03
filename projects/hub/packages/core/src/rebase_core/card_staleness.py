@@ -50,7 +50,7 @@ class CardStaleness(CardBase):
         positions = {
             person: position
             for person, position in self.session.execute(
-                select(Freelancer.id, Freelancer.posizione).where(Freelancer.id.in_(wanted))
+                select(Freelancer.id, Freelancer.job_title).where(Freelancer.id.in_(wanted))
             )
         }
         sources = self.source_service().current_many(list(positions))
@@ -88,7 +88,7 @@ class CardStaleness(CardBase):
         offset = 0
         while limit is None or len(waiting) < limit:
             page = self.session.execute(
-                select(FreelancerCard, Freelancer.cv_sha256, User.nome, User.last_name)
+                select(FreelancerCard, Freelancer.cv_sha256, User.first_name, User.last_name)
                 .join(Freelancer, Freelancer.id == FreelancerCard.freelancer_id)
                 .join(User, User.id == Freelancer.user_id)
                 .where(
@@ -115,13 +115,13 @@ class CardStaleness(CardBase):
                     if (card.prompt_version or 1) == PROMPT_VERSION
                 ]
             )
-            for card, cv_hash, nome, last_name in page:
+            for card, cv_hash, first_name, last_name in page:
                 reason = stale_reason(card, cv_hash, hashes.get(card.freelancer_id, {}))
                 if reason == "prompt" or reason == "source":
                     waiting.append(
                         StaleCard(
                             card.freelancer_id,
-                            f"{nome} {last_name}".strip(),
+                            f"{first_name} {last_name}".strip(),
                             reason,
                             card.generated_at,
                         )

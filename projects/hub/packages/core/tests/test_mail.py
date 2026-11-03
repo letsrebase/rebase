@@ -139,10 +139,10 @@ def test_no_key_means_no_sender() -> None:
 
 
 def test_the_magic_link_mail_carries_the_link_and_how_long_it_lasts() -> None:
-    mail = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/entra?t=abc", 15)
+    mail = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/verify?t=abc", 15)
     assert mail.to == "ada@studio.it"
     assert mail.subject == "Il tuo accesso a rebase"
-    assert "https://letsrebase.com/hub/entra?t=abc" in mail.text
+    assert "https://letsrebase.com/hub/verify?t=abc" in mail.text
     assert "15 minuti" in mail.text
     assert "una volta sola" in mail.text
 
@@ -150,12 +150,12 @@ def test_the_magic_link_mail_carries_the_link_and_how_long_it_lasts() -> None:
 def test_the_magic_link_mail_has_an_html_version_in_the_landings_system() -> None:
     """The HTML is the landing's box: paper ground, Prussian Blue ink, the four tiles,
     the Watermelon call to action, hard edges. The text version stays the fallback."""
-    mail = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/entra?t=abc", 15)
+    mail = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/verify?t=abc", 15)
     assert mail.html is not None
     html = mail.html
     # The link three times: the button's href, and the bare URL as href and as text for
     # the clients that block buttons.
-    assert html.count("https://letsrebase.com/hub/entra?t=abc") == 3
+    assert html.count("https://letsrebase.com/hub/verify?t=abc") == 3
     assert "Entra nella tua area" in html
     assert "15 minuti" in html and "una volta sola" in html
     # The brand's five values and nothing rounded.
@@ -174,21 +174,21 @@ def test_the_magic_link_mail_has_an_html_version_in_the_landings_system() -> Non
 def test_the_magic_link_mail_carries_an_optional_note_before_the_link() -> None:
     """REB-272: the extra sentence `apply` asks for shows up once, in both bodies,
     ahead of the link, and never shows up at all when no caller asks for it."""
-    plain = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/entra?t=abc", 15)
+    plain = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/verify?t=abc", 15)
     assert "Risulta già" not in plain.text
     assert plain.html is not None and "Risulta già" not in plain.html
     note = (
         "Risulta già una scheda su rebase con questo indirizzo: la trovi e la modifichi "
         "dalla tua area."
     )
-    noted = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/entra?t=abc", 15, note)
-    assert noted.text.index(note) < noted.text.index("https://letsrebase.com/hub/entra?t=abc")
+    noted = magic_link_mail("ada@studio.it", "https://letsrebase.com/hub/verify?t=abc", 15, note)
+    assert noted.text.index(note) < noted.text.index("https://letsrebase.com/hub/verify?t=abc")
     assert noted.html is not None and note in noted.html
 
 
 # ---- the welcome mail (ORB-157) ---------------------------------------------------------
 
-LOGIN = "https://letsrebase.com/hub/accedi"
+LOGIN = "https://letsrebase.com/hub/login"
 WIZARD = "https://letsrebase.com/hub/freelance"
 
 
@@ -211,7 +211,7 @@ def _common(mail: Mail) -> None:
 
 
 def test_a_person_who_filled_their_card_is_told_it_is_complete() -> None:
-    mail = welcome_mail("ada@studio.it", "Ada", LOGIN, kind="person", posizione="Backend developer")
+    mail = welcome_mail("ada@studio.it", "Ada", LOGIN, kind="person", job_title="Backend developer")
     _common(mail)
     assert mail.text.startswith("Ciao Ada,")
     assert LOGIN in mail.text and "senza password" in mail.text
@@ -221,7 +221,7 @@ def test_a_person_who_filled_their_card_is_told_it_is_complete() -> None:
 
 
 def test_a_person_who_skipped_the_cv_is_asked_for_it_rather_than_congratulated() -> None:
-    """The CV is optional in the wizard, so «persona» no longer implies a complete card:
+    """The CV is optional in the wizard, so «person» no longer implies a complete card:
     telling somebody their card is complete when it is missing the one thing a company
     searches by would be false, and a reason never to come back and finish it."""
     mail = welcome_mail(
@@ -229,7 +229,7 @@ def test_a_person_who_skipped_the_cv_is_asked_for_it_rather_than_congratulated()
         "Ada",
         LOGIN,
         kind="person",
-        posizione="Backend developer",
+        job_title="Backend developer",
         complete=False,
     )
     _common(mail)
@@ -240,9 +240,9 @@ def test_a_person_who_skipped_the_cv_is_asked_for_it_rather_than_congratulated()
 
 def test_a_card_we_drafted_gets_a_recap_the_ask_to_complete_and_the_offer() -> None:
     summary = CardSummary(
-        nome="Bruna",
+        first_name="Bruna",
         last_name="Esposito",
-        posizione="Senior Frontend Developer",
+        job_title="Senior Frontend Developer",
         linkedin_url="https://www.linkedin.com/in/bruna-esposito/",
         links=("https://github.com/brunaesposito",),
     )
@@ -271,13 +271,13 @@ def test_a_card_we_drafted_gets_a_recap_the_ask_to_complete_and_the_offer() -> N
 
 
 def test_an_address_without_a_card_is_sent_to_the_wizard() -> None:
-    mail = welcome_mail("x@studio.it", None, LOGIN, kind="nessuna", wizard_link=WIZARD)
+    mail = welcome_mail("x@studio.it", None, LOGIN, kind="none", wizard_link=WIZARD)
     _common(mail)
     assert mail.text.startswith("Ciao,\n")
     assert "non siamo riusciti a prepararla noi" in mail.text
     assert WIZARD in mail.text and LOGIN in mail.text
     assert mail.html is not None and "Compila il tuo profilo" in mail.html
-    named = welcome_mail("x@studio.it", "Marco", LOGIN, kind="nessuna", wizard_link=WIZARD)
+    named = welcome_mail("x@studio.it", "Marco", LOGIN, kind="none", wizard_link=WIZARD)
     assert named.text.startswith("Ciao Marco,")
 
 
@@ -363,7 +363,7 @@ def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
         kind="letter",
         number="2026-001",
         attachment=attachment,
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
     )
     ours = signed_copy_mail(
@@ -371,7 +371,7 @@ def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
         kind="letter",
         number="2026-001",
         attachment=attachment,
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
         for_rebase=True,
     )
@@ -388,7 +388,7 @@ def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
         kind="framework",
         number=None,
         attachment=attachment,
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
     )
     assert framework.subject == "Firmato: contratto quadro rebase"
@@ -398,7 +398,7 @@ def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
         kind="framework",
         number=None,
         attachment=attachment,
-        nome="Ada",
+        first_name="Ada",
         last_name="<script>",
         for_rebase=True,
     )
@@ -410,7 +410,9 @@ def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> Non
     and the one link is the cloud's page in the member area, where the magic link they
     already know lets them in."""
     url = "https://letsrebase.com/hub/me/cloud"
-    mail = talent_cloud_opened_mail("wile@acme.it", nome="Wile", company="Acme S.r.l.", url=url)
+    mail = talent_cloud_opened_mail(
+        "wile@acme.it", first_name="Wile", company="Acme S.r.l.", url=url
+    )
     assert mail.to == "wile@acme.it"
     assert mail.subject == "Il talent cloud di rebase è aperto per Acme S.r.l."
     assert mail.text.startswith("Ciao Wile,")
@@ -423,10 +425,13 @@ def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> Non
     assert "Apri il talent cloud" in mail.html
     assert mail.attachments == ()
 
-    nameless = talent_cloud_opened_mail("wile@acme.it", nome="", company="Acme", url=url)
+    nameless = talent_cloud_opened_mail("wile@acme.it", first_name="", company="Acme", url=url)
     assert nameless.text.startswith("Ciao,")
     hostile = talent_cloud_opened_mail(
-        "wile@acme.it", nome="<b>Wile</b>", company="<i>Acme</i>", url='https://x.it/?t="><script>'
+        "wile@acme.it",
+        first_name="<b>Wile</b>",
+        company="<i>Acme</i>",
+        url='https://x.it/?t="><script>',
     )
     assert hostile.html is not None
     for raw in ("<script>", "<b>Wile", "<i>Acme"):
@@ -473,7 +478,7 @@ def test_an_occasional_document_is_named_as_its_own_text_in_every_mail() -> None
         kind="letter",
         number="2026-001",
         attachment=Attachment("lettera.pdf", b"%PDF-1.7 firmato"),
-        nome="Ada",
+        first_name="Ada",
         last_name="Lovelace",
         regime="occasional",
     )

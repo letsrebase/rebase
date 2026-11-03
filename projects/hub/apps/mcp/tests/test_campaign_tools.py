@@ -18,7 +18,7 @@ from rebase_mcp.server import build_server
 IVAN = AdminRead(
     id=UUID("01a00000-0000-7000-8000-000000000001"),
     email="ivan@rebase.it",
-    nome="Ivan",
+    first_name="Ivan",
     active=True,
     created_at=datetime(2026, 9, 10, tzinfo=UTC),
 )
@@ -32,12 +32,12 @@ def _payload(result: Any) -> dict[str, Any]:
 def _seed(factory: sessionmaker[Session]) -> tuple[UUID, UUID]:
     session = factory()
     try:
-        owner = User(email="campagne-mcp@rebase.it", nome="Ivan", last_name="S", role="admin")
+        owner = User(email="campagne-mcp@rebase.it", first_name="Ivan", last_name="S", role="admin")
         session.add(owner)
         session.flush()
         campaign = Campaign(
             created_by=owner.id,
-            nome="Manca il CV",
+            name="Manca il CV",
             slug="c-mcp-manca-il-cv",
             source="status",
             journey_status="missing_cv",
@@ -103,7 +103,7 @@ async def test_an_agent_reads_the_campaigns_and_each_persons_outcome(
         _drop(factory, campaign_id, owner_id)
     item = next(i for i in listed["items"] if i["id"] == str(campaign_id))
     counts = item["counts"]
-    assert (counts["sent"], counts["clicked"], counts["income"], counts["actions"]) == (
+    assert (counts["sent"], counts["clicked"], counts["entered"], counts["actions"]) == (
         2,
         2,
         2,
@@ -112,7 +112,7 @@ async def test_an_agent_reads_the_campaigns_and_each_persons_outcome(
     people = {p["email"]: p for p in one["recipients"]}
     assert people["ada@studio.it"]["action_at"] is not None
     assert people["bob@studio.it"]["action_at"] is None
-    assert one["campaign"]["nome"] == "Manca il CV"
+    assert one["campaign"]["name"] == "Manca il CV"
     # Read-only: nothing here sends, schedules or cancels a campaign.
     assert not [n for n in names if "campagn" in n and n not in ("list_campaigns", "get_campaign")]
 
@@ -132,12 +132,14 @@ async def test_a_link_campaign_shows_where_its_button_leads(
     in the detail alike, with the click as its action."""
     session = factory()
     try:
-        owner = User(email="campagne-link-mcp@rebase.it", nome="Ivan", last_name="S", role="admin")
+        owner = User(
+            email="campagne-link-mcp@rebase.it", first_name="Ivan", last_name="S", role="admin"
+        )
         session.add(owner)
         session.flush()
         campaign = Campaign(
             created_by=owner.id,
-            nome="Casa",
+            name="Casa",
             slug="c-mcp-casa",
             source="status",
             journey_status="complete",
@@ -185,7 +187,7 @@ def _add_recipients(factory: sessionmaker[Session], campaign_id: UUID, count: in
                     code="1",
                     before={},
                     unsubscribe_token=f"t-{email}",
-                    status="in_coda",
+                    status="queued",
                 )
             )
         session.commit()
@@ -201,7 +203,7 @@ def _add_campaigns(factory: sessionmaker[Session], owner_id: UUID, count: int) -
         for n in range(count):
             campaign = Campaign(
                 created_by=owner_id,
-                nome=f"Altra {n}",
+                name=f"Altra {n}",
                 slug=f"c-mcp-altra-{n}",
                 source="status",
                 journey_status="missing_cv",
@@ -297,7 +299,7 @@ async def test_reading_a_campaigns_recipients_leaves_a_line_in_the_trail(
     read is an `AdminAction` of the admin behind the token, without any of them."""
     campaign_id, owner_id = _seed(factory)
     admin = AdminRead(
-        id=owner_id, email="campagne-mcp@rebase.it", nome="Ivan", active=True, created_at=SENT
+        id=owner_id, email="campagne-mcp@rebase.it", first_name="Ivan", active=True, created_at=SENT
     )
     try:
         async with Client(build_server(factory, lambda: admin)) as client:

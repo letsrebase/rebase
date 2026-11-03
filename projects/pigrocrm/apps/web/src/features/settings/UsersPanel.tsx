@@ -39,8 +39,8 @@ const shortDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', tim
 export function UsersPanel() {
   const { user: currentUser } = useAuth()
   // Each dialog is mounted while it is open, with its own form state: `inviting`, and the
-  // member whose name is being corrected (REB-796) or whose aziende are being edited
-  // (REB-635), which is drawn from the second azienda on, like the selector.
+  // member whose name is being corrected (REB-796) or whose legal entities are being edited
+  // (REB-635), which is drawn from the second legal entity on, like the selector.
   const [inviting, setInviting] = useState(false)
   const [renameOf, setRenameOf] = useState<UserRecord | null>(null)
   const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
@@ -53,9 +53,9 @@ export function UsersPanel() {
   const resend = useResendInvite()
   const revoke = useRevokeInvite()
   const update = useUpdateUser()
-  // The scope column and the row action are drawn from the second azienda on, and
+  // The scope column and the row action are drawn from the second legal entity on, and
   // also in a one-legal-entity space while somebody still carries a scope: a member whose
-  // aziende were all deactivated sees nothing, and this is where an admin reads
+  // legal entities were all deactivated sees nothing, and this is where an admin reads
   // «nessuna azienda attiva» and widens them back.
   const showScope =
     several ||

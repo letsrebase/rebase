@@ -37,5 +37,5 @@ function bounds(band: Band): string {
  *  mese». The web cannot import Python, so `bands.test.ts` holds the same cases as core's
  *  `test_bands.py`. */
 export function bandLabel(band: Band, per: 'day' | 'month' = 'day'): string {
-  return `${bounds(band)}${NBSP}€ al ${per}`
+  return `${bounds(band)}${NBSP}€ al ${per === 'day' ? 'giorno' : 'mese'}`
 }

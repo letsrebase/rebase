@@ -56,6 +56,13 @@ def unsubscribe(t: Token, session: SessionDep) -> Ack:
     return Ack()
 
 
+# Mails sent before the English rename (REB-902) carry the Italian path in their footer link
+# and in the `List-Unsubscribe` header, and a mail already in an inbox cannot be corrected:
+# the old path stays, answered by the same two handlers and out of the OpenAPI document.
+legacy_public = APIRouter(prefix="/api/hub/campagne", include_in_schema=False)
+legacy_public.add_api_route("/disiscrizione", unsubscribe_page, methods=["GET"])
+legacy_public.add_api_route("/disiscrizione", unsubscribe, methods=["POST"], response_model=Ack)
+
 router = APIRouter(prefix="/api/hub/campaigns", tags=["hub-admin"])
 NO_SENDER = "L'invio di mail non è configurato su questo ambiente."
 NO_WEBHOOK = "Manca il webhook di Resend: configuralo prima di inviare, vedi AGENTS.md."

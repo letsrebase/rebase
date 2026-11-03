@@ -17,7 +17,7 @@ function paragraphs(text: string): string[] {
  *  keystroke: the subject and the text with their name in them, the button, the
  *  signature and the unsubscribe line, word for word. */
 export function Preview({
-  subject: oggetto,
+  subject: subjectText,
   text,
   buttonText,
   link = null,
@@ -36,28 +36,28 @@ export function Preview({
   person: AudienceRow | null
   onPerson: (email: string) => void
 }) {
-  const body = paragraphs(personalise(text, person?.nome ?? null))
+  const body = paragraphs(personalise(text, person?.name ?? null))
   // The subject takes the name too, on one line, exactly as `render.py` sends it (REB-524).
-  const subject = subjectFor(oggetto, person?.nome ?? null)
+  const subject = subjectFor(subjectText, person?.name ?? null)
   return (
-    <section aria-labelledby="campagna-anteprima" className="space-y-3">
+    <section aria-labelledby="campaign-preview" className="space-y-3">
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h2 id="campagna-anteprima" className="text-lg font-semibold">
+        <h2 id="campaign-preview" className="text-lg font-semibold">
           Anteprima
         </h2>
         {lines.length > 0 && (
           <div className="flex items-center gap-2">
-            <Label htmlFor="campagna-persona" className="whitespace-nowrap text-muted-foreground">
+            <Label htmlFor="campaign-person" className="whitespace-nowrap text-muted-foreground">
               Vedi come la riceve
             </Label>
             <Select value={person?.email ?? ''} onValueChange={onPerson}>
-              <SelectTrigger id="campagna-persona" className="w-40">
+              <SelectTrigger id="campaign-person" className="w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {lines.map((row) => (
                   <SelectItem key={row.email} value={row.email}>
-                    {row.nome ?? row.email}
+                    {row.name ?? row.email}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -65,7 +65,7 @@ export function Preview({
           </div>
         )}
       </div>
-      <div className="bg-muted p-3 sm:p-4" data-testid="anteprima-mail">
+      <div className="bg-muted p-3 sm:p-4" data-testid="mail-preview">
         <p className="mb-3 text-sm">
           <span className="text-muted-foreground">Oggetto:</span>{' '}
           {subject.trim() ? subject : <span className="text-muted-foreground">nessun oggetto</span>}

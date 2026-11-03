@@ -8,7 +8,7 @@ const AMOUNT_PARAMS = ['min_rate', 'max_rate', 'budget_min', 'budget_max'] as co
  *  as `?description=`, and a description that happens to read as JSON (`{"progetto":
  *  …}`, `[…]`, `123`, `true`) must reach the box as the words it is, never as the value
  *  the default parser makes of it. Quoted or not: the text is the text. */
-const TEXT_PARAMS = ['description'] as const
+const TEXT_PARAMS = ['description', 'descrizione'] as const
 
 /**
  * The router's `parseSearch` (REB-531): the default one, except that an amount filter

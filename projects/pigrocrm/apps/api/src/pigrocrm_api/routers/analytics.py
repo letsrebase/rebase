@@ -49,9 +49,9 @@ router = APIRouter(
 # recorded here rather than silently diverging from the spec.
 FromDate = Annotated[date, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")]
 ToDate = Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")]
-# The sidebar's azienda on a sum (REB-630, spec 2026-10-03 §1.9): one more predicate,
-# omitted for «tutte». On the estimate and the ceilings it is the azienda the figure is
-# computed for: resolved alone on a one-azienda space, required by name on a space with
+# The sidebar's legal entity on a sum (REB-630, spec 2026-10-03 §1.9): one more predicate,
+# omitted for «tutte». On the estimate and the ceilings it is the legal entity the figure is
+# computed for: resolved alone on a one-legal entity space, required by name on a space with
 # several, since a forfettario's coefficients and an SRL's arithmetic do not add.
 LegalEntityFilter = Annotated[
     UUID | None,

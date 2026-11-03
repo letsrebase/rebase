@@ -32,7 +32,7 @@ def card_emails() -> Subquery:
 
 class CardRowFields(TypedDict):
     id: UUID
-    nome: str
+    first_name: str
     last_name: str
     email: str
     linkedin_url: str | None
@@ -42,7 +42,7 @@ class CardRowFields(TypedDict):
     daily_rate: Decimal | None
     remote: str | None
     vetted_at: datetime | None
-    posizione: str | None
+    job_title: str | None
 
 
 def card_row_fields(row: Freelancer, user: User) -> CardRowFields:
@@ -51,7 +51,7 @@ def card_row_fields(row: Freelancer, user: User) -> CardRowFields:
     own row has."""
     return {
         "id": row.id,
-        "nome": user.nome,
+        "first_name": user.first_name,
         "last_name": user.last_name,
         "email": user.email,
         "linkedin_url": user.linkedin_url,
@@ -61,5 +61,5 @@ def card_row_fields(row: Freelancer, user: User) -> CardRowFields:
         "daily_rate": row.daily_rate,
         "remote": row.remote,
         "vetted_at": row.vetted_at,
-        "posizione": row.posizione,
+        "job_title": row.job_title,
     }

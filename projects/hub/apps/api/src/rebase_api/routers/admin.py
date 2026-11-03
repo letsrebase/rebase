@@ -129,7 +129,7 @@ class PromoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    nome: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
 
 
@@ -147,7 +147,9 @@ def promote_admin(
     for it (§1, Nav and Amministratori). A brand-new row gets the same magic link
     everyone else gets, since it has no other way in yet."""
     users = UserService(session, settings)
-    user, created = users.promote(payload.email, payload.nome, payload.last_name, admin_id=admin.id)
+    user, created = users.promote(
+        payload.email, payload.first_name, payload.last_name, admin_id=admin.id
+    )
     if created and sender is not None:
         mail = users.request_link(user.email)
         if mail is not None:
@@ -575,7 +577,7 @@ def list_talents(
     status: str | None = None,
     q: SearchQ = None,
     cursor: Cursor = None,
-    posizione: str | None = None,
+    job_title: str | None = None,
     remote: str | None = None,
     min_rate: Decimal | None = None,
     max_rate: Decimal | None = None,
@@ -590,7 +592,7 @@ def list_talents(
     """`talents` (REB-282): every freelancer card and every bare sign-up as one list,
     `status` «lead» for the bare ones -- the read model «Developer e CTO» and
     «Iscrizioni» read as two overlapping lists, merged. Additive beside both: neither
-    changes here. REB-285 adds `q` (nome/cognome/email/posizione, trigram-ordered),
+    changes here. REB-285 adds `q` (first_name/last_name/email/job_title, trigram-ordered),
     `cursor`, and every filter after `status`. `origin` is the channel a row shows
     (`form`, `wizard`, `admin`) and `origin_page` the marketing page the person
     started from (REB-798; the page filter was `origin` before)."""
@@ -599,7 +601,7 @@ def list_talents(
         status=status,
         q=q,
         cursor=cursor,
-        posizione=posizione,
+        job_title=job_title,
         remote=remote,
         min_rate=min_rate,
         max_rate=max_rate,
@@ -744,7 +746,7 @@ def get_referral_settings(_: AdminDep, session: SessionDep) -> ReferralSettingsR
         rate_freelancer=row.rate_freelancer,
         rate_company=row.rate_company,
         updated_at=row.updated_at,
-        updated_by_name=updated_by.nome if updated_by is not None else None,
+        updated_by_name=updated_by.first_name if updated_by is not None else None,
     )
 
 
@@ -761,5 +763,5 @@ def save_referral_settings(
         rate_freelancer=row.rate_freelancer,
         rate_company=row.rate_company,
         updated_at=row.updated_at,
-        updated_by_name=admin.nome,
+        updated_by_name=admin.first_name,
     )

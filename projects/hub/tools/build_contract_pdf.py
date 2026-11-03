@@ -1,17 +1,17 @@
 """Typeset the freelancer contracts into PDFs, on a laptop.
 
     uv run python projects/hub/tools/build_contract_pdf.py
-    uv run python projects/hub/tools/build_contract_pdf.py lettera-di-incarico --data job.json
+    uv run python projects/hub/tools/build_contract_pdf.py engagement-letter --data job.json
 
 Since REB-387 the texts, the Typst template and rebase's defaults are package data of
 `rebase_core.contracts`, which the hub's API renders at request time; this script is the
 thin wrapper that keeps a preview on a laptop. With no argument it builds every document
 as blank forms; naming one or more (by stem) builds only those. `--data` fills the
 fields from a JSON object, read over the package's `rebase.json` and over
-`content/contratti/rebase.local.json` when that file exists: git ignores it, and it holds
+`content/contracts/rebase.local.json` when that file exists: git ignores it, and it holds
 the real data of whoever signs for rebase today, which a public repository does not
 print. `--public` leaves it out and writes to `dist/public/`. The PDFs land in
-`content/contratti/dist/`, which git ignores too.
+`content/contracts/dist/`, which git ignores too.
 """
 
 import argparse
@@ -23,7 +23,7 @@ from rebase_core.contracts.render import DOCUMENTS, company_defaults, render
 
 HUB = Path(__file__).resolve().parent.parent
 REPO = HUB.parent.parent
-CONTRACTS = HUB / "content" / "contratti"
+CONTRACTS = HUB / "content" / "contracts"
 COMPANY_LOCAL = CONTRACTS / "rebase.local.json"
 OUTPUT = CONTRACTS / "dist"
 

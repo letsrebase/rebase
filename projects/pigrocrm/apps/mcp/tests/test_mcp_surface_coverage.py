@@ -492,8 +492,8 @@ _CREDENZIALI: dict[Method, str] = {
     ("RefreshTokenService", "is_live"): "sessione del browser, non superficie agentica",
     ("MagicLinkService", "request"): "e' il passo di login via mail, non un'operazione",
     ("MagicLinkService", "enter"): "e' il passo di login via mail, non un'operazione",
-    # REB-376 (design 2026-09-23 §1-2): `IdentityService` vive nel registro, non in
-    # una singola CRM -- l'MCP server e' avviato per un solo spazio (`ScopedSessionProvider`)
+    # REB-376 (design 2026-09-23 §1-2): `IdentityService` lives in the registry, not in
+    # a single CRM -- the MCP server is started for one space only (`ScopedSessionProvider`)
     # and never has a session on the registry database, so none of these
     # methods is reachable from a tool even in principle.
     ("IdentityService", "request"): "e' il passo di login via mail, un layer sopra -- come sopra",

@@ -122,11 +122,11 @@ def apply(
     sender: SenderDep,
     llm: CardLlmDep,
     open_session: SessionOpenerDep,
-    nome: Annotated[str, Form()],
+    first_name: Annotated[str, Form()],
     last_name: Annotated[str, Form()],
     email: Annotated[str, Form()],
     daily_rate: Annotated[str, Form()],
-    posizione: Annotated[str, Form()],
+    job_title: Annotated[str, Form()],
     remote: Annotated[str, Form()],
     # Optional: the wizard leaves the part out of the body when nobody attached a file,
     # and FastAPI hands `None` here for a part with no filename and for `cv` sent as an
@@ -150,12 +150,12 @@ def apply(
         _refuse_above_the_hourly_ceiling(FreelancerService(session), settings)
     try:
         data = FreelancerCreate(
-            nome=nome,
+            first_name=first_name,
             last_name=last_name,
             email=email,
             linkedin_url=linkedin_url or None,
             daily_rate=_decimal(daily_rate, "daily_rate"),
-            posizione=posizione,
+            job_title=job_title,
             remote=remote,  # type: ignore[arg-type]
             links=links or [],
             utm=SignupUtm(

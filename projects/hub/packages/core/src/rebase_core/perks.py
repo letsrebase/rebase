@@ -22,8 +22,9 @@ from rebase_core.models import Freelancer, GuideDownload, User
 
 PERKS_DIR = Path(__file__).resolve().parent / "perks"
 
-GUIDE_FILENAME = "rebase-guide-first-steps-freelance.pdf"
-GUIDE_PATH = PERKS_DIR / GUIDE_FILENAME
+# The name the guide downloads under: what a freelancer sees, so it stays Italian.
+GUIDE_FILENAME = "rebase-guida-primi-passi-freelance.pdf"
+GUIDE_PATH = PERKS_DIR / "rebase-guide-first-steps-freelance.pdf"
 
 
 def guide_bytes() -> bytes:
@@ -95,7 +96,7 @@ class PerkService:
                     id=download.id,
                     user_id=download.user_id,
                     freelancer_id=freelancer_id,
-                    nome=person.nome,
+                    first_name=person.first_name,
                     last_name=person.last_name,
                     email=person.email,
                     downloaded_at=download.downloaded_at,
@@ -121,7 +122,7 @@ class PerkService:
                 id=download.id,
                 user_id=download.user_id,
                 freelancer_id=freelancer_id,
-                nome=person.nome,
+                first_name=person.first_name,
                 last_name=person.last_name,
                 email=person.email,
                 downloaded_at=download.downloaded_at,

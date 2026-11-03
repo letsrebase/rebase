@@ -48,7 +48,7 @@ class SignupCreate(BaseModel):
     # Required here even though the columns are nullable: the nulls belong to the rows
     # collected before the form asked, and nothing new is allowed to add one. Bounded to
     # the column, and `SafeStr` closes the NUL-byte gap a plain `str` would leave open.
-    nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     # A profile, not any URL: the host has to be LinkedIn's, so a typo or somebody
     # else's site is a 422 and never a stored link nobody can use. A personal profile is
@@ -98,7 +98,7 @@ class SignupCreate(BaseModel):
         trimmed = reject_control_characters(value).strip()
         return trimmed or None
 
-    @field_validator("nome", "last_name", mode="after")
+    @field_validator("first_name", "last_name", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         """Trimmed here rather than in the landing's JavaScript alone: the API is the
@@ -121,7 +121,7 @@ class SignupListItem(ResponseModel):
     email: str
     created_at: datetime
     # `None` only for the rows written before the form asked for a name.
-    nome: str | None = None
+    first_name: str | None = None
     last_name: str | None = None
     linkedin_url: str | None = None
     utm_source: str | None = None
@@ -160,7 +160,7 @@ class SignupRead(BaseModel):
     created_at: datetime
     # `True` the first time an address is seen, `False` when it was already there. Never
     # leaves the process: the router answers `SignupAck`, which does not say which.
-    nuova: bool = False
+    new: bool = False
 
 
 class SignupAck(ResponseModel):

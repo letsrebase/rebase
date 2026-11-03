@@ -4,9 +4,11 @@ anonymous card, and what an admin said instead.
 The prompt (`card_prompt.py`) defines the bands, and `banded` is the parser's half of the same
 rule: Claude is a poor judge of «mid or senior», and the audit found 39 «lead» cards out
 of 101, six of them with two to five years. So the seniority of a card is the band its
-`experience_years` falls in, `lead` being the one word a band alone cannot give: it needs `LEAD_FROM`
+`experience_years` falls in, `lead` being the one word a band alone cannot give: it needs
+`LEAD_FROM`
 years *and* Claude's reading that the CV shows leadership (the prompt's test). A card
-whose `experience_years` is `None` (the CV dates no role) keeps Claude's reading of the responsibility
+whose `experience_years` is `None` (the CV dates no role) keeps Claude's reading of the
+responsibility
 alone, never `lead`, and `card_read` says it is uncertain.
 
 An admin's correction lives on `freelancers` (`seniority_admin`, `experience_years_admin`), not on
@@ -40,7 +42,7 @@ def banded(card: Card) -> Card:
     """`card` with its seniority inside the bands. With years, the seniority is the
     band's, unless Claude said `lead` and the years reach `LEAD_FROM`; without years,
     what Claude read from the responsibility, except `lead`, which nothing dated can back,
-    read as `senior`. The anni and the rest are Claude's own."""
+    read as `senior`. The experience years and the rest are Claude's own."""
     if card.experience_years is None:
         return card.model_copy(update={"seniority": "senior"}) if card.seniority == "lead" else card
     if card.seniority == "lead" and card.experience_years >= LEAD_FROM:

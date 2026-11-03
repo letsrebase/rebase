@@ -2,8 +2,8 @@
 
 Kept out of the family schema modules (`freelancer_schemas.py` and the others):
 everything here is one flow, the admin's «Crea match» and «Match e contratti», and the
-MCP tools that read the same rows. A letter's field names are the Markdown's own keys
-with underscores for hyphens (`start_date` is `{{data-inizio}}`), so
+MCP tools that read the same rows. A letter's field names are English; `TEMPLATE_KEYS` names the
+Markdown's own Italian variable of each (`start_date` is `{{data-inizio}}`), so
 `LetterFields.to_fields` is a rename and a formatting step, nothing else. The company's
 `daily_budget` has no field anywhere here on purpose: what rebase agrees with the
 client never reaches a freelancer's document (spec § 1h), and `test_contract_schemas.py`
@@ -29,7 +29,7 @@ from pydantic import (
 from pydantic_core import InitErrorDetails, PydanticCustomError, ValidationError
 
 from rebase_core.contracts.fields import DAYS_LIMIT, DAYS_LIMIT_MONTH_END, Value, italian_date
-from rebase_core.match_words import Action
+from rebase_core.match_words import PAY_MODE_WORDS, Action
 from rebase_core.models import (
     COMPANY_MAX_LENGTH,
     CUSTOMER_VAT_NUMBER_MAX_LENGTH,
@@ -56,6 +56,8 @@ _VAT_NUMBER = re.compile(r"[0-9]{11}")
 _IDENTIFIER_INPUT_MAX_LENGTH = 40
 LETTER_TEXT_MAX_LENGTH = PROJECT_MAX_LENGTH
 NOTICE_MAX_DAYS = 365
+# `date` is a field name in the report models below: a class body cannot read it as a type.
+Day = date
 
 # «Come si paga»: the two ways a letter prices its fee, and the only values `mode` may
 # take. A closed set, not free text, because the referral reward's base (`reward_base`)
@@ -64,6 +66,44 @@ PayMode = Literal["to_work_unit", "to_body"]
 DAY_RATE: PayMode = "to_work_unit"
 LUMP_SUM: PayMode = "to_body"
 PAY_MODES: tuple[PayMode, ...] = (DAY_RATE, LUMP_SUM)
+# The day-rate unit a letter starts from, as the page prints it (`PAY_MODE_WORDS`).
+DAY_RATE_UNIT = PAY_MODE_WORDS[DAY_RATE]
+
+# A letter field's name in the Markdown: the contract text's own variable, Italian by
+# design (`{{compenso}}`), for each English field of the model.
+TEMPLATE_KEYS: dict[str, str] = {
+    "role": "ruolo",
+    "activities": "attivita",
+    "results": "risultati",
+    "acceptance": "accettazione",
+    "start_date": "data-inizio",
+    "end_date": "data-fine",
+    "commitment": "impegno",
+    "review_period": "periodo-verifica",
+    "location": "luogo",
+    "coordination": "coordinamento",
+    "customer_contact": "referente-cliente",
+    "rebase_contact": "referente-rebase",
+    "mode": "modalita",
+    "fee": "compenso",
+    "unit": "unita",
+    "extra_work": "lavoro-extra",
+    "expenses": "spese",
+    "payment_days": "giorni-pagamento",
+    "month_end": "fine-mese",
+    "billing_deadlines": "scadenze-fatturazione",
+    "notice_days": "giorni-preavviso",
+    "personal_data": "dati-personali",
+    "purpose_data": "dati-finalita",
+    "category_data": "dati-categorie",
+    "data_subjects": "dati-interessati",
+    "authorization_data": "dati-autorizzazione",
+    "exclusivity": "esclusiva",
+    "portfolio": "portfolio",
+    "insurance": "assicurazione",
+    "other_terms": "altre-condizioni",
+    "previous_reports": "rapporti-precedenti",
+}
 
 # The letter's text fields an admin writes on «Condizioni», in the Markdown's order.
 LETTER_TEXT_FIELDS = (
@@ -98,7 +138,7 @@ LETTER_TEXT_FIELDS = (
 # `rebase_core.referrals.ReferralService.referrer_name`) and the four signing fields.
 LETTER_AUTO_FIELDS = frozenset(
     {
-        "number",
+        "numero",
         "data-contratto-quadro",
         "rebase-ragione-sociale",
         "rebase-rappresentante",
@@ -116,7 +156,7 @@ LETTER_AUTO_FIELDS = frozenset(
 )
 
 # The occasional letter (REB-687) asks the same form and names its collaborator by the
-# codice fiscale, never by a partita IVA: the same fields the hub fills, with
+# `codice fiscale`, never by a `partita IVA`: the same fields the hub fills, with
 # `professionista-cf` in place of `professionista-piva`.
 LETTER_AUTO_FIELDS_OCCASIONAL = (LETTER_AUTO_FIELDS - {"professionista-piva"}) | {
     "professionista-cf"
@@ -162,9 +202,9 @@ class FiscalData(BaseModel):
     @field_validator("vat_number", mode="after")
     @classmethod
     def _vat_number(cls, value: str | None) -> str | None:
-        """Nothing typed is no partita IVA, stored as `NULL`; anything typed is the
+        """Nothing typed is no `partita IVA`, stored as `NULL`; anything typed is the
         eleven digits, with its spaces and an `IT` prefix dropped (`IT` alone is not
-        nothing, it is a partita IVA missing its digits)."""
+        nothing, it is a `partita IVA` missing its digits)."""
         compact = _compact(value or "")
         if not compact:
             return None
@@ -228,7 +268,7 @@ class LetterDraft(ResponseModel):
     results: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
     acceptance: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
     start_date: date | None = None
-    data_fine: date | None = None
+    end_date: date | None = None
     commitment: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
     review_period: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
     location: SafeStr | None = Field(default=None, max_length=LETTER_TEXT_MAX_LENGTH)
@@ -288,11 +328,11 @@ class LetterFields(LetterDraft):
     payment_days: int = Field(ge=1, le=DAYS_LIMIT)
     month_end: bool
 
-    @field_validator("data_fine", mode="after")
+    @field_validator("end_date", mode="after")
     @classmethod
     def _end_not_before_start(cls, value: date | None, info: ValidationInfo) -> date | None:
-        """`start_date` is declared before `data_fine`, so it is already in `info.data`
-        by the time this runs: the error can name `data_fine`, the field an admin
+        """`start_date` is declared before `end_date`, so it is already in `info.data`
+        by the time this runs: the error can name `end_date`, the field an admin
         actually filled in, instead of the whole letter."""
         start = info.data.get("start_date")
         if value is not None and start is not None and value < start:
@@ -329,8 +369,10 @@ class LetterFields(LetterDraft):
         fields: dict[str, Value] = {}
         for name in type(self).model_fields:
             value = getattr(self, name)
-            key = name.replace("_", "-")
-            if isinstance(value, date):
+            key = TEMPLATE_KEYS[name]
+            if name == "mode" and value is not None:
+                fields[key] = PAY_MODE_WORDS[value]
+            elif isinstance(value, date):
                 fields[key] = italian_date(value)
             elif isinstance(value, Decimal):
                 fields[key] = int(value) if value == value.to_integral_value() else float(value)
@@ -382,7 +424,7 @@ class MatchCreate(BaseModel):
         try:
             return _WHOLE_NUMBER.validate_python(value)
         except ValidationError:
-            raise PydanticCustomError("giorni_previsti_intero", EXPECTED_DAYS_WHOLE) from None
+            raise PydanticCustomError("expected_days_whole", EXPECTED_DAYS_WHOLE) from None
 
     @field_validator("expected_days", mode="after")
     @classmethod
@@ -391,7 +433,7 @@ class MatchCreate(BaseModel):
         (REB-502): «Crea match» and the MCP tools show the sentence as it is, where
         `Field(ge=, le=)` would answer Pydantic's English."""
         if value is not None and not EXPECTED_DAYS_MIN <= value <= EXPECTED_DAYS_MAX:
-            raise PydanticCustomError("giorni_previsti_range", EXPECTED_DAYS_RANGE)
+            raise PydanticCustomError("expected_days_range", EXPECTED_DAYS_RANGE)
         return value
 
 
@@ -405,7 +447,7 @@ class ContractDocumentRead(ResponseModel):
     # Which family it belongs to and its type as the pages name it (REB-687):
     # «Contratto quadro per prestazioni occasionali», «Lettera di incarico occasionale».
     regime: Regime
-    kind: str
+    label: str
     freelancer_id: UUID
     match_id: UUID | None
     number: str | None
@@ -586,7 +628,7 @@ class ReportDay(ResponseModel):
     of the day, the hours on none left out (REB-505): a day of 8 hours with 3 on
     12/2026 gives 12/2026 its 3, so a month can count an invoice's hours exactly."""
 
-    data: date
+    date: Day
     hours: Decimal
     descriptions: list[str]
     invoices: list[str]
@@ -597,8 +639,8 @@ class ReportWeek(ResponseModel):
     """An ISO week, «2026-W40», from its Monday to its Sunday."""
 
     week: str
-    da: date
-    a: date
+    from_date: Day
+    to_date: Day
     hours: Decimal
 
 
@@ -608,12 +650,12 @@ class ReportMonth(ResponseModel):
 
 
 class ReportInvoice(ResponseModel):
-    """An invoice these hours sit on, with how many of them: «12/2026», or «senza
-    numero» for one not numbered yet."""
+    """An invoice these hours sit on, with how many of them: «12/2026», or
+    «senza numero» for one not numbered yet."""
 
     number: str
     kind: str
-    data: date | None
+    date: Day | None
     status: str
     payment_status: str
     hours: Decimal
@@ -664,12 +706,12 @@ class MemberContract(ResponseModel):
     kind: ContractKind
     # Which family it belongs to and its type as the page names it (REB-687).
     regime: Regime
-    kind: str
+    label: str
     number: str | None
     status: ContractState
     customer: str | None
     start: str | None
-    fine: str | None
+    end: str | None
     sent_at: datetime | None
     signed_at: datetime | None
     signing_url: str | None

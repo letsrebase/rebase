@@ -136,7 +136,7 @@ hardcoded credentials):
 # Postgres data lives on the host in PIGROCRM_DATA_DIR (see .env.example): a Docker reset
 # doesn't touch it. Backup: production loads `docker-compose.backup.yml` (nightly, encrypted,
 # off-host, every database; see `.env.example`).
-docker compose exec api uv run --no-sync pigrocrm createadmin --email admin@tuodominio.it --nome "Nome Cognome"
+docker compose exec api uv run --no-sync pigrocrm createadmin --email admin@tuodominio.it --name "Jane Doe"
 ```
 
 Asks for the password on the terminal, twice (never as an argument or environment variable).

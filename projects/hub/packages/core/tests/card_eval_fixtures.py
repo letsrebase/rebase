@@ -60,11 +60,11 @@ def _person(
 ) -> UUID:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name=last_name,
             email=email,
             daily_rate=Decimal("450.00"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
         ),
         cv,

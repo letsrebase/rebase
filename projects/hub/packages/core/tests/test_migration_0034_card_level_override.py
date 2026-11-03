@@ -1,4 +1,5 @@
-"""0034 (REB-799): `freelancers.seniority_admin` and `experience_years_admin`, nullable, pinned to the
+"""0034 (REB-799): `freelancers.seniority_admin` and `experience_years_admin`, nullable, pinned to
+the
 card's own words and to 0..60; a retried deploy lands on the same schema, and the
 downgrade drops them."""
 
@@ -24,7 +25,7 @@ def _columns(connection: Connection) -> set[str]:
             text(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name = 'freelancers' "
-                "AND column_name IN ('seniority_admin', 'anni_admin')"
+                "AND column_name IN ('seniority_admin', 'anni_admin', 'experience_years_admin')"
             )
         )
     }
@@ -68,22 +69,29 @@ def test_migration_0034_adds_the_admins_level_pinned_to_the_cards_words(
             with engine.begin() as connection:
                 assert _columns(connection) == {"seniority_admin", "experience_years_admin"}
                 assert connection.execute(
-                    text("SELECT seniority_admin, anni_admin FROM freelancers WHERE id = :i"),
+                    text(
+                        "SELECT seniority_admin, experience_years_admin "
+                        "FROM freelancers WHERE id = :i"
+                    ),
                     {"i": freelancer},
                 ).one() == (None, None)
                 connection.execute(
-                    text("UPDATE freelancers SET seniority_admin = 'lead', anni_admin = 60")
+                    text(
+                        "UPDATE freelancers SET seniority_admin = 'lead', "
+                        "experience_years_admin = 60"
+                    )
                 )
                 with pytest.raises(IntegrityError), connection.begin_nested():
                     connection.execute(text("UPDATE freelancers SET seniority_admin = 'guru'"))
                 with pytest.raises(IntegrityError), connection.begin_nested():
-                    connection.execute(text("UPDATE freelancers SET anni_admin = 61"))
+                    connection.execute(text("UPDATE freelancers SET experience_years_admin = 61"))
                 with pytest.raises(IntegrityError), connection.begin_nested():
-                    connection.execute(text("UPDATE freelancers SET anni_admin = -1"))
+                    connection.execute(text("UPDATE freelancers SET experience_years_admin = -1"))
             command.downgrade(config, "0033")
             with engine.connect() as connection:
                 assert _columns(connection) == set()
         command.upgrade(config, "head")
+        command.downgrade(config, "0034")  # the schema this revision was written for
         with engine.begin() as connection:
             # The revision again over the columns it already added.
             connection.execute(text("UPDATE alembic_version SET version_num = '0033'"))

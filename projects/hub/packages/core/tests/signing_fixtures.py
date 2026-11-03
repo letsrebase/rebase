@@ -145,7 +145,7 @@ def _active_framework(
     freelancer_id: UUID,
     admin_id: UUID,
     signed_at: datetime = SIGNED_AT,
-    regime: str = "partita_iva",
+    regime: str = "vat_registered",
 ) -> ContractDocument:
     """A framework agreement as a signature leaves one."""
     document = ContractDocument(
@@ -304,7 +304,7 @@ def _occasional_draft(
     )
 
 
-def _framework_of(session: Session, freelancer_id: UUID, regime: str) -> ContractDocument:
+def _framework_of_regime(session: Session, freelancer_id: UUID, regime: str) -> ContractDocument:
     return [d for d in _documents(session, freelancer_id, "framework") if d.regime == regime][-1]
 
 

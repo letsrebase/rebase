@@ -736,7 +736,7 @@ class InvoiceRepository:
             stmt = stmt.where(Invoice.year == query.year)
         if query.payment_status == "unpaid":
             # «Da incassare» is the dashboard's word, so it is the dashboard's predicate
-            # (`_receivable_filter`, §5.2): an issued fattura nobody has paid. A plain
+            # (`_receivable_filter`, §5.2): an issued invoice nobody has paid. A plain
             # equality on the column listed every draft and every proforma as unpaid,
             # since a row is born `unpaid` (REB-325). `paid` below stays an
             # equality: `set_payment_state` refuses any row that is not an issued fattura

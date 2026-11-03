@@ -19,7 +19,9 @@ sys.path.insert(0, str(HERE))
 import english_lint  # noqa: E402
 import vocabulary  # noqa: E402
 
-TYPESCRIPT_READY = shutil.which("node") is not None and (HERE / "node_modules" / "typescript").exists()
+TYPESCRIPT_READY = (
+    shutil.which("node") is not None and (HERE / "node_modules" / "typescript").exists()
+)
 
 
 class Tree(unittest.TestCase):
@@ -57,14 +59,16 @@ class PythonRules(Tree):
     def test_english_code_passes(self) -> None:
         path = self.write(
             "a/ok.py",
-            '"""Create an invoice for a customer."""\n\n\ndef issue(invoice, due_date):  # when it is payable\n    return invoice\n',
+            '"""Create an invoice for a customer."""\n\n\n'
+            "def issue(invoice, due_date):  # when it is payable\n    return invoice\n",
         )
         self.assertEqual(self.lint(path), [])
 
     def test_string_literals_are_product_copy_and_exempt(self) -> None:
         path = self.write(
             "a/copy.py",
-            'MESSAGE = "Cliente non trovato: controlla la partita IVA"\nKEY = "{{cliente.provincia}}"\n'
+            'MESSAGE = "Cliente non trovato: controlla la partita IVA"\n'
+            'KEY = "{{cliente.provincia}}"\n'
             'SQL = f"ALTER TABLE attivita RENAME TO {new}"\n',
         )
         self.assertEqual(self.lint(path), [])
@@ -74,7 +78,9 @@ class PythonRules(Tree):
         self.assertIn("comment", {k for k, _ in self.words(path)})
 
     def test_italian_docstring_fails(self) -> None:
-        path = self.write("a/d.py", 'def f():\n    """Calcola il totale della fattura per il cliente."""\n')
+        path = self.write(
+            "a/d.py", 'def f():\n    """Calcola il totale della fattura per il cliente."""\n'
+        )
         self.assertIn("comment", {k for k, _ in self.words(path)})
 
     def test_quoted_italian_in_an_english_comment_is_copy(self) -> None:
@@ -90,6 +96,21 @@ class PythonRules(Tree):
             "@mcp.tool()\n"
             "def tool():\n"
             '    """Restituisce il totale della fattura per il cliente."""\n',
+        )
+        self.assertEqual(self.lint(path), [])
+
+    def test_a_quotation_wrapped_over_comment_lines_is_copy(self) -> None:
+        path = self.write(
+            "a/wrap.py",
+            "# the sentence is «la bozza intatta con l'errore\n"
+            "# accanto, il composer si riapre» in the spec\n"
+            "x = 1\n",
+        )
+        self.assertEqual(self.lint(path), [])
+
+    def test_italian_fiscal_terms_are_fine_in_english_prose(self) -> None:
+        path = self.write(
+            "a/fiscal.py", "x = 1  # the partita IVA and the codice fiscale are kept\n"
         )
         self.assertEqual(self.lint(path), [])
 
@@ -112,12 +133,18 @@ class PathsAndAllowlist(Tree):
         path = self.write("projects/pigrocrm/apps/web/src/routes/app/clienti.tsx", "export {}\n")
         self.assertEqual([f for f in self.lint(path) if f.kind == "path"], [])
 
-    def test_allowlist_is_limited_to_its_words(self) -> None:
-        path = self.write(
-            "projects/pigrocrm/packages/core/src/pigrocrm/core/invoices/fatturapa/x.py",
-            "cedente = 1\nannullata = 2\n",
+    def test_allowlist_is_limited_to_its_words_and_kinds(self) -> None:
+        directory = "projects/pigrocrm/packages/core/src/pigrocrm/core/invoices/fatturapa"
+        tags = self.write(
+            f"{directory}/a.py", "x = 1  # Sequence: Anagrafica, Divisa, Natura, Imposta\n"
         )
-        self.assertEqual({w for _, w in self.words(path)}, {"annullata"})
+        other = self.write(
+            f"{directory}/b.py", "x = 1  # Sequence: Anagrafica, Divisa, annullata, emessa\n"
+        )
+        name = self.write(f"{directory}/c.py", "cedente = 1\n")
+        self.assertEqual(self.lint(tags), [])
+        self.assertEqual({w for _, w in self.words(other)}, {"Anagrafica"})
+        self.assertIn(("identifier", "cedente"), self.words(name))
 
     def test_proper_noun_is_not_an_italian_word(self) -> None:
         path = self.write("a/proper.py", "class FatturaPAExporter:\n    fatturapa_version = 1\n")
@@ -131,7 +158,10 @@ class PathsAndAllowlist(Tree):
         self.assertIn(("identifier", "fattura"), self.words(new))
 
     def test_hash_comments_of_config_files_are_read(self) -> None:
-        path = self.write("deploy/run.sh", "#!/bin/sh\n# il file deve essere letto dal server per la fattura\necho ok\n")
+        path = self.write(
+            "deploy/run.sh",
+            "#!/bin/sh\n# il file deve essere letto dal server per la fattura\necho ok\n",
+        )
         self.assertIn("comment", {k for k, _ in self.words(path)})
 
 
@@ -156,8 +186,12 @@ class TypeScriptRules(Tree):
         self.assertEqual(self.lint(path), [])
 
     def test_italian_comment_fails_and_english_passes(self) -> None:
-        bad = self.write("web/b.ts", "// il totale della fattura non puo scendere\nexport const x = 1\n")
-        good = self.write("web/c.ts", "// the total of the invoice cannot go down\nexport const y = 1\n")
+        bad = self.write(
+            "web/b.ts", "// il totale della fattura non puo scendere\nexport const x = 1\n"
+        )
+        good = self.write(
+            "web/c.ts", "// the total of the invoice cannot go down\nexport const y = 1\n"
+        )
         self.assertIn("comment", {k for k, _ in self.words(bad)})
         self.assertEqual(self.lint(good), [])
 
@@ -170,7 +204,9 @@ class CommandLine(Tree):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(HERE / "english_lint.py"), "--root", str(self.root), *args],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
 
     def test_exit_status_follows_findings(self) -> None:

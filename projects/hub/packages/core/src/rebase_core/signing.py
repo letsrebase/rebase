@@ -4,20 +4,21 @@ phase 3).
 `send_match` is «Invia per la firma». At most one document leaves at a time: the
 framework agreement when the freelancer has none active (the letter waits for it,
 `pending`, spec § 1e), else the letter. A document is typeset again as it leaves, with
-the parties as they are today, the day it leaves in rebase's blank («Documento emesso da
-rebase il ...», spec § 5) and the labels under the signing blanks left undrawn; Documenso
-gets the PDF with the freelancer as its one signer (`rebase_core.documenso`), and the hub
-mails the link itself, one mail per document. A text that says `status: draft` never
-leaves (spec § 1f), unless `allow_draft` is true, which only the preview's `.env` sets
-through `REBASE_CONTRACTS_ALLOW_DRAFT`; with every text `status: final` the preview
-leaves it false too, kept for the next draft. If Documenso refuses or does not answer, the
-transaction rolls back and nothing is marked sent; if only the mail fails, the document
+the parties as they are today, the day it leaves in rebase's blank
+(«Documento emesso da rebase il ...», spec § 5) and the labels under the signing blanks
+left undrawn; Documenso gets the PDF with the freelancer as its one signer
+(`rebase_core.documenso`), and the hub mails the link itself, one mail per document.
+A text that says `status: draft` never leaves (spec § 1f), unless `allow_draft` is true,
+which only the preview's `.env` sets through `REBASE_CONTRACTS_ALLOW_DRAFT`; with every
+text `status: final` the preview leaves it false too, kept for the next draft. If
+Documenso refuses or does not answer, the transaction rolls back and nothing is marked
+sent; if only the mail fails, the document
 is `sent` and the report says so, for «Reinvia email».
 
 A freelancer may hold framework agreements of both regimes (REB-687): a letter leaves
 only once the framework agreement of its own regime is signed, and a signature releases
 only the waiting letters of its own regime. An ordinary letter whose freelancer has lost
-the partita IVA since the draft is refused on `regime`, as «Crea match» refuses it.
+the `partita IVA` since the draft is refused on `regime`, as «Crea match» refuses it.
 
 Every write locks the freelancer's row first, as `MatchService.create` and
 `FiscalService.save` already do, then the match, then its document (`match_rows`), because
@@ -94,6 +95,7 @@ from rebase_core.match_rows import (
     match_freelancer,
     require_regime_fits,
 )
+from rebase_core.match_words import STATE_WORDS
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, User
 from rebase_core.regimes import document_stem, text_name
@@ -113,7 +115,7 @@ DEFAULT_CONTRACTS_MAIL = str(Settings.model_fields["contracts_mail"].default)
 # data, and the fields the hub fills itself. What may stay blank is what the signing site
 # fills (the signature, the date) and the engagement's optional lines.
 MUST_PRINT_PREFIXES = ("rebase-", "professionista-", "cliente-")
-MUST_PRINT = frozenset({"number", "data-contratto-quadro", "luogo-firma", "firma-rebase"})
+MUST_PRINT = frozenset({"numero", "data-contratto-quadro", "luogo-firma", "firma-rebase"})
 
 
 def _filename(document: ContractDocument, version: str) -> str:
@@ -200,7 +202,7 @@ class SigningService:
             if match.status not in ("draft", "awaiting_signature"):
                 raise InvalidState(
                     f"Si invia per la firma solo un match in bozza o in firma: questo è "
-                    f"{match.status}.",
+                    f"{STATE_WORDS[match.status]}.",
                     status=match.status,
                 )
             letter = self.lock_letter(match.id)
@@ -347,7 +349,7 @@ class SigningService:
         user = self.owner(document.freelancer_id)
         mail = signing_request_mail(
             user.email,
-            user.nome,
+            user.first_name,
             document.kind,
             document.number,
             document.signing_url,

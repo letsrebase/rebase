@@ -32,8 +32,8 @@ test('a collaboratore is offered only their own Settings groups and cannot reach
 
   await login(page, email, password)
 
-  // Offered, but only the groups this role can open (REB-771): Personale and
-  // Collegamenti, never the admin groups.
+  // Offered, but only the groups this role can open (REB-771): «Personale» and
+  // «Collegamenti», never the admin groups.
   await page.getByRole('button', { name: 'Impostazioni' }).click()
   await expect(page.getByRole('link', { name: 'Personale' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Collegamenti' })).toBeVisible()

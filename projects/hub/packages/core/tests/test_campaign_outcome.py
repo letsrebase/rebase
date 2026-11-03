@@ -112,7 +112,7 @@ def test_a_cv_is_stamped_at_the_comment_the_member_service_writes(clean: Session
 def test_a_card_that_became_complete_is_stamped_at_the_tick_that_saw_it(clean: Session) -> None:  # noqa: F811  (fixture)
     clock = Clock(NOW)
     card = person(clean, "ada@studio.it", cv=False, rate=False)
-    campaign = sent(clean, clock, journey_status="scheda_vuota_nuovi", action="card_complete")
+    campaign = sent(clean, clock, journey_status="card_empty_new", action="card_complete")
     clean.execute(
         update(Freelancer)
         .where(Freelancer.id == card.id)
@@ -131,7 +131,7 @@ def test_a_card_created_after_the_mail_is_stamped_at_its_creation(clean: Session
         clean, clock, journey_status="lead", action="profile_created", button_meta="wizard"
     )
     at = clock.at + timedelta(hours=5)
-    card = person(clean, "giulia@studio.it", nome="Giulia")
+    card = person(clean, "giulia@studio.it", first_name="Giulia")
     clean.execute(update(Freelancer).where(Freelancer.id == card.id).values(created_at=at))
     clean.commit()
     stamp_outcomes(clean, now=at + timedelta(minutes=5))
@@ -152,7 +152,7 @@ def test_an_updated_request_is_stamped_at_its_update(clean: Session) -> None:  #
     campaign = sent(
         clean,
         clock,
-        journey_status="azienda_aperta",
+        journey_status="company_open",
         action="request_updated",
         button_meta="request",
     )

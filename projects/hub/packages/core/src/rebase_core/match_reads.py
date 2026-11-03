@@ -185,7 +185,7 @@ class MatchReads:
             base = base.where(
                 matches_any(
                     (
-                        freelancer_user.nome,
+                        freelancer_user.first_name,
                         freelancer_user.last_name,
                         freelancer_user.email,
                         Company.company_name,
@@ -235,7 +235,7 @@ class MatchReads:
                 .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
             )
         )
-        quadri = [
+        frameworks_all = [
             document_read(document, today, current_framework_version(document.regime))
             for document in frameworks
         ]
@@ -256,9 +256,9 @@ class MatchReads:
                     letters.setdefault(document.match_id, document)
         return FreelancerContracts(
             freelancer_id=freelancer_id,
-            framework=shown_framework(quadri, VAT_REGISTERED),
-            occasional_framework=shown_framework(quadri, OCCASIONAL),
-            frameworks=quadri,
+            framework=shown_framework(frameworks_all, VAT_REGISTERED),
+            occasional_framework=shown_framework(frameworks_all, OCCASIONAL),
+            frameworks=frameworks_all,
             matches=[
                 self._match_read(
                     match,
@@ -356,7 +356,7 @@ class MatchReads:
             freelancer_id=match.freelancer_id,
             company_id=match.company_id,
             company_deleted=company.deleted_at is not None,
-            freelancer_name=freelancer_user.nome,
+            freelancer_name=freelancer_user.first_name,
             freelancer_last_name=freelancer_user.last_name,
             freelancer_email=freelancer_user.email,
             company_name=company.company_name,

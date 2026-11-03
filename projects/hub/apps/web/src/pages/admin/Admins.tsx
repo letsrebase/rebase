@@ -14,16 +14,16 @@ import { Empty, Header, LoadMore } from './list-kit'
 
 interface Draft {
   email: string
-  nome: string
+  first_name: string
   last_name: string
 }
 
-const EMPTY: Draft = { email: '', nome: '', last_name: '' }
+const EMPTY: Draft = { email: '', first_name: '', last_name: '' }
 
 /**
  * Who reads this area, and the one form that grants or revokes the role (ORB-123,
  * REB-279): typing an email promotes whatever `users` row already answers to it, or
- * creates a bare one from `nome`/`last_name` when none exists yet -- those two fields
+ * creates a bare one from `first_name`/`last_name` when none exists yet -- those two fields
  * only matter for a brand-new address, and the server ignores them harmlessly for one
  * it already knows. There is no password anywhere on this page any more: the magic
  * link is the only way in, for a member and an admin alike. Demoting is one click on
@@ -45,25 +45,25 @@ export function AdminAdmins() {
   })
 
   const [draft, setDraft] = useState<Draft>(EMPTY)
-  const [done, setDone] = useState<{ verb: 'promosso' | 'rimosso'; email: string } | null>(null)
+  const [done, setDone] = useState<{ verb: 'promoted' | 'removed'; email: string } | null>(null)
 
   const promote = useMutation({
     mutationFn: (data: Draft) =>
       admin.promote({
         email: data.email.trim(),
-        nome: data.nome.trim() || undefined,
+        first_name: data.first_name.trim() || undefined,
         last_name: data.last_name.trim() || undefined,
       }),
     onSuccess: (saved) => {
       setDraft(EMPTY)
-      setDone({ verb: 'promosso', email: saved.email })
+      setDone({ verb: 'promoted', email: saved.email })
       void client.invalidateQueries({ queryKey: keys.admins() })
     },
   })
   const demote = useMutation({
     mutationFn: (id: string) => admin.demote(id),
     onSuccess: (saved) => {
-      setDone({ verb: 'rimosso', email: saved.email })
+      setDone({ verb: 'removed', email: saved.email })
       void client.invalidateQueries({ queryKey: keys.admins() })
     },
   })
@@ -116,21 +116,21 @@ export function AdminAdmins() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="admin-nome">Nome</Label>
+          <Label htmlFor="admin-first-name">Nome</Label>
           <Input
-            id="admin-nome"
+            id="admin-first-name"
             maxLength={120}
             autoComplete="off"
             placeholder="Solo per un indirizzo nuovo"
-            value={draft.nome}
-            onChange={(event) => field('nome')(event.target.value)}
-            aria-invalid={wrong('nome')}
+            value={draft.first_name}
+            onChange={(event) => field('first_name')(event.target.value)}
+            aria-invalid={wrong('first_name')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="admin-cognome">Cognome</Label>
+          <Label htmlFor="admin-last-name">Cognome</Label>
           <Input
-            id="admin-cognome"
+            id="admin-last-name"
             maxLength={120}
             autoComplete="off"
             placeholder="Solo per un indirizzo nuovo"
@@ -152,12 +152,12 @@ export function AdminAdmins() {
 
       {/* Always mounted: a live region that appears already filled is often not read out. */}
       <p role="status" aria-live="polite" className={done ? 'border-b px-6 py-3 text-sm' : undefined}>
-        {done?.verb === 'promosso' && (
+        {done?.verb === 'promoted' && (
           <>
             Amministratore promosso: <span className="font-medium">{done.email}</span>.
           </>
         )}
-        {done?.verb === 'rimosso' && (
+        {done?.verb === 'removed' && (
           <>
             Non è più amministratore: <span className="font-medium">{done.email}</span>.
           </>
@@ -195,7 +195,7 @@ export function AdminAdmins() {
                   {items.map((row: Admin) => (
                     <TableRow key={row.id}>
                       <TableCell>
-                        <p className="font-medium">{row.nome}</p>
+                        <p className="font-medium">{row.first_name}</p>
                         <p className="text-xs text-muted-foreground">{row.email}</p>
                       </TableCell>
                       <TableCell>
@@ -214,7 +214,7 @@ export function AdminAdmins() {
                           Rimuovi
                           <span className="sr-only">
                             {' '}
-                            {row.nome} ({row.email}) da amministratore
+                            {row.first_name} ({row.email}) da amministratore
                           </span>
                         </Button>
                       </TableCell>

@@ -97,9 +97,9 @@ _ORIGIN_FORM: TalentOrigin = "form"
 # actually asks: did the person write this themselves, through the wizard, or did an
 # admin draft it from research. The column is `NOT NULL` and checked to those two, so
 # the filter below and the row's own `origin` cannot part ways.
-_ORIGIN_BY_COMPILATA_DA: dict[str, TalentOrigin] = {"person": "wizard", "admin": "admin"}
-_COMPILATA_DA_BY_ORIGIN: dict[str, str] = {
-    origin: compilata_da for compilata_da, origin in _ORIGIN_BY_COMPILATA_DA.items()
+_ORIGIN_BY_FILLED_BY: dict[str, TalentOrigin] = {"person": "wizard", "admin": "admin"}
+_FILLED_BY_BY_ORIGIN: dict[str, str] = {
+    origin: filled_by for filled_by, origin in _ORIGIN_BY_FILLED_BY.items()
 }
 ORIGINS: tuple[str, ...] = get_args(TalentOrigin)
 SENIORITIES = ("junior", "mid", "senior", "lead")
@@ -111,7 +111,7 @@ _RankedBy = Literal["rate", "experience_years"]
 
 
 def _card_only_active(*values: object) -> bool:
-    """Whether any filter with no lead-side equivalent is set: `posizione`, `remote`,
+    """Whether any filter with no lead-side equivalent is set: `job_title`, `remote`,
     `daily_rate` and the marketing `origin_page` are columns a bare sign-up
     simply does not have (`Signup` carries none of them), and `skills`, `location`,
     `seniority`, `experience_years`, `industries`, `languages` and `card` read an anonymous card a
@@ -127,7 +127,7 @@ def signup_read(row: Signup) -> TalentRead:
     the card's fields."""
     return TalentRead(
         id=row.id,
-        nome=row.nome,
+        first_name=row.first_name,
         last_name=row.last_name,
         email=row.email,
         linkedin_url=row.linkedin_url,
@@ -180,18 +180,18 @@ def card_fields(
     `seniority` and `experience_years` are the admin's when one corrected them (`seniority_admin`,
     `experience_years_admin`, REB-799), the card's otherwise, through `card_level.level`;
     `seniority_uncertain` says the seniority is a guess, the card having no dated years."""
-    scheda = card if isinstance(card, dict) else {}
-    effective = level(scheda, seniority_admin, experience_years_admin)
+    card_json = card if isinstance(card, dict) else {}
+    effective = level(card_json, seniority_admin, experience_years_admin)
     return {
-        "role": _card_text(scheda, "role"),
+        "role": _card_text(card_json, "role"),
         "seniority": effective.seniority,
         "experience_years": effective.experience_years,
         "seniority_uncertain": effective.uncertain,
-        "skills": _card_texts(scheda, "skills"),
-        "industries": _card_texts(scheda, "industries"),
-        "languages": _card_texts(scheda, "languages"),
-        "location": _card_text(scheda, "location"),
-        "profile_summary": _card_text(scheda, "profile_summary"),
+        "skills": _card_texts(card_json, "skills"),
+        "industries": _card_texts(card_json, "industries"),
+        "languages": _card_texts(card_json, "languages"),
+        "location": _card_text(card_json, "location"),
+        "profile_summary": _card_text(card_json, "profile_summary"),
         "band": band_for(rate),
     }
 
@@ -201,7 +201,7 @@ def _card_read(row: Freelancer, user: User, card: object) -> TalentRead:
     then `card_fields` for what the anonymous `card` says."""
     return TalentRead(
         **card_row_fields(row, user),
-        origin=_ORIGIN_BY_COMPILATA_DA.get(row.compilata_da, "wizard"),
+        origin=_ORIGIN_BY_FILLED_BY.get(row.filled_by, "wizard"),
         has_anonymous_card=isinstance(card, dict),
         **card_fields(card, row.daily_rate, row.seniority_admin, row.experience_years_admin),
     )
@@ -227,7 +227,7 @@ def _names_skill(term: str) -> ColumnElement[bool]:
             ),
         )
     )
-    return or_(matches_any((Freelancer.posizione,), term), on_the_card)
+    return or_(matches_any((Freelancer.job_title,), term), on_the_card)
 
 
 def _lives_in(place: str) -> ColumnElement[bool]:
@@ -340,7 +340,7 @@ def _order(sort: str | None, term: str) -> _Order:
         )
     if sort == "recent":
         return _Order(SortSpec("created_at", "datetime"), True)
-    field, direction = sort.split("_")
+    field, direction = sort.rsplit("_", 1)
     ranked_by: _RankedBy = "rate" if field == "rate" else "experience_years"
     # The whole `sort` is the cursor's key, direction included: a cursor minted going
     # up must not be replayed going down, where `(value, id) > ...` would skip and
@@ -369,7 +369,7 @@ class _Filters:
     `_counts` read the same values and cannot drift apart."""
 
     q: str
-    posizione: str | None
+    job_title: str | None
     remote: str | None
     min_rate: Decimal | None
     max_rate: Decimal | None
@@ -396,7 +396,7 @@ class _Filters:
         names, `origin` `wizard`/`admin` (a lead is `form`), or a ranking by a card
         value."""
         return _card_only_active(
-            self.posizione,
+            self.job_title,
             self.remote,
             self.min_rate,
             self.max_rate,
@@ -429,10 +429,10 @@ def _card_stmt(f: _Filters, *, counting: bool = False) -> Select[Freelancer, Use
         stmt = stmt.join(User, User.id == Freelancer.user_id)
     stmt = stmt.where(Freelancer.deleted_at.is_(None))
     if f.q:
-        search_cols = (User.nome, User.last_name, User.email, Freelancer.posizione)
+        search_cols = (User.first_name, User.last_name, User.email, Freelancer.job_title)
         stmt = stmt.where(matches_any(search_cols, f.q))
-    if f.posizione:
-        stmt = stmt.where(Freelancer.posizione.ilike(f"%{escape_like(f.posizione)}%"))
+    if f.job_title:
+        stmt = stmt.where(Freelancer.job_title.ilike(f"%{escape_like(f.job_title)}%"))
     if f.remote is not None:
         stmt = stmt.where(Freelancer.remote == f.remote)
     if f.min_rate is not None:
@@ -443,7 +443,7 @@ def _card_stmt(f: _Filters, *, counting: bool = False) -> Select[Freelancer, Use
         # `form` is a bare sign-up: no card is one.
         stmt = stmt.where(false())
     elif f.origin is not None:
-        stmt = stmt.where(Freelancer.compilata_da == _COMPILATA_DA_BY_ORIGIN[f.origin])
+        stmt = stmt.where(Freelancer.filled_by == _FILLED_BY_BY_ORIGIN[f.origin])
     if f.origin_page is not None:
         stmt = stmt.where(Freelancer.origin == f.origin_page)
     if f.utm_source is not None:
@@ -503,7 +503,7 @@ def _lead_stmt(f: _Filters) -> Select[Signup]:
     """Every bare sign-up (no card) the filters keep."""
     stmt = _bare_signups()
     if f.q:
-        stmt = stmt.where(matches_any((Signup.nome, Signup.last_name, Signup.email), f.q))
+        stmt = stmt.where(matches_any((Signup.first_name, Signup.last_name, Signup.email), f.q))
     if f.utm_source is not None:
         stmt = stmt.where(Signup.utm_source == f.utm_source)
     if f.with_logins is not None:
@@ -553,7 +553,7 @@ class TalentsService:
         *,
         q: str | None = None,
         cursor: str | None = None,
-        posizione: str | None = None,
+        job_title: str | None = None,
         remote: str | None = None,
         min_rate: Decimal | None = None,
         max_rate: Decimal | None = None,
@@ -598,7 +598,8 @@ class TalentsService:
         `card`, the card's own state (`CARD_STATES`).
 
         `sort` is `recent` (newest first, even while searching), or `rate_asc`,
-        `rate_desc`, `experience_years_asc`, `experience_years_desc`: the cursor then carries that value, and
+        `rate_desc`, `experience_years_asc`, `experience_years_desc`: the cursor then carries that
+        value, and
         the rows with none to rank by (every lead, a card with no rate or no years) are
         left out of the list and of its counts. Without it the order is newest first, or
         best match while `q` searches."""
@@ -616,7 +617,7 @@ class TalentsService:
             raise ValidationFailed(_ENTITY, "card", f"atteso uno fra {', '.join(CARD_STATES)}")
         f = _Filters(
             q=term,
-            posizione=posizione,
+            job_title=job_title,
             remote=remote,
             min_rate=min_rate,
             max_rate=max_rate,
@@ -657,12 +658,12 @@ class TalentsService:
             elif order.ranked_by == "experience_years":
                 sort_col = _card_experience_years()
             elif sort_spec.key == "score":
-                search_cols = (User.nome, User.last_name, User.email, Freelancer.posizione)
+                search_cols = (User.first_name, User.last_name, User.email, Freelancer.job_title)
                 sort_col = similarity_score(search_cols, term)
             else:
                 sort_col = Freelancer.created_at
             if sort_spec.key != "created_at":
-                stmt = stmt.add_columns(sort_col.label("ordine"))
+                stmt = stmt.add_columns(sort_col.label("sort_key"))
             if cursor_bound is not None:
                 stmt = stmt.where(
                     keyset_predicate(
@@ -690,16 +691,22 @@ class TalentsService:
                 .options(defer(Freelancer.cv_bytes))
             ).all()
             for row in rows:
-                card, user = row[0], row[1]
+                freelancer, user = row[0], row[1]
                 # A Postgres `numeric` comes back as a `Decimal`; the cursor carries
                 # JSON numbers, so a ranked value is a `float` on both sides.
-                sort_value = card.created_at if sort_spec.key == "created_at" else float(row.order)
-                candidates.append((sort_value, card.id, _card_read(card, user, row.card)))
+                sort_value = (
+                    freelancer.created_at if sort_spec.key == "created_at" else float(row.sort_key)
+                )
+                candidates.append(
+                    (sort_value, freelancer.id, _card_read(freelancer, user, row.card))
+                )
 
         if wants_leads:
             lead_stmt = _lead_stmt(f)
             if sort_spec.key == "score":
-                lead_score = similarity_score((Signup.nome, Signup.last_name, Signup.email), term)
+                lead_score = similarity_score(
+                    (Signup.first_name, Signup.last_name, Signup.email), term
+                )
                 lead_stmt = lead_stmt.add_columns(lead_score.label("score"))
                 lead_sort_col: Any = lead_score
             else:

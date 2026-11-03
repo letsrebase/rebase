@@ -111,7 +111,7 @@ describe.each(PAGES)('%s', (name) => {
     // login (`/app/`), a leftover from before the hub had one of its own; the hub
     // is the front door now, and a member reaches PigroCRM from inside it
     // (`Area.tsx`'s "Apri PigroCRM") or with its own URL directly. REB-319 then
-    // renamed the hub's own `/login` to `/login`; the hub keeps a redirect from
+    // renamed the hub's own `/accedi` to `/login`; the hub keeps a redirect from
     // the old path, but this link points at the new one directly.
     expect(page).toMatch(/href="\/hub\/login"/)
     expect(page).toContain('Accedi')
@@ -185,23 +185,23 @@ describe('index.html', () => {
     expect(hero).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
     expect(hero).toContain('<p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>')
     // The hub page's own four examples, each a description the API takes as it stands.
-    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-persone="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
+    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-people="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
     expect(hero).toContain('>Web app per una fintech</button>')
     expect(hero).toContain('>Un FDE nel team di un cliente</button>')
     // The box: the hub's placeholder, its own label for a screen reader, and the
     // lengths the API takes, which is what a browser enforces without the script.
-    expect(hero).toMatch(/<label class="sr-only" for="team-descrizione">Descrizione del progetto<\/label>/)
+    expect(hero).toMatch(/<label class="sr-only" for="team-description">Descrizione del progetto<\/label>/)
     expect(hero).toMatch(
-      /<textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
+      /<textarea id="team-description" name="description" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
     )
     expect(hero).toMatch(/<p class="team-error" id="team-error" role="alert"><\/p>/)
     // The headcount beside the button, as the hub's page asks it: ten options, one selected.
-    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="persone">/)
+    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="people">/)
     expect(hero.match(/<option value="(\d+)"/g)).toHaveLength(10)
     expect(hero).toContain('<option value="1" selected>1 persona</option>')
     expect(hero).toContain('<option value="10">10 persone</option>')
     // Each example says how many people its own text implies, like the hub's.
-    expect(hero.match(/data-persone="[1-9]"/g)).toHaveLength(4)
+    expect(hero.match(/data-people="[1-9]"/g)).toHaveLength(4)
     // The button sits inside the composer, under the box, so the two read as one control.
     expect(hero).toMatch(/<div class="composer">[\s\S]*?<textarea[\s\S]*?<div class="composer-bar">[\s\S]*?<button class="cta" type="submit">Proponi il team<\/button>\s*<\/div>\s*<\/div>/)
     // Where the result lands: empty and hidden until the script fills it, which then
@@ -224,7 +224,7 @@ describe('index.html', () => {
     const hero = page.match(/<section class="hero">([\s\S]*?)<\/section>/)?.[1] ?? ''
     const actions = hero.match(/<p class="actions">([\s\S]*?)<\/p>/)?.[1] ?? ''
     expect(actions).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
-    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
+    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/companies">[^<]+<\/a>/)
     expect(actions.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(2)
     // The third door of REB-608 is gone: the builder itself sits where it pointed, and
     // the services band still carries one (checked further down).
@@ -361,7 +361,7 @@ describe('index.html', () => {
   it('says who it is for, in the words that qualify a reader in fifteen seconds', () => {
     // The words are docs/design/positioning.md's (ORB-24): the roles by name, the
     // fiscal reality, the price.
-    for (const word of ['developer', 'ai engineer', 'fractional', 'forfettario', 'self-hosted', 'gratis', 'rate']) {
+    for (const word of ['developer', 'ai engineer', 'fractional', 'forfettario', 'self-hosted', 'gratis', 'tariffa']) {
       expect(page.toLowerCase()).toContain(word)
     }
     expect(page).toMatch(/\bCTO\b/)

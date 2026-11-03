@@ -28,7 +28,7 @@ class TalentRead(ResponseModel):
     ones `FreelancerRead` carries; a bare sign-up has neither, so both stay `None` for
     a `lead` row.
 
-    `posizione` is the card's own, and `role`, `seniority`, `experience_years`, `skills`,
+    `job_title` is the card's own, and `role`, `seniority`, `experience_years`, `skills`,
     `industries`, `languages`, `location` and `profile_summary` are read off Claude's anonymous card
     (REB-778, REB-798), so an agent matching a request reads what a person does from the
     list itself rather than one profile at a time; `band` is the client's price band
@@ -40,7 +40,7 @@ class TalentRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str | None = None
+    first_name: str | None = None
     last_name: str | None = None
     email: str
     linkedin_url: str | None = None
@@ -55,7 +55,7 @@ class TalentRead(ResponseModel):
     # sign-up has neither.
     vetted_at: datetime | None = None
     has_anonymous_card: bool = False
-    posizione: str | None = None
+    job_title: str | None = None
     role: str | None = None
     seniority: Seniority | None = None
     experience_years: int | None = None

@@ -48,16 +48,16 @@ export function FiscalFields({
     <div className="grid gap-3 sm:grid-cols-2">
       {field('tax_code', 'Codice fiscale', { required: true, maxLength: 40, autoComplete: 'off' })}
       {!draft.without_vat_number &&
-        field('partita_iva', 'Partita IVA', { required: true, maxLength: 40, inputMode: 'numeric' })}
+        field('vat_number', 'Partita IVA', { required: true, maxLength: 40, inputMode: 'numeric' })}
       {field('domicile', 'Domicilio', { required: true, maxLength: 300 })}
       {field('certified_email', 'PEC, se ce l’ha', { type: 'email', maxLength: 320 })}
       <div className="flex items-center gap-2 sm:col-span-2">
         <Checkbox
-          id={`${idPrefix}-senza_partita_iva`}
+          id={`${idPrefix}-no-vat-number`}
           checked={draft.without_vat_number}
           onCheckedChange={(checked) => onChange({ ...draft, without_vat_number: checked === true, vat_number: '' })}
         />
-        <Label htmlFor={`${idPrefix}-senza_partita_iva`} className="font-normal">
+        <Label htmlFor={`${idPrefix}-no-vat-number`} className="font-normal">
           Senza partita IVA (prestazione occasionale)
         </Label>
       </div>

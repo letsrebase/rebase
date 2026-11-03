@@ -162,7 +162,7 @@ def test_two_days_in_the_same_month_on_the_same_rate_card_become_one_line(
     assert len(lines) == 1
     assert lines[0].quantity == Decimal("2.00")
     assert lines[0].unit_price == Decimal("500.00")
-    assert lines[0].unit_of_measure == "day"
+    assert lines[0].unit_of_measure == "giorno"
     assert "marzo" in lines[0].description.lower()
     assert len(groups[0]) == 2
 

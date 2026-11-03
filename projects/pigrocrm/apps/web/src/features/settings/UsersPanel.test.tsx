@@ -568,8 +568,8 @@ describe('UsersPanel', () => {
     })
 
     it('still shows a stranded scope in a one-legal-entity space, so an admin can widen it', async () => {
-      // The second azienda was deactivated after Bea was scoped to it: the space is back
-      // to one azienda, the selector is gone, and Bea sees nothing until this row says so.
+      // The second legal entity was deactivated after Bea was scoped to it: the space is back
+      // to one legal entity, the selector is gone, and Bea sees nothing until this row says so.
       respond({ ...lists, '/api/users': () => ok([SCOPED_USER]) })
       vi.mocked(api.PATCH).mockReturnValueOnce(
         Promise.resolve(ok({ ...SCOPED_USER, legal_entities: null })),
@@ -586,7 +586,7 @@ describe('UsersPanel', () => {
       expect(row).toHaveTextContent('nessuna azienda attiva')
       await openRowMenu('Bea Scoped')
       await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
-      // The one azienda, unchecked (it is not in Bea's scope); checking it is «tutte».
+      // The one legal entity, unchecked (it is not in Bea's scope); checking it is «tutte».
       const box = await screen.findByLabelText('humancraft')
       expect(box).not.toBeChecked()
       await userEvent.click(box)

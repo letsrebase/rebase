@@ -19,7 +19,7 @@ class MemberProfile(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    first_name: str
     last_name: str
     email: str
     linkedin_url: str | None
@@ -30,7 +30,7 @@ class MemberProfile(BaseModel):
     cv_filename: str | None
     cv_size: int | None
     daily_rate: Decimal | None
-    posizione: str | None
+    job_title: str | None
     remote: RemoteOption | None
     links: list[str]
     created_at: datetime
@@ -82,7 +82,7 @@ class MeRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    first_name: str
     last_name: str
     email: str
     linkedin_url: str | None
@@ -94,7 +94,7 @@ class MeRead(ResponseModel):
     cv_filename: str | None = None
     cv_size: int | None = None
     daily_rate: Decimal | None = None
-    posizione: str | None = None
+    job_title: str | None = None
     remote: RemoteOption | None = None
     links: list[str] = Field(default_factory=list)
     requests: list[MemberRequest] = Field(default_factory=list)
@@ -130,7 +130,7 @@ class MemberLookup(ResponseModel):
     member and how to greet them, nothing about who is at the keyboard."""
 
     member: bool
-    nome: str | None = None
+    first_name: str | None = None
     last_name: str | None = None
 
 

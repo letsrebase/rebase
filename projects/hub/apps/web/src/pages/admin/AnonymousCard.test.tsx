@@ -307,7 +307,7 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
         provenance: {
           prompt_version: 2,
           provider: 'anthropic',
-          sources: { role: ['cv', 'github'], skills: ['cv', 'link:2'], profile_summary: ['hub'] },
+          field_sources: { role: ['cv', 'github'], skills: ['cv', 'link:2'], profile_summary: ['hub'] },
           conflicts: [
             { kind: 'different_experience_years', experience_years_card: 9, experience_years_hub: 12 },
             { kind: 'discarded_experience_years', experience_years_card: 6, experience_years_hub: null },
@@ -347,7 +347,7 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
         provenance: {
           prompt_version: 1,
           provider: null,
-          sources: {},
+          field_sources: {},
           conflicts: [],
           sources: [],
           source_hashes: {},
@@ -370,7 +370,7 @@ describe('the CV’s data stays out of «Scheda anonima» (REB-855)', () => {
       answer(200, {
         ...WRITTEN,
         person: {
-          nome: 'Ada',
+          first_name: 'Ada',
           last_name: 'Lovelace',
           email: 'ada.lovelace@example.org',
           phone: '+39 333 123 4567',

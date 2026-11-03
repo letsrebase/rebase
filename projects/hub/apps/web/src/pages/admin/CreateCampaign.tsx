@@ -53,7 +53,7 @@ function SaveStatus({ saving, error, savedAt }: { saving: boolean; error: unknow
   )
 }
 
-/** The page itself (REB-526): the name as its title, Destinatari and Messaggio on the
+/** The page itself (REB-526): the name as its title, recipients and message on the
  *  left, the mail's preview and the test on the right, the send bar at the foot. The
  *  draft saves itself; the list follows the saved source; «Invia» names the count and
  *  the moment, and says why when it is off. `initial` is the stored campaign on the
@@ -70,13 +70,13 @@ function Editor({ initial }: { initial: Campaign | null }) {
   // a destination is not writing the mail, so a state picked after it still fills the
   // subject, the text and the button (REB-530). A stored campaign's are the admin's
   // already.
-  const [touched, setTouched] = useState({ mail: initial !== null, nome: initial !== null, meta: initial !== null })
+  const [touched, setTouched] = useState({ mail: initial !== null, name: initial !== null, meta: initial !== null })
   const [excluded, setExcluded] = useState<string[]>([])
   const [person, setPerson] = useState<string | null>(null)
-  const [mode, setMode] = useState<When>('adesso')
+  const [mode, setMode] = useState<When>('now')
   // Filled when «Programma» is chosen, not when the page opens: a page left open for an
   // hour must not propose a moment already past.
-  const [when, setWhen] = useState({ day: '', ora: '' })
+  const [when, setWhen] = useState({ day: '', time: '' })
 
   // The parent's name, for the sentence and the link in Destinatari (Task 6): a `list`
   // never picks its own audience, so it names whose it inherited instead.
@@ -85,7 +85,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
     queryFn: () => admin.campaign(form.segueId!),
     enabled: form.source === 'list' && form.segueId !== null,
   })
-  const segue = parent.data ? { id: parent.data.campaign.id, nome: parent.data.campaign.nome } : null
+  const segue = parent.data ? { id: parent.data.campaign.id, name: parent.data.campaign.name } : null
   const segueError = parent.isError ? failureMessage(parent.error) : null
 
   const payload = payloadOf(form)
@@ -148,9 +148,9 @@ function Editor({ initial }: { initial: Campaign | null }) {
     setForm((current) => ({ ...current, buttonUrl }))
     setTouched((current) => ({ ...current, meta: true }))
   }
-  function changeName(nome: string) {
-    setForm((current) => ({ ...current, nome }))
-    setTouched((current) => ({ ...current, nome: true }))
+  function changeName(name: string) {
+    setForm((current) => ({ ...current, name }))
+    setTouched((current) => ({ ...current, name: true }))
   }
   function pickTemplate(value: string) {
     const template = templates.data?.find((item) => item.journey_status === value)
@@ -161,7 +161,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
     setExcluded((current) => (included ? current.filter((item) => item !== email) : [...current, email]))
   }
   function chooseMode(next: When) {
-    if (next === 'programma' && mode !== 'programma') setWhen(defaultSchedule())
+    if (next === 'schedule' && mode !== 'schedule') setWhen(defaultSchedule())
     setMode(next)
   }
 
@@ -174,9 +174,9 @@ function Editor({ initial }: { initial: Campaign | null }) {
   const schedule = useMutation({
     mutationFn: () => {
       if (key === null || count === null) throw new Error('nothing to send')
-      const excludedHour = count.excluded
-      const moment = mode === 'programma' ? { day: when.day, ora: when.ora } : {}
-      return save.run(key, (saved) => admin.scheduleCampaign(saved.id, { ...moment, excluded: excludedHour }))
+      const unticked = count.excluded
+      const moment = mode === 'schedule' ? { day: when.day, at_time: when.time } : {}
+      return save.run(key, (saved) => admin.scheduleCampaign(saved.id, { ...moment, excluded: unticked }))
     },
     onSuccess: (sent) => {
       void client.invalidateQueries({ queryKey: keys.campaigns })
@@ -195,7 +195,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
     if (count.will_receive === 0) return 'Nessuno riceverebbe la mail.'
     if (!campaign?.test_sent_at) return 'Manda prima una prova: il bottone è sotto l’anteprima.'
     if (!campaign.ready) return 'Hai cambiato la campagna dopo la prova: mandane un’altra.'
-    if (mode === 'programma' && (!when.day || !when.ora)) return 'Scegli giorno e ora.'
+    if (mode === 'schedule' && (!when.day || !when.time)) return 'Scegli giorno e ora.'
     return null
   }
 
@@ -206,14 +206,14 @@ function Editor({ initial }: { initial: Campaign | null }) {
           <h1 className="text-sm text-muted-foreground">
             {form.source === 'list' ? 'Riscrivi a chi non ha fatto niente' : initial ? 'Modifica campagna' : 'Nuova campagna'}
           </h1>
-          <Label htmlFor="campagna-nome" className="sr-only">
+          <Label htmlFor="campaign-name" className="sr-only">
             Nome della campagna
           </Label>
           <Input
-            id="campagna-nome"
-            maxLength={CAMPAIGN_MAX_LENGTH.nome}
+            id="campaign-name"
+            maxLength={CAMPAIGN_MAX_LENGTH.name}
             placeholder={defaultName(form.source)}
-            value={form.nome}
+            value={form.name}
             onChange={(event) => changeName(event.target.value)}
             className="-mx-2.5 h-auto max-w-xl border-transparent py-0.5 text-2xl font-semibold tracking-tight hover:border-border md:text-2xl"
           />
@@ -310,7 +310,7 @@ export function AdminCreateCampaign() {
       <>
         <Header title="Modifica campagna" />
         <p className="p-6 text-sm">
-          «{stored.nome}» non è più una bozza, quindi non si modifica.{' '}
+          «{stored.name}» non è più una bozza, quindi non si modifica.{' '}
           <Link to="/admin/campaigns/$id" params={{ id: stored.id }} className="underline">
             Torna alla campagna
           </Link>

@@ -28,8 +28,8 @@ from rebase_core.campaigns.tick import (
     SEND_INTERVAL_SECONDS,
     STALLED_KEY,
     STALLED_LIST,
-    STALLED_SHARE_DAY,
-    STALLED_SHARE_MONTH,
+    STALLED_QUOTA_DAY,
+    STALLED_QUOTA_MONTH,
     _claim,
     run_tick,
 )
@@ -55,8 +55,8 @@ def scheduled_filters(session: Session, clock: Clock, *emails: str) -> Campaign:
     service = CampaignService(session, SETTINGS, clock=clock)
     who = admin(session)
     for email in emails:
-        # A card *with* a CV: a filtri campaign (no completeness filter) reaches it
-        # regardless, but it must not also match a `missing_cv` stato campaign scheduled
+        # A card *with* a CV: a `filters` campaign (no completeness filter) reaches it
+        # regardless, but it must not also match a `missing_cv` status campaign scheduled
         # afterwards in the same test: the two would otherwise double-book the address.
         person(session, email)
     created = service.create(
@@ -160,7 +160,7 @@ def test_an_opt_out_between_two_rows_of_the_same_pass_is_skipped(
         queued = other.scalars(
             select(CampaignRecipient.email).where(
                 CampaignRecipient.campaign_id == campaign.id,
-                CampaignRecipient.status == "in_coda",
+                CampaignRecipient.status == "queued",
             )
         ).one()
         OptoutService(other).record(queued, "link", None)
@@ -182,7 +182,7 @@ def test_a_retry_keeps_the_row_until_the_third_failure(clean: Session) -> None: 
     flaky = RecordingCampaignSender([SendOutcome("retry")] * MAX_ATTEMPTS)
     for _ in range(MAX_ATTEMPTS - 1):
         run_tick(clean, flaky, SETTINGS, clock=clock, pause=NO_PAUSE)
-        assert rows(clean, campaign)["a@studio.it"].status == "in_coda"
+        assert rows(clean, campaign)["a@studio.it"].status == "queued"
     run_tick(clean, flaky, SETTINGS, clock=clock, pause=NO_PAUSE)
     row = rows(clean, campaign)["a@studio.it"]
     assert (row.status, row.attempts) == ("failed", MAX_ATTEMPTS)
@@ -195,7 +195,7 @@ def test_a_refused_key_stops_the_campaign_and_burns_nothing(
 ) -> None:
     """A 401/403 (a revoked or restricted key, a domain no longer verified) would be
     the same answer for every row: the pass stops at the first, leaves every row
-    `in_coda` with no attempt counted, and logs the status alone. Once the key is
+    `queued` with no attempt counted, and logs the status alone. Once the key is
     fixed, the next tick sends them all."""
     # `hub_engine`'s `upgrade_to_head` runs Alembic's `env.py`, whose `fileConfig`
     # disables every logger that already existed (the trap `test_member_api.py`
@@ -208,7 +208,7 @@ def test_a_refused_key_stops_the_campaign_and_burns_nothing(
         result = run_tick(clean, refused, SETTINGS, clock=clock, pause=NO_PAUSE)
     assert len(refused.sent) == 1
     assert (result.sent, result.failed) == (0, 0)
-    assert {(r.status, r.attempts) for r in rows(clean, campaign).values()} == {("in_coda", 0)}
+    assert {(r.status, r.attempts) for r in rows(clean, campaign).values()} == {("queued", 0)}
     clean.refresh(campaign)
     assert campaign.status == "sending"
     assert "Resend 401" in caplog.text and "studio.it" not in caplog.text
@@ -242,7 +242,7 @@ def test_two_campaigns_in_the_same_minute_reach_a_person_once(clean: Session) ->
     scheduled(clean, clock, "a@studio.it")
     service = CampaignService(clean, SETTINGS, clock=clock)
     who = admin(clean)
-    second = service.create(who.id, draft(nome="Seconda"))
+    second = service.create(who.id, draft(name="Seconda"))
     service.send_test(second.id, as_admin(who), RecordingCampaignSender())
     service.schedule(second.id, ScheduleRequest())
     recording = RecordingCampaignSender()
@@ -309,9 +309,9 @@ def test_to_campaign_cancelled_between_two_rows_ends_cancelled_not_sent(
     clean.refresh(campaign)
     assert campaign.status == "cancelled"
     sent = rows(clean, campaign)
-    inviata = [r for r in sent.values() if r.status == "sent"]
+    sent_rows = [r for r in sent.values() if r.status == "sent"]
     skipped = [r for r in sent.values() if r.status == "skipped"]
-    assert len(inviata) == 1
+    assert len(sent_rows) == 1
     assert [(r.status, r.reason) for r in skipped] == [("skipped", "campagna annullata")]
     assert len(recording.sent) == 1
 
@@ -371,7 +371,7 @@ def test_a_campaign_whose_candidates_raises_does_not_stop_a_second_due_campaign(
     assert [m.mail.to for m in recording.sent] == ["b@studio.it"]
     clean.refresh(broken)
     assert broken.status == "sending"
-    assert rows(clean, broken)["a@studio.it"].status == "in_coda"
+    assert rows(clean, broken)["a@studio.it"].status == "queued"
     clean.refresh(healthy)
     assert healthy.status == "sent"
 
@@ -380,7 +380,7 @@ def test_a_row_with_only_a_bare_resend_id_falls_back_to_the_tick_clock(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
     """REB-522: a tick that dies after Resend accepted a mail but before its own commit
-    leaves the row `in_coda` with none of the webhook's columns written yet. Once the
+    leaves the row `queued` with none of the webhook's columns written yet. Once the
     webhook lands (matched by the row's own `r` tag, independently of that dead tick),
     the next tick must trust it rather than call Resend again. `resend_id` set with no
     webhook timestamp at all is not a shape `webhook.py` produces today (every branch
@@ -392,7 +392,7 @@ def test_a_row_with_only_a_bare_resend_id_falls_back_to_the_tick_clock(
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.id == row.id)
-        .values(status="in_coda", resend_id="re_abc123", sent_at=None)
+        .values(status="queued", resend_id="re_abc123", sent_at=None)
     )
     clean.commit()
     recording = RecordingCampaignSender()
@@ -418,7 +418,7 @@ def test_a_row_with_only_a_first_click_is_stamped_with_the_click_time(
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.id == row.id)
-        .values(status="in_coda", resend_id="re_abc123", first_click_at=clicked_at, sent_at=None)
+        .values(status="queued", resend_id="re_abc123", first_click_at=clicked_at, sent_at=None)
     )
     clean.commit()
     recording = RecordingCampaignSender()
@@ -446,7 +446,7 @@ def test_a_row_with_two_webhook_moments_is_stamped_with_the_earliest(
         update(CampaignRecipient)
         .where(CampaignRecipient.id == row.id)
         .values(
-            status="in_coda",
+            status="queued",
             resend_id="re_abc123",
             first_click_at=clicked_at,
             delivered_at=delivered_at,
@@ -476,7 +476,7 @@ def test_to_row_the_webhook_already_marked_delivered_is_not_sent_twice(
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.id == row.id)
-        .values(status="in_coda", delivered_at=delivered_at, sent_at=None)
+        .values(status="queued", delivered_at=delivered_at, sent_at=None)
     )
     clean.commit()
     recording = RecordingCampaignSender()
@@ -518,7 +518,7 @@ def test_a_stamping_error_is_logged_and_the_send_still_happens(
     campaign = scheduled(clean, clock, "a@studio.it")
     with caplog.at_level(logging.ERROR):
         result = run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
-    assert result.sent == 1 and result.stampate == 0
+    assert result.sent == 1 and result.stamped == 0
     assert rows(clean, campaign)["a@studio.it"].status == "sent"
     assert "outcome stamping failed this tick: KeyError" in caplog.text
     assert "a@studio.it" not in caplog.text
@@ -745,13 +745,13 @@ def test_a_mail_the_webhook_confirms_clears_the_stall_only_if_it_left_after_the_
     assert (after.status, after.stalled_at, after.stalled_reason) == ("sending", *expected)
 
 
-SMALL_DAY = SETTINGS.model_copy(update={"resend_daily_share": 5, "campaign_daily_reserve": 2})
+SMALL_DAY = SETTINGS.model_copy(update={"resend_daily_quota": 5, "campaign_daily_reserve": 2})
 
 
 def test_to_list_past_the_daily_ceiling_sends_across_two_days_with_no_failed(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
-    """REB-779: 5 a day less 2 reserved leaves 3. The fourth row stays `in_coda` with no
+    """REB-779: 5 a day less 2 reserved leaves 3. The fourth row stays `queued` with no
     attempt spent, the page says which day the rest leaves, and the next morning's
     pass sends it and clears the note."""
     clock = Clock(NOW)
@@ -760,7 +760,7 @@ def test_to_list_past_the_daily_ceiling_sends_across_two_days_with_no_failed(
     sender = RecordingCampaignSender()
     first = run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
     assert (first.sent, first.failed, len(sender.sent)) == (3, 0, 3)
-    left = [r for r in rows(clean, campaign).values() if r.status == "in_coda"]
+    left = [r for r in rows(clean, campaign).values() if r.status == "queued"]
     assert len(left) == 2 and {r.attempts for r in left} == {0}
     held = CampaignService(clean, SMALL_DAY, clock=clock).detail(campaign.id).campaign
     assert held.status == "sending"
@@ -792,7 +792,7 @@ def test_the_ceiling_counts_every_campaign_by_the_day_in_rome(
     run_tick(clean, sender, SMALL_DAY, clock=clock, pause=NO_PAUSE)
     assert len(sender.sent) == 3
     states = [r.status for c in (first, second) for r in rows(clean, c).values()]
-    assert states.count("sent") == 3 and "failed" not in states and "in_coda" in states
+    assert states.count("sent") == 3 and "failed" not in states and "queued" in states
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.status == "sent")
@@ -813,9 +813,9 @@ def test_to_share_429_stops_the_campaign_without_spending_an_attempt(
     full = RecordingCampaignSender([SendOutcome("quota", detail="daily_quota_exceeded")])
     result = run_tick(clean, full, SETTINGS, clock=clock, pause=NO_PAUSE)
     assert (result.sent, result.failed, len(full.sent)) == (0, 0, 1)
-    assert {(r.status, r.attempts) for r in rows(clean, campaign).values()} == {("in_coda", 0)}
+    assert {(r.status, r.attempts) for r in rows(clean, campaign).values()} == {("queued", 0)}
     stalled = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campaign
-    assert (stalled.status, stalled.stalled_reason) == ("sending", STALLED_SHARE_DAY)
+    assert (stalled.status, stalled.stalled_reason) == ("sending", STALLED_QUOTA_DAY)
     clock.at += timedelta(minutes=1)
     run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
     done = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campaign
@@ -828,9 +828,9 @@ def test_to_monthly_share_says_so(clean: Session) -> None:  # noqa: F811  (fixtu
     full = RecordingCampaignSender([SendOutcome("quota", detail="monthly_quota_exceeded")])
     run_tick(clean, full, SETTINGS, clock=clock, pause=NO_PAUSE)
     stalled = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campaign
-    assert stalled.stalled_reason == STALLED_SHARE_MONTH
+    assert stalled.stalled_reason == STALLED_QUOTA_MONTH
 
 
 def test_to_reserve_that_takes_the_whole_share_is_refused_at_start_up() -> None:
     with pytest.raises(ValueError, match="REBASE_CAMPAIGN_DAILY_RESERVE"):
-        SETTINGS.model_validate({**SETTINGS.model_dump(), "resend_daily_share": 10})
+        SETTINGS.model_validate({**SETTINGS.model_dump(), "resend_daily_quota": 10})

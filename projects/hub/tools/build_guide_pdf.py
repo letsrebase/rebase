@@ -4,7 +4,7 @@
     uv run python projects/hub/tools/build_guide_pdf.py --check  # verify it
 
 The guide is a perk of the community, so it is not a public file: the hub's API serves
-it to a member behind their own session (`GET /api/hub/me/guida`), which is why the PDF
+it to a member behind their own session (`GET /api/hub/me/guide`), which is why the PDF
 lives inside `rebase_core` as package data rather than in the website's `dist`.
 Lorenzo's call on ORB-70, 2026-09-10: «la guida deve essere scaricabile dall'hub una
 volta registrati».
@@ -48,7 +48,7 @@ HUB = Path(__file__).resolve().parent.parent
 REPO = HUB.parent.parent
 TOOLS = HUB / "tools"
 
-CONTENT = HUB / "content" / "guida-primi-passi-freelance.md"
+CONTENT = HUB / "content" / "guide-first-steps-freelance.md"
 TEMPLATE = TOOLS / "guide.typ.template"
 PALETTE = REPO / "shared" / "brand" / "palette.css"
 FONT = REPO / "shared" / "brand" / "fonts" / "outfit-variable-latin.woff2"
@@ -65,7 +65,7 @@ OUTPUT = (
     / "src"
     / "rebase_core"
     / "perks"
-    / ("rebase-guida-primi-passi-freelance.pdf")
+    / ("rebase-guide-first-steps-freelance.pdf")
 )
 
 # The site is the only place a link in this file can point: a PDF has no origin, so a

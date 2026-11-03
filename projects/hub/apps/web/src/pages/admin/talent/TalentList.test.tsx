@@ -106,18 +106,18 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     await userEvent.type(screen.getByLabelText('Posizione'), 'CTO')
 
     await waitFor(() =>
-      expect(router.state.location.search).toMatchObject({ status: 'new', posizione: 'CTO' }),
+      expect(router.state.location.search).toMatchObject({ status: 'new', job_title: 'CTO' }),
     )
   })
 
   it('reads a filter and a state back out of a URL a link already carries, for Talenti', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
-    mount('/admin/talent?job_title=CTO&status=nuovo')
+    mount('/admin/talent?job_title=CTO&status=new')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByLabelText('Posizione')).toHaveValue('CTO')
   })
 
-  it('sends the page filter of Talenti as pagina_origine, never as origine, which is the row channel (REB-798)', async () => {
+  it('sends the page filter of Talenti as origin_page, never as origin, which is the row channel (REB-798)', async () => {
     const fetch = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
@@ -131,8 +131,8 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     )
     await waitFor(() => {
       const urls = fetch.mock.calls.map(([url]) => String(url))
-      expect(urls.some((url) => url.includes('pagina_origine=home'))).toBe(true)
-      expect(urls.some((url) => /[?&]origine=/.test(url))).toBe(false)
+      expect(urls.some((url) => url.includes('origin_page=home'))).toBe(true)
+      expect(urls.some((url) => /[?&]origin=/.test(url))).toBe(false)
     })
   })
 

@@ -32,8 +32,9 @@ primitive is generated there and nowhere else**: the repository has exactly one
 copy inside an application (REB-304). A project small enough to be a
 single artifact may be one package at its own root rather than growing an `apps/`
 directory with one entry in it, which is what
-`projects/website` is. `tooling/` holds the client-repo starter kit and the weekly
-Snyk report, and a directory is not created there before something real goes in it.
+`projects/website` is. `tooling/` holds the client-repo starter kit, the weekly
+Snyk report, the workflow kit and the English lint, and a directory is not created
+there before something real goes in it.
 
 ## The dependency rule, which is the whole reason these projects live together
 
@@ -88,7 +89,9 @@ nothing when you are not. Narrow to one project by passing its paths as argument
    diff selects before you trust it; `--install-hook` runs it on push.
 2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`, plus
    the workflow kit's own job (`kit · check and PR lint`): the PR's title and body
-   against `.github/workflow.json`, and the kit's copy against its manifest.
+   against `.github/workflow.json`, and the kit's copy against its manifest; and the
+   English lint (`english · identifiers and comments`, seconds), which reads every
+   project's names and comments and fails on Italian in them (§ Conventions).
 3. **`push` to `main`**: the heavy tier (the images), scoped by the
    same filters. It was unconditional until 2026-09-09, when the measurement said
    1,564 hosted minutes in eight days against a 2,000/month allowance on a private
@@ -241,10 +244,29 @@ omp, the kit's Linear gate refuses a card, comment or update that breaks the
   documentation or product surface, check whether a framework publishes it: a
   `@mcp.tool()` or a FastAPI `description=` is the product speaking.
 
-  Two things are grandfathered, deliberately. The dated design records under
-  `projects/pigrocrm/docs/superpowers/` are a verbatim record of decisions already
-  taken and are not retranslated: rewriting a record is how a record stops being one.
-  Anything written from now on, there included, is English.
+  **Identifiers are English too** (decided 2026-11-02, REB-897 to REB-904): database
+  tables, columns, enum values, constraint, index and policy names, REST paths, JSON
+  fields and query parameters, MCP tool and parameter names, CLI flags, environment
+  variables, module and file names, test names and comments. `docs/glossary.md` is the
+  one mapping from an Italian term to its English name; add the term there before you
+  invent a second one. `tooling/english-lint` enforces it on every pull request and in
+  preflight: it fails on an Italian word in an identifier or a file name and on a
+  comment or docstring written in Italian, and it never reads a string literal, which
+  is where the product's Italian lives. Run it with
+  `python3 tooling/english-lint/english_lint.py <paths>` (`--summary` for counts per
+  directory); its few exceptions, each with a reason, are in
+  `tooling/english-lint/allowlist.py`.
+
+  What stays as it is, deliberately, and is not retranslated: the dated design records
+  under `projects/pigrocrm/docs/superpowers/` and the rows of `docs/design/DECISIONS.md`
+  (rewriting a record is how a record stops being one), every Alembic revision up to
+  the rename's own, the template variables people type (`{{cliente.provincia}}`), the
+  keys of users' custom fields, the FatturaPA element names, and the few names that live
+  outside our systems: the browser routes in bookmarks and sent mails (the redirect
+  stubs, `/app/entra`'s 301), the API URLs of mails already sent (the hub's
+  unsubscribe, team answer and magic link), the referral parameter `?rif=` next to its
+  English name, and the indexed `/termini`. A new one of those is a decision, not a
+  shortcut. Anything written from now on, there included, is English.
 - A design decision that is a rule rather than a picture goes in
   `docs/design/DECISIONS.md`, as a row, with the date.
 - **The tracker is Linear, and using it is not optional.** Team `rebase`, issue

@@ -110,8 +110,8 @@ def answer_availability(
     settings: SettingsDep,
     tracker: TrackerDep,
 ) -> TeamAvailabilityOutcome:
-    """«Conferma» on `/hub/team/answer`: `{esito: "si" | "no"}` once recorded, and
-    `{esito: "invalid"}` for a token unknown, spent or expired, never saying which."""
+    """«Conferma» on `/hub/team/answer`: `{outcome: "yes" | "no"}` once recorded, and
+    `{outcome: "invalid"}` for a token unknown, spent or expired, never saying which."""
     spend_one(request)
     outcome = TeamAvailabilityService(session, settings=settings, tracker=tracker).answer(
         data.t, data.answer

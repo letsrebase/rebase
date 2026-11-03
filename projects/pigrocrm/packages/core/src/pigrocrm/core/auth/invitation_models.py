@@ -17,7 +17,7 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     of this table opens nothing.
 
     `accepted_at` and `revoked_at` staying on the row (never deleted) is what makes the
-    three dead states of a spent link -- scaduto, revocato, già usato -- tellable apart
+    three dead states of a spent link -- expired, revoked, already used -- tellable apart
     after the fact; both being `NULL` is the one property that makes a row "pending"
     for every other check. Expiry is not a column state, it is `expires_at < now()`, so
     an expired row is still inside the unique index below and still claims the address;

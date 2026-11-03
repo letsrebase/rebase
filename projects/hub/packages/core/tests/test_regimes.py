@@ -16,14 +16,14 @@ from rebase_core.regimes import (
 @pytest.mark.parametrize(
     ("kind", "regime", "text", "label"),
     [
-        ("framework", "partita_iva", "framework-agreement", "Contratto quadro"),
+        ("framework", "vat_registered", "framework-agreement", "Contratto quadro"),
         (
             "framework",
             "occasional",
             "framework-agreement-occasional",
             "Contratto quadro per prestazioni occasionali",
         ),
-        ("letter", "partita_iva", "engagement-letter", "Lettera di incarico"),
+        ("letter", "vat_registered", "engagement-letter", "Lettera di incarico"),
         (
             "letter",
             "occasional",
@@ -40,7 +40,7 @@ def test_kind_and_regime_name_one_text_and_one_type(
 
 
 def test_the_two_regimes_and_nothing_else() -> None:
-    assert REGIMES == (VAT_REGISTERED, OCCASIONAL) == ("partita_iva", "occasional")
+    assert REGIMES == (VAT_REGISTERED, OCCASIONAL) == ("vat_registered", "occasional")
     assert as_regime("occasional") == OCCASIONAL
     for wrong in ("forfettario", "", "Occasionale"):
         with pytest.raises(ValueError):
@@ -53,11 +53,11 @@ def test_the_two_regimes_and_nothing_else() -> None:
 
 def test_a_documents_file_name_carries_its_own_texts_name() -> None:
     """REB-687: the two families never share a file name."""
-    assert document_stem("framework", "partita_iva", None, "1.0") == "contratto-quadro-v1.0"
+    assert document_stem("framework", "vat_registered", None, "1.0") == "contratto-quadro-v1.0"
     assert document_stem("framework", "occasional", None, "1.0") == (
         "contratto-quadro-occasionale-v1.0"
     )
-    assert document_stem("letter", "partita_iva", "2026-001", "1.1") == (
+    assert document_stem("letter", "vat_registered", "2026-001", "1.1") == (
         "lettera-di-incarico-2026-001"
     )
     assert document_stem("letter", "occasional", "2026-002", "1.0") == (

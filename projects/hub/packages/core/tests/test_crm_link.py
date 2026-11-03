@@ -44,7 +44,7 @@ def _lead_answer(*, created: bool = True) -> bytes:
             "person_id": str(uuid4()),
             "deal_id": str(DEAL),
             "deal_url": DEAL_URL,
-            "creato": created,
+            "created": created,
         }
     ).encode()
 
@@ -173,23 +173,23 @@ def test_a_linked_request_keeps_the_deal_and_sends_the_body_of_the_spec(clean: S
     assert (method, url) == ("PUT", f"{LEAD_URL}{company.id}")
     assert headers["Authorization"] == f"Bearer {TOKEN}"
     body = _body(http)
-    assert set(body) == {"company", "contact_person", "deal", "deal_id"}
+    assert set(body) == {"company", "contact", "deal", "deal_id"}
     assert body["company"] == "Acme S.r.l."
     assert body["deal_id"] is None
-    assert body["contact_person"] == {
-        "nome": "Mario",
+    assert body["contact"] == {
+        "first_name": "Mario",
         "last_name": "Rossi",
         "email": "mario@acme.it",
         "phone": "+39 333 1234567",
         "linkedin_url": None,
     }
     deal = body["deal"]
-    assert set(deal) == {"nome", "valore_previsto", "data_chiusura_prevista", "note"}
-    assert deal["nome"] == "Acme S.r.l.: Sviluppatore backend"
+    assert set(deal) == {"name", "expected_value", "expected_close_date", "notes"}
+    assert deal["name"] == "Acme S.r.l.: Sviluppatore backend"
     # 400 a day, 3 days a week, 12 weeks, 2 people.
-    assert deal["valore_previsto"] == "28800.00"
-    assert deal["data_chiusura_prevista"] == "2026-12-01"
-    note = deal["note"]
+    assert deal["expected_value"] == "28800.00"
+    assert deal["expected_close_date"] == "2026-12-01"
+    note = deal["notes"]
     assert "Progetto, come l'ha scritto l'azienda:" in note
     assert "Un gestionale." in note
     assert "Bozza AI, da rivedere" in note
@@ -264,7 +264,7 @@ def test_the_draft_is_made_once_and_kept_for_every_retry(clean: Session) -> None
 
     assert second.status == "linked"
     assert len(llm.requests) == 1  # the cap is not spent again
-    assert _body(http, 1)["deal"]["nome"] == "Acme S.r.l.: Sviluppatore backend"
+    assert _body(http, 1)["deal"]["name"] == "Acme S.r.l.: Sviluppatore backend"
 
 
 @pytest.mark.parametrize(
@@ -282,9 +282,9 @@ def test_without_a_draft_the_filing_goes_ahead(clean: Session, llm: LlmCall | No
     assert _service(clean, http, llm).link(company.id).status == "linked"
 
     deal = _body(http)["deal"]
-    assert deal["nome"] == "Acme S.r.l.: Backend developer"
-    assert deal["valore_previsto"] is None
-    assert "Nessuna bozza AI" in deal["note"]
+    assert deal["name"] == "Acme S.r.l.: Backend developer"
+    assert deal["expected_value"] is None
+    assert "Nessuna bozza AI" in deal["notes"]
     assert _row(clean, company.id).crm_draft is None  # asked again at the next attempt
 
 
@@ -297,7 +297,7 @@ def test_a_cap_reached_files_without_a_draft(clean: Session) -> None:
 
     http = RecordedPigro([OK])
     assert _service(clean, http, Capped()).link(company.id).status == "linked"
-    assert "Nessuna bozza AI" in _body(http)["deal"]["note"]
+    assert "Nessuna bozza AI" in _body(http)["deal"]["notes"]
 
 
 @pytest.mark.parametrize(
@@ -318,7 +318,7 @@ def test_the_value_needs_every_input(
 
     _service(clean, http, RecordingCall([_draft_response(**draft)])).link(company.id)
 
-    assert _body(http)["deal"]["valore_previsto"] == expected
+    assert _body(http)["deal"]["expected_value"] == expected
 
 
 def test_a_value_that_does_not_fit_the_column_is_dropped(clean: Session) -> None:
@@ -330,7 +330,7 @@ def test_a_value_that_does_not_fit_the_column_is_dropped(clean: Session) -> None
 
     _service(clean, http, RecordingCall([_draft_response(**DRAFT)])).link(company.id)
 
-    assert _body(http)["deal"]["valore_previsto"] is None
+    assert _body(http)["deal"]["expected_value"] is None
 
 
 def test_the_closing_date_is_the_start_only_when_it_is_in_the_future(clean: Session) -> None:
@@ -340,8 +340,8 @@ def test_the_closing_date_is_the_start_only_when_it_is_in_the_future(clean: Sess
     _service(clean, http).link(future.id)
     _service(clean, http).link(past.id)
 
-    assert _body(http, 0)["deal"]["data_chiusura_prevista"] == "2026-12-01"
-    assert _body(http, 1)["deal"]["data_chiusura_prevista"] is None
+    assert _body(http, 0)["deal"]["expected_close_date"] == "2026-12-01"
+    assert _body(http, 1)["deal"]["expected_close_date"] is None
 
 
 def test_the_deal_name_is_cut_to_the_crms_limit(clean: Session) -> None:
@@ -354,7 +354,7 @@ def test_the_deal_name_is_cut_to_the_crms_limit(clean: Session) -> None:
 
     body = _body(http)
     assert len(body["company"]) == 200
-    assert body["deal"]["nome"] == ("A" * 200 + ": " + "B" * 160)[:255]
+    assert body["deal"]["name"] == ("A" * 200 + ": " + "B" * 160)[:255]
 
 
 @pytest.mark.parametrize(
@@ -424,7 +424,7 @@ def test_to_contact_person_with_no_name_is_an_error_not_to_refusal(clean: Sessio
     company = _create(clean)
     user = clean.get(User, company.user_id)
     assert user is not None
-    user.nome = " "
+    user.first_name = " "
     clean.commit()
     http = RecordedPigro([OK])
 
@@ -540,7 +540,7 @@ def test_a_failure_in_one_request_does_not_stop_the_round(clean: Session) -> Non
 
 
 def test_retry_by_an_admin_asks_to_refused_request_again_and_signs_it(clean: Session) -> None:
-    admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     clean.add(admin)
     company = _create(clean)
     company.crm_status = "rejected"
@@ -586,7 +586,7 @@ def test_linking_to_another_deal_sends_the_deal_and_asks_no_draft(clean: Session
 
 
 def test_a_refused_relink_changes_nothing_stored_and_says_why(clean: Session) -> None:
-    admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+    admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     clean.add(admin)
     company = _create(clean)
     kept = uuid4()

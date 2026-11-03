@@ -38,8 +38,8 @@ router = APIRouter(
     dependencies=[Depends(get_actor)],
 )
 
-# The sidebar's azienda (REB-630, spec 2026-10-03 §1.9): one more predicate on every
-# figure, never a change in its arithmetic. Omitted, the figures of every azienda add up,
+# The sidebar's legal entity (REB-630, spec 2026-10-03 §1.9): one more predicate on every
+# figure, never a change in its arithmetic. Omitted, the figures of every legal entity add up,
 # which is what «tutte» shows; the answer echoes it, `null` for «tutte».
 LegalEntityQuery = Annotated[
     UUID | None,

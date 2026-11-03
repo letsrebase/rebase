@@ -20,7 +20,7 @@ function RequestRow({ item }: { item: TeamRequestListItem }) {
       <TableCell>
         <Badge variant="pill">{TEAM_REQUEST_STATE_LABELS[item.status] ?? item.status}</Badge>
       </TableCell>
-      <TableCell className="text-right">{`${item.self_talents} sì su ${item.total_talents}`}</TableCell>
+      <TableCell className="text-right">{`${item.yes_talents} sì su ${item.total_talents}`}</TableCell>
     </TableRow>
   )
 }
@@ -29,7 +29,7 @@ function RequestRow({ item }: { item: TeamRequestListItem }) {
  *  the public page and from the cloud, newest first, with how many of the talents asked
  *  said yes. The state pills are «Talenti»'s and «Match»'s, carried in the URL
  *  (`router.tsx`); the list walks the API's cursor a page at a time, as «Talenti» does. */
-export function AdminRequestsTeam() {
+export function AdminTeamRequests() {
   const search = useSearch({ from: '/signedIn/admin/team' })
   const navigate = useNavigate()
 

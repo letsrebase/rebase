@@ -88,7 +88,7 @@ def test_migration_0029_backfills_only_what_is_not_a_guess_and_runs_again() -> N
                 "before_grant": _proposal(connection, solo, "cloud", "3 days"),
                 "both": _proposal(connection, both, "cloud", "1 hour"),
                 "attempt": _proposal(connection, solo, "cloud", "1 hour", "llm_unavailable"),
-                "public": _proposal(connection, None, "public", "1 hour"),
+                "public": _proposal(connection, None, "pubblico", "1 hour"),
                 "admin": _proposal(connection, admin, "admin", "1 hour"),
             }
         for _ in range(2):  # a retried deploy runs the same revision again
@@ -114,6 +114,7 @@ def test_migration_0029_backfills_only_what_is_not_a_guess_and_runs_again() -> N
             command.upgrade(config, "head")
             command.downgrade(config, "0028")
         command.upgrade(config, "head")
+        command.downgrade(config, "0029")  # the schema this revision was written for
         with engine.begin() as connection:
             # The revision again over the column it already added.
             connection.execute(text("UPDATE alembic_version SET version_num = '0028'"))

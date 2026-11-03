@@ -18,8 +18,8 @@ type TaskCreateBody = components['schemas']['TaskCreate']
 export type TaskUpdateBody = components['schemas']['TaskUpdate']
 
 export function useCalendarMonth(month: string) {
-  // The sidebar's azienda (REB-625): the hours through their deal and the invoices
-  // falling due by their own column; the commitments have no azienda and stay.
+  // The sidebar's legal entity (REB-625): the hours through their deal and the invoices
+  // falling due by their own column; the commitments have no legal entity and stay.
   const { selected } = useLegalEntity()
   return useQuery({
     queryKey: queryKeys.calendarMonth(month, selected),

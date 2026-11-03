@@ -60,15 +60,15 @@ export function useWizardAnalytics(kind: WizardKind, search: string) {
  *  `'admin' | 'member'` and always send it"), done here because it was already on this
  *  exact code path in this diff. */
 export function useIdentify(
-  person: Pick<Me, 'id' | 'email' | 'nome'> | null | undefined,
+  person: Pick<Me, 'id' | 'email' | 'first_name'> | null | undefined,
   role: 'admin' | 'member' | undefined,
 ): void {
   // Primitives rather than the object: the query hands a new object on every refetch
   // and the person has not changed.
   const id = person?.id
   const email = person?.email
-  const nome = person?.nome
+  const firstName = person?.first_name
   useEffect(() => {
-    if (id) identifyUser(id, { email, nome, role })
-  }, [id, email, nome, role])
+    if (id) identifyUser(id, { email, first_name: firstName, role })
+  }, [id, email, firstName, role])
 }

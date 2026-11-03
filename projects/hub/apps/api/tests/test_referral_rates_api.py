@@ -55,7 +55,7 @@ def _admin(api_session: Session) -> None:
     """The admin who edits the rates, reused, as an admin, when an earlier file left one."""
     admin = api_session.scalar(select(User).where(func.lower(User.email) == ADMIN_EMAIL))
     if admin is None:
-        api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+        api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     else:
         admin.role = "admin"
     api_session.commit()
@@ -63,7 +63,7 @@ def _admin(api_session: Session) -> None:
 
 def _login(client: TestClient, sender: RecordingSender) -> None:
     assert client.post("/api/hub/auth/link", json={"email": ADMIN_EMAIL}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 

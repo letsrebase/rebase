@@ -33,7 +33,7 @@ describe('the La guida page', () => {
         total_members: 2,
         last_7_days: 3,
         recent: [
-          { id: 'd-1', freelancer_id: 'f-1', nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', downloaded_at: '2026-09-11T09:00:00Z' },
+          { id: 'd-1', freelancer_id: 'f-1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', downloaded_at: '2026-09-11T09:00:00Z' },
         ],
       }),
     )

@@ -79,7 +79,7 @@ def test_the_totals_count_verdicts_costs_and_what_went_wrong() -> None:
     assert (totals["contradicted"], totals["contradicted_profiles"]) == (1, 1)
     assert (totals["invented"], totals["leaks_rule"], totals["leaks"]) == (2, 1, 1)
     assert (totals["failed"], totals["judged"], totals["guard_failures"]) == (1, 2, 1)
-    assert (totals["anni_checked"], totals["experience_years_ok"]) == (2, 1)
+    assert (totals["experience_years_checked"], totals["experience_years_ok"]) == (2, 1)
     assert (totals["cost_eur"], totals["judge_cost_eur"]) == ("0.03", "0.06")
     assert (totals["latency_ms_avg"], totals["judge_latency_ms_avg"]) == (1000, 2000)
 
@@ -95,7 +95,11 @@ def test_a_run_is_compared_with_its_baseline_on_the_people_both_wrote() -> None:
     measures = table["measures"]
     assert measures["supported_rate"] == {"this": 1.0, "baseline": 0.75, "verdict": "meglio"}
     assert measures["contradicted_rate"]["verdict"] == "meglio"
-    assert measures["anni_ok_rate"] == {"this": 1.0, "baseline": 0.0, "verdict": "meglio"}
+    assert measures["experience_years_ok_rate"] == {
+        "this": 1.0,
+        "baseline": 0.0,
+        "verdict": "meglio",
+    }
     assert measures["leaks"] == {"this": 0.0, "baseline": 1.0, "verdict": "meglio"}
     assert measures["guard_failures"]["verdict"] == "uguale"
     assert compare(baseline, candidate)["measures"]["supported_rate"]["verdict"] == "peggio"

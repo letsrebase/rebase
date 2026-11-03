@@ -15,7 +15,7 @@ import json
 import re
 from pathlib import Path
 
-from rebase_core.perks import GUIDE_FILENAME, GUIDE_PATH, guide_bytes
+from rebase_core.perks import GUIDE_PATH, guide_bytes
 
 REPO = Path(__file__).resolve().parents[5]
 LOCK = json.loads((REPO / "projects/hub/tools/guide-pdf.lock.json").read_text(encoding="utf-8"))
@@ -28,7 +28,7 @@ SIZE_BUDGET = 2 * 1024 * 1024
 
 def test_the_file_is_the_one_its_lock_describes() -> None:
     assert str(GUIDE_PATH.relative_to(REPO)) == LOCK["output"]
-    assert GUIDE_PATH.name == GUIDE_FILENAME
+    assert GUIDE_PATH.name == Path(LOCK["output"]).name
     assert len(PDF) == LOCK["bytes"]
     assert hashlib.sha256(PDF).hexdigest() == LOCK["sha256"]
 

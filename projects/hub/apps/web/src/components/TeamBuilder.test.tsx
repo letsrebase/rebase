@@ -20,12 +20,12 @@ const DESCRIPTION =
 const PROPOSAL = {
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
   summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-  location: { locale: false, dove: 'Brescia' },
+  location: { on_site: false, place: 'Brescia' },
   team: [
     {
-      posizione: 1,
+      position: 1,
       freelancer_id: '9d0c1a2b-1111-4111-8111-000000000001',
-      nome: 'Ada',
+      first_name: 'Ada',
       last_name: 'Lovelace',
       role: 'Backend developer',
       reasoning: 'Ha costruito le API di pagamento di due banche.',
@@ -44,9 +44,9 @@ const PROPOSAL = {
       band: { min: 400, max: 500 },
     },
     {
-      posizione: 2,
+      position: 2,
       freelancer_id: '9d0c1a2b-2222-4222-8222-000000000002',
-      nome: 'Grace',
+      first_name: 'Grace',
       last_name: 'Hopper',
       role: 'Frontend developer',
       reasoning: 'Porta React e la cura dell’accessibilità.',
@@ -131,7 +131,7 @@ describe('TeamBuilder, the box', () => {
     // answer to whoever lives there (REB-598).
     await user.click(screen.getByRole('button', { name: 'Un FDE nel team di un cliente' }))
     expect(value()).toContain('forward deployed engineer')
-    expect(value()).toContain('customer')
+    expect(value()).toContain('cliente')
     expect(value()).not.toContain('Torino')
     expect(value()).not.toContain('designer')
     expect(value().length).toBeGreaterThanOrEqual(40)

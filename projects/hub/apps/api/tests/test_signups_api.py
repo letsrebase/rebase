@@ -25,7 +25,7 @@ from rebase_core.conversions import hashed_email
 def _row(session: Session, email: str) -> tuple[str | None, str | None, str | None]:
     return tuple(  # type: ignore[return-value]
         session.execute(
-            text("SELECT nome, cognome, linkedin_url FROM signups WHERE email = :email"),
+            text("SELECT first_name, last_name, linkedin_url FROM signups WHERE email = :email"),
             {"email": email},
         ).one()
     )
@@ -33,7 +33,7 @@ def _row(session: Session, email: str) -> tuple[str | None, str | None, str | No
 
 def _body(email: str, **extra: object) -> dict[str, object]:
     """What the landing posts: the three required answers, plus whatever the test adds."""
-    return {"email": email, "nome": "Ada", "last_name": "Lovelace", **extra}
+    return {"email": email, "first_name": "Ada", "last_name": "Lovelace", **extra}
 
 
 def test_a_visitor_with_no_account_can_sign_up(client: TestClient, api_session: Session) -> None:
@@ -68,7 +68,8 @@ def test_posting_someone_elses_address_discloses_nothing_about_them(
         json=_body("ada@studio.it", linkedin_url="https://www.linkedin.com/in/ada"),
     )
     probe = client.post(
-        "/api/community/signups", json={"email": "ada@studio.it", "nome": "x", "last_name": "y"}
+        "/api/community/signups",
+        json={"email": "ada@studio.it", "first_name": "x", "last_name": "y"},
     )
     assert (probe.status_code, probe.json()) == (first.status_code, first.json())
     assert "Lovelace" not in probe.text and "linkedin" not in probe.text
@@ -126,7 +127,7 @@ def test_a_signup_without_a_name_is_a_422(client: TestClient) -> None:
     # FastAPI's own request-validation shape, the one the form's field highlighting
     # reads .
     missing = {error["loc"][-1] for error in response.json()["detail"]}
-    assert {"nome", "last_name"} <= missing
+    assert {"first_name", "last_name"} <= missing
 
 
 def test_a_profile_that_is_not_on_linkedin_is_a_422_not_a_row(

@@ -40,7 +40,7 @@ def _settings(**overrides: str) -> Settings:
 def admin_with_key(factory: sessionmaker[Session]) -> Iterator[User]:
     """An admin row, and the Anthropic key saved through the service the page uses."""
     with factory() as session:
-        user = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+        user = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
         session.add(user)
         session.commit()
         AiConfigService(session, _settings()).save_key(user.id, "anthropic", SECRET)
@@ -79,8 +79,8 @@ async def test_list_ai_config_has_no_key_and_no_ciphertext(
         "crm_lead",
     }
     # REB-861: the configuration's trail, with who did it and never the key.
-    assert [(e["kind"], e["admin_name"]) for e in body["registro"]] == [("ai_key", "Ivan Sala")]
-    assert body["registro"][0]["payload"]["key_hint"] == "configurata, finisce con …abcd"
+    assert [(e["kind"], e["admin_name"]) for e in body["trail"]] == [("ai_key", "Ivan Sala")]
+    assert body["trail"][0]["payload"]["key_hint"] == "configurata, finisce con …abcd"
 
 
 async def test_the_trail_is_the_last_fifty_entries_newest_first(
@@ -114,7 +114,7 @@ async def test_the_trail_is_the_last_fifty_entries_newest_first(
     async with Client(build_server(factory, lambda: IVAN, settings=_settings())) as client:
         body = _payload(await client.call_tool("list_ai_config", {}))
 
-    register = body["registro"]
+    register = body["trail"]
     assert len(register) == 50
     assert register[0]["kind"] == "cards_regenerated"
     assert register[0]["payload"]["source"] == "cli" and register[0]["admin_name"] == "Ivan Sala"

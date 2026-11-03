@@ -37,7 +37,7 @@ means the second half belongs in the body.
 
 - Good: `Drop the stale legacy database from the CRM host`
 - Good: `Make the CV optional in the wizard and the member area`
-- Bad: `The dead confermata -> bozza transition is gone from both tables` (the
+- Bad: `The dead confirmed -> draft transition is gone from both tables` (the
   end state, not the work; it reads as a riddle to anyone who did not write it)
 - Bad: a two-hundred-character sentence that is the whole body, in the title
 

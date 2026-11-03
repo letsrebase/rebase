@@ -41,7 +41,7 @@ LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 _SEARCH_COLUMNS = (
     Company.company_name,
-    User.nome,
+    User.first_name,
     User.last_name,
     User.email,
     Company.project,
@@ -50,7 +50,7 @@ _SEARCH_COLUMNS = (
 # The three fields a request's referente shares with its `users` row (REB-281): an
 # override of one of these lands on the identity, never on the row, the same split
 # `rebase_core.freelancers`' own `_ADMIN_IDENTITY_FIELDS` keeps for a freelancer card.
-_ADMIN_IDENTITY_FIELDS = ("nome", "last_name", "linkedin_url")
+_ADMIN_IDENTITY_FIELDS = ("first_name", "last_name", "linkedin_url")
 
 
 def _to_read(row: Company, user: User) -> CompanyRead:
@@ -60,7 +60,7 @@ def _to_read(row: Company, user: User) -> CompanyRead:
     return CompanyRead(
         id=row.id,
         company_name=row.company_name,
-        contact_person=f"{user.nome} {user.last_name}".strip(),
+        contact_person=f"{user.first_name} {user.last_name}".strip(),
         email=user.email,
         phone=user.phone,
         requested_role=row.requested_role,
@@ -130,7 +130,7 @@ class CompanyService:
         self, data: CompanyCreate, *, deal_id: UUID | None = None
     ) -> tuple[CompanyRead, bool]:
         """Every request is a row: a company has several projects, and two requests a
-        week apart are two things to answer, not one to merge. The referente's `users`
+        week apart are two things to answer, not one to merge. The requester's `users`
         row is get-or-created by lowercased email (REB-278), from the two fields the
         wizard collects (REB-279, decision (f)) plus, since REB-380, a phone number,
         and left as it was found on a repeat request: the answer's `contact_person`/`email`
@@ -146,7 +146,7 @@ class CompanyService:
         user = UserService(self.session).get_or_create(
             email, data.contact_first_name, data.contact_last_name, phone=data.phone
         )
-        richiedente_existing = (
+        requester_existing = (
             self.session.scalar(select(Company.id).where(Company.user_id == user.id).limit(1))
             is not None
         )
@@ -178,7 +178,7 @@ class CompanyService:
         # attribution is ever made, from a first or a returning request alike.
         ReferralService(self.session).link_team_request(row.id, user, own_code=data.ref)
         self.session.commit()
-        return _to_read(row, user), richiedente_existing
+        return _to_read(row, user), requester_existing
 
     def create_by_admin(
         self, data: CompanyAdminCreate, admin_id: UUID, *, source: str

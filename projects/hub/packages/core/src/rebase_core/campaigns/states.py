@@ -24,12 +24,12 @@ ENTITY = "campaign"
 
 JOURNEY_STATES: dict[str, str] = {
     "lead": "Lead senza profilo",
-    "scheda_vuota_nuovi": "Scheda vuota, mai entrati",
-    "scheda_vuota_entrati": "Scheda vuota, già entrati",
+    "card_empty_new": "Scheda vuota, mai entrati",
+    "card_empty_signed_in": "Scheda vuota, già entrati",
     "missing_cv": "Manca solo il CV",
     "complete": "Profilo completo",
     "pigro_empty": "Spazio Pigro vuoto",
-    "azienda_aperta": "Azienda con richiesta aperta",
+    "company_open": "Azienda con richiesta aperta",
 }
 PHASE_ONE_STATES = tuple(key for key in JOURNEY_STATES if key != "pigro_empty")
 OPEN_COMPANY_STATES = ("new", "contacted", "in_progress")
@@ -43,7 +43,7 @@ class Candidate:
     """One person a list may reach, before any exclusion. `email` is lowercase."""
 
     email: str
-    nome: str | None
+    name: str | None
     kind: str
     user_id: UUID | None = None
     freelancer_id: UUID | None = None
@@ -52,11 +52,11 @@ class Candidate:
     pigro_slugs: tuple[str, ...] = ()
 
 
-def display_name(nome: str | None) -> str | None:
+def display_name(name: str | None) -> str | None:
     """The name as a greeting reads it: stripped, and «giulia» or «STEFANIA» put in
     title case, since that is how the form stored what somebody typed. A name already
     mixed-case is theirs and stays."""
-    value = (nome or "").strip()
+    value = (name or "").strip()
     if not value:
         return None
     if value.islower() or value.isupper():
@@ -70,12 +70,12 @@ _ANY_CV_SIZE = 0  # a stand-in non-None value: only the other three fields matte
 def card_state(
     cv_size: int | None,
     rate: Decimal | None,
-    posizione: str | None,
+    job_title: str | None,
     remote: str | None,
 ) -> CardState:
-    if card_is_complete(cv_size, rate, posizione, remote):
+    if card_is_complete(cv_size, rate, job_title, remote):
         return "complete"
-    others_complete = card_is_complete(_ANY_CV_SIZE, rate, posizione, remote)
+    others_complete = card_is_complete(_ANY_CV_SIZE, rate, job_title, remote)
     if cv_size is None and others_complete:
         return "missing_cv"
     return "card"
@@ -84,9 +84,9 @@ def card_state(
 def candidates_for_state(session: Session, status: str) -> list[Candidate]:
     if status == "lead":
         return _leads(session)
-    if status in ("scheda_vuota_nuovi", "scheda_vuota_entrati", "missing_cv", "complete"):
+    if status in ("card_empty_new", "card_empty_signed_in", "missing_cv", "complete"):
         return _cards(session, status)
-    if status == "azienda_aperta":
+    if status == "company_open":
         return _companies(session)
     if status == "pigro_empty":
         raise ValidationFailed(ENTITY, "journey_status", PIGRO_LATER)
@@ -100,19 +100,19 @@ def _leads(session: Session) -> list[Candidate]:
     addresses = select(card_emails().c.email)
     signup_user = select(User.id).where(func.lower(User.email) == func.lower(Signup.email))
     rows = session.execute(
-        select(Signup.id, Signup.email, Signup.nome, signup_user.scalar_subquery())
+        select(Signup.id, Signup.email, Signup.first_name, signup_user.scalar_subquery())
         .where(func.lower(Signup.email).not_in(addresses), ~card_by_linkedin())
         .order_by(Signup.created_at, Signup.id)
     ).all()
     return [
         Candidate(
             email=email.lower(),
-            nome=display_name(nome),
+            name=display_name(name),
             kind="lead",
             user_id=user_id,
             signup_id=signup_id,
         )
-        for signup_id, email, nome, user_id in rows
+        for signup_id, email, name, user_id in rows
     ]
 
 
@@ -123,7 +123,7 @@ def _journey_state(status: str) -> ColumnElement[bool]:
     same answer for every combination of the four being there or not."""
     others = and_(
         Freelancer.daily_rate.is_not(None),
-        Freelancer.posizione.is_not(None),
+        Freelancer.job_title.is_not(None),
         Freelancer.remote.is_not(None),
     )
     has_cv = Freelancer.cv_size.is_not(None)
@@ -132,12 +132,12 @@ def _journey_state(status: str) -> ColumnElement[bool]:
     if status == "missing_cv":
         return and_(~has_cv, others)
     entered = exists(select(Login.id).where(Login.user_id == Freelancer.user_id))
-    return and_(~others, entered if status == "scheda_vuota_entrati" else ~entered)
+    return and_(~others, entered if status == "card_empty_signed_in" else ~entered)
 
 
 def _cards(session: Session, status: str) -> list[Candidate]:
     rows = session.execute(
-        select(Freelancer.id, User.id, User.email, User.nome)
+        select(Freelancer.id, User.id, User.email, User.first_name)
         .join(User, User.id == Freelancer.user_id)
         .where(Freelancer.deleted_at.is_(None), _journey_state(status))
         .order_by(Freelancer.created_at, Freelancer.id)
@@ -145,29 +145,29 @@ def _cards(session: Session, status: str) -> list[Candidate]:
     return [
         Candidate(
             email=email.lower(),
-            nome=display_name(nome),
+            name=display_name(name),
             kind="freelancer",
             user_id=user_id,
             freelancer_id=freelancer_id,
         )
-        for freelancer_id, user_id, email, nome in rows
+        for freelancer_id, user_id, email, name in rows
     ]
 
 
 def _companies(session: Session) -> list[Candidate]:
     rows = session.execute(
-        select(Company.id, User.id, User.email, User.nome)
+        select(Company.id, User.id, User.email, User.first_name)
         .join(User, User.id == Company.user_id)
         .where(Company.deleted_at.is_(None), Company.status.in_(OPEN_COMPANY_STATES))
         .order_by(Company.created_at, Company.id)
     ).all()
     by_user: dict[UUID, Candidate] = {}
-    for company_id, user_id, email, nome in rows:
+    for company_id, user_id, email, name in rows:
         known = by_user.get(user_id)
         ids = (*known.company_ids, company_id) if known else (company_id,)
         by_user[user_id] = Candidate(
             email=email.lower(),
-            nome=display_name(nome),
+            name=display_name(name),
             kind="company",
             user_id=user_id,
             company_ids=ids,

@@ -21,7 +21,7 @@ SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
 
 def campaign(**fields: object) -> Campaign:
     values: dict[str, object] = {
-        "nome": "Manca il CV",
+        "name": "Manca il CV",
         "slug": "c-2026-09-25-manca-cv",
         "source": "status",
         "journey_status": "missing_cv",
@@ -37,7 +37,7 @@ def campaign(**fields: object) -> Campaign:
 
 
 TARGET = RenderTarget(
-    email="ada@studio.it", nome="Ada", code="ab12cd34", token="tok", recipient_id="r-1"
+    email="ada@studio.it", name="Ada", code="ab12cd34", token="tok", recipient_id="r-1"
 )
 
 
@@ -49,7 +49,7 @@ def test_the_name_goes_in_and_a_missing_one_leaves_a_clean_greeting() -> None:
 def test_the_button_is_tracked_with_the_campaign_the_action_and_the_person() -> None:
     mail = render(campaign(), TARGET, SETTINGS).mail
     url = (
-        "https://letsrebase.com/hub/login?utm_source=email&utm_medium=campagna"
+        "https://letsrebase.com/hub/login?utm_source=email&utm_medium=campaign"
         "&utm_campaign=c-2026-09-25-manca-cv&utm_content=cv&utm_term=ab12cd34"
     )
     assert url in mail.text
@@ -66,8 +66,8 @@ def test_text_is_escaped_in_html_and_kept_in_text() -> None:
 def test_every_mail_carries_the_one_click_unsubscribe() -> None:
     rendered = render(campaign(), TARGET, SETTINGS)
     page, api = unsubscribe_urls("tok", SETTINGS)
-    assert page == "https://letsrebase.com/hub/disiscrizione?t=tok"
-    assert api == "https://letsrebase.com/api/hub/campagne/disiscrizione?t=tok"
+    assert page == "https://letsrebase.com/hub/unsubscribe?t=tok"
+    assert api == "https://letsrebase.com/api/hub/campaigns/unsubscribe?t=tok"
     assert rendered.headers == {
         "List-Unsubscribe": f"<{api}>",
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

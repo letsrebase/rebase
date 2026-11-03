@@ -28,11 +28,15 @@ ROUTES = [
 
 @pytest.fixture
 def admin(client: TestClient, api_session: Session) -> Iterator[User]:
-    row = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+    row = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
     api_session.add(row)
     api_session.commit()
     client.app.dependency_overrides[get_admin] = lambda: AdminRead(  # type: ignore[attr-defined]
-        id=row.id, email=row.email, nome=row.nome, active=True, created_at=datetime.now(UTC)
+        id=row.id,
+        email=row.email,
+        first_name=row.first_name,
+        active=True,
+        created_at=datetime.now(UTC),
     )
     yield row
     api_session.rollback()

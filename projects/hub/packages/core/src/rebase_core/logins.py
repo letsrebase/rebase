@@ -9,8 +9,8 @@ the page still reads as "how many of the community's cards have logged in". The 
 `PerkService.guide_stats` (ORB-156), so the two admin pages read the same way.
 
 REB-313 turns `recent` from a hardcoded top 20 into a genuinely searchable,
-cursor-paginated sub-list, the same search-and-cursor shape REB-285 gives Talenti and
-Aziende -- newest first with no term, best-match first once `q` narrows it by the
+cursor-paginated sub-list, the same search-and-cursor shape REB-285 gives Talents and
+Companies -- newest first with no term, best-match first once `q` narrows it by the
 person's `nome`/`last_name`/`email`. The four aggregate counters beside it (`total`,
 `members`, `total_members`, `last_7_days`) are unaffected by `q`: they always read
 the whole table, not the filtered page, exactly as before REB-313.
@@ -33,7 +33,7 @@ LOGIN_LIST_LIMIT_MAX = 500
 # The short list a card's own detail shows (REB-284), well below the admin's own
 # `/logins` page: an admin reading one person does not need their last twenty.
 RECENT_LOGINS_FOR_CARD = 5
-_LOGIN_SEARCH_COLUMNS = (User.nome, User.last_name, User.email)
+_LOGIN_SEARCH_COLUMNS = (User.first_name, User.last_name, User.email)
 
 
 class LoginService:
@@ -53,7 +53,7 @@ class LoginService:
         total = self.session.scalar(select(func.count()).select_from(Login)) or 0
         members = self.session.scalar(select(func.count(func.distinct(Login.user_id)))) or 0
         total_members = self.session.scalar(select(func.count()).select_from(Freelancer)) or 0
-        ultimi = (
+        latest = (
             self.session.scalar(
                 select(func.count()).select_from(Login).where(Login.logged_at >= week_ago)
             )
@@ -90,7 +90,7 @@ class LoginService:
             total=total,
             members=members,
             total_members=total_members,
-            last_7_days=ultimi,
+            last_7_days=latest,
             recent=[_read(row[0], row[1]) for row in page_rows],
             next_cursor=next_cursor,
         )
@@ -114,7 +114,7 @@ def _read(login: Login, person: User) -> LoginRead:
     return LoginRead(
         id=login.id,
         user_id=login.user_id,
-        nome=person.nome,
+        first_name=person.first_name,
         last_name=person.last_name,
         email=person.email,
         logged_at=login.logged_at,

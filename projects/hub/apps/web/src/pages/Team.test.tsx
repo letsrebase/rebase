@@ -22,13 +22,13 @@ const PROPOSAL = {
   description: DESCRIPTION,
   people: null,
   summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-  location: { locale: false, dove: null },
-  team: [1, 2].map((posizione) => ({
-    posizione,
+  location: { on_site: false, place: null },
+  team: [1, 2].map((position) => ({
+    position,
     freelancer_id: null,
-    nome: null,
+    first_name: null,
     last_name: null,
-    role: posizione === 1 ? 'Backend developer' : 'Frontend developer',
+    role: position === 1 ? 'Backend developer' : 'Frontend developer',
     reasoning: 'Ha costruito le API di pagamento di due banche.',
     week_days: 5,
     card: {
@@ -116,7 +116,7 @@ describe('the public team page', () => {
 })
 
 describe('the public team page opened on a proposal (REB-675)', () => {
-  it('reads ?proposta= back and shows it as if just proposed, sized as the visitor saw it', async () => {
+  it('reads ?proposal= back and shows it as if just proposed, sized as the visitor saw it', async () => {
     const user = userEvent.setup()
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(answer(200, PROPOSAL))
     mount(`/team?proposal=${PROPOSAL.id}`)
@@ -180,7 +180,7 @@ describe('the public team page opened on a proposal (REB-675)', () => {
     expect(screen.getByLabelText('Descrizione del progetto')).toHaveValue(DESCRIPTION)
   })
 
-  it('fills the box from ?descrizione=, the landing’s form without JavaScript, and asks nothing', async () => {
+  it('fills the box from ?description=, the landing’s form without JavaScript, and asks nothing', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     mount(`/team?description=${encodeURIComponent(DESCRIPTION)}&people=3`)
 

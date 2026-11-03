@@ -81,7 +81,7 @@ engine = create_engine(get_settings().owner_database_url, future=True)
 with session_factory(engine)() as session:
     bind_scope(session, Actor.system())
     UserService(session).create(
-        UserCreate(email="e2e@pigro.it", password="supersegreta1", nome="E2E", ruolo="admin"),
+        UserCreate(email="e2e@pigro.it", password="supersegreta1", name="E2E", role="admin"),
         Actor.system(),
     )
     # `seed_defaults` is admin-only (it calls `actor.require_admin` itself, not just the REST
@@ -109,12 +109,12 @@ with session_factory(engine)() as session:
     # `_check_fiscal` requires).
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio E2E",
-            partita_iva="12345678903",
-            indirizzo="Via di Prova 1",
+            legal_name="Studio E2E",
+            vat_number="12345678903",
+            address="Via di Prova 1",
             cap="00100",
-            comune="Roma",
-            provincia="RM",
+            city="Roma",
+            province="RM",
             email="e2e@pigro.it",
         ),
         Actor.system(),
@@ -130,7 +130,7 @@ with session_factory(engine)() as session:
     # also `FiscalProfileUpsert`'s own default for each of them; `regime_code` has no
     # default and is the whole point of the row.
     FiscalProfileService(session).upsert(
-        FiscalProfileUpsert(codice_regime="RF19"),
+        FiscalProfileUpsert(regime_code="RF19"),
         Actor.system(),
     )
 print("seed complete")
