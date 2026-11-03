@@ -242,9 +242,9 @@ test.describe('il ciclo completo — metà umana', () => {
     const signals = (await (await page.request.get('/api/dashboard/operational')).json()) as {
       signals: { code: string; count: number }[]
     }
-    const cartellino = signals.signals.find((s) => s.code === 'won_to_invoice')
-    if (!cartellino) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
-    const onTheTag = cartellino.count
+    const toInvoiceSignal = signals.signals.find((s) => s.code === 'won_to_invoice')
+    if (!toInvoiceSignal) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
+    const onTheTag = toInvoiceSignal.count
     expect(onTheTag).toBeGreaterThanOrEqual(1)
 
     await page.goto('/app/deal/list?to_invoice=true')

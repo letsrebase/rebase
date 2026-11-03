@@ -8,7 +8,7 @@
  *    (REB-358, a database check), and an empty space has none, so the door first asks
  *    whom the invoice was issued to: one already on file, found by name as it is typed,
  *    or a new name, which is `POST /api/customers` exactly as «Nuovo cliente» on
- *    Clienti sends it.
+ *    «Clienti» sends it.
  * 2. **The PDF.** One file, a PDF, filed as a `invoice` document of that customer
  *    (`POST /api/documents`, then its first version), because that is the one shape
  *    `import_issued_invoice` accepts as the original (`pdf_source.document_id`).
@@ -20,7 +20,7 @@
  *
  * Registering an issued invoice is `require_admin` in the service, so the door is the
  * admin's, like the fiscal step: anybody else reads who does it. The assistant also needs
- * the space's «Accesso completo per i token dell'agente», because `import_issued_invoice`
+ * the space's «Accesso completo per i token dell’agente», because `import_issued_invoice`
  * is registered only under `mcp_full_access` (it cannot be undone); the handoff says so,
  * with the link, while that switch is off.
  */
