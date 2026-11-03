@@ -437,6 +437,7 @@ export function DealDetail() {
         customFields={custom}
         owners={directory.members}
         initial={dealToFormValues(deal)}
+        contractId={deal.contract_id}
         problem={problem}
         busy={update.isPending}
         onSubmit={(values) => {

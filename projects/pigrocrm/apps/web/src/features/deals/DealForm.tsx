@@ -21,7 +21,7 @@ import type { ProblemDetail } from '@/lib/api'
 import { toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
 import type { FieldDefinition } from '@/lib/schema'
 import { useDebounced } from '@/hooks/useDebounced'
-import { DealValueLines } from './DealValueLines'
+import { DealValueLines, LockedValueLines } from './DealValueLines'
 import {
   emptyLine,
   linesToBody,
@@ -139,6 +139,9 @@ interface Props {
   /** Who a new deal belongs to when the picker is left alone: the signed-in person, which
    *  is what the server does with an omitted `owner_id` (REB-780). */
   defaultOwnerId?: string | null
+  /** The contract this deal was converted into, once it was: the lines are then read-only and
+   *  never sent, since the contract owns the price. */
+  contractId?: string | null
 }
 
 export function DealForm({
@@ -152,7 +155,9 @@ export function DealForm({
   title,
   owners,
   defaultOwnerId,
+  contractId,
 }: Props) {
+  const locked = contractId != null
   const [values, setValues] = useState<DealFormValues>(() => initial ?? createValues())
   // `initial`'s absence is what "Nuovo deal" means, exactly like `CustomerForm`/
   // `PersonForm` -- derived rather than a separate boolean prop, so the "show the
@@ -200,7 +205,7 @@ export function DealForm({
   const settledKey = useDebounced(JSON.stringify(linesToBody(drafts)), PREVIEW_DEBOUNCE_MS)
   const settledLines = useMemo(() => JSON.parse(settledKey) as ReturnType<typeof linesToBody>, [settledKey])
   const closeDate = (values.native.expected_close_date as string | undefined) || null
-  const preview = useValuePreview(settledLines, closeDate, open, session)
+  const preview = useValuePreview(settledLines, closeDate, open && !locked, session)
   // The server's sentence about the lines goes under the line it names: from the preview
   // while typing, from the save once it was refused. Anything else stays with `DynamicForm`.
   const previewProblem = preview.error as ProblemDetail | null
@@ -245,9 +250,10 @@ export function DealForm({
     // owns the price).
     const lines = linesToBody(drafts)
     if (
-      isCreate
+      !locked &&
+      (isCreate
         ? lines.length > 0
-        : JSON.stringify(lines) !== JSON.stringify(linesToBody(draftsOf(initial)))
+        : JSON.stringify(lines) !== JSON.stringify(linesToBody(draftsOf(initial))))
     ) {
       body.value_lines = lines
     }
@@ -291,7 +297,10 @@ export function DealForm({
           mode={isCreate ? 'create' : 'edit'}
         />
 
-        <DealValueLines
+        {locked ? (
+          <LockedValueLines lines={drafts} contractId={contractId} />
+        ) : (
+          <DealValueLines
           lines={drafts}
           onChange={(lines) =>
             setValues((previous) => ({ ...previous, native: { ...previous.native, value_lines: lines } }))
@@ -299,7 +308,8 @@ export function DealForm({
           // With no priced line left the deal has no value, whatever the debounce still holds.
           preview={linesToBody(drafts).length > 0 ? preview.data : undefined}
           problem={onLines}
-        />
+          />
+        )}
 
         {owners !== undefined ? (
           <div className="space-y-2">
