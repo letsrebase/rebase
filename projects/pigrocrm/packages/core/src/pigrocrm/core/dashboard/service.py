@@ -6,9 +6,11 @@ import `Decimal`, and it may not contain a `BinOp` node with `*`, `/` or `-`. A 
 service that cannot subtract cannot invent a margin.
 
 Spec §3: every figure on a dashboard is either returned verbatim by the service that owns
-the data, or a single `COUNT`/`SUM` written in the repository of the table it counts. So
-this file calls **services** for figures somebody else already owns and **repositories**
-for the aggregates it defines -- and never a third thing.
+the data, or a single `COUNT`/`SUM` written in the repository of the table it counts, or one
+of the three declared exceptions, all of them in `deals/repository.py` (the weighted value,
+the conversion rate and, since REB-931, the monthly recurring value, which prices the deal's
+lines through `deals.value`). So this file calls **services** for figures somebody else
+already owns and **repositories** for the aggregates it defines -- and never a third thing.
 
 Why repositories rather than services for those aggregates: a service exists to own
 authorisation, a transaction and business rules, and these aggregates have none beyond
@@ -229,6 +231,7 @@ class DashboardService:
             legal_entity_id=legal_entity,
             pipeline=self._deals.pipeline_summary(legal_entity),
             closings=self._deals.closed_in_period(period.date_from, period.date_to, legal_entity),
+            open_monthly_recurring=self._deals.open_monthly_recurring(legal_entity),
             offers_pending=self._documents.pending_offers(_PENDING_OFFERS_SHOWN, legal_entity),
             offers_pending_total=self._documents.count_pending_offers(legal_entity),
             expected_closings_30_days=self._deals.expected_closures(

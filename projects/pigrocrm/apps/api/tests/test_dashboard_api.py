@@ -57,6 +57,7 @@ EXPECTED_KEYS = {
     "legal_entity_id",
     "pipeline",
     "closings",
+    "open_monthly_recurring",
     "offers_pending",
     "offers_pending_total",
     "expected_closings_30_days",
