@@ -32,5 +32,5 @@
     "enabled": false,
     "riskCeiling": "low"
   },
-  "instructions": "This repository is written in English, with one exception recorded in AGENTS.md § Conventions: what a person said may be quoted in Italian inside «guillemets», for example the rows of docs/design/DECISIONS.md that quote Ivan or Lorenzo. Do not flag Italian inside «guillemets» as non-English text. The strings PigroCRM and the hub show to their Italian users (UI copy, validation and error messages, MCP tool and resource descriptions, document templates, seeded content) are Italian by design; do not flag those either."
+  "instructions": "This repository is written in English, with one exception recorded in AGENTS.md § Conventions: what a person said may be quoted in Italian inside «guillemets», for example the rows of docs/design/DECISIONS.md that quote Ivan or Lorenzo. Do not flag Italian inside «guillemets» as non-English text. The strings PigroCRM and the hub show to their Italian users inside the product (UI copy, validation and error messages, emails, document templates, seeded content) are Italian by design; do not flag those either. OpenAPI and MCP descriptions and CLI help are English since 2026-11-03: Italian there is a finding, except proper nouns and Italian terms with no English equivalent."
 }

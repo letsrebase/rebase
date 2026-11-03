@@ -11,9 +11,10 @@ Three kinds of entry:
   `words=None` allows every word (an Italian module on purpose); a `kinds` filter keeps
   the entry from allowing more than it must.
 
-String literals are never checked, so the Italian a person reads (UI copy, messages,
-OpenAPI and MCP descriptions as strings, template content, template variables, custom
-field keys, the SQL a migration runs) needs no entry here.
+String literals are not checked, except the published keyword strings of
+`english_lint.PUBLISHING_CALLS`, so the Italian a person reads inside the product (UI copy,
+messages, emails, template content, template variables, custom field keys, the SQL a
+migration runs) needs no entry here.
 
 Globs: `*` is one path segment's characters, `**` any number of segments.
 """
