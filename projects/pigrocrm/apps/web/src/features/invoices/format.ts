@@ -70,10 +70,10 @@ export function formatPeriod(da: string | null, a: string | null): string {
  * function from a number, because it never has one.
  */
 export function formatInvoiceNumber(
-  invoice: Pick<Invoice, 'anno' | 'numero' | 'riferimento'>,
+  invoice: Pick<Invoice, 'year' | 'number' | 'reference'>,
 ): string {
-  if (invoice.anno !== null && invoice.numero !== null) return `${invoice.anno}/${invoice.numero}`
-  return invoice.riferimento ?? EMPTY
+  if (invoice.year !== null && invoice.number !== null) return `${invoice.year}/${invoice.number}`
+  return invoice.reference ?? EMPTY
 }
 
 /**
@@ -82,11 +82,11 @@ export function formatInvoiceNumber(
  * table cell is a poor name for a page, so it is called what it is.
  */
 export function formatInvoiceHeading(
-  invoice: Pick<Invoice, 'anno' | 'numero' | 'riferimento' | 'tipo'>,
+  invoice: Pick<Invoice, 'year' | 'number' | 'reference' | 'type'>,
 ): string {
   const label = formatInvoiceNumber(invoice)
   if (label !== EMPTY) return label
-  return invoice.tipo === 'proforma' ? 'Proforma' : 'Bozza di fattura'
+  return invoice.type === 'proforma' ? 'Proforma' : 'Bozza di fattura'
 }
 
 /**
@@ -96,8 +96,8 @@ export function formatInvoiceHeading(
  * show a running figure before saving, and it adds integer cents because
  * `Number('0.29') * 100` is `28.999999999999996`.
  */
-export function sumLineTotals(lines: Pick<InvoiceLine, 'prezzo_totale'>[]): string {
-  const cents = lines.reduce((sum, line) => sum + centsFromDecimalString(line.prezzo_totale), 0)
+export function sumLineTotals(lines: Pick<InvoiceLine, 'total_price'>[]): string {
+  const cents = lines.reduce((sum, line) => sum + centsFromDecimalString(line.total_price), 0)
   const negative = cents < 0
   const absolute = Math.abs(cents)
   return `${negative ? '-' : ''}${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, '0')}`
@@ -106,8 +106,8 @@ export function sumLineTotals(lines: Pick<InvoiceLine, 'prezzo_totale'>[]): stri
 /** A row of the create dialog as the inputs hold it: two decimal strings, either of
  *  which may still be empty because the user is typing. */
 interface PricedRow {
-  quantita: string
-  prezzo_unitario: string
+  quantity: string
+  unit_price: string
 }
 
 /** Only a plain decimal is arithmetic here. Anything else -- a stray letter, a comma,
@@ -116,7 +116,7 @@ interface PricedRow {
 const DECIMAL = /^-?\d*\.?\d*$/
 
 /** `FACTOR_DECIMAL_PLACES` in `packages/core/src/pigrocrm/core/invoices/schemas.py`:
- *  `quantita` and `prezzo_unitario` are `Numeric(12, 6)`. */
+ *  `quantity` and `unit_price` are `Numeric(12, 6)`. */
 const FACTOR_SCALE = 6
 /** Millionths times cents lands at 10^-8; this brings the product back to cents. */
 const FACTOR_TO_CENTS = 1_000_000
@@ -125,7 +125,7 @@ const FACTOR_TO_CENTS = 1_000_000
  * What a set of typed-in rows would come to, for the create dialog's live figure.
  *
  * The counterpart of `sumLineTotals` for rows that do not exist server-side yet: there
- * is no `prezzo_totale` to add up, so the product has to be formed here. Exact integer
+ * is no `total_price` to add up, so the product has to be formed here. Exact integer
  * arithmetic via `lib/decimal.ts` -- the quantity in millionths (`Numeric(12,6)`, which
  * is what makes 7,5 hours expressible), the price in cents -- and never a float:
  * `Number('0.29') * 100` is `28.999999999999996` in this project's own Node runtime.
@@ -144,11 +144,11 @@ const FACTOR_TO_CENTS = 1_000_000
  * this figure would visibly lose precision first, on a document the server will not
  * accept either.
  */
-export function previewImponibile(rows: readonly PricedRow[]): string {
+export function previewTaxableAmount(rows: readonly PricedRow[]): string {
   let cents = 0
   for (const row of rows) {
-    const quantity = row.quantita.trim()
-    const price = row.prezzo_unitario.trim()
+    const quantity = row.quantity.trim()
+    const price = row.unit_price.trim()
     if (quantity === '' || price === '') continue
     if (!DECIMAL.test(quantity) || !DECIMAL.test(price)) continue
     cents += Math.round(
@@ -166,14 +166,14 @@ export function previewImponibile(rows: readonly PricedRow[]): string {
  * the parts the order has. The dash without an order number.
  */
 export function formatPurchaseOrder(
-  invoice: Pick<Invoice, 'ordine_numero' | 'ordine_data' | 'ordine_cig' | 'ordine_cup'>,
+  invoice: Pick<Invoice, 'purchase_order_number' | 'purchase_order_date' | 'purchase_order_tender_code' | 'purchase_order_project_code'>,
 ): string {
-  if (!invoice.ordine_numero) return EMPTY
-  const numero = invoice.ordine_data
-    ? `n. ${invoice.ordine_numero} del ${formatDate(invoice.ordine_data)}`
-    : `n. ${invoice.ordine_numero}`
-  const parts = [numero]
-  if (invoice.ordine_cig) parts.push(`CIG ${invoice.ordine_cig}`)
-  if (invoice.ordine_cup) parts.push(`CUP ${invoice.ordine_cup}`)
+  if (!invoice.purchase_order_number) return EMPTY
+  const number = invoice.purchase_order_date
+    ? `n. ${invoice.purchase_order_number} del ${formatDate(invoice.purchase_order_date)}`
+    : `n. ${invoice.purchase_order_number}`
+  const parts = [number]
+  if (invoice.purchase_order_tender_code) parts.push(`CIG ${invoice.purchase_order_tender_code}`)
+  if (invoice.purchase_order_project_code) parts.push(`CUP ${invoice.purchase_order_project_code}`)
   return parts.join(', ')
 }

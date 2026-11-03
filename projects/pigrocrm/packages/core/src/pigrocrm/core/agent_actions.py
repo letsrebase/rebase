@@ -35,13 +35,13 @@ is for, instead of inheriting its owner's role and being told no operation by op
 AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
     {
         # Activities and notes.
-        "create_attivita",
-        "update_attivita",
-        "complete_attivita",
-        "cancel_attivita",
-        "reopen_attivita",
-        "archive_attivita",
-        "restore_attivita",
+        "create_task",
+        "update_task",
+        "complete_task",
+        "cancel_task",
+        "reopen_task",
+        "archive_task",
+        "restore_task",
         "add_note",
         "update_note",
         "delete_note",
@@ -108,8 +108,8 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         # The emitter and its fiscal profile: setup, not history (ORB-188). The profile
         # write is a total replacement that can be replaced again and an issued invoice
         # keeps its own copy.
-        "create_azienda",
-        "upsert_emitter_profile",
+        "create_legal_entity",
+        "upsert_legal_entities",
         "update_fiscal_profile",
         # Drafts an agent prepares for a person to send.
         "create_email_draft",
@@ -237,8 +237,8 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "seed_templates",
         "seed_cost_categories",
         "update_automation_config",
-        "set_default_azienda",
-        "deactivate_azienda",
+        "set_default_legal_entity",
+        "deactivate_legal_entity",
         "update_azienda_assets",
         "update_document",
         # Reads of the configuration's own history, and the register's PDF (it archives a

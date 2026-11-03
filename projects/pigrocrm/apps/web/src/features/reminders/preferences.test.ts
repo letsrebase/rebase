@@ -114,9 +114,9 @@ describe('visibleTypes', () => {
 
 describe('thresholdWording', () => {
   it('reads «da N giorni» for a ladder that climbs with time and «N giorni prima» for one that climbs as a date nears', () => {
-    expect(thresholdWording({ direction: 'since', unit: 'days' })).toEqual({ before: 'da', after: 'giorni' })
+    expect(thresholdWording({ direction: 'since', unit: 'days' })).toEqual({ before: 'da', after: 'days' })
     expect(thresholdWording({ direction: 'until', unit: 'days' })).toEqual({ before: '', after: 'giorni prima' })
-    expect(thresholdWording({ direction: 'since', unit: 'hours' }).after).toBe('ore')
+    expect(thresholdWording({ direction: 'since', unit: 'hours' }).after).toBe('hours')
     expect(thresholdWording({ direction: 'since', unit: 'minutes' }).after).toBe('minuti')
     expect(thresholdWording({ direction: 'since', unit: 'percent' }).after).toBe('%')
   })
@@ -124,9 +124,9 @@ describe('thresholdWording', () => {
 
 describe('groupTypes', () => {
   it('files each type under its section, in the table order, and drops the empty ones', () => {
-    const types = ['job_late', 'invoice_overdue', 'attivita_due'].map((key) => ({ ...KIND, key }))
+    const types = ['job_late', 'invoice_overdue', 'task_due'].map((key) => ({ ...KIND, key }))
     expect(groupTypes(types).map((group) => [group.label, group.types.map((kind) => kind.key)])).toEqual([
-      ['Attività e deal', ['attivita_due']],
+      ['Attività e deal', ['task_due']],
       ['Fatture e fatturazione', ['invoice_overdue']],
       ['Spazio', ['job_late']],
     ])

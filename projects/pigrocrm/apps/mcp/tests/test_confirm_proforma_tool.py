@@ -19,13 +19,13 @@ from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 
-RIGA = {"descrizione": "Consulenza", "quantita": "2", "prezzo_unitario": "100.00"}
+RIGA = {"description": "Consulenza", "quantity": "2", "unit_price": "100.00"}
 
 
 def _customer(session: Session) -> str:
-    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), Actor.system())
+    FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), Actor.system())
     customer = CustomerService(session).create(
-        CustomerCreate(ragione_sociale="Bozze S.r.l.", partita_iva="12345678901"),
+        CustomerCreate(legal_name="Bozze S.r.l.", vat_number="12345678901"),
         Actor(id=None, type="mcp", role="admin"),
     )
     return str(customer.id)
@@ -35,22 +35,22 @@ async def test_a_draft_proforma_with_lines_is_confirmed(server: Any, mcp_session
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "righe": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
         )
         assert not created.is_error, created.content[0].text
         invoice_id = created.structured_content["id"]
-        assert created.structured_content["stato"] == "bozza"
+        assert created.structured_content["status"] == "draft"
 
         confirmed = await client.call_tool("confirm_proforma", {"invoice_id": invoice_id})
         assert not confirmed.is_error, confirmed.content[0].text
         assert confirmed.structured_content["id"] == invoice_id
-        assert confirmed.structured_content["stato"] == "confermata"
+        assert confirmed.structured_content["status"] == "confirmed"
         # Still a proforma, still without a number: nothing fiscal happened.
-        assert confirmed.structured_content["tipo"] == "proforma"
-        assert confirmed.structured_content["numero"] is None
+        assert confirmed.structured_content["type"] == "proforma"
+        assert confirmed.structured_content["number"] is None
 
         again = await client.call_tool("get_invoice", {"invoice_id": invoice_id})
-        assert again.structured_content["stato"] == "confermata"
+        assert again.structured_content["status"] == "confirmed"
 
 
 async def test_a_proforma_without_lines_is_refused_with_the_field_named(
@@ -59,7 +59,7 @@ async def test_a_proforma_without_lines_is_refused_with_the_field_named(
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "righe": []}
+            "create_proforma", {"customer_id": customer_id, "lines": []}
         )
         assert not created.is_error, created.content[0].text
         invoice_id = created.structured_content["id"]
@@ -74,7 +74,7 @@ async def test_a_confirmed_proforma_is_not_confirmed_twice(
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "righe": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
         )
         invoice_id = created.structured_content["id"]
         first = await client.call_tool("confirm_proforma", {"invoice_id": invoice_id})
@@ -89,21 +89,21 @@ async def test_a_confirmed_proforma_is_still_the_agent_s_to_shape(
 ) -> None:
     """What makes the tool safe on the default surface: confirming forecloses nothing.
     The header and the lines stay editable (`_is_editable`) and the proforma can still be
-    discarded; there is no way back to `bozza` and none is needed."""
+    discarded; there is no way back to `draft` and none is needed."""
     customer_id = _customer(mcp_session)
     async with Client(server) as client:
         created = await client.call_tool(
-            "create_proforma", {"customer_id": customer_id, "righe": [RIGA]}
+            "create_proforma", {"customer_id": customer_id, "lines": [RIGA]}
         )
         invoice_id = created.structured_content["id"]
         await client.call_tool("confirm_proforma", {"invoice_id": invoice_id})
         relined = await client.call_tool(
             "replace_proforma_lines",
-            {"invoice_id": invoice_id, "righe": [{**RIGA, "prezzo_unitario": "150.00"}]},
+            {"invoice_id": invoice_id, "lines": [{**RIGA, "unit_price": "150.00"}]},
         )
         assert not relined.is_error, relined.content[0].text
-        assert relined.structured_content["stato"] == "confermata"
-        assert relined.structured_content["totale"] == "300.00"
+        assert relined.structured_content["status"] == "confirmed"
+        assert relined.structured_content["total"] == "300.00"
         discarded = await client.call_tool("discard_proforma", {"invoice_id": invoice_id})
         assert not discarded.is_error, discarded.content[0].text
 
@@ -119,15 +119,15 @@ async def test_anything_that_is_not_a_proforma_is_refused_before_the_service_is_
     from pigrocrm.core.storage import LocalFileStorage
 
     customer_id = _customer(mcp_session)
-    fattura = InvoiceService(mcp_session, LocalFileStorage("/tmp/unused")).create(
+    invoice = InvoiceService(mcp_session, LocalFileStorage("/tmp/unused")).create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario="100.00")],
+            lines=[InvoiceLineIn(description="Consulenza", unit_price="100.00")],
         ),
         Actor(id=None, type="mcp", role="admin"),
     )
     async with Client(server) as client:
-        refused = await client.call_tool("confirm_proforma", {"invoice_id": str(fattura.id)})
+        refused = await client.call_tool("confirm_proforma", {"invoice_id": str(invoice.id)})
         assert refused.is_error
         assert "da MCP si modificano solo le proforma" in refused.content[0].text
 

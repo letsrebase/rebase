@@ -48,7 +48,7 @@ const ADMIN_NAV = [
     { to: '/admin/access', label: 'Accessi', icon: LogIn },
     { to: '/admin/admins', label: 'Amministratori', icon: ShieldCheck },
     { to: '/admin/agents', label: 'Agenti', icon: Plug },
-    { to: '/admin/modelli-ai', label: 'Modelli AI', icon: Cpu },
+    { to: '/admin/ai-models', label: 'Modelli AI', icon: Cpu },
   ],
 ] as const
 

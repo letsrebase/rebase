@@ -18,21 +18,21 @@ import {
 import { BigNumber } from './charts'
 import { money } from './format'
 import { useYearOverview, yearCsvPath, type YearOverview, type YearRegisterRow } from './queries'
-import type { Periodo } from './periodo'
+import type { Period } from './period'
 
 /** The year the picker's start date names, the same reading the economic tab has: a
  *  date, not an amount, so going through `Date` is not the coercion criterion 14 bans. */
-function yearOf(periodo: Periodo): number {
-  return new Date(`${periodo.da}T00:00:00`).getFullYear()
+function yearOf(period: Period): number {
+  return new Date(`${period.da}T00:00:00`).getFullYear()
 }
 
 /** The regime an invoice froze at issue, in the words the settings screen uses. A code
  *  this product has no name for is printed as it is rather than guessed at. */
-function regimeLabel(codice: string | null, pack: string): string {
-  if (codice === 'RF19') return 'Forfettario (RF19)'
-  if (codice === 'RF01') return 'Ordinario (RF01)'
-  if (codice === null && pack === 'non-it') return 'Estero'
-  return codice ?? 'Non indicato'
+function regimeLabel(code: string | null, pack: string): string {
+  if (code === 'RF19') return 'Forfettario (RF19)'
+  if (code === 'RF01') return 'Ordinario (RF01)'
+  if (code === null && pack === 'non-it') return 'Estero'
+  return code ?? 'Non indicato'
 }
 
 /** «0,00» as a rate: the API's decimal with its comma, no coercion. */
@@ -42,24 +42,24 @@ function rate(value: string): string {
 
 /** The stamp-duty sentences the invoices print, each with how many carry it. Grouping the
  *  words is presentation; the sentence itself is the server's, as the document has it. */
-function bolloDeclarations(registro: YearRegisterRow[]): { sentence: string; fatture: number }[] {
+function stampDutyDeclarations(register: YearRegisterRow[]): { sentence: string; invoices: number }[] {
   const counts = new Map<string, number>()
-  for (const row of registro) {
-    if (row.dichiarazione_bollo) {
-      counts.set(row.dichiarazione_bollo, (counts.get(row.dichiarazione_bollo) ?? 0) + 1)
+  for (const row of register) {
+    if (row.stamp_duty_declaration) {
+      counts.set(row.stamp_duty_declaration, (counts.get(row.stamp_duty_declaration) ?? 0) + 1)
     }
   }
-  return [...counts].map(([sentence, fatture]) => ({ sentence, fatture }))
+  return [...counts].map(([sentence, invoices]) => ({ sentence, invoices }))
 }
 
-function Registro({ overview }: { overview: YearOverview }) {
-  const { registro, totali } = overview
-  if (registro.length === 0) {
+function Register({ overview }: { overview: YearOverview }) {
+  const { register, total } = overview
+  if (register.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">Nessuna fattura emessa nel {overview.anno}.</p>
+      <p className="text-sm text-muted-foreground">Nessuna fattura emessa nel {overview.year}.</p>
     )
   }
-  const declarations = bolloDeclarations(registro)
+  const declarations = stampDutyDeclarations(register)
   return (
     <div className="space-y-3">
       <Table scrollLabel="Registro delle fatture emesse">
@@ -76,7 +76,7 @@ function Registro({ overview }: { overview: YearOverview }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {registro.map((row) => (
+          {register.map((row) => (
             <TableRow key={row.invoice_id}>
               <TableCell className="tabular-nums">
                 <Link
@@ -84,30 +84,30 @@ function Registro({ overview }: { overview: YearOverview }) {
                   params={{ invoiceId: row.invoice_id }}
                   className="underline-offset-4 hover:underline"
                 >
-                  {row.anno}/{row.numero}
+                  {row.year}/{row.number}
                 </Link>
               </TableCell>
-              <TableCell className="tabular-nums">{formatIsoDateItalian(row.data_emissione)}</TableCell>
+              <TableCell className="tabular-nums">{formatIsoDateItalian(row.issue_date)}</TableCell>
               <TableCell>
                 <Link
                   to="/app/customers/$customerId"
                   params={{ customerId: row.customer_id }}
                   className="underline-offset-4 hover:underline"
                 >
-                  {row.ragione_sociale}
+                  {row.legal_name}
                 </Link>
-                {row.partita_iva ? (
-                  <span className="block text-xs text-muted-foreground">P.IVA {row.partita_iva}</span>
+                {row.vat_number ? (
+                  <span className="block text-xs text-muted-foreground">P.IVA {row.vat_number}</span>
                 ) : null}
               </TableCell>
-              <TableCell className="text-right tabular-nums">{money(row.imponibile)}</TableCell>
-              <TableCell className="text-right tabular-nums">{money(row.rivalsa)}</TableCell>
-              <TableCell className="text-right tabular-nums">{money(row.bollo)}</TableCell>
-              <TableCell className="text-right tabular-nums">{money(row.totale)}</TableCell>
+              <TableCell className="text-right tabular-nums">{money(row.taxable_amount)}</TableCell>
+              <TableCell className="text-right tabular-nums">{money(row.social_security_surcharge)}</TableCell>
+              <TableCell className="text-right tabular-nums">{money(row.stamp_duty)}</TableCell>
+              <TableCell className="text-right tabular-nums">{money(row.total)}</TableCell>
               <TableCell>
-                {row.stato_pagamento === 'incassato'
-                  ? row.data_incasso
-                    ? `Incassata il ${formatIsoDateItalian(row.data_incasso)}`
+                {row.payment_status === 'paid'
+                  ? row.payment_date
+                    ? `Incassata il ${formatIsoDateItalian(row.payment_date)}`
                     : 'Incassata'
                   : 'Da incassare'}
               </TableCell>
@@ -117,19 +117,19 @@ function Registro({ overview }: { overview: YearOverview }) {
         <TableFooter>
           <TableRow>
             <TableCell colSpan={3} className="font-semibold">
-              Totale registro · {totali.fatture} {totali.fatture === 1 ? 'fattura' : 'fatture'}
+              Totale registro · {total.invoices} {total.invoices === 1 ? 'invoice' : 'invoices'}
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
-              {money(totali.imponibile)}
+              {money(total.taxable_amount)}
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
-              {money(totali.rivalsa)}
+              {money(total.social_security_surcharge)}
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
-              {money(totali.bollo)}
+              {money(total.stamp_duty)}
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
-              {money(totali.totale)}
+              {money(total.total)}
             </TableCell>
             <TableCell />
           </TableRow>
@@ -143,7 +143,7 @@ function Registro({ overview }: { overview: YearOverview }) {
               <li key={declaration.sentence}>
                 «{declaration.sentence}»{' '}
                 <span className="tabular-nums">
-                  ({declaration.fatture} {declaration.fatture === 1 ? 'fattura' : 'fatture'})
+                  ({declaration.invoices} {declaration.invoices === 1 ? 'invoice' : 'invoices'})
                 </span>
               </li>
             ))}
@@ -159,7 +159,7 @@ function Registro({ overview }: { overview: YearOverview }) {
  * tax treatment, the register of the issued invoices with the stamp duty and the rivalsa
  * apart, and the CSV of the same lines.
  *
- * The register year is the year the invoices were numbered in (`anno`), the universe the
+ * The register year is the year the invoices were numbered in (`year`), the universe the
  * dashboard's own revenue figure sums, so the total below is that figure and the CSV
  * totals to it. The legal references and the stamp-duty sentence are the lines' and the
  * invoices' own words, printed as stored: rewording them here would put on a page the
@@ -170,18 +170,18 @@ function Registro({ overview }: { overview: YearOverview }) {
  * under its own name, so the tab is never blank.
  */
 export function YearPanel({
-  anno,
-  aziendaId,
-  titolo,
+  year,
+  legalEntityId,
+  title,
   quiet = false,
 }: {
-  anno: number
-  aziendaId?: string
-  titolo?: string
+  year: number
+  legalEntityId?: string
+  title?: string
   quiet?: boolean
 }) {
   const { selected } = useLegalEntity()
-  const query = useYearOverview(anno, aziendaId)
+  const query = useYearOverview(year, legalEntityId)
 
   if (query.isError) {
     if (quiet && toProblem(query.error).status === 404) return null
@@ -198,19 +198,19 @@ export function YearPanel({
   const overview = query.data
   // The azienda the file is of: the block's own, else the one the sidebar selected. The
   // server resolves the only azienda of a one-azienda space by itself, so nothing is sent.
-  const csvAzienda = aziendaId ?? selected
+  const csvLegalEntity = legalEntityId ?? selected
 
   return (
-    <section className="space-y-6" aria-label={`Anno ${anno}${titolo ? ` · ${titolo}` : ''}`}>
+    <section className="space-y-6" aria-label={`Anno ${year}${title ? ` · ${title}` : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          {titolo ? <strong className="mr-2 font-semibold text-foreground">{titolo}</strong> : null}
-          Registro {anno}: le fatture emesse nell’anno, con il bollo e la rivalsa a parte.
-          {overview.annullate > 0
-            ? ` ${overview.annullate === 1 ? 'Una fattura annullata resta fuori' : `${overview.annullate} fatture annullate restano fuori`} dai totali.`
+          {title ? <strong className="mr-2 font-semibold text-foreground">{title}</strong> : null}
+          Registro {year}: le fatture emesse nell’anno, con il bollo e la rivalsa a parte.
+          {overview.cancelled > 0
+            ? ` ${overview.cancelled === 1 ? 'Una fattura annullata resta fuori' : `${overview.cancelled} fatture annullate restano fuori`} dai totali.`
             : ''}
         </p>
-        <DownloadButton variant="outline" path={yearCsvPath(anno, csvAzienda)}>
+        <DownloadButton variant="outline" path={yearCsvPath(year, csvLegalEntity)}>
           <Download className="mr-2 size-4" aria-hidden="true" />
           Scarica il CSV per il commercialista
         </DownloadButton>
@@ -219,24 +219,24 @@ export function YearPanel({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <BigNumber
           label="Ricavi dell’anno"
-          value={money(overview.totali.imponibile)}
+          value={money(overview.total.taxable_amount)}
           tone="accent"
-          hint={`${overview.totali.fatture} ${overview.totali.fatture === 1 ? 'fattura emessa' : 'fatture emesse'}`}
+          hint={`${overview.total.invoices} ${overview.total.invoices === 1 ? 'fattura emessa' : 'fatture emesse'}`}
         />
         <BigNumber
           label="di cui rivalsa INPS"
-          value={money(overview.totali.rivalsa)}
+          value={money(overview.total.social_security_surcharge)}
           hint="già nei ricavi"
         />
         <BigNumber
           label="Bollo virtuale"
-          value={money(overview.totali.bollo)}
+          value={money(overview.total.stamp_duty)}
           hint="a carico dell’emittente, fuori dai ricavi"
         />
-        <BigNumber label="Totale documenti" value={money(overview.totali.totale)} />
+        <BigNumber label="Totale documenti" value={money(overview.total.total)} />
       </div>
 
-      {overview.regimi.length > 0 ? (
+      {overview.regimes.length > 0 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-medium">Ricavi per regime</h2>
           <p className="text-sm text-muted-foreground">
@@ -251,11 +251,11 @@ export function YearPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {overview.regimi.map((row) => (
-                <TableRow key={`${row.codice_regime ?? ''}:${row.pack_id}`}>
-                  <TableCell>{regimeLabel(row.codice_regime, row.pack_id)}</TableCell>
-                  <TableCell className="text-right">{row.fatture}</TableCell>
-                  <TableCell className="text-right tabular-nums">{money(row.ricavi)}</TableCell>
+              {overview.regimes.map((row) => (
+                <TableRow key={`${row.regime_code ?? ''}:${row.pack_id}`}>
+                  <TableCell>{regimeLabel(row.regime_code, row.pack_id)}</TableCell>
+                  <TableCell className="text-right">{row.invoices}</TableCell>
+                  <TableCell className="text-right tabular-nums">{money(row.revenue)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -263,7 +263,7 @@ export function YearPanel({
         </section>
       ) : null}
 
-      {overview.trattamenti.length > 0 ? (
+      {overview.treatments.length > 0 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-medium">Ricavi per trattamento fiscale</h2>
           <p className="text-sm text-muted-foreground">
@@ -280,17 +280,17 @@ export function YearPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {overview.trattamenti.map((row) => (
+              {overview.treatments.map((row) => (
                 <TableRow
-                  key={`${row.aliquota_iva}:${row.natura ?? ''}:${row.riferimento_normativo ?? ''}`}
+                  key={`${row.vat_rate}:${row.vat_nature ?? ''}:${row.legal_reference ?? ''}`}
                 >
-                  <TableCell className="tabular-nums">{rate(row.aliquota_iva)}</TableCell>
-                  <TableCell>{row.natura ?? '—'}</TableCell>
+                  <TableCell className="tabular-nums">{rate(row.vat_rate)}</TableCell>
+                  <TableCell>{row.vat_nature ?? '—'}</TableCell>
                   <TableCell className="max-w-md whitespace-normal">
-                    {row.riferimento_normativo ?? '—'}
+                    {row.legal_reference ?? '—'}
                   </TableCell>
-                  <TableCell className="text-right">{row.righe}</TableCell>
-                  <TableCell className="text-right tabular-nums">{money(row.ricavi)}</TableCell>
+                  <TableCell className="text-right">{row.lines}</TableCell>
+                  <TableCell className="text-right tabular-nums">{money(row.revenue)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -300,7 +300,7 @@ export function YearPanel({
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium">Registro delle fatture emesse</h2>
-        <Registro overview={overview} />
+        <Register overview={overview} />
       </section>
     </section>
   )
@@ -311,25 +311,25 @@ export function YearPanel({
  * says «Tutte» on a space with several (a register is numbered per azienda, and two
  * aziende's invoices are never in one file).
  */
-export function YearTab({ periodo }: { periodo: Periodo }) {
-  const anno = yearOf(periodo)
-  const { aziende, selected, several } = useLegalEntity()
-  const perAzienda = several && selected === null
+export function YearTab({ period }: { period: Period }) {
+  const year = yearOf(period)
+  const { legal_entities, selected, several } = useLegalEntity()
+  const byLegalEntity = several && selected === null
 
   return (
     <div className="space-y-8">
-      {perAzienda ? (
-        aziende.map((azienda) => (
+      {byLegalEntity ? (
+        legal_entities.map((legal_entity) => (
           <YearPanel
-            key={azienda.id}
-            anno={anno}
-            aziendaId={azienda.id}
-            titolo={azienda.nome}
+            key={legal_entity.id}
+            year={year}
+            legalEntityId={legal_entity.id}
+            title={legal_entity.nome}
             quiet
           />
         ))
       ) : (
-        <YearPanel anno={anno} />
+        <YearPanel year={year} />
       )}
     </div>
   )

@@ -30,7 +30,7 @@ from rebase_core.anonymous_cv.writer import (
     AnonymousCvWriter,
     Written,
 )
-from rebase_core.card_persona import PERSONA_CV
+from rebase_core.card_person import PERSON_CV
 from rebase_core.card_types import NO_TEXT
 from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
@@ -55,22 +55,22 @@ BODY: dict[str, Any] = {
     "sommario": "Backend developer con cinque anni di servizi di fatturazione in TIM.",
     "esperienze": [
         {
-            "ruolo": "Backend developer",
-            "azienda": "TIM S.p.A.",
-            "luogo": "Roma, IT",
+            "role": "Backend developer",
+            "company": "TIM S.p.A.",
+            "location": "Roma, IT",
             "periodo": "2019 – 2024",
-            "punti": [{"titolo": None, "testo": "Ha sviluppato i servizi di fatturazione."}],
+            "punti": [{"titolo": None, "text": "Ha sviluppato i servizi di fatturazione."}],
         }
     ],
-    "competenze": [{"area": "Competenze", "voci": ["Python", "PostgreSQL"]}],
+    "skills": [{"area": "Competenze", "voci": ["Python", "PostgreSQL"]}],
     "formazione": [],
     "certificazioni": [],
-    "lingue": [{"lingua": "Italiano", "livello": "Madrelingua"}],
-    "altre_sezioni": [],
+    "languages": [{"lingua": "Italiano", "livello": "Madrelingua"}],
+    "other_sections": [],
 }
-NO_IDENTITA: dict[str, Any] = {
+NO_IDENTITY: dict[str, Any] = {
     "nome": None,
-    "cognome": None,
+    "last_name": None,
     "email": None,
     "telefoni": [],
     "link": [],
@@ -78,9 +78,9 @@ NO_IDENTITA: dict[str, Any] = {
 # What the system prompt must name, each in its words: what never goes in the CV.
 EXCLUSIONS = (
     "nome",
-    "cognome",
+    "last_name",
     "email",
-    "telefono",
+    "phone",
     "indirizzo postale",
     "data e il luogo di nascita",
     "nazionalità",
@@ -101,7 +101,7 @@ EXCLUSIONS = (
     "vat number",
     "codice fiscale",
     "tax code",
-    "pec",
+    "certified_email",
     "iban",
     "numero di un documento",
 )
@@ -115,16 +115,16 @@ def _with(**fields: Any) -> dict[str, Any]:
     return {**copy.deepcopy(BODY), **fields}
 
 
-def _with_bullet(testo: str) -> dict[str, Any]:
+def _with_bullet(text: str) -> dict[str, Any]:
     body = copy.deepcopy(BODY)
-    body["esperienze"][0]["punti"][0]["testo"] = testo
+    body["esperienze"][0]["punti"][0]["text"] = text
     return body
 
 
 def cv_response(
     body: dict[str, Any] | None = None,
     *,
-    identita: dict[str, Any] | None = None,
+    identity: dict[str, Any] | None = None,
     raw: str | None = None,
     stop_reason: str = "end_turn",
     input_tokens: int = 3000,
@@ -136,7 +136,7 @@ def cv_response(
     answer = (
         raw
         if raw is not None
-        else json.dumps({"cv": body or BODY, "identita": identita or NO_IDENTITA})
+        else json.dumps({"cv": body or BODY, "identita": identity or NO_IDENTITY})
     )
     try:
         parsed = AnonymousCvDraft.model_validate_json(answer) if stop_reason == "end_turn" else None
@@ -187,11 +187,11 @@ def _apply(
 ) -> UUID:
     data = FreelancerCreate(
         nome="Mario",
-        cognome="Messina",
+        last_name="Messina",
         email=email,
-        tariffa_giornaliera=Decimal("450.00"),
+        daily_rate=Decimal("450.00"),
         posizione="Backend developer",
-        remoto="remoto",
+        remote="remote",
         links=links or [],
     )
     service = FreelancerService(session)
@@ -202,7 +202,7 @@ def _apply(
 
 
 def _admin(session: Session) -> UUID:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin")
+    admin = User(email="ivan@rebase.it", nome="Ivan", last_name="", role="admin")
     session.add(admin)
     session.commit()
     return admin.id
@@ -339,7 +339,7 @@ def test_a_kept_body_that_is_no_longer_a_cv_is_written_again(clean: Session) -> 
     """A body kept under this version that the shape no longer reads (a field renamed by
     hand, a limit lowered) is stale: written again, never a 500."""
     freelancer_id = _apply(clean)
-    _keep(clean, freelancer_id, {**BODY, "riassunto": "un campo che non c'è più"})
+    _keep(clean, freelancer_id, {**BODY, "summary": "un campo che non c'è più"})
     llm = RecordingCall([cv_response()])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
@@ -364,7 +364,7 @@ def test_new_cv_writes_again(clean: Session) -> None:
     freelancer_id = _apply(clean)
     _writer(clean, RecordingCall([cv_response()])).get_or_write(freelancer_id)
     MemberService(clean).replace_cv(freelancer_id, CV_2025, "cv 2025.pdf", "application/pdf")
-    newer = _with(titolo="Backend lead")
+    newer = _with(title="Backend lead")
     llm = RecordingCall([cv_response(newer)])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
@@ -508,9 +508,9 @@ def test_identity_from_the_answer_is_checked(clean: Session) -> None:
     """The profile has no phone: the numbers the CV itself states, read back in `identita`,
     are what the guard finds in a bullet, the second as surely as the first."""
     freelancer_id = _apply(clean)
-    identita = {**NO_IDENTITA, "telefoni": ["333 1234567", "+39 06 9876 5432"]}
-    leaking = cv_response(_with_bullet("Ufficio: 06 98765432."), identita=identita)
-    llm = RecordingCall([leaking, cv_response(identita=identita)])
+    identity = {**NO_IDENTITY, "telefoni": ["333 1234567", "+39 06 9876 5432"]}
+    leaking = cv_response(_with_bullet("Ufficio: 06 98765432."), identity=identity)
+    llm = RecordingCall([leaking, cv_response(identity=identity)])
 
     written = _writer(clean, llm).get_or_write(freelancer_id)
 
@@ -519,22 +519,22 @@ def test_identity_from_the_answer_is_checked(clean: Session) -> None:
     assert written.cv == AnonymousCv.model_validate(BODY)
 
 
-def test_the_cards_persona_is_checked(clean: Session) -> None:
+def test_the_cards_person_is_checked(clean: Session) -> None:
     """The card's stored persona for this CV (REB-855) is the third reading of the person:
     its phone, which neither the profile nor the answer has, is found in a bullet."""
     freelancer_id = _apply(clean)
-    persona = {
+    person = {
         "nome": "Mario",
-        "cognome": "Messina",
+        "last_name": "Messina",
         "email": None,
-        "telefono": "+39 347 765 4321",
-        "citta": None,
+        "phone": "+39 347 765 4321",
+        "city": None,
         "linkedin_url": None,
-        "altri_link": [],
-        "aziende": [],
-        PERSONA_CV: _sha(CV),
+        "other_links": [],
+        "companies": [],
+        PERSON_CV: _sha(CV),
     }
-    clean.add(FreelancerCard(freelancer_id=freelancer_id, persona=persona))
+    clean.add(FreelancerCard(freelancer_id=freelancer_id, person=person))
     clean.commit()
     llm = RecordingCall([cv_response(_with_bullet("Chiamare il 3477654321.")), cv_response()])
 
@@ -558,10 +558,10 @@ def test_the_tax_data_is_checked(clean: Session, logs: pytest.LogCaptureFixture)
     FiscalService(clean).save(
         freelancer_id,
         FiscalData(
-            codice_fiscale="MSSMRA85M01F158K",
-            partita_iva="01234567890",
-            domicilio="Via Roma 1, Messina",
-            pec="studio.fatture@pec.it",
+            tax_code="MSSMRA85M01F158K",
+            vat_number="01234567890",
+            domicile="Via Roma 1, Messina",
+            certified_email="studio.fatture@pec.it",
         ),
         _admin(clean),
     )
@@ -575,16 +575,16 @@ def test_the_tax_data_is_checked(clean: Session, logs: pytest.LogCaptureFixture)
         assert secret not in logs.text
 
 
-def test_the_pec_is_checked_as_an_email(clean: Session) -> None:
+def test_the_certified_email_is_checked_as_an_email(clean: Session) -> None:
     """The PEC's handle, written without its domain, is the person as an email's is."""
     freelancer_id = _apply(clean)
     FiscalService(clean).save(
         freelancer_id,
         FiscalData(
-            codice_fiscale="MSSMRA85M01F158K",
-            partita_iva=None,
-            domicilio="Via Roma 1, Messina",
-            pec="studio.fatture@pec.it",
+            tax_code="MSSMRA85M01F158K",
+            vat_number=None,
+            domicile="Via Roma 1, Messina",
+            certified_email="studio.fatture@pec.it",
         ),
         _admin(clean),
     )

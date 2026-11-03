@@ -162,7 +162,7 @@ describe('EntityDetailLayout', () => {
     const tab = screen.getByRole('tab', { name: 'Email' })
     expect(tab).toBeInTheDocument()
     await userEvent.click(tab)
-    expect(screen.getByText('conversazioni')).toBeInTheDocument()
+    expect(screen.getByText('conversations')).toBeInTheDocument()
   })
 
   // Only a customer has contracts, so a person or a deal passing nothing gets no tab.

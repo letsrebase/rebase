@@ -31,7 +31,7 @@ TABLES = (
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[User]:
-    row = User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin")
+    row = User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin")
     api_session.add(row)
     api_session.commit()
     yield row
@@ -51,11 +51,11 @@ def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL
 def _apply(client: TestClient, email: str, linkedin: str | None = None) -> None:
     data = {
         "nome": "Ada",
-        "cognome": "Lovelace",
+        "last_name": "Lovelace",
         "email": email,
-        "tariffa_giornaliera": "450",
+        "daily_rate": "450",
         "posizione": "Backend developer",
-        "remoto": "remoto",
+        "remote": "remote",
     }
     if linkedin:
         data["linkedin_url"] = linkedin
@@ -139,11 +139,11 @@ def test_a_conflicting_merge_is_a_409_with_the_sentence(
     for card_id in ids.values():
         api_session.add(
             ContractDocument(
-                kind="quadro",
+                kind="framework",
                 freelancer_id=card_id,
                 text_version="1",
                 pdf=b"%PDF-1",
-                stato="firmato",
+                status="signed",
                 created_by=admin.id,
             )
         )
@@ -162,12 +162,12 @@ def test_a_conflicting_merge_is_a_409_with_the_sentence(
 def test_the_pairs_are_listed_for_an_admin_only(
     client: TestClient, api_session: Session, sender: RecordingSender, admin: User
 ) -> None:
-    assert client.get("/api/hub/talent/duplicati").status_code == 401
+    assert client.get("/api/hub/talent/duplicates").status_code == 401
     _apply(client, "uno@studio.it")
     _login(client, sender)
-    listed = client.get("/api/hub/talent/duplicati")
+    listed = client.get("/api/hub/talent/duplicates")
     assert listed.status_code == 200
-    assert listed.json() == {"unibili": [], "da_rivedere": [], "iscrizioni": 0}
+    assert listed.json() == {"mergeable": [], "from_review": [], "signups": 0}
 
 
 def test_a_member_is_refused_the_pairs_and_the_merge(
@@ -177,7 +177,7 @@ def test_a_member_is_refused_the_pairs_and_the_merge(
     _apply(client, "due@studio.it")
     ids = _card_ids(api_session)
     _login(client, sender, "uno@studio.it")
-    assert client.get("/api/hub/talent/duplicati").status_code == 403
+    assert client.get("/api/hub/talent/duplicates").status_code == 403
     merge = client.post(
         f"/api/hub/freelancers/{ids['uno@studio.it']}/merge", json={"da": ids["due@studio.it"]}
     )
@@ -188,7 +188,7 @@ def test_an_address_with_no_card_and_a_profile_on_a_card_mails_the_cards_owner(
     client: TestClient, api_session: Session, sender: RecordingSender, admin: User
 ) -> None:
     _apply(client, "vecchia@studio.it", ADA)
-    api_session.add(User(email="senzascheda@studio.it", nome="Wile", cognome="Coyote"))
+    api_session.add(User(email="senzascheda@studio.it", nome="Wile", last_name="Coyote"))
     api_session.commit()
     sender.sent.clear()
     _apply(client, "senzascheda@studio.it", ADA)

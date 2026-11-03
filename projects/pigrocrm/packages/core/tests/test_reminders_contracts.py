@@ -22,7 +22,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.reminders.catalogue import reminder_key
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
@@ -60,46 +60,46 @@ class World:
     owner: User
     carol: User  # owns the customer
     customer: Customer
-    azienda: UUID
+    legal_entity: UUID
 
     def contract(
         self,
         *,
         requires: bool = False,
-        inizio: date | None = None,
-        fine: date | None = None,
-        tipo_rinnovo: str = "nessuno",
-        preavviso: int | None = None,
+        start: date | None = None,
+        end: date | None = None,
+        renewal_type: str = "none",
+        notice: int | None = None,
         customer: Customer | None = None,
-        stato: str = "bozza",
+        status: str = "draft",
     ) -> Contract:
         row = Contract(
             customer_id=(customer or self.customer).id,
-            azienda_id=self.azienda,
-            titolo="Consulenza",
-            inizio=inizio or _ago(200),
-            fine=fine,
-            tipo_rinnovo=tipo_rinnovo,
-            preavviso_rinnovo_giorni=preavviso,
-            preavviso_disdetta_giorni=30,
-            cadenza_fatturazione="mensile",
-            politica_spese={"kind": "rimborsabile"},
+            legal_entity_id=self.legal_entity,
+            title="Consulenza",
+            start=start or _ago(200),
+            end=end,
+            renewal_type=renewal_type,
+            renewal_notice_days=notice,
+            termination_notice_days=30,
+            billing_cadence="monthly",
+            expense_policy={"kind": "reimbursable"},
             requires_prior_approval=requires,
-            stato=stato,
+            status=status,
         )
         self.session.add(row)
         self.session.flush()
         return row
 
     def day(
-        self, contract: Contract, data: date, stato: str = "lavorato", **fields: object
+        self, contract: Contract, data: date, status: str = "worked", **fields: object
     ) -> WorkUnit:
         row = WorkUnit(
             contract_id=contract.id,
             data=data,
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato=stato,
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status=status,
             **fields,
         )
         self.session.add(row)
@@ -107,17 +107,17 @@ class World:
         return row
 
     def approval(self, contract: Contract, received: date) -> Approval:
-        document = Document(contract_id=contract.id, tipo="contratto", titolo="Contratto firmato")
+        document = Document(contract_id=contract.id, type="contract", title="Contratto firmato")
         self.session.add(document)
         self.session.flush()
         row = Approval(
             contract_id=contract.id,
-            canale="email",
-            mittente="cliente@example.test",
-            ricevuto_il=_noon(received),
+            channel="email",
+            sender="cliente@example.test",
+            received_at=_noon(received),
             document_id=document.id,
-            estratto="Confermiamo.",
-            origine={"kind": "manuale"},
+            excerpt="Confermiamo.",
+            origin={"kind": "manual"},
         )
         self.session.add(row)
         self.session.flush()
@@ -146,28 +146,30 @@ class World:
 
 @pytest.fixture
 def world(db_session: Session) -> World:
-    azienda = db_session.scalars(
+    legal_entity = db_session.scalars(
         select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
     ).one()
     users = {}
-    for name, ruolo in (("owner", "admin"), ("carol", "collaboratore")):
+    for name, role in (("owner", "admin"), ("carol", "collaborator")):
         user = User(
             email=f"{name}-{uuid4()}@example.test",
             password_hash="x",
             nome=name.title(),
-            ruolo=ruolo,
+            role=role,
         )
         db_session.add(user)
         users[name] = user
     db_session.flush()
-    customer = Customer(ragione_sociale="ACME Srl", azienda_id=azienda, owner_id=users["carol"].id)
+    customer = Customer(
+        legal_name="ACME Srl", legal_entity_id=legal_entity, owner_id=users["carol"].id
+    )
     db_session.add(customer)
     db_session.flush()
-    return World(db_session, users["owner"], users["carol"], customer, azienda)
+    return World(db_session, users["owner"], users["carol"], customer, legal_entity)
 
 
 def _actor(user: User) -> Actor:
-    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
 # -- the card's proof ---------------------------------------------------------------------
@@ -176,7 +178,7 @@ def _actor(user: User) -> Actor:
 def test_a_contract_ending_in_sixty_days_with_two_days_worked_unapproved_raises_both(
     world: World,
 ) -> None:
-    contract = world.contract(requires=True, fine=_ahead(60))
+    contract = world.contract(requires=True, end=_ahead(60))
     first = world.day(contract, _ago(2))
     second = world.day(contract, _ago(1))
     free = world.contract(requires=False)  # no approval type at all
@@ -197,9 +199,9 @@ def test_a_contract_ending_in_sixty_days_with_two_days_worked_unapproved_raises_
 
 
 def test_a_contract_with_no_approval_requirement_raises_no_approval_type(world: World) -> None:
-    contract = world.contract(requires=False, fine=_ahead(60))
+    contract = world.contract(requires=False, end=_ahead(60))
     world.day(contract, _ago(3))
-    world.day(contract, _ago(2), "proposto")
+    world.day(contract, _ago(2), "proposed")
 
     evaluation = world.evaluate()
 
@@ -228,14 +230,14 @@ def test_a_contract_with_no_approval_requirement_raises_no_approval_type(world: 
 def test_contract_expiring_climbs_the_ladder_on_both_sides_of_each_boundary(
     world: World, days: int, severity: str | None
 ) -> None:
-    contract = world.contract(fine=_ahead(days), inizio=_ago(400))
+    contract = world.contract(end=_ahead(days), start=_ago(400))
 
     assert world.severity("contract_expiring", contract.id) == severity
 
 
 def test_a_contract_without_an_end_date_or_archived_is_not_expiring(world: World) -> None:
-    world.contract(fine=None)
-    gone = world.contract(fine=_ahead(10))
+    world.contract(end=None)
+    gone = world.contract(end=_ahead(10))
     gone.deleted_at = NOON
     world.session.flush()
 
@@ -252,8 +254,8 @@ def test_a_renewed_contract_is_neither_expiring_nor_in_its_renewal_window(world:
     assert world.severity("contract_expiring", renewing.id) is not None
     assert world.severity("renewal_window_open", renewing.id) is not None
 
-    successor = world.contract(inizio=renewing.fine + timedelta(days=1), fine=_ahead(500))
-    successor.contratto_precedente_id = renewing.id
+    successor = world.contract(start=renewing.end + timedelta(days=1), end=_ahead(500))
+    successor.previous_contract_id = renewing.id
     world.session.flush()
 
     assert world.severity("contract_expiring", renewing.id) is None
@@ -262,29 +264,29 @@ def test_a_renewed_contract_is_neither_expiring_nor_in_its_renewal_window(world:
 
 
 def test_contract_expiring_reads_the_end_date_each_pass(world: World) -> None:
-    contract = world.contract(fine=_ahead(20))
+    contract = world.contract(end=_ahead(20))
     assert world.severity("contract_expiring", contract.id) == "serious"
 
-    contract.fine = _ahead(400)
+    contract.end = _ahead(400)
     world.session.flush()
 
     assert world.severity("contract_expiring", contract.id) is None, "the cause was fixed"
 
 
-def test_contract_expiring_goes_to_the_customers_owner_scoped_to_the_azienda(
+def test_contract_expiring_goes_to_the_customers_owner_scoped_to_the_legal_entity(
     world: World,
 ) -> None:
-    contract = world.contract(fine=_ahead(20))
-    other = LegalEntity(nome="Altra", ragione_sociale="Altra Srl", nazione="IT")
+    contract = world.contract(end=_ahead(20))
+    other = LegalEntity(nome="Altra", legal_name="Altra Srl", country="IT")
     world.session.add(other)
     world.session.flush()
     scoped = User(
-        email=f"s-{uuid4()}@example.test", password_hash="x", nome="Scoped", ruolo="collaboratore"
+        email=f"s-{uuid4()}@example.test", password_hash="x", nome="Scoped", role="collaborator"
     )
-    scoped.ambito_limitato = True
+    scoped.limited_scope = True
     world.session.add(scoped)
     world.session.flush()
-    scoped.scopes = [UserLegalEntity(user_id=scoped.id, azienda_id=other.id)]
+    scoped.scopes = [UserLegalEntity(user_id=scoped.id, legal_entity_id=other.id)]
     world.customer.owner_id = scoped.id
     world.session.flush()
 
@@ -294,7 +296,7 @@ def test_contract_expiring_goes_to_the_customers_owner_scoped_to_the_azienda(
 
 
 def test_contract_expiring_names_what_the_web_opens(world: World) -> None:
-    contract = world.contract(fine=_ahead(20))
+    contract = world.contract(end=_ahead(20))
 
     [reminder] = [r for r in world.evaluate().reminders if r.user_id == world.carol.id]
 
@@ -307,10 +309,10 @@ def test_contract_expiring_names_what_the_web_opens(world: World) -> None:
 # -- renewal_window_open ------------------------------------------------------------------
 
 
-def _renewing(world: World, left: int, *, tipo: str = "tacito", preavviso: int = 10) -> Contract:
+def _renewing(world: World, left: int, *, type: str = "tacit", notice: int = 10) -> Contract:
     """A contract whose renewal deadline is `left` days away."""
     return world.contract(
-        tipo_rinnovo=tipo, preavviso=preavviso, fine=_ahead(left + preavviso), inizio=_ago(400)
+        renewal_type=type, notice=notice, end=_ahead(left + notice), start=_ago(400)
     )
 
 
@@ -335,22 +337,22 @@ def test_the_renewal_window_climbs_as_it_closes(
     assert world.severity("renewal_window_open", contract.id) == severity
 
 
-@pytest.mark.parametrize("tipo", ["esplicito", "opzione_controparte", "tacito"])
-def test_every_renewal_type_with_a_notice_has_a_window(world: World, tipo: str) -> None:
-    contract = _renewing(world, 5, tipo=tipo)
+@pytest.mark.parametrize("type", ["explicit", "counterparty_option", "tacit"])
+def test_every_renewal_type_with_a_notice_has_a_window(world: World, type: str) -> None:
+    contract = _renewing(world, 5, type=type)
 
     assert world.severity("renewal_window_open", contract.id) == "critical"
 
 
 def test_a_contract_with_no_renewal_clause_or_no_end_has_no_window(world: World) -> None:
-    world.contract(tipo_rinnovo="nessuno", fine=_ahead(5))
-    world.contract(tipo_rinnovo="tacito", preavviso=10, fine=None)
+    world.contract(renewal_type="none", end=_ahead(5))
+    world.contract(renewal_type="tacit", notice=10, end=None)
 
     assert "renewal_window_open" not in {r.type for r in world.evaluate().reminders}
 
 
 def test_the_renewal_window_is_measured_to_the_deadline_not_to_the_end(world: World) -> None:
-    contract = _renewing(world, 20, preavviso=40)
+    contract = _renewing(world, 20, notice=40)
 
     [reminder] = [
         r
@@ -363,7 +365,7 @@ def test_the_renewal_window_is_measured_to_the_deadline_not_to_the_end(world: Wo
 
 
 def test_a_renewal_whose_deadline_passed_is_not_open_but_expiring_still_is(world: World) -> None:
-    contract = world.contract(tipo_rinnovo="tacito", preavviso=30, fine=_ahead(10))
+    contract = world.contract(renewal_type="tacit", notice=30, end=_ahead(10))
 
     types = {r.type for r in world.evaluate().reminders}
 
@@ -408,7 +410,7 @@ def test_linking_an_approval_or_revoking_the_day_clears_it(world: World) -> None
     assert world.severity("worked_without_approval", linked.id) == "critical"
 
     linked.approval_id = world.approval(contract, _ago(1)).id
-    revoked.stato = "revocato"
+    revoked.status = "revoked"
     world.session.flush()
 
     assert world.severity("worked_without_approval", linked.id) is None
@@ -443,7 +445,7 @@ def test_an_archived_contracts_days_are_not_raised(world: World) -> None:
 
 
 def _proposed(world: World, contract: Contract, days: int) -> WorkUnit:
-    unit = world.day(contract, _ago(days + 1), "proposto")
+    unit = world.day(contract, _ago(days + 1), "proposed")
     unit.created_at = _noon(_ago(days))
     world.session.flush()
     return unit
@@ -473,7 +475,7 @@ def test_an_answered_or_not_required_approval_is_not_unanswered(world: World) ->
     requiring = world.contract(requires=True)
     answered = _proposed(world, requiring, 12)
     answered.approval_id = world.approval(requiring, _ago(1)).id
-    answered.stato = "approvato"
+    answered.status = "approved"
     free = world.contract(requires=False)
     not_needed = _proposed(world, free, 12)
     worked = world.day(requiring, _ago(30))
@@ -490,7 +492,7 @@ def test_an_unanswered_approval_clears_when_the_day_is_refused(world: World) -> 
     unit = _proposed(world, contract, 12)
     assert world.severity("approval_unanswered", unit.id) == "serious"
 
-    unit.stato = "rifiutato"
+    unit.status = "rejected"
     world.session.flush()
 
     assert world.severity("approval_unanswered", unit.id) is None
@@ -533,7 +535,7 @@ def test_the_requirement_applies_only_to_a_requiring_contract_and_a_live_day(
     free_unit = world.day(free, _ago(5), approval_id=world.approval(free, _ago(1)).id)
     contract = world.contract(requires=True)
     refused = world.day(contract, _ago(5), approval_id=world.approval(contract, _ago(1)).id)
-    refused.stato = "revocato"
+    refused.status = "revoked"
     world.session.flush()
 
     assert world.severity("approval_requirement_unmet", free_unit.id) is None
@@ -544,7 +546,7 @@ def test_the_requirement_applies_only_to_a_requiring_contract_and_a_live_day(
 
 
 def test_a_day_outside_the_contract_term_is_serious_at_once(world: World) -> None:
-    contract = world.contract(inizio=_ago(30), fine=_ago(10))
+    contract = world.contract(start=_ago(30), end=_ago(10))
     before = world.day(contract, _ago(31))
     after = world.day(contract, _ago(9))
     first = world.day(contract, _ago(30))
@@ -557,7 +559,7 @@ def test_a_day_outside_the_contract_term_is_serious_at_once(world: World) -> Non
 
 
 def test_an_open_ended_contract_has_no_end_to_be_outside_of(world: World) -> None:
-    contract = world.contract(inizio=_ago(30), fine=None)
+    contract = world.contract(start=_ago(30), end=None)
     inside = world.day(contract, _ago(1))
     before = world.day(contract, _ago(31))
 
@@ -566,21 +568,21 @@ def test_an_open_ended_contract_has_no_end_to_be_outside_of(world: World) -> Non
 
 
 def test_correcting_the_term_clears_the_reminder(world: World) -> None:
-    contract = world.contract(inizio=_ago(30), fine=_ago(10))
+    contract = world.contract(start=_ago(30), end=_ago(10))
     unit = world.day(contract, _ago(5))
     assert world.severity("work_unit_outside_term", unit.id) == "serious"
 
-    contract.fine = _ahead(30)
+    contract.end = _ahead(30)
     world.session.flush()
 
     assert world.severity("work_unit_outside_term", unit.id) is None
 
 
 def test_a_withdrawn_or_archived_day_outside_the_term_is_not_raised(world: World) -> None:
-    contract = world.contract(inizio=_ago(30), fine=_ago(10))
+    contract = world.contract(start=_ago(30), end=_ago(10))
     revoked = world.day(contract, _ago(5))
-    revoked.stato = "revocato"
-    unwanted = world.contract(inizio=_ago(30), fine=_ago(10))
+    revoked.status = "revoked"
+    unwanted = world.contract(start=_ago(30), end=_ago(10))
     world.day(unwanted, _ago(5))
     unwanted.deleted_at = NOON
     world.session.flush()
@@ -589,7 +591,7 @@ def test_a_withdrawn_or_archived_day_outside_the_term_is_not_raised(world: World
 
 
 def test_a_day_outside_the_term_is_told_to_the_customers_owner(world: World) -> None:
-    contract = world.contract(inizio=_ago(30), fine=_ago(10))
+    contract = world.contract(start=_ago(30), end=_ago(10))
     unit = world.day(contract, _ago(5))
 
     assert world.raised()[("work_unit_outside_term", unit.id)] == {world.carol.id}
@@ -599,7 +601,7 @@ def test_a_day_outside_the_term_is_told_to_the_customers_owner(world: World) -> 
 
 
 def test_a_type_the_space_switched_off_is_not_raised(world: World) -> None:
-    contract = world.contract(fine=_ahead(20))
+    contract = world.contract(end=_ahead(20))
     ReminderPreferenceService(world.session).write(
         _actor(world.owner), "space", "contract_expiring", ReminderPreferenceWrite(enabled=False)
     )
@@ -614,15 +616,15 @@ def test_a_type_the_space_switched_off_is_not_raised(world: World) -> None:
 
 
 @pytest.mark.parametrize(
-    ("stato", "counts"),
-    [("bozza", True), ("attivo", True), ("terminato", False), ("scaduto", False)],
+    ("status", "counts"),
+    [("draft", True), ("active", True), ("terminated", False), ("expired", False)],
 )
 def test_a_terminated_or_lapsed_contract_is_neither_expiring_nor_renewing(
-    world: World, stato: str, counts: bool
+    world: World, status: str, counts: bool
 ) -> None:
-    expiring = world.contract(fine=_ahead(20), stato=stato)
+    expiring = world.contract(end=_ahead(20), status=status)
     renewing = world.contract(
-        tipo_rinnovo="tacito", preavviso=10, fine=_ahead(15), inizio=_ago(400), stato=stato
+        renewal_type="tacit", notice=10, end=_ahead(15), start=_ago(400), status=status
     )
 
     assert (world.severity("contract_expiring", expiring.id) is not None) is counts
@@ -630,24 +632,24 @@ def test_a_terminated_or_lapsed_contract_is_neither_expiring_nor_renewing(
 
 
 def test_the_expiring_types_do_not_apply_when_every_contract_is_over(world: World) -> None:
-    world.contract(fine=_ahead(20), stato="terminato", tipo_rinnovo="tacito", preavviso=5)
+    world.contract(end=_ahead(20), status="terminated", renewal_type="tacit", notice=5)
 
     evaluation = world.evaluate()
 
     assert evaluation.ran.isdisjoint({"contract_expiring", "renewal_window_open"})
 
 
-def _settle(world: World, unit: WorkUnit, stato: str) -> None:
-    unit.stato = "fatturato"
+def _settle(world: World, unit: WorkUnit, status: str) -> None:
+    unit.status = "invoiced"
     world.session.flush()
-    if stato == "pagato":
-        unit.stato = "pagato"
+    if status == "paid":
+        unit.status = "paid"
         world.session.flush()
 
 
-@pytest.mark.parametrize("stato", ["fatturato", "pagato"])
-def test_an_invoiced_or_paid_day_is_done_and_raises_nothing(world: World, stato: str) -> None:
-    contract = world.contract(requires=True, inizio=_ago(30), fine=_ago(10))
+@pytest.mark.parametrize("status", ["invoiced", "paid"])
+def test_an_invoiced_or_paid_day_is_done_and_raises_nothing(world: World, status: str) -> None:
+    contract = world.contract(requires=True, start=_ago(30), end=_ago(10))
     flagged = world.day(contract, _ago(5))
     late = world.day(contract, _ago(6), approval_id=world.approval(contract, _ago(1)).id)
     outside = world.day(contract, _ago(7), approval_id=world.approval(contract, _ago(9)).id)
@@ -656,7 +658,7 @@ def test_an_invoiced_or_paid_day_is_done_and_raises_nothing(world: World, stato:
     assert world.severity("work_unit_outside_term", outside.id) is not None
 
     for unit in (flagged, late, outside):
-        _settle(world, unit, stato)
+        _settle(world, unit, status)
 
     assert world.raised() == {}
 
@@ -664,9 +666,9 @@ def test_an_invoiced_or_paid_day_is_done_and_raises_nothing(world: World, stato:
 def test_a_day_proposed_and_then_settled_is_not_unanswered(world: World) -> None:
     contract = world.contract(requires=True)
     unit = _proposed(world, contract, 12)
-    unit.stato = "lavorato"  # no approval on a requiring contract: flagged, then billed
+    unit.status = "worked"  # no approval on a requiring contract: flagged, then billed
     world.session.flush()
-    _settle(world, unit, "pagato")
+    _settle(world, unit, "paid")
 
     assert world.severity("approval_unanswered", unit.id) is None
 
@@ -675,7 +677,7 @@ def test_a_day_proposed_and_then_settled_is_not_unanswered(world: World) -> None
 
 
 def test_one_day_is_never_written_as_one_days(world: World) -> None:
-    contract = world.contract(requires=True, fine=_ahead(1), tipo_rinnovo="tacito", preavviso=0)
+    contract = world.contract(requires=True, end=_ahead(1), renewal_type="tacit", notice=0)
     unit = world.day(contract, _ago(1))
     other = world.day(contract, _ago(2))
 

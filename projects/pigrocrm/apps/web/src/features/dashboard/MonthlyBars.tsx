@@ -23,7 +23,7 @@ import type { CashMonth } from './queries'
  * its own value inside; a column too short for a label says its value above itself
  * rather than nowhere; a stacked column says its height as money above, so the figure on
  * top of a month is the bar a reader measures and not one segment mistaken for it. That
- * height comes from the server (`pila_andamento`, `pila_proiezione`), costs included
+ * height comes from the server (`trend_stack`, `projection_stack`), costs included
  * since the bar includes them: a sum is a figure, and no figure is born in the browser.
  * A payload without it, an API a deploy behind the web, prints nothing above rather than
  * `NaN €`. Below 72px of column the labels hide instead of clipping (a container query):
@@ -53,10 +53,10 @@ export function MonthlyBars({
   title: string
   months: CashMonth[]
   series: SeriesKey[]
-  shares: 'quote_andamento' | 'quote_proiezione'
+  shares: 'trend_shares' | 'projection_shares'
 }) {
   const empty = months.every((month) => series.every((key) => isZero(month[key])))
-  const heights = shares === 'quote_andamento' ? 'pila_andamento' : 'pila_proiezione'
+  const heights = shares === 'trend_shares' ? 'trend_stack' : 'projection_stack'
 
   return (
     <figure className="border bg-card p-4" aria-labelledby={`${shares}-title`}>
@@ -102,19 +102,19 @@ export function MonthlyBars({
             // than one segment, the lone value when its only segment is too short to carry
             // it. A month with one segment tall enough says its figure once, inside. An
             // older payload carries no `pila_*`: then nothing, never `NaN €`.
-            const pila: string | undefined = month[heights]
+            const stack: string | undefined = month[heights]
             const above =
               segments.length > 1
-                ? pila === undefined
+                ? stack === undefined
                   ? null
-                  : money(pila)
+                  : money(stack)
                 : segments.length === 1 && labelled.length === 0
                   ? money(segments[0]!.value)
                   : null
             return (
               <div
-                key={month.mese}
-                data-testid={`column-${month.mese}`}
+                key={month.month}
+                data-testid={`column-${month.month}`}
                 className="@container flex h-full min-h-0 flex-col justify-end gap-0.5"
               >
                 {above !== null && (
@@ -142,7 +142,7 @@ export function MonthlyBars({
                         className="absolute inset-x-0 top-1 hidden px-1 text-center text-[10px] font-medium @min-[72px]:block"
                         style={{
                           color:
-                            segment.key === 'da_incassare'
+                            segment.key === 'unpaid'
                               ? 'var(--color-prussian-blue)'
                               : '#ffffff',
                         }}
@@ -159,7 +159,7 @@ export function MonthlyBars({
       )}
       <div aria-hidden="true" className="mt-1 grid grid-cols-12 gap-2 text-center text-xs text-muted-foreground">
         {months.map((month) => (
-          <span key={month.mese}>{MONTHS[month.mese - 1]}</span>
+          <span key={month.month}>{MONTHS[month.month - 1]}</span>
         ))}
       </div>
 
@@ -183,9 +183,9 @@ export function MonthlyBars({
             </thead>
             <tbody>
               {months.map((month) => (
-                <tr key={month.mese}>
+                <tr key={month.month}>
                   <th scope="row" className="py-1 pr-2 text-left font-normal">
-                    {MONTHS[month.mese - 1]} {String(month.anno).slice(2)}
+                    {MONTHS[month.month - 1]} {String(month.year).slice(2)}
                   </th>
                   {series.map((key) => (
                     <td key={key} className="py-1 pr-2 tabular-nums">

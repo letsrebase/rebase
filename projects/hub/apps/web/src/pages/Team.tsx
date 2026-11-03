@@ -4,7 +4,7 @@ import { Button } from '@rebase/ui/button'
 import { TeamBuilder } from '@/components/TeamBuilder'
 import { ApiError, team, type TeamProposal } from '@/lib/api'
 
-/** Over an empty builder when `?proposta=` names nothing the API can open (REB-675): a
+/** Over an empty builder when `?proposal=` names nothing the API can open (REB-675): a
  *  proposal older than a day, never made, or not a public one; one sentence for all. */
 export const STALE_SENTENCE =
   'Questa proposta non c’è più: descrivi di nuovo il progetto e te ne proponiamo un altro.'
@@ -17,13 +17,13 @@ const OPENING = 'Apro la proposta…'
 /** The public team builder, `/hub/team` (P-REB-43, spec § 3.1, § 4.3): no login, the
  *  wizards' chrome, the builder, and the beta box that points a company wanting the
  *  whole cloud at the company wizard, with `da=team-builder` as its origin. Since
- *  REB-675 it also opens on a proposal made elsewhere: `?proposta=<id>`, the link the
+ *  REB-675 it also opens on a proposal made elsewhere: `?proposal=<id>`, the link the
  *  landing's hero gives under its minimal result, reads the proposal back and hands it
- *  to the builder as if just proposed; `?descrizione=` only fills the box. */
+ *  to the builder as if just proposed; `?description=` only fills the box. */
 export function Team() {
-  const search = useSearch({ strict: false }) as { proposta?: string; descrizione?: string; persone?: number }
-  const proposta = search.proposta
-  // The read of `proposta`, keyed by it: a `null` proposal with `gone` is the API's
+  const search = useSearch({ strict: false }) as { proposal?: string; description?: string; people?: number }
+  const proposta = search.proposal
+  // The read of `proposal`, keyed by it: a `null` proposal with `gone` is the API's
   // 404, without it a failure the next attempt may not repeat.
   const [opened, setOpened] = useState<{
     id: string
@@ -97,8 +97,8 @@ export function Team() {
             key={proposal?.id ?? 'empty'}
             mode="public"
             proposal={proposal}
-            descrizione={search.descrizione}
-            persone={search.persone}
+            description={search.description}
+            people={search.people}
           />
         </>
       )}

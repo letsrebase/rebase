@@ -50,18 +50,18 @@ function formatUsed(value: string | null): string {
  * left as a pair of inline ternaries -- so the label and the tone have one key to agree
  * on, the same shape the four stored enums use.
  *
- * `attivo` is the ordinary, settled state. `revocato` stays quiet rather than reading as
+ * `active` is the ordinary, settled state. `revoked` stays quiet rather than reading as
  * a warning: revoking is something the owner *did*, deliberately, and a list of old
  * tokens all in the destructive tint would say something went wrong when nothing did.
  */
-type TokenStato = 'attivo' | 'revocato'
+type TokenStatus = 'active' | 'revoked'
 
-const TOKEN_STATE_LABELS: Record<TokenStato, string> = { attivo: 'Attivo', revocato: 'Revocato' }
+const TOKEN_STATE_LABELS: Record<TokenStatus, string> = { active: 'Attivo', revoked: 'Revocato' }
 
-const TOKEN_STATE_TONE: Record<TokenStato, StatusTone> = { attivo: 'ink', revocato: 'muted' }
+const TOKEN_STATE_TONE: Record<TokenStatus, StatusTone> = { active: 'ink', revoked: 'muted' }
 
-function statoOf(token: TokenRecord): TokenStato {
-  return token.revoked_at ? 'revocato' : 'attivo'
+function statusOf(token: TokenRecord): TokenStatus {
+  return token.revoked_at ? 'revoked' : 'active'
 }
 
 /**
@@ -69,14 +69,14 @@ function statoOf(token: TokenRecord): TokenStato {
  * period-lock tools. «Completo» wears the gold dot, the one tone in the product that says
  * «look here»: it is the setting somebody scans the list for. An ordinary token is quiet.
  */
-const ACCESS_LABELS = { completo: 'Completo', standard: 'Standard' } as const
+const ACCESS_LABELS = { complete: 'Completo', standard: 'Standard' } as const
 const ACCESS_TONE: Record<keyof typeof ACCESS_LABELS, StatusTone> = {
-  completo: 'gold',
+  complete: 'gold',
   standard: 'muted',
 }
 
 function accessOf(token: TokenRecord): keyof typeof ACCESS_LABELS {
-  return token.full_access ? 'completo' : 'standard'
+  return token.full_access ? 'complete' : 'standard'
 }
 
 const FULL_ACCESS_HELP =
@@ -104,7 +104,7 @@ export function TokensPanel() {
   const { user } = useAuth()
   const [creating, setCreating] = useState(false)
   const [connecting, setConnecting] = useState(false)
-  const [nome, setNome] = useState('')
+  const [nome, setName] = useState('')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [fullAccess, setFullAccess] = useState(false)
   const [issued, setIssued] = useState<CreatedToken | null>(null)
@@ -115,7 +115,7 @@ export function TokensPanel() {
   const revoke = useRevokeToken()
   const setAccess = useSetTokenFullAccess()
   const options = useTokenOptions()
-  const isAdmin = user?.ruolo === 'admin'
+  const isAdmin = user?.role === 'admin'
   const team = useTeamTokens(isAdmin)
   // Unknown (still loading, or the read failed) counts as closed: the server refuses an
   // opening the space does not offer, and an offered box that fails on submit is worse than
@@ -129,7 +129,7 @@ export function TokensPanel() {
 
   function openDialog() {
     setProblem(null)
-    setNome('')
+    setName('')
     setFullAccess(false)
     setCreating(true)
   }
@@ -141,7 +141,7 @@ export function TokensPanel() {
         setIssued(created)
         setCopied(false)
         setCreating(false)
-        setNome('')
+        setName('')
       },
       onError: (error) => setProblem(toProblem(error)),
     })
@@ -222,10 +222,10 @@ export function TokensPanel() {
       // The accessor carries the word, so the column has one plain text value; the pill
       // is the same dotted one every other state in the product wears (design spec §4),
       // not the filled badge this column used to show.
-      accessorFn: (row) => TOKEN_STATE_LABELS[statoOf(row)],
+      accessorFn: (row) => TOKEN_STATE_LABELS[statusOf(row)],
       cell: (info) => {
-        const stato = statoOf(info.row.original)
-        return <StatusPill tone={TOKEN_STATE_TONE[stato]}>{TOKEN_STATE_LABELS[stato]}</StatusPill>
+        const status = statusOf(info.row.original)
+        return <StatusPill tone={TOKEN_STATE_TONE[status]}>{TOKEN_STATE_LABELS[status]}</StatusPill>
       },
     },
     {
@@ -255,7 +255,7 @@ export function TokensPanel() {
   ]
 
   const teamColumns: ColumnDef<DataTableFeatures, TeamTokenRecord>[] = [
-    { header: 'Titolare', accessorKey: 'owner_nome' },
+    { header: 'Titolare', accessorKey: 'owner_name' },
     { header: 'Nome', accessorKey: 'nome' },
     { header: 'Prefisso', id: 'prefix', cell: (info) => <code>{info.row.original.prefix}</code> },
     accessColumn<TeamTokenRecord>(),
@@ -272,9 +272,9 @@ export function TokensPanel() {
         const token = info.row.original
         return (
           <RowActions
-            label={`Azioni per ${token.nome} di ${token.owner_nome}`}
+            label={`Azioni per ${token.nome} di ${token.owner_name}`}
             items={fullAccessAction(token, fullAccessAvailable, (t, next) =>
-              changeAccess(t, next, ` di ${token.owner_nome}`),
+              changeAccess(t, next, ` di ${token.owner_name}`),
             )}
           />
         )
@@ -282,7 +282,7 @@ export function TokensPanel() {
     },
   ]
 
-  const ruolo = user ? roleLabel(user.ruolo) : null
+  const role = user ? roleLabel(user.role) : null
 
   return (
     <>
@@ -371,7 +371,7 @@ export function TokensPanel() {
             <DialogTitle>Nuovo token</DialogTitle>
             <DialogDescription>
               Dai un nome riconoscibile, es. &quot;Claude sul portatile&quot;. Avrà lo stesso ruolo
-              di questo account ({ruolo}) e non scadrà finché non lo revochi.
+              di questo account ({role}) e non scadrà finché non lo revochi.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -388,7 +388,7 @@ export function TokensPanel() {
               id="token-nome"
               aria-invalid={fieldError?.field === 'nome'}
               value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              onChange={(event) => setName(event.target.value)}
             />
             {fieldError?.field === 'nome' && (
               <p className="text-sm text-destructive">{fieldError.message}</p>

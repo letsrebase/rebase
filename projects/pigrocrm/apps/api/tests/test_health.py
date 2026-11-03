@@ -34,8 +34,8 @@ def test_health_is_unchanged_by_a_broken_gmail_credential(
         email="gmail-broken@example.it",
         nome="Utente",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     api_session.add(user)
     api_session.flush()

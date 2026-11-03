@@ -4,8 +4,8 @@ import { asBody, isBlank, toFormValues, toRequestBody, type FormValues } from '.
 
 const FIELDS: FieldDefinition[] = [
   { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
-  { key: 'valore', label: 'Valore', type: 'currency', required: false, options: [] },
-  { key: 'giorni', label: 'Giorni', type: 'number', required: false, options: [] },
+  { key: 'value', label: 'Valore', type: 'currency', required: false, options: [] },
+  { key: 'days', label: 'Giorni', type: 'number', required: false, options: [] },
 ]
 
 function values(native: Record<string, unknown>, custom: Record<string, unknown> = {}): FormValues {
@@ -29,14 +29,14 @@ describe('toFormValues', () => {
     id: 'e-1',
     created_at: '2026-01-01',
     nome: 'Acme',
-    valore: '10.00',
-    custom_fields: { settore: 'PMI', vecchio: 'x' },
+    value: '10.00',
+    custom_fields: { industry: 'PMI', vecchio: 'x' },
   }
 
   it('seeds exactly the listed native keys, never the rest of the row', () => {
-    const result = toFormValues(entity, ['nome', 'valore', 'giorni'])
+    const result = toFormValues(entity, ['nome', 'value', 'days'])
 
-    expect(result.native).toEqual({ nome: 'Acme', valore: '10.00', giorni: undefined })
+    expect(result.native).toEqual({ nome: 'Acme', value: '10.00', days: undefined })
     expect(result.native).not.toHaveProperty('id')
     expect(result.native).not.toHaveProperty('created_at')
   })
@@ -44,9 +44,9 @@ describe('toFormValues', () => {
   it('copies custom_fields whole into its own namespace, detached from the row', () => {
     const result = toFormValues(entity, ['nome'])
 
-    expect(result.custom).toEqual({ settore: 'PMI', vecchio: 'x' })
-    result.custom.settore = 'changed'
-    expect(entity.custom_fields.settore).toBe('PMI')
+    expect(result.custom).toEqual({ industry: 'PMI', vecchio: 'x' })
+    result.custom.industry = 'changed'
+    expect(entity.custom_fields.industry).toBe('PMI')
   })
 
   it('answers an empty custom namespace for an entity without custom_fields', () => {
@@ -56,7 +56,7 @@ describe('toFormValues', () => {
 
 describe('toRequestBody', () => {
   it('sends non-blank natives and always carries custom_fields', () => {
-    const body = toRequestBody(values({ nome: 'Acme', valore: '' }), {
+    const body = toRequestBody(values({ nome: 'Acme', value: '' }), {
       fields: FIELDS,
       isRenderedCustomKey: rendersEverything,
     })
@@ -65,49 +65,49 @@ describe('toRequestBody', () => {
   })
 
   it('spells a cleared native column by its type, and says nothing about one that was never set', () => {
-    const initial = values({ nome: 'Acme', valore: '10.00', giorni: 30 })
+    const initial = values({ nome: 'Acme', value: '10.00', days: 30 })
 
-    const body = toRequestBody(values({ nome: '', valore: '', giorni: null, extra: '' }), {
+    const body = toRequestBody(values({ nome: '', value: '', days: null, extra: '' }), {
       fields: FIELDS,
       initial,
       isRenderedCustomKey: rendersEverything,
     })
 
-    expect(body).toEqual({ nome: '', valore: null, giorni: null, custom_fields: {} })
+    expect(body).toEqual({ nome: '', value: null, days: null, custom_fields: {} })
   })
 
   it('clears a custom field only with null, and only when it used to hold a value', () => {
-    const initial = values({}, { settore: 'PMI', vuoto: '' })
+    const initial = values({}, { industry: 'PMI', empty: '' })
 
-    const body = toRequestBody(values({}, { settore: '', vuoto: '', fatto: false }), {
+    const body = toRequestBody(values({}, { industry: '', empty: '', fatto: false }), {
       fields: FIELDS,
       initial,
       isRenderedCustomKey: rendersEverything,
     })
 
-    expect(body.custom_fields).toEqual({ settore: null, fatto: false })
+    expect(body.custom_fields).toEqual({ industry: null, fatto: false })
   })
 
   it('leaves out a custom value whose definition is no longer rendered', () => {
-    const body = toRequestBody(values({}, { archiviato: 'x', attivo: 'y' }), {
+    const body = toRequestBody(values({}, { archived: 'x', active: 'y' }), {
       fields: FIELDS,
-      initial: values({}, { archiviato: 'x' }),
-      isRenderedCustomKey: (key) => key === 'attivo',
+      initial: values({}, { archived: 'x' }),
+      isRenderedCustomKey: (key) => key === 'active',
     })
 
-    expect(body.custom_fields).toEqual({ attivo: 'y' })
+    expect(body.custom_fields).toEqual({ active: 'y' })
   })
 
   it('honours skipNative and coerceNative', () => {
-    const body = toRequestBody(values({ nome: 'Acme', giorni: '30', customer_id: 'c-1' }), {
+    const body = toRequestBody(values({ nome: 'Acme', days: '30', customer_id: 'c-1' }), {
       fields: FIELDS,
       initial: values({ customer_id: 'c-0' }),
       isRenderedCustomKey: rendersEverything,
       skipNative: (key) => key === 'customer_id',
-      coerceNative: (key, value) => (key === 'giorni' ? Number(value) : value),
+      coerceNative: (key, value) => (key === 'days' ? Number(value) : value),
     })
 
-    expect(body).toEqual({ nome: 'Acme', giorni: 30, custom_fields: {} })
+    expect(body).toEqual({ nome: 'Acme', days: 30, custom_fields: {} })
   })
 })
 

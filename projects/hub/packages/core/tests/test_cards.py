@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 import pytest
 from admins import an_admin
-from fakes_cards import CARD, FONTI, MODEL, Scripted, card_response, text_pdf
+from fakes_cards import CARD, MODEL, SOURCES, Scripted, card_response, text_pdf
 from freelancer_fixtures import (
     CV,
     CV_2026,
@@ -72,7 +72,7 @@ def test_card_from_a_cv(clean_hub: Session) -> None:
         NOW,
         None,
     )
-    assert read.modalita == "remoto"
+    assert read.mode == "remote"
     stored = stored_card(clean_hub, freelancer_id)
     assert stored is not None
     assert (stored.input_tokens, stored.output_tokens) == (1200, 180)
@@ -82,23 +82,23 @@ def test_card_from_a_cv(clean_hub: Session) -> None:
     # input, the model's claim for each field, and no conflict. The named card is the
     # persona of the answer (an empty one here), tied to the CV it was read from.
     assert (stored.prompt_version, stored.provider, stored.thinking_tokens) == (3, None, 0)
-    assert stored.persona == {
+    assert stored.person == {
         "nome": None,
-        "cognome": None,
+        "last_name": None,
         "email": None,
-        "telefono": None,
-        "citta": None,
+        "phone": None,
+        "city": None,
         "linkedin_url": None,
-        "altri_link": [],
-        "aziende": [],
+        "other_links": [],
+        "companies": [],
         "cv_sha256": sha(CV),
     }
-    assert stored.fonti == FONTI
+    assert stored.sources == SOURCES
     assert stored.source_hashes == {"wizard": sha(b"Backend developer")}
     assert stored.conflicts == []
 
     # One call, shaped for a card: the answer is `CardDraft` (the `Card`, and the private
-    # `fonti` and `employers` beside it), whose schema the seam sends closed, every
+    # `sources` and `employers` beside it), whose schema the seam sends closed, every
     # property required, without its docstring (`test_llm.py`), and which still enforces
     # every limit on the answer (the over-limit cases below). No ceiling of its own: the
     # `card` task's is the one that applies.
@@ -117,12 +117,12 @@ def test_card_from_a_cv(clean_hub: Session) -> None:
     # The work mode is read from the profile when the card is shown, never stored on it.
     row = clean_hub.get(Freelancer, freelancer_id)
     assert row is not None
-    row.remoto = "ibrido"
+    row.remote = "hybrid"
     clean_hub.commit()
-    assert CardWriter(clean_hub, None).read(freelancer_id).modalita == "ibrido"
+    assert CardWriter(clean_hub, None).read(freelancer_id).mode == "hybrid"
 
 
-CV_TEXT = CvText(filename="cv.pdf", pagine=1, testo="Ada Lovelace", troncato=False)
+CV_TEXT = CvText(filename="cv.pdf", pages=1, text="Ada Lovelace", truncated=False)
 
 
 def test_compose_does_not_write_the_card_row(clean_hub: Session) -> None:
@@ -144,7 +144,7 @@ def test_compose_adds_up_the_rewrite_and_reports_a_failure_without_storing_it(
     clean_hub: Session,
 ) -> None:
     freelancer_id = apply_freelancer(clean_hub)
-    gendered = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperienza."}
+    gendered = {**CARD, "profile_summary": "Lei è una sviluppatrice con nove anni di esperienza."}
     llm = RecordingCall(
         [
             card_response(gendered, input_tokens=1000, output_tokens=100),
@@ -180,9 +180,9 @@ def test_card_prompt_is_byte_identical_in_substance_to_before() -> None:
     adds is the version line and the description of the private answer, and nothing else."""
     cv = CvText(
         filename="cv.pdf",
-        pagine=1,
-        testo="Ada Lovelace, backend developer a Torino",
-        troncato=True,
+        pages=1,
+        text="Ada Lovelace, backend developer a Torino",
+        truncated=True,
     )
 
     request = card_prompt(cv, "Backend developer")
@@ -217,18 +217,18 @@ def test_the_read_carries_the_clients_band_from_the_rate(clean_hub: Session) -> 
     in «500–650». No rate, no band; and a talent with no card yet still has one."""
     freelancer_id = apply_freelancer(clean_hub)
     CardWriter(clean_hub, RecordingCall([card_response()]), now=lambda: NOW).write(freelancer_id)
-    assert CardWriter(clean_hub, None).read(freelancer_id).fascia == Band(min=500, max=650)
+    assert CardWriter(clean_hub, None).read(freelancer_id).band == Band(min=500, max=650)
 
     row = clean_hub.get(Freelancer, freelancer_id)
     assert row is not None
-    row.tariffa_giornaliera = None
+    row.daily_rate = None
     clean_hub.commit()
-    assert CardWriter(clean_hub, None).read(freelancer_id).fascia is None
+    assert CardWriter(clean_hub, None).read(freelancer_id).band is None
 
     without_cv = apply_freelancer(clean_hub, email="grace@studio.it", cv=None)
     read = CardWriter(clean_hub, None).read(without_cv)
     assert read.card is None
-    assert read.fascia == Band(min=500, max=650)
+    assert read.band == Band(min=500, max=650)
 
 
 def test_card_follows_the_cv(clean_hub: Session) -> None:
@@ -311,19 +311,22 @@ def test_scanned_cv_makes_no_call(clean_hub: Session) -> None:
     [
         (card_response(stop_reason="max_tokens"), "max_tokens"),
         (card_response(text="Ecco la scheda: ruolo backend"), "shape"),
-        (card_response({key: value for key, value in CARD.items() if key != "luogo"}), "shape"),
+        (card_response({key: value for key, value in CARD.items() if key != "location"}), "shape"),
         (card_response({**CARD, "nome": "Ada Lovelace"}), "shape"),
         (card_response({**CARD, "seniority": "guru"}), "shape"),
-        (card_response(["non", "una", "scheda"]), "shape"),  # type: ignore[arg-type]
+        (card_response(["non", "una", "card"]), "shape"),  # type: ignore[arg-type]
         # The limits the seam strips from the schema are still `Card`'s.
-        (card_response({**CARD, "anni": 61}), "shape"),
-        (card_response({**CARD, "competenze": [f"skill {n}" for n in range(21)]}), "shape"),
-        (card_response({**CARD, "sintesi": "x" * 401}), "shape"),
+        (card_response({**CARD, "experience_years": 61}), "shape"),
+        (card_response({**CARD, "skills": [f"skill {n}" for n in range(21)]}), "shape"),
+        (card_response({**CARD, "profile_summary": "x" * 401}), "shape"),
         # A valid card that names the person or carries an address (spec § 2.1).
-        (card_response({**CARD, "sintesi": "Il profilo di Lovelace, backend."}), "identifying"),
-        (card_response({**CARD, "competenze": ["Python", "www.ada.dev"]}), "identifying"),
-        (card_response({**CARD, "luogo": "https://maps.example/torino"}), "identifying"),
-        (card_response({**CARD, "sintesi": "Scrivete a ada@studio.it."}), "identifying"),
+        (
+            card_response({**CARD, "profile_summary": "Il profilo di Lovelace, backend."}),
+            "identifying",
+        ),
+        (card_response({**CARD, "skills": ["Python", "www.ada.dev"]}), "identifying"),
+        (card_response({**CARD, "location": "https://maps.example/torino"}), "identifying"),
+        (card_response({**CARD, "profile_summary": "Scrivete a ada@studio.it."}), "identifying"),
     ],
     ids=[
         "max_tokens",
@@ -447,7 +450,7 @@ def test_refresh_stale_limits_and_counts(clean_hub: Session) -> None:
 
 
 def test_refresh_stale_skips_a_turned_down_talent(clean_hub: Session) -> None:
-    """The backfill sends no CV of a person turned down (`scartato`): the catalogue
+    """The backfill sends no CV of a person turned down (`discarded`): the catalogue
     would never show the card, so the CV would reach Anthropic for nothing."""
     turned_down = apply_freelancer(
         clean_hub, "a@studio.it", text_pdf("Il CV di chi è stato scartato.")
@@ -455,14 +458,14 @@ def test_refresh_stale_skips_a_turned_down_talent(clean_hub: Session) -> None:
     kept = apply_freelancer(clean_hub, "b@studio.it", text_pdf("Il CV di chi resta."))
     row = clean_hub.get(Freelancer, turned_down)
     assert row is not None
-    row.stato = "scartato"
+    row.status = "discarded"
     clean_hub.commit()
     llm = RecordingCall([card_response()])
 
     assert CardWriter(clean_hub, llm).refresh_stale() == CardsRefreshed(written=1, failed=0)
 
     [request] = llm.requests
-    assert "chi resta" in user_text(request) and "scartato" not in user_text(request)
+    assert "chi resta" in user_text(request) and "discarded" not in user_text(request)
     assert (stored := stored_card(clean_hub, kept)) is not None and stored.card == CARD
     assert stored_card(clean_hub, turned_down) is None
     assert CardWriter(clean_hub, llm).refresh_stale() == CardsRefreshed(written=0, failed=0)

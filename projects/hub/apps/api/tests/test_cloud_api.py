@@ -39,16 +39,16 @@ from rebase_core.team_prompt import ProposalAnswer
 from rebase_core.team_requests import CLOUD_CLOSED_FOR_PROPOSAL
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
-REFERENTE = "wile@acme.it"
+CONTACT_PERSON = "wile@acme.it"
 CLOSED = "Il talent cloud non è aperto per questo account."
 NOT_AVAILABLE = "Profilo non disponibile."
 OTHER_CONTEXT = "La proposta è di un altro contesto: rigenerala."
 BUSY = "Troppe richieste in questo momento: riprova tra un minuto."
 OFF = "Il team builder è spento."
-DESCRIZIONE = (
+DESCRIPTION = (
     "Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, sei mesi, da remoto."
 )
-RIASSUNTO = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
+SUMMARY = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def _clock(client: TestClient, now: datetime) -> None:
     client.app.dependency_overrides[get_clock] = lambda: lambda: now  # type: ignore[attr-defined]
 
 
-def _login(client: TestClient, sender: RecordingSender, email: str = REFERENTE) -> None:
+def _login(client: TestClient, sender: RecordingSender, email: str = CONTACT_PERSON) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
     match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
@@ -97,38 +97,38 @@ def _login(client: TestClient, sender: RecordingSender, email: str = REFERENTE) 
     sender.sent.clear()
 
 
-def _company(session: Session, azienda: str = "Acme S.r.l.") -> UUID:
+def _company(session: Session, company: str = "Acme S.r.l.") -> UUID:
     read, _ = CompanyService(session).request(
         CompanyCreate(
-            nome_azienda=azienda,
-            referente_nome="Wile",
-            referente_cognome="Coyote",
-            email=REFERENTE,
-            telefono="+39 345 1234567",
-            figura_richiesta="Backend developer",
-            progetto="Serve un backend developer per tre mesi.",
-            periodo_da=date(2026, 10, 1),
-            durata="3 mesi",
-            budget_giornaliero=Decimal("500"),
-            remoto="remoto",
-            numero_risorse=1,
+            company_name=company,
+            contact_first_name="Wile",
+            contact_last_name="Coyote",
+            email=CONTACT_PERSON,
+            phone="+39 345 1234567",
+            requested_role="Backend developer",
+            project="Serve un backend developer per tre mesi.",
+            period_from=date(2026, 10, 1),
+            duration="3 mesi",
+            daily_budget=Decimal("500"),
+            remote="remote",
+            headcount=1,
         )
     )
     return read.id
 
 
 def _open(
-    session: Session, azienda: str = "Acme S.r.l.", *, ago: timedelta = timedelta(hours=1)
+    session: Session, company: str = "Acme S.r.l.", *, ago: timedelta = timedelta(hours=1)
 ) -> tuple[UUID, UUID]:
-    """A live grant for the referente of `azienda`'s request, opened `ago`: their user
+    """A live grant for the referente of `company`'s request, opened `ago`: their user
     id and the company. An hour by default, so the proposals the tests write (five
     minutes old) come after it, as a proposal made in the cloud does."""
     admin = session.scalar(select(User).where(User.email == "ivan@rebase.it"))
     if admin is None:
-        admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+        admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
         session.add(admin)
         session.commit()
-    company_id = _company(session, azienda)
+    company_id = _company(session, company)
     grant, _ = TalentCloudService(session, Settings(_env_file=None)).grant(company_id, admin.id)  # type: ignore[call-arg]
     session.execute(
         update(TalentCloudGrant)
@@ -136,32 +136,32 @@ def _open(
         .values(granted_at=datetime.now(UTC) - ago)
     )
     session.commit()
-    user_id = session.scalar(select(User.id).where(User.email == REFERENTE))
+    user_id = session.scalar(select(User.id).where(User.email == CONTACT_PERSON))
     assert user_id is not None
     return user_id, company_id
 
 
 def _talent(
     session: Session,
-    cognome: str,
+    last_name: str,
     *,
-    stato: str = "nuovo",
+    status: str = "new",
     card: dict[str, Any] | None = None,
     vetted: bool = False,
 ) -> UUID:
-    slug = cognome.lower()
-    user = User(email=f"{slug}@studio.it", nome="Ada", cognome=cognome, telefono="+39 333 9998877")
+    slug = last_name.lower()
+    user = User(email=f"{slug}@studio.it", nome="Ada", last_name=last_name, phone="+39 333 9998877")
     session.add(user)
     session.flush()
     row = Freelancer(
         user_id=user.id,
-        remoto="remoto",
-        tariffa_giornaliera=Decimal("463.21"),
-        stato=stato,
+        remote="remote",
+        daily_rate=Decimal("463.21"),
+        status=status,
         posizione="Backend developer",
         links=[f"https://{slug}.dev"],
         cv_bytes=PDF,
-        cv_filename=f"CV {cognome}.pdf",
+        cv_filename=f"CV {last_name}.pdf",
         cv_mime="application/pdf",
         cv_size=len(PDF),
         vetted_at=datetime.now(UTC) if vetted else None,
@@ -172,8 +172,8 @@ def _talent(
         Note(
             entity_type="freelancer",
             entity_id=row.id,
-            testo="Nota riservata dell'admin.",
-            autore="Ivan",
+            text="Nota riservata dell'admin.",
+            author="Ivan",
         )
     )
     session.add(
@@ -187,10 +187,10 @@ def _talent(
             generated_at=datetime.now(UTC),
             # What the CV says of the person (REB-855) is the admin's alone: the cloud
             # shows the account's name and links, never these.
-            persona={
+            person={
                 "email": "ada.cv@example.org",
-                "telefono": "+39 02 5550123",
-                "aziende": ["Initech Labs"],
+                "phone": "+39 02 5550123",
+                "companies": ["Initech Labs"],
             },
         )
     )
@@ -202,31 +202,31 @@ def _proposal_row(
     session: Session,
     members: list[UUID],
     *,
-    origine: str = "cloud",
+    origin: str = "cloud",
     user_id: UUID | None = None,
     model: str = MODEL,
     age: timedelta = timedelta(minutes=5),
 ) -> UUID:
     row = TeamProposal(
-        descrizione=DESCRIZIONE,
-        riassunto=RIASSUNTO,
-        luogo={"locale": False, "dove": None},
+        description=DESCRIPTION,
+        summary=SUMMARY,
+        location={"locale": False, "dove": None},
         team=[
             {
                 "posizione": index,
                 "freelancer_id": str(freelancer_id),
-                "ruolo": "Backend developer",
-                "motivazione": "Nove anni di API in Python.",
-                "giorni_settimana": 5,
+                "role": "Backend developer",
+                "reasoning": "Nove anni di API in Python.",
+                "week_days": 5,
             }
             for index, freelancer_id in enumerate(members, start=1)
         ],
-        economia={"giorno": None, "mese": None, "giorni_mese": 22},
+        economics={"day": None, "month": None, "days_month": 22},
         model=model,
         input_tokens=5200,
         output_tokens=640,
         cache_read_tokens=0,
-        origine=origine,
+        origin=origin,
         user_id=user_id,
         created_at=datetime.now(UTC) - age,
     )
@@ -237,14 +237,14 @@ def _proposal_row(
 
 def proposal_response() -> LlmResponse:
     body = {
-        "riassunto": RIASSUNTO,
-        "luogo": {"locale": False, "dove": None},
+        "summary": SUMMARY,
+        "location": {"locale": False, "dove": None},
         "team": [
             {
                 "id": "t1",
-                "ruolo": "Backend developer",
-                "motivazione": "Nove anni di API in Python e FastAPI.",
-                "giorni_settimana": 5,
+                "role": "Backend developer",
+                "reasoning": "Nove anni di API in Python e FastAPI.",
+                "week_days": 5,
             }
         ],
     }
@@ -261,11 +261,11 @@ def proposal_response() -> LlmResponse:
 
 
 def _cloud_propose(client: TestClient, **extra: Any) -> Any:
-    return client.post("/api/hub/me/cloud/proposals", json={"descrizione": DESCRIZIONE, **extra})
+    return client.post("/api/hub/me/cloud/proposals", json={"description": DESCRIPTION, **extra})
 
 
 def _public_propose(client: TestClient) -> Any:
-    return client.post("/api/hub/team/proposals", json={"descrizione": DESCRIZIONE})
+    return client.post("/api/hub/team/proposals", json={"description": DESCRIPTION})
 
 
 # ---- the guard -----------------------------------------------------------------------------
@@ -296,7 +296,7 @@ def test_the_cloud_is_closed_to_anyone_without_a_live_grant(
     assert all(answer.json() == {"detail": CLOSED} for answer in refused)
 
     # An admin is no exception: the cloud is a company's.
-    cloud.add(User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin"))
+    cloud.add(User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin"))
     cloud.commit()
     _login(client, sender, "ivan@rebase.it")
     assert [answer.status_code for answer in _every_route(client, ada)] == [403] * 4
@@ -327,7 +327,7 @@ def test_the_cloud_lists_the_talents_by_name_and_filters_them(
 ) -> None:
     lovelace = _talent(cloud, "Lovelace", card={"seniority": "senior"})
     hopper = _talent(cloud, "Hopper", card={"seniority": "mid"}, vetted=True)
-    _talent(cloud, "Scartata", stato="scartato")
+    _talent(cloud, "Scartata", status="discarded")
     _open(cloud)
     _login(client, sender)
 
@@ -336,26 +336,29 @@ def test_the_cloud_lists_the_talents_by_name_and_filters_them(
     assert listed.status_code == 200, listed.text
     body = listed.json()
     assert [item["freelancer_id"] for item in body["items"]] == [str(hopper), str(lovelace)]
-    assert body["ruoli"] == [CARD["ruolo"]] and body["capped"] is False
+    assert body["roles"] == [CARD["role"]] and body["capped"] is False
     first = body["items"][0]
-    assert (first["nome"], first["cognome"], first["vetted"]) == ("Ada", "Hopper", True)
+    assert (first["nome"], first["last_name"], first["vetted"]) == ("Ada", "Hopper", True)
     assert first["links"] == ["https://hopper.dev"] and first["ha_cv"] is True
-    assert first["card"]["sintesi"] == CARD["sintesi"] and first["card"]["luogo"] is None
-    assert first["fascia"] == {"min": 500, "max": 650} and first["modalita"] == "remoto"
+    assert (
+        first["card"]["profile_summary"] == CARD["profile_summary"]
+        and first["card"]["location"] is None
+    )
+    assert first["band"] == {"min": 500, "max": 650} and first["mode"] == "remote"
     # Never the rate, the state, the notes, the address or the phone, nor what the CV says
     # of the person.
-    secrets = ("463.21", "tariffa", '"stato"', "Nota riservata", "@studio.it", "+39")
-    for secret in (*secrets, "ada.cv@example.org", "5550123", "Initech", "persona"):
+    secrets = ("463.21", "rate", '"stato"', "Nota riservata", "@studio.it", "+39")
+    for secret in (*secrets, "ada.cv@example.org", "5550123", "Initech", "person"):
         assert secret not in listed.text, secret
 
     narrowed = client.get(
         "/api/hub/me/cloud/talents",
-        params={"seniority": "senior", "competenza": "fastapi", "fascia_min": 500},
+        params={"seniority": "senior", "skill": "fastapi", "min_band": 500},
     )
     assert [item["freelancer_id"] for item in narrowed.json()["items"]] == [str(lovelace)]
-    assert client.get("/api/hub/me/cloud/talents", params={"modalita": "luna"}).status_code == 422
-    assert client.get("/api/hub/me/cloud/talents", params={"fascia_min": -1}).status_code == 422
-    long_skill = {"competenza": "x" * 101}
+    assert client.get("/api/hub/me/cloud/talents", params={"mode": "luna"}).status_code == 422
+    assert client.get("/api/hub/me/cloud/talents", params={"min_band": -1}).status_code == 422
+    long_skill = {"skill": "x" * 101}
     assert client.get("/api/hub/me/cloud/talents", params=long_skill).status_code == 422
 
 
@@ -363,7 +366,7 @@ def test_the_cv_route_streams_a_cloud_talents_cv_and_nobody_elses(
     client: TestClient, cloud: Session, sender: RecordingSender
 ) -> None:
     ada = _talent(cloud, "Lovelace")
-    turned_down = _talent(cloud, "Scartata", stato="scartato")
+    turned_down = _talent(cloud, "Scartata", status="discarded")
     _open(cloud)
     _login(client, sender)
 
@@ -395,24 +398,24 @@ def test_a_cloud_proposal_is_the_callers_and_keeps_the_ids(
 
     assert proposed.status_code == 200, proposed.text
     body = proposed.json()
-    assert body["origine"] == "cloud"
+    assert body["origin"] == "cloud"
     [member] = body["team"]
     # The cloud's read keeps who each member is, and the card's place: it shows the CV.
-    assert member["freelancer_id"] == str(ada) and member["scheda"]["luogo"] == CARD["luogo"]
+    assert member["freelancer_id"] == str(ada) and member["card"]["location"] == CARD["location"]
     # And their name, which the builder's result shows as each card's heading.
-    assert (member["nome"], member["cognome"]) == ("Ada", "Lovelace")
+    assert (member["nome"], member["last_name"]) == ("Ada", "Lovelace")
     row = cloud.get(TeamProposal, UUID(body["id"]))
-    assert row is not None and (row.origine, row.user_id) == ("cloud", user_id)
+    assert row is not None and (row.origin, row.user_id) == ("cloud", user_id)
 
     # «Rigenera» takes only the caller's own cloud proposal.
-    public = _proposal_row(cloud, [ada], origine="pubblico")
+    public = _proposal_row(cloud, [ada], origin="public")
     admin_id = cloud.scalar(select(User.id).where(User.role == "admin"))
     someone_elses = _proposal_row(cloud, [ada], user_id=admin_id)
     for previous in (public, someone_elses):
-        refused = _cloud_propose(client, previous_id=str(previous), nota="Più junior.")
+        refused = _cloud_propose(client, previous_id=str(previous), note="Più junior.")
         assert refused.status_code == 422
     _llm(client, RecordingCall([proposal_response()]))
-    again = _cloud_propose(client, previous_id=body["id"], nota="Più junior.")
+    again = _cloud_propose(client, previous_id=body["id"], note="Più junior.")
     assert again.status_code == 200 and again.json()["previous_id"] == body["id"]
 
 
@@ -509,8 +512,8 @@ def test_the_cloud_proposals_count_in_the_daily_cap(
 def test_richiedi_files_one_talent_for_the_grants_company_and_mails_rebase(
     client: TestClient, cloud: Session, sender: RecordingSender
 ) -> None:
-    ada = _talent(cloud, "Lovelace", card={"ruolo": "Data engineer"})
-    turned_down = _talent(cloud, "Scartata", stato="scartato")
+    ada = _talent(cloud, "Lovelace", card={"role": "Data engineer"})
+    turned_down = _talent(cloud, "Scartata", status="discarded")
     user_id, company_id = _open(cloud)
     _login(client, sender)
 
@@ -521,31 +524,31 @@ def test_richiedi_files_one_talent_for_the_grants_company_and_mails_rebase(
     assert created.json() == {"id": str(request_id)}
     row = cloud.get(TeamRequest, request_id)
     assert row is not None
-    assert (row.origine, row.proposal_id, row.user_id, row.company_id) == (
+    assert (row.origin, row.proposal_id, row.user_id, row.company_id) == (
         "cloud",
         None,
         user_id,
         company_id,
     )
-    assert (row.azienda, row.email, row.telefono) == ("Acme S.r.l.", REFERENTE, "+39 345 1234567")
+    assert (row.company, row.email, row.phone) == ("Acme S.r.l.", CONTACT_PERSON, "+39 345 1234567")
     [talent] = cloud.scalars(
         select(TeamRequestTalent).where(TeamRequestTalent.request_id == request_id)
     ).all()
-    assert (talent.freelancer_id, talent.ruolo) == (ada, "Data engineer")
+    assert (talent.freelancer_id, talent.role) == (ada, "Data engineer")
     [mail] = sender.sent
     assert mail.to == "ciao@letsrebase.com"
     assert mail.subject == "Nuova richiesta team da Acme S.r.l."
     assert "Ada Lovelace" in mail.text and f"/admin/team/{request_id}" in mail.text
 
     # A referente with no phone on file is asked for none: the request has none.
-    referente = cloud.get(User, user_id)
-    assert referente is not None
-    referente.telefono = None
+    contact_person = cloud.get(User, user_id)
+    assert contact_person is not None
+    contact_person.phone = None
     cloud.commit()
     again = client.post("/api/hub/me/cloud/requests", json={"freelancer_id": str(ada)})
     assert again.status_code == 201
     stored = cloud.get(TeamRequest, UUID(again.json()["id"]))
-    assert stored is not None and stored.telefono is None
+    assert stored is not None and stored.phone is None
 
     for outside in (turned_down, uuid4()):
         refused = client.post("/api/hub/me/cloud/requests", json={"freelancer_id": str(outside)})
@@ -560,7 +563,7 @@ def test_assumi_team_files_the_callers_cloud_proposal_at_once(
     ada = _talent(cloud, "Lovelace")
     user_id, company_id = _open(cloud)
     own = _proposal_row(cloud, [ada], user_id=user_id)
-    public = _proposal_row(cloud, [ada], origine="pubblico")
+    public = _proposal_row(cloud, [ada], origin="public")
     _login(client, sender)
 
     created = client.post("/api/hub/me/cloud/requests", json={"proposal_id": str(own)})
@@ -568,7 +571,7 @@ def test_assumi_team_files_the_callers_cloud_proposal_at_once(
     assert created.status_code == 201, created.text
     row = cloud.get(TeamRequest, UUID(created.json()["id"]))
     assert row is not None
-    assert (row.origine, row.proposal_id, row.user_id, row.company_id, row.azienda) == (
+    assert (row.origin, row.proposal_id, row.user_id, row.company_id, row.company) == (
         "cloud",
         own,
         user_id,
@@ -576,7 +579,7 @@ def test_assumi_team_files_the_callers_cloud_proposal_at_once(
         "Acme S.r.l.",
     )
     [mail] = sender.sent
-    assert RIASSUNTO in mail.text and "Lovelace" not in mail.text
+    assert SUMMARY in mail.text and "Lovelace" not in mail.text
 
     twice = client.post("/api/hub/me/cloud/requests", json={"proposal_id": str(own)})
     assert twice.status_code == 409
@@ -613,7 +616,7 @@ def test_assumi_team_refuses_a_proposal_made_under_an_older_grant(
     assert created.status_code == 201, created.text
     row = cloud.get(TeamRequest, UUID(created.json()["id"]))
     assert row is not None
-    assert (row.proposal_id, row.company_id, row.azienda) == (under_beta, beta, "Beta S.r.l.")
+    assert (row.proposal_id, row.company_id, row.company) == (under_beta, beta, "Beta S.r.l.")
     assert len(sender.sent) == 1
 
 
@@ -651,7 +654,7 @@ def test_assumi_team_files_under_the_company_the_proposal_was_made_for(
     assert created.status_code == 201, created.text
     row = cloud.get(TeamRequest, UUID(created.json()["id"]))
     assert row is not None
-    assert (row.company_id, row.azienda) == (beta, "Beta S.r.l.")
+    assert (row.company_id, row.company) == (beta, "Beta S.r.l.")
     assert len(sender.sent) == 1
 
     # Acme's grant is closed while Beta's stays live: the Acme proposal is refused.
@@ -674,4 +677,4 @@ def test_assumi_team_files_under_the_company_the_proposal_was_made_for(
     filed = client.post("/api/hub/me/cloud/requests", json={"proposal_id": fresh})
     assert filed.status_code == 201, filed.text
     again = cloud.get(TeamRequest, UUID(filed.json()["id"]))
-    assert again is not None and (again.company_id, again.azienda) == (acme, "Acme S.r.l.")
+    assert again is not None and (again.company_id, again.company) == (acme, "Acme S.r.l.")

@@ -33,12 +33,12 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.schemas import EmailDraftCreate, EmailDraftRead
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
-from pigrocrm.core.invoices.naming import numero_completo
+from pigrocrm.core.invoices.naming import number_complete
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.templates.renderer import DeclaredVariable, render_template
@@ -50,44 +50,44 @@ CONTRACT_ENTITY = "contract"
 
 # One declaration per variable: its name, label, whether a template must be given it, and the
 # sample the save check renders it with. The editor lists them, the save check renders against
-# the samples, and `_values` supplies the real ones. `scadenza` is optional because an invoice
+# the samples, and `_values` supplies the real ones. `due_date` is optional because an invoice
 # need not have one.
 _FIELDS: tuple[tuple[str, str, bool, str], ...] = (
-    ("cliente", "Cliente", True, "Acme S.r.l."),
-    ("contratto", "Contratto", True, "Consulenza"),
-    ("periodo", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
-    ("numero_fattura", "Numero della fattura", True, "2026/12"),
-    ("data_fattura", "Data della fattura", True, "31/10/2026"),
-    ("importo", "Totale della fattura", True, "1.250,00 €"),
-    ("giornate", "Giornate in fattura", True, "2.50"),
-    ("scadenza", "Scadenza", False, "30/11/2026"),
+    ("customer", "Cliente", True, "Acme S.r.l."),
+    ("contract", "Contratto", True, "Consulenza"),
+    ("period", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
+    ("invoice_number", "Numero della fattura", True, "2026/12"),
+    ("invoice_date", "Data della fattura", True, "31/10/2026"),
+    ("amount", "Totale della fattura", True, "1.250,00 €"),
+    ("work_units", "Giornate in fattura", True, "2.50"),
+    ("due_date", "Scadenza", False, "30/11/2026"),
 )
 TEMPLATE_VARIABLES: tuple[DeclaredVariable, ...] = tuple(
     DeclaredVariable(name, label, "text", required) for name, label, required, _ in _FIELDS
 )
 # `emittente.*` is the azienda's own identity, the same scope every template reads.
-_EMITTER_SAMPLE = {"ragione_sociale": "Studio Rossi", "telefono": "", "sito_web": ""}
-EMITTER_VARIABLES = tuple(f"emittente.{name}" for name in _EMITTER_SAMPLE)
+_LEGAL_ENTITY_SAMPLE = {"legal_name": "Studio Rossi", "phone": "", "website": ""}
+LEGAL_ENTITY_VARIABLES = tuple(f"emittente.{name}" for name in _LEGAL_ENTITY_SAMPLE)
 
 _SAMPLE: dict[str, Any] = {
     **{name: sample for name, _, _, sample in _FIELDS},
-    "emittente": _EMITTER_SAMPLE,
+    "emittente": _LEGAL_ENTITY_SAMPLE,
 }
 
 
 def variables() -> list[ContractEmailVariable]:
-    named = [ContractEmailVariable(nome=v.nome, etichetta=v.etichetta) for v in TEMPLATE_VARIABLES]
-    named.extend(ContractEmailVariable(nome=n, etichetta=n) for n in EMITTER_VARIABLES)
+    named = [ContractEmailVariable(nome=v.nome, label=v.label) for v in TEMPLATE_VARIABLES]
+    named.extend(ContractEmailVariable(nome=n, label=n) for n in LEGAL_ENTITY_VARIABLES)
     return named
 
 
-def _italian_date(giorno: date | None) -> str:
-    return "" if giorno is None else f"{giorno.day:02d}/{giorno.month:02d}/{giorno.year}"
+def _italian_date(day: date | None) -> str:
+    return "" if day is None else f"{day.day:02d}/{day.month:02d}/{day.year}"
 
 
-def _money(value: Decimal, divisa: str) -> str:
+def _money(value: Decimal, currency: str) -> str:
     text = f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{text} €" if divisa == "EUR" else f"{text} {divisa}"
+    return f"{text} €" if currency == "EUR" else f"{text} {currency}"
 
 
 def _render(source: str, values: dict[str, Any]) -> str:
@@ -114,11 +114,11 @@ class ContractEmailService:
         return template
 
     @staticmethod
-    def _check_renders(oggetto: str, corpo: str) -> None:
+    def _check_renders(subject: str, body: str) -> None:
         """An unknown `{{name}}` fails here, at save, and not on the day a client's invoice
         is being sent: the same promise mastro's own placeholder check makes."""
-        _render(oggetto, _SAMPLE)
-        _render(corpo, _SAMPLE)
+        _render(subject, _SAMPLE)
+        _render(body, _SAMPLE)
 
     # ---- the saved templates ---------------------------------------------------------
 
@@ -136,13 +136,13 @@ class ContractEmailService:
     ) -> ContractEmailTemplateRead:
         actor.require_write("create_contract_email_template")
         self._contract(contract_id)
-        self._check_renders(data.oggetto, data.corpo)
+        self._check_renders(data.subject, data.body)
         row = ContractEmailTemplate(
             contract_id=contract_id,
             nome=data.nome,
-            oggetto=data.oggetto,
-            corpo=data.corpo,
-            allegati=list(dict.fromkeys(data.allegati)),
+            subject=data.subject,
+            body=data.body,
+            attachments=list(dict.fromkeys(data.attachments)),
         )
         with self._unique_name(data.nome):
             self.session.add(row)
@@ -162,16 +162,16 @@ class ContractEmailService:
         actor.require_write("update_contract_email_template")
         row = self._template(contract_id, template_id)
         changes = data.model_dump(exclude_unset=True)
-        oggetto = changes["oggetto"] if changes.get("oggetto") is not None else row.oggetto
-        corpo = changes["corpo"] if changes.get("corpo") is not None else row.corpo
-        self._check_renders(oggetto, corpo)
+        subject = changes["subject"] if changes.get("subject") is not None else row.subject
+        body = changes["body"] if changes.get("body") is not None else row.body
+        self._check_renders(subject, body)
         nome = changes["nome"] if changes.get("nome") is not None else row.nome
         with self._unique_name(nome):
-            for field in ("nome", "oggetto", "corpo", "attivo"):
+            for field in ("nome", "subject", "body", "active"):
                 if changes.get(field) is not None:
                     setattr(row, field, changes[field])
-            if changes.get("allegati") is not None:
-                row.allegati = list(dict.fromkeys(changes["allegati"]))
+            if changes.get("attachments") is not None:
+                row.attachments = list(dict.fromkeys(changes["attachments"]))
         self.activities.record(
             CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"nome": row.nome}
         )
@@ -198,7 +198,7 @@ class ContractEmailService:
             raise ValidationFailed(
                 ENTITY, "invoice_id", "la fattura non è di questo cliente", expected="una fattura"
             )
-        if invoice.tipo != "fattura" or invoice.stato != "emessa" or invoice.numero is None:
+        if invoice.type != "invoice" or invoice.status != "issued" or invoice.number is None:
             raise ValidationFailed(
                 ENTITY,
                 "invoice_id",
@@ -209,7 +209,7 @@ class ContractEmailService:
 
     def _days_of(self, contract_id: UUID, invoice: Invoice) -> tuple[date, date, Decimal]:
         row = self.session.execute(
-            select(func.min(WorkUnit.data), func.max(WorkUnit.data), func.sum(WorkUnit.quantita))
+            select(func.min(WorkUnit.data), func.max(WorkUnit.data), func.sum(WorkUnit.quantity))
             .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
             .where(InvoiceLine.invoice_id == invoice.id, WorkUnit.contract_id == contract_id)
         ).one()
@@ -228,28 +228,30 @@ class ContractEmailService:
         invoice: Invoice,
         da: date,
         a: date,
-        quantita: Decimal,
+        quantity: Decimal,
         actor: Actor,
     ) -> dict[str, Any]:
         customer = self.session.get(Customer, contract.customer_id)
-        if invoice.anno is None or invoice.numero is None:
+        if invoice.year is None or invoice.number is None:
             raise ValidationFailed(
                 ENTITY,
                 "invoice_id",
                 "si invia una fattura emessa: una bozza non ha ancora un numero",
                 expected="una fattura emessa",
             )
-        emitter = LegalEntityService(self.session).as_template_values(actor, invoice.azienda_id)
+        legal_entity = LegalEntityService(self.session).as_template_values(
+            actor, invoice.legal_entity_id
+        )
         return {
-            "cliente": customer.ragione_sociale if customer is not None else "",
-            "contratto": contract.titolo,
+            "cliente": customer.legal_name if customer is not None else "",
+            "contratto": contract.title,
             "periodo": f"{_italian_date(da)} - {_italian_date(a)}",
-            "numero_fattura": numero_completo(invoice.anno, invoice.numero),
-            "data_fattura": _italian_date(invoice.data_emissione),
-            "importo": _money(invoice.totale, invoice.divisa),
-            "giornate": str(quantita),
-            "scadenza": _italian_date(invoice.data_scadenza) or None,
-            **emitter,
+            "numero_fattura": number_complete(invoice.year, invoice.number),
+            "data_fattura": _italian_date(invoice.issue_date),
+            "importo": _money(invoice.total, invoice.currency),
+            "giornate": str(quantity),
+            "scadenza": _italian_date(invoice.due_date) or None,
+            **legal_entity,
         }
 
     def _suggested(self, contract: Contract) -> list[str]:
@@ -272,24 +274,24 @@ class ContractEmailService:
         contract = self._contract(contract_id)
         template = self._template(contract_id, template_id)
         invoice = self._invoice_of(contract, invoice_id)
-        da, a, quantita = self._days_of(contract_id, invoice)
-        values = self._values(contract, invoice, da, a, quantita, actor)
-        allegati = [
-            ContractEmailAttachment(tipo="fattura_pdf", nome=f"Fattura {values['numero_fattura']}")
-            for kind in template.allegati
-            if kind == "fattura_pdf"
+        da, a, quantity = self._days_of(contract_id, invoice)
+        values = self._values(contract, invoice, da, a, quantity, actor)
+        attachments = [
+            ContractEmailAttachment(type="invoice_pdf", nome=f"Fattura {values['invoice_number']}")
+            for kind in template.attachments
+            if kind == "invoice_pdf"
         ] + [
             ContractEmailAttachment(
-                tipo="registro_pdf", nome=f"Registro giornate {values['periodo']}"
+                type="register_pdf", nome=f"Registro giornate {values['period']}"
             )
-            for kind in template.allegati
-            if kind == "registro_pdf"
+            for kind in template.attachments
+            if kind == "register_pdf"
         ]
         return ContractEmailPreview(
-            subject=_render(template.oggetto, values),
-            body=_render(template.corpo, values),
-            to_suggeriti=self._suggested(contract),
-            allegati=allegati,
+            subject=_render(template.subject, values),
+            body=_render(template.body, values),
+            to_suggested=self._suggested(contract),
+            attachments=attachments,
             da=da,
             a=a,
         )
@@ -311,15 +313,15 @@ class ContractEmailService:
         actor.require_write("prepare_contract_email")
         contract = self._contract(contract_id)
         template = self._template(contract_id, template_id)
-        if not template.attivo:
+        if not template.active:
             raise Conflict(ENTITY, "questo modello è archiviato", template_id=str(template_id))
         invoice = self._invoice_of(contract, invoice_id)
-        da, a, quantita = self._days_of(contract_id, invoice)
-        values = self._values(contract, invoice, da, a, quantita, actor)
+        da, a, quantity = self._days_of(contract_id, invoice)
+        values = self._values(contract, invoice, da, a, quantity, actor)
 
         documents = DocumentRepository(self.session)
         version_ids: list[UUID] = []
-        if "fattura_pdf" in template.allegati:
+        if "invoice_pdf" in template.attachments:
             if invoice.pdf_document_id is None:
                 raise ValidationFailed(
                     ENTITY,
@@ -331,19 +333,19 @@ class ContractEmailService:
             version = (
                 None
                 if document is None
-                else documents.version(document.id, document.versione_corrente)
+                else documents.version(document.id, document.current_version)
             )
             if version is None:
                 raise NotFound("document_version", invoice.pdf_document_id)
             version_ids.append(version.id)
-        if "registro_pdf" in template.allegati:
+        if "register_pdf" in template.attachments:
             # Everything the render reads is read: end the transaction first, so the pooled
             # connection is not held while the render waits for one of its slots.
             self.session.commit()
             archived = ContractRegisterService(self.session, storage).render_pdf(
                 contract_id, da, a, actor, invoice_id=invoice.id
             )
-            version = documents.version(archived.id, archived.versione_corrente)
+            version = documents.version(archived.id, archived.current_version)
             if version is None:
                 raise NotFound("document_version", archived.id)
             version_ids.append(version.id)
@@ -353,12 +355,12 @@ class ContractEmailService:
                 entity_type="customer",
                 entity_id=contract.customer_id,
                 to_addresses=to_addresses,
-                subject=_render(template.oggetto, values),
-                body_markdown=_render(template.corpo, values),
+                subject=_render(template.subject, values),
+                body_markdown=_render(template.body, values),
                 attachment_version_ids=version_ids,
             ),
             actor,
-            azienda_id=invoice.azienda_id,
+            legal_entity_id=invoice.legal_entity_id,
         )
 
 

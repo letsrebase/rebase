@@ -60,7 +60,7 @@ beforeEach(() => {
 
 describe('the post-session redirect', () => {
   beforeEach(() => {
-    user.value = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' }
+    user.value = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin' }
   })
 
   it('sends an already-authenticated visitor to the deep link the guard recorded', async () => {
@@ -121,7 +121,7 @@ describe('the login page', () => {
 })
 
 describe('the chooser (REB-377)', () => {
-  type Row = { slug: string; ruolo: string; invito?: true; invitato_da?: string; nome?: string }
+  type Row = { slug: string; role: string; invitation?: true; invited_from?: string; nome?: string }
   function mockSpaces(spaces: Row[] | null, status = 200) {
     GET.mockImplementation((path: string) => {
       if (path === '/api/identity/spaces') {
@@ -137,14 +137,14 @@ describe('the chooser (REB-377)', () => {
 
   it('shows one row per space instead of the email form once at least one resolves', async () => {
     mockSpaces([
-      { slug: 'studio', ruolo: 'admin' },
-      { slug: 'altro', ruolo: 'collaboratore' },
+      { slug: 'studio', role: 'admin' },
+      { slug: 'other', role: 'collaborator' },
     ])
     render(<LoginPage />)
     expect(await screen.findByRole('button', { name: /studio/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /altro/ })).toBeInTheDocument()
     expect(screen.getByText('amministratore')).toBeInTheDocument()
-    expect(screen.getByText('collaboratore')).toBeInTheDocument()
+    expect(screen.getByText('collaborator')).toBeInTheDocument()
     expect(screen.queryByLabelText('Email')).toBeNull()
   })
 
@@ -161,9 +161,9 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('enters the chosen space and navigates to its own basepath', async () => {
-    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    mockSpaces([{ slug: 'studio', role: 'admin' }])
     POST.mockResolvedValue({
-      data: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' },
+      data: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin' },
       response: { status: 200 },
     })
     const go = vi.fn()
@@ -178,7 +178,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('reports the API sentence and leaves the row usable when entering fails', async () => {
-    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    mockSpaces([{ slug: 'studio', role: 'admin' }])
     POST.mockResolvedValue({
       error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
       response: { status: 404 },
@@ -194,7 +194,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('also offers to create a new space, not gated behind the empty-state root check', async () => {
-    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    mockSpaces([{ slug: 'studio', role: 'admin' }])
     render(<LoginPage />)
     await userEvent.click(await screen.findByRole('button', { name: 'Crea un nuovo spazio' }))
     expect(navigate).toHaveBeenCalledWith({ to: '/app/register' })
@@ -202,8 +202,8 @@ describe('the chooser (REB-377)', () => {
 
   it('disables the create-space button and the other rows while a space is being entered', async () => {
     mockSpaces([
-      { slug: 'studio', ruolo: 'admin' },
-      { slug: 'altro', ruolo: 'collaboratore' },
+      { slug: 'studio', role: 'admin' },
+      { slug: 'other', role: 'collaborator' },
     ])
     let resolveEntering: (value: unknown) => void = () => {}
     POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))
@@ -222,7 +222,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('re-enables the create-space button when entering fails', async () => {
-    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    mockSpaces([{ slug: 'studio', role: 'admin' }])
     let resolveEntering: (value: unknown) => void = () => {}
     POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))
     render(<LoginPage go={vi.fn()} />)
@@ -238,8 +238,8 @@ describe('the chooser (REB-377)', () => {
   // goes to the acceptance page instead of entering a space this address has no seat in.
   it('lists an invitation as a row that says who sent it', async () => {
     mockSpaces([
-      { slug: 'studio', ruolo: 'admin' },
-      { slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan', nome: 'Ada' },
+      { slug: 'studio', role: 'admin' },
+      { slug: 'rebase', role: 'collaborator', invitation: true, invited_from: 'Ivan', nome: 'Ada' },
     ])
     render(<LoginPage />)
     const invitation = await screen.findByRole('button', { name: /rebase/ })
@@ -248,7 +248,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('says an invitation is waiting even when the sender has no name to give', async () => {
-    mockSpaces([{ slug: 'rebase', ruolo: 'readonly', invito: true }])
+    mockSpaces([{ slug: 'rebase', role: 'readonly', invitation: true }])
     render(<LoginPage />)
     expect(await screen.findByRole('button', { name: /rebase/ })).toHaveTextContent(
       'Invito da accettare',
@@ -256,7 +256,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
-    mockSpaces([{ slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan' }])
+    mockSpaces([{ slug: 'rebase', role: 'collaborator', invitation: true, invited_from: 'Ivan' }])
     POST.mockResolvedValue({
       data: { url: '/rebase/app/invite?t=abc' },
       response: { status: 200 },
@@ -274,7 +274,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('reports the sentence and keeps the invitation usable when it has run out', async () => {
-    mockSpaces([{ slug: 'rebase', ruolo: 'collaboratore', invito: true }])
+    mockSpaces([{ slug: 'rebase', role: 'collaborator', invitation: true }])
     const sentence =
       "Questo invito non c'è più: è scaduto, è stato revocato o lo hai già accettato. " +
       'Chiedi a chi ti ha invitato di rimandarlo.'

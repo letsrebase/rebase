@@ -4,7 +4,7 @@ export interface DaysSearch {
   /** One contract's days; omitted, every contract's. */
   contract?: string
   /** `AAAA-MM`; omitted with a contract chosen, every month of that contract. */
-  mese?: string
+  month?: string
 }
 
 export interface NewDaySearch {
@@ -12,7 +12,7 @@ export interface NewDaySearch {
   data?: string
 }
 
-const MESE = /^\d{4}-(?:0[1-9]|1[0-2])$/
+const Month = /^\d{4}-(?:0[1-9]|1[0-2])$/
 const DATA = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -21,12 +21,12 @@ function text(value: unknown, pattern: RegExp): string | undefined {
 }
 
 /**
- * `?contract=&mese=`: both in the URL, so a link to a contract's days or to a month is a
+ * `?contract=&month=`: both in the URL, so a link to a contract's days or to a month is a
  * link. A malformed value is dropped rather than refused: the filter is a view, and a
  * pasted URL with a bad month opens the page's default instead of an error.
  */
 export function validateDaysSearch(search: Record<string, unknown>): DaysSearch {
-  return { contract: text(search.contract, UUID), mese: text(search.mese, MESE) }
+  return { contract: text(search.contract, UUID), month: text(search.month, Month) }
 }
 
 export function validateNewDaySearch(search: Record<string, unknown>): NewDaySearch {
@@ -41,6 +41,6 @@ export function monthWindow(mese: string): { da: string; a: string } {
 }
 
 /** The month to open on when the URL names none and no contract narrows the list. */
-export function defaultMese(today: Date = new Date()): string {
+export function defaultMonth(today: Date = new Date()): string {
   return toIsoMonth(today)
 }

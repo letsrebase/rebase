@@ -33,21 +33,21 @@ beforeEach(() => {
 
 describe('the funnel table', () => {
   it.each([
-    ['POST', '/api/tenants/', 'spazio_creato'],
-    ['POST', '/api/auth/verify', 'entrato_con_link'],
-    ['POST', '/api/auth/invite', 'entrato_con_invito'],
-    ['POST', '/api/users/invites', 'invito_inviato'],
-    ['POST', '/api/users/invites/i1/resend', 'invito_inviato'],
-    ['DELETE', '/api/users/invites/i1', 'invito_revocato'],
-    ['POST', '/api/customers', 'cliente_creato'],
-    ['POST', '/api/customers/from-suggestions', 'clienti_importati'],
-    ['POST', '/api/deals', 'deal_creato'],
-    ['POST', '/api/documents', 'documento_creato'],
-    ['POST', '/api/documents/from-template', 'documento_creato'],
-    ['POST', '/api/time-entries', 'ore_registrate'],
-    ['POST', '/api/invoices/inv-1/issue', 'fattura_emessa'],
-    ['POST', '/api/tokens', 'assistente_collegato'],
-    ['PUT', '/api/aziende/01994c3e-0000-7000-8000-000000000001', 'profilo_emittente_salvato'],
+    ['POST', '/api/tenants/', 'space_created'],
+    ['POST', '/api/auth/verify', 'signed_in_with_link'],
+    ['POST', '/api/auth/invite', 'signed_in_with_invitation'],
+    ['POST', '/api/users/invites', 'invitation_sent'],
+    ['POST', '/api/users/invites/i1/resend', 'invitation_sent'],
+    ['DELETE', '/api/users/invites/i1', 'invitation_revoked'],
+    ['POST', '/api/customers', 'customer_created'],
+    ['POST', '/api/customers/from-suggestions', 'customers_imported'],
+    ['POST', '/api/deals', 'deal_created'],
+    ['POST', '/api/documents', 'document_created'],
+    ['POST', '/api/documents/from-template', 'document_created'],
+    ['POST', '/api/time-entries', 'hours_logged'],
+    ['POST', '/api/invoices/inv-1/issue', 'invoice_issued'],
+    ['POST', '/api/tokens', 'assistant_connected'],
+    ['PUT', '/api/legal-entities/01994c3e-0000-7000-8000-000000000001', 'legal_entity_profile_saved'],
   ])('%s %s on a 2xx is exactly one %s', async (method, path, event) => {
     await answered(method, path, 201)
     expect(capture).toHaveBeenCalledTimes(1)
@@ -59,7 +59,7 @@ describe('the funnel table', () => {
     expect(capture).not.toHaveBeenCalled()
     await answered('POST', '/api/invoices/inv-1/issue', 201)
     expect(capture).toHaveBeenCalledTimes(1)
-    expect(capture).toHaveBeenCalledWith('fattura_emessa')
+    expect(capture).toHaveBeenCalledWith('invoice_issued')
   })
 
   it('never matches a {name} placeholder against an empty segment', async () => {
@@ -69,7 +69,7 @@ describe('the funnel table', () => {
 
   it.each([400, 401, 409, 422, 500, 503])('a %i is not an event', async (status) => {
     await answered('POST', '/api/customers', status)
-    await answered('PUT', '/api/aziende/01994c3e-0000-7000-8000-000000000001', status)
+    await answered('PUT', '/api/legal-entities/01994c3e-0000-7000-8000-000000000001', status)
     expect(capture).not.toHaveBeenCalled()
   })
 
@@ -88,7 +88,7 @@ describe('the funnel table', () => {
     await answered('POST', '/api/invoices/inv-1/confirm', 200)
     await answered('POST', '/api/documents/doc-1/restore', 200)
     await answered('POST', '/api/documents/doc-1/versions', 201)
-    await answered('POST', '/api/aziende/01994c3e-0000-7000-8000-000000000001', 200)
+    await answered('POST', '/api/legal-entities/01994c3e-0000-7000-8000-000000000001', 200)
     await answered('POST', '/api/auth/login', 200)
     await answered('POST', '/api/auth/logout', 200)
     expect(capture).not.toHaveBeenCalled()
@@ -96,7 +96,7 @@ describe('the funnel table', () => {
 
   it('reads the path under a space with the prefix removed', async () => {
     await answered('POST', '/studio/api/customers', 201, '/studio')
-    expect(capture).toHaveBeenCalledWith('cliente_creato')
+    expect(capture).toHaveBeenCalledWith('customer_created')
   })
 
   it('does not mistake another space for this one', async () => {
@@ -107,10 +107,10 @@ describe('the funnel table', () => {
   })
 
   it('ignores a trailing slash either way', () => {
-    expect(eventFor('POST', '/api/tenants', '')).toBe('spazio_creato')
-    expect(eventFor('POST', '/api/tenants/', '')).toBe('spazio_creato')
-    expect(eventFor('POST', '/api/customers/', '')).toBe('cliente_creato')
-    expect(eventFor('post', '/studio/api/customers/', '/studio')).toBe('cliente_creato')
+    expect(eventFor('POST', '/api/tenants', '')).toBe('space_created')
+    expect(eventFor('POST', '/api/tenants/', '')).toBe('space_created')
+    expect(eventFor('POST', '/api/customers/', '')).toBe('customer_created')
+    expect(eventFor('post', '/studio/api/customers/', '/studio')).toBe('customer_created')
   })
 })
 
@@ -125,12 +125,12 @@ describe('on the real client', () => {
     const client = createClient<paths>({ baseUrl: `${ORIGIN}/studio`, fetch: fetchMock })
     client.use(analyticsMiddleware('/studio'))
 
-    await client.POST('/api/customers', { body: { ragione_sociale: 'Ada' } as never })
+    await client.POST('/api/customers', { body: { legal_name: 'Ada' } as never })
     await client.GET('/api/customers')
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(capture).toHaveBeenCalledTimes(1)
-    expect(capture).toHaveBeenCalledWith('cliente_creato')
+    expect(capture).toHaveBeenCalledWith('customer_created')
   })
 
   it('counts nothing when the API refused', async () => {
@@ -143,28 +143,28 @@ describe('on the real client', () => {
     const client = createClient<paths>({ baseUrl: ORIGIN, fetch: fetchMock })
     client.use(analyticsMiddleware(''))
 
-    await client.POST('/api/customers', { body: { ragione_sociale: '' } as never })
+    await client.POST('/api/customers', { body: { legal_name: '' } as never })
 
     expect(capture).not.toHaveBeenCalled()
   })
 })
 
 describe('identifySession', () => {
-  const ADA = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' as const }
+  const ADA = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin' as const }
 
   it('names the person with what Ivan chose to see, and the root installation as root', () => {
     identifySession(ADA, '')
     expect(identifyUser).toHaveBeenCalledWith('u1', {
       email: 'ada@studio.it',
       nome: 'Ada',
-      ruolo: 'admin',
+      role: 'admin',
     })
-    expect(identifyGroup).toHaveBeenCalledWith('spazio', 'root')
+    expect(identifyGroup).toHaveBeenCalledWith('space', 'root')
   })
 
   it('names a space by its slug, without the slash', () => {
     identifySession(ADA, '/studio')
-    expect(identifyGroup).toHaveBeenCalledWith('spazio', 'studio')
+    expect(identifyGroup).toHaveBeenCalledWith('space', 'studio')
   })
 
   it('is undone by forgetSession', () => {

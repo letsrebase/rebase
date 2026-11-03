@@ -26,9 +26,9 @@ const USER = {
   id: 'u1',
   email: 'collab@pigro.it',
   nome: 'Cora Collaboratrice',
-  ruolo: 'collaboratore' as const,
-  attivo: true,
-  digest_settimanale: true,
+  role: 'collaborator' as const,
+  active: true,
+  weekly_digest: true,
 }
 
 function renderPanel() {
@@ -57,11 +57,11 @@ describe('DigestPreference', () => {
   /**
    * The switch this task exists for: usable by any role (it calls no
    * `/api/users` endpoint, only `PATCH /api/auth/me`), and the switch reads the
-   * current user's own `digest_settimanale` -- no admin-only list involved.
+   * current user's own `weekly_digest` -- no admin-only list involved.
    */
   it('reads digest_settimanale from the current user, and toggling it sends the PATCH', async () => {
     vi.mocked(api.PATCH).mockReturnValueOnce(
-      Promise.resolve(ok({ ...USER, digest_settimanale: false })),
+      Promise.resolve(ok({ ...USER, weekly_digest: false })),
     )
     renderPanel()
 
@@ -73,7 +73,7 @@ describe('DigestPreference', () => {
     await waitFor(() =>
       expect(api.PATCH).toHaveBeenCalledWith(
         '/api/auth/me',
-        expect.objectContaining({ body: { digest_settimanale: false } }),
+        expect.objectContaining({ body: { weekly_digest: false } }),
       ),
     )
     await waitFor(() =>

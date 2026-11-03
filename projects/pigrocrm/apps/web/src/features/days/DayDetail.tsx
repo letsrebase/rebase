@@ -25,11 +25,11 @@ import { DayStatePill } from './DayStatePill'
 import {
   ACTIONS,
   actorLabel,
-  quantitaLabel,
+  quantityLabel,
   reasonLabel,
-  statoLabel,
+  statusLabel,
   type WorkUnitDetail,
-  type WorkUnitStato,
+  type WorkUnitStatus,
 } from './labels'
 import { downloadDisputeBundle, useMoveDay, useWorkUnit } from './queries'
 
@@ -37,7 +37,7 @@ import { downloadDisputeBundle, useMoveDay, useWorkUnit } from './queries'
  * `/app/days/$workUnitId`: one day, with its state, the approval it rests on, the log of
  * every move it made, and the moves its state allows.
  *
- * The buttons are the API's own list (`azioni`): the state graph lives in the database and
+ * The buttons are the API's own list (`actions`): the state graph lives in the database and
  * the service, and the page never carries a copy of it that could drift. A move asks for a
  * reason where the move is a judgement (contesting, withdrawing, writing off) and sends a
  * plain one where the act is the reason; the reason lands in the log beside who made the
@@ -67,13 +67,13 @@ export function DayDetail({ workUnitId }: { workUnitId: string }) {
 function Loaded({ day }: { day: WorkUnitDetail }) {
   const canWrite = useCanWrite()
   const move = useMoveDay(day.id)
-  const [pending, setPending] = useState<WorkUnitStato | null>(null)
+  const [pending, setPending] = useState<WorkUnitStatus | null>(null)
   const [reason, setReason] = useState('')
   const spec = pending === null ? undefined : ACTIONS[pending]
   const needsReason = spec !== undefined && spec.defaultReason === null
   // Only the moves the page knows how to word: a state the API offers that has no entry in
   // `ACTIONS` is not drawn as a button with a raw state name on it.
-  const offered = day.azioni.filter((stato) => ACTIONS[stato] !== undefined)
+  const offered = day.actions.filter((status) => ACTIONS[status] !== undefined)
 
   function close() {
     if (move.isPending) return
@@ -87,10 +87,10 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
     const motivo = reason.trim() !== '' ? reason.trim() : spec.defaultReason
     if (motivo === null) return
     move.mutate(
-      { stato: pending, motivo },
+      { status: pending, reason: motivo },
       {
         onSuccess: (next) => {
-          toast.success(`Giornata: ${statoLabel(next.stato).toLowerCase()}`)
+          toast.success(`Giornata: ${statusLabel(next.status).toLowerCase()}`)
           setPending(null)
           setReason('')
         },
@@ -103,20 +103,20 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
       <PageHeader
         icon={CalendarCheck}
         title={`Giornata del ${formatIsoDateItalian(day.data)}`}
-        description={`${day.contract_titolo}, ${day.customer_nome}`}
+        description={`${day.contract_title}, ${day.customer_name}`}
         actions={
           canWrite && offered.length > 0 ? (
             <>
-              {offered.map((stato) => {
-                const action = ACTIONS[stato]
+              {offered.map((status) => {
+                const action = ACTIONS[status]
                 if (action === undefined) return null
                 return (
                   <Button
-                    key={stato}
+                    key={status}
                     variant={action.tone}
                     onClick={() => {
                       move.reset()
-                      setPending(stato)
+                      setPending(status)
                     }}
                   >
                     {action.label}
@@ -138,39 +138,39 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
             params={{ contractId: day.contract_id }}
             className="underline underline-offset-4"
           >
-            {day.contract_titolo}
+            {day.contract_title}
           </Link>
           <Link
             to="/app/customers/$customerId"
             params={{ customerId: day.customer_id }}
             className="underline underline-offset-4"
           >
-            {day.customer_nome}
+            {day.customer_name}
           </Link>
         </p>
 
         <section aria-label="La giornata">
           <dl className="border-t text-sm">
             <Row label="Stato">
-              <DayStatePill stato={day.stato} />
+              <DayStatePill status={day.status} />
             </Row>
-            <Row label="Quanto">{quantitaLabel(day.quantita)}</Row>
-            <Row label="Cosa è stato fatto">{day.descrizione}</Row>
+            <Row label="Quanto">{quantityLabel(day.quantity)}</Row>
+            <Row label="Cosa è stato fatto">{day.description}</Row>
             {day.note ? <Row label="Note">{day.note}</Row> : null}
           </dl>
         </section>
 
-        {day.stato === 'lavorato_senza_approvazione' ? (
+        {day.status === 'worked_without_approval' ? (
           <Notice>
             Il contratto richiede l’approvazione preventiva del cliente e a questa giornata non è
-            collegata nessuna. Resta «{statoLabel('lavorato_senza_approvazione')}» finché non ne arriva una.
+            collegata nessuna. Resta «{statusLabel('worked_without_approval')}» finché non ne arriva una.
           </Notice>
         ) : null}
-        {day.fuori_termine ? (
+        {day.out_of_term ? (
           <Notice>
-            {day.fuori_termine === 'prima_dell_inizio'
-              ? `La data precede l’inizio del contratto, il ${formatIsoDateItalian(day.contratto_inizio)}.`
-              : `La data è dopo la fine del contratto, il ${day.contratto_fine ? formatIsoDateItalian(day.contratto_fine) : ''}.`}
+            {day.out_of_term === 'before_start'
+              ? `La data precede l’inizio del contratto, il ${formatIsoDateItalian(day.start_contract)}.`
+              : `La data è dopo la fine del contratto, il ${day.contract_end ? formatIsoDateItalian(day.contract_end) : ''}.`}
           </Notice>
         ) : null}
 
@@ -260,16 +260,16 @@ function Approval({ day }: { day: WorkUnitDetail }) {
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            Ricevuta il {formatOccurredAt(approval.ricevuto_il)} da {approval.mittente}, per{' '}
-            {approval.canale.replace('_', ' ')}.
+            Ricevuta il {formatOccurredAt(approval.received_at)} da {approval.sender}, per{' '}
+            {approval.channel.replace('_', ' ')}.
           </p>
           <blockquote className="whitespace-pre-line border-l-2 border-foreground pl-4 text-sm">
-            {approval.estratto}
+            {approval.excerpt}
           </blockquote>
           <Button asChild variant="outline" size="sm">
             <Link to="/app/documents/$documentId" params={{ documentId: approval.document_id }}>
               <FileText className="mr-2 size-4" aria-hidden />
-              {approval.documento_titolo ?? 'Apri il documento'}
+              {approval.title_document ?? 'Apri il documento'}
             </Link>
           </Button>
         </>
@@ -326,22 +326,22 @@ function History({ day }: { day: WorkUnitDetail }) {
         Cronologia
       </h2>
       <ol className="border-t">
-        {day.transizioni.map((step) => (
+        {day.transitions.map((step) => (
           <li key={step.id} className="space-y-1 border-b py-3 text-sm">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {step.stato_precedente === null ? (
-                <span className="font-medium">Registrata come {statoLabel(step.stato_nuovo).toLowerCase()}</span>
+              {step.previous_status === null ? (
+                <span className="font-medium">Registrata come {statusLabel(step.new_status).toLowerCase()}</span>
               ) : (
                 <span className="font-medium">
-                  {statoLabel(step.stato_precedente)} <span aria-hidden="true">→</span>
-                  <span className="sr-only"> passa a </span> {statoLabel(step.stato_nuovo)}
+                  {statusLabel(step.previous_status)} <span aria-hidden="true">→</span>
+                  <span className="sr-only"> passa a </span> {statusLabel(step.new_status)}
                 </span>
               )}
             </p>
             <p className="text-muted-foreground">
-              <time dateTime={step.created_at}>{formatOccurredAt(step.created_at)}</time>, {actorLabel(step.attore).toLowerCase()}
+              <time dateTime={step.created_at}>{formatOccurredAt(step.created_at)}</time>, {actorLabel(step.actor).toLowerCase()}
             </p>
-            <p>{reasonLabel(step.motivo)}</p>
+            <p>{reasonLabel(step.reason)}</p>
           </li>
         ))}
       </ol>

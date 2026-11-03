@@ -33,8 +33,8 @@ the moment they are used, by the Drive reader. `transport_factory` exists solely
 test can point that one `files.get` at a fake instead of Google -- production always
 takes the default, `transport/user_transport_for`.
 
-One new `activities` kind lives here: `drive.radici_impostate`, alongside
-`drive.credenziale_revocata` -- `activities.kind` is open by project (slice 1 §5.8),
+One new `activities` kind lives here: `drive.roots_set`, alongside
+`drive.credential_revoked` -- `activities.kind` is open by project (slice 1 §5.8),
 so neither costs a migration.
 """
 
@@ -339,7 +339,7 @@ class GoogleDriveAccountService:
         self.activities.record(
             "google_drive_account",
             account.id,
-            "drive.credenziale_revocata",
+            "drive.credential_revoked",
             actor,
             # The address and nothing else -- never the upstream body.
             {"email_address": account.email_address},
@@ -457,7 +457,7 @@ class GoogleDriveAccountService:
         self.activities.record(
             "google_drive_account",
             account.id,
-            "drive.radici_impostate",
+            "drive.roots_set",
             actor,
             payload,
         )

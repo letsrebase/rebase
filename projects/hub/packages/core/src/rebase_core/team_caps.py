@@ -4,7 +4,7 @@ page and the cloud may ask Claude for, together, before the next one answers 503
 Beta has no quota for a person (Ivan: no limits), and a script is not a person: the
 concurrency cap (`team_slots.ProposalSlots`) bounds how much runs at once, and this
 bounds what a day can cost. The count is the
-`team_proposals` rows of `pubblico` and `cloud` origin created since midnight in Rome,
+`team_proposals` rows of `public` and `cloud` origin created since midnight in Rome,
 where the day of the people running rebase begins; a row written with no call (an
 empty catalogue, `team_sentences.NO_CALL_MODEL`) cost nothing and is not counted, and nor
 is an admin's own proposal, which no stranger can repeat.
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 ROME = ZoneInfo("Europe/Rome")
 # The origins a stranger can repeat: the public page and the cloud (spec § 5).
-CAPPED_ORIGINS = ("pubblico", "cloud")
+CAPPED_ORIGINS = ("public", "cloud")
 
 
 def rome_midnight(now: datetime) -> datetime:
@@ -45,7 +45,7 @@ def proposals_today(session: Session, *, now: datetime) -> int:
         .select_from(TeamProposal)
         .where(
             TeamProposal.created_at >= rome_midnight(now),
-            TeamProposal.origine.in_(CAPPED_ORIGINS),
+            TeamProposal.origin.in_(CAPPED_ORIGINS),
             TeamProposal.model != NO_CALL_MODEL,
         )
     )

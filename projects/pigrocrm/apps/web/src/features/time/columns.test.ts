@@ -6,7 +6,7 @@ import {
   formatHoursValue,
   formatMoneyValue,
   formatRateValue,
-  statoOf,
+  statusOf,
   TIME_ENTRY_STATE_TONE,
 } from './columns'
 import type { TimeEntry } from './queries'
@@ -48,15 +48,15 @@ const ENTRY: TimeEntry = {
   deal_id: 'd1',
   user_id: 'u1',
   data: '2026-03-05',
-  ore: '7.50',
-  descrizione: 'Sviluppo',
-  fatturabile: true,
-  tariffa_applicata: '80.00',
-  costo_applicato: null,
-  tariffa_origine: 'deal',
-  costo_origine: 'assente',
-  valore_riga: '600.00',
-  costo_riga: null,
+  hours: '7.50',
+  description: 'Sviluppo',
+  billable: true,
+  applied_rate: '80.00',
+  applied_cost: null,
+  rate_source: 'deal',
+  cost_source: 'absent',
+  line_value: '600.00',
+  line_cost: null,
   invoice_line_id: null,
   note_interne: null,
   custom_fields: {},
@@ -93,48 +93,48 @@ describe('how an hour reads', () => {
 
   /** The header has to sit over the digits it labels, which only the column can say. */
   it('declares hours, rate and value right-aligned columns', () => {
-    expect(column('ore').meta).toEqual({ align: 'right' })
-    expect(column('tariffa_applicata').meta).toEqual({ align: 'right' })
-    expect(column('valore_riga').meta).toEqual({ align: 'right' })
+    expect(column('hours').meta).toEqual({ align: 'right' })
+    expect(column('applied_rate').meta).toEqual({ align: 'right' })
+    expect(column('line_value').meta).toEqual({ align: 'right' })
   })
 
   it('aligns hours on tabular digits, through the number cell rather than the money one', () => {
-    renderCell('ore', ENTRY)
+    renderCell('hours', ENTRY)
     const cell = screen.getByText('7,5')
     expect(cell.className).toContain('text-right')
     expect(cell.className).toContain('tabular-nums')
   })
 
   it('keeps the rate beside where it came from, right-aligned', () => {
-    renderCell('tariffa_applicata', ENTRY)
+    renderCell('applied_rate', ENTRY)
     expect(screen.getByText(/dal deal/).className).toContain('text-right')
   })
 
   it('shows an unpriced rate as the dash rather than as zero', () => {
-    renderCell('tariffa_applicata', { ...ENTRY, tariffa_applicata: null })
+    renderCell('applied_rate', { ...ENTRY, applied_rate: null })
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 })
 
 /**
  * The one status in the product that is *derived* rather than stored: `invoice_line_id`
- * and `fatturabile` together are what the three readings mean.
+ * and `billable` together are what the three readings mean.
  */
 describe("an hour's state", () => {
   it('reads an hour with an invoice line as invoiced, whatever fatturabile says', () => {
-    expect(statoOf({ ...ENTRY, invoice_line_id: 'l1', fatturabile: false })).toBe('fatturata')
+    expect(statusOf({ ...ENTRY, invoice_line_id: 'l1', billable: false })).toBe('invoiced')
   })
 
   it('reads a billable hour with no line as still to be invoiced', () => {
-    expect(statoOf({ ...ENTRY, fatturabile: true })).toBe('da_fatturare')
+    expect(statusOf({ ...ENTRY, billable: true })).toBe('to_invoice')
   })
 
   it('reads a non-billable hour as such, not as pending', () => {
-    expect(statoOf({ ...ENTRY, fatturabile: false })).toBe('non_fatturabile')
+    expect(statusOf({ ...ENTRY, billable: false })).toBe('non_billable')
   })
 
   it('shows an hour still to invoice in the waiting-on-somebody tone', () => {
-    renderCell('stato', ENTRY)
+    renderCell('status', ENTRY)
     expect(screen.getByText('Da fatturare').closest('[data-slot="badge"]')).toHaveAttribute(
       'data-tone',
       'gold',
@@ -142,7 +142,7 @@ describe("an hour's state", () => {
   })
 
   it('shows an invoiced hour as settled', () => {
-    renderCell('stato', { ...ENTRY, invoice_line_id: 'l1' })
+    renderCell('status', { ...ENTRY, invoice_line_id: 'l1' })
     expect(screen.getByText('Fatturata').closest('[data-slot="badge"]')).toHaveAttribute(
       'data-tone',
       'ink',
@@ -152,11 +152,11 @@ describe("an hour's state", () => {
   /** Most non-billable hours are deliberate (internal work), so the column must not
    *  read as a table of problems. */
   it('keeps a non-billable hour quiet rather than tinting it as a warning', () => {
-    renderCell('stato', { ...ENTRY, fatturabile: false })
+    renderCell('status', { ...ENTRY, billable: false })
     expect(screen.getByText('Non fatturabile').closest('[data-slot="badge"]')).toHaveAttribute(
       'data-tone',
       'muted',
     )
-    expect(TIME_ENTRY_STATE_TONE.non_fatturabile).not.toBe('danger')
+    expect(TIME_ENTRY_STATE_TONE.non_billable).not.toBe('danger')
   })
 })

@@ -141,7 +141,7 @@ def test_a_run_writes_checks_and_judges_each_card_and_stores_no_live_card(
     judging = RecordingCall(
         [
             judge_response(
-                {"competenze": ("unsupported", "no source says AWS")},
+                {"skills": ("unsupported", "no source says AWS")},
                 invented=["AWS"],
                 identifying=["Acme"],
             )
@@ -158,17 +158,20 @@ def test_a_run_writes_checks_and_judges_each_card_and_stores_no_live_card(
         "years": {"mode": "recomputed", "ok": True, "low": 8, "high": 9},
         "anonymity": [],
     }
-    assert (result.anni_ok, result.guard_clean) == (True, True)
+    assert (result.experience_years_ok, result.guard_clean) == (True, True)
     # The judge's verdicts, and a rule's over the judge's on the years.
     assert result.judgement is not None
     fields = result.judgement["fields"]
-    assert fields["competenze"] == {
+    assert fields["skills"] == {
         "verdict": "unsupported",
         "reason": "no source says AWS",
         "by": "judge",
     }
-    assert fields["anni"]["by"] == "rule" and fields["anni"]["verdict"] == "supported"
-    assert fields["ruolo"]["by"] == "judge"
+    assert (
+        fields["experience_years"]["by"] == "rule"
+        and fields["experience_years"]["verdict"] == "supported"
+    )
+    assert fields["role"]["by"] == "judge"
     assert result.judgement["invented"] == ["AWS"]
     assert result.judgement["identifying"] == ["Acme"]
     # One call to write, one to judge, and nothing written to the live card.
@@ -206,13 +209,13 @@ def test_a_rule_settles_the_years_over_a_judge_who_says_supported(clean_hub: Ses
     run = _run(clean_hub, RecordingCall([card_response()]), RecordingCall([judge_response()]))
 
     [result] = results_of(clean_hub, run.id)
-    assert result.anni_ok is False
+    assert result.experience_years_ok is False
     assert result.checks is not None and result.checks["years"]["mode"] == "undated"
     assert result.judgement is not None
-    assert result.judgement["fields"]["anni"]["verdict"] == "contradicted"
-    assert result.judgement["fields"]["anni"]["by"] == "rule"
+    assert result.judgement["fields"]["experience_years"]["verdict"] == "contradicted"
+    assert result.judgement["fields"]["experience_years"]["by"] == "rule"
     assert run.summary["contradicted"] == 1 and run.summary["contradicted_profiles"] == 1
-    assert (run.summary["anni_checked"], run.summary["anni_ok"]) == (1, 0)
+    assert (run.summary["anni_checked"], run.summary["experience_years_ok"]) == (1, 0)
 
 
 def test_an_identifier_of_the_person_left_in_a_card_is_found_by_the_rules(
@@ -225,7 +228,9 @@ def test_an_identifier_of_the_person_left_in_a_card_is_found_by_the_rules(
     assert row is not None
     row.links = ["https://ada-engine.dev/me"]
     clean_hub.commit()
-    leaky = _card(sintesi="Ha fondato ada-engine, una libreria per i calcoli, nove anni di Python.")
+    leaky = _card(
+        profile_summary="Ha fondato ada-engine, una libreria per i calcoli, nove anni di Python."
+    )
 
     run = _run(
         clean_hub,
@@ -235,7 +240,7 @@ def test_an_identifier_of_the_person_left_in_a_card_is_found_by_the_rules(
     )
 
     [result] = results_of(clean_hub, run.id)
-    assert result.checks is not None and result.checks["anonymity"] == ["sintesi"]
+    assert result.checks is not None and result.checks["anonymity"] == ["profile_summary"]
     assert (run.summary["leaks_rule"], run.summary["leaks"]) == (1, 1)
     assert "anonima" in format_report(run, [result]) and "no" in format_report(run, [result])
 
@@ -249,7 +254,7 @@ def test_prompt_version_1_writes_from_the_cv_alone_and_takes_a_bare_card(
     run = _run(clean_hub, writer, RecordingCall([judge_response()]), prompt_version=1)
 
     [request] = writer.requests
-    assert "Prompt version" not in request.system and "fonti" not in request.system
+    assert "Prompt version" not in request.system and "sources" not in request.system
     assert "Sources available" not in request.messages[0].text
     assert request.output_model is Card
     [result] = results_of(clean_hub, run.id)
@@ -268,7 +273,7 @@ def test_a_prompt_version_nobody_can_write_is_refused_before_any_call(clean_hub:
 
 def test_a_card_a_guard_refused_is_a_guard_failure_and_is_not_judged(clean_hub: Session) -> None:
     _person(clean_hub, label="lead")
-    gendered = _card(sintesi="Lei è una sviluppatrice con nove anni di esperienza.")
+    gendered = _card(profile_summary="Lei è una sviluppatrice con nove anni di esperienza.")
     judging = RecordingCall([])
 
     run = _run(
@@ -320,7 +325,7 @@ def test_a_judge_that_gives_no_verdict_is_recorded_and_the_run_goes_on(
     first, second = results_of(clean_hub, run.id)
     assert first.judgement is not None and first.judgement["failure"] == failure
     # The rules' verdict stands where the judge gave none.
-    assert set(first.judgement["fields"]) == {"anni"}
+    assert set(first.judgement["fields"]) == {"experience_years"}
     assert second.judgement is not None and second.judgement["failure"] is None
     assert run.summary["complete"] and run.summary["judge_failed"] == 1
     assert (run.summary["judged"], run.summary["fields"]) == (1, 8 + 1)

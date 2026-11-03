@@ -48,11 +48,11 @@ MISSING = "00000000-0000-7000-8000-000000000000"
 OFF = "Il team builder è spento."
 BUSY = "Troppe richieste in questo momento: riprova tra un minuto."
 ALREADY = "Questa proposta è già stata richiesta."
-DESCRIZIONE = (
+DESCRIPTION = (
     "Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, sei mesi, da remoto."
 )
-RIASSUNTO = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
-CONTACTS = {"azienda": "Acme S.r.l.", "email": "wile@acme.it", "telefono": "+39 345 1234567"}
+SUMMARY = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
+CONTACTS = {"company": "Acme S.r.l.", "email": "wile@acme.it", "phone": "+39 345 1234567"}
 # What a log line may carry of a request is its id, and an id is not text to scan for a
 # secret: a UUIDv7 opens with the top bits of the millisecond clock, so for minutes at a
 # time every id carries the same hex digits, and a phone's «345» is in them (REB-667).
@@ -96,14 +96,14 @@ def _clock(client: TestClient, now: datetime) -> None:
 
 
 def _talent(session: Session, n: int = 1) -> UUID:
-    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", cognome=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
         user_id=user.id,
-        remoto="remoto",
-        tariffa_giornaliera=Decimal("450.00"),
-        stato="nuovo",
+        remote="remote",
+        daily_rate=Decimal("450.00"),
+        status="new",
         posizione="Backend developer",
     )
     session.add(row)
@@ -127,30 +127,30 @@ def _proposal_row(
     session: Session,
     members: list[UUID],
     *,
-    origine: str = "pubblico",
+    origin: str = "public",
     created_at: datetime | None = None,
     model: str = MODEL,
 ) -> UUID:
     row = TeamProposal(
-        descrizione=DESCRIZIONE,
-        riassunto=RIASSUNTO,
-        luogo={"locale": False, "dove": None},
+        description=DESCRIPTION,
+        summary=SUMMARY,
+        location={"locale": False, "dove": None},
         team=[
             {
                 "posizione": index,
                 "freelancer_id": str(freelancer_id),
-                "ruolo": "Backend developer",
-                "motivazione": "Nove anni di API in Python.",
-                "giorni_settimana": 5,
+                "role": "Backend developer",
+                "reasoning": "Nove anni di API in Python.",
+                "week_days": 5,
             }
             for index, freelancer_id in enumerate(members, start=1)
         ],
-        economia={"giorno": None, "mese": None, "giorni_mese": 22},
+        economics={"day": None, "month": None, "days_month": 22},
         model=model,
         input_tokens=5200 if model else 0,
         output_tokens=640 if model else 0,
         cache_read_tokens=0,
-        origine=origine,
+        origin=origin,
         # A few minutes old, so a proposal the test makes afterwards is the newer one. The
         # wall clock decides which day that is in Rome, so a test that counts the day (the
         # daily cap) pins `_clock` and passes `created_at` from the same instant: planted
@@ -165,16 +165,16 @@ def _proposal_row(
 
 def proposal_response(team: list[dict[str, Any]] | None = None) -> LlmResponse:
     body = {
-        "riassunto": RIASSUNTO,
-        "luogo": {"locale": False, "dove": None},
+        "summary": SUMMARY,
+        "location": {"locale": False, "dove": None},
         "team": team
         if team is not None
         else [
             {
                 "id": "t1",
-                "ruolo": "Backend developer",
-                "motivazione": "Nove anni di API in Python e FastAPI.",
-                "giorni_settimana": 5,
+                "role": "Backend developer",
+                "reasoning": "Nove anni di API in Python e FastAPI.",
+                "week_days": 5,
             }
         ],
     }
@@ -191,7 +191,7 @@ def proposal_response(team: list[dict[str, Any]] | None = None) -> LlmResponse:
 
 
 def _propose(client: TestClient) -> Any:
-    return client.post("/api/hub/team/proposals", json={"descrizione": DESCRIZIONE})
+    return client.post("/api/hub/team/proposals", json={"description": DESCRIPTION})
 
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
@@ -214,21 +214,21 @@ def test_public_proposal_answers_the_team_without_ids(client: TestClient, team: 
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["riassunto"] == RIASSUNTO
-    assert body["origine"] == "pubblico"
+    assert body["summary"] == SUMMARY
+    assert body["origin"] == "public"
     # What it was asked with travels on the read (REB-675), for a page opened on it later.
-    assert (body["descrizione"], body["persone"]) == (DESCRIZIONE, None)
+    assert (body["description"], body["people"]) == (DESCRIPTION, None)
     [member] = body["team"]
     assert member["posizione"] == 1
     assert member["freelancer_id"] is None
-    assert member["nome"] is None and member["cognome"] is None
-    assert member["scheda"]["luogo"] is None
-    assert member["fascia"] == {"min": 500, "max": 650}
+    assert member["nome"] is None and member["last_name"] is None
+    assert member["card"]["location"] is None
+    assert member["band"] == {"min": 500, "max": 650}
     assert str(freelancer_id) not in response.text
     assert "Lovelace" not in response.text and "talento1@studio.it" not in response.text
     assert len(recording.requests) == 1
     [row] = team.scalars(select(TeamProposal)).all()
-    assert (row.origine, row.user_id) == ("pubblico", None)
+    assert (row.origin, row.user_id) == ("public", None)
 
 
 def test_public_proposal_is_422_on_a_short_description_or_a_foreign_previous(
@@ -238,21 +238,21 @@ def test_public_proposal_is_422_on_a_short_description_or_a_foreign_previous(
     recording = RecordingCall([])
     _llm(client, recording)
 
-    refused = client.post("/api/hub/team/proposals", json={"descrizione": "Un sito."})
+    refused = client.post("/api/hub/team/proposals", json={"description": "Un sito."})
 
     assert refused.status_code == 422
-    assert refused.json()["detail"][0]["loc"][-1] == "descrizione"
+    assert refused.json()["detail"][0]["loc"][-1] == "description"
 
     # The number of people is one to ten (REB-591).
-    nobody = client.post("/api/hub/team/proposals", json={"descrizione": DESCRIZIONE, "persone": 0})
+    nobody = client.post("/api/hub/team/proposals", json={"description": DESCRIPTION, "people": 0})
     assert nobody.status_code == 422
-    assert nobody.json()["detail"][0]["loc"] == ["body", "persone"]
+    assert nobody.json()["detail"][0]["loc"] == ["body", "people"]
 
     # «Rigenera» on the public page takes only a public proposal (spec § 3.2).
-    cloud = _proposal_row(team, [member], origine="cloud")
+    cloud = _proposal_row(team, [member], origin="cloud")
     foreign = client.post(
         "/api/hub/team/proposals",
-        json={"descrizione": DESCRIZIONE, "previous_id": str(cloud), "nota": "Più junior."},
+        json={"description": DESCRIPTION, "previous_id": str(cloud), "nota": "Più junior."},
     )
     assert foreign.status_code == 422
     assert foreign.json()["detail"][0]["loc"] == ["body", "previous_id"]
@@ -315,7 +315,7 @@ def test_public_proposal_is_503_when_the_cap_is_full(client: TestClient, team: S
     assert len(blocking.requests) == 1
     # The ask that found no slot is kept too (0028), beside the proposal that answered.
     team.expire_all()
-    assert sorted(row.errore or "ok" for row in team.scalars(select(TeamProposal))) == [
+    assert sorted(row.error or "ok" for row in team.scalars(select(TeamProposal))) == [
         "ok",
         "team_builder_busy",
     ]
@@ -341,9 +341,7 @@ def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     _proposal_row(team, [member], created_at=now)  # the second paid proposal of the day
     recording = RecordingCall([proposal_response()])
     _llm(client, recording)
-    refused = client.post(
-        "/api/hub/team/proposals", json={"descrizione": DESCRIZIONE, "persone": 4}
-    )
+    refused = client.post("/api/hub/team/proposals", json={"description": DESCRIPTION, "people": 4})
 
     assert refused.status_code == 503
     assert refused.json() == {"detail": BUSY}
@@ -351,15 +349,15 @@ def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     # The refused ask is kept (0028), stamped with the same instant, costing the day
     # nothing: a second ask is refused by the same count, not one higher.
     team.expire_all()
-    [attempt] = team.scalars(select(TeamProposal).where(TeamProposal.errore.is_not(None))).all()
-    assert (attempt.errore, attempt.persone, attempt.model, attempt.created_at) == (
+    [attempt] = team.scalars(select(TeamProposal).where(TeamProposal.error.is_not(None))).all()
+    assert (attempt.error, attempt.people, attempt.model, attempt.created_at) == (
         "team_builder_busy",
         4,
         "",
         now,
     )
     assert _propose(client).status_code == 503
-    failed = TeamProposal.errore.is_not(None)
+    failed = TeamProposal.error.is_not(None)
     assert team.scalar(select(func.count()).select_from(TeamProposal).where(failed)) == 2
 
 
@@ -378,7 +376,7 @@ def test_one_client_cannot_spend_the_daily_cap_for_everybody(
 
     def propose(headers: dict[str, str]) -> Any:
         return client.post(
-            "/api/hub/team/proposals", json={"descrizione": DESCRIZIONE}, headers=headers
+            "/api/hub/team/proposals", json={"description": DESCRIPTION}, headers=headers
         )
 
     assert [propose(abuser).status_code for _ in range(2)] == [200, 200]
@@ -388,7 +386,7 @@ def test_one_client_cannot_spend_the_daily_cap_for_everybody(
     # The abuser used 2 of the 3 paid proposals of the day; the room left is somebody else's.
     assert propose(other).status_code == 200
     team.expire_all()
-    errors = [row.errore for row in team.scalars(select(TeamProposal)) if row.errore]
+    errors = [row.error for row in team.scalars(select(TeamProposal)) if row.error]
     assert errors == ["team_builder_busy"]
     assert proposals_today(team, now=utcnow()) == 3
 
@@ -403,7 +401,7 @@ def test_a_refused_ask_is_counted_against_its_client(client: TestClient, team: S
 
     def propose() -> Any:
         return client.post(
-            "/api/hub/team/proposals", json={"descrizione": DESCRIZIONE}, headers=headers
+            "/api/hub/team/proposals", json={"description": DESCRIPTION}, headers=headers
         )
 
     assert propose().status_code == 200
@@ -516,9 +514,9 @@ def test_public_proposal_is_502_when_claude_is_down(client: TestClient, team: Se
     assert refused.json() == {"detail": "Non riesco a proporre un team adesso: riprova tra poco."}
     # The ask is kept as an attempt (0028), a row the visitor was never handed.
     [attempt] = team.scalars(select(TeamProposal)).all()
-    assert (attempt.errore, attempt.descrizione, attempt.riassunto) == (
+    assert (attempt.error, attempt.description, attempt.summary) == (
         "llm_unavailable",
-        DESCRIZIONE,
+        DESCRIPTION,
         "",
     )
     # The one slot came back through the failure.
@@ -545,16 +543,16 @@ def test_public_read_by_id_answers_a_fresh_public_proposal_and_404_for_the_rest(
     team: Session,
     strict_rate_limit: None,
 ) -> None:
-    """REB-675: `/hub/team?proposta=<id>` opens on this read, so the window is the one
+    """REB-675: `/hub/team?proposal=<id>` opens on this read, so the window is the one
     «Rigenera» and «Assumi team» already give a proposal, and every refusal is the same
     404, so the route never says which proposals exist."""
     member = _talent(team)
     fresh = _proposal_row(team, [member])
     old = _proposal_row(team, [member], created_at=datetime.now(UTC) - timedelta(days=1, minutes=1))
-    cloud = _proposal_row(team, [member], origine="cloud")
+    cloud = _proposal_row(team, [member], origin="cloud")
     refused = _proposal_row(team, [], model="")
     team.execute(
-        update(TeamProposal).where(TeamProposal.id == refused).values(errore="team_builder_busy")
+        update(TeamProposal).where(TeamProposal.id == refused).values(error="team_builder_busy")
     )
     team.commit()
 
@@ -563,15 +561,15 @@ def test_public_read_by_id_answers_a_fresh_public_proposal_and_404_for_the_rest(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["id"] == str(fresh)
-    assert (body["descrizione"], body["persone"], body["riassunto"]) == (
-        DESCRIZIONE,
+    assert (body["description"], body["people"], body["summary"]) == (
+        DESCRIPTION,
         None,
-        RIASSUNTO,
+        SUMMARY,
     )
     [read] = body["team"]
     assert read["posizione"] == 1
     assert (
-        read["freelancer_id"] is None and read["nome"] is None and read["scheda"]["luogo"] is None
+        read["freelancer_id"] is None and read["nome"] is None and read["card"]["location"] is None
     )
     assert str(member) not in response.text and "Lovelace" not in response.text
     for proposal_id in (old, cloud, refused, MISSING):
@@ -593,20 +591,20 @@ def test_public_read_by_id_answers_a_fresh_public_proposal_and_404_for_the_rest(
 @pytest.mark.parametrize(
     ("sent", "stored"), [("ABCDEFGH23", "ABCDEFGH23"), ("not a code!!", None), (None, None)]
 )
-def test_public_request_keeps_a_well_shaped_rif_and_drops_the_rest(
+def test_public_request_keeps_to_well_shaped_ref_and_drops_the_rest(
     client: TestClient, team: Session, sent: str | None, stored: str | None
 ) -> None:
-    """REB-600: `rif` is public input, cleaned like a signup's, and never a 422."""
+    """REB-600: `ref` is public input, cleaned like a signup's, and never a 422."""
     proposal_id = _proposal_row(team, [_talent(team)])
 
     created = client.post(
         "/api/hub/team/requests",
-        json={"proposal_id": str(proposal_id), **CONTACTS, **({"rif": sent} if sent else {})},
+        json={"proposal_id": str(proposal_id), **CONTACTS, **({"ref": sent} if sent else {})},
     )
 
     assert created.status_code == 201, created.text
     row = team.get(TeamRequest, UUID(created.json()["id"]))
-    assert row is not None and row.rif == stored
+    assert row is not None and row.ref == stored
 
 
 def test_public_request_is_201_then_409(
@@ -622,7 +620,7 @@ def test_public_request_is_201_then_409(
     request_id = created.json()["id"]
     assert created.json() == {"id": request_id}
     row = team.get(TeamRequest, UUID(request_id))
-    assert row is not None and row.origine == "pubblico" and row.azienda == "Acme S.r.l."
+    assert row is not None and row.origin == "public" and row.company == "Acme S.r.l."
     # Sent after the answer, by the background task the route queued.
     [mail] = sender.sent
     assert mail.to == "ciao@letsrebase.com"
@@ -692,7 +690,7 @@ def test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal(
 ) -> None:
     member = _talent(team)
     old = _proposal_row(team, [member], created_at=datetime.now(UTC) - timedelta(days=1, minutes=1))
-    cloud = _proposal_row(team, [member], origine="cloud")
+    cloud = _proposal_row(team, [member], origin="cloud")
     empty = _proposal_row(team, [], model="")
 
     for proposal_id, reason in (
@@ -711,10 +709,10 @@ def test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal(
 
     bad = client.post(
         "/api/hub/team/requests",
-        json={"proposal_id": str(old), **CONTACTS, "email": "non-una-mail", "telefono": "12"},
+        json={"proposal_id": str(old), **CONTACTS, "email": "non-una-mail", "phone": "12"},
     )
     assert bad.status_code == 422
-    assert {item["loc"][-1] for item in bad.json()["detail"]} == {"email", "telefono"}
+    assert {item["loc"][-1] for item in bad.json()["detail"]} == {"email", "phone"}
     assert team.scalars(select(TeamRequest)).all() == []
     assert sender.sent == []
 
@@ -743,7 +741,7 @@ def test_public_request_is_throttled(
 def test_an_admin_reads_and_works_a_request(
     client: TestClient, team: Session, sender: RecordingSender
 ) -> None:
-    team.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin"))
+    team.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="Sala", role="admin"))
     team.commit()
     _login(client, sender)
     member = _talent(team)
@@ -753,11 +751,11 @@ def test_an_admin_reads_and_works_a_request(
     )
     team.commit()
     ids = []
-    for azienda in ("Uno Srl", "Due Srl", "Tre Srl"):
+    for company in ("Uno Srl", "Due Srl", "Tre Srl"):
         proposal_id = _proposal_row(team, [member])
         created = client.post(
             "/api/hub/team/requests",
-            json={"proposal_id": str(proposal_id), **CONTACTS, "azienda": azienda},
+            json={"proposal_id": str(proposal_id), **CONTACTS, "company": company},
         )
         assert created.status_code == 201, created.text
         ids.append(created.json()["id"])
@@ -773,17 +771,17 @@ def test_an_admin_reads_and_works_a_request(
     assert [item["id"] for item in rest["items"]] == [ids[0]]
     assert rest["next_cursor"] is None
     item = rest["items"][0]
-    assert (item["azienda"], item["origine"], item["stato"]) == ("Uno Srl", "pubblico", "nuova")
-    assert (item["talenti_totale"], item["talenti_si"]) == (1, 0)
+    assert (item["company"], item["origin"], item["status"]) == ("Uno Srl", "public", "new")
+    assert (item["total_talents"], item["self_talents"]) == (1, 0)
 
     detail = client.get(f"/api/hub/team/requests/{ids[0]}")
     assert detail.status_code == 200, detail.text
     body = detail.json()
-    assert body["email"] == "wile@acme.it" and body["telefono"] == "+39 345 1234567"
+    assert body["email"] == "wile@acme.it" and body["phone"] == "+39 345 1234567"
     assert body["proposal"]["team"][0]["freelancer_id"] == str(member)
-    [talento] = body["talenti"]
-    assert (talento["nome"], talento["cognome"]) == ("Ada1", "Lovelace1")
-    assert talento["tariffa_giornaliera"] == "450.00"
+    [talent] = body["talents"]
+    assert (talent["nome"], talent["last_name"]) == ("Ada1", "Lovelace1")
+    assert talent["daily_rate"] == "450.00"
 
     # «Proposte» (0028): the three asks, newest first, each naming its request.
     proposals = client.get("/api/hub/team/proposals", params={"limit": 2})
@@ -793,52 +791,52 @@ def test_an_admin_reads_and_works_a_request(
         "/api/hub/team/proposals", params={"limit": 2, "cursor": proposals.json()["next_cursor"]}
     ).json()
     oldest, unfiled = rest["items"]
-    assert (oldest["request_id"], oldest["origine"], oldest["errore"], oldest["membri"]) == (
+    assert (oldest["request_id"], oldest["origin"], oldest["error"], oldest["members"]) == (
         ids[0],
-        "pubblico",
+        "public",
         None,
         1,
     )
-    assert oldest["descrizione"] == DESCRIZIONE and oldest["persone"] is None
+    assert oldest["description"] == DESCRIPTION and oldest["people"] is None
     # REB-607: the row names who it held, with the id the admin's profile page takes;
     # a talent removed with «Elimina» since is kept by id and serialised unnamed.
-    assert (unfiled["id"], unfiled["request_id"], unfiled["membri"]) == (str(never), None, 2)
+    assert (unfiled["id"], unfiled["request_id"], unfiled["members"]) == (str(never), None, 2)
     assert unfiled["team"] == [
         {
             "posizione": 1,
             "freelancer_id": str(member),
-            "ruolo": "Backend developer",
+            "role": "Backend developer",
             "nome": "Ada1",
-            "cognome": "Lovelace1",
+            "last_name": "Lovelace1",
         },
         {
             "posizione": 2,
             "freelancer_id": str(removed),
-            "ruolo": "Backend developer",
+            "role": "Backend developer",
             "nome": None,
-            "cognome": None,
+            "last_name": None,
         },
     ]
     assert rest["next_cursor"] is None
-    assert client.get("/api/hub/team/proposals", params={"esito": "errore"}).json()["items"] == []
-    assert client.get("/api/hub/team/proposals", params={"esito": "boh"}).status_code == 422
-    assert client.get("/api/hub/team/proposals", params={"origine": "sito"}).status_code == 422
+    assert client.get("/api/hub/team/proposals", params={"outcome": "error"}).json()["items"] == []
+    assert client.get("/api/hub/team/proposals", params={"outcome": "boh"}).status_code == 422
+    assert client.get("/api/hub/team/proposals", params={"origin": "sito"}).status_code == 422
 
-    moved = client.post(f"/api/hub/team/requests/{ids[0]}/status", json={"stato": "contattata"})
+    moved = client.post(f"/api/hub/team/requests/{ids[0]}/status", json={"status": "contacted"})
     assert moved.status_code == 200, moved.text
-    assert moved.json()["stato"] == "contattata" and moved.json()["contacted_at"] is not None
-    only = client.get("/api/hub/team/requests", params={"stato": "contattata"}).json()
+    assert moved.json()["status"] == "contacted" and moved.json()["contacted_at"] is not None
+    only = client.get("/api/hub/team/requests", params={"status": "contacted"}).json()
     assert [item["id"] for item in only["items"]] == [ids[0]]
-    unknown = client.post(f"/api/hub/team/requests/{ids[0]}/status", json={"stato": "persa"})
+    unknown = client.post(f"/api/hub/team/requests/{ids[0]}/status", json={"status": "persa"})
     assert unknown.status_code == 422
 
     noted = client.patch(f"/api/hub/team/requests/{ids[0]}/note", json={"note": "Richiamare."})
     assert noted.status_code == 200 and noted.json()["note"] == "Richiamare."
     summary = "Un'azienda di logistica rifà il gestionale, sei mesi."
-    edited = client.patch(f"/api/hub/team/requests/{ids[0]}/summary", json={"riassunto": summary})
+    edited = client.patch(f"/api/hub/team/requests/{ids[0]}/summary", json={"summary": summary})
     assert edited.status_code == 200, edited.text
-    assert edited.json()["riassunto"] == summary
-    blank = client.patch(f"/api/hub/team/requests/{ids[0]}/summary", json={"riassunto": "  "})
+    assert edited.json()["summary"] == summary
+    blank = client.patch(f"/api/hub/team/requests/{ids[0]}/summary", json={"summary": "  "})
     assert blank.status_code == 422
 
     admin_id = team.scalar(select(User.id).where(User.email == ADMIN_EMAIL))
@@ -873,7 +871,7 @@ def _admin_request(
     client: TestClient, team: Session, sender: RecordingSender, members: int = 2
 ) -> tuple[str, list[UUID]]:
     """An admin signed in, and a public request for a team of `members` talents."""
-    team.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin"))
+    team.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="Sala", role="admin"))
     team.commit()
     _login(client, sender)
     talents = [_talent(team, n) for n in range(1, members + 1)]
@@ -904,9 +902,9 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
 
     assert contacted.status_code == 200, contacted.text
     body = contacted.json()
-    assert body["stato"] == "contattata" and body["contacted_at"] is not None
-    assert all(talento["mail_sent_at"] is not None for talento in body["talenti"])
-    assert all(talento["contattabile"] for talento in body["talenti"])
+    assert body["status"] == "contacted" and body["contacted_at"] is not None
+    assert all(talent["mail_sent_at"] is not None for talent in body["talents"])
+    assert all(talent["contactable"] for talent in body["talents"])
     # Sent after the answer, by the background task, to each talent once.
     first, second = _availability(mailbox)
     assert (first.to, second.to) == ("talento1@studio.it", "talento2@studio.it")
@@ -915,20 +913,16 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
 
     # A mail scanner's GET records nothing.
     assert client.get("/api/hub/team/availability", params={"t": _token(first)}).status_code == 405
-    answered = client.post(
-        "/api/hub/team/availability", json={"t": _token(first), "risposta": "si"}
-    )
+    answered = client.post("/api/hub/team/availability", json={"t": _token(first), "answer": "si"})
     assert answered.status_code == 200, answered.text
-    assert answered.json() == {"esito": "si"}
-    again = client.post("/api/hub/team/availability", json={"t": _token(first), "risposta": "no"})
-    assert again.json() == {"esito": "invalid"}
-    unknown = client.post(
-        "/api/hub/team/availability", json={"t": "non-un-token", "risposta": "no"}
-    )
-    assert unknown.json() == {"esito": "invalid"}
+    assert answered.json() == {"outcome": "si"}
+    again = client.post("/api/hub/team/availability", json={"t": _token(first), "answer": "no"})
+    assert again.json() == {"outcome": "invalid"}
+    unknown = client.post("/api/hub/team/availability", json={"t": "non-un-token", "answer": "no"})
+    assert unknown.json() == {"outcome": "invalid"}
     assert (
         client.post(
-            "/api/hub/team/availability", json={"t": _token(second), "risposta": "forse"}
+            "/api/hub/team/availability", json={"t": _token(second), "answer": "forse"}
         ).status_code
         == 422
     )
@@ -936,7 +930,7 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
     row = team.scalar(
         select(TeamRequestTalent).where(TeamRequestTalent.freelancer_id == talents[0])
     )
-    assert row is not None and row.risposta == "si" and row.risposta_at is not None
+    assert row is not None and row.answer == "si" and row.answered_at is not None
 
     # «Contatta i talenti» is a first time only; «Rimanda» writes to the silent one.
     refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
@@ -947,16 +941,16 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
     [*_, last] = _availability(mailbox)
     assert len(_availability(mailbox)) == 3 and last.to == "talento2@studio.it"
     assert client.post(
-        "/api/hub/team/availability", json={"t": _token(last), "risposta": "no"}
-    ).json() == {"esito": "no"}
+        "/api/hub/team/availability", json={"t": _token(last), "answer": "no"}
+    ).json() == {"outcome": "no"}
     nobody = client.post(f"/api/hub/team/requests/{request_id}/contact?only_silent=true")
     assert nobody.status_code == 409
     assert nobody.json() == {"detail": NOBODY}
 
     detail = client.get(f"/api/hub/team/requests/{request_id}").json()
-    assert [talento["risposta"] for talento in detail["talenti"]] == ["si", "no"]
+    assert [talent["answer"] for talent in detail["talents"]] == ["si", "no"]
     item = client.get("/api/hub/team/requests").json()["items"][0]
-    assert (item["talenti_totale"], item["talenti_si"]) == (2, 1)
+    assert (item["total_talents"], item["self_talents"]) == (2, 1)
 
 
 def test_contact_refuses_a_summary_that_names_the_company(
@@ -967,7 +961,7 @@ def test_contact_refuses_a_summary_that_names_the_company(
     assert row is not None and row.proposal_id is not None
     proposal = team.get(TeamProposal, row.proposal_id)
     assert proposal is not None
-    proposal.riassunto = "ACME rifà il gestionale degli ordini."
+    proposal.summary = "ACME rifà il gestionale degli ordini."
     team.commit()
 
     refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
@@ -975,7 +969,7 @@ def test_contact_refuses_a_summary_that_names_the_company(
     assert refused.status_code == 409
     assert refused.json() == {"detail": NAMES}
     assert _availability(mailbox) == []
-    assert client.get(f"/api/hub/team/requests/{request_id}").json()["stato"] == "nuova"
+    assert client.get(f"/api/hub/team/requests/{request_id}").json()["status"] == "new"
 
 
 def test_contact_without_a_mail_key_is_503(
@@ -994,8 +988,8 @@ def test_contact_without_a_mail_key_is_503(
         )
     }
     detail = client.get(f"/api/hub/team/requests/{request_id}").json()
-    assert detail["stato"] == "nuova"
-    assert [talento["mail_sent_at"] for talento in detail["talenti"]] == [None]
+    assert detail["status"] == "new"
+    assert [talent["mail_sent_at"] for talent in detail["talents"]] == [None]
 
 
 def test_a_refused_availability_mail_is_logged_by_id_alone(
@@ -1019,7 +1013,7 @@ def test_a_refused_availability_mail_is_logged_by_id_alone(
 
     assert contacted.status_code == 200, contacted.text
     # The answer came before the delivery: it shows the talent contacted.
-    assert contacted.json()["stato"] == "contattata"
+    assert contacted.json()["status"] == "contacted"
     assert len(refusing.sent) == 1
     warnings = [
         record.getMessage() for record in caplog.records if record.levelno == logging.WARNING
@@ -1032,18 +1026,18 @@ def test_a_refused_availability_mail_is_logged_by_id_alone(
     # The link reached nobody: the talent is not contacted, nor is the request, and
     # «Contatta i talenti» is free again.
     detail = client.get(f"/api/hub/team/requests/{request_id}").json()
-    assert [talento["mail_sent_at"] for talento in detail["talenti"]] == [None]
-    assert detail["stato"] == "nuova" and detail["contacted_at"] is None
+    assert [talent["mail_sent_at"] for talent in detail["talents"]] == [None]
+    assert detail["status"] == "new" and detail["contacted_at"] is None
 
 
 def test_the_answer_post_is_throttled(
     client: TestClient, team: Session, strict_rate_limit: None
 ) -> None:
     for _ in range(SIGNUPS_PER_MINUTE):
-        answered = client.post("/api/hub/team/availability", json={"t": "x", "risposta": "si"})
-        assert answered.json() == {"esito": "invalid"}
+        answered = client.post("/api/hub/team/availability", json={"t": "x", "answer": "si"})
+        assert answered.json() == {"outcome": "invalid"}
 
-    refused = client.post("/api/hub/team/availability", json={"t": "x", "risposta": "si"})
+    refused = client.post("/api/hub/team/availability", json={"t": "x", "answer": "si"})
 
     assert refused.status_code == 429
     assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)

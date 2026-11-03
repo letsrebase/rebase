@@ -66,11 +66,11 @@ persona, non per singola voce:
   servizio ha la sua voce, con la sua password: non si riusa mai la stessa.
 - **Le raccolte che ci sono**, con i nomi in inglese come le app: `Infrastructure` (server,
   DNS, servizi tecnici) e `Administration` (account dell'azienda, fornitori) per le
-  credenziali di Rebase, e per ogni cliente `Clients/<cliente>`, con dentro una raccolta per
-  progetto, `Clients/<cliente>/<progetto>`. Chi lavora a un progetto riceve la raccolta di
+  credenziali di Rebase, e per ogni cliente `Clients/<customer>`, con dentro una raccolta per
+  progetto, `Clients/<customer>/<project>`. Chi lavora a un progetto riceve la raccolta di
   quel progetto, di solito in **solo visualizzazione**; chi non ci lavora non la vede.
-- **Annidare è solo un nome**: `Clients/<cliente>/<progetto>` compare sotto il cliente, ma
-  non eredita niente da `Clients/<cliente>`. Avere il progetto non ti fa vedere le voci del
+- **Annidare è solo un nome**: `Clients/<customer>/<project>` compare sotto il cliente, ma
+  non eredita niente da `Clients/<customer>`. Avere il progetto non ti fa vedere le voci del
   cliente, e il contrario: ogni raccolta si assegna da sola.
 - **Niente gruppi**: non usiamo i «gruppi» del server (sono una funzione ancora in prova):
   si assegna la raccolta ai nomi, uno per uno.

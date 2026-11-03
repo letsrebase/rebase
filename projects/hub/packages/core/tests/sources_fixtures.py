@@ -70,11 +70,11 @@ def _person(
 ) -> UUID:
     data = FreelancerCreate(
         nome="Ada",
-        cognome="Lovelace",
+        last_name="Lovelace",
         email=email,
-        tariffa_giornaliera=Decimal("450.00"),
+        daily_rate=Decimal("450.00"),
         posizione="Backend developer",
-        remoto="remoto",
+        remote="remote",
         links=links,
     )
     service = FreelancerService(session)

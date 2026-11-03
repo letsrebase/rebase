@@ -41,7 +41,7 @@ def _ensure_committed_default(engine: Engine) -> None:
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     with engine.begin() as connection:
         if connection.execute(
@@ -50,7 +50,7 @@ def _ensure_committed_default(engine: Engine) -> None:
             return
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
             )
         )
 
@@ -74,7 +74,7 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
     transaction = connection.begin()
     # The default azienda every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
@@ -83,7 +83,7 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
     ).first():
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
             )
         )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
@@ -108,11 +108,11 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
 def _fresh_rate_limit() -> None:
     # The limiter's bucket is a module-level dict, so it outlives any one test's own
     # fixtures: without this, a test that spends its budget on `/api/auth/link` or
-    # `/api/tenants/{slug}/disponibile` (REB-228) hands the next one an already-spent
+    # `/api/tenants/{slug}/available` (REB-228) hands the next one an already-spent
     # bucket -- including a test that builds its own `TestClient` by hand instead of
     # going through `client` or `test_tenants_api.py`'s own `spaces_client`
     # (`test_the_root_slug_is_the_root_itself_and_nobody_elses_name` reaches
-    # `disponibile` that way). Autouse, not tucked inside one fixture, so no test in
+    # `available` that way). Autouse, not tucked inside one fixture, so no test in
     # this directory can be the one left uncovered.
     reset_rate_limit()
 
@@ -152,7 +152,7 @@ def client(api_session: Session, tmp_path: Path) -> Iterator[TestClient]:
 @pytest.fixture
 def admin_user(api_session: Session):
     return UserService(api_session).create(
-        UserCreate(email=ADMIN_EMAIL, password=ADMIN_PASSWORD, nome="Admin", ruolo="admin"),
+        UserCreate(email=ADMIN_EMAIL, password=ADMIN_PASSWORD, nome="Admin", role="admin"),
         Actor.system(),
     )
 
@@ -166,13 +166,13 @@ def logged_in(client: TestClient, admin_user) -> TestClient:
     return client
 
 
-def _client_as(client: TestClient, session: Session, *, email: str, ruolo: Role) -> TestClient:
-    """The same shape as `admin_user`/`logged_in` above, generalised over `ruolo` so a
+def _client_as(client: TestClient, session: Session, *, email: str, role: Role) -> TestClient:
+    """The same shape as `admin_user`/`logged_in` above, generalised over `role` so a
     router's own `actor.require_write`/`actor.require_admin` gate can be exercised
     over real HTTP -- not only at the service layer, where every existing test in
     this suite already covers it."""
     UserService(session).create(
-        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Test", ruolo=ruolo),
+        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Test", role=role),
         Actor.system(),
     )
     response = client.post("/api/auth/login", json={"email": email, "password": ADMIN_PASSWORD})
@@ -182,9 +182,9 @@ def _client_as(client: TestClient, session: Session, *, email: str, ruolo: Role)
 
 @pytest.fixture
 def readonly_client(client: TestClient, api_session: Session) -> TestClient:
-    return _client_as(client, api_session, email="readonly@pigro.it", ruolo="readonly")
+    return _client_as(client, api_session, email="readonly@pigro.it", role="readonly")
 
 
 @pytest.fixture
 def collaborator_client(client: TestClient, api_session: Session) -> TestClient:
-    return _client_as(client, api_session, email="collaboratore@pigro.it", ruolo="collaboratore")
+    return _client_as(client, api_session, email="collaboratore@pigro.it", role="collaborator")

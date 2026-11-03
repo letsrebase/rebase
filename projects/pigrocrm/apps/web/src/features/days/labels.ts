@@ -4,7 +4,7 @@ import type { components } from '@/lib/api-types'
 
 /**
  * Wire shapes, from the generated schema and never hand-declared: `work_units/schemas.py`
- * is the source and `pnpm generate:api` tracks it. `quantita` and the rate's `importo`
+ * is the source and `pnpm generate:api` tracks it. `quantity` and the rate's `amount`
  * arrive as decimal strings, and nothing here parses them into a float.
  */
 export type WorkUnitRow = components['schemas']['WorkUnitRow']
@@ -12,22 +12,22 @@ export type WorkUnitDetail = components['schemas']['WorkUnitDetail']
 export type WorkUnitCreateBody = components['schemas']['WorkUnitRecord']
 export type WorkUnitTransition = components['schemas']['WorkUnitTransitionRead']
 export type RateCard = components['schemas']['RateCardRead']
-export type WorkUnitStato = WorkUnitDetail['azioni'][number]
+export type WorkUnitStatus = WorkUnitDetail['actions'][number]
 /** A contract day as a calendar cell carries it (`DayWorkUnit`). */
 export type CalendarWorkUnit = components['schemas']['DayWorkUnit']
 
-/** The ledger's own words, one for one (`WorkUnitStato`), in the order a day lives them. */
-export const STATO_LABELS: Record<WorkUnitStato, string> = {
-  proposto: 'Proposta',
-  approvato: 'Approvata',
-  lavorato: 'Lavorata',
-  lavorato_senza_approvazione: 'Lavorata senza approvazione',
-  contestato: 'Contestata',
-  fatturato: 'Fatturata',
-  pagato: 'Pagata',
-  revocato: 'Revocata',
-  rifiutato: 'Rifiutata',
-  non_fatturabile: 'Non fatturabile',
+/** The ledger's own words, one for one (`WorkUnitStatus`), in the order a day lives them. */
+export const StatusLabels: Record<WorkUnitStatus, string> = {
+  proposed: 'Proposta',
+  approved: 'Approvata',
+  worked: 'Lavorata',
+  worked_without_approval: 'Lavorata senza approvazione',
+  disputed: 'Contestata',
+  invoiced: 'Fatturata',
+  paid: 'Pagata',
+  revoked: 'Revocata',
+  rejected: 'Rifiutata',
+  non_billable: 'Non fatturabile',
 }
 
 /**
@@ -37,34 +37,34 @@ export const STATO_LABELS: Record<WorkUnitStato, string> = {
  * are a fact still to be settled), danger the ones that went the other way, ink the
  * settled ones.
  */
-export const STATO_TONE: Record<WorkUnitStato, StatusTone> = {
-  proposto: 'gold',
-  approvato: 'ink',
-  lavorato: 'ink',
-  lavorato_senza_approvazione: 'gold',
-  contestato: 'danger',
-  fatturato: 'ink',
-  pagato: 'ink',
-  revocato: 'danger',
-  rifiutato: 'danger',
-  non_fatturabile: 'muted',
+export const StatusTone: Record<WorkUnitStatus, StatusTone> = {
+  proposed: 'gold',
+  approved: 'ink',
+  worked: 'ink',
+  worked_without_approval: 'gold',
+  disputed: 'danger',
+  invoiced: 'ink',
+  paid: 'ink',
+  revoked: 'danger',
+  rejected: 'danger',
+  non_billable: 'muted',
 }
 
-export function isStato(value: string): value is WorkUnitStato {
-  return value in STATO_LABELS
+export function isStatus(value: string): value is WorkUnitStatus {
+  return value in StatusLabels
 }
 
-export function statoLabel(value: string): string {
-  return isStato(value) ? STATO_LABELS[value] : value
+export function statusLabel(value: string): string {
+  return isStatus(value) ? StatusLabels[value] : value
 }
 
-export function statoTone(value: string): StatusTone {
-  return isStato(value) ? STATO_TONE[value] : 'muted'
+export function statusTone(value: string): StatusTone {
+  return isStatus(value) ? StatusTone[value] : 'muted'
 }
 
 /**
  * What a move is called on its button and what it asks for. `reason` is what the API
- * requires (`motivo`, never empty); `defaultReason` is written for the moves whose reason
+ * requires (`reason`, never empty); `defaultReason` is written for the moves whose reason
  * is the act itself, so marking a day worked is one click, and a move that is a judgement
  * (contesting, withdrawing, writing off) asks the person for theirs.
  */
@@ -78,43 +78,43 @@ export interface ActionSpec {
   tone: 'default' | 'outline' | 'destructive'
 }
 
-export const ACTIONS: Partial<Record<WorkUnitStato, ActionSpec>> = {
-  lavorato: {
+export const ACTIONS: Partial<Record<WorkUnitStatus, ActionSpec>> = {
+  worked: {
     label: 'Segna come lavorata',
     title: 'Segnare la giornata come lavorata?',
     description: 'La giornata risulta svolta. Se il contratto richiede l’approvazione preventiva e nessuna è collegata, resta segnata come lavorata senza approvazione.',
     defaultReason: 'Giornata svolta',
     tone: 'default',
   },
-  contestato: {
+  disputed: {
     label: 'Contesta',
     title: 'Contestare la giornata?',
     description: 'Il cliente o tu la contestate. Il motivo resta nella cronologia.',
     defaultReason: null,
     tone: 'outline',
   },
-  pagato: {
+  paid: {
     label: 'Segna come pagata',
     title: 'Segnare la giornata come pagata?',
     description: 'Il pagamento è arrivato. Da qui la giornata non si muove più.',
     defaultReason: 'Pagamento ricevuto',
     tone: 'default',
   },
-  non_fatturabile: {
+  non_billable: {
     label: 'Non fatturabile',
     title: 'Dichiarare la giornata non fatturabile?',
     description: 'Resta registrata ma non entra in nessuna fattura. Da qui la giornata non si muove più.',
     defaultReason: null,
     tone: 'outline',
   },
-  revocato: {
+  revoked: {
     label: 'Revoca',
     title: 'Revocare la giornata?',
     description: 'La giornata non conta più e la sua data torna libera. Da qui non si muove più.',
     defaultReason: null,
     tone: 'destructive',
   },
-  rifiutato: {
+  rejected: {
     label: 'Rifiuta',
     title: 'Rifiutare la giornata?',
     description: 'Il cliente non l’ha confermata. La data torna libera. Da qui non si muove più.',
@@ -130,16 +130,16 @@ export const ACTIONS: Partial<Record<WorkUnitStato, ActionSpec>> = {
  * a sentence, so it has its words here.
  */
 const REASON_LABELS: Record<string, string> = {
-  creazione: 'Giornata registrata',
+  creation: 'Giornata registrata',
 }
 
-export function reasonLabel(motivo: string): string {
-  return (Object.hasOwn(REASON_LABELS, motivo) ? REASON_LABELS[motivo] : undefined) ?? motivo
+export function reasonLabel(reason: string): string {
+  return (Object.hasOwn(REASON_LABELS, reason) ? REASON_LABELS[reason] : undefined) ?? reason
 }
 
-/** Who made a move, as the log's `attore` says it. */
-export function actorLabel(attore: WorkUnitTransition['attore']): string {
-  switch (attore.kind) {
+/** Who made a move, as the log's `actor` says it. */
+export function actorLabel(actor: WorkUnitTransition['actor']): string {
+  switch (actor.kind) {
     case 'human':
       return 'Una persona'
     case 'agent':
@@ -155,45 +155,45 @@ export const FULL_DAY = '1.00'
 export const HALF_DAY = '0.50'
 
 /** `1.00` is a full day, `0.50` half; anything else prints as the number of days. */
-export function quantitaLabel(quantita: string): string {
-  const scaled = scaledFromDecimalString(quantita, 2)
+export function quantityLabel(quantity: string): string {
+  const scaled = scaledFromDecimalString(quantity, 2)
   if (scaled === 100) return 'Giornata intera'
   if (scaled === 50) return 'Mezza giornata'
-  return `${formatItalianQuantity(quantita)} giornate`
+  return `${formatItalianQuantity(quantity)} giornate`
 }
 
 /** The rate card whose validity range contains `data` (ISO dates compare as strings). */
 export function activeRateCard(cards: readonly RateCard[], data: string): RateCard | null {
   return (
-    cards.find((card) => card.valido_da <= data && (card.valido_a === null || data <= card.valido_a)) ??
+    cards.find((card) => card.valid_from <= data && (card.valid_to === null || data <= card.valid_to)) ??
     null
   )
 }
 
-/** Whether `card` prices a fraction of this size: `frazioni_ammesse` lists what it allows. */
-export function allowsFraction(card: RateCard | null, quantita: string): boolean {
+/** Whether `card` prices a fraction of this size: `allowed_fractions` lists what it allows. */
+export function allowsFraction(card: RateCard | null, quantity: string): boolean {
   if (card === null) return true
-  const wanted = scaledFromDecimalString(quantita, 2)
-  return card.frazioni_ammesse.some((allowed) => scaledFromDecimalString(allowed, 2) === wanted)
+  const wanted = scaledFromDecimalString(quantity, 2)
+  return card.allowed_fractions.some((allowed) => scaledFromDecimalString(allowed, 2) === wanted)
 }
 
-const UNITA_PHRASES: Record<string, string> = {
+const UnitPhrases: Record<string, string> = {
   ora: 'all’ora',
-  giorno: 'al giorno',
-  mese: 'al mese',
-  anno: 'all’anno',
-  forfait: 'a forfait',
+  day: 'al giorno',
+  month: 'al mese',
+  year: 'all’anno',
+  flat: 'a forfait',
 }
 
 /** The unit a rate card prices by, as the words after the figure: «al giorno», «all’ora». */
-export function unitaLabel(unita: string): string {
-  return (Object.hasOwn(UNITA_PHRASES, unita) ? UNITA_PHRASES[unita] : undefined) ?? `per ${unita}`
+export function unitLabel(unit: string): string {
+  return (Object.hasOwn(UnitPhrases, unit) ? UnitPhrases[unit] : undefined) ?? `per ${unit}`
 }
 
 /** The cell's contribution to its accessible name: how many days, and any flagged one. */
 export function cellDaysLabel(days: readonly CalendarWorkUnit[]): string {
   if (days.length === 0) return ''
-  const flagged = days.filter((day) => day.stato === 'lavorato_senza_approvazione').length
+  const flagged = days.filter((day) => day.status === 'worked_without_approval').length
   const base = days.length === 1 ? '1 giornata' : `${days.length} giornate`
   return flagged > 0 ? `, ${base}, ${flagged} senza approvazione` : `, ${base}`
 }

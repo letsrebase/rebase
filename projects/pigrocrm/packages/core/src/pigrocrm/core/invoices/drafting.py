@@ -20,7 +20,7 @@ from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.invoices.checks import (
     MUTABLE_AFTER_ISSUE,
-    check_competenza,
+    check_accrual,
     is_editable,
     require_editable,
 )
@@ -28,11 +28,11 @@ from pigrocrm.core.invoices.constants import ENTITY, ZERO
 from pigrocrm.core.invoices.context import InvoiceContext
 from pigrocrm.core.invoices.lines import apply_totals, compute_lines, persist_lines
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.naming import proforma_riferimento
-from pigrocrm.core.invoices.ordine import ORDINE_FIELDS, checked_ordine
+from pigrocrm.core.invoices.naming import proforma_reference
+from pigrocrm.core.invoices.purchase_order import ORDER_FIELDS, checked_order
 from pigrocrm.core.invoices.schemas import (
-    DIVISA,
-    TIPO_DOCUMENTO,
+    CURRENCY,
+    SDI_DOCUMENT_TYPE,
     InvoiceCreate,
     InvoiceLineIn,
     InvoiceRead,
@@ -59,14 +59,14 @@ class InvoiceDrafting:
         data: InvoiceCreate,
         actor: Actor,
         *,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
         commit: bool = True,
     ) -> InvoiceRead:
         """A draft or a proforma. Neither has a number, which is why a failed creation
         cannot burn one -- not as a matter of care, but because there is nothing to
         burn until `issue` runs.
 
-        `azienda_id` names the azienda the draft is issued under when it is not its
+        `legal_entity_id` names the azienda the draft is issued under when it is not its
         parent's: a contract's days are billed under the contract's own azienda, which a
         customer moved since no longer shares. In-process only, never on `InvoiceCreate`,
         so the REST surface keeps taking its azienda from the customer or the deal.
@@ -76,20 +76,23 @@ class InvoiceDrafting:
         actor.require_write("create_invoice")
         ctx = self.ctx
         customer = ctx.check_owner(data.customer_id, data.deal_id)
-        azienda_id = (
-            ctx.emitter.inherited(azienda_id, ENTITY)
-            if azienda_id is not None
-            else ctx.azienda_of_parent(customer, data.deal_id)
+        legal_entity_id = (
+            ctx.legal_entity.inherited(legal_entity_id, ENTITY)
+            if legal_entity_id is not None
+            else ctx.legal_entity_of_parent(customer, data.deal_id)
         )
-        strategy, profile = ctx.regime(azienda_id)
-        check_competenza(data.competenza_da, data.competenza_a)
-        ordine = checked_ordine(
-            data.ordine_numero, data.ordine_data, data.ordine_cig, data.ordine_cup
+        strategy, profile = ctx.regime(legal_entity_id)
+        check_accrual(data.accrual_from, data.accrual_to)
+        order = checked_order(
+            data.purchase_order_number,
+            data.purchase_order_date,
+            data.purchase_order_tender_code,
+            data.purchase_order_project_code,
         )
-        if data.tipo != "proforma" and data.data_emissione is not None:
+        if data.type != "proforma" and data.issue_date is not None:
             raise ValidationFailed(
                 ENTITY,
-                "data_emissione",
+                "issue_date",
                 "una bozza di fattura non ha data: la prende all'emissione, "
                 "quando entra nel registro",
                 expected="nessuna data, oppure tipo = 'proforma'",
@@ -98,38 +101,36 @@ class InvoiceDrafting:
         invoice = Invoice(
             customer_id=data.customer_id,
             deal_id=data.deal_id,
-            azienda_id=azienda_id,
-            tipo=data.tipo,
-            stato="bozza",
-            tipo_documento=TIPO_DOCUMENTO,
-            divisa=DIVISA,
-            causale=data.causale,
-            competenza_da=data.competenza_da,
-            competenza_a=data.competenza_a,
-            **ordine.columns(),
+            legal_entity_id=legal_entity_id,
+            type=data.type,
+            status="draft",
+            sdi_document_type=SDI_DOCUMENT_TYPE,
+            currency=CURRENCY,
+            memo=data.memo,
+            accrual_from=data.accrual_from,
+            accrual_to=data.accrual_to,
+            **order.columns(),
             note_interne=data.note_interne,
-            imponibile=ZERO,
-            imposta=ZERO,
-            bollo=ZERO,
-            totale=ZERO,
-            stato_pagamento="da_incassare",
+            taxable_amount=ZERO,
+            vat_amount=ZERO,
+            stamp_duty=ZERO,
+            total=ZERO,
+            payment_status="unpaid",
             custom_fields=self._validated_custom(data.custom_fields or {}),
         )
-        if data.tipo == "proforma":
+        if data.type == "proforma":
             # `today_local()`, not `date.today()`: see `db/clock.py`'s module docstring
             # (this project's `Dockerfile.api` pins no `TZ`, so a bare `date.today()` is
-            # the UTC date). Low-stakes here -- `riferimento` is a non-fiscal, internal
+            # the UTC date). Low-stakes here -- `reference` is a non-fiscal, internal
             # identifier -- but there is no reason to let the wrong clock answer at all.
             today = today_local()
-            invoice.riferimento = proforma_riferimento(
-                today.year, ctx.repo.next_proforma_sequence()
-            )
+            invoice.reference = proforma_reference(today.year, ctx.repo.next_proforma_sequence())
             # A proforma's own document date (ORB-63): the sender's, stored here so the PDF
             # stops printing the render day. Not a register date -- none of
             # `check_issue_date`'s limits apply, and the fattura born from this row takes
             # its own date at `issue` -- which is why any date is accepted.
-            invoice.data_emissione = data.data_emissione or today
-        computed = compute_lines(data.righe, profile, strategy, nazione_cliente=customer.nazione)
+            invoice.issue_date = data.issue_date or today
+        computed = compute_lines(data.lines, profile, strategy, country_customer=customer.country)
         apply_totals(invoice, computed, profile, strategy)
         ctx.repo.add(invoice)
         persist_lines(ctx.repo, invoice, computed)
@@ -138,7 +139,7 @@ class InvoiceDrafting:
             invoice.id,
             "created",
             actor,
-            {"tipo": invoice.tipo, "righe": len(computed), "totale": str(invoice.totale)},
+            {"type": invoice.type, "lines": len(computed), "total": str(invoice.total)},
         )
         if commit:
             ctx.session.commit()
@@ -157,44 +158,42 @@ class InvoiceDrafting:
             raise ImmutableField(
                 ENTITY,
                 sorted(frozen)[0],
-                f"campo congelato su un documento in stato '{invoice.stato}'",
+                f"campo congelato su un documento in stato '{invoice.status}'",
             )
-        if "data_emissione" in changes:
+        if "issue_date" in changes:
             # Editable only on a proforma, and only ever to another date: a fattura's date
             # is the register's and `issue` assigns it (spec 6.2), and a proforma without
             # a date would put the render day back on its PDF (ORB-63).
-            if invoice.tipo != "proforma":
+            if invoice.type != "proforma":
                 raise ValidationFailed(
                     ENTITY,
-                    "data_emissione",
+                    "issue_date",
                     "la data di una fattura la assegna l'emissione, non una modifica",
                     expected="nessuna data su una bozza di fattura",
                 )
-            if changes["data_emissione"] is None:
+            if changes["issue_date"] is None:
                 raise ValidationFailed(
                     ENTITY,
-                    "data_emissione",
+                    "issue_date",
                     "una proforma porta sempre una data: si sposta, non si toglie",
                     expected="una data",
                 )
-        if "competenza_da" in changes or "competenza_a" in changes:
-            check_competenza(
-                changes.get("competenza_da", invoice.competenza_da),
-                changes.get("competenza_a", invoice.competenza_a),
+        if "accrual_from" in changes or "accrual_to" in changes:
+            check_accrual(
+                changes.get("accrual_from", invoice.accrual_from),
+                changes.get("accrual_to", invoice.accrual_to),
             )
-        if any(key in changes for key in ORDINE_FIELDS):
+        if any(key in changes for key in ORDER_FIELDS):
             # On the merged row, like the period: a CIG added to a document whose number is
             # stored is one field, and a number cleared while the CIG stays is refused
             # before anything is written (REB-693).
-            ordine = checked_ordine(
-                changes.get("ordine_numero", invoice.ordine_numero),
-                changes.get("ordine_data", invoice.ordine_data),
-                changes.get("ordine_cig", invoice.ordine_cig),
-                changes.get("ordine_cup", invoice.ordine_cup),
+            order = checked_order(
+                changes.get("purchase_order_number", invoice.purchase_order_number),
+                changes.get("purchase_order_date", invoice.purchase_order_date),
+                changes.get("purchase_order_tender_code", invoice.purchase_order_tender_code),
+                changes.get("purchase_order_project_code", invoice.purchase_order_project_code),
             )
-            changes.update(
-                {key: value for key, value in ordine.columns().items() if key in changes}
-            )
+            changes.update({key: value for key, value in order.columns().items() if key in changes})
         if data.custom_fields is not None:
             changes["custom_fields"] = merge_custom(
                 ENTITY,
@@ -209,7 +208,7 @@ class InvoiceDrafting:
         return ctx.read(invoice)
 
     def replace_lines(
-        self, invoice_id: UUID, righe: list[InvoiceLineIn], actor: Actor
+        self, invoice_id: UUID, lines: list[InvoiceLineIn], actor: Actor
     ) -> InvoiceRead:
         """The whole list, never a partial patch.
 
@@ -220,18 +219,18 @@ class InvoiceDrafting:
         actor.require_write("replace_invoice_lines")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        require_editable(invoice, "righe")
+        require_editable(invoice, "lines")
         billed = count_days_billed_on(ctx.session, invoice.id)
         if billed:
             raise Conflict(
                 ENTITY,
                 f"questa bozza porta {billed} giornate fatturate: per cambiare le righe "
                 "elimina la bozza e rifai la fattura dal contratto",
-                giornate=billed,
+                work_units=billed,
             )
         customer = ctx.check_owner(invoice.customer_id, None)
-        strategy, profile = ctx.regime(invoice.azienda_id)
-        computed = compute_lines(righe, profile, strategy, nazione_cliente=customer.nazione)
+        strategy, profile = ctx.regime(invoice.legal_entity_id)
+        computed = compute_lines(lines, profile, strategy, country_customer=customer.country)
         apply_totals(invoice, computed, profile, strategy)
         persist_lines(ctx.repo, invoice, computed)
         ctx.activities.record(
@@ -239,41 +238,41 @@ class InvoiceDrafting:
             invoice.id,
             "lines_replaced",
             actor,
-            {"righe": len(computed), "totale": str(invoice.totale)},
+            {"lines": len(computed), "total": str(invoice.total)},
         )
         ctx.session.commit()
         return ctx.read(invoice)
 
     def confirm_proforma(self, invoice_id: UUID, actor: Actor) -> InvoiceRead:
-        """`bozza` -> `confermata` on a proforma: the amount is agreed and the document
+        """`draft` -> `confirmed` on a proforma: the amount is agreed and the document
         is ready to be sent, still without touching the register."""
         actor.require_write("confirm_proforma")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        if invoice.tipo != "proforma":
+        if invoice.type != "proforma":
             raise Conflict(
-                ENTITY, "solo una proforma si conferma", tipo=invoice.tipo, stato=invoice.stato
+                ENTITY, "solo una proforma si conferma", type=invoice.type, status=invoice.status
             )
-        if invoice.stato != "bozza":
+        if invoice.status != "draft":
             raise Conflict(
                 ENTITY,
-                f"da '{invoice.stato}' non si puo' passare a 'confermata'",
-                stato_attuale=invoice.stato,
+                f"da '{invoice.status}' non si puo' passare a 'confermata'",
+                status_current=invoice.status,
             )
         if not ctx.repo.lines(invoice.id):
             raise ValidationFailed(
                 ENTITY,
-                "righe",
+                "lines",
                 "una proforma senza righe non si conferma",
                 expected="almeno una riga",
             )
-        invoice.stato = "confermata"
+        invoice.status = "confirmed"
         ctx.activities.record(ENTITY, invoice.id, "confirmed", actor)
         ctx.session.commit()
         return ctx.read(invoice)
 
     def soft_delete(self, invoice_id: UUID, actor: Actor) -> None:
-        """Only what never consumed a number, and never a `consumata` proforma.
+        """Only what never consumed a number, and never a `consumed` proforma.
 
         Checked here **and** by `ck_invoices_no_delete_once_consumed`, which is what
         makes the rule true for a psql session too. Without the gap-free register the
@@ -297,13 +296,13 @@ class InvoiceDrafting:
         actor.require_write("delete_invoice")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        if invoice.numero is not None or invoice.stato == "consumata":
+        if invoice.number is not None or invoice.status == "consumed":
             raise Conflict(
                 ENTITY,
                 "un documento che ha consumato un numero non si elimina: "
                 "si annulla, conservando il numero",
-                stato=invoice.stato,
-                numero=invoice.numero,
+                status=invoice.status,
+                number=invoice.number,
             )
         now = datetime.now(UTC)
 
@@ -339,30 +338,30 @@ class InvoiceDrafting:
         actor.require_write("set_payment_state")
         ctx = self.ctx
         invoice = ctx.require_locked(invoice_id)
-        if invoice.stato != "emessa":
+        if invoice.status != "issued":
             raise Conflict(
                 ENTITY,
                 "solo una fattura emessa ha un incasso da registrare",
-                stato=invoice.stato,
+                status=invoice.status,
             )
-        if data.stato_pagamento == "incassato" and data.data_incasso is None:
+        if data.payment_status == "paid" and data.payment_date is None:
             raise ValidationFailed(
                 ENTITY,
-                "data_incasso",
+                "payment_date",
                 "un incasso senza data non e' un incasso",
                 expected="la data in cui il pagamento e' arrivato",
             )
-        invoice.stato_pagamento = data.stato_pagamento
+        invoice.payment_status = data.payment_status
         # Cleared rather than left dangling: the table's own
-        # `ck_invoices_incasso_requires_state` would refuse the inconsistent pair anyway,
+        # `ck_invoices_collection_requires_state` would refuse the inconsistent pair anyway,
         # and a stale date on an uncollected invoice is a lie either way.
-        invoice.data_incasso = data.data_incasso if data.stato_pagamento == "incassato" else None
+        invoice.payment_date = data.payment_date if data.payment_status == "paid" else None
         ctx.activities.record(
             ENTITY,
             invoice.id,
             "payment_state_changed",
             actor,
-            {"stato_pagamento": invoice.stato_pagamento},
+            {"payment_status": invoice.payment_status},
         )
         ctx.session.commit()
         return ctx.read(invoice)

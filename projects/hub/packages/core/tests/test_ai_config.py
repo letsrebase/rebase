@@ -41,7 +41,7 @@ def _settings(secrets_key: str = SECRETS_KEY) -> Settings:
 
 @pytest.fixture
 def admin(hub_engine: Engine, hub_session: Session) -> Iterator[User]:
-    row = hub_session.get(User, an_admin(hub_session, cognome="Sala"))
+    row = hub_session.get(User, an_admin(hub_session, last_name="Sala"))
     assert row is not None
     yield row
     hub_session.rollback()
@@ -336,7 +336,7 @@ def test_unpriced_usage_is_counted_unpriced_not_free(hub_session: Session, admin
 def test_record_usage_refuses_an_unknown_task_or_purpose(hub_session: Session, admin: User) -> None:
     service = _service(hub_session)
     with pytest.raises(ValidationFailed):
-        _usage(service, task="prova")
+        _usage(service, task="test")
     with pytest.raises(ValidationFailed):
         _usage(service, purpose="card")
 
@@ -429,7 +429,7 @@ def test_spent_today_counts_every_purpose_of_the_task(hub_session: Session, admi
     service = _service(hub_session)
     _ready(service, admin)
     _usage(service, purpose="run", output_tokens=40_000)  # 1 EUR
-    _usage(service, purpose="prova", output_tokens=40_000)  # 1 EUR
+    _usage(service, purpose="test", output_tokens=40_000)  # 1 EUR
     _usage(service, purpose="eval", output_tokens=40_000)  # 1 EUR
     _usage(service, task="team_proposal", output_tokens=40_000)  # not the card's
     assert service.spent_today("card") == Decimal("3.000000")
@@ -455,7 +455,7 @@ def test_read_lists_the_seeded_providers_tasks_and_known_models(
 ) -> None:
     config = _service(hub_session).read()
     assert [p.provider for p in config.providers] == ["anthropic", "openai", "google"]
-    assert [t.task for t in config.tasks] == ["card", "team_proposal", "cv_anonimo", "crm_lead"]
+    assert [t.task for t in config.tasks] == ["card", "team_proposal", "anonymous_cv", "crm_lead"]
     assert config.known_models["anthropic"][0] == "claude-opus-5"
     assert set(config.known_models) == {"anthropic", "openai", "google"}
     assert config.prices == []

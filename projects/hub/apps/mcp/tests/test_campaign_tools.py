@@ -19,7 +19,7 @@ IVAN = AdminRead(
     id=UUID("01a00000-0000-7000-8000-000000000001"),
     email="ivan@rebase.it",
     nome="Ivan",
-    attivo=True,
+    active=True,
     created_at=datetime(2026, 9, 10, tzinfo=UTC),
 )
 SENT = datetime(2026, 9, 25, 7, 30, tzinfo=UTC)
@@ -32,23 +32,23 @@ def _payload(result: Any) -> dict[str, Any]:
 def _seed(factory: sessionmaker[Session]) -> tuple[UUID, UUID]:
     session = factory()
     try:
-        owner = User(email="campagne-mcp@rebase.it", nome="Ivan", cognome="S", role="admin")
+        owner = User(email="campagne-mcp@rebase.it", nome="Ivan", last_name="S", role="admin")
         session.add(owner)
         session.flush()
         campaign = Campaign(
             created_by=owner.id,
             nome="Manca il CV",
             slug="c-mcp-manca-il-cv",
-            fonte="stato",
-            stato_percorso="manca_cv",
-            oggetto="o",
-            testo="t",
-            bottone_testo="b",
-            bottone_meta="area",
-            azione="cv",
-            stato="inviata",
-            contenuto_at=SENT,
-            inviata_at=SENT,
+            source="status",
+            journey_status="missing_cv",
+            subject="o",
+            text="t",
+            button_text="b",
+            button_meta="area",
+            action="cv",
+            status="sent",
+            content_at=SENT,
+            sent_at=SENT,
         )
         session.add(campaign)
         session.flush()
@@ -58,15 +58,15 @@ def _seed(factory: sessionmaker[Session]) -> tuple[UUID, UUID]:
                 CampaignRecipient(
                     campaign_id=campaign.id,
                     email=email,
-                    tipo="freelancer",
-                    codice="1",
-                    prima={},
-                    disiscrizione_token=f"t-{email}",
-                    stato="inviata",
-                    inviata_at=SENT,
-                    primo_clic_at=later,
-                    entrato_at=later,
-                    azione_at=done,
+                    kind="freelancer",
+                    code="1",
+                    before={},
+                    unsubscribe_token=f"t-{email}",
+                    status="sent",
+                    sent_at=SENT,
+                    first_click_at=later,
+                    signed_in_at=later,
+                    action_at=done,
                 )
             )
         session.commit()
@@ -94,33 +94,33 @@ async def test_an_agent_reads_the_campaigns_and_each_persons_outcome(
     campaign_id, owner_id = _seed(factory)
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
-            listed = _payload(await client.call_tool("list_campagne", {}))
+            listed = _payload(await client.call_tool("list_campaigns", {}))
             one = _payload(
-                await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
+                await client.call_tool("get_campaign", {"campaign_id": str(campaign_id)})
             )
             names = {tool.name for tool in (await client.list_tools()).tools}
     finally:
         _drop(factory, campaign_id, owner_id)
     item = next(i for i in listed["items"] if i["id"] == str(campaign_id))
-    counts = item["conteggi"]
-    assert (counts["inviate"], counts["cliccate"], counts["entrate"], counts["azioni"]) == (
+    counts = item["counts"]
+    assert (counts["sent"], counts["clicked"], counts["income"], counts["actions"]) == (
         2,
         2,
         2,
         1,
     )
-    people = {p["email"]: p for p in one["destinatari"]}
-    assert people["ada@studio.it"]["azione_at"] is not None
-    assert people["bob@studio.it"]["azione_at"] is None
-    assert one["campagna"]["nome"] == "Manca il CV"
+    people = {p["email"]: p for p in one["recipients"]}
+    assert people["ada@studio.it"]["action_at"] is not None
+    assert people["bob@studio.it"]["action_at"] is None
+    assert one["campaign"]["nome"] == "Manca il CV"
     # Read-only: nothing here sends, schedules or cancels a campaign.
-    assert not [n for n in names if "campagn" in n and n not in ("list_campagne", "get_campagna")]
+    assert not [n for n in names if "campagn" in n and n not in ("list_campaigns", "get_campaign")]
 
 
 async def test_an_unknown_campaign_is_a_sentence(factory: sessionmaker[Session]) -> None:
     async with Client(build_server(factory, lambda: IVAN)) as client:
         result = await client.call_tool(
-            "get_campagna", {"campagna_id": "01a00000-0000-7000-8000-00000000dead"}
+            "get_campaign", {"campaign_id": "01a00000-0000-7000-8000-00000000dead"}
         )
     assert result.is_error
 
@@ -132,23 +132,23 @@ async def test_a_link_campaign_shows_where_its_button_leads(
     in the detail alike, with the click as its action."""
     session = factory()
     try:
-        owner = User(email="campagne-link-mcp@rebase.it", nome="Ivan", cognome="S", role="admin")
+        owner = User(email="campagne-link-mcp@rebase.it", nome="Ivan", last_name="S", role="admin")
         session.add(owner)
         session.flush()
         campaign = Campaign(
             created_by=owner.id,
             nome="Casa",
             slug="c-mcp-casa",
-            fonte="stato",
-            stato_percorso="completo",
-            oggetto="o",
-            testo="t",
-            bottone_testo="Iscriviti",
-            bottone_meta="link",
-            bottone_url="https://lu.ma/rebase-house",
-            azione="clic",
-            stato="bozza",
-            contenuto_at=SENT,
+            source="status",
+            journey_status="complete",
+            subject="o",
+            text="t",
+            button_text="Iscriviti",
+            button_meta="link",
+            button_url="https://lu.ma/rebase-house",
+            action="click",
+            status="draft",
+            content_at=SENT,
         )
         session.add(campaign)
         session.commit()
@@ -157,18 +157,18 @@ async def test_a_link_campaign_shows_where_its_button_leads(
         session.close()
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
-            listed = _payload(await client.call_tool("list_campagne", {}))
+            listed = _payload(await client.call_tool("list_campaigns", {}))
             one = _payload(
-                await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
+                await client.call_tool("get_campaign", {"campaign_id": str(campaign_id)})
             )
     finally:
         _drop(factory, campaign_id, owner_id)
     item = next(i for i in listed["items"] if i["id"] == str(campaign_id))
-    for shown in (item, one["campagna"]):
-        assert (shown["bottone_meta"], shown["bottone_url"], shown["azione"]) == (
+    for shown in (item, one["campaign"]):
+        assert (shown["button_meta"], shown["button_url"], shown["action"]) == (
             "link",
             "https://lu.ma/rebase-house",
-            "clic",
+            "click",
         )
 
 
@@ -181,11 +181,11 @@ def _add_recipients(factory: sessionmaker[Session], campaign_id: UUID, count: in
                 CampaignRecipient(
                     campaign_id=campaign_id,
                     email=email,
-                    tipo="freelancer",
-                    codice="1",
-                    prima={},
-                    disiscrizione_token=f"t-{email}",
-                    stato="in_coda",
+                    kind="freelancer",
+                    code="1",
+                    before={},
+                    unsubscribe_token=f"t-{email}",
+                    status="in_coda",
                 )
             )
         session.commit()
@@ -203,15 +203,15 @@ def _add_campaigns(factory: sessionmaker[Session], owner_id: UUID, count: int) -
                 created_by=owner_id,
                 nome=f"Altra {n}",
                 slug=f"c-mcp-altra-{n}",
-                fonte="stato",
-                stato_percorso="manca_cv",
-                oggetto="o",
-                testo="t",
-                bottone_testo="b",
-                bottone_meta="area",
-                azione="cv",
-                stato="bozza",
-                contenuto_at=SENT,
+                source="status",
+                journey_status="missing_cv",
+                subject="o",
+                text="t",
+                button_text="b",
+                button_meta="area",
+                action="cv",
+                status="draft",
+                content_at=SENT,
             )
             session.add(campaign)
             session.flush()
@@ -225,7 +225,7 @@ def _add_campaigns(factory: sessionmaker[Session], owner_id: UUID, count: int) -
 async def test_the_campaign_tools_are_paged_in_a_fixed_order(
     factory: sessionmaker[Session],
 ) -> None:
-    """REB-804: `list_campagne` and `get_campagna` take `limit` and `cursor`; walking the
+    """REB-804: `list_campaigns` and `get_campaign` take `limit` and `cursor`; walking the
     cursors visits every campaign and every recipient once, in the same order as one big
     read, and the counts stay those of the whole campaign."""
     campaign_id, owner_id = _seed(factory)
@@ -233,14 +233,14 @@ async def test_the_campaign_tools_are_paged_in_a_fixed_order(
     emails = _add_recipients(factory, campaign_id, 3)
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
-            whole = _payload(await client.call_tool("list_campagne", {}))
+            whole = _payload(await client.call_tool("list_campaigns", {}))
             seen: list[str] = []
             cursor = None
             while True:
                 args: dict[str, Any] = {"limit": 1}
                 if cursor:
                     args["cursor"] = cursor
-                page = _payload(await client.call_tool("list_campagne", args))
+                page = _payload(await client.call_tool("list_campaigns", args))
                 assert len(page["items"]) == 1
                 seen += [item["id"] for item in page["items"]]
                 cursor = page["next_cursor"]
@@ -249,26 +249,26 @@ async def test_the_campaign_tools_are_paged_in_a_fixed_order(
             walked: list[str] = []
             cursor = None
             while True:
-                args = {"campagna_id": str(campaign_id), "limit": 2}
+                args = {"campaign_id": str(campaign_id), "limit": 2}
                 if cursor:
                     args["cursor"] = cursor
-                page = _payload(await client.call_tool("get_campagna", args))
-                assert page["conteggi"]["destinatari"] == 5
-                walked += [p["email"] for p in page["destinatari"]]
+                page = _payload(await client.call_tool("get_campaign", args))
+                assert page["counts"]["recipients"] == 5
+                walked += [p["email"] for p in page["recipients"]]
                 cursor = page["next_cursor"]
                 if cursor is None:
                     break
             everything = _payload(
-                await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
+                await client.call_tool("get_campaign", {"campaign_id": str(campaign_id)})
             )
             foreign = await client.call_tool(
-                "get_campagna",
-                {"campagna_id": str(others[0]), "cursor": _foreign_cursor()},
+                "get_campaign",
+                {"campaign_id": str(others[0]), "cursor": _foreign_cursor()},
             )
             garbage = await client.call_tool(
-                "get_campagna", {"campagna_id": str(campaign_id), "cursor": "non-un-cursore"}
+                "get_campaign", {"campaign_id": str(campaign_id), "cursor": "non-un-cursore"}
             )
-            bad_list_cursor = await client.call_tool("list_campagne", {"cursor": "xx"})
+            bad_list_cursor = await client.call_tool("list_campaigns", {"cursor": "xx"})
     finally:
         for other in others:
             session = factory()
@@ -278,7 +278,7 @@ async def test_the_campaign_tools_are_paged_in_a_fixed_order(
         _drop(factory, campaign_id, owner_id)
     assert seen == [item["id"] for item in whole["items"]] and len(seen) == 3
     assert walked == sorted(["ada@studio.it", "bob@studio.it", *emails])
-    assert [p["email"] for p in everything["destinatari"]] == walked
+    assert [p["email"] for p in everything["recipients"]] == walked
     assert foreign.is_error and "cursore non valido" in foreign.content[0].text
     assert garbage.is_error and "cursore non valido" in garbage.content[0].text
     assert bad_list_cursor.is_error
@@ -297,12 +297,12 @@ async def test_reading_a_campaigns_recipients_leaves_a_line_in_the_trail(
     read is an `AdminAction` of the admin behind the token, without any of them."""
     campaign_id, owner_id = _seed(factory)
     admin = AdminRead(
-        id=owner_id, email="campagne-mcp@rebase.it", nome="Ivan", attivo=True, created_at=SENT
+        id=owner_id, email="campagne-mcp@rebase.it", nome="Ivan", active=True, created_at=SENT
     )
     try:
         async with Client(build_server(factory, lambda: admin)) as client:
-            await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
-            await client.call_tool("list_campagne", {})
+            await client.call_tool("get_campaign", {"campaign_id": str(campaign_id)})
+            await client.call_tool("list_campaigns", {})
         with factory() as session:
             [action] = session.scalars(
                 select(AdminAction).where(AdminAction.kind == "recipients_read")
@@ -316,4 +316,4 @@ async def test_reading_a_campaigns_recipients_leaves_a_line_in_the_trail(
         campaign_id,
         owner_id,
     )
-    assert action.payload == {"fonte": "mcp", "righe": 2}
+    assert action.payload == {"source": "mcp", "lines": 2}

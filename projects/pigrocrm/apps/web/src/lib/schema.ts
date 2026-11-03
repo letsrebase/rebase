@@ -52,8 +52,8 @@ const TEXT_SHAPED: ReadonlySet<FieldType> = new Set(['text', 'textarea', 'url', 
  * detail every form here got wrong in the same way. `""` was the whole answer while
  * `exclude_none=True` was the backend's update contract: an omitted key changed
  * nothing, `null` was silently discarded, and `""` was the only thing left that meant
- * "clear it". It only ever worked for text columns. On `valore_previsto`,
- * `data_chiusura_prevista`, `ore_preventivate` or `tariffa_applicata`, `""` is not a
+ * "clear it". It only ever worked for text columns. On `expected_value`,
+ * `expected_close_date`, `budgeted_hours` or `applied_rate`, `""` is not a
  * decimal or a date and never reached the service at all -- Pydantic answered 422, so
  * an estimate typed once could not be taken back. That is residual A14, seen from this
  * side of the wire.

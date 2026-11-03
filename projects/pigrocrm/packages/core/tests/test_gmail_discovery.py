@@ -62,7 +62,7 @@ def test_the_discovery_query_is_one_the_list_url_accepts() -> None:
 
 
 @pytest.mark.parametrize(
-    ("sito_web", "expected"),
+    ("website", "expected"),
     [
         ("https://www.example.com/", "example.com"),
         ("http://example.com", "example.com"),
@@ -71,28 +71,28 @@ def test_the_discovery_query_is_one_the_list_url_accepts() -> None:
         ("HTTPS://WWW.Example.com", "example.com"),
     ],
 )
-def test_the_domain_is_read_from_the_website(sito_web: str, expected: str) -> None:
-    assert customer_domain(sito_web=sito_web, email=None) == expected
+def test_the_domain_is_read_from_the_website(website: str, expected: str) -> None:
+    assert customer_domain(website=website, email=None) == expected
 
 
 def test_without_a_website_the_domain_is_read_from_the_customer_email() -> None:
-    assert customer_domain(sito_web=None, email="info@example.com") == "example.com"
+    assert customer_domain(website=None, email="info@example.com") == "example.com"
 
 
 def test_the_website_wins_over_the_email_when_both_exist() -> None:
-    assert customer_domain(sito_web="https://example.com", email="x@gmail.com") == "example.com"
+    assert customer_domain(website="https://example.com", email="x@gmail.com") == "example.com"
 
 
 @pytest.mark.parametrize("email", ["ceo@gmail.com", "ceo@outlook.com", "ceo@yahoo.it"])
 def test_a_webmail_domain_is_not_a_customer_domain(email: str) -> None:
     """`from:@gmail.com` is half the planet. The result would not be one customer's
     correspondents, so it is refused rather than answered."""
-    assert customer_domain(sito_web=None, email=email) is None
+    assert customer_domain(website=None, email=email) is None
 
 
 def test_nothing_to_derive_from_is_none_not_an_error() -> None:
-    assert customer_domain(sito_web=None, email=None) is None
-    assert customer_domain(sito_web="", email="") is None
+    assert customer_domain(website=None, email=None) is None
+    assert customer_domain(website="", email="") is None
 
 
 # --- the service ----------------------------------------------------------------------
@@ -134,8 +134,8 @@ def _mail(
 
 def _example(session: Session, **overrides: object) -> Customer:
     fields: dict[str, object] = {
-        "ragione_sociale": "Example Ltd",
-        "sito_web": "https://www.example.com/",
+        "legal_name": "Example Ltd",
+        "website": "https://www.example.com/",
     }
     fields.update(overrides)
     customer = Customer(**fields)
@@ -162,20 +162,20 @@ def test_discovery_answers_who_at_the_domain_wrote_or_was_written_to(db_session:
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert report.dominio == "example.com"
+    assert report.domain == "example.com"
     assert report.threads_scanned == 1
-    found = {row.indirizzo: row for row in report.corrispondenti}
+    found = {row.address: row for row in report.matching}
     assert set(found) == {"marco@example.com", "sarah@example.com"}
     marco = found["marco@example.com"]
     assert marco.nome == "Marco Bianchi"
-    assert marco.messaggi == 2
+    assert marco.messages == 2
     # Two messages in one conversation: the page counts conversations, so this is one.
-    assert marco.conversazioni == 1
-    assert marco.ultimo_messaggio == datetime.fromtimestamp(
+    assert marco.conversations == 1
+    assert marco.last_message == datetime.fromtimestamp(
         fake.messages["m2"].internal_date_ms / 1000, tz=UTC
     )
     assert found["sarah@example.com"].nome == "Sarah Miller"
-    assert found["sarah@example.com"].messaggi == 1
+    assert found["sarah@example.com"].messages == 1
 
 
 def test_a_display_name_longer_than_a_person_takes_is_clipped(db_session: Session) -> None:
@@ -188,7 +188,7 @@ def test_a_display_name_longer_than_a_person_takes_is_clipped(db_session: Sessio
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert [len(row.nome) for row in report.corrispondenti] == [255]
+    assert [len(row.nome) for row in report.matching] == [255]
 
 
 def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> None:
@@ -201,7 +201,7 @@ def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> Non
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert [row.indirizzo for row in report.corrispondenti] == [
+    assert [row.address for row in report.matching] == [
         "marco@example.com",
         "sarah@example.com",
     ]
@@ -251,7 +251,7 @@ def test_the_connected_mailbox_is_never_reported_as_a_correspondent(db_session: 
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert [row.indirizzo for row in report.corrispondenti] == ["marco@example.com"]
+    assert [row.address for row in report.matching] == ["marco@example.com"]
 
 
 def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -> None:
@@ -268,13 +268,13 @@ def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    known = {row.indirizzo: row.gia_in_anagrafica for row in report.corrispondenti}
+    known = {row.address: row.already_in_directory for row in report.matching}
     assert known == {"marco@example.com": True, "sarah@example.com": False}
 
 
 def test_a_customer_with_no_domain_is_a_conflict_not_an_empty_answer(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _example(db_session, sito_web=None, email="ceo@gmail.com")
+    customer = _example(db_session, website=None, email="ceo@gmail.com")
     with pytest.raises(Conflict):
         sync_service(db_session, FakeGmail()).discover(customer.id, actor=actor_for(account))
 
@@ -304,7 +304,7 @@ def test_an_agent_without_full_access_is_refused_before_gmail_is_asked(
 
     trusted = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
     report = sync_service(db_session, fake).discover(customer.id, actor=trusted)
-    assert [row.indirizzo for row in report.corrispondenti] == ["marco@example.com"]
+    assert [row.address for row in report.matching] == ["marco@example.com"]
 
 
 def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(db_session: Session) -> None:
@@ -339,4 +339,4 @@ def test_only_the_most_recent_conversations_are_read(
     # Which two is Gmail's order (newest first); the fake lists oldest first, so the
     # test claims the cap and not the order.
     assert report.threads_scanned == 2
-    assert len(report.corrispondenti) == 2
+    assert len(report.matching) == 2

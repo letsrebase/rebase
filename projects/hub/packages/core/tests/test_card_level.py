@@ -19,12 +19,14 @@ from rebase_core.card_level import (
 from rebase_core.team_schemas import Card
 
 
-def _card(seniority: str, anni: int | None) -> Card:
-    return Card.model_validate({**CARD, "seniority": seniority, "anni": anni})
+def _card(seniority: str, experience_years: int | None) -> Card:
+    return Card.model_validate(
+        {**CARD, "seniority": seniority, "experience_years": experience_years}
+    )
 
 
 @pytest.mark.parametrize(
-    ("anni", "band"),
+    ("experience_years", "band"),
     [
         (0, "junior"),
         (2, "junior"),
@@ -35,13 +37,15 @@ def _card(seniority: str, anni: int | None) -> Card:
         (30, "senior"),
     ],
 )
-def test_the_bands_are_junior_under_three_mid_to_five_senior_from_six(anni: int, band: str) -> None:
+def test_the_bands_are_junior_under_three_mid_to_five_senior_from_six(
+    experience_years: int, band: str
+) -> None:
     assert (MID_FROM, SENIOR_FROM, LEAD_FROM) == (3, 6, 8)
-    assert seniority_for(anni) == band
+    assert seniority_for(experience_years) == band
 
 
 @pytest.mark.parametrize(
-    ("said", "anni", "written"),
+    ("said", "experience_years", "written"),
     [
         # What the audit found: lead with two to five years, senior with three, mid with
         # seven, junior with ten, all brought inside the bands.
@@ -71,70 +75,85 @@ def test_the_bands_are_junior_under_three_mid_to_five_senior_from_six(anni: int,
     ],
 )
 def test_the_parser_brings_a_seniority_inside_the_year_bands(
-    said: str, anni: int | None, written: str
+    said: str, experience_years: int | None, written: str
 ) -> None:
-    result = banded(_card(said, anni))
+    result = banded(_card(said, experience_years))
 
-    assert (result.seniority, result.anni) == (written, anni)
-    assert result.model_dump(exclude={"seniority"}) == _card(said, anni).model_dump(
+    assert (result.seniority, result.experience_years) == (written, experience_years)
+    assert result.model_dump(exclude={"seniority"}) == _card(said, experience_years).model_dump(
         exclude={"seniority"}
     )
 
 
 def test_a_card_without_years_is_a_card() -> None:
-    """`anni` is required in the schema but may be null: a CV that dates no role."""
-    card = Card.model_validate({**CARD, "anni": None})
-    assert card.anni is None
-    with pytest.raises(ValueError, match="anni"):
-        Card.model_validate({k: v for k, v in CARD.items() if k != "anni"})
-    with pytest.raises(ValueError, match="anni"):
-        Card.model_validate({**CARD, "anni": -1})
-    with pytest.raises(ValueError, match="anni"):
-        Card.model_validate({**CARD, "anni": 61})
+    """`experience_years` is required in the schema but may be null: a CV that dates no role."""
+    card = Card.model_validate({**CARD, "experience_years": None})
+    assert card.experience_years is None
+    with pytest.raises(ValueError, match="experience_years"):
+        Card.model_validate({k: v for k, v in CARD.items() if k != "experience_years"})
+    with pytest.raises(ValueError, match="experience_years"):
+        Card.model_validate({**CARD, "experience_years": -1})
+    with pytest.raises(ValueError, match="experience_years"):
+        Card.model_validate({**CARD, "experience_years": 61})
 
 
 @pytest.mark.parametrize(
-    ("stored", "seniority_admin", "anni_admin", "expected"),
+    ("stored", "seniority_admin", "experience_years_admin", "expected"),
     [
         # Nobody corrected it: the card's own.
-        ({"seniority": "senior", "anni": 9}, None, None, Level("senior", 9, False)),
+        ({"seniority": "senior", "experience_years": 9}, None, None, Level("senior", 9, False)),
         # The admin's seniority and years beat the card's, each on its own.
-        ({"seniority": "senior", "anni": 9}, "junior", None, Level("junior", 9, False)),
-        ({"seniority": "senior", "anni": 9}, None, 12, Level("senior", 12, False)),
-        ({"seniority": "senior", "anni": 9}, "lead", 0, Level("lead", 0, False)),
+        ({"seniority": "senior", "experience_years": 9}, "junior", None, Level("junior", 9, False)),
+        ({"seniority": "senior", "experience_years": 9}, None, 12, Level("senior", 12, False)),
+        ({"seniority": "senior", "experience_years": 9}, "lead", 0, Level("lead", 0, False)),
         # Years of 0 are an answer, not a missing one.
-        ({"seniority": "junior", "anni": 5}, None, 0, Level("junior", 0, False)),
+        ({"seniority": "junior", "experience_years": 5}, None, 0, Level("junior", 0, False)),
         # No dated role: uncertain, until the admin says the seniority.
-        ({"seniority": "mid", "anni": None}, None, None, Level("mid", None, True)),
-        ({"seniority": "mid", "anni": None}, None, 4, Level("mid", 4, True)),
-        ({"seniority": "mid", "anni": None}, "senior", None, Level("senior", None, False)),
+        ({"seniority": "mid", "experience_years": None}, None, None, Level("mid", None, True)),
+        ({"seniority": "mid", "experience_years": None}, None, 4, Level("mid", 4, True)),
+        (
+            {"seniority": "mid", "experience_years": None},
+            "senior",
+            None,
+            Level("senior", None, False),
+        ),
         # A card the JSON of which lacks or mistypes a key does not break a reader.
         ({"seniority": "mid"}, None, None, Level("mid", None, True)),
-        ({"seniority": 3, "anni": "9"}, None, None, Level(None, None, False)),
-        ({"anni": True}, None, None, Level(None, None, False)),
+        ({"seniority": 3, "experience_years": "9"}, None, None, Level(None, None, False)),
+        ({"experience_years": True}, None, None, Level(None, None, False)),
         ({}, None, 7, Level(None, 7, False)),
     ],
 )
 def test_the_admins_level_beats_the_cards_each_field_on_its_own(
     stored: dict[str, Any],
     seniority_admin: str | None,
-    anni_admin: int | None,
+    experience_years_admin: int | None,
     expected: Level,
 ) -> None:
-    assert level(stored, seniority_admin, anni_admin) == expected
+    assert level(stored, seniority_admin, experience_years_admin) == expected
 
 
 def test_card_read_is_the_card_with_the_effective_level() -> None:
     plain = card_read(CARD, None, None)
-    assert (plain.seniority, plain.anni, plain.seniority_incerta) == ("senior", 9, False)
-    assert plain.model_dump(exclude={"seniority_incerta"}) == Card.model_validate(CARD).model_dump()
+    assert (plain.seniority, plain.experience_years, plain.seniority_uncertain) == (
+        "senior",
+        9,
+        False,
+    )
+    assert (
+        plain.model_dump(exclude={"seniority_uncertain"}) == Card.model_validate(CARD).model_dump()
+    )
 
-    corrected = card_read({**CARD, "anni": None, "seniority": "mid"}, "lead", 11)
-    assert (corrected.seniority, corrected.anni, corrected.seniority_incerta) == ("lead", 11, False)
-    assert corrected.ruolo == CARD["ruolo"] and corrected.sintesi == CARD["sintesi"]
+    corrected = card_read({**CARD, "experience_years": None, "seniority": "mid"}, "lead", 11)
+    assert (corrected.seniority, corrected.experience_years, corrected.seniority_uncertain) == (
+        "lead",
+        11,
+        False,
+    )
+    assert corrected.role == CARD["role"] and corrected.profile_summary == CARD["profile_summary"]
 
-    undated = card_read({**CARD, "anni": None}, None, None)
-    assert (undated.anni, undated.seniority_incerta) == (None, True)
+    undated = card_read({**CARD, "experience_years": None}, None, None)
+    assert (undated.experience_years, undated.seniority_uncertain) == (None, True)
 
-    with pytest.raises(ValueError, match="ruolo"):
-        card_read({"seniority": "mid", "anni": 3}, "lead", 3)
+    with pytest.raises(ValueError, match="role"):
+        card_read({"seniority": "mid", "experience_years": 3}, "lead", 3)

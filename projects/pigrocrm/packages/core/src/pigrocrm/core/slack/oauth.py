@@ -135,7 +135,7 @@ class SlackOAuthService:
         self.activities.record(
             SLACK_ENTITY,
             workspace.id,
-            "slack.workspace_collegato",
+            "slack.workspace_connected",
             actor,
             {"team_id": workspace.team_id, "team_name": workspace.team_name},
         )
@@ -163,7 +163,7 @@ class SlackOAuthService:
         self.activities.record(
             SLACK_ENTITY,
             workspace.id,
-            "slack.workspace_scollegato",
+            "slack.workspace_disconnected",
             actor,
             {"team_id": workspace.team_id, "team_name": workspace.team_name},
         )

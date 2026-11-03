@@ -1,13 +1,13 @@
 """The one writer of `proposals` -- and, on `accept`, the one writer of the
 `contracts`/`rate_cards` pair or the `approvals`/`work_units` pair it produces, in the
-same transaction as the proposal's own `stato` flip. Spec §10: "agents propose, humans
+same transaction as the proposal's own `status` flip. Spec §10: "agents propose, humans
 confirm."
 
 **Why this module, not `WorkUnitService.create`/`ApprovalService.create`, writes a
-`'giornata'` accept.** Those two commit on their own (see their own docstrings); calling
+`'work_unit'` accept.** Those two commit on their own (see their own docstrings); calling
 either from here would make "one transaction, never as two separate calls a caller could
 interrupt between" (spec §10's own words) false the moment the second call failed after
-the first had already committed. `_accept_giornata` instead builds the `Approval` and
+the first had already committed. `_accept_work_unit` instead builds the `Approval` and
 `WorkUnit` rows directly through their repositories -- both flush, neither commits -- so
 `accept`'s own single `self.session.commit()` at the end is the only place either
 becomes durable. `WorkUnitService.create` still validates the identical entry-state
@@ -35,19 +35,19 @@ from pigrocrm.core.contracts.rules import (
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.repository import DocumentRepository
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.proposals.repository import ProposalRepository
 from pigrocrm.core.proposals.schemas import (
-    ContrattoProposalFields,
-    GiornataProposalFields,
+    ContractProposalFields,
     ProposalAccept,
     ProposalCreate,
     ProposalListQuery,
     ProposalPage,
     ProposalRead,
     ProposalReject,
+    WorkUnitProposalFields,
 )
 from pigrocrm.core.work_units.models import Approval, WorkUnit
 from pigrocrm.core.work_units.service import set_transition_context
@@ -76,24 +76,24 @@ class ProposalService:
 
     # ---- shape parsing (campi_proposti/campi_accettati are plain JSONB) -----------
 
-    def _parse_contratto_fields(self, campi: dict[str, Any]) -> ContrattoProposalFields:
+    def _parse_contract_fields(self, fields: dict[str, Any]) -> ContractProposalFields:
         try:
-            return ContrattoProposalFields.model_validate(campi)
+            return ContractProposalFields.model_validate(fields)
         except PydanticValidationError as exc:
             raise ValidationFailed(
                 ENTITY,
-                "campi_proposti",
+                "proposed_fields",
                 _first_error(exc),
                 expected="{'contract': {...ContractCreate}, 'rate_card': {...RateCardCreate}}",
             ) from exc
 
-    def _parse_giornata_fields(self, campi: dict[str, Any]) -> GiornataProposalFields:
+    def _parse_work_unit_fields(self, fields: dict[str, Any]) -> WorkUnitProposalFields:
         try:
-            return GiornataProposalFields.model_validate(campi)
+            return WorkUnitProposalFields.model_validate(fields)
         except PydanticValidationError as exc:
             raise ValidationFailed(
                 ENTITY,
-                "campi_proposti",
+                "proposed_fields",
                 _first_error(exc),
                 expected="{'contract_id', 'data', 'quantita', 'descrizione', 'approvazione'}",
             ) from exc
@@ -111,7 +111,7 @@ class ProposalService:
         if document is None:
             raise NotFound("document", data.document_id)
 
-        if data.target_type == "contratto":
+        if data.target_type == "contract":
             if data.contract_id is not None:
                 raise ValidationFailed(
                     ENTITY,
@@ -120,7 +120,7 @@ class ProposalService:
                     "esistente: e' la prima bozza, non un rinnovo",
                     expected="assente quando target_type = 'contratto'",
                 )
-            fields = self._parse_contratto_fields(data.campi_proposti)
+            fields = self._parse_contract_fields(data.proposed_fields)
             if self.session.get(Customer, fields.contract.customer_id) is None:
                 raise NotFound("customer", fields.contract.customer_id)
         else:
@@ -131,8 +131,8 @@ class ProposalService:
                     "obbligatorio per una proposta di tipo 'giornata'",
                     expected="un contract_id esistente",
                 )
-            giornata_fields = self._parse_giornata_fields(data.campi_proposti)
-            if giornata_fields.contract_id != data.contract_id:
+            work_unit_fields = self._parse_work_unit_fields(data.proposed_fields)
+            if work_unit_fields.contract_id != data.contract_id:
                 raise ValidationFailed(
                     ENTITY,
                     "campi_proposti.contract_id",
@@ -147,11 +147,11 @@ class ProposalService:
                 document_id=data.document_id,
                 contract_id=data.contract_id,
                 target_type=data.target_type,
-                campi_proposti=data.campi_proposti,
-                estratto=data.estratto,
-                tipo_estratto=data.tipo_estratto,
-                confidenza=data.confidenza,
-                motivo_confidenza=data.motivo_confidenza,
+                proposed_fields=data.proposed_fields,
+                excerpt=data.excerpt,
+                excerpt_type=data.excerpt_type,
+                confidence=data.confidence,
+                confidence_reason=data.confidence_reason,
             )
         )
         self.activities.record(
@@ -176,14 +176,14 @@ class ProposalService:
     def _require_pending(self, proposal_id: UUID) -> Proposal:
         """The proposal, read under a row lock and overwritten from the database
         (`populate_existing`), so two concurrent decisions queue and the second finds the
-        first one's `stato` instead of acting on a copy loaded before it."""
+        first one's `status` instead of acting on a copy loaded before it."""
         proposal = self.repo.get_for_update(proposal_id)
         if proposal is None:
             raise NotFound(ENTITY, proposal_id)
-        if proposal.stato != "in_attesa":
+        if proposal.status != "pending":
             raise Conflict(
                 ENTITY,
-                f"già decisa ({proposal.stato}): una proposta si decide una sola volta",
+                f"già decisa ({proposal.status}): una proposta si decide una sola volta",
                 proposal_id=str(proposal_id),
             )
         return proposal
@@ -200,59 +200,59 @@ class ProposalService:
         actor.require_write("reject_proposal")
         proposal = self._require_pending(proposal_id)
         decider = self._decider(actor)
-        proposal.stato = "rifiutata"
-        proposal.deciso_da = decider
-        proposal.deciso_il = datetime.now(UTC)
+        proposal.status = "rejected"
+        proposal.decided_by = decider
+        proposal.decided_at = datetime.now(UTC)
         self.activities.record(
             ENTITY,
             proposal.id,
             "rejected",
             actor,
-            {"deciso_da": decider, "motivo": data.motivo},
+            {"decided_by": decider, "reason": data.reason},
         )
         self.session.commit()
         return ProposalRead.model_validate(proposal)
 
     def accept(self, proposal_id: UUID, data: ProposalAccept, actor: Actor) -> ProposalRead:
         """One transaction, start to finish: the target row (`Contract`+`RateCard`,
-        or `Approval`+`WorkUnit`) is built, the proposal's own `stato`/`campi_accettati`
-        /`id_risultato`/`deciso_da`/`deciso_il` are set, and exactly one commit closes
-        all of it. A `'giornata'` accept never leaves a day at `'proposto'` because
+        or `Approval`+`WorkUnit`) is built, the proposal's own `status`/`accepted_fields`
+        /`result_id`/`decided_by`/`decided_at` are set, and exactly one commit closes
+        all of it. A `'work_unit'` accept never leaves a day at `'proposed'` because
         there is no separate call in between that could be interrupted."""
         actor.require_person("accept_proposal")
         actor.require_write("accept_proposal")
         proposal = self._require_pending(proposal_id)
         decider = self._decider(actor)
         accepted = (
-            data.campi_accettati
-            if data.campi_accettati is not None
-            else dict(proposal.campi_proposti)
+            data.accepted_fields
+            if data.accepted_fields is not None
+            else dict(proposal.proposed_fields)
         )
-        if proposal.target_type == "contratto":
-            id_risultato = self._accept_contratto(proposal, accepted, actor)
+        if proposal.target_type == "contract":
+            result_id = self._accept_contract(proposal, accepted, actor)
         else:
-            id_risultato = self._accept_giornata(proposal, accepted, actor)
+            result_id = self._accept_work_unit(proposal, accepted, actor)
 
-        proposal.campi_accettati = accepted
-        proposal.stato = "accettata"
-        proposal.id_risultato = id_risultato
-        proposal.deciso_da = decider
-        proposal.deciso_il = datetime.now(UTC)
+        proposal.accepted_fields = accepted
+        proposal.status = "accepted"
+        proposal.result_id = result_id
+        proposal.decided_by = decider
+        proposal.decided_at = datetime.now(UTC)
         self.activities.record(
             ENTITY,
             proposal.id,
             "accepted",
             actor,
-            {"deciso_da": decider, "id_risultato": str(id_risultato)},
+            {"decided_by": decider, "result_id": str(result_id)},
         )
         self.session.commit()
         return ProposalRead.model_validate(proposal)
 
-    def _accept_contratto(self, proposal: Proposal, campi: dict[str, Any], actor: Actor) -> UUID:
+    def _accept_contract(self, proposal: Proposal, fields: dict[str, Any], actor: Actor) -> UUID:
         """Creates the `contracts` row (plus its first `rate_cards` row) and
         re-points the originating document's ownership at it -- spec §10, §11's own
         "widen at accept time, not at archive time" ordering."""
-        fields = self._parse_contratto_fields(campi)
+        fields = self._parse_contract_fields(fields)
         customer = self.session.get(Customer, fields.contract.customer_id)
         if customer is None:
             raise NotFound("customer", fields.contract.customer_id)
@@ -276,8 +276,8 @@ class ProposalService:
             # The customer's azienda at acceptance, as `ContractService.create` copies it.
             contract = Contract(
                 **contract_payload,
-                azienda_id=LegalEntityService(self.session).inherited(
-                    customer.azienda_id, "contract"
+                legal_entity_id=LegalEntityService(self.session).inherited(
+                    customer.legal_entity_id, "contract"
                 ),
             )
             self.session.add(contract)
@@ -287,7 +287,7 @@ class ProposalService:
                 contract.id,
                 "created",
                 actor,
-                {"titolo": contract.titolo, "proposal_id": str(proposal.id)},
+                {"title": contract.title, "proposal_id": str(proposal.id)},
             )
             rate_card_payload["contract_id"] = contract.id
             rate_card = RateCard(**rate_card_payload)
@@ -297,7 +297,7 @@ class ProposalService:
             contract.id,
             "rate_card_added",
             actor,
-            {"tipo": rate_card.tipo, "valido_da": str(rate_card.valido_da)},
+            {"type": rate_card.type, "valid_from": str(rate_card.valid_from)},
         )
 
         document = self.documents.get(proposal.document_id)
@@ -313,16 +313,16 @@ class ProposalService:
         )
         return contract.id
 
-    def _accept_giornata(self, proposal: Proposal, campi: dict[str, Any], actor: Actor) -> UUID:
-        """Creates the `approval` row and the `work_unit` at `'approvato'`, both in
-        one transaction -- never leaving a day at `'proposto'` (spec §10).
+    def _accept_work_unit(self, proposal: Proposal, fields: dict[str, Any], actor: Actor) -> UUID:
+        """Creates the `approval` row and the `work_unit` at `'approved'`, both in
+        one transaction -- never leaving a day at `'proposed'` (spec §10).
 
         Re-checks `fields.contract_id` against `proposal.contract_id` even though
-        `create()` already checked it once: `campi` here may be a human's edited
-        `campi_accettati`, not the original `campi_proposti` `create()` validated,
+        `create()` already checked it once: `fields` here may be a human's edited
+        `accepted_fields`, not the original `proposed_fields` `create()` validated,
         and a reviewer who approved a proposal against contract A must not have
         their accept silently redirected to contract B by an edited payload."""
-        fields = self._parse_giornata_fields(campi)
+        fields = self._parse_work_unit_fields(fields)
         if fields.contract_id != proposal.contract_id:
             raise ValidationFailed(
                 ENTITY,
@@ -347,13 +347,13 @@ class ProposalService:
         ):
             approval = Approval(
                 contract_id=fields.contract_id,
-                canale=fields.approvazione.canale,
-                mittente=fields.approvazione.mittente,
-                ricevuto_il=fields.approvazione.ricevuto_il,
-                message_id=fields.approvazione.message_id,
+                channel=fields.approval.channel,
+                sender=fields.approval.sender,
+                received_at=fields.approval.received_at,
+                message_id=fields.approval.message_id,
                 document_id=proposal.document_id,
-                estratto=proposal.estratto,
-                origine={"kind": "agente", "proposal_id": str(proposal.id)},
+                excerpt=proposal.excerpt,
+                origin={"kind": "agente", "proposal_id": str(proposal.id)},
             )
             self.session.add(approval)
             self.session.flush()
@@ -362,9 +362,9 @@ class ProposalService:
             work_unit = WorkUnit(
                 contract_id=fields.contract_id,
                 data=fields.data,
-                quantita=fields.quantita,
-                descrizione=fields.descrizione,
-                stato="approvato",
+                quantity=fields.quantity,
+                description=fields.description,
+                status="approved",
                 approval_id=approval.id,
             )
             self.session.add(work_unit)

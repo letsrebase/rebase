@@ -18,23 +18,23 @@ async def test_a_note_from_the_mcp_is_signed_by_the_token_and_marked_mcp(
         first = _payload(
             await client.call_tool(
                 "add_freelancer_note",
-                {"freelancer_id": freelancer_id, "testo": "Sentito al telefono."},
+                {"freelancer_id": freelancer_id, "text": "Sentito al telefono."},
             )
         )
-        assert (first["autore"], first["testo"]) == ("Ivan Sala", "Sentito al telefono.")
-        assert (first["autore_id"], first["fonte"], first["modificabile"]) == (
+        assert (first["author"], first["text"]) == ("Ivan Sala", "Sentito al telefono.")
+        assert (first["author_id"], first["source"], first["editable"]) == (
             str(IVAN.id),
             "mcp",
             True,
         )
         # The author is the token's: the tool has no argument to name another.
         tools = {t.name: t for t in (await client.list_tools()).tools}
-        assert "autore" not in tools["add_freelancer_note"].input_schema["properties"]
-        assert "autore" not in tools["add_company_note"].input_schema["properties"]
+        assert "author" not in tools["add_freelancer_note"].input_schema["properties"]
+        assert "author" not in tools["add_company_note"].input_schema["properties"]
         second = _payload(
             await client.call_tool(
                 "add_freelancer_note",
-                {"freelancer_id": freelancer_id, "testo": "Portfolio ricevuto."},
+                {"freelancer_id": freelancer_id, "text": "Portfolio ricevuto."},
             )
         )
 
@@ -44,7 +44,7 @@ async def test_a_note_from_the_mcp_is_signed_by_the_token_and_marked_mcp(
         assert [c["id"] for c in detail["note"]] == [second["id"], first["id"]]
         assert "commenti" not in detail
         # The list does not carry the thread.
-        listed = _payload(await client.call_tool("list_talenti", {}))
+        listed = _payload(await client.call_tool("list_talents", {}))
         assert "note" not in listed["items"][0]
     _wipe(factory)
 
@@ -57,13 +57,13 @@ async def test_a_note_is_edited_and_deleted_over_mcp_and_the_trail_names_the_doo
     async with Client(build_server(factory, lambda: IVAN)) as client:
         note = _payload(
             await client.call_tool(
-                "add_freelancer_note", {"freelancer_id": freelancer_id, "testo": "Prima."}
+                "add_freelancer_note", {"freelancer_id": freelancer_id, "text": "Prima."}
             )
         )
         edited = _payload(
-            await client.call_tool("update_note", {"note_id": note["id"], "testo": "Dopo."})
+            await client.call_tool("update_note", {"note_id": note["id"], "text": "Dopo."})
         )
-        assert (edited["testo"], edited["modificata_da"]) == ("Dopo.", "Ivan Sala")
+        assert (edited["text"], edited["edited_by"]) == ("Dopo.", "Ivan Sala")
         gone = _payload(await client.call_tool("delete_note", {"note_id": note["id"]}))
         assert gone == {"nota": note["id"], "cancellata": True}
         detail = _payload(
@@ -77,7 +77,7 @@ async def test_a_note_is_edited_and_deleted_over_mcp_and_the_trail_names_the_doo
         assert audit.structured_content is not None
         entries = {entry["kind"]: entry["payload"] for entry in audit.structured_content["result"]}
         assert set(entries) == {"note_added", "note_edited", "note_deleted"}
-        assert all(payload["fonte"] == "mcp" for payload in entries.values())
+        assert all(payload["source"] == "mcp" for payload in entries.values())
         assert entries["note_edited"]["before"] == "Prima."
     _wipe(factory)
 
@@ -92,9 +92,9 @@ async def test_the_persons_events_are_refused_by_update_and_delete(
     event = Note(
         entity_type="freelancer",
         entity_id=UUID(freelancer_id),
-        testo="CV caricato dalla persona",
-        autore="Ada Lovelace",
-        fonte="persona",
+        text="CV caricato dalla persona",
+        author="Ada Lovelace",
+        source="person",
     )
     session.add(event)
     session.commit()
@@ -102,7 +102,7 @@ async def test_the_persons_events_are_refused_by_update_and_delete(
     session.close()
     async with Client(build_server(factory, lambda: IVAN)) as client:
         for tool, args in (
-            ("update_note", {"note_id": event_id, "testo": "Riscritta."}),
+            ("update_note", {"note_id": event_id, "text": "Riscritta."}),
             ("delete_note", {"note_id": event_id}),
         ):
             refused = await client.call_tool(tool, args)
@@ -110,8 +110,8 @@ async def test_the_persons_events_are_refused_by_update_and_delete(
         detail = _payload(
             await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
         )
-        assert [n["testo"] for n in detail["note"]] == ["CV caricato dalla persona"]
-        assert detail["note"][0]["modificabile"] is False
+        assert [n["text"] for n in detail["note"]] == ["CV caricato dalla persona"]
+        assert detail["note"][0]["editable"] is False
     _wipe(factory)
 
 
@@ -124,24 +124,24 @@ async def test_a_company_note_lands_on_the_company_and_a_bad_one_is_a_sentence(
     async with Client(build_server(factory, lambda: IVAN)) as client:
         posted = _payload(
             await client.call_tool(
-                "add_company_note", {"company_id": company_id, "testo": "Budget confermato."}
+                "add_company_note", {"company_id": company_id, "text": "Budget confermato."}
             )
         )
-        assert (posted["autore"], posted["fonte"]) == ("Ivan Sala", "mcp")
+        assert (posted["author"], posted["source"]) == ("Ivan Sala", "mcp")
         detail = _payload(await client.call_tool("get_company", {"company_id": company_id}))
-        assert [c["testo"] for c in detail["note"]] == ["Budget confermato."]
+        assert [c["text"] for c in detail["note"]] == ["Budget confermato."]
 
         # A freelancer id is not a company: not found, as a sentence.
         wrong = await client.call_tool(
-            "add_company_note", {"company_id": freelancer_id, "testo": "x"}
+            "add_company_note", {"company_id": freelancer_id, "text": "x"}
         )
         assert wrong.is_error and "non trovato" in wrong.content[0].text
         empty = await client.call_tool(
-            "add_freelancer_note", {"freelancer_id": freelancer_id, "testo": "   "}
+            "add_freelancer_note", {"freelancer_id": freelancer_id, "text": "   "}
         )
-        assert empty.is_error and "testo" in empty.content[0].text
+        assert empty.is_error and "text" in empty.content[0].text
         long = await client.call_tool(
-            "add_freelancer_note", {"freelancer_id": freelancer_id, "testo": "x" * 4001}
+            "add_freelancer_note", {"freelancer_id": freelancer_id, "text": "x" * 4001}
         )
         assert long.is_error and "4000" in long.content[0].text
         untouched = _payload(

@@ -7,8 +7,8 @@ too). Two live cards whose people share a profile are the same person, and an ad
 
 **What only flags.** The same name, or the same telephone number, is a reason to look,
 never to merge: two people are called «Marco Rossi», a number is shared by a studio, and
-a merge moves contracts. Those pairs are listed for review (`da_rivedere`), carry
-`possibile_duplicato_di` on a Talenti row, and are merged only by an admin who has read
+a merge moves contracts. Those pairs are listed for review (`from_review`), carry
+`duplicate_possible_of` on a Talenti row, and are merged only by an admin who has read
 both cards, through the same merge.
 
 **Sign-ups.** A sign-up has no card, so there is nothing to merge: one whose profile is
@@ -48,8 +48,8 @@ from rebase_core.vocabulary import enum_of
 
 LINKEDIN = "linkedin"
 NOME = "nome"
-TELEFONO = "telefono"
-SIGNALS = (LINKEDIN, NOME, TELEFONO)
+PHONE = "phone"
+SIGNALS = (LINKEDIN, NOME, PHONE)
 DuplicateSignal = Annotated[str, Field(json_schema_extra=enum_of(SIGNALS))]
 # Cards a Talenti row names as «may be this person»: a common name is shared by many, and a
 # row is read by an agent that pays for every id.
@@ -75,7 +75,7 @@ class Person:
     freelancer_id: UUID
     email: str
     nome: str
-    cognome: str
+    last_name: str
     admin: bool
     created_at: datetime
     cv_uploaded_at: datetime | None
@@ -95,18 +95,18 @@ class Person:
 
 @dataclass(frozen=True)
 class DuplicatePair:
-    """Two live cards that look like one person. `survivor` and `assorbito` are the
+    """Two live cards that look like one person. `survivor` and `absorbed` are the
     default of the merge: the newest CV wins, unless an admin chooses otherwise by
-    merging the other way round. `unibile` is true only when the LinkedIn profile is the
+    merging the other way round. `mergeable` is true only when the LinkedIn profile is the
     same, and neither card is an admin's, since an admin is never the one merged away."""
 
     survivor: Person
-    assorbito: Person
-    segnali: tuple[str, ...]
+    absorbed: Person
+    signals: tuple[str, ...]
 
     @property
-    def unibile(self) -> bool:
-        return LINKEDIN in self.segnali and not self.assorbito.admin
+    def mergeable(self) -> bool:
+        return LINKEDIN in self.signals and not self.absorbed.admin
 
 
 @dataclass(frozen=True)
@@ -122,16 +122,16 @@ class LeadDuplicate:
 
 @dataclass(frozen=True)
 class DuplicateReport:
-    unibili: list[DuplicatePair] = field(default_factory=list)
-    da_rivedere: list[DuplicatePair] = field(default_factory=list)
-    iscrizioni: list[LeadDuplicate] = field(default_factory=list)
+    mergeable: list[DuplicatePair] = field(default_factory=list)
+    from_review: list[DuplicatePair] = field(default_factory=list)
+    signups: list[LeadDuplicate] = field(default_factory=list)
 
 
-def _name_key(nome: str, cognome: str) -> str | None:
+def _name_key(nome: str, last_name: str) -> str | None:
     """The name as a person would be recognised by it: accents, case, spaces and the
     order of the two words left out. `None` when either is empty."""
     parts = []
-    for word in (nome, cognome):
+    for word in (nome, last_name):
         folded = unicodedata.normalize("NFKD", word)
         text_ = "".join(ch for ch in folded if not unicodedata.combining(ch))
         text_ = re.sub(r"[\W_]+", "", text_.lower())
@@ -167,10 +167,10 @@ def _live_people() -> Select[*tuple[Any, ...]]:
             Freelancer.cv_size,
             User.email,
             User.nome,
-            User.cognome,
+            User.last_name,
             User.role,
             User.linkedin_url,
-            User.telefono,
+            User.phone,
         )
         .join(User, User.id == Freelancer.user_id)
         .where(Freelancer.deleted_at.is_(None), User.merged_into_id.is_(None))
@@ -191,7 +191,7 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
             freelancer_id=row.id,
             email=row.email,
             nome=row.nome,
-            cognome=row.cognome,
+            last_name=row.last_name,
             admin=row.role == "admin",
             created_at=row.created_at,
             cv_uploaded_at=row.cv_uploaded_at,
@@ -200,14 +200,14 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
         people[row.id] = person
         if (key := linkedin_key(row.linkedin_url)) is not None:
             by_linkedin[key].append(person)
-        if (name := _name_key(row.nome, row.cognome)) is not None:
+        if (name := _name_key(row.nome, row.last_name)) is not None:
             by_name[name].append(person)
-        if (phone := _phone_key(row.telefono)) is not None:
+        if (phone := _phone_key(row.phone)) is not None:
             by_phone[phone].append(person)
     found: dict[frozenset[UUID], set[str]] = defaultdict(set)
     _pairs(by_linkedin, LINKEDIN, found)
     _pairs(by_name, NOME, found)
-    _pairs(by_phone, TELEFONO, found)
+    _pairs(by_phone, PHONE, found)
     order = SIGNALS
     pairs: list[DuplicatePair] = []
     for ids, signals in found.items():
@@ -217,7 +217,7 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
     # Survivors first and oldest ids last, so a group of three is merged into its best
     # card by the pairs that name it, and the pair between the other two is already moot.
     pairs.sort(
-        key=lambda p: (p.survivor.rank, p.survivor.freelancer_id, p.assorbito.rank), reverse=True
+        key=lambda p: (p.survivor.rank, p.survivor.freelancer_id, p.absorbed.rank), reverse=True
     )
     return pairs
 
@@ -230,9 +230,9 @@ def find_duplicates(session: Session) -> DuplicateReport:
     neighbours."""
     pairs = _pairs_among(session.execute(_live_people()).all())
     return DuplicateReport(
-        unibili=[p for p in pairs if p.unibile],
-        da_rivedere=[p for p in pairs if not p.unibile],
-        iscrizioni=_lead_duplicates(session),
+        mergeable=[p for p in pairs if p.mergeable],
+        from_review=[p for p in pairs if not p.mergeable],
+        signups=_lead_duplicates(session),
     )
 
 
@@ -356,10 +356,10 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
     for row in page:
         if (profile := linkedin_key(row.linkedin_url)) is not None:
             profiles.add(profile)
-        if _name_key(row.nome, row.cognome) is not None:
-            first, last = _ascii_word(row.nome), _ascii_word(row.cognome)
+        if _name_key(row.nome, row.last_name) is not None:
+            first, last = _ascii_word(row.nome), _ascii_word(row.last_name)
             names.update((f"{first}|{last}", f"{last}|{first}"))
-        if (number := _phone_key(row.telefono)) is not None:
+        if (number := _phone_key(row.phone)) is not None:
             digits = re.sub(r"[^0-9]", "", number)
             if digits:
                 numbers.update((digits, f"39{digits}", f"0039{digits}"))
@@ -374,16 +374,16 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
         both = (
             _ascii_word_sql(User.nome)
             .concat(literal_column("'|'"))
-            .concat(_ascii_word_sql(User.cognome))
+            .concat(_ascii_word_sql(User.last_name))
         )
         matches.append(both.in_(sorted(names)))
-    digits_sql = _ascii_digits_sql(User.telefono)
+    digits_sql = _ascii_digits_sql(User.phone)
     if numbers:
         matches.append(digits_sql.in_(numbers))
     if non_ascii_number:
         # A number of digits outside ASCII (`\D` keeps those): nothing to match on but
         # having a telephone number that is not made of ASCII digits.
-        matches.append(and_(User.telefono.is_not(None), digits_sql == ""))
+        matches.append(and_(User.phone.is_not(None), digits_sql == ""))
     if not matches:
         return []
     return list(session.execute(_live_people().where(or_(*matches))).all())
@@ -391,7 +391,7 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
 
 def duplicates_of(session: Session, freelancer_ids: list[UUID]) -> dict[UUID, list[UUID]]:
     """For a page of Talenti rows: the other live cards each might be, by LinkedIn, name
-    or telephone (`possibile_duplicato_di`), the first `FLAGS_PER_ROW` in the order
+    or telephone (`duplicate_possible_of`), the first `FLAGS_PER_ROW` in the order
     `find_duplicates` lists the pairs. Reads the page's own cards and the cards sharing a
     key with them (`_neighbours`), never the table: a page of a hundred costs two reads
     however many people there are."""
@@ -402,10 +402,10 @@ def duplicates_of(session: Session, freelancer_ids: list[UUID]) -> dict[UUID, li
     answer: dict[UUID, list[UUID]] = {}
     pairs = _pairs_among(_neighbours(session, page))
     # The mergeable pairs first, then the ones to review, as the report lists them.
-    for pair in (*(p for p in pairs if p.unibile), *(p for p in pairs if not p.unibile)):
+    for pair in (*(p for p in pairs if p.mergeable), *(p for p in pairs if not p.mergeable)):
         for mine, other in (
-            (pair.survivor, pair.assorbito),
-            (pair.assorbito, pair.survivor),
+            (pair.survivor, pair.absorbed),
+            (pair.absorbed, pair.survivor),
         ):
             if mine.freelancer_id in wanted:
                 flagged = answer.setdefault(mine.freelancer_id, [])
@@ -420,7 +420,7 @@ class PersonRead(ResponseModel):
     freelancer_id: UUID
     user_id: UUID
     nome: str
-    cognome: str
+    last_name: str
     email: str
     created_at: datetime
     cv_uploaded_at: datetime | None
@@ -428,20 +428,20 @@ class PersonRead(ResponseModel):
 
 
 class DuplicatePairRead(ResponseModel):
-    """`survivor` is the default of the merge (the newest CV); `segnali` says why the two
-    look alike (`linkedin`, `nome`, `telefono`), and `unibile` that the profile is the same,
+    """`survivor` is the default of the merge (the newest CV); `signals` says why the two
+    look alike (`linkedin`, `nome`, `phone`), and `mergeable` that the profile is the same,
     the only signal that is a reason to merge rather than to look."""
 
     survivor: PersonRead
-    assorbito: PersonRead
-    segnali: list[DuplicateSignal]
-    unibile: bool
+    absorbed: PersonRead
+    signals: list[DuplicateSignal]
+    mergeable: bool
 
 
 class DuplicateListRead(ResponseModel):
-    unibili: list[DuplicatePairRead]
-    da_rivedere: list[DuplicatePairRead]
-    iscrizioni: int
+    mergeable: list[DuplicatePairRead]
+    from_review: list[DuplicatePairRead]
+    signups: int
 
 
 def _person_read(person: Person) -> PersonRead:
@@ -449,7 +449,7 @@ def _person_read(person: Person) -> PersonRead:
         freelancer_id=person.freelancer_id,
         user_id=person.user_id,
         nome=person.nome,
-        cognome=person.cognome,
+        last_name=person.last_name,
         email=person.email,
         created_at=person.created_at,
         cv_uploaded_at=person.cv_uploaded_at,
@@ -464,22 +464,22 @@ def duplicate_list(session: Session) -> DuplicateListRead:
     def read(pair: DuplicatePair) -> DuplicatePairRead:
         return DuplicatePairRead(
             survivor=_person_read(pair.survivor),
-            assorbito=_person_read(pair.assorbito),
-            segnali=list(pair.segnali),
-            unibile=pair.unibile,
+            absorbed=_person_read(pair.absorbed),
+            signals=list(pair.signals),
+            mergeable=pair.mergeable,
         )
 
     return DuplicateListRead(
-        unibili=[read(p) for p in report.unibili],
-        da_rivedere=[read(p) for p in report.da_rivedere],
-        iscrizioni=len(report.iscrizioni),
+        mergeable=[read(p) for p in report.mergeable],
+        from_review=[read(p) for p in report.from_review],
+        signups=len(report.signups),
     )
 
 
 __all__ = [
     "LINKEDIN",
     "NOME",
-    "TELEFONO",
+    "PHONE",
     "UNIQUE_INDEXES",
     "DuplicateListRead",
     "DuplicatePair",

@@ -1,5 +1,5 @@
 """A configurable taxonomy, on the pipeline-stage model: `code` is the stable identity
-of a seed, `nome` is the label a user may rename, and `archiviata` replaces deletion."""
+of a seed, `nome` is the label a user may rename, and `archived` replaces deletion."""
 
 from datetime import date
 from decimal import Decimal
@@ -16,7 +16,7 @@ from pigrocrm.core.timetracking.models import Cost
 from pigrocrm.core.timetracking.schemas import CostCategoryCreate, CostCategoryUpdate
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLABORATOR = Actor(id=None, type="user", role="collaboratore")
+COLLABORATOR = Actor(id=None, type="user", role="collaborator")
 
 
 def test_seed_creates_the_five_named_categories(db_session: Session) -> None:
@@ -29,7 +29,7 @@ def test_seed_creates_the_five_named_categories(db_session: Session) -> None:
         "Altro",
     ]
     assert [c.code for c in created] == [code for code, _, _ in SEED_CATEGORIES]
-    assert [c.posizione for c in created] == [0, 1, 2, 3, 4]
+    assert [c.position for c in created] == [0, 1, 2, 3, 4]
 
 
 def test_seed_deduplicates_on_code_not_on_nome(db_session: Session) -> None:
@@ -64,14 +64,14 @@ def test_archiving_keeps_existing_costs_readable(db_session: Session, seeded_dea
             deal_id=seeded_deal_id,
             category_id=category.id,
             data=date(2026, 3, 1),
-            importo=Decimal("42.00"),
-            descrizione="VPS",
+            amount=Decimal("42.00"),
+            description="VPS",
         )
     )
     db_session.flush()
 
     archived = service.archive_cost_category(category.id, ADMIN)
-    assert archived.archiviata is True
+    assert archived.archived is True
     assert category.id not in {c.id for c in service.list_cost_categories()}
     assert category.id in {c.id for c in service.list_cost_categories(include_archived=True)}
     with pytest.raises(ValidationFailed) as excinfo:
@@ -83,7 +83,7 @@ def test_unarchive_brings_it_back(db_session: Session) -> None:
     service = CostCategoryService(db_session)
     category = service.create_cost_category(CostCategoryCreate(nome="Hosting"), ADMIN)
     service.archive_cost_category(category.id, ADMIN)
-    assert service.unarchive_cost_category(category.id, ADMIN).archiviata is False
+    assert service.unarchive_cost_category(category.id, ADMIN).archived is False
 
 
 def test_every_write_records_an_activity(db_session: Session) -> None:

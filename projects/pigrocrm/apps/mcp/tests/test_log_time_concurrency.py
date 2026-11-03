@@ -37,9 +37,9 @@ def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID, UUID,
     session: Session = session_factory(mcp_engine)()
     try:
         stage = PipelineStage(
-            nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
+            nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
-        customer = Customer(ragione_sociale=f"Cliente concorrenza {uuid4()}")
+        customer = Customer(legal_name=f"Cliente concorrenza {uuid4()}")
         user = User(email=f"worker-{uuid4()}@example.test", password_hash="x", nome="Worker")
         session.add_all([stage, customer, user])
         session.flush()
@@ -47,7 +47,7 @@ def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID, UUID,
             nome="Progetto concorrenza",
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
-            probabilita=10,
+            probability=10,
         )
         session.add(deal)
         session.commit()
@@ -88,7 +88,7 @@ def test_twenty_concurrent_log_time_calls_produce_twenty_rows(
 
 def _run_concurrent_log_time(mcp_engine: Engine, mcp_storage, deal_id: UUID, user_id: UUID) -> None:
     provider = ScopedSessionProvider(session_factory(mcp_engine))
-    actor = Actor(id=user_id, type="mcp", role="collaboratore")
+    actor = Actor(id=user_id, type="mcp", role="collaborator")
     context = McpContext(provider, lambda: actor, mcp_storage)
     barrier = threading.Barrier(CONCURRENCY)
 
@@ -101,8 +101,8 @@ def _run_concurrent_log_time(mcp_engine: Engine, mcp_storage, deal_id: UUID, use
                     "deal_id": deal_id,
                     "user_id": user_id,
                     "data": date(2026, 3, 10),
-                    "ore": "1.00",
-                    "descrizione": f"Voce {index}",
+                    "hours": "1.00",
+                    "description": f"Voce {index}",
                 },
             )["id"]
 

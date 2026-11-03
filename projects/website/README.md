@@ -39,9 +39,9 @@ same 301 until 2026-10-20 (REB-670) and is a 404 now. The
 hub owns every signup since 2026-09-09 (REB-17), so the page's own form was not
 carried forward.
 
-The landing's two doors point at `/hub/freelance` and `/hub/aziende`, the hub's
+The landing's two doors point at `/hub/freelance` and `/hub/companies`, the hub's
 wizards, and the team builder in its hero (REB-676, `src/team.js`) asks the hub's own
-`POST /api/hub/team/proposals` and sends the visitor to `/hub/team?proposta=<id>` for the
+`POST /api/hub/team/proposals` and sends the visitor to `/hub/team?proposal=<id>` for the
 whole team, which the hub reads back by that id (REB-675); without JavaScript the form is
 a GET to `/hub/team` with the description. Every one of those is served by the rebase hub
 (`projects/hub`) on the same origin: they are the things this project does not own, and

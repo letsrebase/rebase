@@ -22,24 +22,24 @@ function cellValue(column: ReturnType<typeof buildCustomerColumns>[number], cust
 
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
-  azienda_id: 'a-1',
+  legal_entity_id: 'a-1',
   owner_id: null,
-  ragione_sociale: 'ACME Srl',
-  partita_iva: null,
-  codice_fiscale: null,
-  codice_sdi: null,
-  pec: null,
-  indirizzo: null,
+  legal_name: 'ACME Srl',
+  vat_number: null,
+  tax_code: null,
+  sdi_code: null,
+  certified_email: null,
+  address: null,
   cap: null,
-  comune: null,
-  provincia: null,
-  nazione: 'IT',
+  city: null,
+  province: null,
+  country: 'IT',
   email: null,
-  telefono: null,
-  sito_web: null,
-  stato: null,
-  giorni_pagamento: null,
-  pagamento_fine_mese: false,
+  phone: null,
+  website: null,
+  status: null,
+  payment_days: null,
+  payment_end_of_month: false,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',
@@ -53,7 +53,7 @@ describe('buildCustomerColumns', () => {
 
   it('appends one column per custom field', () => {
     const fields: FieldDefinition[] = [
-      { key: 'settore', label: 'Settore', type: 'text', required: false, options: [] },
+      { key: 'industry', label: 'Settore', type: 'text', required: false, options: [] },
     ]
     const headers = buildCustomerColumns(fields).map((column) => column.header)
     expect(headers).toContain('Settore')
@@ -64,18 +64,18 @@ describe('buildCustomerColumns', () => {
   })
 
   it('renders a null native field as the empty dash', () => {
-    const [, partitaIva] = buildCustomerColumns([])
-    expect(cellValue(partitaIva!, { ...BASE_CUSTOMER, partita_iva: null })).toBe('—')
+    const [, vatNumber] = buildCustomerColumns([])
+    expect(cellValue(vatNumber!, { ...BASE_CUSTOMER, vat_number: null })).toBe('—')
   })
 
   it('renders an explicitly-cleared ("") native field as the same dash, never a blank cell', () => {
-    const [, partitaIva] = buildCustomerColumns([])
-    expect(cellValue(partitaIva!, { ...BASE_CUSTOMER, partita_iva: '' })).toBe('—')
+    const [, vatNumber] = buildCustomerColumns([])
+    expect(cellValue(vatNumber!, { ...BASE_CUSTOMER, vat_number: '' })).toBe('—')
   })
 
   it('renders a present native field as itself', () => {
-    const [, partitaIva] = buildCustomerColumns([])
-    expect(cellValue(partitaIva!, { ...BASE_CUSTOMER, partita_iva: '01234567890' })).toBe(
+    const [, vatNumber] = buildCustomerColumns([])
+    expect(cellValue(vatNumber!, { ...BASE_CUSTOMER, vat_number: '01234567890' })).toBe(
       '01234567890',
     )
   })

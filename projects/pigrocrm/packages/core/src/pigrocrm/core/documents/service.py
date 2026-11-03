@@ -28,7 +28,7 @@ from pigrocrm.core.documents.schemas import (
     DocumentPage,
     DocumentRead,
     DocumentTextRead,
-    DocumentTipo,
+    DocumentType,
     DocumentUpdate,
     DocumentVersionRead,
     OfferState,
@@ -43,13 +43,13 @@ from pigrocrm.core.storage.base import DocumentStorage
 
 # The offer lifecycle, as a table rather than a chain of `if`s: the UI reads it to
 # decide which buttons to show, and the MCP tool reads it to tell an agent what it may
-# do next. `accettata` and `rifiutata` are terminal -- an offer that was answered is a
+# do next. `accepted` and `rejected` are terminal -- an offer that was answered is a
 # fact, and editing that fact is a new offer, not a state change.
 OFFER_TRANSITIONS: dict[str, frozenset[str]] = {
-    "bozza": frozenset({"inviata"}),
-    "inviata": frozenset({"accettata", "rifiutata", "bozza"}),
-    "accettata": frozenset(),
-    "rifiutata": frozenset(),
+    "draft": frozenset({"sent"}),
+    "sent": frozenset({"accepted", "rejected", "draft"}),
+    "accepted": frozenset(),
+    "rejected": frozenset(),
 }
 
 
@@ -73,12 +73,12 @@ class DocumentService:
         data: DocumentCreate,
         actor: Actor,
         *,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
         commit: bool = True,
     ) -> DocumentRead:
         """`commit=False` leaves the row flushed in the caller's transaction, for a caller
         that holds a lock (an invoice's row) that must outlive this write."""
-        document = self._context.create_row(data, actor, azienda_id=azienda_id)
+        document = self._context.create_row(data, actor, legal_entity_id=legal_entity_id)
         if commit:
             self.session.commit()
         return DocumentRead.model_validate(document)
@@ -139,9 +139,9 @@ class DocumentService:
         content_type: str,
         actor: Actor,
         *,
-        sorgente_markdown: str | None = None,
+        markdown_source: str | None = None,
         template_id: UUID | None = None,
-        variabili: dict[str, Any] | None = None,
+        variables: dict[str, Any] | None = None,
         storage_prefix: str | None = None,
         commit: bool = True,
     ) -> DocumentVersionRead:
@@ -152,9 +152,9 @@ class DocumentService:
             data,
             content_type,
             actor,
-            sorgente_markdown=sorgente_markdown,
+            markdown_source=markdown_source,
             template_id=template_id,
-            variabili=variabili,
+            variables=variables,
             storage_prefix=storage_prefix,
             commit=commit,
         )
@@ -165,14 +165,14 @@ class DocumentService:
         customer_id: UUID | None = None,
         deal_id: UUID | None = None,
         contract_id: UUID | None = None,
-        tipo: DocumentTipo,
-        titolo: str,
+        type: DocumentType,
+        title: str,
         data: bytes,
         content_type: str,
         actor: Actor,
-        origine: dict[str, Any],
+        origin: dict[str, Any],
         commit: bool = True,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
     ) -> DocumentRead:
         """Bytes from somewhere else, filed as a document and its first version in one
         unit of work. See `DocumentUploads.import_bytes` for what `commit=False` does
@@ -181,30 +181,30 @@ class DocumentService:
             customer_id=customer_id,
             deal_id=deal_id,
             contract_id=contract_id,
-            tipo=tipo,
-            titolo=titolo,
+            type=type,
+            title=title,
             data=data,
             content_type=content_type,
             actor=actor,
-            origine=origine,
+            origin=origin,
             commit=commit,
-            azienda_id=azienda_id,
+            legal_entity_id=legal_entity_id,
         )
 
     def versions(self, document_id: UUID, actor: Actor) -> list[DocumentVersionRead]:
         return self._uploads.versions(document_id)
 
     def download(
-        self, document_id: UUID, numero: int | None, actor: Actor
+        self, document_id: UUID, number: int | None, actor: Actor
     ) -> tuple[bytes, str, str]:
-        """`(bytes, content_type, filename)`; `numero=None` is the current version."""
-        return self._uploads.download(document_id, numero)
+        """`(bytes, content_type, filename)`; `number=None` is the current version."""
+        return self._uploads.download(document_id, number)
 
     def extract_text(
-        self, document_id: UUID, numero: int | None, actor: Actor, *, max_bytes: int | None = None
+        self, document_id: UUID, number: int | None, actor: Actor, *, max_bytes: int | None = None
     ) -> DocumentTextRead:
         """The text of an archived document. See `DocumentText.extract_text`."""
-        return self._text.extract_text(document_id, numero, max_bytes=max_bytes)
+        return self._text.extract_text(document_id, number, max_bytes=max_bytes)
 
     # ---- template-driven documents ------------------------------------------
 
@@ -212,44 +212,44 @@ class DocumentService:
         """A new document whose first version is a template rendered to PDF."""
         return self._templating.create_from_template(data, actor)
 
-    def regenerate(self, document_id: UUID, numero: int, actor: Actor) -> DocumentVersionRead:
+    def regenerate(self, document_id: UUID, number: int, actor: Actor) -> DocumentVersionRead:
         """An old version rebuilt from its own template and variables, as a new version."""
-        return self._templating.regenerate(document_id, numero, actor)
+        return self._templating.regenerate(document_id, number, actor)
 
     # ---- offers ---------------------------------------------------------------
 
-    def set_offer_state(self, document_id: UUID, stato: OfferState, actor: Actor) -> DocumentRead:
-        """The only writer of `documents.stato`.
+    def set_offer_state(self, document_id: UUID, status: OfferState, actor: Actor) -> DocumentRead:
+        """The only writer of `documents.status`.
 
         Deliberately not a field on `DocumentUpdate`, and it stays that way now that
         A14 is closed and a `null` on an Update schema really does clear a column: the
         original reason was that it could not, but the better one is that
-        `documents.stato` is `NULL` for everything that is not an offer, so "clear it"
+        `documents.status` is `NULL` for everything that is not an offer, so "clear it"
         is not a state a caller should be able to ask for on an offer at all. A
         dedicated method taking a required, non-nullable literal cannot express it.
         """
         actor.require_write("set_offer_state")
         document = self._context.require(document_id)
-        if document.tipo != "offerta" or document.stato is None:
+        if document.type != "offer" or document.status is None:
             raise ValidationFailed(
                 ENTITY,
-                "stato",
+                "status",
                 "solo un documento di tipo offerta ha uno stato",
                 expected="un documento di tipo offerta",
             )
-        allowed = OFFER_TRANSITIONS[document.stato]
-        if stato not in allowed:
+        allowed = OFFER_TRANSITIONS[document.status]
+        if status not in allowed:
             raise Conflict(
                 ENTITY,
-                f"da '{document.stato}' non si puo' passare a '{stato}'",
-                stato_attuale=document.stato,
-                transizioni_ammesse=sorted(allowed),
+                f"da '{document.status}' non si puo' passare a '{status}'",
+                status_current=document.status,
+                transitions_allowed=sorted(allowed),
             )
-        previous, document.stato = document.stato, stato
+        previous, document.status = document.status, status
         # The day this state began. `today_local()` and never `date.today()`: see
         # `db/clock.py`. An offer whose state was set at 00:30 CET on 1 January would
         # otherwise be reported as having been in that state since the previous year.
-        document.stato_dal = today_local()
+        document.status_since = today_local()
 
         # Slice 6 §9.3. The order of these four steps is fixed and is not cosmetic:
         #
@@ -271,7 +271,7 @@ class DocumentService:
         AutomationRunner(self.session).on_offer_state_changed(document, previous, actor)
 
         self._context.activities.record(
-            ENTITY, document.id, "state_changed", actor, {"da": previous, "a": stato}
+            ENTITY, document.id, "state_changed", actor, {"da": previous, "a": status}
         )
         self.session.commit()
         return DocumentRead.model_validate(document)

@@ -50,7 +50,7 @@ class PigroMember(ResponseModel):
 
     id: UUID
     nome: str
-    cognome: str
+    last_name: str
 
 
 class PigroSpace(ResponseModel):
@@ -60,11 +60,11 @@ class PigroSpace(ResponseModel):
     # Where the space answers, for the link on the row.
     url: str
     # `None` when nobody with that address filled in the hub's wizard.
-    membro: PigroMember | None
+    member: PigroMember | None
 
 
 class PigroSpaceList(ResponseModel):
-    totale: int
+    total: int
     items: list[PigroSpace]
     next_cursor: str | None = None
 
@@ -127,7 +127,7 @@ class PigroRegistry:
             needle = q.strip().lower()
             rows = [r for r in rows if needle in r.slug.lower() or needle in r.owner_email.lower()]
         rows.sort(key=lambda r: (r.created_at, r.slug), reverse=True)
-        totale = len(rows)
+        total = len(rows)
         if cursor:
             after_value, after_slug = _decode_pigro_cursor(cursor)
             rows = [r for r in rows if (r.created_at, r.slug) < (after_value, after_slug)]
@@ -135,14 +135,14 @@ class PigroRegistry:
         next_cursor = _encode_pigro_cursor(page[-1]) if len(rows) > limit else None
         members = self._members({row.owner_email.lower() for row in page}, session)
         return PigroSpaceList(
-            totale=totale,
+            total=total,
             items=[
                 PigroSpace(
                     slug=row.slug,
                     owner_email=row.owner_email,
                     created_at=row.created_at,
                     url=f"{self.door.url('')}/{row.slug}/app/",
-                    membro=members.get(row.owner_email.lower()),
+                    member=members.get(row.owner_email.lower()),
                 )
                 for row in page
             ],
@@ -164,7 +164,7 @@ class PigroRegistry:
             owner_email=row.owner_email,
             created_at=row.created_at,
             url=f"{self.door.url('')}/{row.slug}/app/",
-            membro=members.get(target),
+            member=members.get(target),
         )
 
     @staticmethod
@@ -173,11 +173,11 @@ class PigroRegistry:
         if not emails:
             return {}
         rows = session.execute(
-            select(Freelancer.id, User.email, User.nome, User.cognome)
+            select(Freelancer.id, User.email, User.nome, User.last_name)
             .join(User, User.id == Freelancer.user_id)
             .where(func.lower(User.email).in_(emails))
         ).all()
         return {
-            email.lower(): PigroMember(id=freelancer_id, nome=nome, cognome=cognome)
-            for freelancer_id, email, nome, cognome in rows
+            email.lower(): PigroMember(id=freelancer_id, nome=nome, last_name=last_name)
+            for freelancer_id, email, nome, last_name in rows
         }

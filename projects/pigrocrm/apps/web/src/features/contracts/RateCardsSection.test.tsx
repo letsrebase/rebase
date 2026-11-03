@@ -22,29 +22,29 @@ function failed(error: unknown, status: number) {
 const CLOSED = {
   id: 'r1',
   contract_id: 'c1',
-  valido_da: '2026-01-01',
-  valido_a: '2026-06-30',
-  tipo: 'giornaliero',
-  importo: '400.00',
-  unita: 'giorno',
-  frazioni_ammesse: ['1.00', '0.50'],
-  ore_minime: null,
-  periodo_erogazione: null,
+  valid_from: '2026-01-01',
+  valid_to: '2026-06-30',
+  type: 'daily',
+  amount: '400.00',
+  unit: 'day',
+  allowed_fractions: ['1.00', '0.50'],
+  minimum_hours: null,
+  delivery_period: null,
 }
 const OPEN = {
   ...CLOSED,
   id: 'r2',
-  valido_da: '2026-07-01',
-  valido_a: null,
-  importo: '450.00',
-  frazioni_ammesse: ['1.00'],
+  valid_from: '2026-07-01',
+  valid_to: null,
+  amount: '450.00',
+  allowed_fractions: ['1.00'],
 }
 
 function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <RateCardsSection contractId="c1" divisa="EUR" />
+      <RateCardsSection contractId="c1" currency="EUR" />
     </QueryClientProvider>,
   )
 }
@@ -82,8 +82,8 @@ describe('RateCardsSection', () => {
     expect(api.POST).toHaveBeenCalledWith(
       '/api/contracts/{contract_id}/rate-cards',
       expect.objectContaining({
-        params: { path: { contract_id: 'c1' }, query: { chiudi_precedente: true } },
-        body: expect.objectContaining({ valido_da: '2027-01-01', importo: '480.00', valido_a: null }),
+        params: { path: { contract_id: 'c1' }, query: { close_previous: true } },
+        body: expect.objectContaining({ valid_from: '2027-01-01', amount: '480.00', valid_to: null }),
       }),
     )
     await vi.waitFor(() => expect(dialog).not.toBeInTheDocument())
@@ -112,7 +112,7 @@ describe('RateCardsSection', () => {
     expect(api.POST).toHaveBeenCalledWith(
       '/api/contracts/{contract_id}/rate-cards',
       expect.objectContaining({
-        params: { path: { contract_id: 'c1' }, query: { chiudi_precedente: false } },
+        params: { path: { contract_id: 'c1' }, query: { close_previous: false } },
       }),
     )
   })
@@ -130,9 +130,9 @@ describe('RateCardsSection', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Modifica la tariffa dal 01/07/2026' }),
     )
-    const importo = screen.getByLabelText('Importo (€)')
-    await userEvent.clear(importo)
-    await userEvent.type(importo, '475.00')
+    const amount = screen.getByLabelText('Importo (€)')
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '475.00')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(api.PATCH).toHaveBeenCalledWith(
@@ -140,10 +140,10 @@ describe('RateCardsSection', () => {
       expect.objectContaining({
         params: { path: { contract_id: 'c1', rate_card_id: 'r2' } },
         body: expect.objectContaining({
-          importo: '475.00',
-          valido_a: null,
-          ore_minime: null,
-          periodo_erogazione: null,
+          amount: '475.00',
+          valid_to: null,
+          minimum_hours: null,
+          delivery_period: null,
         }),
       }),
     )

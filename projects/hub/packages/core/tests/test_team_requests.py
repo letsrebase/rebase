@@ -62,11 +62,11 @@ from rebase_core.team_schemas import TeamRequestCreate, TeamRequestRead
 
 HUB = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
-RIASSUNTO = (
+SUMMARY = (
     "Un'azienda di logistica rifà il gestionale degli ordini: backend Python e frontend "
     "React, sei mesi da remoto."
 )
-AZIENDA = "Acme S.r.l."
+LEGAL_ENTITY = "Acme S.r.l."
 # What a log line may carry of a request is its id, and an id is not text to scan for a
 # secret: a UUIDv7 opens with the top bits of the millisecond clock, so for minutes at a
 # time every id carries the same hex digits, and a phone's «345» is in them (REB-667).
@@ -118,17 +118,17 @@ def _talent(
     session: Session,
     n: int,
     *,
-    tariffa: Decimal | None = Decimal("450.00"),
-    remoto: str | None = "remoto",
+    rate: Decimal | None = Decimal("450.00"),
+    remote: str | None = "remote",
 ) -> UUID:
-    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", cognome=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
         user_id=user.id,
-        remoto=remoto,
-        tariffa_giornaliera=tariffa,
-        stato="nuovo",
+        remote=remote,
+        daily_rate=rate,
+        status="new",
         posizione="Backend developer",
     )
     session.add(row)
@@ -149,7 +149,7 @@ def _talent(
 
 
 def _user(session: Session, email: str, *, role: str = "member") -> UUID:
-    user = User(email=email, nome="Ivan", cognome="Admin", role=role)
+    user = User(email=email, nome="Ivan", last_name="Admin", role=role)
     session.add(user)
     session.commit()
     return user.id
@@ -159,36 +159,34 @@ def _proposal(
     session: Session,
     members: list[UUID],
     *,
-    origine: str = "pubblico",
+    origin: str = "public",
     user_id: UUID | None = None,
     created_at: datetime = NOW - timedelta(hours=2),
-    riassunto: str = RIASSUNTO,
+    summary: str = SUMMARY,
     model: str = MODEL,
     roles: list[str] | None = None,
 ) -> UUID:
     ruoli = roles or [f"Ruolo {index}" for index in range(1, len(members) + 1)]
     row = TeamProposal(
-        descrizione="Rifacciamo il gestionale degli ordini, sei mesi, da remoto, in Python.",
-        riassunto=riassunto,
-        luogo={"locale": False, "dove": None},
+        description="Rifacciamo il gestionale degli ordini, sei mesi, da remoto, in Python.",
+        summary=summary,
+        location={"locale": False, "dove": None},
         team=[
             {
                 "posizione": index,
                 "freelancer_id": str(freelancer_id),
-                "ruolo": ruolo,
-                "motivazione": "Nove anni di API in Python.",
-                "giorni_settimana": 5,
+                "role": role,
+                "reasoning": "Nove anni di API in Python.",
+                "week_days": 5,
             }
-            for index, (freelancer_id, ruolo) in enumerate(
-                zip(members, ruoli, strict=True), start=1
-            )
+            for index, (freelancer_id, role) in enumerate(zip(members, ruoli, strict=True), start=1)
         ],
-        economia={"giorno": None, "mese": None, "giorni_mese": 22},
+        economics={"day": None, "month": None, "days_month": 22},
         model=model,
         input_tokens=5200 if model else 0,
         output_tokens=640 if model else 0,
         cache_read_tokens=4800 if model else 0,
-        origine=origine,
+        origin=origin,
         user_id=user_id,
         created_at=created_at,
     )
@@ -197,12 +195,12 @@ def _proposal(
     return row.id
 
 
-def _data(proposal_id: UUID, azienda: str = AZIENDA) -> TeamRequestCreate:
+def _data(proposal_id: UUID, company: str = LEGAL_ENTITY) -> TeamRequestCreate:
     return TeamRequestCreate(
         proposal_id=proposal_id,
-        azienda=azienda,
+        company=company,
         email="wile@acme.it",
-        telefono="+39 345 1234567",
+        phone="+39 345 1234567",
     )
 
 
@@ -213,80 +211,80 @@ def _service(
 
 
 def _create(
-    service: TeamRequestService, proposal_id: UUID, azienda: str = AZIENDA
+    service: TeamRequestService, proposal_id: UUID, company: str = LEGAL_ENTITY
 ) -> tuple[TeamRequestRead, Mail]:
     return service.create(
-        _data(proposal_id, azienda), origine="pubblico", user_id=None, company_id=None
+        _data(proposal_id, company), origin="public", user_id=None, company_id=None
     )
 
 
 def _public(
-    service: TeamRequestService, proposal_id: UUID, azienda: str = AZIENDA
+    service: TeamRequestService, proposal_id: UUID, company: str = LEGAL_ENTITY
 ) -> TeamRequestRead:
-    return _create(service, proposal_id, azienda)[0]
+    return _create(service, proposal_id, company)[0]
 
 
 # ---- create --------------------------------------------------------------------------------
 
 
 def test_request_from_a_proposal_files_the_talents_and_mails(clean: Session) -> None:
-    first = _talent(clean, 1, tariffa=Decimal("450.00"))
-    second = _talent(clean, 2, tariffa=None)
+    first = _talent(clean, 1, rate=Decimal("450.00"))
+    second = _talent(clean, 2, rate=None)
     proposal_id = _proposal(clean, [first, second], roles=["Backend developer", "Designer"])
     capture = FakeCapture()
 
     read, mail = _create(_service(clean, tracker=Tracker(capture)), proposal_id)
 
-    assert read.origine == "pubblico"
-    assert read.azienda == AZIENDA
+    assert read.origin == "public"
+    assert read.company == LEGAL_ENTITY
     assert read.email == "wile@acme.it"
-    assert read.telefono == "+39 345 1234567"
-    assert read.stato == "nuova"
+    assert read.phone == "+39 345 1234567"
+    assert read.status == "new"
     assert read.user_id is None and read.company_id is None
     assert read.note is None and read.contacted_at is None and read.closed_at is None
-    assert read.riassunto == RIASSUNTO
-    assert read.descrizione is not None and "gestionale" in read.descrizione
+    assert read.summary == SUMMARY
+    assert read.description is not None and "gestionale" in read.description
     # The admin's read of the proposal: ids and the card's place kept.
     assert read.proposal is not None
     assert [member.freelancer_id for member in read.proposal.team] == [first, second]
-    assert read.proposal.team[0].scheda.luogo == "Torino"
+    assert read.proposal.team[0].card.location == "Torino"
     # One talent per member, in the proposal's order, with their own rate and band.
-    assert [talent.freelancer_id for talent in read.talenti] == [first, second]
-    ada = read.talenti[0]
-    assert (ada.nome, ada.cognome, ada.ruolo) == ("Ada1", "Lovelace1", "Backend developer")
-    assert ada.tariffa_giornaliera == Decimal("450.00")
-    assert ada.fascia == Band(min=500, max=650)  # 450 x 1.4 = 630
-    assert ada.mail_sent_at is None and ada.risposta is None and ada.risposta_at is None
-    assert read.talenti[1].tariffa_giornaliera is None and read.talenti[1].fascia is None
+    assert [talent.freelancer_id for talent in read.talents] == [first, second]
+    ada = read.talents[0]
+    assert (ada.nome, ada.last_name, ada.role) == ("Ada1", "Lovelace1", "Backend developer")
+    assert ada.daily_rate == Decimal("450.00")
+    assert ada.band == Band(min=500, max=650)  # 450 x 1.4 = 630
+    assert ada.mail_sent_at is None and ada.answer is None and ada.answered_at is None
+    assert read.talents[1].daily_rate is None and read.talents[1].band is None
     stored = clean.scalars(
         select(TeamRequestTalent).where(TeamRequestTalent.request_id == read.id)
     ).all()
-    assert {row.ruolo for row in stored} == {"Backend developer", "Designer"}
+    assert {row.role for row in stored} == {"Backend developer", "Designer"}
 
     # The mail is built, not sent: the route sends it after its answer.
     assert mail.to == "ciao@letsrebase.com"
     assert mail.subject == "Nuova richiesta team da Acme S.r.l."
-    assert RIASSUNTO in mail.text
+    assert SUMMARY in mail.text
     assert f"https://letsrebase.com/hub/admin/team/{read.id}" in mail.text
     assert mail.html is not None and f"/admin/team/{read.id}" in mail.html
     # It names no talent: the names are on the request's page, behind the admin cookie.
-    for talent in read.talenti:
-        assert talent.cognome not in mail.text and talent.cognome not in mail.html
+    for talent in read.talents:
+        assert talent.last_name not in mail.text and talent.last_name not in mail.html
     assert "Lovelace" not in mail.text + mail.html
 
     [(event, _, properties)] = capture.calls
-    assert event == TEAM_REQUEST_SENT == "team_richiesta_inviata"
-    assert properties == {"origine": "pubblico", "$process_person_profile": False}
+    assert event == TEAM_REQUEST_SENT == "team_request_sent"
+    assert properties == {"origin": "public", "$process_person_profile": False}
 
 
 def test_the_mail_of_a_single_talent_request_names_the_talent(clean: Session) -> None:
     """`request_mail` is what the cloud's «Richiedi» (D3) reuses: a request of one
     talent and no proposal says who was asked, in place of a summary."""
     talent = _talent(clean, 1)
-    row = TeamRequest(origine="cloud", azienda="Acme", email="wile@acme.it", stato="nuova")
+    row = TeamRequest(origin="cloud", company="Acme", email="wile@acme.it", status="new")
     clean.add(row)
     clean.flush()
-    clean.add(TeamRequestTalent(request_id=row.id, freelancer_id=talent, ruolo="Backend"))
+    clean.add(TeamRequestTalent(request_id=row.id, freelancer_id=talent, role="Backend"))
     clean.commit()
     service = _service(clean)
 
@@ -331,8 +329,8 @@ def test_request_refuses_an_old_proposal(clean: Session) -> None:
 def test_request_refuses_a_proposal_of_another_origin_or_none(clean: Session) -> None:
     talent = _talent(clean, 1)
     owner = _user(clean, "referente@acme.it")
-    cloud = _proposal(clean, [talent], origine="cloud", user_id=owner)
-    admin = _proposal(clean, [talent], origine="admin", user_id=owner)
+    cloud = _proposal(clean, [talent], origin="cloud", user_id=owner)
+    admin = _proposal(clean, [talent], origin="admin", user_id=owner)
     service = _service(clean)
 
     for proposal_id in (cloud, admin, UUID("00000000-0000-7000-8000-000000000000")):
@@ -341,16 +339,16 @@ def test_request_refuses_a_proposal_of_another_origin_or_none(clean: Session) ->
         assert refused.value.details["reason"] == PROPOSAL_REFUSED
     # The cloud's own request (D3) takes only its own user's cloud proposal.
     with pytest.raises(ValidationFailed):
-        service.create(_data(cloud), origine="cloud", user_id=None, company_id=None)
+        service.create(_data(cloud), origin="cloud", user_id=None, company_id=None)
     assert clean.scalars(select(TeamRequest)).all() == []
 
 
 def test_request_refuses_an_attempt_that_got_no_proposal(clean: Session) -> None:
-    """0028: a row with `errore` is an ask Claude never answered; its id never left the
+    """0028: a row with `error` is an ask Claude never answered; its id never left the
     hub, and «Assumi team» on it is refused as on a proposal that does not exist."""
-    attempt = _proposal(clean, [_talent(clean, 1)], model="", riassunto="")
+    attempt = _proposal(clean, [_talent(clean, 1)], model="", summary="")
     clean.execute(
-        update(TeamProposal).where(TeamProposal.id == attempt).values(errore="llm_unavailable")
+        update(TeamProposal).where(TeamProposal.id == attempt).values(error="llm_unavailable")
     )
     clean.commit()
     with pytest.raises(ValidationFailed) as refused:
@@ -361,7 +359,7 @@ def test_request_refuses_an_attempt_that_got_no_proposal(clean: Session) -> None
 
 
 def test_request_refuses_a_proposal_with_nobody(clean: Session) -> None:
-    empty = _proposal(clean, [], model="", riassunto="Al momento nessun profilo corrisponde.")
+    empty = _proposal(clean, [], model="", summary="Al momento nessun profilo corrisponde.")
     with pytest.raises(ValidationFailed) as refused:
         _public(_service(clean), empty)
 
@@ -386,7 +384,7 @@ def test_request_asks_only_whom_the_proposal_still_shows(
     no_card = _talent(clean, 4)
     bad_card = _talent(clean, 5)
     proposal_id = _proposal(clean, [kept, turned_down, deleted, no_card, bad_card])
-    clean.execute(update(Freelancer).where(Freelancer.id == turned_down).values(stato="scartato"))
+    clean.execute(update(Freelancer).where(Freelancer.id == turned_down).values(status="discarded"))
     clean.execute(update(Freelancer).where(Freelancer.id == deleted).values(deleted_at=NOW))
     clean.execute(text("DELETE FROM freelancer_cards WHERE freelancer_id = :id"), {"id": no_card})
     # An object, so `cloud_visible` keeps it, but not a card: the read leaves it out.
@@ -399,11 +397,11 @@ def test_request_asks_only_whom_the_proposal_still_shows(
 
     read = _public(_service(clean), proposal_id)
 
-    assert [talent.freelancer_id for talent in read.talenti] == [kept]
+    assert [talent.freelancer_id for talent in read.talents] == [kept]
     for position in (2, 3, 4, 5):
         assert f"member {position} is no longer in the catalogue" in logs.text
 
-    clean.execute(update(Freelancer).where(Freelancer.id == kept).values(stato="scartato"))
+    clean.execute(update(Freelancer).where(Freelancer.id == kept).values(status="discarded"))
     clean.commit()
     alone = _proposal(clean, [kept])
     with pytest.raises(ValidationFailed) as refused:
@@ -415,7 +413,7 @@ def test_request_logs_a_summary_that_names_the_company(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
     proposal_id = _proposal(
-        clean, [_talent(clean, 1)], riassunto="ACME rifà il gestionale degli ordini."
+        clean, [_talent(clean, 1)], summary="ACME rifà il gestionale degli ordini."
     )
 
     read = _public(_service(clean), proposal_id)
@@ -434,7 +432,7 @@ def test_request_logs_a_summary_that_names_the_company(
 
 
 @pytest.mark.parametrize(
-    ("riassunto", "azienda", "expected"),
+    ("summary", "company", "expected"),
     [
         ("Acme rifà il gestionale.", "Acme S.r.l.", True),
         ("Un'azienda rifà il gestionale per ACME.", "Acme S.r.l.", True),
@@ -467,16 +465,16 @@ def test_request_logs_a_summary_that_names_the_company(
         ("IBM Italia lancia un progetto.", "IBM Italia S.r.l.", True),
     ],
 )
-def test_names_the_company_words(riassunto: str, azienda: str, expected: bool) -> None:
-    assert names_the_company(riassunto, azienda) is expected
+def test_names_the_company_words(summary: str, company: str, expected: bool) -> None:
+    assert names_the_company(summary, company) is expected
 
 
 def test_team_request_mail_escapes_what_the_visitor_typed() -> None:
     mail = team_request_mail(
         "ciao@letsrebase.com",
-        azienda="<b>Acme</b> & C.",
-        riassunto="Un gestionale <script>alert(1)</script>.",
-        talento=None,
+        company="<b>Acme</b> & C.",
+        summary="Un gestionale <script>alert(1)</script>.",
+        talent=None,
         url="https://letsrebase.com/hub/admin/team/abc",
     )
 
@@ -488,9 +486,9 @@ def test_team_request_mail_escapes_what_the_visitor_typed() -> None:
 
     single = team_request_mail(
         "ciao@letsrebase.com",
-        azienda="Acme",
-        riassunto=None,
-        talento="Ada Lovelace",
+        company="Acme",
+        summary=None,
+        talent="Ada Lovelace",
         url="https://letsrebase.com/hub/admin/team/abc",
     )
     assert "Ada Lovelace" in single.text
@@ -507,36 +505,36 @@ def test_list_filters_and_pages_by_cursor(clean: Session) -> None:
     middle = _public(service, _proposal(clean, [first]), "Due Srl")
     newest = _public(service, _proposal(clean, [second]), "Tre Srl")
     admin = _user(clean, "ivan@rebase.it", role="admin")
-    service.set_status(middle.id, "contattata", admin)
+    service.set_status(middle.id, "contacted", admin)
     clean.execute(
         update(TeamRequestTalent)
         .where(TeamRequestTalent.request_id == oldest.id, TeamRequestTalent.freelancer_id == first)
-        .values(risposta="si", risposta_at=NOW)
+        .values(answer="si", answered_at=NOW)
     )
     clean.commit()
 
-    page = service.list_recent(stato=None, origine=None, limit=2, cursor=None)
+    page = service.list_recent(status=None, origin=None, limit=2, cursor=None)
     assert [item.id for item in page.items] == [newest.id, middle.id]
     assert page.next_cursor is not None
-    rest = service.list_recent(stato=None, origine=None, limit=2, cursor=page.next_cursor)
+    rest = service.list_recent(status=None, origin=None, limit=2, cursor=page.next_cursor)
     assert [item.id for item in rest.items] == [oldest.id]
     assert rest.next_cursor is None
     [item] = rest.items
-    assert (item.azienda, item.origine, item.stato) == ("Uno Srl", "pubblico", "nuova")
-    assert (item.talenti_totale, item.talenti_si) == (2, 1)
+    assert (item.company, item.origin, item.status) == ("Uno Srl", "public", "new")
+    assert (item.total_talents, item.self_talents) == (2, 1)
     assert item.contacted_at is None
 
-    contacted = service.list_recent(stato="contattata", origine=None, limit=50, cursor=None)
+    contacted = service.list_recent(status="contacted", origin=None, limit=50, cursor=None)
     assert [item.id for item in contacted.items] == [middle.id]
     assert contacted.items[0].contacted_at == NOW
-    public = service.list_recent(stato=None, origine="pubblico", limit=50, cursor=None)
+    public = service.list_recent(status=None, origin="public", limit=50, cursor=None)
     assert len(public.items) == 3
-    assert service.list_recent(stato=None, origine="cloud", limit=50, cursor=None).items == []
+    assert service.list_recent(status=None, origin="cloud", limit=50, cursor=None).items == []
 
     for field, kwargs in (
-        ("stato", {"stato": "aperta", "origine": None, "cursor": None}),
-        ("origine", {"stato": None, "origine": "admin", "cursor": None}),
-        ("cursor", {"stato": None, "origine": None, "cursor": "non-un-cursore"}),
+        ("status", {"status": "aperta", "origin": None, "cursor": None}),
+        ("origin", {"status": None, "origin": "admin", "cursor": None}),
+        ("cursor", {"status": None, "origin": None, "cursor": "non-un-cursore"}),
     ):
         with pytest.raises(ValidationFailed) as refused:
             service.list_recent(limit=10, **kwargs)
@@ -553,16 +551,16 @@ def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
     request = _public(service, _proposal(clean, [_talent(clean, 1)]))
     admin = _user(clean, "ivan@rebase.it", role="admin")
 
-    contacted = service.set_status(request.id, "contattata", admin)
-    assert contacted.stato == "contattata" and contacted.contacted_at == NOW
-    closed = service.set_status(request.id, "chiusa", admin)
-    assert closed.stato == "chiusa" and closed.closed_at == NOW
+    contacted = service.set_status(request.id, "contacted", admin)
+    assert contacted.status == "contacted" and contacted.contacted_at == NOW
+    closed = service.set_status(request.id, "closed", admin)
+    assert closed.status == "closed" and closed.closed_at == NOW
     assert closed.contacted_at == NOW
-    reopened = service.set_status(request.id, "nuova", admin)
+    reopened = service.set_status(request.id, "new", admin)
     assert reopened.closed_at is None and reopened.contacted_at == NOW
     with pytest.raises(ValidationFailed) as refused:
         service.set_status(request.id, "persa", admin)
-    assert refused.value.details["field"] == "stato"
+    assert refused.value.details["field"] == "status"
 
     noted = service.set_note(request.id, "  Richiamare lunedì.  ", admin)
     assert noted.note == "Richiamare lunedì."
@@ -575,20 +573,20 @@ def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
     assert NAMES_THE_COMPANY == (
         "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
     )
-    assert service.get(request.id).riassunto == RIASSUNTO
+    assert service.get(request.id).summary == SUMMARY
 
     summary = "Un'azienda di logistica rifà il gestionale: backend Python, sei mesi."
     edited = service.set_summary(request.id, summary, admin)
-    assert edited.riassunto == summary
-    assert edited.proposal is not None and edited.proposal.riassunto == summary
+    assert edited.summary == summary
+    assert edited.proposal is not None and edited.proposal.summary == summary
     clean.expire_all()
     assert request.proposal is not None
     proposal = clean.get(TeamProposal, request.proposal.id)
-    assert proposal is not None and proposal.riassunto == summary
+    assert proposal is not None and proposal.summary == summary
 
     # The same value again is not a change, and records nothing.
     service.set_summary(request.id, summary, admin)
-    service.set_status(request.id, "nuova", admin)
+    service.set_status(request.id, "new", admin)
 
     # `id` after `created_at` keeps the order a statement about insertion (ids are UUIDv7),
     # never about the plan, as `_contacts` and `test_team_builder._rows` do (REB-661).
@@ -599,30 +597,30 @@ def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
     assert {action.entity_id for action in actions} == {request.id}
     assert {action.admin_id for action in actions} == {admin}
     assert {action.kind for action in actions} == {"overridden"}
-    # `before` and `after` on every row, not `changed` alone: three `["stato"]` and two
+    # `before` and `after` on every row, not `changed` alone: three `["status"]` and two
     # `["note"]` entries would pass with the rows of either group swapped (REB-673).
     assert [
         (action.payload["changed"], action.payload["before"], action.payload["after"])
         for action in actions
     ] == [
-        (["stato"], {"stato": "nuova"}, {"stato": "contattata"}),
-        (["stato"], {"stato": "contattata"}, {"stato": "chiusa"}),
-        (["stato"], {"stato": "chiusa"}, {"stato": "nuova"}),
+        (["status"], {"status": "new"}, {"status": "contacted"}),
+        (["status"], {"status": "contacted"}, {"status": "closed"}),
+        (["status"], {"status": "closed"}, {"status": "new"}),
         (["note"], {"note": None}, {"note": "Richiamare lunedì."}),
         (["note"], {"note": "Richiamare lunedì."}, {"note": None}),
-        (["riassunto"], {"riassunto": RIASSUNTO}, {"riassunto": summary}),
+        (["summary"], {"summary": SUMMARY}, {"summary": summary}),
     ]
 
 
 def test_summary_of_a_request_with_no_proposal_is_refused(clean: Session) -> None:
     admin = _user(clean, "ivan@rebase.it", role="admin")
-    row = TeamRequest(origine="cloud", azienda="Acme", email="wile@acme.it", stato="nuova")
+    row = TeamRequest(origin="cloud", company="Acme", email="wile@acme.it", status="new")
     clean.add(row)
     clean.commit()
 
     service = _service(clean)
     read = service.get(row.id)
-    assert read.proposal is None and read.riassunto is None and read.descrizione is None
+    assert read.proposal is None and read.summary is None and read.description is None
     with pytest.raises(InvalidState):
         service.set_summary(row.id, "Un riassunto.", admin)
 
@@ -660,10 +658,10 @@ def _mailer(
     )
 
 
-def _token(mail: Mail, risposta: str = "si") -> str:
-    """The raw token in the mail's link for `risposta`, on the hub's own origin."""
+def _token(mail: Mail, answer: str = "si") -> str:
+    """The raw token in the mail's link for `answer`, on the hub's own origin."""
     found = re.search(
-        rf"https://letsrebase\.com/hub/team/risposta\?t=([A-Za-z0-9_-]+)&r={risposta}\n",
+        rf"https://letsrebase\.com/hub/team/risposta\?t=([A-Za-z0-9_-]+)&r={answer}\n",
         mail.text,
     )
     assert found, mail.text
@@ -698,8 +696,8 @@ def _contacts(session: Session) -> list[dict[str, Any]]:
 
 
 def test_contact_mails_every_talent_once(clean: Session) -> None:
-    first = _talent(clean, 1, tariffa=Decimal("450.00"))
-    second = _talent(clean, 2, tariffa=None)
+    first = _talent(clean, 1, rate=Decimal("450.00"))
+    second = _talent(clean, 2, rate=None)
     request = _public(
         _service(clean), _proposal(clean, [first, second], roles=["Backend developer", "Designer"])
     )
@@ -708,19 +706,19 @@ def test_contact_mails_every_talent_once(clean: Session) -> None:
 
     read = _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
 
-    assert read.stato == "contattata" and read.contacted_at == NOW
-    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, NOW]
-    assert [talent.risposta for talent in read.talenti] == [None, None]
+    assert read.status == "contacted" and read.contacted_at == NOW
+    assert [talent.mail_sent_at for talent in read.talents] == [NOW, NOW]
+    assert [talent.answer for talent in read.talents] == [None, None]
     ada, bea = sender.sent
     assert (ada.to, bea.to) == ("talento1@studio.it", "talento2@studio.it")
     for mail in (ada, bea):
         assert mail.subject == "Un progetto per te: sei disponibile?"
-        assert RIASSUNTO in mail.text
+        assert SUMMARY in mail.text
         assert mail.html is not None
         # One token per talent, behind both answers.
         assert _token(mail, "si") == _token(mail, "no")
         # No company and never the client's band: the talent reads their own rate.
-        for secret in ("Acme", "wile@acme.it", Band(min=500, max=650).label(), "fascia"):
+        for secret in ("Acme", "wile@acme.it", Band(min=500, max=650).label(), "band"):
             assert secret not in mail.text and secret not in mail.html, secret
     assert ada.text.startswith("Ciao Ada1,") and "Backend developer" in ada.text
     assert "450 € al giorno" in ada.text
@@ -745,7 +743,7 @@ def test_contact_mails_every_talent_once(clean: Session) -> None:
     )
     assert len(sender.sent) == 2
     assert _row(clean, request.id, first).token_hash == _sha256(_token(ada))
-    assert _contacts(clean) == [{"talenti": 2, "only_silent": False}]
+    assert _contacts(clean) == [{"talents": 2, "only_silent": False}]
     [action] = clean.scalars(select(AdminAction).where(AdminAction.kind == "talents_contacted"))
     assert (action.entity_type, action.entity_id, action.admin_id) == (
         "team_request",
@@ -773,8 +771,8 @@ def test_contact_only_silent(clean: Session) -> None:
     [again] = sender.sent[3:]
     assert again.to == "talento2@studio.it"
     assert _token(again) != _token(second)
-    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, later, NOW]
-    assert [talent.risposta for talent in read.talenti] == ["si", None, "no"]
+    assert [talent.mail_sent_at for talent in read.talents] == [NOW, later, NOW]
+    assert [talent.answer for talent in read.talents] == ["si", None, "no"]
     assert read.contacted_at == NOW  # the first send's
     # The new link spent the old one, and answers.
     assert service.answer(_token(second), "si") == "invalid"
@@ -787,8 +785,8 @@ def test_contact_only_silent(clean: Session) -> None:
     assert nobody.value.message == NOBODY_TO_CONTACT == "Non c'è nessun talento da contattare."
     assert len(sender.sent) == 4
     assert _contacts(clean) == [
-        {"talenti": 3, "only_silent": False},
-        {"talenti": 1, "only_silent": True},
+        {"talents": 3, "only_silent": False},
+        {"talents": 1, "only_silent": True},
     ]
 
 
@@ -799,7 +797,7 @@ def test_contact_skips_a_talent_gone_since_the_request(
     request = _public(_service(clean), _proposal(clean, talents))
     admin = _user(clean, "ivan@rebase.it", role="admin")
     clean.execute(update(Freelancer).where(Freelancer.id == talents[1]).values(deleted_at=NOW))
-    clean.execute(update(Freelancer).where(Freelancer.id == talents[2]).values(stato="scartato"))
+    clean.execute(update(Freelancer).where(Freelancer.id == talents[2]).values(status="discarded"))
     clean.commit()
     sender = RecordingSender()
     service = _mailer(clean, sender)
@@ -807,9 +805,9 @@ def test_contact_skips_a_talent_gone_since_the_request(
     read = service.contact_talents(request.id, admin, only_silent=False)
 
     assert [mail.to for mail in sender.sent] == ["talento1@studio.it"]
-    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, None, None]
+    assert [talent.mail_sent_at for talent in read.talents] == [NOW, None, None]
     # The page reads who can be written to at all.
-    assert [talent.contattabile for talent in read.talenti] == [True, False, False]
+    assert [talent.contactable for talent in read.talents] == [True, False, False]
     for gone in talents[1:]:
         assert _row(clean, request.id, gone).token_hash is None
     lines = [record.getMessage() for record in logs.records]
@@ -832,7 +830,7 @@ def test_contact_refuses_a_summary_that_names_the_company(clean: Session) -> Non
     talent = _talent(clean, 1)
     request = _public(
         _service(clean),
-        _proposal(clean, [talent], riassunto="ACME rifà il gestionale degli ordini."),
+        _proposal(clean, [talent], summary="ACME rifà il gestionale degli ordini."),
     )
     admin = _user(clean, "ivan@rebase.it", role="admin")
     sender = RecordingSender()
@@ -843,7 +841,7 @@ def test_contact_refuses_a_summary_that_names_the_company(clean: Session) -> Non
     assert refused.value.message == NAMES_THE_COMPANY
     assert sender.sent == []
     read = _service(clean).get(request.id)
-    assert read.stato == "nuova" and read.contacted_at is None
+    assert read.status == "new" and read.contacted_at is None
     assert _row(clean, request.id, talent).token_hash is None
     assert _contacts(clean) == []
 
@@ -866,7 +864,7 @@ def test_contact_needs_a_sender_and_an_open_request(clean: Session) -> None:
         )
     assert unsent.value.message == NO_SENDER
 
-    _service(clean).set_status(request.id, "chiusa", admin)
+    _service(clean).set_status(request.id, "closed", admin)
     sender = RecordingSender()
     with pytest.raises(InvalidState) as closed:
         _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
@@ -879,7 +877,7 @@ def test_contact_needs_a_sender_and_an_open_request(clean: Session) -> None:
         _mailer(clean).contact_talents(MISSING, admin, only_silent=False)
 
 
-def test_a_refused_mail_leaves_no_link_and_rimanda_tries_again(
+def test_to_refused_mail_leaves_no_link_and_snooze_tries_again(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
     first, second = _talent(clean, 1), _talent(clean, 2)
@@ -889,9 +887,9 @@ def test_a_refused_mail_leaves_no_link_and_rimanda_tries_again(
 
     read = _mailer(clean, refusing).contact_talents(request.id, admin, only_silent=False)
 
-    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, None]
+    assert [talent.mail_sent_at for talent in read.talents] == [NOW, None]
     # One mail left, so the request was contacted.
-    assert read.stato == "contattata" and read.contacted_at == NOW
+    assert read.status == "contacted" and read.contacted_at == NOW
     assert _row(clean, request.id, second).token_hash is None
     assert _mailer(clean).answer(_token(refusing.sent[1]), "si") == "invalid"
     [warning] = [
@@ -923,8 +921,8 @@ def test_a_first_send_refused_whole_leaves_the_request_as_it_was(
         request.id, admin, only_silent=False
     )
 
-    assert read.stato == "nuova" and read.contacted_at is None
-    assert [talent.mail_sent_at for talent in read.talenti] == [None, None]
+    assert read.status == "new" and read.contacted_at is None
+    assert [talent.mail_sent_at for talent in read.talents] == [None, None]
     undone = [line for line in (r.getMessage() for r in logs.records) if "again" in line]
     assert undone == [
         f"team request {request.id}: no availability mail left, the request is nuova again"
@@ -932,26 +930,26 @@ def test_a_first_send_refused_whole_leaves_the_request_as_it_was(
     retried = RecordingSender()
     again = _mailer(clean, retried).contact_talents(request.id, admin, only_silent=False)
     assert [mail.to for mail in retried.sent] == ["talento1@studio.it", "talento2@studio.it"]
-    assert again.stato == "contattata" and again.contacted_at == NOW
+    assert again.status == "contacted" and again.contacted_at == NOW
 
     # A request reopened by hand keeps the `contacted_at` it already had: only the state
     # this send moved goes back.
     reopened = _public(_service(clean), _proposal(clean, [_talent(clean, 3)]), "Tre Srl")
-    _service(clean).set_status(reopened.id, "contattata", admin)
-    _service(clean).set_status(reopened.id, "nuova", admin)
+    _service(clean).set_status(reopened.id, "contacted", admin)
+    _service(clean).set_status(reopened.id, "new", admin)
     later = NOW + timedelta(days=1)
     read = _mailer(clean, Refusing("talento3@studio.it"), now=later).contact_talents(
         reopened.id, admin, only_silent=False
     )
-    assert read.stato == "nuova" and read.contacted_at == NOW
+    assert read.status == "new" and read.contacted_at == NOW
 
 
-def test_a_first_send_refused_whole_after_a_rimanda_left_keeps_the_request_contacted(
+def test_to_first_send_refused_whole_after_to_snooze_left_keeps_the_request_contacted(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
     """«Contatta i talenti», then «Rimanda» before the first batch's mails leave: the
     second batch is delivered, the first is refused whole. The talents have the second
-    batch's mail, so the request was contacted: it stays `contattata` with its
+    batch's mail, so the request was contacted: it stays `contacted` with its
     `contacted_at`, and the second batch's links still answer."""
     talents = [_talent(clean, 1), _talent(clean, 2)]
     request = _public(_service(clean), _proposal(clean, talents))
@@ -967,8 +965,8 @@ def test_a_first_send_refused_whole_after_a_rimanda_left_keeps_the_request_conta
 
     clean.expire_all()
     read = _service(clean).get(request.id)
-    assert read.stato == "contattata" and read.contacted_at == NOW
-    assert [talent.mail_sent_at for talent in read.talenti] == [later, later]
+    assert read.status == "contacted" and read.contacted_at == NOW
+    assert [talent.mail_sent_at for talent in read.talents] == [later, later]
     assert "again" not in " ".join(record.getMessage() for record in logs.records)
     assert _mailer(clean, now=later).answer(_token(delivered.sent[0]), "si") == "si"
 
@@ -987,18 +985,18 @@ def test_availability_records_yes_and_no(clean: Session) -> None:
     assert service.answer(_token(sender.sent[1], "no"), "no") == "no"
 
     read = service.requests.get(request.id)
-    assert [(talent.risposta, talent.risposta_at) for talent in read.talenti] == [
+    assert [(talent.answer, talent.answered_at) for talent in read.talents] == [
         ("si", later),
         ("no", later),
     ]
-    [item] = service.requests.list_recent(stato=None, origine=None).items
-    assert (item.talenti_totale, item.talenti_si) == (2, 1)
+    [item] = service.requests.list_recent(status=None, origin=None).items
+    assert (item.total_talents, item.self_talents) == (2, 1)
     # Counted with the answer alone: no talent, no request, no address.
     assert [(event, properties) for event, _, properties in capture.calls] == [
-        (TEAM_TALENT_ANSWER, {"risposta": "si", "$process_person_profile": False}),
-        (TEAM_TALENT_ANSWER, {"risposta": "no", "$process_person_profile": False}),
+        (TEAM_TALENT_ANSWER, {"answer": "si", "$process_person_profile": False}),
+        (TEAM_TALENT_ANSWER, {"answer": "no", "$process_person_profile": False}),
     ]
-    assert TEAM_TALENT_ANSWER == "team_talento_risposta"
+    assert TEAM_TALENT_ANSWER == "team_talent_answer"
 
 
 def test_availability_token_is_one_use_and_expires(clean: Session) -> None:
@@ -1014,7 +1012,7 @@ def test_availability_token_is_one_use_and_expires(clean: Session) -> None:
     # Spent: another answer, the same or the other, is refused and changes nothing.
     assert service.answer(ada, "no") == "invalid"
     assert service.answer(ada, "si") == "invalid"
-    assert _row(clean, request.id, talents[0]).risposta == "si"
+    assert _row(clean, request.id, talents[0]).answer == "si"
     # An unknown or an empty token is the same refusal.
     assert service.answer("non-un-token", "si") == "invalid"
     assert service.answer("", "no") == "invalid"
@@ -1023,11 +1021,11 @@ def test_availability_token_is_one_use_and_expires(clean: Session) -> None:
     last = NOW + ANSWER_MAX_AGE - timedelta(seconds=1)
     assert _mailer(clean, now=last).answer(bea, "no") == "no"
     assert _mailer(clean, now=NOW + ANSWER_MAX_AGE).answer(cleo, "si") == "invalid"
-    assert _row(clean, request.id, talents[2]).risposta is None
+    assert _row(clean, request.id, talents[2]).answer is None
 
     with pytest.raises(ValidationFailed) as unknown:
         service.answer(cleo, "forse")
-    assert unknown.value.details["field"] == "risposta"
+    assert unknown.value.details["field"] == "answer"
 
 
 def _contrast_with_white(colour: str) -> float:
@@ -1049,9 +1047,9 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
     mail = team_availability_mail(
         "ada@studio.it",
         nome="Ada",
-        ruolo="Backend <developer>",
-        riassunto="Un gestionale <script>alert(1)</script>.",
-        tariffa=Decimal("1450.50"),
+        role="Backend <developer>",
+        summary="Un gestionale <script>alert(1)</script>.",
+        rate=Decimal("1450.50"),
         yes_url=yes,
         no_url=no,
     )
@@ -1084,9 +1082,9 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
     unrated = team_availability_mail(
         "ada@studio.it",
         nome="Ada",
-        ruolo="Designer",
-        riassunto=None,
-        tariffa=None,
+        role="Designer",
+        summary=None,
+        rate=None,
         yes_url=yes,
         no_url=no,
     )
@@ -1095,9 +1093,9 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
     whole = team_availability_mail(
         "ada@studio.it",
         nome="",
-        ruolo="Designer",
-        riassunto="Un gestionale.",
-        tariffa=Decimal("450.00"),
+        role="Designer",
+        summary="Un gestionale.",
+        rate=Decimal("450.00"),
         yes_url=yes,
         no_url=no,
     )
@@ -1108,9 +1106,9 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
 
 
 def _paid(
-    session: Session, created_at: datetime, *, origine: str = "pubblico", model: str = MODEL
+    session: Session, created_at: datetime, *, origin: str = "public", model: str = MODEL
 ) -> None:
-    _proposal(session, [], origine=origine, created_at=created_at, model=model)
+    _proposal(session, [], origin=origin, created_at=created_at, model=model)
 
 
 def test_the_daily_cap_counts_paid_proposals_since_midnight_in_rome(clean: Session) -> None:
@@ -1118,11 +1116,11 @@ def test_the_daily_cap_counts_paid_proposals_since_midnight_in_rome(clean: Sessi
     now = datetime(2026, 9, 25, 22, 30, tzinfo=UTC)
     midnight = datetime(2026, 9, 25, 22, 0, tzinfo=UTC)
     _paid(clean, midnight)
-    _paid(clean, midnight + timedelta(minutes=10), origine="cloud")
+    _paid(clean, midnight + timedelta(minutes=10), origin="cloud")
     _paid(clean, midnight - timedelta(seconds=1))  # yesterday in Rome
     _paid(clean, midnight + timedelta(minutes=5), model="")  # an empty catalogue: no call
     owner = _user(clean, "ivan@rebase.it", role="admin")
-    _proposal(clean, [], origine="admin", user_id=owner, created_at=midnight)
+    _proposal(clean, [], origin="admin", user_id=owner, created_at=midnight)
 
     assert proposals_today(clean, now=now) == 2
 
@@ -1155,31 +1153,31 @@ def test_the_caps_have_their_defaults_and_reach_the_container() -> None:
 # ---- the referral code a public request carries (REB-600) --------------------------
 
 
-def _filed_with(session: Session, rif: str | None) -> TeamRequest:
+def _filed_with(session: Session, ref: str | None) -> TeamRequest:
     members = [_talent(session, 1)]
     proposal_id = _proposal(session, members)
     data = TeamRequestCreate(
         proposal_id=proposal_id,
-        azienda=AZIENDA,
+        company=LEGAL_ENTITY,
         email="wile@acme.it",
-        telefono="+39 345 1234567",
-        rif=rif,  # type: ignore[arg-type]
+        phone="+39 345 1234567",
+        ref=ref,  # type: ignore[arg-type]
     )
-    read, _ = _service(session).create(data, origine="pubblico", user_id=None, company_id=None)
+    read, _ = _service(session).create(data, origin="public", user_id=None, company_id=None)
     return session.get_one(TeamRequest, read.id)
 
 
-def test_a_public_request_keeps_the_rif_and_credits_nobody(clean: Session) -> None:
+def test_to_public_request_keeps_the_ref_and_credits_nobody(clean: Session) -> None:
     row = _filed_with(clean, "ABCDEFGH23")
 
-    assert row.rif == "ABCDEFGH23"
+    assert row.ref == "ABCDEFGH23"
     assert clean.scalar(select(Referral)) is None
 
 
 @pytest.mark.parametrize("raw", ["not a code!!", "WAYTOOLONGACODE", "   ", ""])
-def test_a_rif_that_is_not_a_code_is_no_code_and_never_a_422(clean: Session, raw: str) -> None:
-    assert _filed_with(clean, raw).rif is None
+def test_to_ref_that_is_not_to_code_is_no_code_and_never_to_422(clean: Session, raw: str) -> None:
+    assert _filed_with(clean, raw).ref is None
 
 
-def test_a_request_without_rif_stores_none(clean: Session) -> None:
-    assert _filed_with(clean, None).rif is None
+def test_to_request_without_ref_stores_none(clean: Session) -> None:
+    assert _filed_with(clean, None).ref is None

@@ -48,8 +48,8 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("POST", "/api/hub/documenso/webhook"): (PUBLIC, "Documenso's webhook: the shared secret"),
     ("POST", "/api/hub/webhooks/resend"): (PUBLIC, "Resend's webhook: the Svix signature"),
     ("GET", "/api/hub/referral-rates"): (PUBLIC, "the rates the landing and the guide show"),
-    ("GET", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the unsubscribe page's token read"),
-    ("POST", "/api/hub/campagne/disiscrizione"): (PUBLIC, "the unsubscribe's one click"),
+    ("GET", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe page's token read"),
+    ("POST", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe's one click"),
     # --- signing in
     ("POST", "/api/hub/auth/link"): (PUBLIC, "asks a magic link, behind spend_one"),
     ("POST", "/api/hub/auth/enter"): (PUBLIC, "spends a magic link, behind spend_one"),
@@ -167,7 +167,7 @@ def test_admin_routes_are_401_for_nobody_and_403_for_a_member(
     assert {route: code for route, code in anonymous.items() if code != 401} == {}
 
     # ... then a signed-in member, who is a real identity at the wrong door.
-    guarded.add(User(email="membro@studio.it", nome="Ada", cognome="Membro"))
+    guarded.add(User(email="membro@studio.it", nome="Ada", last_name="Membro"))
     guarded.commit()
     _login(client, sender, "membro@studio.it")
     member = {route: client.request(route[0], _url(route[1])).status_code for route in ADMIN_ROUTES}

@@ -29,7 +29,7 @@ describe('the Home notice', () => {
     expect(await screen.findByRole('heading', { name: '3 proposte da rivedere' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Rivedi le proposte/ })).toHaveAttribute('href', '/app/proposals')
     expect(api.GET).toHaveBeenCalledWith('/api/proposals', {
-      params: { query: { stato: 'in_attesa', ordine: 'arrivo', limit: 200 } },
+      params: { query: { status: 'pending', order: 'arrival', limit: 200 } },
     })
   })
 
@@ -49,7 +49,7 @@ describe('the Home notice', () => {
   it('is not drawn for an empty queue, once the empty answer is in', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok({ items: [] }) as never)
     const client = renderWithQuery(<PendingProposalsNotice />)
-    await waitFor(() => expect(client.getQueryState(queryKeys.proposals('in_attesa'))?.status).toBe('success'))
+    await waitFor(() => expect(client.getQueryState(queryKeys.proposals('pending'))?.status).toBe('success'))
     expect(screen.queryByRole('heading')).toBeNull()
   })
 
@@ -67,7 +67,7 @@ describe('the Home notice', () => {
       refused(500, { title: 'x', status: 500, detail: 'boom', code: 'internal', instance: '/' }) as never,
     )
     const client = renderWithQuery(<PendingProposalsNotice />)
-    await waitFor(() => expect(client.getQueryState(queryKeys.proposals('in_attesa'))?.status).toBe('error'))
+    await waitFor(() => expect(client.getQueryState(queryKeys.proposals('pending'))?.status).toBe('error'))
     expect(screen.queryByRole('heading')).toBeNull()
   })
 })

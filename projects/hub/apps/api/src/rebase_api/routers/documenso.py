@@ -16,7 +16,7 @@ mails, the letters a framework agreement releases) runs after the response, in a
 of its own (`SigningRecovery.finish`). A completion is not moved by `apply`: the secret
 above travels in clear, so a `DOCUMENT_COMPLETED` only tells `apply` which document to
 hand to `finish`, which confirms it with Documenso itself, over the hub's own API token,
-before it counts as `firmato` (REB-431) -- a forged event then needs the token too.
+before it counts as `signed` (REB-431) -- a forged event then needs the token too.
 Every well-formed delivery is answered 200, handled or not, so Documenso never retries
 an event the hub chose to ignore. A delivery the hub missed entirely is recovered by an
 admin's «Aggiorna stato», or, unattended, by `rebase contracts-sweep`.

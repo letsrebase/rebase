@@ -37,9 +37,9 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
 
   // The stored order moved (a refetch after a change made elsewhere): every field the
   // person has not edited follows it, the ones they typed in keep their text.
-  const { ordine_numero, ordine_data, ordine_cig, ordine_cup } = invoice
+  const { purchase_order_number, purchase_order_date, purchase_order_tender_code, purchase_order_project_code } = invoice
   useEffect(() => {
-    const stored = purchaseOrderDraft({ ordine_numero, ordine_data, ordine_cig, ordine_cup })
+    const stored = purchaseOrderDraft({ purchase_order_number, purchase_order_date, purchase_order_tender_code, purchase_order_project_code })
     setDraft((current) => {
       const next = { ...current }
       for (const field of Object.keys(stored) as (keyof PurchaseOrderDraft)[]) {
@@ -47,7 +47,7 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
       }
       return next
     })
-  }, [ordine_numero, ordine_data, ordine_cig, ordine_cup])
+  }, [purchase_order_number, purchase_order_date, purchase_order_tender_code, purchase_order_project_code])
 
   function set(field: keyof PurchaseOrderDraft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -86,9 +86,9 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
           <Label htmlFor="ordine-numero">Numero ordine</Label>
           <Input
             id="ordine-numero"
-            value={draft.ordine_numero}
+            value={draft.purchase_order_number}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_numero', event.target.value)}
+            onChange={(event) => set('purchase_order_number', event.target.value)}
           />
         </div>
         <div className="space-y-2">
@@ -96,27 +96,27 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
           <Input
             id="ordine-data"
             type="date"
-            value={draft.ordine_data}
+            value={draft.purchase_order_date}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_data', event.target.value)}
+            onChange={(event) => set('purchase_order_date', event.target.value)}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="ordine-cig">CIG</Label>
           <Input
             id="ordine-cig"
-            value={draft.ordine_cig}
+            value={draft.purchase_order_tender_code}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_cig', event.target.value)}
+            onChange={(event) => set('purchase_order_tender_code', event.target.value)}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="ordine-cup">CUP</Label>
           <Input
             id="ordine-cup"
-            value={draft.ordine_cup}
+            value={draft.purchase_order_project_code}
             disabled={update.isPending}
-            onChange={(event) => set('ordine_cup', event.target.value)}
+            onChange={(event) => set('purchase_order_project_code', event.target.value)}
           />
         </div>
       </div>

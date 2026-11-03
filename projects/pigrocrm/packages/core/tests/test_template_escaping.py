@@ -488,16 +488,16 @@ def test_the_render_pipeline_closes_the_residual_dash_and_ellipsis_gap(
     settings = Settings(jwt_secret="x" * 32)
     header = build_header(
         {
-            "ragione_sociale": "Test",
-            "partita_iva": "1",
+            "legal_name": "Test",
+            "vat_number": "1",
             "email": "a@b.it",
-            "telefono": "1",
-            "pec": "a@b.it",
-            "sito_web": "b.it",
-            "indirizzo": "via Test 1",
+            "phone": "1",
+            "certified_email": "a@b.it",
+            "website": "b.it",
+            "address": "via Test 1",
             "cap": "00000",
-            "comune": "Roma",
-            "provincia": "RM",
+            "city": "Roma",
+            "province": "RM",
         }
     )
     pdf_bytes = render_pdf(f"{escaped}\n", header_typst=header, settings=settings)
@@ -557,7 +557,7 @@ def test_url_context_makes_the_customers_own_site_a_working_link_for_real(
     uris = _compile_markdown_to_pdf_uris(body, tmp_path)
     assert uris == [real_url]
     text = _compile_markdown_paragraph_to_pdf_text(body, tmp_path)
-    assert "fine" in text
+    assert "end" in text
 
 
 @requires_real_compiler
@@ -574,7 +574,7 @@ def test_url_context_a_non_absolute_value_is_a_safe_but_inert_destination_for_re
     uris = _compile_markdown_to_pdf_uris(body, tmp_path)
     assert uris == [quote(non_url, safe="")]
     text = _compile_markdown_paragraph_to_pdf_text(body, tmp_path)
-    assert "fine" in text
+    assert "end" in text
 
 
 @requires_real_compiler
@@ -601,7 +601,7 @@ def test_url_context_a_trusted_url_with_parens_and_brackets_does_not_break_the_l
     uris = _compile_markdown_to_pdf_uris(body, tmp_path)
     assert uris == ["https://esempio.it/a)b%5D(c"]
     text = _compile_markdown_paragraph_to_pdf_text(body, tmp_path)
-    assert "fine" in text
+    assert "end" in text
 
 
 @requires_real_compiler
@@ -619,7 +619,7 @@ def test_url_context_a_hostile_non_url_value_does_not_break_the_document_for_rea
     uris = _compile_markdown_to_pdf_uris(body, tmp_path)
     assert uris == [quote(hostile, safe="")]
     text = _compile_markdown_paragraph_to_pdf_text(body, tmp_path)
-    assert "fine" in text
+    assert "end" in text
 
 
 @requires_real_compiler

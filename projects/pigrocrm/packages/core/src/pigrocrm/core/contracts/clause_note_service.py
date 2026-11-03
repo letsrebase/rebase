@@ -40,7 +40,7 @@ class ClauseNoteService:
             contract_id,
             "clause_note_added",
             actor,
-            {"riferimento_clausola": note.riferimento_clausola},
+            {"clause_reference": note.clause_reference},
         )
         self.session.commit()
         return ClauseNoteRead.model_validate(note)
@@ -65,7 +65,7 @@ class ClauseNoteService:
             contract_id,
             "clause_note_updated",
             actor,
-            {"riferimento_clausola": note.riferimento_clausola, "changed": sorted(changes)},
+            {"clause_reference": note.clause_reference, "changed": sorted(changes)},
         )
         self.session.commit()
         return ClauseNoteRead.model_validate(note)

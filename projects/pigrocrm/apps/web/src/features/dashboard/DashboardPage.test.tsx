@@ -13,12 +13,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // REB-788: the panels read the role (the estimate is an administrator's), so the tests
 // say which role is signed in; the default is the one that may read everything.
-const session = vi.hoisted(() => ({ ruolo: 'admin' as 'admin' | 'collaboratore' | 'readonly' }))
+const session = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'collaborator' | 'readonly' }))
 vi.mock('@/lib/auth', async () => {
   const { can } = await import('@/lib/permissions')
   return {
-    useAuth: () => ({ user: { id: 'u-1', ruolo: session.ruolo } }),
-    useCan: (action: Parameters<typeof can>[1]) => can(session.ruolo, action),
+    useAuth: () => ({ user: { id: 'u-1', role: session.role } }),
+    useCan: (action: Parameters<typeof can>[1]) => can(session.role, action),
   }
 })
 import { DashboardPage } from './DashboardPage'
@@ -38,77 +38,77 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const EMPTY_DASHBOARD = {
-  periodo: { da: '2026-03-01', a: '2026-03-31' },
-  calcolato_alle: '2026-03-15T10:00:00Z',
+  period: { da: '2026-03-01', a: '2026-03-31' },
+  calculated_at: '2026-03-15T10:00:00Z',
   pipeline: [],
-  chiusure: { vinti: 0, persi: 0, valore_vinto: '0.00', tasso_conversione: null },
-  offerte_in_attesa: [],
-  offerte_in_attesa_totale: 0,
-  chiusure_previste_30_giorni: 0,
-  chiusure_non_attribuibili: 0,
-  offerte_accettate_deal_non_vinto: 0,
+  closings: { won: 0, lost: 0, won_value: '0.00', conversion_rate: null },
+  offers_pending: [],
+  offers_pending_total: 0,
+  expected_closings_30_days: 0,
+  closings_not_attributable: 0,
+  accepted_offers_deal_not_won: 0,
 }
 
 
 const EMPTY_OVERVIEW = {
-  calcolato_alle: '2026-03-15T10:00:00Z',
-  cassa: {
-    anno: 2026,
-    incassato: '0.00',
-    da_incassare: '0.00',
-    bozze: '0.00',
-    proiettato: '0.00',
-    costi: '0.00',
-    lordo_effettivo: '0.00',
-    lordo_proiettato: '0.00',
-    mesi: [],
-    base: 'competenza',
+  calculated_at: '2026-03-15T10:00:00Z',
+  pension_fund: {
+    year: 2026,
+    paid: '0.00',
+    unpaid: '0.00',
+    drafts: '0.00',
+    projected: '0.00',
+    costs: '0.00',
+    actual_gross: '0.00',
+    projected_gross: '0.00',
+    months: [],
+    base: 'accrual',
   },
-  fiscale: null,
-  fiscale_proiettato: null,
-  concentrazione_clienti: [],
-  netto_effettivo: null,
-  netto_proiettato: null,
+  tax: null,
+  projected_tax: null,
+  customer_concentration: [],
+  actual_net: null,
+  projected_net: null,
 }
 
 
 const EMPTY_ESTIMATE = {
-  anno: 2026,
-  stima: true,
-  avvertenza: 'Stima indicativa.',
-  ricavi: '0.00',
-  coefficiente_redditivita: null,
-  imponibile: null,
-  aliquota_imposta_sostitutiva: null,
-  imposta_sostitutiva: null,
-  aliquota_inps: null,
-  contributi: null,
-  reddito_netto_stimato: null,
+  year: 2026,
+  estimate: true,
+  warning: 'Stima indicativa.',
+  revenue: '0.00',
+  profitability_coefficient: null,
+  taxable_amount: null,
+  substitute_tax_rate: null,
+  substitute_tax: null,
+  social_security_rate: null,
+  contributions: null,
+  estimated_net_income: null,
 }
 
 /** One mock for every endpoint the tabs read: which tab is mounted decides which are
  *  called. The economic one reads two -- the overview behind its cards and the estimate
  *  behind the «Stima fiscale» card under them. */
 const EMPTY_RECEIVABLES = {
-  calcolato_alle: '2026-03-15T10:00:00Z',
-  oggi: '2026-03-15',
-  totale: '0.00',
-  fasce: [],
-  per_mese: [],
-  per_cliente: [],
-  scadute: [],
-  scadute_totale: 0,
+  calculated_at: '2026-03-15T10:00:00Z',
+  today: '2026-03-15',
+  total: '0.00',
+  bands: [],
+  by_month: [],
+  by_customer: [],
+  overdue: [],
+  total_overdue: 0,
 }
 
 const EMPTY_YEAR = {
-  anno: 2026,
-  azienda_id: 'a1',
-  azienda_nome: 'Studio Rossi',
-  totali: { fatture: 0, imponibile: '0.00', rivalsa: '0.00', bollo: '0.00', totale: '0.00' },
-  regimi: [],
-  trattamenti: [],
-  registro: [],
-  annullate: 0,
+  year: 2026,
+  legal_entity_id: 'a1',
+  legal_entity_name: 'Studio Rossi',
+  total: { invoices: 0, taxable_amount: '0.00', social_security_surcharge: '0.00', stamp_duty: '0.00', total: '0.00' },
+  regimes: [],
+  treatments: [],
+  register: [],
+  cancelled: 0,
 }
 
 const BY_PATH: Record<string, unknown> = {
@@ -117,26 +117,26 @@ const BY_PATH: Record<string, unknown> = {
   '/api/analytics/overview': EMPTY_OVERVIEW,
   '/api/analytics/fiscal': EMPTY_ESTIMATE,
   // No ceiling applies: the panel under the figures draws nothing (REB-755).
-  '/api/analytics/ceilings': { anno: 2026, azienda_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', soglie: [] },
+  '/api/analytics/ceilings': { year: 2026, legal_entity_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', thresholds: [] },
   // No active contract caps a customer's share: nor does that panel have anything to show.
   '/api/contracts': { items: [], next_cursor: null },
   '/api/analytics/year': EMPTY_YEAR,
   // Nothing late and nothing due today: the «Da fare» band is its one line (REB-874, and
   // `DaFareBand.test.tsx` for the rest).
-  '/api/activities/oggi': {
-    oggi: '2026-03-15',
-    in_ritardo: { totale: 0, items: [] },
-    scadono_oggi: { totale: 0, items: [] },
-    prossimi_sette_giorni: { totale: 0, items: [] },
-    senza_scadenza: { totale: 0, items: [] },
+  '/api/activities/today': {
+    today: '2026-03-15',
+    overdue: { total: 0, items: [] },
+    today_due: { total: 0, items: [] },
+    next_seven_days: { total: 0, items: [] },
+    without_due_date: { total: 0, items: [] },
   },
 }
 
 const SEARCH: DashboardSearch = {
-  tab: 'commerciale',
+  tab: 'commercial',
   da: '2026-03-01',
   a: '2026-03-31',
-  base: 'competenza',
+  base: 'accrual',
 }
 
 function renderPage(search = SEARCH) {
@@ -151,7 +151,7 @@ function renderPage(search = SEARCH) {
 }
 
 beforeEach(() => {
-  session.ruolo = 'admin'
+  session.role = 'admin'
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.GET).mockImplementation(
     ((path: string) =>
@@ -164,7 +164,7 @@ beforeEach(() => {
 
 describe('DashboardPage', () => {
   it('renders the tab the URL names, not the first one', async () => {
-    renderPage({ ...SEARCH, tab: 'economica' })
+    renderPage({ ...SEARCH, tab: 'economic' })
     expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
     // The commercial tab's own card, by the title it has today: after the 2026-09-09
     // rename «Pipeline aperta per stato» exists nowhere, so asserting *its* absence
@@ -182,7 +182,7 @@ describe('DashboardPage', () => {
   })
 
   it('passes the period from the URL through to the request', async () => {
-    renderPage({ tab: 'commerciale', da: '2024-06-01', a: '2024-06-30', base: 'competenza' })
+    renderPage({ tab: 'commercial', da: '2024-06-01', a: '2024-06-30', base: 'accrual' })
     expect(await screen.findByText(/nessun dato nel periodo/i)).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
       params: { query: { da: '2024-06-01', a: '2024-06-30' } },
@@ -223,21 +223,21 @@ describe('DashboardPage', () => {
   })
 
   it('hands a changed tab back for the URL', async () => {
-    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economica' })
+    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economic' })
     await userEvent.click(screen.getByRole('tab', { name: 'Commerciale' }))
-    expect(onSearchChange).toHaveBeenCalledWith({ tab: 'commerciale' })
+    expect(onSearchChange).toHaveBeenCalledWith({ tab: 'commercial' })
   })
 
   it('passes the reading from the URL through to the economic request, and hands a change back', async () => {
     // ORB-133: the switch is the page's, the state is the URL's. Nothing is held locally,
     // so a shared link reopens on the same reading.
-    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economica', base: 'incasso' })
+    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economic', base: 'collection' })
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', {
-      params: { query: { anno: 2026, base: 'incasso' } },
+      params: { query: { year: 2026, base: 'collection' } },
     })
     await userEvent.click(screen.getByRole('radio', { name: 'Competenza' }))
-    expect(onSearchChange).toHaveBeenCalledWith({ base: 'competenza' })
+    expect(onSearchChange).toHaveBeenCalledWith({ base: 'accrual' })
   })
 
   it('keeps a typed date in the URL too', () => {
@@ -280,7 +280,7 @@ describe('DashboardPage, the page intestazione', () => {
 
 describe('DashboardPage, four tabs', () => {
   it('offers the economic, commercial, scadenziario, anno and giornate tabs, and marks the current one', () => {
-    renderPage({ ...SEARCH, tab: 'economica' })
+    renderPage({ ...SEARCH, tab: 'economic' })
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
     expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario', 'Anno', 'Giornate'])
     expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
@@ -288,21 +288,21 @@ describe('DashboardPage, four tabs', () => {
 
   /** REB-757: the year tab reads the year the period names and nothing else. */
   it('mounts the anno tab on the picker\'s year, with the picker', async () => {
-    renderPage({ ...SEARCH, tab: 'anno' })
+    renderPage({ ...SEARCH, tab: 'year' })
     expect(await screen.findByText(/nessuna fattura emessa nel 2026/i)).toBeInTheDocument()
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/year', { params: { query: { anno: 2026 } } })
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/year', { params: { query: { year: 2026 } } })
   })
 
   it('shows the period picker on the two tabs that have a period', () => {
-    renderPage({ ...SEARCH, tab: 'economica' })
+    renderPage({ ...SEARCH, tab: 'economic' })
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
   })
 
   /** REB-329: the scadenziario has no period, so the picker would change nothing on
    *  screen; it is not drawn, and the tab reads its own endpoint and no other. */
   it('mounts the scadenziario without a period picker, reading its own endpoint', async () => {
-    renderPage({ ...SEARCH, tab: 'scadenziario' })
+    renderPage({ ...SEARCH, tab: 'receivables' })
     expect(await screen.findByText(/scadenziario per fascia/i)).toBeInTheDocument()
     expect(screen.queryByLabelText('Dal')).not.toBeInTheDocument()
     // No period, and in «tutte» no azienda either: an empty query (REB-632).

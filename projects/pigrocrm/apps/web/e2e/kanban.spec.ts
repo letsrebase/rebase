@@ -42,7 +42,7 @@ test('a move the server refuses puts the card back in its original column and sa
   // test -- mirrors PipelinePanel.tsx's own `submit` body exactly.
   const stageName = `Rifiuto ${Date.now()}`
   const stageResponse = await page.request.post('/api/pipeline-stages', {
-    data: { nome: stageName, posizione: 99, probabilita_default: 50, tipo: 'open' },
+    data: { nome: stageName, position: 99, default_probability: 50, type: 'open' },
   })
   expect(stageResponse.ok()).toBe(true)
   const stage = (await stageResponse.json()) as { id: string }

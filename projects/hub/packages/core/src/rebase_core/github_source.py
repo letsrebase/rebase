@@ -12,7 +12,7 @@ What the snapshot says and does not say:
   them. A fork and an archived repository are marked and sorted last: they are somebody
   else's work or a finished one.
 * **No account age.** `created_at` is never read into the text: a ten-year-old account is
-  not ten years of professional experience, and `anni` comes only from dated roles
+  not ten years of professional experience, and `experience_years` comes only from dated roles
   (design, «Calls made after the builder check»).
 * `hash_material()` is the same facts **without anything that moves on its own**: stars,
   last push, language byte counts, the activity bucket, the public-repository count. A card

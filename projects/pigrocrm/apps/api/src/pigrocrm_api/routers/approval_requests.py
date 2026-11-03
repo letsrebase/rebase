@@ -14,7 +14,7 @@ from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
     prefix="/api/contracts/{contract_id}/approval-request",
-    tags=["giornate"],
+    tags=["work_units"],
     responses=PROBLEM_RESPONSES,
     dependencies=[Depends(get_actor)],
 )
@@ -41,7 +41,7 @@ def prepare(
     actor: ActorDep,
     settings: SettingsDep,
 ) -> ApprovalRequestPrepared:
-    """Registra le giornate chieste come `proposto` e salva il messaggio come bozza del
+    """Registra le giornate chieste come `proposed` e salva il messaggio come bozza del
     cliente, in una transazione. Non invia: l'invio è `POST /api/email-drafts/{id}/send`,
     che una persona preme dopo aver letto la bozza. Una data in cui il contratto ha già
     una giornata risponde 409. Chiusa a ogni credenziale di tipo agente."""

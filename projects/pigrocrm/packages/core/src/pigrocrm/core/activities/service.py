@@ -90,7 +90,7 @@ def serve_activities(session: Session, rows: Iterable[Activity]) -> list[Activit
     helper to two readers.
 
     One query for the whole page, not one per row. `User` is read without a filter on
-    `attivo`: a member who has left still did what the timeline says they did, and a
+    `active`: a member who has left still did what the timeline says they did, and a
     blank where their name was would read as a system action. A row whose id no user row
     holds (a space restored from a partial dump, a token owner removed by hand) keeps
     `actor_name=None` rather than failing the read.
@@ -125,12 +125,12 @@ def serve_activities(session: Session, rows: Iterable[Activity]) -> list[Activit
 
 
 def _triggering_member(activity: Activity) -> UUID | None:
-    """The member an automation's entry names in `payload.attivata_da`, if it names one.
+    """The member an automation's entry names in `payload.triggered_by`, if it names one.
 
     The payload is free-form JSON written by many callers, so anything that is not the
     text of a UUID is no member at all rather than an error: a read of the timeline must
     not fail on one odd row."""
-    raw = activity.payload.get("attivata_da") if activity.actor_type == "system" else None
+    raw = activity.payload.get("triggered_by") if activity.actor_type == "system" else None
     if not isinstance(raw, str):
         return None
     try:

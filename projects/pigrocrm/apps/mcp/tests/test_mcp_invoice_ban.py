@@ -251,7 +251,7 @@ FORBIDDEN_SERVICE_CALLS = (
     # (slice 9 §4.2). Not a `*Service` receiver, which is why they are here as bare
     # names and why `test_mcp_surface_coverage.py` cannot carry them in `_VIETATE`
     # (its taxonomy sweeps classes whose name ends in `Service`, and `DriveReader` is
-    # not one) -- see `_FUORI_DAL_SETACCIO` there, which records the reason for each.
+    # not one) -- see `_OUTSIDE_FROM_SETACCIO` there, which records the reason for each.
     #
     # Each name is unique in this codebase, which is what makes the substring scan the
     # right instrument: no service has a `list_children`, a `read_text` or a
@@ -705,7 +705,7 @@ async def test_they_are_registered_exactly_when_the_installation_opted_in(
         # shown the closed surface even on an open installation, which
         # `test_token_full_access.py` owns. Here both halves agree, as they do for a space
         # whose members have all opened their tokens.
-        attore = Actor(id=None, type="mcp", role="admin", full_access=full_access)
+        actor = Actor(id=None, type="mcp", role="admin", full_access=full_access)
         google = (
             {
                 "google_client_id": "cid.apps.googleusercontent.com",
@@ -718,7 +718,7 @@ async def test_they_are_registered_exactly_when_the_installation_opted_in(
         )
         server = build_server(
             lambda: mcp_session,
-            lambda: attore,
+            lambda: actor,
             LocalFileStorage(str(tmp_path)),
             Settings(_env_file=None, mcp_full_access=full_access, **google),  # type: ignore[call-arg]
         )
@@ -727,23 +727,23 @@ async def test_they_are_registered_exactly_when_the_installation_opted_in(
     # Without Google, the switch adds every forbidden tool except the ones that need a
     # mailbox to exist at all: those stay absent, not broken, exactly as `tools/gmail.py`
     # does on the same installation.
-    chiusa = await tool_names(False, gmail=False)
-    aperta = await tool_names(True, gmail=False)
+    closed = await tool_names(False, gmail=False)
+    open = await tool_names(True, gmail=False)
 
-    assert not (chiusa & set(FORBIDDEN)), "un'installazione chiusa non registra nessuno dei divieti"
-    senza_google = set(FORBIDDEN) - FORBIDDEN_NEEDING_GMAIL
-    mancanti = senza_google - aperta
-    assert not mancanti, f"interruttore aperto ma questi tool non esistono: {sorted(mancanti)}"
+    assert not (closed & set(FORBIDDEN)), "un'installazione chiusa non registra nessuno dei divieti"
+    without_google = set(FORBIDDEN) - FORBIDDEN_NEEDING_GMAIL
+    missing = without_google - open
+    assert not missing, f"interruttore aperto ma questi tool non esistono: {sorted(missing)}"
     # And nothing else moved: opting in means exactly these more tools, not a different server.
-    assert aperta - chiusa == senza_google
+    assert open - closed == without_google
 
     # With Google configured as well, the switch adds all of them -- and still nothing
     # else.
-    chiusa_google = await tool_names(False, gmail=True)
-    aperta_google = await tool_names(True, gmail=True)
+    closed_google = await tool_names(False, gmail=True)
+    open_google = await tool_names(True, gmail=True)
 
-    assert not (chiusa_google & set(FORBIDDEN))
-    assert aperta_google - chiusa_google == set(FORBIDDEN)
+    assert not (closed_google & set(FORBIDDEN))
+    assert open_google - closed_google == set(FORBIDDEN)
 
 
 def test_the_privileged_module_is_the_only_place_they_appear() -> None:
@@ -780,13 +780,13 @@ def test_the_privileged_module_is_the_only_place_they_appear() -> None:
             "coprendo la cosa sbagliata"
         )
 
-    dentro, fuori = _privileged_imports_of_server()
+    dentro, outside = _privileged_imports_of_server()
     assert dentro == {module.stem for module in PRIVILEGED_MODULES}, (
         "un modulo privilegiato non e' importato dentro `if resolved_settings."
         f"mcp_full_access:`: dentro la guardia ci sono {sorted(dentro)}"
     )
-    assert not fuori, (
-        f"{sorted(fuori)} sono importati fuori dalla guardia: verrebbero registrati "
+    assert not outside, (
+        f"{sorted(outside)} sono importati fuori dalla guardia: verrebbero registrati "
         "sempre e l'esenzione delle scansioni diventerebbe un buco"
     )
 
@@ -835,8 +835,8 @@ def _privileged_imports_of_server() -> tuple[set[str], set[str]]:
 
     nomi = {module.stem for module in PRIVILEGED_MODULES}
     dentro = imported_names(list(guards)) & nomi
-    tutti = imported_names([tree]) & nomi
-    return dentro, tutti - dentro
+    all = imported_names([tree]) & nomi
+    return dentro, all - dentro
 
 
 def _agent_reachable_source() -> str:

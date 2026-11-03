@@ -34,7 +34,7 @@ function DealEconomics({ dealId }: { dealId: string }) {
   // The string the API sent, compared as a string. `Number(...) > 0` on a decimal field
   // is exactly the accidental arithmetic `lib/no-float-money.test.ts` exists to catch,
   // and `"0.00"` is the only spelling `Numeric(12,2)` serialises for zero.
-  const somethingToInvoice = pnl.data.ore_fatturabili_non_fatturate !== '0.00'
+  const somethingToInvoice = pnl.data.billable_uninvoiced_hours !== '0.00'
 
   return (
     <div className="space-y-6">
@@ -42,8 +42,8 @@ function DealEconomics({ dealId }: { dealId: string }) {
         <CardContent className="pt-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Conto economico</h2>
-            <Badge variant={pnl.data.stato === 'chiuso' ? 'default' : 'secondary'}>
-              {pnl.data.stato}
+            <Badge variant={pnl.data.status === 'closed' ? 'default' : 'secondary'}>
+              {pnl.data.status}
             </Badge>
           </div>
           <PnlRows pnl={pnl.data} />
@@ -73,8 +73,8 @@ function DealEconomics({ dealId }: { dealId: string }) {
 /** One sentence per reading, under the chips: the row's hint names the base, this says
  *  what the base does to the figure, and only one of the two is on screen at a time. */
 const BASE_NOTE: Record<PnlBase, string> = {
-  emissione: 'Ricavi attribuiti alla data di emissione della fattura.',
-  competenza:
+  issue: 'Ricavi attribuiti alla data di emissione della fattura.',
+  accrual:
     'Ricavi attribuiti al periodo di competenza della fattura, o alla data di emissione quando manca.',
 }
 
@@ -86,8 +86,8 @@ function CustomerEconomics({ customerId }: { customerId: string }) {
   // the report cannot open on next year late on 31 December.
   const year = new Date().getFullYear()
   // The reading is state and not a search param: it is a way of looking at one card,
-  // and `emissione` is what the spec recorded, so the tab opens on it every time.
-  const [base, setBase] = useState<PnlBase>('emissione')
+  // and `issue` is what the spec recorded, so the tab opens on it every time.
+  const [base, setBase] = useState<PnlBase>('issue')
   const pnl = usePeriodPnl({
     from: toIsoDate(new Date(year, 0, 1)),
     to: toIsoDate(new Date(year, 11, 31)),

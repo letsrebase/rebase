@@ -171,7 +171,7 @@ export default defineConfig([
     },
   },
   {
-    // `variablesToFields` maps `TemplateDescription.variabili` onto the exact
+    // `variablesToFields` maps `TemplateDescription.variables` onto the exact
     // `FieldDefinition[]` shape `NewFromTemplateDialog` feeds to `DynamicForm` --
     // coupled to this component by construction the same way
     // `customerToFormValues`/`personToFormValues`/`dealToFormValues` are coupled to

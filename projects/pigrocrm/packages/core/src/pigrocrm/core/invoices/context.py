@@ -21,8 +21,6 @@ from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import DriveReader
-from pigrocrm.core.emitter.models import LegalEntity
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
@@ -31,10 +29,12 @@ from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.checks import is_editable
 from pigrocrm.core.invoices.constants import ENTITY
+from pigrocrm.core.invoices.due_date import due_date_from_termini
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
-from pigrocrm.core.invoices.scadenza import scadenza_da_termini
 from pigrocrm.core.invoices.schemas import InvoiceRead
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.base import DocumentStorage
 
 
@@ -54,7 +54,7 @@ class InvoiceContext:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.fiscal = FiscalProfileService(session)
-        self.emitter = LegalEntityService(session)
+        self.legal_entity = LegalEntityService(session)
         self.documents = DocumentService(session, storage, self.settings)
         # The same session as everything else here (REB-367, design §7 item 5): a
         # customer `confirm_import` creates for a brand-new counterparty lands in the
@@ -116,15 +116,15 @@ class InvoiceContext:
 
     # ---- fiscal and azienda ---------------------------------------------------
 
-    def regime(self, azienda_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
+    def regime(self, legal_entity_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
         """The strategy and the parameters of one azienda, read together so a caller
         cannot pair a profile with the wrong strategy; `None` is the default azienda
         (REB-619). Raises `NotFound("fiscal_profile", ...)` when nothing is configured,
         which tells the user which screen to go to."""
-        profile = self.fiscal.snapshot(azienda_id)
-        return resolve_regime(profile.codice_regime, profile.pack_id), profile
+        profile = self.fiscal.snapshot(legal_entity_id)
+        return resolve_regime(profile.regime_code, profile.pack_id), profile
 
-    def azienda_of_parent(self, customer: Customer, deal_id: UUID | None) -> UUID:
+    def legal_entity_of_parent(self, customer: Customer, deal_id: UUID | None) -> UUID:
         """The azienda a new document is born under (REB-623, spec §1.7): the deal's
         when it hangs on one, the customer's otherwise. Copied now and kept, so a
         customer moved later leaves this document where it was issued. Refused when
@@ -133,22 +133,22 @@ class InvoiceContext:
             deal = self.session.get(Deal, deal_id)
             if deal is None:  # pragma: no cover - `check_owner` has already answered NotFound
                 raise NotFound("deal", deal_id)
-            return self.emitter.inherited(deal.azienda_id, ENTITY)
-        return self.emitter.inherited(customer.azienda_id, ENTITY)
+            return self.legal_entity.inherited(deal.legal_entity_id, ENTITY)
+        return self.legal_entity.inherited(customer.legal_entity_id, ENTITY)
 
-    def writing_azienda(self, azienda_id: UUID | None) -> LegalEntity:
+    def writing_legal_entity(self, legal_entity_id: UUID | None) -> LegalEntity:
         """The azienda a register write goes on: the one named, the default when none,
         and never an inactive one (REB-619). A read may still answer for a deactivated
         azienda, since its history stays readable; a number consumed or a gap declared
         on it would be a register nobody can see moving."""
-        azienda = self.emitter.resolve(azienda_id)
-        if not azienda.attiva:
+        legal_entity = self.legal_entity.resolve(legal_entity_id)
+        if not legal_entity.active:
             raise Conflict(
                 ENTITY,
                 "l'azienda non e' attiva: riattivala prima di scrivere sul suo registro",
-                azienda_id=str(azienda.id),
+                legal_entity_id=str(legal_entity.id),
             )
-        return azienda
+        return legal_entity
 
     @staticmethod
     def issues_abroad(profile: FiscalSnapshot) -> bool:
@@ -159,21 +159,19 @@ class InvoiceContext:
 
     # ---- due dates ------------------------------------------------------------
 
-    def due_date_from_terms(
-        self, data_emissione: date, customer_id: UUID, profile_days: int
-    ) -> date:
-        """The due date the customer's terms give from `data_emissione` (REB-326). The
+    def due_date_from_terms(self, issue_date: date, customer_id: UUID, profile_days: int) -> date:
+        """The due date the customer's terms give from `issue_date` (REB-326). The
         customer's days when it has them, the profile's otherwise; the end-of-month slide
-        is the customer's alone. One arithmetic, `scadenza_da_termini`, for every caller."""
+        is the customer's alone. One arithmetic, `due_date_from_termini`, for every caller."""
         days, month_end = self.repo.payment_terms({customer_id}).get(customer_id, (None, False))
-        return scadenza_da_termini(
-            data_emissione, profile_days if days is None else days, fine_mese=month_end
+        return due_date_from_termini(
+            issue_date, profile_days if days is None else days, fine_mese=month_end
         )
 
-    def scadenza_prevista(self, invoice: Invoice) -> date | None:
-        """`scadenza_prevista` of an editable document (REB-326): the date `issue` would
+    def expected_due_date(self, invoice: Invoice) -> date | None:
+        """`expected_due_date` of an editable document (REB-326): the date `issue` would
         print if pressed today, so the person sees a wrong term before the XML carries
-        it. The row's own `data_scadenza` when written by hand, the customer's terms
+        it. The row's own `due_date` when written by hand, the customer's terms
         otherwise. An issued or consumed row gets nothing: its date is a fact, not a
         forecast. A space with no fiscal profile yet has no default days, and only a
         customer with days of its own gets a forecast there -- the profile's absence is
@@ -181,17 +179,17 @@ class InvoiceContext:
         """
         if not is_editable(invoice):
             return None
-        if invoice.data_scadenza is not None:
-            return invoice.data_scadenza
+        if invoice.due_date is not None:
+            return invoice.due_date
         days, month_end = self.repo.payment_terms({invoice.customer_id}).get(
             invoice.customer_id, (None, False)
         )
         if days is None:
             try:
-                days = self.fiscal.snapshot().giorni_scadenza
+                days = self.fiscal.snapshot().due_days
             except NotFound:
                 return None
-        return scadenza_da_termini(today_local(), days, fine_mese=month_end)
+        return due_date_from_termini(today_local(), days, fine_mese=month_end)
 
     # ---- reads ----------------------------------------------------------------
 
@@ -202,7 +200,7 @@ class InvoiceContext:
         return self.reads([invoice])[0]
 
     def reads(self, invoices: Sequence[Invoice]) -> list[InvoiceRead]:
-        """The batched form, and the reason `customer_ragione_sociale` is resolved here
+        """The batched form, and the reason `customer_legal_name` is resolved here
         and not inside `InvoiceRead` itself: one lookup for the whole page
         (`InvoiceRepository.customer_names`), so a page of invoices costs two queries
         rather than one per row.
@@ -214,17 +212,17 @@ class InvoiceContext:
         names = self.repo.customer_names({invoice.customer_id for invoice in invoices})
         return [
             InvoiceRead.model_validate(invoice).model_copy(
-                update={"customer_ragione_sociale": names.get(invoice.customer_id)}
+                update={"customer_legal_name": names.get(invoice.customer_id)}
             )
             for invoice in invoices
         ]
 
     def get(self, invoice_id: UUID) -> InvoiceRead:
-        """One row, with its forecast: `scadenza_prevista` is filled here and not in
+        """One row, with its forecast: `expected_due_date` is filled here and not in
         `reads`, because only the detail page shows it and a list page's query budget
         (two statements, `test_the_customer_name_costs_one_query_for_the_whole_page`) is
         not spent on a date nothing on that page prints."""
         invoice = self.require(invoice_id)
         return self.read(invoice).model_copy(
-            update={"scadenza_prevista": self.scadenza_prevista(invoice)}
+            update={"expected_due_date": self.expected_due_date(invoice)}
         )

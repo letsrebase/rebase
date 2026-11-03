@@ -35,12 +35,12 @@ INVALID_CREDENTIALS = "credenziali non valide"
 # is what makes hanging a second family of events off this entity free.
 ENTITY = "user"
 
-# What `update` may touch, mirroring `UserUpdate`'s own fields. `ruolo` and `attivo`
+# What `update` may touch, mirroring `UserUpdate`'s own fields. `role` and `active`
 # are the two that matter: between them they are the answer to "who made this account
 # an administrator" and "who turned this account off", which is the entire reason this
 # audit exists. `password_hash` is not here and must never be -- it is not reachable
 # through `UserUpdate` at all, and the absence tests pin that.
-_AUDITED_FIELDS = ("nome", "ruolo", "attivo", "ambito_limitato")
+_AUDITED_FIELDS = ("nome", "role", "active", "limited_scope")
 
 # `update` refuses a change that would take the space's ability to administer itself
 # away. Two refusals, both in service of one invariant -- there is always at least one
@@ -119,7 +119,7 @@ def require_verified_identity(session: Session, actor: Actor, action: str) -> No
     user = UserRepository(session).get(actor.id)
     if user is None:
         return
-    if user.password_hash is None and user.email_verificata_il is None:
+    if user.password_hash is None and user.email_verified_at is None:
         raise ValidationFailed("user", "email", UNVERIFIED_IDENTITY, expected=action)
 
 
@@ -135,9 +135,13 @@ class UserService:
         # The scope checked like an update's (no empty list, active aziende only), and
         # written with the row below rather than after its commit: in between, a scoped
         # admin would count as an unscoped one for a concurrent `update`'s guard.
-        return self.create_scoped(data, actor, check_scope(self.session, ENTITY, data.aziende))
+        return self.create_scoped(
+            data, actor, check_scope(self.session, ENTITY, data.legal_entities)
+        )
 
-    def create_scoped(self, data: UserCreate, actor: Actor, aziende: list[UUID] | None) -> UserRead:
+    def create_scoped(
+        self, data: UserCreate, actor: Actor, legal_entities: list[UUID] | None
+    ) -> UserRead:
         """`create` with an already-checked scope, possibly empty: what an accepted
         invitation whose aziende were deactivated meanwhile opens (spec §1.11), which
         `check_scope` would refuse to a request. Same guards, same single transaction."""
@@ -150,7 +154,7 @@ class UserService:
                 raise ValidationFailed(
                     "user",
                     "password",
-                    "obbligatoria",
+                    "required",
                     expected=f">= {MIN_PASSWORD_LENGTH} caratteri",
                 )
         elif len(data.password) < MIN_PASSWORD_LENGTH:
@@ -167,22 +171,22 @@ class UserService:
             email=data.email,
             password_hash=hash_password(data.password) if data.password is not None else None,
             nome=data.nome,
-            ruolo=data.ruolo,
-            attivo=True,
-            tariffa_oraria_default=data.tariffa_oraria_default,
-            costo_orario_default=data.costo_orario_default,
+            role=data.role,
+            active=True,
+            default_hourly_rate=data.default_hourly_rate,
+            default_hourly_cost=data.default_hourly_cost,
         )
         try:
             self.repo.add(user)
-            if aziende is not None:
-                apply_scope(self.session, user, aziende)
-            # `email` and `ruolo` only. The password never appears -- not the plaintext
+            if legal_entities is not None:
+                apply_scope(self.session, user, legal_entities)
+            # `email` and `role` only. The password never appears -- not the plaintext
             # the caller sent, not the argon2 hash stored on the row -- because a
             # timeline entry is read by more people, and kept for longer, than the
             # column it would have been copied from.
-            payload: dict[str, Any] = {"email": user.email, "ruolo": user.ruolo}
-            if aziende is not None:
-                payload["aziende"] = [str(a) for a in aziende]
+            payload: dict[str, Any] = {"email": user.email, "role": user.role}
+            if legal_entities is not None:
+                payload["legal_entities"] = [str(a) for a in legal_entities]
             self.activities.record(ENTITY, user.id, "created", actor, payload)
             self.session.commit()
         except IntegrityError as exc:
@@ -207,7 +211,7 @@ class UserService:
         # Not listed among task 4B-1's files, converted anyway: leaving two services on
         # `exclude_none` would mean the codebase has two update contracts, which is how
         # A14 survived four slices in the first place. It matters here on its own terms
-        # too -- `tariffa_oraria_default` and `costo_orario_default` are nullable, and an
+        # too -- `default_hourly_rate` and `default_hourly_cost` are nullable, and an
         # unclearable default rate is a number nobody chose staying in force forever.
         #
         # `supplied_changes`, never `model_dump(exclude_none=True)`: under `exclude_none`
@@ -218,10 +222,12 @@ class UserService:
         # The scope is not a column of the row (the flag and the rows under it are):
         # taken out before the column checks, and only when the caller named it, since
         # `null` here means «every azienda» and not «leave it».
-        scope_named = "aziende" in data.model_fields_set
-        changes.pop("aziende", None)
-        aziende = check_scope(self.session, "user", data.aziende) if scope_named else None
-        scope_before = user.aziende
+        scope_named = "legal_entities" in data.model_fields_set
+        changes.pop("legal_entities", None)
+        legal_entities = (
+            check_scope(self.session, "user", data.legal_entities) if scope_named else None
+        )
+        scope_before = user.legal_entities
         reject_cleared_columns("user", User, changes)
         # REB-292, both refusals before the first write, and neither outside the two
         # privileged fields: nome and the rate defaults are ordinary edits, whoever
@@ -232,8 +238,8 @@ class UserService:
         # answer 409 about a change that touches no admin at all.
         # A system actor (the CLI) has no id to compare against, so its writes see
         # only the count rule; `pigrocrm createadmin` stays the operator's way back.
-        privileged = sorted({"ruolo", "attivo"} & changes.keys())
-        narrowing = scope_named and aziende is not None
+        privileged = sorted({"role", "active"} & changes.keys())
+        narrowing = scope_named and legal_entities is not None
         if privileged or scope_named:
             # The two counts below are check-then-write: two requests demoting, or
             # scoping, the last two admins at once would each see the other as the
@@ -248,21 +254,17 @@ class UserService:
             )
             self.session.refresh(user)
             before = _snapshot(user)
-            scope_before = user.aziende
+            scope_before = user.legal_entities
         if privileged:
             # The state the row WOULD hold, predicted rather than written: raising
             # after `setattr` would leave the pending change on the session's
             # identity map for whoever reads this row next in the same request.
-            final_ruolo = changes.get("ruolo", user.ruolo)
-            final_attivo = changes.get("attivo", user.attivo)
-            if (
-                user.ruolo == "admin"
-                and user.attivo
-                and (final_ruolo != "admin" or not final_attivo)
-            ):
+            final_role = changes.get("role", user.role)
+            final_active = changes.get("active", user.active)
+            if user.role == "admin" and user.active and (final_role != "admin" or not final_active):
                 other_active_admins = self.session.scalar(
                     select(func.count(User.id)).where(
-                        User.id != user_id, User.ruolo == "admin", User.attivo.is_(True)
+                        User.id != user_id, User.role == "admin", User.active.is_(True)
                     )
                 )
                 if not other_active_admins:
@@ -275,36 +277,38 @@ class UserService:
         # nobody else left in that position.
         if (
             (privileged or narrowing)
-            and user.ruolo == "admin"
-            and user.attivo
-            and not user.ambito_limitato
+            and user.role == "admin"
+            and user.active
+            and not user.limited_scope
         ):
-            final_ruolo = changes.get("ruolo", user.ruolo)
-            final_attivo = changes.get("attivo", user.attivo)
-            if final_ruolo != "admin" or not final_attivo or narrowing:
+            final_role = changes.get("role", user.role)
+            final_active = changes.get("active", user.active)
+            if final_role != "admin" or not final_active or narrowing:
                 other_unscoped = self.session.scalar(
                     select(func.count(User.id)).where(
                         User.id != user_id,
-                        User.ruolo == "admin",
-                        User.attivo.is_(True),
-                        User.ambito_limitato.is_(False),
+                        User.role == "admin",
+                        User.active.is_(True),
+                        User.limited_scope.is_(False),
                     )
                 )
                 if not other_unscoped:
-                    raise LastUnscopedAdmin(privileged[0] if privileged else "aziende")
+                    raise LastUnscopedAdmin(privileged[0] if privileged else "legal_entities")
         for field, value in changes.items():
             setattr(user, field, value)
         if scope_named:
-            apply_scope(self.session, user, aziende)
+            apply_scope(self.session, user, legal_entities)
 
         # Nothing is recorded when the patch changed nothing: a deactivation that was
         # already in force is not a decision anyone took today. See `field_changes`.
         delta = field_changes(before, _snapshot(user))
-        if scope_named and user.aziende != scope_before:
+        if scope_named and user.legal_entities != scope_before:
             delta.setdefault("changed", [])
-            if "aziende" not in delta["changed"]:
-                delta["changed"].append("aziende")
-            delta["aziende"] = [str(a) for a in user.aziende] if user.aziende is not None else None
+            if "legal_entities" not in delta["changed"]:
+                delta["changed"].append("legal_entities")
+            delta["legal_entities"] = (
+                [str(a) for a in user.legal_entities] if user.legal_entities is not None else None
+            )
         # A deactivation ends the account's agent credentials in the same transaction
         # (REB-295): `resolve()` already refuses a token whose owner is inactive, but
         # refusing on every call left the rows live -- reactivating the account would
@@ -316,7 +320,7 @@ class UserService:
         # because `resolve()` carries the CURRENT role on every request.
         # `pat_service` imports this module, so the import is local -- the same
         # cycle-avoidance `templates/service.py` applies to `gmail`.
-        if "attivo" in delta.get("changed", []) and not user.attivo:
+        if "active" in delta.get("changed", []) and not user.active:
             from pigrocrm.core.auth.pat_service import PatService
 
             PatService(self.session).revoke_all_for(user.id, actor)
@@ -354,9 +358,9 @@ class UserService:
         user = self.repo.get(actor.id)
         if user is None:
             raise NotFound("user", actor.id)
-        if user.digest_settimanale != value:
-            user.digest_settimanale = value
-            self.activities.record(ENTITY, user.id, "updated", actor, {"digest_settimanale": value})
+        if user.weekly_digest != value:
+            user.weekly_digest = value
+            self.activities.record(ENTITY, user.id, "updated", actor, {"weekly_digest": value})
         self.session.commit()
         return UserRead.model_validate(user)
 
@@ -414,7 +418,7 @@ class UserService:
         stored = user.password_hash if user is not None else None
         reference = stored if stored is not None else dummy_hash()
         ok = verify_password(password, reference)
-        if user is None or stored is None or not ok or not user.attivo:
+        if user is None or stored is None or not ok or not user.active:
             raise ValidationFailed("user", "credentials", INVALID_CREDENTIALS)
         # `last_login_at` is written here and nowhere else on this path (REB-297): the
         # moment a password actually opens a session, not the moment credentials were

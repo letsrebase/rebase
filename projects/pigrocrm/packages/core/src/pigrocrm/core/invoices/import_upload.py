@@ -56,7 +56,7 @@ UPLOAD_MAX_TOTAL_BYTES = 100 * 1024 * 1024
 """One request's ceilings, after the ZIPs are opened. A FatturaPA file is kilobytes and a
 lotto of a few hundred invoices is a few megabytes; these leave a year of a busy space
 room and stop an archive that decompresses into the whole disk. The total is the same
-100 MiB `documents.DIMENSIONE_MAX` and the nginx gate in front of the route use."""
+100 MiB `documents.SIZE_MAX` and the nginx gate in front of the route use."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,22 +181,22 @@ def party_key(party: ParsedInvoiceParty) -> str:
     foreign customers with one name stay two, and only a party with no identifier at all
     falls back to its name. The server defines the key and the review hands it to the
     page: the page never computes one."""
-    italian = normalise_fiscal_id(party.partita_iva) or normalise_fiscal_id(party.codice_fiscale)
+    italian = normalise_fiscal_id(party.vat_number) or normalise_fiscal_id(party.tax_code)
     if italian is not None:
         return italian
-    foreign = normalise_foreign_fiscal_id(party.partita_iva) or normalise_foreign_fiscal_id(
-        party.codice_fiscale
+    foreign = normalise_foreign_fiscal_id(party.vat_number) or normalise_foreign_fiscal_id(
+        party.tax_code
     )
     if foreign is not None:
         return f"estero:{foreign}"
-    return f"nome:{party.ragione_sociale.casefold()}"
+    return f"nome:{party.legal_name.casefold()}"
 
 
 class UploadedInvoiceReviewRead(BaseModel):
     """One row of the review of an uploaded file: `ReviewedInvoiceRead`'s own fields,
     named by the file (and its SHA-256) instead of a `document_id`, since nothing was
     archived. One per invoice the file parses into, or exactly one `"unclaimed"` for a
-    file no registered format reads: `motivo` then says why when the file looked like a
+    file no registered format reads: `reason` then says why when the file looked like a
     FatturaPA and could not be read as one. `party_key` names the invoice's customer in
     the decisions of the confirmation."""
 
@@ -207,21 +207,21 @@ class UploadedInvoiceReviewRead(BaseModel):
     outcome: InvoiceReviewOutcome
     invoice: ParsedInvoice | None = None
     party_key: str | None = None
-    motivo: str | None = None
-    azienda_id: UUID | None = None
+    reason: str | None = None
+    legal_entity_id: UUID | None = None
     matched_customer_id: UUID | None = None
-    mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
+    days_mappings: list[WorkUnitDayMappingProposal | None] | None = None
 
 
 class UploadedInvoiceReviewResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    righe: list[UploadedInvoiceReviewRead]
+    lines: list[UploadedInvoiceReviewRead]
 
 
 class UploadedInvoiceConfirmRead(BaseModel):
     """One row of the confirmation of an uploaded file, `ConfirmedInvoiceRead`'s fields
-    named by the file, with the `party_key` of the invoice's customer and the `motivo`
+    named by the file, with the `party_key` of the invoice's customer and the `reason`
     of an unreadable file, as on the review row."""
 
     model_config = ConfigDict(extra="forbid")
@@ -230,16 +230,16 @@ class UploadedInvoiceConfirmRead(BaseModel):
     sha256: str
     outcome: InvoiceConfirmOutcome
     party_key: str | None = None
-    motivo: str | None = None
-    azienda_id: UUID | None = None
-    fattura: InvoiceRead | None = None
-    buchi_non_dichiarati: list[int] | None = None
+    reason: str | None = None
+    legal_entity_id: UUID | None = None
+    invoice: InvoiceRead | None = None
+    undeclared_gaps: list[int] | None = None
 
 
 class UploadedInvoiceConfirmResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    righe: list[UploadedInvoiceConfirmRead]
+    lines: list[UploadedInvoiceConfirmRead]
 
 
 class UploadedPartyDecision(BaseModel):
@@ -257,13 +257,13 @@ class UploadedPartyDecision(BaseModel):
 
 
 class UploadedInvoiceDecisions(BaseModel):
-    """`clienti`: one decision per counterparty, keyed by the `party_key` the review
+    """`customers`: one decision per counterparty, keyed by the `party_key` the review
     named, so it holds for every invoice of that customer in every file of every batch
     of the import, a `lotto` with several customers included."""
 
     model_config = ConfigDict(extra="forbid")
 
-    clienti: dict[str, UploadedPartyDecision] = Field(default_factory=dict)
+    customers: dict[str, UploadedPartyDecision] = Field(default_factory=dict)
 
 
 def parse_decisions(raw: str) -> dict[str, UploadedPartyDecision]:
@@ -278,4 +278,4 @@ def parse_decisions(raw: str) -> dict[str, UploadedPartyDecision]:
             "le decisioni non sono un JSON valido",
             expected='{"clienti": {"<party_key>": {"create_customer": true}}}',
         ) from exc
-    return parsed.clienti
+    return parsed.customers

@@ -9,8 +9,8 @@
 
 /** The hours «giornata» fills in, and half of one. Defaults in a field, never columns:
  *  a day is eight hours on a deal and stays an ordinary time entry. */
-export const GIORNATA = '8.00'
-export const MEZZA = '4.00'
+export const WorkUnit = '8.00'
+export const HALF = '4.00'
 
 /**
  * `value` as hours the API will accept, or `null` if it is not hours at all: a positive

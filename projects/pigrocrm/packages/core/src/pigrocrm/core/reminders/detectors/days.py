@@ -5,27 +5,27 @@
 contract's customer (`links.py`), scoped to the contract's azienda.
 
 **What «approval» is in this schema.** A contract says one thing, `requires_prior_approval`;
-an approval (`approvals`) is a received written approval with a `ricevuto_il`, linked from
-the days it covers; a day moves to `lavorato_senza_approvazione` on its own when it is worked
+an approval (`approvals`) is a received written approval with a `received_at`, linked from
+the days it covers; a day moves to `worked_without_approval` on its own when it is worked
 on a requiring contract with none linked (`work_units/triggers.py`). The rest of Mastro's
 approval clause (a coverage period, a scope, who may approve) was not ported, so:
 
-- `worked_without_approval`: days in `lavorato_senza_approvazione` on a contract that still
+- `worked_without_approval`: days in `worked_without_approval` on a contract that still
   requires approvals. The measure is days since the day was worked (`data`): `serious` at
   once, `critical` from 3 days.
-- `approval_unanswered`: days still `proposto`, with no approval linked, on a requiring
+- `approval_unanswered`: days still `proposed`, with no approval linked, on a requiring
   contract: the approval has been asked for, by proposing the day, and nobody has answered.
   The measure is days since the day was proposed (its creation, in the installation's zone).
 - `approval_requirement_unmet`: the one requirement the data can check, that the approval is
   **prior**: a day linked to an approval received after the day, or to an approval of another
   contract. Measure: days since the day.
-- `work_unit_outside_term`: a day before the contract's `inizio` or after its `fine`.
+- `work_unit_outside_term`: a day before the contract's `start` or after its `end`.
   Measure: days since the day. It reads the contract's current term on every pass, so
   correcting the term clears it.
 
-Only days that can still be fixed are read: `rifiutato`, `revocato`, `non_fatturabile`,
-`fatturato` and `pagato` are out of every type (the day is done), and `approval_unanswered`
-reads `proposto` alone. The coverage reminder
+Only days that can still be fixed are read: `rejected`, `revoked`, `non_billable`,
+`invoiced` and `paid` are out of every type (the day is done), and `approval_unanswered`
+reads `proposed` alone. The coverage reminder
 (`approval_coverage_expiring`) has no data behind it and is not built.
 """
 
@@ -38,7 +38,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Date, Select, cast, exists, func, or_, select
 
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.mail import giorno_breve
+from pigrocrm.core.mail import day_short
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver
@@ -52,7 +52,7 @@ OUTSIDE_TERM = REMINDER_TYPES["work_unit_outside_term"]
 
 # Days that are done: refused, withdrawn, written off, invoiced or paid. A reminder is for
 # what somebody can still fix, and a settled day is closed; none of the types reads them.
-_DONE = ("rifiutato", "revocato", "non_fatturabile", "fatturato", "pagato")
+_DONE = ("rejected", "revoked", "non_billable", "invoiced", "paid")
 
 
 def _requiring(ctx: DetectorContext) -> bool:
@@ -75,7 +75,7 @@ def _rows(
     """Days with their contract, the contract not archived, the day no later than
     `day_cutoff` when given (the loosest rung of the ladder, never fewer than the day)."""
     stmt = query.join(Contract, Contract.id == WorkUnit.contract_id).where(
-        Contract.deleted_at.is_(None), WorkUnit.stato.not_in(_DONE)
+        Contract.deleted_at.is_(None), WorkUnit.status.not_in(_DONE)
     )
     if day_cutoff is not None:
         stmt = stmt.where(WorkUnit.data <= day_cutoff)
@@ -106,14 +106,14 @@ def _detect(
                 subject_id=unit.id,
                 measure=float(measure(unit)),
                 recipients=ctx.directory.recipients(
-                    (links.customer_owner_id,), contract.azienda_id
+                    (links.customer_owner_id,), contract.legal_entity_id
                 ),
-                title=f"{title}: {contract.titolo}, {giorno_breve(unit.data)}",
+                title=f"{title}: {contract.title}, {day_short(unit.data)}",
                 detail=f"{detail(unit, contract)}{customer}",
                 # The day has no page of its own: the reminder opens its contract.
                 entity="contract",
                 entity_id=contract.id,
-                azienda_id=contract.azienda_id,
+                legal_entity_id=contract.legal_entity_id,
                 customer_id=contract.customer_id,
             )
         )
@@ -128,7 +128,7 @@ def detect_worked_without_approval(ctx: DetectorContext) -> list[Detection]:
     rows = _rows(
         ctx,
         select(WorkUnit, Contract).where(
-            WorkUnit.stato == "lavorato_senza_approvazione",
+            WorkUnit.status == "worked_without_approval",
             Contract.requires_prior_approval.is_(True),
         ),
         day_cutoff=ctx.today - timedelta(days=max(ctx.bound(WITHOUT_APPROVAL), 0)),
@@ -163,7 +163,7 @@ def _proposed_days(ctx: DetectorContext, unit: WorkUnit) -> int:
 def detect_approval_unanswered(ctx: DetectorContext) -> list[Detection]:
     cutoff = _proposed_before(ctx, max(ctx.bound(UNANSWERED), 0))
     stmt = select(WorkUnit, Contract).where(
-        WorkUnit.stato == "proposto",
+        WorkUnit.status == "proposed",
         WorkUnit.approval_id.is_(None),
         Contract.requires_prior_approval.is_(True),
         WorkUnit.created_at < cutoff,
@@ -182,7 +182,7 @@ def detect_approval_unanswered(ctx: DetectorContext) -> list[Detection]:
 
 
 def _received_day(zone: str) -> Any:
-    return cast(func.timezone(zone, Approval.ricevuto_il), Date)
+    return cast(func.timezone(zone, Approval.received_at), Date)
 
 
 def detect_requirement_unmet(ctx: DetectorContext) -> list[Detection]:
@@ -210,9 +210,9 @@ def detect_requirement_unmet(ctx: DetectorContext) -> list[Detection]:
         approval = approvals[unit.approval_id]
         if approval.contract_id != unit.contract_id:
             return "La giornata poggia su un'approvazione data per un altro contratto"
-        received = approval.ricevuto_il.astimezone(ZoneInfo(ctx.timezone)).date()
+        received = approval.received_at.astimezone(ZoneInfo(ctx.timezone)).date()
         return (
-            f"L'approvazione è arrivata {giorno_breve(received)}, dopo la giornata: "
+            f"L'approvazione è arrivata {day_short(received)}, dopo la giornata: "
             "il contratto la vuole preventiva"
         )
 
@@ -229,17 +229,17 @@ def detect_requirement_unmet(ctx: DetectorContext) -> list[Detection]:
 def detect_outside_term(ctx: DetectorContext) -> list[Detection]:
     stmt = select(WorkUnit, Contract).where(
         or_(
-            WorkUnit.data < Contract.inizio,
-            (Contract.fine.is_not(None)) & (WorkUnit.data > Contract.fine),
+            WorkUnit.data < Contract.start,
+            (Contract.end.is_not(None)) & (WorkUnit.data > Contract.end),
         )
     )
     rows = _rows(ctx, stmt, day_cutoff=ctx.today - timedelta(days=max(ctx.bound(OUTSIDE_TERM), 0)))
 
     def detail(unit: WorkUnit, contract: Contract) -> str:
-        if unit.data < contract.inizio:
-            return f"Il contratto inizia {giorno_breve(contract.inizio)}, la giornata è prima"
-        assert contract.fine is not None
-        return f"Il contratto finisce {giorno_breve(contract.fine)}, la giornata è dopo"
+        if unit.data < contract.start:
+            return f"Il contratto inizia {day_short(contract.start)}, la giornata è prima"
+        assert contract.end is not None
+        return f"Il contratto finisce {day_short(contract.end)}, la giornata è dopo"
 
     return _detect(
         ctx,

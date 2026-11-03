@@ -16,7 +16,7 @@ function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-const SETTINGS = { rate_freelancer: '0.1000', rate_company: '0.3000', updated_at: '2026-09-26T10:00:00Z', updated_by_nome: 'Ivan' }
+const SETTINGS = { rate_freelancer: '0.1000', rate_company: '0.3000', updated_at: '2026-09-26T10:00:00Z', updated_by_name: 'Ivan' }
 
 const CONFIRMED_REWARD = {
   referral_id: 'ref1',
@@ -24,25 +24,25 @@ const CONFIRMED_REWARD = {
   kind: 'freelancer',
   referred_id: 'f1',
   referred_deleted: false,
-  referrer_nome: 'Mario Rossi',
+  referrer_name: 'Mario Rossi',
   referrer_email: 'mario@community.it',
   referrer_freelancer_id: null,
-  referred_nome: 'Ada Lovelace',
+  referred_name: 'Ada Lovelace',
   match_id: 'm1',
   match_freelancer_id: 'f1',
-  match_freelancer_nome: 'Ada Lovelace',
+  match_freelancer_name: 'Ada Lovelace',
   match_freelancer_deleted: false,
-  match_nome_azienda: 'ACME Srl',
-  match_figura_richiesta: 'Backend developer',
+  match_company_name: 'ACME Srl',
+  match_requested_role: 'Backend developer',
   projected_rate: null,
   projected_amount: null,
   rate: '0.1000',
   base_amount: '7000.00',
   reward_amount: '700.00',
-  stato: 'da_confermare',
-  referral_stato: 'verificato',
+  status: 'to_confirm',
+  referral_status: 'verified',
   verified_at: '2026-09-27T08:00:00Z',
-  verified_via: 'accesso',
+  verified_via: 'access',
   note: null,
   created_at: '2026-09-26T10:00:00Z',
   confirmed_at: null,
@@ -62,7 +62,7 @@ const UNPRICED_REWARD = {
   reward_id: 'r2',
   kind: 'company',
   referred_id: 'c1',
-  referred_nome: 'ACME S.r.l.',
+  referred_name: 'ACME S.r.l.',
   base_amount: null,
   reward_amount: null,
 }
@@ -73,16 +73,16 @@ const PENDING_REFERRAL = {
   reward_id: null,
   kind: 'freelancer',
   referred_id: 'f3',
-  referred_nome: 'Grace Hopper',
+  referred_name: 'Grace Hopper',
   match_id: null,
   match_freelancer_id: null,
-  match_freelancer_nome: null,
-  match_nome_azienda: null,
-  match_figura_richiesta: null,
+  match_freelancer_name: null,
+  match_company_name: null,
+  match_requested_role: null,
   rate: null,
   base_amount: null,
   reward_amount: null,
-  stato: null,
+  status: null,
 }
 
 /** Branches on the path, not on call order: this page fires the settings and the
@@ -255,14 +255,14 @@ describe('the Referral admin page (P-REB-44)', () => {
     mount([CONFIRMED_REWARD], {
       '/api/hub/referrals/r1/state': (init) => {
         moved = JSON.parse(init?.body as string)
-        return answer(200, { ...CONFIRMED_REWARD, stato: 'confermato' })
+        return answer(200, { ...CONFIRMED_REWARD, status: 'confirmed' })
       },
     })
     await screen.findByText('Ada Lovelace')
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Conferma' }))
 
-    await waitFor(() => expect(moved).toEqual({ stato: 'confermato' }))
+    await waitFor(() => expect(moved).toEqual({ status: 'confirmed' }))
   })
 
   it('says so in the row when a reward cannot be moved', async () => {
@@ -370,9 +370,9 @@ describe('the Referral admin page (P-REB-44)', () => {
         ...PENDING_REFERRAL,
         match_id: 'm5',
         match_freelancer_id: 'f3',
-        match_freelancer_nome: 'Grace Hopper',
-        match_nome_azienda: 'Bianchi Srl',
-        match_figura_richiesta: 'Designer',
+        match_freelancer_name: 'Grace Hopper',
+        match_company_name: 'Bianchi Srl',
+        match_requested_role: 'Designer',
         projected_rate: '0.1000',
         projected_amount: '350.00',
       },
@@ -387,7 +387,7 @@ describe('the Referral admin page (P-REB-44)', () => {
   })
 
   it('says there is no estimate when a live match cannot be projected, never a made-up figure (REB-609)', async () => {
-    mount([{ ...PENDING_REFERRAL, match_id: 'm5', match_freelancer_id: 'f3', match_nome_azienda: 'Bianchi Srl' }])
+    mount([{ ...PENDING_REFERRAL, match_id: 'm5', match_freelancer_id: 'f3', match_company_name: 'Bianchi Srl' }])
     await screen.findByText('Bianchi Srl')
 
     expect(screen.getByText('Nessuna stima per il match')).toBeInTheDocument()
@@ -414,8 +414,8 @@ describe('the Referral admin page (P-REB-44)', () => {
 
   it('says in whole sentences that a signed letter verified a referral, or that it already counted (REB-658)', async () => {
     mount([
-      { ...CONFIRMED_REWARD, verified_via: 'lettera' },
-      { ...UNPRICED_REWARD, verified_via: 'storico' },
+      { ...CONFIRMED_REWARD, verified_via: 'letter' },
+      { ...UNPRICED_REWARD, verified_via: 'history' },
     ])
     await screen.findByText('Ada Lovelace')
     const rows = screen.getAllByRole('row')
@@ -430,8 +430,8 @@ describe('the Referral admin page (P-REB-44)', () => {
         referral_id: 'ref4',
         kind: 'company',
         referred_id: 'c4',
-        referred_nome: 'Rossi Srl',
-        referral_stato: 'da_verificare',
+        referred_name: 'Rossi Srl',
+        referral_status: 'to_verify',
         verified_at: null,
         verified_via: null,
       },
@@ -452,12 +452,12 @@ describe('the Referral admin page (P-REB-44)', () => {
         ...PENDING_REFERRAL,
         match_id: 'm5',
         match_freelancer_id: 'f3',
-        match_freelancer_nome: 'Grace Hopper',
-        match_nome_azienda: 'Bianchi Srl',
-        match_figura_richiesta: 'Designer',
+        match_freelancer_name: 'Grace Hopper',
+        match_company_name: 'Bianchi Srl',
+        match_requested_role: 'Designer',
         projected_rate: '0.1000',
         projected_amount: '350.00',
-        referral_stato: 'da_verificare',
+        referral_status: 'to_verify',
         verified_at: null,
         verified_via: null,
       },

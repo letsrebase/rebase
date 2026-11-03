@@ -37,11 +37,11 @@ from rebase_core.mail import EmailSender
 from rebase_core.match_drafts import field_reason
 from rebase_core.match_reads import MatchReads
 from rebase_core.ratelimit import RateLimiter
-from rebase_core.schema_common import Remoto
+from rebase_core.schema_common import Remote
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.signing import SigningFactory, SigningService
 
-_REMOTE_WORDS: tuple[Remoto, ...] = get_args(Remoto)
+_REMOTE_WORDS: tuple[Remote, ...] = get_args(Remote)
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
 AdminProvider = Callable[[], AdminRead]
@@ -98,7 +98,7 @@ def field_refusal(exc: PydanticValidationError) -> ToolError:
     for a text past its limit the limit itself, the way the note tools say it («al
     massimo 4000 caratteri»). An optional text's limit is Pydantic's `too_long`, a plain
     one's `string_too_long`: both carry `max_length`. `set_freelancer_tax_data`,
-    `create_match`'s `giorni_previsti` and the team tools refuse through this."""
+    `create_match`'s `expected_days` and the team tools refuse through this."""
     error = exc.errors()[0]
     field = ".".join(str(part) for part in error["loc"])
     if error["type"] in {"string_too_long", "too_long"}:
@@ -120,7 +120,7 @@ def number(value: str | None, field: str) -> Decimal | None:
 
 def integer(value: str | None, field: str) -> int | None:
     """A whole number passed as a string, the same convention `number` gives a
-    decimal one: `numero_risorse` and `giorni_presenza` (REB-380)."""
+    decimal one: `headcount` and `onsite_days` (REB-380)."""
     if value is None or not value.strip():
         return None
     try:
@@ -165,8 +165,8 @@ def to_uuid(value: str, field: str) -> UUID:
         raise ToolError(f"{field}: «{shown}» non è un identificativo valido") from None
 
 
-def as_remote(value: str | None) -> Remoto | None:
-    """`remoto` as the schema's own closed set (`remoto`, `ibrido`, `in_sede`), refused
+def as_remote(value: str | None) -> Remote | None:
+    """`remote` as the schema's own closed set (`remote`, `hybrid`, `on_site`), refused
     with the three words when it is another."""
     if value is None:
         return None
@@ -179,8 +179,8 @@ def as_remote(value: str | None) -> Remoto | None:
 def search_term(value: str | None) -> str | None:
     """`q` bounded the way the API's `SearchQ` bounds it: an unbounded term reaching
     `ILIKE` and `similarity()` on every row is a denial of service with extra steps.
-    Every free-text filter of a list tool (`q`, `luogo`, `posizione`, `utm_source`,
-    `origine`, `pagina_origine`) goes through this."""
+    Every free-text filter of a list tool (`q`, `location`, `posizione`, `utm_source`,
+    `origin`, `origin_page`) goes through this."""
     if value is not None and len(value) > SEARCH_MAX_LENGTH:
         raise ToolError(f"la ricerca deve stare in {SEARCH_MAX_LENGTH} caratteri")
     return value
@@ -195,8 +195,8 @@ def bounded(value: str | None, field: str) -> str | None:
     return value
 
 
-def skill_terms(values: list[str] | None, field: str = "competenze") -> list[str] | None:
-    """`competenze` (or `settori`, `lingue`, `seniority`: `field` names the one being
+def skill_terms(values: list[str] | None, field: str = "skills") -> list[str] | None:
+    """`skills` (or `industries`, `languages`, `seniority`: `field` names the one being
     read) bounded like `q`: at most `SKILL_TERMS_MAX` terms, each within
     `SEARCH_MAX_LENGTH`."""
     if values is None:
@@ -222,7 +222,7 @@ def supplied_text(raw: str) -> str | None:
 class Deps:
     """Everything a tool reads from the server that built it. `admin` answers the admin
     behind the current call; `settings` and `http` are what reaches the CRM, for
-    `list_pigro_spaces` and for the `pigro_slug` of `get_talento`, and without them the
+    `list_pigro_spaces` and for the `pigro_slug` of `get_talent`, and without them the
     registry's tools answer the same sentence the admin area shows when it is not
     configured while the slug stays `None`."""
 
@@ -264,8 +264,8 @@ class Deps:
     @property
     def pigro_configured(self) -> bool:
         """Whether the CRM's engagements door has a token here: without one an active
-        match's `situazione` says the report is not configured and offers no
-        `riprova_pigro`, as the admin API's own match reads do (spec § 3.2)."""
+        match's `situation` says the report is not configured and offers no
+        `retry_pigro`, as the admin API's own match reads do (spec § 3.2)."""
         return self.settings is not None and bool(self.settings.pigro_engagements_token)
 
     @property
@@ -280,7 +280,7 @@ class Deps:
         return Settings(_env_file=None)  # type: ignore[call-arg]
 
     def reading(self, session: Session) -> MatchReads:
-        return MatchReads(session, pigro_configurato=self.pigro_configured)
+        return MatchReads(session, pigro_configured=self.pigro_configured)
 
     def contracts(self, session: Session) -> SigningService:
         if self.signing is not None:
@@ -314,5 +314,5 @@ class Deps:
         this door. `AdminActionService.record` never raises, so a read is not refused
         because the trail could not keep up."""
         AdminActionService(session).record(
-            entity_type, entity_id, kind, self.admin().id, {"fonte": SOURCE, **(payload or {})}
+            entity_type, entity_id, kind, self.admin().id, {"source": SOURCE, **(payload or {})}
         )

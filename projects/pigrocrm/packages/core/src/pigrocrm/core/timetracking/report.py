@@ -33,16 +33,16 @@ from pigrocrm.core.timetracking.xlsx import build_time_report_xlsx
 
 ENTITY = "time_report"
 
-TIME_REPORT_TEMPLATE_NOME = "Rapporto ore"
+TIME_REPORT_TEMPLATE_NAME = "Rapporto ore"
 
-# Declared for the compilation form (slice 2 §4.3). `voci` is deliberately not
+# Declared for the compilation form (slice 2 §4.3). `entries` is deliberately not
 # declared: it is supplied by the service on every render, never typed by a human, and
 # `render_template` accepts undeclared supplied keys -- `{{#each voci}}` resolves from
 # `values`. Declaring it would put a list-typed variable on a form nobody fills in.
 TIME_REPORT_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"nome": "periodo", "etichetta": "Periodo", "tipo": "text", "obbligatoria": True},
-    {"nome": "totale_ore", "etichetta": "Totale ore", "tipo": "number", "obbligatoria": True},
-    {"nome": "numero_voci", "etichetta": "Numero voci", "tipo": "number", "obbligatoria": True},
+    {"nome": "period", "label": "Periodo", "type": "text", "required": True},
+    {"nome": "hours_total", "label": "Totale ore", "type": "number", "required": True},
+    {"nome": "numero_voci", "label": "Numero voci", "type": "number", "required": True},
 )
 
 # `re.fullmatch` is what this is used with -- never `re.match` with `$`, because `$`
@@ -52,19 +52,19 @@ TIME_REPORT_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
 PERIOD_KEY_RE = re.compile(r"(\d{4})-(0[1-9]|1[0-2])")
 
 
-def parse_period(mese: str) -> tuple[int, int]:
+def parse_period(month: str) -> tuple[int, int]:
     """`"2026-03"` -> `(2026, 3)`. The `AAAA-MM` key carried over from the previous system: the
     monthly cut is what a client expects next to an invoice, and it is what gets agreed
     on."""
-    match = PERIOD_KEY_RE.fullmatch(mese)
+    match = PERIOD_KEY_RE.fullmatch(month)
     if match is None:
         raise ValidationFailed(
-            ENTITY, "mese", "periodo non valido", expected="un periodo nella forma AAAA-MM"
+            ENTITY, "month", "periodo non valido", expected="un periodo nella forma AAAA-MM"
         )
     return int(match.group(1)), int(match.group(2))
 
 
-def _italian_date(giorno: date) -> str:
+def _italian_date(day: date) -> str:
     """`dd/mm/yyyy`, formatted from the `Date`'s own parts.
 
     Never through an instant and never through `toISOString()`-shaped arithmetic:
@@ -72,20 +72,20 @@ def _italian_date(giorno: date) -> str:
     CEST on 31 March was stored -- and printed -- as 1 April, landing in the wrong
     monthly export, which is the file attached to an invoice.
     """
-    return f"{giorno.day:02d}/{giorno.month:02d}/{giorno.year}"
+    return f"{day.day:02d}/{day.month:02d}/{day.year}"
 
 
 def report_variables(
-    entries: list[TimeEntry], *, anno: int, mese: int, deal: Deal, customer: Customer | None
+    entries: list[TimeEntry], *, year: int, month: int, deal: Deal, customer: Customer | None
 ) -> dict[str, Any]:
     """Everything both formats need, computed once from already-fetched rows.
 
-    Every figure arrives finished: `totale_ore` is already summed with `sum_hours`, so
+    Every figure arrives finished: `hours_total` is already summed with `sum_hours`, so
     neither the template nor the workbook adds anything. The previous system accumulated hours as
     binary floats (`sum + entry.hours`) and printed a total that was a binary sum
     rounded at the end.
 
-    `descrizione` is handed over **raw** -- multi-line, unescaped. `escape_for` (slice
+    `description` is handed over **raw** -- multi-line, unescaped. `escape_for` (slice
     2) prepares it at render, once, for the context it lands in; the XLSX passes it
     through no escaper at all, because a cell value is not markup.
 
@@ -94,7 +94,7 @@ def report_variables(
     exercised (and, in Task 4A-15, reused for the XLSX) with plain objects.
     """
     return {
-        "periodo": period_label(anno, mese),
+        "periodo": period_label(year, month),
         # `today_local()`, never a bare `date.today()`: see `db/clock.py`. This is the
         # compilation date printed at the head of the timesheet that goes to the client
         # next to the invoice. On the API image, which runs in UTC, every report
@@ -112,18 +112,18 @@ def report_variables(
                 # `str(Decimal)` keeps the stored scale exactly ("2.50", not "2.5"):
                 # the column the client reads must show two places, and formatting a
                 # float here would be the drift `Numeric` exists to avoid.
-                "ore": str(entry.ore),
-                "descrizione": entry.descrizione,
+                "ore": str(entry.hours),
+                "descrizione": entry.description,
             }
             for entry in entries
         ],
-        "totale_ore": str(sum_hours([entry.ore for entry in entries])),
+        "totale_ore": str(sum_hours([entry.hours for entry in entries])),
         "numero_voci": str(len(entries)),
         # Kept as native types for the workbook, which needs real dates and real
         # numbers rather than the display strings above (Task 4A-15).
-        "_rows": [(entry.data, entry.ore, entry.descrizione) for entry in entries],
-        "_anno": anno,
-        "_mese": mese,
+        "_rows": [(entry.data, entry.hours, entry.description) for entry in entries],
+        "_anno": year,
+        "_mese": month,
     }
 
 
@@ -136,30 +136,30 @@ class TimeReportService:
         self.customers = CustomerRepository(session)
         self.templates = TemplateService(session)
 
-    def variables_for(self, deal_id: UUID, mese: str, actor: Actor) -> dict[str, Any]:
+    def variables_for(self, deal_id: UUID, month: str, actor: Actor) -> dict[str, Any]:
         """Fetches the deal, the customer and the month's entries, then delegates the
         actual figure-building to `report_variables` -- see that function's docstring
         for why the two are split."""
-        anno, numero_mese = parse_period(mese)
+        year, number_month = parse_period(month)
         deal = self.deals.get(deal_id)
         if deal is None:
             raise NotFound("deal", deal_id)
         customer = self.customers.get(deal.customer_id)
-        rows = self.entries.for_month(deal_id, anno, numero_mese)
-        return report_variables(rows, anno=anno, mese=numero_mese, deal=deal, customer=customer)
+        rows = self.entries.for_month(deal_id, year, number_month)
+        return report_variables(rows, year=year, month=number_month, deal=deal, customer=customer)
 
-    def render_pdf(self, deal_id: UUID, mese: str, actor: Actor) -> DocumentRead:
-        """Archived as a `document` of type `rapporto_ore` on the deal, through the
+    def render_pdf(self, deal_id: UUID, month: str, actor: Actor) -> DocumentRead:
+        """Archived as a `document` of type `hours_report` on the deal, through the
         slice 2 pipeline unchanged -- so it gets the versioning, the hash, the pluggable
         storage and the timeline that already work, and a regenerated report is a new
         version rather than a silent overwrite."""
-        variables = self.variables_for(deal_id, mese, actor)
-        template = self.templates.repo.get_by_nome(TIME_REPORT_TEMPLATE_NOME)
+        variables = self.variables_for(deal_id, month, actor)
+        template = self.templates.repo.get_by_name(TIME_REPORT_TEMPLATE_NAME)
         if template is None:
             raise ValidationFailed(
                 ENTITY,
                 "template",
-                f"il template «{TIME_REPORT_TEMPLATE_NOME}» non esiste",
+                f"il template «{TIME_REPORT_TEMPLATE_NAME}» non esiste",
                 expected="esegui `pigrocrm seed-templates`",
             )
         if self.storage is None:
@@ -170,15 +170,15 @@ class TimeReportService:
         return DocumentService(self.session, self.storage).create_from_template(
             DocumentFromTemplate(
                 template_id=template.id,
-                titolo=f"Rapporto ore {variables['periodo']}",
+                title=f"Rapporto ore {variables['period']}",
                 customer_id=None,
                 deal_id=deal_id,
-                variabili=public,
+                variables=public,
             ),
             actor,
         )
 
-    def build_xlsx(self, deal_id: UUID, mese: str, actor: Actor) -> tuple[str, bytes]:
+    def build_xlsx(self, deal_id: UUID, month: str, actor: Actor) -> tuple[str, bytes]:
         """Returns `(filename, bytes)`.
 
         Not archived as a `document`, unlike the PDF, and that asymmetry is deliberate:
@@ -188,11 +188,11 @@ class TimeReportService:
         regenerated from the same `variables_for` on every request, so it can never
         drift from the PDF, and storing versions of it would archive scratch paper.
         """
-        variables = self.variables_for(deal_id, mese, actor)
+        variables = self.variables_for(deal_id, month, actor)
         content = build_time_report_xlsx(
-            cliente=str(variables["cliente"].get("ragione_sociale", "")),
-            offerta=str(variables["deal"]["nome"]),
-            periodo=str(variables["periodo"]),
+            customer=str(variables["customer"].get("legal_name", "")),
+            offer=str(variables["deal"]["nome"]),
+            period=str(variables["period"]),
             rows=variables["_rows"],
         )
         return f"rapporto-ore-{variables['_anno']}-{variables['_mese']:02d}.xlsx", content

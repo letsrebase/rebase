@@ -42,7 +42,7 @@ from rebase_core.audit import utcnow
 from rebase_core.card_draft import CardDraft
 from rebase_core.card_prompt import PROMPT_VERSION
 from rebase_core.card_regen import CARD_REGENERATED, CARDS_REGENERATE, NO_ANSWER_REASONS
-from rebase_core.card_types import Composed, Fonte, Outcome, Regeneration
+from rebase_core.card_types import Composed, Outcome, Regeneration, Source
 from rebase_core.card_writer import CardWriter
 from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable, NotFound
 from rebase_core.llm import LlmRequest
@@ -122,7 +122,7 @@ class CardBatches:
         ids: Sequence[UUID],
         admin_id: UUID,
         *,
-        fonte: Fonte,
+        source: Source,
         limit: int,
     ) -> CardsRefreshed:
         """Sends the cards of `ids` that are still stale as one batch, and records it, and
@@ -184,10 +184,10 @@ class CardBatches:
             # still leaves its start and its end, whatever state the session was left in, and
             # sends nothing. The original error is what the caller gets.
             session.rollback()
-            started = writer.record_start(admin_id, fonte, limit, len(ids))
+            started = writer.record_start(admin_id, source, limit, len(ids))
             writer.end_regeneration(
                 admin_id=admin_id,
-                fonte=fonte,
+                source=source,
                 start_action_id=started,
                 queued=len(ids),
                 stopped=True,
@@ -198,15 +198,15 @@ class CardBatches:
         # The start is signed once the batch has an id to name, and before the provider is
         # called: what the hub is about to pay for is never something its trail does not know.
         start = writer.record_start(
-            admin_id, fonte, limit, len(ids), batch.id if batch is not None else None
+            admin_id, source, limit, len(ids), batch.id if batch is not None else None
         )
-        run = Regeneration(admin_id, fonte, bulk=True, start_action_id=start)
+        run = Regeneration(admin_id, source, bulk=True, start_action_id=start)
         with writer.acting(run):
             for freelancer_id in no_text:
                 writer.write(freelancer_id, force=True)
         if batch is None:
             writer.end_regeneration(
-                admin_id=admin_id, fonte=fonte, start_action_id=start, queued=len(ids)
+                admin_id=admin_id, source=source, start_action_id=start, queued=len(ids)
             )
             return CardsRefreshed(written=0, failed=0)
         try:
@@ -223,7 +223,7 @@ class CardBatches:
                     writer.card_done(item.freelancer_id, "errored", reason="not_sent")
             writer.end_regeneration(
                 admin_id=admin_id,
-                fonte=fonte,
+                source=source,
                 start_action_id=start,
                 queued=len(ids),
                 batch_id=batch.id,
@@ -357,7 +357,7 @@ class CardBatches:
             return None, None
         run = Regeneration(
             batch.started_by,
-            cast(Fonte, start.payload.get("fonte", "web")),
+            cast(Source, start.payload.get("source", "web")),
             bulk=True,
             start_action_id=start.id,
             batch_since=batch.created_at,
@@ -378,7 +378,7 @@ class CardBatches:
             return
         writer.end_regeneration(
             admin_id=run.admin_id,
-            fonte=run.fonte,
+            source=run.source,
             start_action_id=start.id,
             queued=int(start.payload.get("queued") or batch.request_count),
             batch_id=batch.id,
@@ -552,7 +552,7 @@ class CardBatches:
         )
         if payload is None:
             return None
-        if payload.get("esito") == "scritta":
+        if payload.get("outcome") == "scritta":
             return "written"
         reason = payload.get("reason")
         if reason in ("superseded", "unchanged"):

@@ -1,18 +1,18 @@
 """One pass of the `campaigns` loop (spec § 5.4): every campaign whose time has come, or
-that a previous pass left `in_invio`, sent one recipient at a time with the send-time
+that a previous pass left `sending`, sent one recipient at a time with the send-time
 checks of § 5.3. A session advisory lock keeps two passes from ever running together.
 
 Controller ruling (R12/R13): the campaigns a first, unlocked `SELECT` finds are only
 ids, never held onto as ORM objects across the loop. Each one is re-read and locked
 (`FOR UPDATE SKIP LOCKED`) right before it is claimed, so a row someone else is already
 holding is skipped this pass rather than raced, and a row this pass finds no longer
-due (moved back to `bozza`, already claimed and moving, or something else entirely) is
+due (moved back to `draft`, already claimed and moving, or something else entirely) is
 left alone. Claiming commits immediately, releasing the campaign's own lock for the
 rest of the send: the campaign is never locked for the whole run, only for the moment
-that flips it to `in_invio`, so a `cancel()` from elsewhere can land between two of its
-rows. The final transition back out of `in_invio` re-reads and re-locks the campaign
-once more and only moves it to `inviata` if it is still there: a campaign a `cancel()`
-already moved to `annullata` stays there.
+that flips it to `sending`, so a `cancel()` from elsewhere can land between two of its
+rows. The final transition back out of `sending` re-reads and re-locks the campaign
+once more and only moves it to `sent` if it is still there: a campaign a `cancel()`
+already moved to `cancelled` stays there.
 
 The session advisory lock (`pg_try_advisory_lock`/`pg_advisory_unlock`) is a per
 *connection* lock, but `session` commits many times over a pass (once per claim, once
@@ -28,11 +28,11 @@ Controller ruling R14: nothing else isolates an exception per campaign or per ro
 one bad row or one bad campaign must not be able to wedge every campaign after it,
 forever. Two backstops, both narrow on purpose: they catch what preparing a mail can
 raise on data this pass didn't choose (a `pigro` button phase 1 refuses, a recipient's
-own broken `prima` snapshot, corrupt stored `filtri`), not bugs in the loop itself:
-a row whose checks or `render` raise is marked `fallita` with a short, address-free
+own broken `before` snapshot, corrupt stored `filters`), not bugs in the loop itself:
+a row whose checks or `render` raise is marked `failed` with a short, address-free
 reason and the row loop moves on; a campaign whose own work raises outside a row (e.g.
 `candidates`) rolls that campaign's work back, is logged by id and
-exception type only, and is left `in_invio` for a later pass while the loop moves on
+exception type only, and is left `sending` for a later pass while the loop moves on
 to the next due campaign. The advisory lock is released in every case regardless,
 since it is taken and released around the whole pass, outside both of these.
 
@@ -55,7 +55,7 @@ from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.audience import REASON_DONE, REASON_NOT_LISTED, candidates, exclusions
 from rebase_core.campaigns.outcome import stamp_outcomes
 from rebase_core.campaigns.render import RenderTarget, render
-from rebase_core.campaigns.sender import QUOTA_MONTHLY, CampaignSender
+from rebase_core.campaigns.sender import SHARE_MONTHLY, CampaignSender
 from rebase_core.config import Settings
 from rebase_core.models import Campaign, CampaignRecipient
 from rebase_core.team_caps import ROME, rome_midnight
@@ -78,18 +78,18 @@ STALLED_LIST = "la lista non si legge"
 # other stops on the page («Invio fermo: ...»), with when the rest leaves. The first is
 # ours and ends at midnight in Rome; the second is Resend's, whose day may not start at
 # the same minute, so the pass keeps trying every minute with no attempt counted.
-STALLED_QUOTA_DAY = "Resend ha esaurito la quota di oggi: il resto parte appena la rinnova"
-STALLED_QUOTA_MONTH = "Resend ha esaurito la quota del mese: il resto parte quando si rinnova"
+STALLED_SHARE_DAY = "Resend ha esaurito la quota di oggi: il resto parte appena la rinnova"
+STALLED_SHARE_MONTH = "Resend ha esaurito la quota del mese: il resto parte quando si rinnova"
 
 _log = logging.getLogger(__name__)
 
 
 @dataclass
 class TickResult:
-    campagne: int = 0
-    inviate: int = 0
-    saltate: int = 0
-    fallite: int = 0
+    campaigns: int = 0
+    sent: int = 0
+    skipped: int = 0
+    failed: int = 0
     stampate: int = 0
 
 
@@ -113,17 +113,17 @@ def run_tick(
                 select(Campaign.id)
                 .where(
                     or_(
-                        and_(Campaign.stato == "programmata", Campaign.programmata_per <= clock()),
-                        Campaign.stato == "in_invio",
+                        and_(Campaign.status == "scheduled", Campaign.scheduled_for <= clock()),
+                        Campaign.status == "sending",
                     )
                 )
-                .order_by(Campaign.programmata_per, Campaign.id)
+                .order_by(Campaign.scheduled_for, Campaign.id)
             ).all()
             for campaign_id in due_ids:
                 campaign = _claim(session, campaign_id, clock())
                 if campaign is None:
                     continue
-                result.campagne += 1
+                result.campaigns += 1
                 try:
                     _send(session, campaign, sender, settings, clock, pause, result)
                 except Exception as exc:  # one bad campaign must not wedge the rest (R14)
@@ -144,13 +144,13 @@ def campaign_room(session: Session, settings: Settings, now: datetime) -> int:
     """How many more campaign mails may leave today (REB-779): the day's ceiling, less
     the reserve for the mails that are not campaigns, less the rows sent since midnight
     in Rome across every campaign. Never below zero."""
-    ceiling = max(settings.resend_daily_quota - settings.campaign_daily_reserve, 0)
+    ceiling = max(settings.resend_daily_share - settings.campaign_daily_reserve, 0)
     sent = session.scalar(
         select(func.count())
         .select_from(CampaignRecipient)
         .where(
-            CampaignRecipient.stato == "inviata",
-            CampaignRecipient.inviata_at >= rome_midnight(now),
+            CampaignRecipient.status == "sent",
+            CampaignRecipient.sent_at >= rome_midnight(now),
         )
     )
     return max(ceiling - (sent or 0), 0)
@@ -159,7 +159,7 @@ def campaign_room(session: Session, settings: Settings, now: datetime) -> int:
 def held_sentence(settings: Settings, now: datetime) -> str:
     """What the page says when the ceiling holds the rest: the number and the day and
     hour it leaves, the next midnight in Rome."""
-    ceiling = max(settings.resend_daily_quota - settings.campaign_daily_reserve, 0)
+    ceiling = max(settings.resend_daily_share - settings.campaign_daily_reserve, 0)
     tomorrow = datetime.combine(
         rome_midnight(now).date() + timedelta(days=1), day_time.min, tzinfo=ROME
     )
@@ -171,15 +171,15 @@ def held_sentence(settings: Settings, now: datetime) -> str:
 
 def _claim(session: Session, campaign_id: UUID, now: datetime) -> Campaign | None:
     """Re-reads and locks one campaign the unlocked scan above found due. Returns it,
-    moved to `in_invio` and the move already committed (releasing the lock), only if it
+    moved to `sending` and the move already committed (releasing the lock), only if it
     is still claimable under the lock; otherwise releases the lock and returns `None`
     without touching the row: someone else has it (`SKIP LOCKED` found nothing), or it
-    moved on since the scan (back to `bozza`, cancelled, already `in_invio`).
+    moved on since the scan (back to `draft`, cancelled, already `sending`).
 
     `populate_existing=True`: this session may already hold this campaign in its
     identity map (`expire_on_commit=False`, and a pass touches several rows without
     ever expiring the objects it already has). Without it, a `Campaign` this session
-    saw before would keep its old, in-memory `stato` instead of the one this very
+    saw before would keep its old, in-memory `status` instead of the one this very
     `SELECT ... FOR UPDATE` just locked and read, the one write this function is about
     to gate on."""
     campaign = session.scalars(
@@ -190,16 +190,16 @@ def _claim(session: Session, campaign_id: UUID, now: datetime) -> Campaign | Non
     ).first()
     if campaign is None:
         return None
-    if campaign.stato == "in_invio":
+    if campaign.status == "sending":
         session.commit()
         return campaign
     due = (
-        campaign.stato == "programmata"
-        and campaign.programmata_per is not None
-        and campaign.programmata_per <= now
+        campaign.status == "scheduled"
+        and campaign.scheduled_for is not None
+        and campaign.scheduled_for <= now
     )
     if due:
-        campaign.stato = "in_invio"
+        campaign.status = "sending"
         session.commit()
         return campaign
     session.commit()  # release the lock: nothing to claim
@@ -213,7 +213,7 @@ def _earliest_webhook_moment(row: CampaignRecipient) -> datetime | None:
     when the webhook wrote none of them yet."""
     moments = [
         m
-        for m in (row.consegnata_at, row.rimbalzata_at, row.primo_clic_at, row.reclamo_at)
+        for m in (row.delivered_at, row.bounced_at, row.first_click_at, row.complaint_at)
         if m is not None
     ]
     return min(moments) if moments else None
@@ -233,11 +233,11 @@ def _send(
     try:
         members = (
             {c.email for c in candidates(session, campaign)}
-            if campaign.fonte in ("stato", "filtri")
+            if campaign.source in ("status", "filters")
             else None
         )
     except Exception:
-        # The list itself cannot be read (corrupt stored `filtri`, say): no later pass
+        # The list itself cannot be read (corrupt stored `filters`, say): no later pass
         # reads it either, so the campaign says so (REB-524). Only this read records
         # it; anything else that escapes a campaign is the caller's to log (R14).
         session.rollback()
@@ -247,7 +247,7 @@ def _send(
         row = session.scalars(
             select(CampaignRecipient)
             .where(
-                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.stato == "in_coda"
+                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.status == "in_coda"
             )
             .order_by(CampaignRecipient.id)
             .limit(1)
@@ -263,25 +263,25 @@ def _send(
             # retried `Idempotency-Key` would answer harmlessly for 24 hours, but past
             # that Resend forgets the key and a bare retry would send a second mail
             # (DECISIONS.md, the retry row). Trust what the webhook already knows
-            # instead of calling Resend again. `inviata_at` takes the earliest of the
+            # instead of calling Resend again. `sent_at` takes the earliest of the
             # webhook's own timestamps (`_earliest_webhook_moment`), each the event's
             # own moment, not when this tick noticed it, since outcome stamping and the
-            # gap rule both read `inviata_at` as "since when": stamping it with this
+            # gap rule both read `sent_at` as "since when": stamping it with this
             # tick's `now` -- possibly long after the real send, if the loop was down
             # for a while -- would miss whatever the recipient already did in between
             # and understate how long ago they were reached. `clock()` is a fallback
             # for a `resend_id` with none of the four columns set, which no event
             # `webhook.py` handles today can actually leave behind (every branch that
             # reaches its shared `resend_id` write has just set one of them).
-            row.stato, row.inviata_at = "inviata", webhook_moment or clock()
-            result.inviate += 1
+            row.status, row.sent_at = "sent", webhook_moment or clock()
+            result.sent += 1
             # A mail the webhook dates after the stop says the send moves again, as an
             # accepted send does; one it dates before left before Resend started
             # refusing, and says nothing about the refusal (REB-524, review on #473).
             if (
                 webhook_moment is not None
-                and campaign.fermo_at is not None
-                and webhook_moment > campaign.fermo_at
+                and campaign.stalled_at is not None
+                and webhook_moment > campaign.stalled_at
             ):
                 _moving(campaign)
             session.commit()
@@ -297,28 +297,28 @@ def _send(
                 now=clock(),
                 gap_days=settings.campaign_gap_days,
             ).get(row.email)
-            if reason is None and done_at(session, row, campaign.azione) is not None:
+            if reason is None and done_at(session, row, campaign.action) is not None:
                 reason = REASON_DONE
             if reason is None and members is not None and row.email not in members:
                 reason = REASON_NOT_LISTED
             if reason is not None:
-                row.stato, row.motivo = "saltata", reason
-                result.saltate += 1
+                row.status, row.reason = "skipped", reason
+                result.skipped += 1
                 session.commit()
                 continue
             target = RenderTarget(
                 email=row.email,
                 nome=row.nome,
-                codice=row.codice,
-                token=row.disiscrizione_token,
+                code=row.code,
+                token=row.unsubscribe_token,
                 recipient_id=str(row.id),
             )
             rendered = render(campaign, target, settings)
         except Exception:  # one bad row must not stop the rest of the send (R14)
             # Data this pass didn't choose (a `pigro` button phase 1 refuses, a
-            # recipient's own broken `prima` snapshot): never the address, never a key.
-            row.stato, row.motivo = "fallita", ROW_PREPARE_ERROR
-            result.fallite += 1
+            # recipient's own broken `before` snapshot): never the address, never a key.
+            row.status, row.reason = "failed", ROW_PREPARE_ERROR
+            result.failed += 1
             session.commit()
             continue
         if campaign_room(session, settings, clock()) == 0:
@@ -328,45 +328,45 @@ def _send(
             _stall(session, campaign.id, held_sentence(settings, clock()), clock())
             return
         outcome = sender.send(rendered, idempotency_key=str(row.id))
-        if outcome.esito == "quota":
+        if outcome.outcome == "quota":
             # Resend's own 429 for the quota: every other mail would get it, and the
             # row did nothing wrong. Same stop as the ceiling, tried again next pass.
             session.commit()
             _log.error("campaign %s stopped this tick: Resend quota", campaign.id)
-            monthly = outcome.dettaglio == QUOTA_MONTHLY
+            monthly = outcome.detail == SHARE_MONTHLY
             _stall(
                 session,
                 campaign.id,
-                STALLED_QUOTA_MONTH if monthly else STALLED_QUOTA_DAY,
+                STALLED_SHARE_MONTH if monthly else STALLED_SHARE_DAY,
                 clock(),
             )
             return
-        if outcome.esito == "fermati":
+        if outcome.outcome == "stop":
             # Resend refused the key or the domain: every other row would get the same
             # answer. Stop this campaign's pass with the row still `in_coda` and no
-            # attempt counted; the campaign stays `in_invio` and the next tick tries
+            # attempt counted; the campaign stays `sending` and the next tick tries
             # again, so fixing the key resumes the send. The status alone is logged,
             # and the stop is stored on the campaign for its page (REB-524).
             session.commit()  # releases the row's lock; nothing was written
-            _log.error("campaign %s stopped this tick: %s", campaign.id, outcome.dettaglio)
+            _log.error("campaign %s stopped this tick: %s", campaign.id, outcome.detail)
             _stall(session, campaign.id, STALLED_KEY, clock())
             return
-        if outcome.esito == "accettata":
-            row.stato, row.resend_id, row.inviata_at = "inviata", outcome.resend_id, clock()
-            result.inviate += 1
+        if outcome.outcome == "accepted":
+            row.status, row.resend_id, row.sent_at = "sent", outcome.resend_id, clock()
+            result.sent += 1
             _moving(campaign)
-        elif outcome.esito == "riprova":
-            row.tentativi += 1
-            if row.tentativi >= MAX_ATTEMPTS:
-                dettaglio = outcome.dettaglio or "Resend non risponde"
-                row.stato, row.motivo = "fallita", dettaglio[:200]
-                result.fallite += 1
+        elif outcome.outcome == "retry":
+            row.attempts += 1
+            if row.attempts >= MAX_ATTEMPTS:
+                detail = outcome.detail or "Resend non risponde"
+                row.status, row.reason = "failed", detail[:200]
+                result.failed += 1
             else:
                 session.commit()
                 return  # the next tick tries this row again, same key
         else:
-            row.stato, row.motivo = "fallita", (outcome.dettaglio or "rifiutata")[:200]
-            result.fallite += 1
+            row.status, row.reason = "failed", (outcome.detail or "rejected")[:200]
+            result.failed += 1
         session.commit()
         pause(SEND_INTERVAL_SECONDS)
     _finish(session, campaign.id, clock)
@@ -374,9 +374,9 @@ def _send(
 
 def _finish(session: Session, campaign_id: UUID, clock: Callable[[], datetime]) -> None:
     """Controller ruling R13: re-reads and locks the campaign once more, and moves it
-    out of `in_invio` only if it is still there. A `cancel()` that landed between two
-    rows already moved it to `annullata`; that stands. `populate_existing=True` for the
-    same reason as `_claim`: this session's identity map may still hold the `in_invio`
+    out of `sending` only if it is still there. A `cancel()` that landed between two
+    rows already moved it to `cancelled`; that stands. `populate_existing=True` for the
+    same reason as `_claim`: this session's identity map may still hold the `sending`
     this very function set a moment ago, and the whole point here is to see whatever a
     concurrent `cancel()` wrote since."""
     campaign = session.scalars(
@@ -385,9 +385,9 @@ def _finish(session: Session, campaign_id: UUID, clock: Callable[[], datetime]) 
         .with_for_update()
         .execution_options(populate_existing=True)
     ).one()
-    if campaign.stato == "in_invio":
-        campaign.stato, campaign.inviata_at = "inviata", clock()
-        campaign.fermo_at, campaign.fermo_motivo = None, None
+    if campaign.status == "sending":
+        campaign.status, campaign.sent_at = "sent", clock()
+        campaign.stalled_at, campaign.stalled_reason = None, None
     session.commit()
 
 
@@ -395,23 +395,23 @@ def _moving(campaign: Campaign) -> None:
     """A mail of this campaign left, sent now or confirmed by the webhook: whatever
     stopped the send is fixed, so its stall goes (REB-524). Written with the row's own
     commit, through the object `_claim` loaded with `populate_existing`."""
-    if campaign.fermo_at is not None or campaign.fermo_motivo is not None:
-        campaign.fermo_at, campaign.fermo_motivo = None, None
+    if campaign.stalled_at is not None or campaign.stalled_reason is not None:
+        campaign.stalled_at, campaign.stalled_reason = None, None
 
 
-def _stall(session: Session, campaign_id: UUID, motivo: str, now: datetime) -> None:
+def _stall(session: Session, campaign_id: UUID, reason: str, now: datetime) -> None:
     """Stores why this campaign's send stopped (REB-524), only while it is still
-    `in_invio`: a `cancel()` that landed meanwhile stands, and says nothing of a stop.
-    `fermo_at` keeps the FIRST stop, since every pass retries and a send stopped for
+    `sending`: a `cancel()` that landed meanwhile stands, and says nothing of a stop.
+    `stalled_at` keeps the FIRST stop, since every pass retries and a send stopped for
     hours must not read as stopped a minute ago; the reason is the latest pass's. A
-    conditional `UPDATE` rather than a write through the ORM object, whose `stato`
+    conditional `UPDATE` rather than a write through the ORM object, whose `status`
     this pass read at the claim and may be stale by now. A failure here is logged by
     type and never stops the pass."""
     try:
         session.execute(
             update(Campaign)
-            .where(Campaign.id == campaign_id, Campaign.stato == "in_invio")
-            .values(fermo_at=func.coalesce(Campaign.fermo_at, now), fermo_motivo=motivo)
+            .where(Campaign.id == campaign_id, Campaign.status == "sending")
+            .values(stalled_at=func.coalesce(Campaign.stalled_at, now), stalled_reason=reason)
             .execution_options(synchronize_session="fetch")
         )
         session.commit()

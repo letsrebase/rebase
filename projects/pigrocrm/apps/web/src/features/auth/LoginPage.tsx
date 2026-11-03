@@ -180,15 +180,15 @@ export function LoginPage({
                 >
                   <span className="text-left">
                     {space.slug}
-                    {space.invito && (
+                    {space.invitation && (
                       <span className="text-muted-foreground block text-xs font-normal">
-                        {space.invitato_da
-                          ? `Invito da ${space.invitato_da}, da accettare`
+                        {space.invited_from
+                          ? `Invito da ${space.invited_from}, da accettare`
                           : 'Invito da accettare'}
                       </span>
                     )}
                   </span>
-                  <span className="text-muted-foreground text-xs">{roleLabel(space.ruolo)}</span>
+                  <span className="text-muted-foreground text-xs">{roleLabel(space.role)}</span>
                 </Button>
               ))}
               <Button

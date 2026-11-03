@@ -70,7 +70,7 @@ _LENGTH_BY_TYPE: dict[str, tuple[str, str, str]] = {
 
 # error type -> (`ctx` key, reason, expected value with the bound as `{}`): the violations
 # of a `Decimal` or a pattern that `max_digits`, `decimal_places` and the like declare on
-# `ore`, `importo` and the money fields.
+# `hours`, `amount` and the money fields.
 _BOUNDED_REASON_BY_TYPE: dict[str, tuple[str, str, str]] = {
     "decimal_max_places": ("decimal_places", "ha troppi decimali", "al massimo {} decimali"),
     "decimal_max_digits": ("max_digits", "ha troppe cifre", "al massimo {} cifre in tutto"),
@@ -227,7 +227,7 @@ def unknown_argument_error(
     tool: str, names: Sequence[str], schema: Mapping[str, Any]
 ) -> DomainError:
     """A parameter the tool does not have (REB-808). The SDK ignores it silently, so a
-    misspelt `limite` on a search answered with every row, and a misspelt `stage_id` read
+    misspelt `limit` on a search answered with every row, and a misspelt `stage_id` read
     as a missing one. Names the first, offers the closest real name, and lists them all."""
     name = names[0]
     close = get_close_matches(name, list(schema.get("properties", {})), n=1)

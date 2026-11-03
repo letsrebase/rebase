@@ -12,41 +12,41 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readOrigin } from '@/lib/utm'
 import { STALE_SENTENCE, Team, UNREACHABLE_SENTENCE } from './Team'
 
-const DESCRIZIONE =
+const DESCRIPTION =
   'Ci serve una web app per i clienti: pagamenti, dashboard dei conti, API di open banking.'
 
 /** A public read as `GET /api/hub/team/proposals/{id}` answers it (REB-675): two people,
- *  sized by the engine (`persone` null), the way the landing asks. */
+ *  sized by the engine (`people` null), the way the landing asks. */
 const PROPOSAL = {
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
-  descrizione: DESCRIZIONE,
-  persone: null,
-  riassunto: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-  luogo: { locale: false, dove: null },
+  description: DESCRIPTION,
+  people: null,
+  summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
+  location: { locale: false, dove: null },
   team: [1, 2].map((posizione) => ({
     posizione,
     freelancer_id: null,
     nome: null,
-    cognome: null,
-    ruolo: posizione === 1 ? 'Backend developer' : 'Frontend developer',
-    motivazione: 'Ha costruito le API di pagamento di due banche.',
-    giorni_settimana: 5,
-    scheda: {
-      ruolo: 'Sviluppatore backend',
+    last_name: null,
+    role: posizione === 1 ? 'Backend developer' : 'Frontend developer',
+    reasoning: 'Ha costruito le API di pagamento di due banche.',
+    week_days: 5,
+    card: {
+      role: 'Sviluppatore backend',
       seniority: 'senior',
-      anni: 9,
-      competenze: ['Python'],
-      settori: [],
-      lingue: ['italiano'],
-      luogo: null,
-      sintesi: 'Nove anni su sistemi di pagamento.',
+      experience_years: 9,
+      skills: ['Python'],
+      industries: [],
+      languages: ['italiano'],
+      location: null,
+      profile_summary: 'Nove anni su sistemi di pagamento.',
     },
-    modalita: 'remoto',
-    fascia: { min: 400, max: 500 },
+    mode: 'remote',
+    band: { min: 400, max: 500 },
   })),
-  economia: { giorno: { min: 800, max: 1000 }, mese: { min: 17600, max: 22000 }, giorni_mese: 22 },
+  economics: { day: { min: 800, max: 1000 }, month: { min: 17600, max: 22000 }, days_month: 22 },
   previous_id: null,
-  origine: 'pubblico',
+  origin: 'public',
   created_at: '2026-10-07T08:00:00Z',
 }
 
@@ -63,10 +63,10 @@ function mount(entry = '/team') {
     path: '/team',
     validateSearch: (
       search: Record<string, unknown>,
-    ): { proposta?: string; descrizione?: string; persone?: number } => ({
-      ...(typeof search.proposta === 'string' && search.proposta ? { proposta: search.proposta } : {}),
-      ...(typeof search.descrizione === 'string' && search.descrizione ? { descrizione: search.descrizione } : {}),
-      ...(typeof search.persone === 'number' ? { persone: search.persone } : {}),
+    ): { proposal?: string; description?: string; people?: number } => ({
+      ...(typeof search.proposal === 'string' && search.proposal ? { proposal: search.proposal } : {}),
+      ...(typeof search.description === 'string' && search.description ? { description: search.description } : {}),
+      ...(typeof search.people === 'number' ? { people: search.people } : {}),
     }),
     component: Team,
   })
@@ -106,7 +106,7 @@ describe('the public team page', () => {
       "Il team builder è in beta e senza limiti. Con il talent cloud apri una posizione e la ricerca non si ferma: per tutta la durata dell'abbonamento cerchiamo nella community e fuori e ti portiamo i profili che passano la selezione. Dentro, vedi i profili per nome e chiedi i talenti direttamente.",
     )
     const link = screen.getByRole('link', { name: 'Chiedi l’accesso al talent cloud' })
-    expect(link).toHaveAttribute('href', '/companies?da=team-builder')
+    expect(link).toHaveAttribute('href', '/companies?from=team-builder')
 
     await user.click(link)
     await waitFor(() => expect(router.state.location.pathname).toBe('/companies'))
@@ -119,20 +119,20 @@ describe('the public team page opened on a proposal (REB-675)', () => {
   it('reads ?proposta= back and shows it as if just proposed, sized as the visitor saw it', async () => {
     const user = userEvent.setup()
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(answer(200, PROPOSAL))
-    mount(`/team?proposta=${PROPOSAL.id}`)
+    mount(`/team?proposal=${PROPOSAL.id}`)
 
     expect(await screen.findByRole('status')).toHaveTextContent('Apro la proposta…')
     expect(await screen.findByRole('heading', { name: 'La nostra proposta' })).toBeInTheDocument()
     expect(fetchSpy.mock.calls[0]?.[0]).toBe(`/api/hub/team/proposals/${PROPOSAL.id}`)
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByLabelText('Descrizione del progetto')).toHaveValue(DESCRIZIONE)
+    expect(screen.getByLabelText('Descrizione del progetto')).toHaveValue(DESCRIPTION)
     expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
       'Backend developer',
       'Frontend developer',
       'Quanto costa il team',
     ])
-    // The engine sized this one (`persone` null): the selector says two, the team's own
+    // The engine sized this one (`people` null): the selector says two, the team's own
     // size, so «Rigenera» keeps it rather than shrinking the team to one.
     expect(screen.getByRole('combobox', { name: 'Quante persone' })).toHaveTextContent('2 persone')
     expect(screen.getByRole('button', { name: 'Assumi team' })).toBeInTheDocument()
@@ -142,8 +142,8 @@ describe('the public team page opened on a proposal (REB-675)', () => {
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
     const [, init] = fetchSpy.mock.calls[1] as [string, RequestInit]
     expect(JSON.parse(init.body as string)).toEqual({
-      descrizione: DESCRIZIONE,
-      persone: 2,
+      description: DESCRIPTION,
+      people: 2,
       previous_id: PROPOSAL.id,
     })
   })
@@ -152,7 +152,7 @@ describe('the public team page opened on a proposal (REB-675)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       answer(404, { detail: 'team_proposal 00000000-0000-7000-8000-000000000000 non trovato' }),
     )
-    mount('/team?proposta=00000000-0000-7000-8000-000000000000')
+    mount('/team?proposal=00000000-0000-7000-8000-000000000000')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(STALE_SENTENCE)
     expect(screen.getByLabelText('Descrizione del progetto')).toHaveValue('')
@@ -166,7 +166,7 @@ describe('the public team page opened on a proposal (REB-675)', () => {
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(answer(503, { detail: 'Troppe richieste in questo momento: riprova tra un minuto.' }))
       .mockResolvedValueOnce(answer(200, PROPOSAL))
-    mount(`/team?proposta=${PROPOSAL.id}`)
+    mount(`/team?proposal=${PROPOSAL.id}`)
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(UNREACHABLE_SENTENCE)
@@ -177,14 +177,14 @@ describe('the public team page opened on a proposal (REB-675)', () => {
     expect(await screen.findByRole('heading', { name: 'La nostra proposta' })).toBeInTheDocument()
     expect(fetchSpy).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByLabelText('Descrizione del progetto')).toHaveValue(DESCRIZIONE)
+    expect(screen.getByLabelText('Descrizione del progetto')).toHaveValue(DESCRIPTION)
   })
 
   it('fills the box from ?descrizione=, the landing’s form without JavaScript, and asks nothing', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    mount(`/team?descrizione=${encodeURIComponent(DESCRIZIONE)}&persone=3`)
+    mount(`/team?description=${encodeURIComponent(DESCRIPTION)}&people=3`)
 
-    expect(await screen.findByLabelText('Descrizione del progetto')).toHaveValue(DESCRIZIONE)
+    expect(await screen.findByLabelText('Descrizione del progetto')).toHaveValue(DESCRIPTION)
     // And the headcount the same form sent, so the page asks what the landing would have.
     expect(screen.getByRole('combobox', { name: 'Quante persone' })).toHaveTextContent('3 persone')
     expect(screen.queryByRole('status')).toBeNull()

@@ -38,14 +38,14 @@ def _user(connection: Any) -> Any:
     return user_id
 
 
-def _freelancer(connection: Any, *, stato: str = "nuovo", cv: bytes | None = None) -> Any:
+def _freelancer(connection: Any, *, status: str = "new", cv: bytes | None = None) -> Any:
     freelancer_id = uuid4()
     connection.execute(
         text(
             "INSERT INTO freelancers (id, user_id, stato, compilata_da, links, cv_bytes) "
             "VALUES (:id, :u, :s, 'persona', '[]', :cv)"
         ),
-        {"id": freelancer_id, "u": _user(connection), "s": stato, "cv": cv},
+        {"id": freelancer_id, "u": _user(connection), "s": status, "cv": cv},
     )
     return freelancer_id
 
@@ -80,9 +80,9 @@ def test_a_value_outside_its_closed_set_is_refused(hub_postgres: Any) -> None:
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
-            _freelancer(connection, stato="attivo")
+            _freelancer(connection, status="active")
         with pytest.raises(IntegrityError, match="ck_freelancers_stato"), engine.begin() as c:
-            _freelancer(c, stato="altro")
+            _freelancer(c, status="altro")
         engine.dispose()
 
 
@@ -95,7 +95,7 @@ def test_a_legacy_row_outside_the_set_does_not_stop_the_upgrade(hub_postgres: An
         command.downgrade(config, _parent(config))
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
-            _freelancer(connection, stato="vecchio")
+            _freelancer(connection, status="vecchio")
         command.upgrade(config, "head")
         with engine.begin() as connection:
             enforced = connection.execute(
@@ -105,7 +105,7 @@ def test_a_legacy_row_outside_the_set_does_not_stop_the_upgrade(hub_postgres: An
             ).scalar_one()
         assert enforced is False
         with pytest.raises(IntegrityError, match="ck_freelancers_stato"), engine.begin() as c:
-            _freelancer(c, stato="altro")
+            _freelancer(c, status="altro")
         engine.dispose()
 
 

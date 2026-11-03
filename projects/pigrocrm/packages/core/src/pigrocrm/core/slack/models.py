@@ -54,7 +54,7 @@ class SlackWorkspace(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         # One workspace per space, whatever the rows say: the same expression in every row
         # is a value the unique index admits once.
-        Index("uq_slack_workspaces_one_per_space", text("(true)"), unique=True),
+        Index("uq_slack_workspaces_one_by_space", text("(true)"), unique=True),
     )
 
     team_id: Mapped[str] = mapped_column(String(32), nullable=False)

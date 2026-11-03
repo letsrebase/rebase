@@ -20,7 +20,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from rebase_core.card_draft import FONTI_FIELDS
+from rebase_core.card_draft import SOURCES_FIELDS
 from rebase_core.card_prompt import source_blocks, source_keys
 from rebase_core.cv_text import CvText
 from rebase_core.hub_facts import HubFacts
@@ -61,24 +61,24 @@ class FieldVerdict(BaseModel):
 class CardJudgement(BaseModel):
     """The judge's whole answer: a verdict for each field of the card, every claim no
     source says, and every identifier of the person that appears in the card. A fixed object
-    rather than a free map, as `CardFonti`: every provider's native structured output takes
+    rather than a free map, as `CardSources`: every provider's native structured output takes
     it, and a field the judge forgot is a shape failure."""
 
     model_config = ConfigDict(extra="forbid")
 
-    ruolo: FieldVerdict
-    anni: FieldVerdict
+    role: FieldVerdict
+    experience_years: FieldVerdict
     seniority: FieldVerdict
-    competenze: FieldVerdict
-    settori: FieldVerdict
-    lingue: FieldVerdict
-    luogo: FieldVerdict
-    sintesi: FieldVerdict
+    skills: FieldVerdict
+    industries: FieldVerdict
+    languages: FieldVerdict
+    location: FieldVerdict
+    profile_summary: FieldVerdict
     invented: list[Annotated[str, StringConstraints(max_length=160)]] = Field(max_length=30)
     identifying: list[Annotated[str, StringConstraints(max_length=120)]] = Field(max_length=30)
 
     def fields(self) -> dict[str, FieldVerdict]:
-        return {name: getattr(self, name) for name in FONTI_FIELDS}
+        return {name: getattr(self, name) for name in SOURCES_FIELDS}
 
 
 _SYSTEM = """\
@@ -142,13 +142,13 @@ def judge_prompt(
     position the person gave, the card, the CV and every source the writer could read (the
     hub's facts included), as the writer's prompt carries them, whichever prompt version
     wrote the card, so a card of the CV alone is judged against everything we hold."""
-    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    cut = " (cut short: the file is longer than what follows)" if cv.truncated else ""
     card_json = json.dumps(card.model_dump(mode="json"), ensure_ascii=False)
     user = (
         f"Today: {today.isoformat()}\n"
         f"Position on the profile: {posizione or 'not given'}\n\n"
         f"The card to check:\n<card>\n{card_json}\n</card>\n\n"
-        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+        f"The CV's text{cut}:\n<cv>\n{cv.text}\n</cv>"
     )
     blocks = source_blocks(sources, facts)
     if blocks:

@@ -17,11 +17,11 @@ fiscal year.
 
 `congela` freezes that instant on both sides of the disagreement:
 
-  * `pigrocrm.core.db.clock._now` is frozen, so `today_local()` answers `OGGI_IN_ITALIA`
+  * `pigrocrm.core.db.clock._now` is frozen, so `today_local()` answers `TODAY_IN_ITALY`
     (1 January 2026): the real function, real `ZoneInfo` conversion, only the instant
     supplied.
   * each production module named by the caller gets a `date` whose `today()` answers
-    `OGGI_DEL_PROCESSO` (31 December 2025), which is what the standard library would
+    `TODAY_OF_PROCESSO` (31 December 2025), which is what the standard library would
     genuinely return for that instant on a host running in UTC.
 
 There is exactly one place to freeze, `db.clock._now`, because there is exactly one place
@@ -46,10 +46,10 @@ from pigrocrm.core.db.clock import ITALY_TZ
 # 00:30 on 1 January in Rome. In UTC this instant is still 23:30 on 31 December.
 ISTANTE = datetime(2026, 1, 1, 0, 30, tzinfo=ITALY_TZ)
 
-OGGI_IN_ITALIA: date = ISTANTE.astimezone(ITALY_TZ).date()
-OGGI_DEL_PROCESSO: date = ISTANTE.astimezone(UTC).date()
+TODAY_IN_ITALY: date = ISTANTE.astimezone(ITALY_TZ).date()
+TODAY_OF_PROCESSO: date = ISTANTE.astimezone(UTC).date()
 
-assert OGGI_IN_ITALIA != OGGI_DEL_PROCESSO, "the whole point is that these two differ"
+assert TODAY_IN_ITALY != TODAY_OF_PROCESSO, "the whole point is that these two differ"
 
 
 class _DataDiSistema(date):
@@ -57,7 +57,7 @@ class _DataDiSistema(date):
 
     @classmethod
     def today(cls) -> date:
-        return OGGI_DEL_PROCESSO
+        return TODAY_OF_PROCESSO
 
 
 def congela(monkeypatch: pytest.MonkeyPatch, *moduli: object) -> None:
@@ -67,12 +67,12 @@ def congela(monkeypatch: pytest.MonkeyPatch, *moduli: object) -> None:
         monkeypatch.setattr(modulo, "date", _DataDiSistema, raising=False)
 
 
-def fissa_oggi(monkeypatch: pytest.MonkeyPatch, giorno: date) -> None:
-    """Pin the product clock to midday in Rome on `giorno`, the day a module computed once
+def fissa_today(monkeypatch: pytest.MonkeyPatch, day: date) -> None:
+    """Pin the product clock to midday in Rome on `day`, the day a module computed once
     at import (`TODAY = today_local()`): a run that crosses midnight would otherwise compare
     the service's new day with the old one."""
-    istante = datetime(giorno.year, giorno.month, giorno.day, 12, 0, tzinfo=ITALY_TZ)
+    istante = datetime(day.year, day.month, day.day, 12, 0, tzinfo=ITALY_TZ)
     monkeypatch.setattr(db_clock, "_now", lambda: istante.astimezone(UTC))
 
 
-__all__ = ["ISTANTE", "fissa_oggi", "OGGI_DEL_PROCESSO", "OGGI_IN_ITALIA", "congela"]
+__all__ = ["ISTANTE", "fissa_today", "TODAY_OF_PROCESSO", "TODAY_IN_ITALY", "congela"]

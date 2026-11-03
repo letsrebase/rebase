@@ -23,21 +23,21 @@ def campaign(**fields: object) -> Campaign:
     values: dict[str, object] = {
         "nome": "Manca il CV",
         "slug": "c-2026-09-25-manca-cv",
-        "fonte": "stato",
-        "stato_percorso": "manca_cv",
-        "oggetto": "Manca solo il CV",
-        "testo": "Ciao {nome},\n\nmanca il <CV> & poco altro.\nDavvero.",
-        "bottone_testo": "Carica il CV",
-        "bottone_meta": "area",
-        "azione": "cv",
-        "contenuto_at": datetime(2026, 9, 25, tzinfo=UTC),
+        "source": "status",
+        "journey_status": "missing_cv",
+        "subject": "Manca solo il CV",
+        "text": "Ciao {nome},\n\nmanca il <CV> & poco altro.\nDavvero.",
+        "button_text": "Carica il CV",
+        "button_meta": "area",
+        "action": "cv",
+        "content_at": datetime(2026, 9, 25, tzinfo=UTC),
     }
     values.update(fields)
     return Campaign(**values)
 
 
 TARGET = RenderTarget(
-    email="ada@studio.it", nome="Ada", codice="ab12cd34", token="tok", recipient_id="r-1"
+    email="ada@studio.it", nome="Ada", code="ab12cd34", token="tok", recipient_id="r-1"
 )
 
 
@@ -78,27 +78,27 @@ def test_every_mail_carries_the_one_click_unsubscribe() -> None:
 def test_tags_name_the_campaign_the_action_the_kind_and_the_row() -> None:
     assert render(campaign(), TARGET, SETTINGS).tags == {
         "campaign": "c-2026-09-25-manca-cv",
-        "azione": "cv",
+        "action": "cv",
         "kind": "real",
         "r": "r-1",
     }
     test = render(
-        campaign(), RenderTarget("ivan@rebase.it", "Ivan", "00", "prova"), SETTINGS, test=True
+        campaign(), RenderTarget("ivan@rebase.it", "Ivan", "00", "test"), SETTINGS, test=True
     )
     assert test.tags["kind"] == "test" and "r" not in test.tags
     assert test.mail.subject == "[prova] Manca solo il CV"
 
 
 @pytest.mark.parametrize(
-    ("meta", "path"), [("area", "/login"), ("richiesta", "/login"), ("wizard", "/freelance")]
+    ("meta", "path"), [("area", "/login"), ("request", "/login"), ("wizard", "/freelance")]
 )
 def test_each_destination_is_a_hub_page(meta: str, path: str) -> None:
-    assert destination(campaign(bottone_meta=meta), SETTINGS) == f"https://letsrebase.com/hub{path}"
+    assert destination(campaign(button_meta=meta), SETTINGS) == f"https://letsrebase.com/hub{path}"
 
 
 def test_the_pigro_destination_waits_for_phase_three() -> None:
     with pytest.raises(ValidationFailed, match="fase Pigro"):
-        destination(campaign(bottone_meta="pigro"), SETTINGS)
+        destination(campaign(button_meta="pigro"), SETTINGS)
 
 
 def test_the_person_code_is_the_waves_code() -> None:
@@ -115,14 +115,14 @@ def test_a_render_is_byte_identical_twice() -> None:
 def test_the_name_goes_in_the_subject_too() -> None:
     """REB-524: `{nome}` stayed literal in the subject. It follows the body's rule, the
     test mail's included, and the HTML title is the subject the person reads."""
-    greeting = campaign(oggetto="{nome}, manca solo il CV")
+    greeting = campaign(subject="{nome}, manca solo il CV")
     mail = render(greeting, TARGET, SETTINGS).mail
     assert mail.subject == "Ada, manca solo il CV"
     assert "<title>Ada, manca solo il CV</title>" in (mail.html or "")
     nameless = RenderTarget("bob@studio.it", None, "00", "tok")
-    assert render(campaign(oggetto="Ciao {nome}!"), nameless, SETTINGS).mail.subject == "Ciao!"
+    assert render(campaign(subject="Ciao {nome}!"), nameless, SETTINGS).mail.subject == "Ciao!"
     test = render(
-        greeting, RenderTarget("ivan@rebase.it", "Ivan", "00", "prova"), SETTINGS, test=True
+        greeting, RenderTarget("ivan@rebase.it", "Ivan", "00", "test"), SETTINGS, test=True
     )
     assert test.mail.subject == "[prova] Ivan, manca solo il CV"
 
@@ -132,7 +132,7 @@ def test_a_name_cannot_break_the_subject_onto_another_header() -> None:
     would reach `Mail.subject` as a line break. Every control character in the subject
     becomes a space; the body is left as it is, escaped already."""
     sneaky = RenderTarget("ada@studio.it", "Ada\r\nBcc: x@y", "ab12cd34", "tok")
-    greeting = campaign(oggetto="{nome}, manca solo il CV\t")
+    greeting = campaign(subject="{nome}, manca solo il CV\t")
     mail = render(greeting, sneaky, SETTINGS).mail
     assert mail.subject == "Ada Bcc: x@y, manca solo il CV"
     assert not any(ord(ch) < 32 or ord(ch) == 127 for ch in mail.subject)

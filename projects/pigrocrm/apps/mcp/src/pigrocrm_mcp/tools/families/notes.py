@@ -14,7 +14,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def add_note(
-        testo: str,
+        text: str,
         deal_id: str | None = None,
         customer_id: str | None = None,
         person_id: str | None = None,
@@ -23,15 +23,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         `deal_id`, `customer_id`, `person_id`. Il CRM la firma e la data da solo: il testo non deve
         iniziare con una data né dire chi scrive.
         """
-        return notes.add(context, testo, deal_id, customer_id, person_id)
+        return notes.add(context, text, deal_id, customer_id, person_id)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def update_note(note_id: str, testo: str) -> dict[str, Any]:
+    def update_note(note_id: str, text: str) -> dict[str, Any]:
         """Riscrive una nota (`id` in `note` dei `get_*`): le proprie, o tutte se amministratore;
         mai quelle del sistema. Niente data né autore nel testo.
         """
-        return notes.update(context, note_id, testo)
+        return notes.update(context, note_id, text)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard

@@ -6,7 +6,7 @@ with an outcome code the SPA renders in Italian, and never on a problem document
 flow, with the one message they could act on in a shape no browser displays usefully. The
 page re-reads `GET /account` and shows the state that is true.
 
-`esito` is looked up in a fixed table on the page, so nothing an attacker appends to the
+`outcome` is looked up in a fixed table on the page, so nothing an attacker appends to the
 URL can put words of their own on the screen; Google's and Slack's own `error` is never
 forwarded, since it is English and occasionally embeds the client id.
 """
@@ -27,15 +27,15 @@ from pigrocrm_api.tenancy import cookie_path
 
 
 class ConsentOutcome(StrEnum):
-    """The `esito` the SPA reads; the values are the wire contract."""
+    """The `outcome` the SPA reads; the values are the wire contract."""
 
-    CONNECTED = "collegato"
-    DENIED = "negato"
-    FAILED = "errore"
+    CONNECTED = "connected"
+    DENIED = "denied"
+    FAILED = "error"
     # The browser came back with no live session (REB-446): no access cookie that still
     # works and no refresh cookie that could renew it. Nothing was redeemed, so the person
     # only has to start again once they are signed in.
-    NO_SESSION = "sessione"
+    NO_SESSION = "session_expired"
 
 
 # The page of the SPA that renders the outcome, which may depend on who is back: `None` is
@@ -103,5 +103,5 @@ def _back(
     path = page if isinstance(page, str) else page(actor)
     # Snyk Code python/OR here is a false positive: one of the SPA's fixed pages, under the
     # request's own prefix (a slug that matched SLUG_PATTERN in `tenancy.py`, or none for
-    # the root), with one of the four constant `esito` codes.
+    # the root), with one of the four constant `outcome` codes.
     return RedirectResponse(f"{prefix}{path}?esito={outcome.value}", status_code=307)

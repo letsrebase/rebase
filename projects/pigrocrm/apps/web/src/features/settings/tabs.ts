@@ -37,7 +37,7 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
-    id: 'spazio',
+    id: 'space',
     label: 'Spazio e persone',
     tabs: [
       { value: 'space', label: 'Spazio' },
@@ -57,7 +57,7 @@ export const SETTINGS_GROUPS = [
     id: 'fatturazione',
     label: 'Fatturazione e costi',
     tabs: [
-      { value: 'aziende', label: 'Aziende' },
+      { value: 'legal_entities', label: 'Aziende' },
       { value: 'cost-categories', label: 'Categorie costo' },
       { value: 'rates', label: 'Tariffe' },
       { value: 'periods', label: 'Periodi' },
@@ -74,7 +74,7 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
-    id: 'promemoria',
+    id: 'reminder',
     label: 'Promemoria e automazioni',
     tabs: [
       // The space's reminder defaults (REB-735), admin only like every section but the two

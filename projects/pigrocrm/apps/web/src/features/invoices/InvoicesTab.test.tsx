@@ -40,7 +40,7 @@ describe('InvoicesTab', () => {
     await screen.findByText('Nessuna fattura.')
     const call = mockGet.mock.calls.find((c) => c[0] === '/api/invoices')
     const options = call?.[1] as { params?: { query?: Record<string, unknown> } } | undefined
-    expect(options?.params?.query).toEqual({ deal_id: 'd1', escludi_consumate: true })
+    expect(options?.params?.query).toEqual({ deal_id: 'd1', exclude_consumed: true })
   })
 
   /** Every row on this tab belongs to the customer (or the deal's customer) named in

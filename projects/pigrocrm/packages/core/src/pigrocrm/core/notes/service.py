@@ -65,7 +65,7 @@ class NoteService:
     def add(self, entity_type: str, entity_id: UUID, data: NoteCreate, actor: Actor) -> NoteRead:
         actor.require_write("add_note")
         _parent(self.session, entity_type, entity_id)
-        note = append_note(self.session, entity_type, entity_id, data.testo, actor)
+        note = append_note(self.session, entity_type, entity_id, data.text, actor)
         self.session.commit()
         return self._reads([note], actor)[0]
 
@@ -74,7 +74,7 @@ class NoteService:
         change and writes nothing."""
         actor.require_write("update_note")
         note = self._changeable(note_id, actor)
-        if data.testo == note.testo:
+        if data.text == note.text:
             return self._reads([note], actor)[0]
         editor = self.session.get(User, actor.id) if actor.id is not None else None
         # The text the edit replaces, whole, in the transaction of the edit: the timeline
@@ -82,22 +82,22 @@ class NoteService:
         self.session.add(
             NoteRevision(
                 note_id=note.id,
-                testo=note.testo,
+                text=note.text,
                 edited_by_id=editor.id if editor is not None else None,
                 edited_by=display_name(editor) if editor is not None else None,
-                fonte=SOURCES[actor.type],
+                source=SOURCES[actor.type],
             )
         )
-        note.testo = data.testo
-        note.modificata_at = datetime.now(UTC)
-        note.modificata_da_id = actor.id
+        note.text = data.text
+        note.edited_at = datetime.now(UTC)
+        note.edited_by_id = actor.id
         self.session.flush()
         self.activities.record(
             note.entity_type,
             note.entity_id,
             KIND_EDITED,
             actor,
-            {"nota_id": note.id, "fonte": SOURCES[actor.type]},
+            {"note_id": note.id, "source": SOURCES[actor.type]},
         )
         self.session.commit()
         return self._reads([note], actor)[0]
@@ -114,7 +114,7 @@ class NoteService:
             note.entity_id,
             KIND_DELETED,
             actor,
-            {"nota_id": note.id, "fonte": SOURCES[actor.type]},
+            {"note_id": note.id, "source": SOURCES[actor.type]},
         )
         self.session.commit()
 
@@ -174,11 +174,11 @@ class NoteService:
         # is not there for them, and reads as so rather than as a refusal.
         _parent(self.session, note.entity_type, note.entity_id)
         if not may_change(note, actor):
-            raise NoteNotChangeable(note.id, recorded=note.fonte in NOTE_READ_ONLY_SOURCES)
+            raise NoteNotChangeable(note.id, recorded=note.source in NOTE_READ_ONLY_SOURCES)
         return note
 
     def _reads(self, notes: Sequence[Note], actor: Actor) -> list[NoteRead]:
-        editors = {note.modificata_da_id for note in notes if note.modificata_da_id is not None}
+        editors = {note.edited_by_id for note in notes if note.edited_by_id is not None}
         names: dict[UUID, str] = {}
         if editors:
             names = {
@@ -188,10 +188,10 @@ class NoteService:
         return [
             NoteRead.model_validate(note).model_copy(
                 update={
-                    "modificata_da": names.get(note.modificata_da_id)
-                    if note.modificata_da_id is not None
+                    "edited_by": names.get(note.edited_by_id)
+                    if note.edited_by_id is not None
                     else None,
-                    "modificabile": may_change(note, actor),
+                    "editable": may_change(note, actor),
                 }
             )
             for note in notes

@@ -49,7 +49,7 @@ FULL_ACCESS_BUDGET_BYTES = 105_000
 # listed, so adding one is a decision somebody wrote down.
 _READ_PREFIXES = ("get_", "list_", "search_", "describe_", "preview_")
 _READS_WITH_ANOTHER_NAME = {
-    "propose_azienda",
+    "suggest_legal_entity",
     "simulate_ceiling",
     "project_contract_revenue",
     "review_invoice_import",
@@ -73,7 +73,7 @@ _IRREVERSIBLE = {
     "discard_proforma",
     "set_offer_state",
 }
-# A `create_*` that is not additive: `chiudi_precedente` shortens the rate card in force.
+# A `create_*` that is not additive: `close_previous` shortens the rate card in force.
 _CREATES_THAT_OVERWRITE = {"create_rate_card"}
 
 
@@ -188,8 +188,8 @@ def test_compact_schema_drops_the_keywords_and_keeps_the_values() -> None:
             # a property called `title` and one called `default` are names, not keywords
             "title": {"title": "Title", "type": "string"},
             "default": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
-            "stato": {"enum": ["title", "default"], "default": "title", "type": "string"},
-            "righe": {"items": {"title": "Riga", "type": "object"}, "type": "array"},
+            "status": {"enum": ["title", "default"], "default": "title", "type": "string"},
+            "lines": {"items": {"title": "Riga", "type": "object"}, "type": "array"},
             "da": {"type": "integer", "default": 0},
         },
         "required": ["title"],
@@ -199,8 +199,8 @@ def test_compact_schema_drops_the_keywords_and_keeps_the_values() -> None:
         "properties": {
             "title": {"type": "string"},
             "default": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "stato": {"enum": ["title", "default"], "default": "title", "type": "string"},
-            "righe": {"items": {"type": "object"}, "type": "array"},
+            "status": {"enum": ["title", "default"], "default": "title", "type": "string"},
+            "lines": {"items": {"type": "object"}, "type": "array"},
             "da": {"type": "integer", "default": 0},
         },
         "required": ["title"],

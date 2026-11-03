@@ -76,7 +76,7 @@ def test_no_statement_of_a_search_returns_more_than_a_page(db_session: Session) 
         method = pick(repo)
         group, counts = _rows_returned(db_session, partial(method, term, PER_CLASS_LIMIT))
 
-        assert group.totale > PER_CLASS_LIMIT, f"{branch}: {term!r} matched too little to show it"
+        assert group.total > PER_CLASS_LIMIT, f"{branch}: {term!r} matched too little to show it"
         assert len(group.hits) == PER_CLASS_LIMIT, branch
         assert max(counts) <= PER_CLASS_LIMIT, (
             f"{branch}: a statement returned {max(counts)} rows for a page of {PER_CLASS_LIMIT}"
@@ -88,15 +88,15 @@ def test_the_page_holds_the_best_rows_and_not_the_first_ones(db_session: Session
     that only start with the term, and is still the one row of a page of one."""
     db_session.execute(
         insert(Customer),
-        [{"ragione_sociale": f"Vulcano Impianti {n} Srl"} for n in range(12)]
-        + [{"ragione_sociale": "Vulcano"}],
+        [{"legal_name": f"Vulcano Impianti {n} Srl"} for n in range(12)]
+        + [{"legal_name": "Vulcano"}],
     )
     db_session.flush()
 
     group = SearchRepository(db_session).customers("Vulcano", 1)
 
-    assert [hit.etichetta for hit in group.hits] == ["Vulcano"]
-    assert group.totale == 13
+    assert [hit.label for hit in group.hits] == ["Vulcano"]
+    assert group.total == 13
 
 
 def test_a_count_past_the_ceiling_is_the_ceiling_and_says_so(db_session: Session) -> None:
@@ -105,7 +105,7 @@ def test_a_count_past_the_ceiling_is_the_ceiling_and_says_so(db_session: Session
     and not a number nobody counted."""
     db_session.execute(
         insert(Customer),
-        [{"ragione_sociale": f"Cliente {n} Srl"} for n in range(COUNT_CEILING + 1)],
+        [{"legal_name": f"Cliente {n} Srl"} for n in range(COUNT_CEILING + 1)],
     )
     db_session.flush()
     repo = SearchRepository(db_session)
@@ -114,7 +114,7 @@ def test_a_count_past_the_ceiling_is_the_ceiling_and_says_so(db_session: Session
         db_session, lambda: repo.customers(_TERM_PAST_THE_CEILING, PER_CLASS_LIMIT)
     )
 
-    assert group.totale == COUNT_CEILING, group
-    assert group.totale_e_un_minimo is True, group
+    assert group.total == COUNT_CEILING, group
+    assert group.total_and_a_minimum is True, group
     assert len(group.hits) == PER_CLASS_LIMIT
     assert max(counts) <= PER_CLASS_LIMIT, counts

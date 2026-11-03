@@ -77,12 +77,12 @@ def test_currency_rejects_non_numeric() -> None:
 
 
 def test_date_accepts_iso_string_and_date_and_normalises_to_iso() -> None:
-    specs = [spec("scadenza", "date")]
+    specs = [spec("due_date", "date")]
     assert (
-        validate_custom_fields("c", specs, {"scadenza": "2026-08-06"})["scadenza"] == "2026-08-06"
+        validate_custom_fields("c", specs, {"due_date": "2026-08-06"})["due_date"] == "2026-08-06"
     )
     assert (
-        validate_custom_fields("c", specs, {"scadenza": date(2026, 8, 6)})["scadenza"]
+        validate_custom_fields("c", specs, {"due_date": date(2026, 8, 6)})["due_date"]
         == "2026-08-06"
     )
 
@@ -90,22 +90,22 @@ def test_date_accepts_iso_string_and_date_and_normalises_to_iso() -> None:
 @pytest.mark.parametrize("bad", ["06/08/2026", "2026-13-01", "domani"])
 def test_date_rejects_non_iso(bad: str) -> None:
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("c", [spec("scadenza", "date")], {"scadenza": bad})
+        validate_custom_fields("c", [spec("due_date", "date")], {"due_date": bad})
     assert exc.value.details["expected"] == "una data ISO (YYYY-MM-DD)"
 
 
 def test_select_accepts_a_declared_option() -> None:
-    s = spec("stato", "select", options=["attivo", "sospeso"])
-    assert validate_custom_fields("c", [s], {"stato": "attivo"})["stato"] == "attivo"
+    s = spec("status", "select", options=["active", "sospeso"])
+    assert validate_custom_fields("c", [s], {"status": "active"})["status"] == "active"
 
 
 def test_select_rejects_an_undeclared_option_and_lists_the_valid_ones() -> None:
     """The error must name the allowed values: an agent that gets 'invalid' retries
     at random, one that gets the list corrects itself."""
-    s = spec("stato", "select", options=["attivo", "sospeso"])
+    s = spec("status", "select", options=["active", "sospeso"])
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("c", [s], {"stato": "chiuso"})
-    assert "attivo" in exc.value.details["expected"]
+        validate_custom_fields("c", [s], {"status": "closed"})
+    assert "active" in exc.value.details["expected"]
     assert "sospeso" in exc.value.details["expected"]
 
 
@@ -256,7 +256,7 @@ def test_field_spec_rejects_select_with_no_options_as_an_impossible_state() -> N
     with nothing listed after it - exactly the useless "invalid" this design exists
     to avoid. Refusing to construct the spec is better than emitting that message."""
     with pytest.raises(ValidationError):
-        FieldSpec(key="stato", label="Stato", field_type="select", options=[])
+        FieldSpec(key="status", label="Stato", field_type="select", options=[])
 
 
 def test_field_spec_rejects_multiselect_with_no_options() -> None:

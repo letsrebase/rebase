@@ -16,14 +16,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User, UserLegalEntity
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, reminder_key
 from pigrocrm.core.reminders.detect import DetectorContext
@@ -41,6 +40,7 @@ from pigrocrm.core.reminders.preferences import ReminderPreferenceService, Remin
 from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.timetracking.models import TimeEntry, TimeTimer
 
 TODAY = date(2026, 10, 26)
@@ -62,22 +62,22 @@ class World:
     customer: Customer
     deal: Deal
     open_stage: PipelineStage
-    azienda: UUID
+    legal_entity: UUID
 
-    def user(self, ruolo: str = "collaboratore", attivo: bool = True) -> User:
+    def user(self, role: str = "collaborator", active: bool = True) -> User:
         user = User(
             email=f"u-{uuid4()}@example.test",
             password_hash="x",
             nome="Persona",
-            ruolo=ruolo,
-            attivo=attivo,
+            role=role,
+            active=active,
         )
         self.session.add(user)
         self.session.flush()
         return user
 
-    def attivita(self, scadenza: date | None, **fields: object) -> Attivita:
-        row = Attivita(titolo=fields.pop("titolo", "Richiamare"), scadenza=scadenza, **fields)
+    def attivita(self, due_date: date | None, **fields: object) -> Task:
+        row = Task(title=fields.pop("title", "Richiamare"), due_date=due_date, **fields)
         self.session.add(row)
         self.session.flush()
         return row
@@ -97,38 +97,38 @@ class World:
 
 @pytest.fixture
 def world(db_session: Session) -> World:
-    azienda = db_session.scalars(
+    legal_entity = db_session.scalars(
         select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
     ).one()
     users = {}
-    for name, ruolo in (
+    for name, role in (
         ("owner", "admin"),
-        ("alice", "collaboratore"),
-        ("bob", "collaboratore"),
-        ("carol", "collaboratore"),
+        ("alice", "collaborator"),
+        ("bob", "collaborator"),
+        ("carol", "collaborator"),
     ):
         user = User(
             email=f"{name}-{uuid4()}@example.test",
             password_hash="x",
             nome=name.title(),
-            ruolo=ruolo,
+            role=role,
         )
         db_session.add(user)
         users[name] = user
-    stage = PipelineStage(
-        nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
-    )
+    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     db_session.add(stage)
     db_session.flush()
-    customer = Customer(ragione_sociale="ACME Srl", azienda_id=azienda, owner_id=users["carol"].id)
+    customer = Customer(
+        legal_name="ACME Srl", legal_entity_id=legal_entity, owner_id=users["carol"].id
+    )
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
         nome="Sito web",
         customer_id=customer.id,
-        azienda_id=azienda,
+        legal_entity_id=legal_entity,
         pipeline_stage_id=stage.id,
-        probabilita=10,
+        probability=10,
         owner_id=users["bob"].id,
         created_at=_at(TODAY - timedelta(days=2)),
     )
@@ -143,7 +143,7 @@ def world(db_session: Session) -> World:
         customer,
         deal,
         stage,
-        azienda,
+        legal_entity,
     )
 
 
@@ -153,18 +153,18 @@ def world(db_session: Session) -> World:
 def test_one_pass_raises_a_due_an_overdue_and_a_past_close_deal_for_the_right_people(
     world: World,
 ) -> None:
-    due = world.attivita(TODAY, assegnata_a=world.alice.id, customer_id=world.customer.id)
+    due = world.attivita(TODAY, assigned_to=world.alice.id, customer_id=world.customer.id)
     overdue = world.attivita(
-        TODAY - timedelta(days=3), assegnata_a=world.alice.id, deal_id=world.deal.id
+        TODAY - timedelta(days=3), assigned_to=world.alice.id, deal_id=world.deal.id
     )
-    world.deal.data_chiusura_prevista = TODAY - timedelta(days=5)
+    world.deal.expected_close_date = TODAY - timedelta(days=5)
 
     raised = world.raised(world.evaluate())
 
     # An attività due today, assigned to Alice and linked to the customer Carol owns.
-    assert raised[("attivita_due", due.id)] == {world.alice.id, world.carol.id}
+    assert raised[("task_due", due.id)] == {world.alice.id, world.carol.id}
     # An overdue one on the deal Bob owns, whose customer Carol owns, assigned to Alice.
-    assert raised[("attivita_overdue", overdue.id)] == {
+    assert raised[("task_overdue", overdue.id)] == {
         world.alice.id,
         world.bob.id,
         world.carol.id,
@@ -175,11 +175,11 @@ def test_one_pass_raises_a_due_an_overdue_and_a_past_close_deal_for_the_right_pe
 
 
 def test_the_severity_is_each_recipients_own(world: World) -> None:
-    world.attivita(TODAY - timedelta(days=3), assegnata_a=world.alice.id)
+    world.attivita(TODAY - timedelta(days=3), assigned_to=world.alice.id)
     ReminderPreferenceService(world.session).write(
         _actor(world.alice),
         "me",
-        "attivita_overdue",
+        "task_overdue",
         ReminderPreferenceWrite(ladder={"serious": 1, "critical": 3}),
     )
 
@@ -197,9 +197,9 @@ def test_a_persons_list_is_what_the_whole_space_raises_for_them(world: World, wh
     """`reminders_of` runs less than `evaluate` (a type only the admins are told is not run
     for somebody who is not one, and nobody else's severity is resolved) and says the same
     about the person."""
-    world.attivita(TODAY - timedelta(days=3), assegnata_a=world.alice.id, deal_id=world.deal.id)
+    world.attivita(TODAY - timedelta(days=3), assigned_to=world.alice.id, deal_id=world.deal.id)
     world.attivita(TODAY, customer_id=world.customer.id)
-    world.deal.data_chiusura_prevista = TODAY - timedelta(days=5)
+    world.deal.expected_close_date = TODAY - timedelta(days=5)
     # Something only the admins are told: the reminder pass itself has not run for hours.
     world.session.add(ReminderJobRun(job=REMINDER_PASS_JOB, ran_at=NOON - timedelta(hours=5)))
     user = getattr(world, who)
@@ -214,8 +214,8 @@ def test_a_persons_list_is_what_the_whole_space_raises_for_them(world: World, wh
 
 
 def test_somebody_who_cannot_be_told_has_no_list(world: World) -> None:
-    world.attivita(TODAY - timedelta(days=3), assegnata_a=world.alice.id)
-    left = world.user(attivo=False)
+    world.attivita(TODAY - timedelta(days=3), assigned_to=world.alice.id)
+    left = world.user(active=False)
 
     mine = ReminderEngine(world.session, SETTINGS).reminders_of(left.id, today=TODAY, now=NOON)
 
@@ -249,70 +249,70 @@ def test_what_detectors_share_is_read_once_per_evaluation_and_never_across_two(
 
 
 def _actor(user: User) -> Actor:
-    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
 # -- attività ------------------------------------------------------------------------------
 
 
-def test_an_attivita_with_no_deadline_is_not_late_and_not_due(world: World) -> None:
-    world.attivita(None, assegnata_a=world.alice.id)
+def test_an_task_with_no_deadline_is_not_late_and_not_due(world: World) -> None:
+    world.attivita(None, assigned_to=world.alice.id)
 
     assert world.evaluate().reminders == ()
 
 
-def test_only_an_open_not_archived_attivita_counts(world: World) -> None:
+def test_only_an_open_not_archived_task_counts(world: World) -> None:
     yesterday = TODAY - timedelta(days=1)
     world.attivita(
-        yesterday, assegnata_a=world.alice.id, stato="completata", completata_il=yesterday
+        yesterday, assigned_to=world.alice.id, status="completed", completed_at=yesterday
     )
-    world.attivita(yesterday, assegnata_a=world.alice.id, stato="annullata")
-    world.attivita(yesterday, assegnata_a=world.alice.id, deleted_at=NOON)
+    world.attivita(yesterday, assigned_to=world.alice.id, status="cancelled")
+    world.attivita(yesterday, assigned_to=world.alice.id, deleted_at=NOON)
 
     assert world.evaluate().reminders == ()
 
 
 def test_on_the_day_it_is_due_and_the_day_after_it_is_overdue(world: World) -> None:
-    row = world.attivita(TODAY, assegnata_a=world.alice.id)
+    row = world.attivita(TODAY, assigned_to=world.alice.id)
 
     today = world.raised(world.evaluate(TODAY))
     tomorrow = world.raised(world.evaluate(TODAY + timedelta(days=1)))
 
-    assert ("attivita_due", row.id) in today and ("attivita_overdue", row.id) not in today
-    assert ("attivita_overdue", row.id) in tomorrow and ("attivita_due", row.id) not in tomorrow
+    assert ("task_due", row.id) in today and ("task_overdue", row.id) not in today
+    assert ("task_overdue", row.id) in tomorrow and ("task_due", row.id) not in tomorrow
 
 
 def test_what_the_pass_opened_for_a_late_invoice_is_not_announced_twice_to_one_person(
     world: World,
 ) -> None:
-    """`fattura_scaduta`'s attivita is the to-do of the reminder `invoice_overdue`: a person
+    """`overdue_invoice`'s attivita is the to-do of the reminder `invoice_overdue`: a person
     already told of the invoice is not told of its attivita as well, and a person who is not
     (here the assignee, who owns nothing) still is. The other rules' attivita and manual
     ones are announced like any other."""
     invoice = Invoice(
         customer_id=world.customer.id,
-        azienda_id=world.azienda,
-        tipo="fattura",
-        stato="emessa",
-        anno=2026,
-        numero=1,
-        data_emissione=TODAY - timedelta(days=40),
-        data_scadenza=TODAY - timedelta(days=3),
-        totale=Decimal("1220.00"),
+        legal_entity_id=world.legal_entity,
+        type="invoice",
+        status="issued",
+        year=2026,
+        number=1,
+        issue_date=TODAY - timedelta(days=40),
+        due_date=TODAY - timedelta(days=3),
+        total=Decimal("1220.00"),
     )
     world.session.add(invoice)
     world.session.flush()
     covered = world.attivita(
         TODAY,
-        assegnata_a=world.alice.id,
+        assigned_to=world.alice.id,
         invoice_id=invoice.id,
-        origine="automazione",
-        regola="fattura_scaduta",
+        origin="automation",
+        rule="overdue_invoice",
     )
     other = world.attivita(
-        TODAY, assegnata_a=world.alice.id, origine="automazione", regola="deal_fermo"
+        TODAY, assigned_to=world.alice.id, origin="automation", rule="stalled_deal"
     )
-    manual = world.attivita(TODAY, assegnata_a=world.alice.id, invoice_id=invoice.id)
+    manual = world.attivita(TODAY, assigned_to=world.alice.id, invoice_id=invoice.id)
 
     evaluation = world.evaluate()
     raised = world.raised(evaluation)
@@ -320,11 +320,11 @@ def test_what_the_pass_opened_for_a_late_invoice_is_not_announced_twice_to_one_p
     assert ("invoice_overdue", invoice.id) in raised
     # Still detected for everybody, so a person's acknowledge or snooze of it is not forgotten
     # on the day it is not raised for them.
-    assert reminder_key("attivita_due", covered.id) in evaluation.raised
+    assert reminder_key("task_due", covered.id) in evaluation.raised
     # The customer's owner hears of the invoice already; the assignee does not.
-    assert raised[("attivita_due", covered.id)] == {world.alice.id}
-    assert world.carol.id in raised[("attivita_due", manual.id)]
-    assert raised[("attivita_due", other.id)] == {world.alice.id}
+    assert raised[("task_due", covered.id)] == {world.alice.id}
+    assert world.carol.id in raised[("task_due", manual.id)]
+    assert raised[("task_due", other.id)] == {world.alice.id}
 
     # And a person who switched `invoice_overdue` off keeps the attivita's reminders.
     ReminderPreferenceService(world.session).write(
@@ -332,11 +332,11 @@ def test_what_the_pass_opened_for_a_late_invoice_is_not_announced_twice_to_one_p
     )
     after = world.raised(world.evaluate())
     assert ("invoice_overdue", invoice.id) not in after
-    assert world.carol.id in after[("attivita_due", covered.id)]
+    assert world.carol.id in after[("task_due", covered.id)]
 
 
-def test_an_overdue_attivita_climbs_the_ladder_as_days_pass(world: World) -> None:
-    world.attivita(TODAY - timedelta(days=1), assegnata_a=world.alice.id)
+def test_an_overdue_task_climbs_the_ladder_as_days_pass(world: World) -> None:
+    world.attivita(TODAY - timedelta(days=1), assigned_to=world.alice.id)
 
     def severity(day: int) -> str:
         (reminder,) = world.evaluate(TODAY + timedelta(days=day)).reminders
@@ -347,103 +347,103 @@ def test_an_overdue_attivita_climbs_the_ladder_as_days_pass(world: World) -> Non
     assert severity(13) == "critical", "fourteen days late"
 
 
-def test_a_lead_time_raises_a_due_attivita_early_for_the_person_who_asked(world: World) -> None:
-    row = world.attivita(TODAY + timedelta(days=3), assegnata_a=world.alice.id)
-    world.attivita(TODAY + timedelta(days=3), assegnata_a=world.bob.id)
+def test_to_lead_time_raises_to_due_task_early_for_the_person_who_asked(world: World) -> None:
+    row = world.attivita(TODAY + timedelta(days=3), assigned_to=world.alice.id)
+    world.attivita(TODAY + timedelta(days=3), assigned_to=world.bob.id)
     ReminderPreferenceService(world.session).write(
-        _actor(world.alice), "me", "attivita_due", ReminderPreferenceWrite(ladder={"warning": 3})
+        _actor(world.alice), "me", "task_due", ReminderPreferenceWrite(ladder={"warning": 3})
     )
 
     raised = world.raised(world.evaluate())
 
-    assert raised == {("attivita_due", row.id): {world.alice.id}}, (
+    assert raised == {("task_due", row.id): {world.alice.id}}, (
         "Bob keeps the default of the day itself; Alice asked for three days' notice"
     )
 
 
-def test_an_attivita_linked_to_a_person_or_invoice_reaches_the_customers_owner(
+def test_an_task_linked_to_to_person_or_invoice_reaches_the_customers_owner(
     world: World,
 ) -> None:
     from pigrocrm.core.people.models import Person
 
-    person = Person(nome="Mario", cognome="Rossi", customer_id=world.customer.id)
+    person = Person(nome="Mario", last_name="Rossi", customer_id=world.customer.id)
     world.session.add(person)
     world.session.flush()
     row = world.attivita(TODAY, person_id=person.id)
 
-    assert world.raised(world.evaluate())[("attivita_due", row.id)] == {world.carol.id}
+    assert world.raised(world.evaluate())[("task_due", row.id)] == {world.carol.id}
 
 
-def test_an_attivita_with_nobody_goes_to_the_spaces_owner(world: World) -> None:
+def test_an_task_with_nobody_goes_to_the_spaces_owner(world: World) -> None:
     row = world.attivita(TODAY)
 
-    assert world.raised(world.evaluate()) == {("attivita_due", row.id): {world.owner.id}}
+    assert world.raised(world.evaluate()) == {("task_due", row.id): {world.owner.id}}
 
 
 def test_an_archived_assignee_is_dropped_and_the_reminder_goes_on(world: World) -> None:
-    gone = world.user(attivo=False)
-    row = world.attivita(TODAY, assegnata_a=gone.id, customer_id=world.customer.id)
+    gone = world.user(active=False)
+    row = world.attivita(TODAY, assigned_to=gone.id, customer_id=world.customer.id)
 
-    assert world.raised(world.evaluate())[("attivita_due", row.id)] == {world.carol.id}
+    assert world.raised(world.evaluate())[("task_due", row.id)] == {world.carol.id}
 
 
 def test_when_nobody_can_be_told_it_goes_to_the_spaces_owner(world: World) -> None:
-    gone = world.user(attivo=False)
-    row = world.attivita(TODAY, assegnata_a=gone.id)
+    gone = world.user(active=False)
+    row = world.attivita(TODAY, assigned_to=gone.id)
 
-    assert world.raised(world.evaluate())[("attivita_due", row.id)] == {world.owner.id}
+    assert world.raised(world.evaluate())[("task_due", row.id)] == {world.owner.id}
 
 
 def test_a_scoped_member_is_told_only_about_what_their_scope_covers(world: World) -> None:
-    other = LegalEntity(nome="Altra", ragione_sociale="Altra Srl", nazione="IT")
+    other = LegalEntity(nome="Altra", legal_name="Altra Srl", country="IT")
     world.session.add(other)
     world.session.flush()
     scoped = world.user()
-    scoped.ambito_limitato = True
-    scoped.scopes = [UserLegalEntity(user_id=scoped.id, azienda_id=other.id)]
+    scoped.limited_scope = True
+    scoped.scopes = [UserLegalEntity(user_id=scoped.id, legal_entity_id=other.id)]
     world.session.flush()
-    row = world.attivita(TODAY, assegnata_a=scoped.id, customer_id=world.customer.id)
-    unlinked = world.attivita(TODAY, assegnata_a=scoped.id)
+    row = world.attivita(TODAY, assigned_to=scoped.id, customer_id=world.customer.id)
+    unlinked = world.attivita(TODAY, assigned_to=scoped.id)
 
     raised = world.raised(world.evaluate())
 
-    assert raised[("attivita_due", row.id)] == {world.carol.id}, "the customer is another azienda's"
-    assert scoped.id not in raised[("attivita_due", unlinked.id)], "no azienda, no scoped reader"
-    assert raised[("attivita_due", unlinked.id)] == {world.owner.id}
+    assert raised[("task_due", row.id)] == {world.carol.id}, "the customer is another azienda's"
+    assert scoped.id not in raised[("task_due", unlinked.id)], "no azienda, no scoped reader"
+    assert raised[("task_due", unlinked.id)] == {world.owner.id}
 
 
-def test_a_scoped_member_is_told_about_their_own_azienda(world: World) -> None:
+def test_to_scoped_member_is_told_about_their_own_legal_entity(world: World) -> None:
     scoped = world.user()
-    scoped.ambito_limitato = True
-    scoped.scopes = [UserLegalEntity(user_id=scoped.id, azienda_id=world.azienda)]
+    scoped.limited_scope = True
+    scoped.scopes = [UserLegalEntity(user_id=scoped.id, legal_entity_id=world.legal_entity)]
     world.session.flush()
-    row = world.attivita(TODAY, assegnata_a=scoped.id, customer_id=world.customer.id)
+    row = world.attivita(TODAY, assigned_to=scoped.id, customer_id=world.customer.id)
 
-    assert scoped.id in world.raised(world.evaluate())[("attivita_due", row.id)]
+    assert scoped.id in world.raised(world.evaluate())[("task_due", row.id)]
 
 
 def test_a_type_the_space_switched_off_is_not_run_and_not_raised(world: World) -> None:
-    world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
+    world.attivita(TODAY - timedelta(days=2), assigned_to=world.alice.id)
     ReminderPreferenceService(world.session).write(
-        _actor(world.owner), "space", "attivita_overdue", ReminderPreferenceWrite(enabled=False)
+        _actor(world.owner), "space", "task_overdue", ReminderPreferenceWrite(enabled=False)
     )
 
     evaluation = world.evaluate()
 
     assert evaluation.reminders == ()
-    assert "attivita_overdue" not in evaluation.ran
-    assert "attivita_due" in evaluation.ran
+    assert "task_overdue" not in evaluation.ran
+    assert "task_due" in evaluation.ran
 
 
 def test_a_person_can_switch_a_type_off_for_themselves(world: World) -> None:
     row = world.attivita(
-        TODAY - timedelta(days=2), assegnata_a=world.alice.id, deal_id=world.deal.id
+        TODAY - timedelta(days=2), assigned_to=world.alice.id, deal_id=world.deal.id
     )
     ReminderPreferenceService(world.session).write(
-        _actor(world.alice), "me", "attivita_overdue", ReminderPreferenceWrite(enabled=False)
+        _actor(world.alice), "me", "task_overdue", ReminderPreferenceWrite(enabled=False)
     )
 
-    assert world.raised(world.evaluate())[("attivita_overdue", row.id)] == {
+    assert world.raised(world.evaluate())[("task_overdue", row.id)] == {
         world.bob.id,
         world.carol.id,
     }
@@ -454,7 +454,7 @@ def test_a_person_can_switch_a_type_off_for_themselves(world: World) -> None:
 
 def test_a_deal_past_its_close_climbs_from_warning_to_serious(world: World) -> None:
     def severity(days_late: int) -> str | None:
-        world.deal.data_chiusura_prevista = TODAY - timedelta(days=days_late)
+        world.deal.expected_close_date = TODAY - timedelta(days=days_late)
         found = [r for r in world.evaluate().reminders if r.type == "deal_past_close"]
         return found[0].severity if found else None
 
@@ -465,10 +465,10 @@ def test_a_deal_past_its_close_climbs_from_warning_to_serious(world: World) -> N
 
 
 def test_a_won_lost_or_archived_deal_is_not_past_anything(world: World) -> None:
-    won = PipelineStage(nome=f"Vinto {uuid4()}", posizione=9, probabilita_default=100, tipo="won")
+    won = PipelineStage(nome=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
     world.session.add(won)
     world.session.flush()
-    world.deal.data_chiusura_prevista = TODAY - timedelta(days=30)
+    world.deal.expected_close_date = TODAY - timedelta(days=30)
     world.deal.pipeline_stage_id = won.id
 
     assert world.evaluate().reminders == ()
@@ -498,10 +498,10 @@ def test_a_deal_three_weeks_old_with_hours_this_week_is_not_stale(world: World) 
             deal_id=world.deal.id,
             user_id=world.alice.id,
             data=TODAY - timedelta(days=5),
-            ore=Decimal("2.00"),
-            descrizione="Analisi",
-            tariffa_applicata=Decimal("80.000000"),
-            tariffa_origine="manuale",
+            hours=Decimal("2.00"),
+            description="Analisi",
+            applied_rate=Decimal("80.000000"),
+            rate_source="manual",
         )
     )
 
@@ -551,7 +551,7 @@ def test_a_mail_ten_days_ago_keeps_a_deal_from_being_stale_and_a_month_ago_does_
 def test_a_todo_on_the_deal_counts_as_activity(world: World) -> None:
     world.deal.created_at = _at(TODAY - timedelta(days=60))
     row = world.attivita(
-        TODAY + timedelta(days=30), deal_id=world.deal.id, assegnata_a=world.alice.id
+        TODAY + timedelta(days=30), deal_id=world.deal.id, assigned_to=world.alice.id
     )
     row.created_at = _at(TODAY - timedelta(days=4))
 
@@ -565,7 +565,7 @@ def test_a_timer_left_running_climbs_from_serious_to_critical(world: World) -> N
     timer = TimeTimer(
         user_id=world.alice.id,
         deal_id=world.deal.id,
-        descrizione="Call",
+        description="Call",
         started_at=NOON - timedelta(hours=11),
     )
     world.session.add(timer)
@@ -603,7 +603,7 @@ def _delivered(world: World) -> int:
 
 
 def test_a_pass_puts_each_reminder_in_each_persons_list_once(world: World) -> None:
-    world.attivita(TODAY, assegnata_a=world.alice.id)
+    world.attivita(TODAY, assigned_to=world.alice.id)
     engine = ReminderEngine(world.session, SETTINGS)
 
     first = engine.record_pass(world.evaluate(), today=TODAY)
@@ -615,7 +615,7 @@ def test_a_pass_puts_each_reminder_in_each_persons_list_once(world: World) -> No
 
 
 def test_an_escalation_is_delivered_again_and_a_daily_type_the_next_day(world: World) -> None:
-    world.attivita(TODAY - timedelta(days=1), assegnata_a=world.alice.id)
+    world.attivita(TODAY - timedelta(days=1), assigned_to=world.alice.id)
     engine = ReminderEngine(world.session, SETTINGS)
     day = TODAY
 
@@ -631,7 +631,7 @@ def test_an_escalation_is_delivered_again_and_a_daily_type_the_next_day(world: W
 
 
 def test_a_threshold_type_is_delivered_once_per_rank_not_once_a_day(world: World) -> None:
-    world.deal.data_chiusura_prevista = TODAY - timedelta(days=2)
+    world.deal.expected_close_date = TODAY - timedelta(days=2)
     engine = ReminderEngine(world.session, SETTINGS)
 
     first = engine.record_pass(world.evaluate(TODAY), today=TODAY)
@@ -644,9 +644,9 @@ def test_a_threshold_type_is_delivered_once_per_rank_not_once_a_day(world: World
 
 
 def test_a_reminder_a_person_acknowledged_is_not_delivered_to_them_again(world: World) -> None:
-    row = world.attivita(TODAY, assegnata_a=world.alice.id, customer_id=world.customer.id)
+    row = world.attivita(TODAY, assigned_to=world.alice.id, customer_id=world.customer.id)
     ReminderStateService(world.session).acknowledge(
-        _actor(world.alice), reminder_key("attivita_due", row.id), "warning"
+        _actor(world.alice), reminder_key("task_due", row.id), "warning"
     )
     engine = ReminderEngine(world.session, SETTINGS)
 
@@ -658,8 +658,8 @@ def test_a_reminder_a_person_acknowledged_is_not_delivered_to_them_again(world: 
 
 
 def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(world: World) -> None:
-    row = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
-    key = reminder_key("attivita_overdue", row.id)
+    row = world.attivita(TODAY - timedelta(days=2), assigned_to=world.alice.id)
+    key = reminder_key("task_overdue", row.id)
     ReminderStateService(world.session).snooze(_actor(world.alice), key, "serious", "tomorrow")
     engine = ReminderEngine(world.session, SETTINGS)
 
@@ -670,14 +670,14 @@ def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(world: World) -> Non
 
 
 def test_a_cleared_cause_ends_the_occurrence_with_everything_behind_it(world: World) -> None:
-    row = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
-    key = reminder_key("attivita_overdue", row.id)
+    row = world.attivita(TODAY - timedelta(days=2), assigned_to=world.alice.id)
+    key = reminder_key("task_overdue", row.id)
     engine = ReminderEngine(world.session, SETTINGS)
     ReminderStateService(world.session).acknowledge(_actor(world.alice), key, "serious")
     engine.record_pass(world.evaluate(), today=TODAY)
 
-    row.stato = "completata"
-    row.completata_il = TODAY
+    row.status = "completed"
+    row.completed_at = TODAY
     result = engine.record_pass(world.evaluate(), today=TODAY)
 
     assert result.raised == 0 and result.ended >= 1
@@ -688,18 +688,18 @@ def test_a_cleared_cause_ends_the_occurrence_with_everything_behind_it(world: Wo
         )
 
     # Reopened, it is a new occurrence that nothing earlier suppresses.
-    row.stato = "aperta"
-    row.completata_il = None
+    row.status = "open"
+    row.completed_at = None
     assert engine.record_pass(world.evaluate(), today=TODAY).delivered == 1
 
 
 def test_a_type_switched_off_leaves_its_rows_alone(world: World) -> None:
-    row = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
-    key = reminder_key("attivita_overdue", row.id)
+    row = world.attivita(TODAY - timedelta(days=2), assigned_to=world.alice.id)
+    key = reminder_key("task_overdue", row.id)
     engine = ReminderEngine(world.session, SETTINGS)
     engine.record_pass(world.evaluate(), today=TODAY)
     ReminderPreferenceService(world.session).write(
-        _actor(world.owner), "space", "attivita_overdue", ReminderPreferenceWrite(enabled=False)
+        _actor(world.owner), "space", "task_overdue", ReminderPreferenceWrite(enabled=False)
     )
 
     engine.record_pass(world.evaluate(), today=TODAY)
@@ -716,11 +716,11 @@ def test_a_type_switched_off_leaves_its_rows_alone(world: World) -> None:
 
 
 def test_a_person_lists_their_reminders_with_what_they_did_about_each(world: World) -> None:
-    due = world.attivita(TODAY, assegnata_a=world.alice.id, titolo="Mandare il preventivo")
-    overdue = world.attivita(TODAY - timedelta(days=2), assegnata_a=world.alice.id)
-    world.attivita(TODAY, assegnata_a=world.bob.id)
+    due = world.attivita(TODAY, assigned_to=world.alice.id, title="Mandare il preventivo")
+    overdue = world.attivita(TODAY - timedelta(days=2), assigned_to=world.alice.id)
+    world.attivita(TODAY, assigned_to=world.bob.id)
     ReminderStateService(world.session).acknowledge(
-        _actor(world.alice), reminder_key("attivita_due", due.id), "warning"
+        _actor(world.alice), reminder_key("task_due", due.id), "warning"
     )
     engine = ReminderEngine(world.session, SETTINGS)
     engine.record_pass(world.evaluate(), today=TODAY)
@@ -731,8 +731,8 @@ def test_a_person_lists_their_reminders_with_what_they_did_about_each(world: Wor
     )
 
     assert [(item.type, item.status) for item in listed] == [
-        ("attivita_overdue", "open"),
-        ("attivita_due", "acknowledged"),
+        ("task_overdue", "open"),
+        ("task_due", "acknowledged"),
     ], "the most severe first, Bob's own attività not among Alice's"
     assert listed[0].entity_id == overdue.id and listed[0].entity == "attivita"
     assert listed[0].delivered_at is not None, "the pass put it in her list"
@@ -743,8 +743,8 @@ def test_a_person_lists_their_reminders_with_what_they_did_about_each(world: Wor
 
 def test_the_catalogue_and_the_detectors_name_the_same_types() -> None:
     assert [detector.kind.key for detector in DETECTORS] == [
-        "attivita_due",
-        "attivita_overdue",
+        "task_due",
+        "task_overdue",
         "deal_past_close",
         "deal_stale",
         "timer_running_long",

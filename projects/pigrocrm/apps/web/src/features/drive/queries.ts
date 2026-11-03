@@ -35,17 +35,17 @@ export const driveKeys = {
    * only for -- and about -- one specific person, so a bare `health` key would keep
    * answering from whichever person first fetched it.
    *
-   * The id is what a role alone cannot cover: two admins share `ruolo`, so a session
+   * The id is what a role alone cannot cover: two admins share `role`, so a session
    * switch from admin A to admin B in the same tab, without a `logout()` in between --
    * a token client that swaps a cookie, or a browser profile shared between two
    * people -- would key both fetches identically on role and hand B the cache A left
    * behind, complete with A's own email address. The role stays in the key too,
-   * alongside the id, for round 2's own reason: a demotion changes `ruolo` while
+   * alongside the id, for round 2's own reason: a demotion changes `role` while
    * `user.id` stays the same person, and `space_storage` must disappear at that
    * moment as well, not only when the person themselves changes.
    */
-  healthForViewer: (userId: string | undefined, ruolo: string | undefined) =>
-    [...driveKeys.health, userId, ruolo] as const,
+  healthForViewer: (userId: string | undefined, role: string | undefined) =>
+    [...driveKeys.health, userId, role] as const,
 }
 
 /**
@@ -57,13 +57,13 @@ export const driveKeys = {
 export function useDriveHealth() {
   const { user } = useAuth()
   return useQuery({
-    queryKey: driveKeys.healthForViewer(user?.id, user?.ruolo),
+    queryKey: driveKeys.healthForViewer(user?.id, user?.role),
     queryFn: () => unwrap(api.GET('/api/drive/account')),
   })
 }
 
 /**
- * No `elimina_messaggi` flag on the wire: Drive stores no correspondence of its own, so
+ * No `delete_messages` flag on the wire: Drive stores no correspondence of its own, so
  * there is nothing here for one to name -- unlike Gmail's disconnect.
  */
 export function useDisconnectDrive() {

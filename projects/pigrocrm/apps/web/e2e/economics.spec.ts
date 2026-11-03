@@ -37,12 +37,12 @@ import { ensureSpaceHasWork, loginAsAdmin, seedDealWithRate } from './helpers'
  * the code it is checking checks nothing. The euro sign arrives from ICU preceded by a
  * non-breaking space, so everything that is not a digit, a dot or a comma goes first.
  */
-function centesimi(testo: string): number {
-  const pulito = testo.replace(/[^\d.,-]/g, '')
+function centesimi(text: string): number {
+  const pulito = text.replace(/[^\d.,-]/g, '')
   const negativo = pulito.startsWith('-')
-  const [intero = '0', decimali = ''] = pulito.replace('-', '').replace(/\./g, '').split(',')
-  const valore = Number(intero) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
-  return negativo ? -valore : valore
+  const [whole = '0', decimali = ''] = pulito.replace('-', '').replace(/\./g, '').split(',')
+  const value = Number(whole) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
+  return negativo ? -value : value
 }
 
 /**
@@ -57,8 +57,8 @@ function centesimi(testo: string): number {
  * ambiguous -- `0,00 €` is on three rows at once before anything is invoiced, which is
  * exactly the state this spec has the most to say about.
  */
-function riga(dove: Page | Locator, etichetta: string | RegExp): Locator {
-  return dove.getByText(etichetta).locator('xpath=..')
+function riga(dove: Page | Locator, label: string | RegExp): Locator {
+  return dove.getByText(label).locator('xpath=..')
 }
 
 /** `YYYY-MM` for today, from **local** date parts. Never `toISOString().slice(0, 7)`:
@@ -66,12 +66,12 @@ function riga(dove: Page | Locator, etichetta: string | RegExp): Locator {
  *  the report would open on the next one and the invoice this spec just issued would
  *  fall outside its own window. Mirrors `lib/dates.ts`'s `toIsoMonth`, restated here for
  *  the reason `centesimi` above is. */
-function meseCorrente(oggi: Date): string {
-  return `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}`
+function monthCurrent(today: Date): string {
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 }
 
 /**
- * `giorni` calendar days, ending today, that are all guaranteed to fall in **today's own
+ * `days` calendar days, ending today, that are all guaranteed to fall in **today's own
  * month**: the day number walks backwards from today and is clamped at the first, so on
  * the second of a month it produces `[…-01, …-01, …-02]` rather than stepping into the
  * month before.
@@ -85,26 +85,26 @@ function meseCorrente(oggi: Date): string {
  * row-per-entry), which is the same property that lets one person log two sessions in
  * one afternoon.
  */
-function giorniDelMese(oggi: Date, giorni: number): string[] {
-  const mese = meseCorrente(oggi)
-  return Array.from({ length: giorni }, (_, indice) => {
-    const numero = Math.max(1, oggi.getDate() - (giorni - 1 - indice))
-    return `${mese}-${String(numero).padStart(2, '0')}`
+function daysOfMonth(today: Date, days: number): string[] {
+  const month = monthCurrent(today)
+  return Array.from({ length: days }, (_, indice) => {
+    const number = Math.max(1, today.getDate() - (days - 1 - indice))
+    return `${month}-${String(number).padStart(2, '0')}`
   })
 }
 
 /** `period_label`'s own long form -- "agosto 2026" -- which is what the description of a
  *  month-grouped invoice line reads. Written out rather than taken from `Intl`, because
  *  it is the *backend's* wording that has to be matched, not the browser's. */
-const MESI = [
-  'gennaio',
-  'febbraio',
+const Months = [
+  'january',
+  'february',
   'marzo',
   'aprile',
   'maggio',
-  'giugno',
+  'june',
   'luglio',
-  'agosto',
+  'august',
   'settembre',
   'ottobre',
   'novembre',
@@ -112,7 +112,7 @@ const MESI = [
 ]
 
 /** Reads a `Row`'s figure as integer hundredths. */
-async function importo(locator: Locator): Promise<number> {
+async function amount(locator: Locator): Promise<number> {
   return centesimi(await locator.innerText())
 }
 
@@ -127,13 +127,13 @@ test.describe('economics', () => {
     test.setTimeout(240_000)
 
     // Never a literal year anywhere in this file: `invoices.checks.check_issue_date`
-    // refuses a `data_emissione` outside the current year, so a hard-coded `2026-03-10`
+    // refuses a `issue_date` outside the current year, so a hard-coded `2026-03-10`
     // would be a spec that starts failing on the first of January. Everything is derived
     // from `new Date()` -- the hours and the emission land in the same calendar month, and
     // therefore inside the year the annual estimate is read for.
-    const oggi = new Date()
-    const giorni = giorniDelMese(oggi, 3)
-    const mesePerEsteso = `${MESI[oggi.getMonth()]} ${oggi.getFullYear()}`
+    const today = new Date()
+    const days = daysOfMonth(today, 3)
+    const monthByEsteso = `${Months[today.getMonth()]} ${today.getFullYear()}`
 
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
@@ -147,28 +147,28 @@ test.describe('economics', () => {
     // The per-deal assertions further down need no such care: they are scoped to a deal
     // whose name carries this run's own timestamp.
     await page.goto('/app/?tab=economica')
-    const ricaviFiscaliPrima = await importo(riga(page, 'Ricavi incassabili'))
+    const revenueTaxBefore = await amount(riga(page, 'Ricavi incassabili'))
 
     // 2. A deal that can actually be invoiced.
     //
     // `page.request`, never the top-level `request` fixture -- see `seedDealWithRate`'s
     // own docstring: that fixture's cookie jar is a separate one and every call here
     // would come back 401. The customer carries the four address parts, the P.IVA and
-    // the `codice_sdi` because `check_party_exportable`/`check_recipient_routing` run
+    // the `sdi_code` because `check_party_exportable`/`check_recipient_routing` run
     // inside `issue`, *before* a register number is consumed, and refuse a recipient
     // missing any of them.
     const nome = `Progetto Economia ${Date.now()}`
     const { dealId } = await seedDealWithRate(page.request, {
       nome,
-      tariffa: '100.000000',
-      cliente: {
-        partita_iva: '12345678901',
-        codice_sdi: 'ABCDEFG',
-        indirizzo: 'Corso Italia 5',
+      rate: '100.000000',
+      customer: {
+        vat_number: '12345678901',
+        sdi_code: 'ABCDEFG',
+        address: 'Corso Italia 5',
         cap: '00100',
-        comune: 'Roma',
-        provincia: 'RM',
-        nazione: 'IT',
+        city: 'Roma',
+        province: 'RM',
+        country: 'IT',
       },
     })
 
@@ -176,25 +176,25 @@ test.describe('economics', () => {
     // Three sessions of eight hours, not one entry of twenty-four: `ck_time_entries_ore_range`
     // caps a single entry at 24 hours (the brief's own sample logged 40 in one row and is
     // refused by the database), and three entries are what makes the *grouping* below
-    // observable at all -- one invoice line whose `quantita` is the sum of three rows'
-    // `ore` is criterion 5, and it cannot be seen from a single entry.
+    // observable at all -- one invoice line whose `quantity` is the sum of three rows'
+    // `hours` is criterion 5, and it cannot be seen from a single entry.
     //
-    // `costo_applicato` explicitly, so the provisional margin further down is a real
+    // `applied_cost` explicitly, so the provisional margin further down is a real
     // negative number rather than a zero: twenty-four hours costing 25 EUR/h and not yet
     // invoiced is exactly the state §7.1 insists must not be read as a loss, and a margin
     // of 0,00 € would prove nothing about the qualifier printed beside it.
-    for (const giorno of giorni) {
-      const voce = await page.request.post('/api/time-entries', {
+    for (const day of days) {
+      const entry = await page.request.post('/api/time-entries', {
         data: {
           deal_id: dealId,
           user_id: me.id,
-          data: giorno,
-          ore: '8.00',
-          descrizione: 'Sviluppo',
-          costo_applicato: '25.000000',
+          data: day,
+          hours: '8.00',
+          description: 'Sviluppo',
+          applied_cost: '25.000000',
         },
       })
-      expect(voce.status(), await voce.text()).toBe(201)
+      expect(entry.status(), await entry.text()).toBe(201)
     }
 
     // 3. Before any invoice: provisional, and the accrued value is not called revenue.
@@ -218,7 +218,7 @@ test.describe('economics', () => {
     // 4. The hours become a draft -- and the deal's economics do not move.
     //
     // This is the single most valuable assertion in this file. An hour bound to a line
-    // of a *draft* invoice is `fatturato` to the link-based list filter and is still
+    // of a *draft* invoice is `invoiced` to the link-based list filter and is still
     // billable-and-unbilled to every figure below, because a draft is not revenue. The
     // opposite reading would leave the work in neither figure: priced, done, and
     // invisible until somebody pressed «Emetti».
@@ -255,35 +255,35 @@ test.describe('economics', () => {
     await expect(page.getByText('Emessa', { exact: true })).toBeVisible({ timeout: 120_000 })
 
     // Criterion 5, on the document itself: **one** line for three entries, grouped by
-    // rate and month, whose `quantita` is the sum of their `ore` -- and whose description
+    // rate and month, whose `quantity` is the sum of their `hours` -- and whose description
     // names the month it covers, which is what makes it legible beside a timesheet.
-    const rigaFattura = page.getByRole('row').filter({ hasText: 'Attività' })
-    await expect(rigaFattura).toHaveCount(1)
-    await expect(rigaFattura).toContainText(mesePerEsteso)
-    await expect(rigaFattura).toContainText('24.00')
-    await expect(rigaFattura).toContainText('2.400,00 €')
+    const lineInvoice = page.getByRole('row').filter({ hasText: 'Attività' })
+    await expect(lineInvoice).toHaveCount(1)
+    await expect(lineInvoice).toContainText(monthByEsteso)
+    await expect(lineInvoice).toContainText('24.00')
+    await expect(lineInvoice).toContainText('2.400,00 €')
 
     // 6. The deal is won, so the margin has the right to stop being provisional.
     //
     // Through `PATCH /api/deals/{id}/stage` -- the endpoint the Kanban drag itself calls
     // -- rather than through the drag: `kanban.spec.ts` already proves that gesture, and
-    // a drag failing here would read as an economics failure. `stato` is `chiuso` only
+    // a drag failing here would read as an economics failure. `status` is `closed` only
     // when the stage is not `open` *and* nothing billable is left unbilled, so both
     // halves have to be true before the qualifier changes.
     const stages = (await (await page.request.get('/api/pipeline-stages')).json()) as {
       id: string
       code: string | null
     }[]
-    const vinto = stages.find((stage) => stage.code === 'vinto')
-    expect(vinto, 'lo stato «vinto» deve esistere: e2e-setup.sh semina la pipeline').toBeTruthy()
+    const won = stages.find((stage) => stage.code === 'won')
+    expect(won, 'lo stato «vinto» deve esistere: e2e-setup.sh semina la pipeline').toBeTruthy()
     const mossa = await page.request.patch(`/api/deals/${dealId}/stage`, {
-      data: { stage_id: vinto?.id },
+      data: { stage_id: won?.id },
     })
     expect(mossa.status(), await mossa.text()).toBe(200)
 
     await page.goto(`/app/deal/${dealId}`)
     await page.getByRole('tab', { name: 'Economia' }).click()
-    await expect(page.getByText('chiuso', { exact: true })).toBeVisible()
+    await expect(page.getByText('closed', { exact: true })).toBeVisible()
     await expect(riga(page, 'Ricavi fatturati')).toContainText('2.400,00 €')
     await expect(riga(page, 'Ricavi fatturati')).toContainText('1 fatture emesse')
     await expect(riga(page, 'Margine lordo')).toContainText('1.800,00 €')
@@ -301,12 +301,12 @@ test.describe('economics', () => {
     //
     // In Home → Economica, under the cards: the estimate is a card of the dashboard since
     // the Analisi section left the interface, read for the year the period on screen
-    // names, which for a bare `/app/?tab=economica` is the current one.
+    // names, which for a bare `/app/?tab=economic` is the current one.
     await page.goto('/app/?tab=economica')
     await expect(page.getByRole('note')).toContainText(/stima/i)
     await expect
-      .poll(async () => importo(riga(page, 'Ricavi incassabili')))
-      .toBe(ricaviFiscaliPrima + 240_000)
+      .poll(async () => amount(riga(page, 'Ricavi incassabili')))
+      .toBe(revenueTaxBefore + 240_000)
     // The three parameters are configured (e2e-setup.sh seeds the forfettario profile),
     // so every derived line is a figure rather than «non calcolabile» -- which is the
     // only way to tell a configured estimate from a missing one.
@@ -327,7 +327,7 @@ test.describe('economics', () => {
     await loginAsAdmin(page)
     const { dealId } = await seedDealWithRate(page.request, {
       nome: `Progetto Errore ${Date.now()}`,
-      tariffa: '100.000000',
+      rate: '100.000000',
     })
     await page.route('**/api/deals/*/pnl', (route) => route.abort('failed'))
     await page.goto(`/app/deal/${dealId}`)

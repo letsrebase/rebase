@@ -53,7 +53,7 @@ export function HomePage({
   if (startPage === null && state.spaceEmpty !== null && !state.workFailed) setStartPage(state.spaceEmpty)
   const chosen = startPage ?? state.spaceEmpty
   if (chosen === null) return null
-  if (chosen) return <GetStartedPage esito={search.esito} />
+  if (chosen) return <GetStartedPage outcome={search.outcome} />
   return (
     <DashboardPage
       search={search}
@@ -63,7 +63,7 @@ export function HomePage({
           {/* The consent flow comes back here only if the API read the space as empty
               and this page did not (a read that failed counts as work): the outcome is
               still the person's to read. */}
-          <ConsentOutcome {...consentOutcome('gmail', search.esito)} className="mb-6" />
+          <ConsentOutcome {...consentOutcome('gmail', search.outcome)} className="mb-6" />
           <RecordDayShortcut />
           <PendingProposalsNotice />
           {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}

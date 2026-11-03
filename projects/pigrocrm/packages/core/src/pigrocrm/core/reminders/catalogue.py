@@ -1,7 +1,7 @@
 """What a reminder is: the types, their ladders, and the arithmetic that turns a measure
 into a severity (spec 2026-10-26 §3, §5).
 
-A **type** is one kind of reminder (`attivita_overdue`), a **subject** is the record it is
+A **type** is one kind of reminder (`task_overdue`), a **subject** is the record it is
 about, and the pair is the reminder's **key**, `type:subject-id`. Nothing here touches the
 database: the catalogue is data and the severity is a pure function, which is what lets a
 detector be tested on a date and the preference resolver be called from the detectors, the
@@ -60,7 +60,7 @@ class ReminderType:
     """One kind of reminder, as the code and the settings both read it.
 
     `subject` names the record the key's id belongs to (the web turns it into a link);
-    `daily` is for the types delivered once a day while they hold (`attivita_overdue`,
+    `daily` is for the types delivered once a day while they hold (`task_overdue`,
     «every morning»), through the ledger's `period` column (spec §8.3); `audience` says
     whether the recipients come from the subject or are the space's admins.
     """
@@ -82,7 +82,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
     kind.key: kind
     for kind in (
         ReminderType(
-            key="attivita_due",
+            key="task_due",
             label="Attività in scadenza",
             description="Un'attività aperta scade oggi, o fra i giorni di anticipo che scegli.",
             subject="attivita",
@@ -91,7 +91,7 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             ladder={"warning": 0},
         ),
         ReminderType(
-            key="attivita_overdue",
+            key="task_overdue",
             label="Attività scaduta",
             description=(
                 "Un'attività aperta ha superato la sua scadenza: te lo ricorda ogni mattina."

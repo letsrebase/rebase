@@ -16,11 +16,11 @@ import type { TimeEntry } from './queries'
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
-  { key: 'ore', label: 'Ore', type: 'number', required: true, options: [] },
-  { key: 'descrizione', label: 'Descrizione', type: 'textarea', required: true, options: [] },
-  { key: 'fatturabile', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
+  { key: 'hours', label: 'Ore', type: 'number', required: true, options: [] },
+  { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
+  { key: 'billable', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
   {
-    key: 'tariffa_applicata',
+    key: 'applied_rate',
     label: 'Tariffa (€/h, lascia vuoto per usare quella predefinita)',
     type: 'number',
     required: false,
@@ -38,10 +38,10 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
  *  simply not there. */
 export const LOCKED_KEYS = new Set([
   'data',
-  'ore',
-  'descrizione',
-  'fatturabile',
-  'tariffa_applicata',
+  'hours',
+  'description',
+  'billable',
+  'applied_rate',
 ])
 
 /** The form's state in the API's two namespaces -- see `FormValues`. */
@@ -57,14 +57,14 @@ export type TimeEntryFormValues = FormValues
  * `formatIsoDateItalian` (@/lib/dates) closes.
  */
 export function defaultFormValues(today: Date = new Date()): TimeEntryFormValues {
-  return { native: { fatturabile: true, data: toIsoDate(today) }, custom: {} }
+  return { native: { billable: true, data: toIsoDate(today) }, custom: {} }
 }
 
 /**
  * Builds the form's starting state from an entry that already exists.
  *
  * Deliberately not `{ ...entry, ...entry.custom_fields }`: a `TimeEntryRead` also
- * carries `id`, `tariffa_origine`, `valore_riga`, `invoice_line_id`, `created_at` and
+ * carries `id`, `rate_source`, `line_value`, `invoice_line_id`, `created_at` and
  * the rest, none of which `TimeEntryUpdate` accepts -- sending them back would 422 on
  * every edit. Walking exactly `NATIVE_FIELD_KEYS` keeps the round trip to what the form
  * is allowed to send; `custom_fields` is copied whole into its own namespace, archived

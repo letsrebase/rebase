@@ -6,7 +6,7 @@ import { consentOutcome } from '@/features/consent/outcome'
 /**
  * Where `GET /api/slack/oauth/callback` lands the browser after an install (REB-739): the
  * Slack twin of `settings/drive.tsx`, with the same reasoning. `validateSearch` narrows
- * `?esito=` to a string or nothing, and `consentOutcome` looks it up in a fixed table
+ * `?outcome=` to a string or nothing, and `consentOutcome` looks it up in a fixed table
  * instead of rendering it, so a link somebody else crafted cannot put a sentence of their
  * choosing on this page. Admins only (`SETTINGS_TAB_MIN_ROLE`), so there is no outcome
  * to read out in front of the settings gate.
@@ -15,18 +15,18 @@ import { consentOutcome } from '@/features/consent/outcome'
  * route out of the router plugin's automatic code splitting.
  */
 function SlackSettingsRoute() {
-  const { esito } = Route.useSearch()
+  const { outcome } = Route.useSearch()
   return (
     <div className="space-y-4">
-      <ConsentOutcome {...consentOutcome('slack', esito)} />
+      <ConsentOutcome {...consentOutcome('slack', outcome)} />
       <SlackPanel />
     </div>
   )
 }
 
 export const Route = createFileRoute('/app/settings/slack')({
-  validateSearch: (search: Record<string, unknown>): { esito?: string } => ({
-    esito: typeof search.esito === 'string' ? search.esito : undefined,
+  validateSearch: (search: Record<string, unknown>): { outcome?: string } => ({
+    outcome: typeof search.outcome === 'string' ? search.outcome : undefined,
   }),
   component: SlackSettingsRoute,
 })

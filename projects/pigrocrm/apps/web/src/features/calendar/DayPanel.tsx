@@ -18,8 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
-import { AttivitaItem } from '@/features/attivita/AttivitaItem'
+import { TaskDialog } from '@/features/tasks/TaskDialog'
+import { TaskItem } from '@/features/tasks/TaskItem'
 import { PanelDays } from '@/features/days/CalendarDays'
 import { useDeals } from '@/features/deals/queries'
 import { useLogTime } from '@/features/time/queries'
@@ -27,7 +27,7 @@ import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
-import { GIORNATA, MEZZA, normaliseHours } from './hours'
+import { WorkUnit, HALF, normaliseHours } from './hours'
 import type { CalendarDay } from './queries'
 
 /**
@@ -44,11 +44,11 @@ import type { CalendarDay } from './queries'
  * date belongs to the invoice.
  */
 export function DayPanel({
-  giorno,
+  day,
   data,
   onClose,
 }: {
-  giorno: string
+  day: string
   data: CalendarDay | undefined
   onClose: () => void
 }) {
@@ -61,17 +61,17 @@ export function DayPanel({
           a date with many rows keeps every one reachable and the header and «Chiudi» in view. */}
       <DialogContent className="max-h-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{formatIsoDateItalian(giorno)}</DialogTitle>
+          <DialogTitle>{formatIsoDateItalian(day)}</DialogTitle>
         </DialogHeader>
 
         <div className="min-h-0 space-y-5 overflow-y-auto">
           <Worked data={data} />
-          <PanelDays giorno={giorno} days={data?.giornate ?? []} />
+          <PanelDays day={day} days={data?.work_units ?? []} />
           <Due data={data} />
           {canWrite && (
             <>
-              <LogHours giorno={giorno} onProblem={setProblem} />
-              <NewCommitment giorno={giorno} />
+              <LogHours day={day} onProblem={setProblem} />
+              <NewCommitment day={day} />
             </>
           )}
         </div>
@@ -94,21 +94,21 @@ export function DayPanel({
 }
 
 function Worked({ data }: { data: CalendarDay | undefined }) {
-  const righe = data?.per_deal ?? []
-  if (righe.length === 0) return <p className="text-sm text-muted-foreground">Nessuna ora.</p>
+  const lines = data?.per_deal ?? []
+  if (lines.length === 0) return <p className="text-sm text-muted-foreground">Nessuna ora.</p>
   return (
     <section aria-labelledby="ore-del-giorno" className="space-y-1">
       <h3 id="ore-del-giorno" className="text-sm font-medium">
-        Ore ({data ? formatItalianQuantity(data.ore) : ''})
+        Ore ({data ? formatItalianQuantity(data.hours) : ''})
       </h3>
       <ul className="space-y-1 text-sm">
-        {righe.map((riga) => (
+        {lines.map((riga) => (
           <li key={riga.deal_id} className="flex justify-between gap-4">
             <span>
-              {riga.cliente ? `${riga.cliente} · ` : ''}
-              {riga.deal_nome}
+              {riga.customer ? `${riga.customer} · ` : ''}
+              {riga.deal_name}
             </span>
-            <span className="tabular-nums">{formatItalianQuantity(riga.ore)} h</span>
+            <span className="tabular-nums">{formatItalianQuantity(riga.hours)} h</span>
           </li>
         ))}
       </ul>
@@ -120,8 +120,8 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
  *  cannot be touched from here at all. */
 function Due({ data }: { data: CalendarDay | undefined }) {
   const attivita = data?.attivita ?? []
-  const fatture = data?.fatture ?? []
-  if (attivita.length === 0 && fatture.length === 0) return null
+  const invoices = data?.invoices ?? []
+  if (attivita.length === 0 && invoices.length === 0) return null
 
   return (
     <section aria-labelledby="scadenze-del-giorno" className="space-y-2">
@@ -130,20 +130,20 @@ function Due({ data }: { data: CalendarDay | undefined }) {
       </h3>
       <ul className="space-y-2 text-sm">
         {attivita.map((item) => (
-          <AttivitaItem key={item.id} attivita={item} />
+          <TaskItem key={item.id} attivita={item} />
         ))}
-        {fatture.map((fattura) => (
-          <li key={fattura.id} className="flex items-center justify-between gap-3">
+        {invoices.map((invoice) => (
+          <li key={invoice.id} className="flex items-center justify-between gap-3">
             <Link
               to="/app/invoices/$invoiceId"
-              params={{ invoiceId: fattura.id }}
+              params={{ invoiceId: invoice.id }}
               className="underline underline-offset-4"
             >
-              Fattura {fattura.numero ?? '—'}
-              {fattura.cliente ? ` · ${fattura.cliente}` : ''}
+              Fattura {invoice.number ?? '—'}
+              {invoice.customer ? ` · ${invoice.customer}` : ''}
             </Link>
             <span className="tabular-nums">
-              {fattura.totale} €{fattura.in_ritardo ? ' · scaduta' : ''}
+              {invoice.total} €{invoice.overdue ? ' · scaduta' : ''}
             </span>
           </li>
         ))}
@@ -153,43 +153,43 @@ function Due({ data }: { data: CalendarDay | undefined }) {
 }
 
 function LogHours({
-  giorno,
+  day,
   onProblem,
 }: {
-  giorno: string
+  day: string
   onProblem: (message: string | null) => void
 }) {
   const { user } = useAuth()
   const deals = useDeals()
   const log = useLogTime()
   const [dealId, setDealId] = useState('')
-  const [ore, setOre] = useState(GIORNATA)
-  const [descrizione, setDescrizione] = useState('')
+  const [ore, setHours] = useState(WorkUnit)
+  const [description, setDescription] = useState('')
 
-  const valide = normaliseHours(ore)
+  const valid = normaliseHours(ore)
 
   /**
    * `quante` is passed in rather than read from state, and that is not a style choice:
-   * `setOre(GIORNATA)` followed by `submit()` sent whatever was in the field *before*
+   * `setHours(WorkUnit)` followed by `submit()` sent whatever was in the field *before*
    * the click, because a `useState` setter does not update the current render's value.
    * Pressing «Giornata» after typing 4 logged four hours and said «giornata».
    */
-  function submit(quante: string) {
-    const hours = normaliseHours(quante)
+  function submit(how_many: string) {
+    const hours = normaliseHours(how_many)
     if (!user || dealId === '' || hours === null) return
     onProblem(null)
     log.mutate(
       {
         deal_id: dealId,
         user_id: user.id,
-        data: giorno,
-        ore: hours,
-        descrizione: descrizione.trim() === '' ? 'Ore' : descrizione.trim(),
+        data: day,
+        hours: hours,
+        description: description.trim() === '' ? 'Ore' : description.trim(),
       },
       {
         onSuccess: () => {
           toast.success('Ore registrate')
-          setDescrizione('')
+          setDescription('')
         },
         onError: (error) => onProblem(toProblem(error).detail),
       },
@@ -226,16 +226,16 @@ function LogHours({
             id="ore-del-giorno-input"
             inputMode="decimal"
             value={ore}
-            onChange={(event) => setOre(event.target.value)}
-            aria-invalid={ore.trim() !== '' && valide === null}
+            onChange={(event) => setHours(event.target.value)}
+            aria-invalid={ore.trim() !== '' && valid === null}
             aria-label="Ore"
           />
         </div>
       </div>
       <Input
         placeholder="Descrizione (facoltativa)"
-        value={descrizione}
-        onChange={(event) => setDescrizione(event.target.value)}
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
         aria-label="Descrizione"
       />
       <div className="flex flex-wrap items-center gap-2">
@@ -244,18 +244,18 @@ function LogHours({
             the field *and* send, so eight hours on a deal stays two clicks. */}
         <Button
           size="sm"
-          disabled={dealId === '' || valide === null || log.isPending}
+          disabled={dealId === '' || valid === null || log.isPending}
           onClick={() => submit(ore)}
         >
-          Registra {valide === null ? '—' : formatItalianQuantity(valide)} h
+          Registra {valid === null ? '—' : formatItalianQuantity(valid)} h
         </Button>
         <Button
           size="sm"
           variant="outline"
           disabled={dealId === '' || log.isPending}
           onClick={() => {
-            setOre(GIORNATA)
-            submit(GIORNATA)
+            setHours(WorkUnit)
+            submit(WorkUnit)
           }}
         >
           Giornata (8h)
@@ -265,14 +265,14 @@ function LogHours({
           variant="outline"
           disabled={dealId === '' || log.isPending}
           onClick={() => {
-            setOre(MEZZA)
-            submit(MEZZA)
+            setHours(HALF)
+            submit(HALF)
           }}
         >
           Mezza (4h)
         </Button>
       </div>
-      {ore.trim() !== '' && valide === null && (
+      {ore.trim() !== '' && valid === null && (
         <p className="text-sm text-muted-foreground">
           Le ore vanno scritte come numero, da 0,25 a 24 — per esempio 7,5 oppure 3.
         </p>
@@ -286,7 +286,7 @@ function LogHours({
  * day prefilled as the deadline. It used to be a one-line title box that could write
  * nothing else, which is what the dialog replaced (REB-719).
  */
-function NewCommitment({ giorno }: { giorno: string }) {
+function NewCommitment({ day }: { day: string }) {
   const [open, setOpen] = useState(false)
   return (
     <section aria-labelledby="nuova-scadenza" className="space-y-2 border-t pt-4">
@@ -296,7 +296,7 @@ function NewCommitment({ giorno }: { giorno: string }) {
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
         Aggiungi un’attività per questo giorno
       </Button>
-      <AttivitaDialog open={open} onOpenChange={setOpen} defaults={{ scadenza: giorno }} />
+      <TaskDialog open={open} onOpenChange={setOpen} defaults={{ due_date: day }} />
     </section>
   )
 }

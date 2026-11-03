@@ -48,7 +48,7 @@ SYSTEM = Actor(id=None, type="system", role="admin")
 def _deal_in_stage(db_session: Session, stage_id: UUID) -> None:
     """A stage with a deal in it cannot be deleted, which is the path this fixture
     exists to reach."""
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), SYSTEM)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), SYSTEM)
     DealService(db_session).create(
         DealCreate(nome="Un deal", customer_id=customer.id, pipeline_stage_id=stage_id), SYSTEM
     )
@@ -56,7 +56,7 @@ def _deal_in_stage(db_session: Session, stage_id: UUID) -> None:
 
 def _admin(db_session: Session, email: str) -> UserRead:
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Amministratrice", ruolo="admin"),
+        UserCreate(email=email, password="supersegreta1", nome="Amministratrice", role="admin"),
         SYSTEM,
     )
 
@@ -304,12 +304,12 @@ def test_a_field_definition_is_not_created_when_its_audit_entry_cannot_be(
 
 def test_creating_a_pipeline_stage_records_its_identity(db_session: Session) -> None:
     stage = PipelineService(db_session).create(
-        PipelineStageCreate(nome="Preventivo", posizione=7, tipo="open", code="preventivo"), SYSTEM
+        PipelineStageCreate(nome="Preventivo", position=7, type="open", code="preventivo"), SYSTEM
     )
 
     entry = _entries(db_session, "pipeline_stage", stage.id)[0]
     assert entry.kind == "created"
-    assert entry.payload == {"nome": "Preventivo", "code": "preventivo", "tipo": "open"}
+    assert entry.payload == {"nome": "Preventivo", "code": "preventivo", "type": "open"}
 
 
 def test_renaming_a_pipeline_stage_records_both_names_and_pins_the_entry_to_the_code(
@@ -317,7 +317,7 @@ def test_renaming_a_pipeline_stage_records_both_names_and_pins_the_entry_to_the_
 ) -> None:
     service = PipelineService(db_session)
     stage = service.create(
-        PipelineStageCreate(nome="Preventivo", posizione=7, code="preventivo"), SYSTEM
+        PipelineStageCreate(nome="Preventivo", position=7, code="preventivo"), SYSTEM
     )
 
     service.update(stage.id, PipelineStageUpdate(nome="Offerta inviata"), SYSTEM)
@@ -331,18 +331,18 @@ def test_renaming_a_pipeline_stage_records_both_names_and_pins_the_entry_to_the_
 def test_changing_a_stages_outcome_type_is_recorded_with_both_sides(
     db_session: Session,
 ) -> None:
-    """`tipo` is the attribute the rest of the domain reads: it decides which stages
+    """`type` is the attribute the rest of the domain reads: it decides which stages
     `default_stage` may hand a new deal, and whether a deal counts as won. Turning one
     into a terminal stage is exactly the "who did this and when" case."""
     service = PipelineService(db_session)
-    stage = service.create(PipelineStageCreate(nome="Chiuso", posizione=9), SYSTEM)
+    stage = service.create(PipelineStageCreate(nome="Chiuso", position=9), SYSTEM)
 
-    service.update(stage.id, PipelineStageUpdate(tipo="won"), SYSTEM)
+    service.update(stage.id, PipelineStageUpdate(type="won"), SYSTEM)
 
     entry = _entries(db_session, "pipeline_stage", stage.id)[-1]
-    assert entry.payload["changed"] == ["tipo"]
-    assert entry.payload["before"] == {"tipo": "open"}
-    assert entry.payload["after"] == {"tipo": "won"}
+    assert entry.payload["changed"] == ["type"]
+    assert entry.payload["before"] == {"type": "open"}
+    assert entry.payload["after"] == {"type": "won"}
 
 
 def test_deleting_a_stage_leaves_the_only_remaining_record_that_it_existed(
@@ -352,7 +352,7 @@ def test_deleting_a_stage_leaves_the_only_remaining_record_that_it_existed(
     timeline entry has to carry enough to recognise the stage without it."""
     service = PipelineService(db_session)
     stage = service.create(
-        PipelineStageCreate(nome="Da eliminare", posizione=8, code="da_eliminare"), SYSTEM
+        PipelineStageCreate(nome="Da eliminare", position=8, code="da_eliminare"), SYSTEM
     )
 
     service.delete(stage.id, SYSTEM)
@@ -361,7 +361,7 @@ def test_deleting_a_stage_leaves_the_only_remaining_record_that_it_existed(
         service.get(stage.id)
     entry = _entries(db_session, "pipeline_stage", stage.id)[-1]
     assert entry.kind == "deleted"
-    assert entry.payload == {"nome": "Da eliminare", "code": "da_eliminare", "tipo": "open"}
+    assert entry.payload == {"nome": "Da eliminare", "code": "da_eliminare", "type": "open"}
 
 
 def test_seeding_records_each_default_stage_as_seeded_and_says_nothing_on_a_reseed(
@@ -398,7 +398,7 @@ def test_seeding_records_each_default_stage_as_seeded_and_says_nothing_on_a_rese
 def test_a_refused_stage_deletion_records_nothing(db_session: Session) -> None:
     """A stage with deals in it is not deleted, so nothing happened to record."""
     service = PipelineService(db_session)
-    stage = service.create(PipelineStageCreate(nome="Con deal", posizione=3), SYSTEM)
+    stage = service.create(PipelineStageCreate(nome="Con deal", position=3), SYSTEM)
     _deal_in_stage(db_session, stage.id)
 
     with pytest.raises(Conflict):
@@ -415,7 +415,7 @@ def test_creating_a_user_records_the_email_and_the_role(db_session: Session) -> 
 
     entry = _entries(db_session, "user", user.id)[0]
     assert entry.kind == "created"
-    assert entry.payload == {"email": "nuova@test.it", "ruolo": "admin"}
+    assert entry.payload == {"email": "nuova@test.it", "role": "admin"}
 
 
 def test_deactivating_a_user_records_who_turned_the_account_off(db_session: Session) -> None:
@@ -424,13 +424,13 @@ def test_deactivating_a_user_records_who_turned_the_account_off(db_session: Sess
     actor = Actor(id=who.id, type="user", role="admin")
     victim = _admin(db_session, "vittima@test.it")
 
-    UserService(db_session).update(victim.id, UserUpdate(attivo=False), actor)
+    UserService(db_session).update(victim.id, UserUpdate(active=False), actor)
 
     entry = _entries(db_session, "user", victim.id)[-1]
     assert entry.kind == "updated"
-    assert entry.payload["changed"] == ["attivo"]
-    assert entry.payload["before"] == {"attivo": True}
-    assert entry.payload["after"] == {"attivo": False}
+    assert entry.payload["changed"] == ["active"]
+    assert entry.payload["before"] == {"active": True}
+    assert entry.payload["after"] == {"active": False}
     assert entry.actor_id == who.id
 
 
@@ -444,17 +444,17 @@ def test_promoting_a_user_to_administrator_is_recorded_with_both_roles(
         UserCreate(email="collab@test.it", password="supersegreta1", nome="Collab"), SYSTEM
     )
 
-    service.update(user.id, UserUpdate(ruolo="admin"), SYSTEM)
+    service.update(user.id, UserUpdate(role="admin"), SYSTEM)
 
     entry = _entries(db_session, "user", user.id)[-1]
-    assert entry.payload["before"] == {"ruolo": "collaboratore"}
-    assert entry.payload["after"] == {"ruolo": "admin"}
+    assert entry.payload["before"] == {"role": "collaborator"}
+    assert entry.payload["after"] == {"role": "admin"}
 
 
 def test_a_user_update_that_changes_nothing_records_nothing(db_session: Session) -> None:
     user = _admin(db_session, "invariata@test.it")
 
-    UserService(db_session).update(user.id, UserUpdate(attivo=True, ruolo="admin"), SYSTEM)
+    UserService(db_session).update(user.id, UserUpdate(active=True, role="admin"), SYSTEM)
 
     assert _kinds(db_session, "user", user.id) == ["created"]
 
@@ -599,7 +599,7 @@ def test_a_stage_is_not_deleted_when_its_audit_entry_cannot_be(
     already issued the DELETE by the time the audit is written, so a commit that ran
     before the entry would destroy the row and the only record of it in one go."""
     service = PipelineService(db_session)
-    stage = service.create(PipelineStageCreate(nome="Sopravvive", posizione=4), SYSTEM)
+    stage = service.create(PipelineStageCreate(nome="Sopravvive", position=4), SYSTEM)
     monkeypatch.setattr(ActivityService, "record", _audit_is_down)
 
     with pytest.raises(RuntimeError):
@@ -683,7 +683,7 @@ def test_the_user_audit_never_carries_the_password_or_its_hash(db_session: Sessi
     user = service.create(
         UserCreate(email="pw@test.it", password=password, nome="Con credenziali"), SYSTEM
     )
-    service.update(user.id, UserUpdate(ruolo="admin", nome="Rinominata"), SYSTEM)
+    service.update(user.id, UserUpdate(role="admin", nome="Rinominata"), SYSTEM)
     db_session.commit()
 
     stored = UserRepository(db_session).get(user.id)

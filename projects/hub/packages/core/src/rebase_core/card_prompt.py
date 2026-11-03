@@ -9,11 +9,11 @@ from dataclasses import replace
 
 from rebase_core.card_draft import (
     CV,
-    FONTI_FIELDS,
     HUB,
+    SOURCES_FIELDS,
     CardDraft,
-    CardFonti,
-    CardPersona,
+    CardPerson,
+    CardSources,
 )
 from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.card_types import Failure
@@ -29,7 +29,7 @@ from rebase_core.team_schemas import Card
 # the prompt of REB-799 and REB-802, the CV alone; a card with no version recorded is
 # version 1. Version 2 (REB-839) reads the person's other sources too and answers a
 # private `CardDraft`. Version 3 (REB-855) also reads the person's identity and contacts
-# out of the CV, in `persona`, for the admin's named card. A bump spends nothing by
+# out of the CV, in `person`, for the admin's named card. A bump spends nothing by
 # itself: the cards of another version are listed for an admin to regenerate
 # (`CardWriter.stale_cards`); the hourly `refresh_stale` only writes a card whose CV is new.
 PROMPT_VERSION = 3
@@ -161,7 +161,7 @@ def prompt_sources(sources: SourceSet) -> list[SourceItem]:
 
 
 def source_keys(sources: SourceSet, facts: HubFacts) -> list[str]:
-    """The keys a card's `fonti` may name for this person, in the order the prompt lists
+    """The keys a card's `sources` may name for this person, in the order the prompt lists
     them: the CV always, each source the prompt carries, and `hub` when it has anything to
     say."""
     kept = prompt_sources(sources)
@@ -212,11 +212,11 @@ def card_prompt(
     the system text is far below the smallest prefix a provider caches, and one CV is
     read once. The output ceiling is the `card` task's (`ai_tasks`, «Modelli AI»)."""
     sources = sources or SourceSet([])
-    facts = facts or HubFacts(seniority_admin=None, anni_admin=None)
-    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    facts = facts or HubFacts(seniority_admin=None, experience_years_admin=None)
+    cut = " (cut short: the file is longer than what follows)" if cv.truncated else ""
     user = (
         f"Position on the profile: {posizione or 'not given'}\n\n"
-        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+        f"The CV's text{cut}:\n<cv>\n{cv.text}\n</cv>"
     )
     blocks = source_blocks(sources, facts)
     if blocks:
@@ -230,10 +230,10 @@ def card_prompt_v1(cv: CvText, posizione: str | None) -> LlmRequest:
     baseline the present prompt is compared with (REB-842): `_SYSTEM` alone, a user turn
     of the position and the CV and nothing else, the answer `Card`. Never used to write a
     live card."""
-    cut = " (cut short: the file is longer than what follows)" if cv.troncato else ""
+    cut = " (cut short: the file is longer than what follows)" if cv.truncated else ""
     user = (
         f"Position on the profile: {posizione or 'not given'}\n\n"
-        f"The CV's text{cut}:\n<cv>\n{cv.testo}\n</cv>"
+        f"The CV's text{cut}:\n<cv>\n{cv.text}\n</cv>"
     )
     return prompt_request(_SYSTEM, [user], Card)
 
@@ -289,18 +289,18 @@ def draft_from(response: LlmResponse, known: KnownIdentifiers) -> CardDraft | Fa
         # version 1 answers the card alone
         draft = CardDraft(
             card=response.parsed,
-            fonti=CardFonti.model_validate({name: [] for name in FONTI_FIELDS}),
+            sources=CardSources.model_validate({name: [] for name in SOURCES_FIELDS}),
             employers=[],
-            persona=CardPersona(
+            person=CardPerson(
                 nome=None,
-                cognome=None,
+                last_name=None,
                 email=None,
-                telefono=None,
-                citta=None,
+                phone=None,
+                city=None,
                 linkedin_url=None,
-                altri_link=[],
+                other_links=[],
             ),
         )
-    if identifying(draft.card, KnownIdentifiers.empty(known.cognome, known.nome)):
+    if identifying(draft.card, KnownIdentifiers.empty(known.last_name, known.nome)):
         return "identifying"
     return draft

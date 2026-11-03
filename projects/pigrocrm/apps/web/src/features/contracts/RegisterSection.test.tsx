@@ -25,37 +25,37 @@ function ok(data: unknown) {
 
 const REGISTER = {
   contract_id: 'c1',
-  titolo: 'Consulenza',
-  cliente: 'ACME Srl',
+  title: 'Consulenza',
+  customer: 'ACME Srl',
   da: '2026-10-01',
   a: '2026-10-31',
-  voci: [
+  entries: [
     {
       work_unit_id: 'w1',
       data: '2026-10-07',
-      quantita: '1.00',
-      descrizione: 'Giornata',
-      stato: 'fatturato',
-      numero_fattura: '2026/12',
-      approvazione: {
-        canale: 'email',
-        mittente: 'mario@cliente.example',
-        ricevuto_il: '2026-10-02T09:30:00',
+      quantity: '1.00',
+      description: 'Giornata',
+      status: 'invoiced',
+      invoice_number: '2026/12',
+      approval: {
+        channel: 'email',
+        sender: 'mario@cliente.example',
+        received_at: '2026-10-02T09:30:00',
         message_id: '<a@b>',
       },
     },
     {
       work_unit_id: 'w2',
       data: '2026-10-08',
-      quantita: '0.50',
-      descrizione: 'Mezza giornata',
-      stato: 'fatturato',
-      numero_fattura: null,
-      approvazione: null,
+      quantity: '0.50',
+      description: 'Mezza giornata',
+      status: 'invoiced',
+      invoice_number: null,
+      approval: null,
     },
   ],
-  totale_quantita: '1.50',
-  senza_approvazione: 1,
+  quantity_total: '1.50',
+  without_approval: 1,
 }
 
 function renderSection() {
@@ -103,7 +103,7 @@ describe('RegisterSection', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'CSV' }))
     expect(downloadFromApi).toHaveBeenCalledWith(
-      '/api/contracts/c1/register/csv?da=2026-10-01&a=2026-10-31',
+      '/api/contracts/c1/register/csv?from=2026-10-01&to=2026-10-31',
     )
     await userEvent.click(screen.getByRole('button', { name: 'PDF' }))
 
@@ -118,7 +118,7 @@ describe('RegisterSection', () => {
 
   it('says so when the month has no billed day', async () => {
     vi.mocked(api.GET).mockImplementation(
-      (() => ok({ ...REGISTER, voci: [], totale_quantita: '0', senza_approvazione: 0 })) as never,
+      (() => ok({ ...REGISTER, entries: [], quantity_total: '0', without_approval: 0 })) as never,
     )
     renderSection()
     expect(await screen.findByText('Nessuna giornata fatturata in questo mese.')).toBeInTheDocument()

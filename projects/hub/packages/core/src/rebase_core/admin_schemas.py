@@ -23,7 +23,7 @@ class StatusChange(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    stato: str = Field(min_length=1, max_length=20)
+    status: str = Field(min_length=1, max_length=20)
 
 
 class VettedChange(BaseModel):

@@ -448,7 +448,7 @@ Keeping it working:
   name. The old sync's rows stay in PostHog under the old name: delete them there, or
   two tables claim to be the same thing. Same for a column dropped from a synced table.
 - **A column moved out of a synced table takes its data out of the warehouse**, without
-  failing anything. The identity merge moved `nome`, `cognome`, `email` and
+  failing anything. The identity merge moved `nome`, `last_name`, `email` and
   `linkedin_url` from `freelancers` and `companies` into `users`, which is deliberately
   not granted: those syncs keep running and arrive without the identity they used to
   carry, so a dashboard that joins a person to their card is empty rather than broken.

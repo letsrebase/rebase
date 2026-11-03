@@ -43,55 +43,55 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
 # Italian values, translating mastro's ten states (`work-unit.ts:39-50`) one for one,
 # `String(40)` + a `CHECK` -- never a Postgres `ENUM` -- matching every other closed
-# set already on this schema (`invoices.stato`, `documents.tipo`). Wider than the
-# longest legal value (`lavorato_senza_approvazione`, 27 characters) on purpose: a
+# set already on this schema (`invoices.status`, `documents.type`). Wider than the
+# longest legal value (`worked_without_approval`, 27 characters) on purpose: a
 # column sized exactly to its legal set answers a wrong value with Postgres's own
-# raw `StringDataRightTruncation`, not the `ck_work_units_stato` violation beside it
+# raw `StringDataRightTruncation`, not the `ck_work_units_status` violation beside it
 # (`automations/schemas.py`'s own comment on the identical defect, already fixed
-# once on `invoices.tipo`).
-WORK_UNIT_STATI: tuple[str, ...] = (
-    "proposto",
-    "approvato",
-    "lavorato",
-    "lavorato_senza_approvazione",
-    "fatturato",
-    "pagato",
-    "contestato",
-    "revocato",
-    "rifiutato",
-    "non_fatturabile",
+# once on `invoices.type`).
+WORK_UNIT_STATUSES: tuple[str, ...] = (
+    "proposed",
+    "approved",
+    "worked",
+    "worked_without_approval",
+    "invoiced",
+    "paid",
+    "disputed",
+    "revoked",
+    "rejected",
+    "non_billable",
 )
 
 # The three states an INSERT may name directly (§12's own citation of
 # `0012_work_unit_state_machine.sql`: "rejecting an INSERT starting anywhere but the
-# three legal entry states"). `lavorato_senza_approvazione` is reachable only through
+# three legal entry states"). `worked_without_approval` is reachable only through
 # the redirect below -- a caller can never name it on creation.
-WORK_UNIT_ENTRY_STATI: frozenset[str] = frozenset({"proposto", "approvato", "lavorato"})
+WORK_UNIT_ENTRY_STATUSES: frozenset[str] = frozenset({"proposed", "approved", "worked"})
 
 # REB-372: the states `AnalyticsRepository.unbilled_backlog` treats as "approved to
 # bill", once work_units exist to make the distinction at all -- mastro's own three
 # qualifying states (`certainty.ts:116-120`: "approved/worked/disputed"), translated,
 # and nothing wider.
 #
-# `fatturato`/`pagato` are deliberately NOT in this set, even though they sit later in
+# `invoiced`/`paid` are deliberately NOT in this set, even though they sit later in
 # the graph: `bind_work_units` (`invoicing.py`) sets only `invoice_line_id`, never
-# `stato`, so the normal invoicing path never actually produces `fatturato` on its
+# `status`, so the normal invoicing path never actually produces `invoiced` on its
 # own -- and `WorkUnitService.transition` is a generic, already-public method with no
-# coupling to `invoice_line_id` at all, so a work_unit can reach `fatturato`/`pagato`
-# (both legal edges from `lavorato`/`contestato`/`fatturato`) while `invoice_line_id`
+# coupling to `invoice_line_id` at all, so a work_unit can reach `invoiced`/`paid`
+# (both legal edges from `worked`/`disputed`/`invoiced`) while `invoice_line_id`
 # is still NULL. Relying on the backlog query's own `invoice_line_id IS NULL` filter
 # to keep such a row out would be relying on an invariant this codebase does not
 # enforce; the state itself is what says "already billed" or "already paid", and
 # that is reason enough on its own to leave the backlog, independent of the link.
 #
-# Also deliberately excluded: `proposto` (merely logged, the one distinction this
-# issue exists to draw), `lavorato_senza_approvazione` (worked *without* the approval
+# Also deliberately excluded: `proposed` (merely logged, the one distinction this
+# issue exists to draw), `worked_without_approval` (worked *without* the approval
 # its own contract requires -- the flagged, uncertain branch REB-359's invoicing step
 # already refuses to gather automatically, `work_units/repository.py`'s own
-# `unbilled_for_contract` default), `rifiutato`/`revocato` (never happened, or no
-# longer counts), and `non_fatturabile` (recorded, real, but declared unbillable --
+# `unbilled_for_contract` default), `rejected`/`revoked` (never happened, or no
+# longer counts), and `non_billable` (recorded, real, but declared unbillable --
 # the opposite of committed revenue).
-WORK_UNIT_COMMITTED_STATI: frozenset[str] = frozenset({"approvato", "lavorato", "contestato"})
+WORK_UNIT_COMMITTED_STATUSES: frozenset[str] = frozenset({"approved", "worked", "disputed"})
 
 # The state graph `work_unit_enforce_state_machine` enforces (`triggers.py` renders
 # this into the migration's own `op.execute(...)` text and into
@@ -106,49 +106,49 @@ WORK_UNIT_COMMITTED_STATI: frozenset[str] = frozenset({"approvato", "lavorato", 
 # unreachable:
 #
 # - A day starts proposed, pre-approved, or already worked (the three entry states).
-# - `proposto` moves to approval, straight to work (no prior approval required by
+# - `proposed` moves to approval, straight to work (no prior approval required by
 #   the contract), or off the ledger (rejected by the client, or withdrawn).
-# - `approvato` moves to work, or is withdrawn before the work happens.
-# - `lavorato` and `lavorato_senza_approvazione` share their forward edges: the work
+# - `approved` moves to work, or is withdrawn before the work happens.
+# - `worked` and `worked_without_approval` share their forward edges: the work
 #   already happened either way, so both can be billed, disputed, written off as
 #   unbillable, or withdrawn. The flagged state's one extra edge, back to plain
-#   `lavorato`, is the recovery -- also reachable automatically, with no explicit
+#   `worked`, is the recovery -- also reachable automatically, with no explicit
 #   caller transition, the instant `approval_id` is linked (`triggers.py`).
 # - The trigger checks this graph against what the caller *requested*, before the
 #   redirect ever rewrites anything (`triggers.py`'s own `v_requested`) -- so
-#   `proposto`/`approvato` need no separate edge into `lavorato_senza_approvazione`:
-#   a caller only ever asks for `'lavorato'`, and the redirect turning that into the
+#   `proposed`/`approved` need no separate edge into `worked_without_approval`:
+#   a caller only ever asks for `'worked'`, and the redirect turning that into the
 #   flagged state afterward is a rewrite of an already-legal write, not a second
 #   edge of its own. It also closes the loophole a post-redirect check would leave
-#   open: without this ordering, any state able to reach `'lavorato_senza_approvazione'`
-#   at all (say, from a state that was never allowed to reach `'lavorato'`) could
+#   open: without this ordering, any state able to reach `'worked_without_approval'`
+#   at all (say, from a state that was never allowed to reach `'worked'`) could
 #   sneak there by asking for the unapproved write.
-# - `fatturato` is paid, or disputed before payment lands.
-# - `contestato` resolves back to `lavorato`, is written off, or is withdrawn.
-# - `pagato`, `rifiutato`, `revocato` and `non_fatturabile` are terminal: once a day
+# - `invoiced` is paid, or disputed before payment lands.
+# - `disputed` resolves back to `worked`, is written off, or is withdrawn.
+# - `paid`, `rejected`, `revoked` and `non_billable` are terminal: once a day
 #   is paid, refused, withdrawn or written off, nothing here moves it again.
 WORK_UNIT_TRANSITIONS: dict[str, frozenset[str]] = {
-    "proposto": frozenset({"approvato", "lavorato", "rifiutato", "revocato"}),
-    "approvato": frozenset({"lavorato", "revocato"}),
-    "lavorato": frozenset({"fatturato", "contestato", "non_fatturabile", "revocato"}),
-    "lavorato_senza_approvazione": frozenset(
-        {"lavorato", "fatturato", "contestato", "non_fatturabile", "revocato"}
+    "proposed": frozenset({"approved", "worked", "rejected", "revoked"}),
+    "approved": frozenset({"worked", "revoked"}),
+    "worked": frozenset({"invoiced", "disputed", "non_billable", "revoked"}),
+    "worked_without_approval": frozenset(
+        {"worked", "invoiced", "disputed", "non_billable", "revoked"}
     ),
-    "fatturato": frozenset({"pagato", "contestato"}),
-    "contestato": frozenset({"lavorato", "revocato", "non_fatturabile"}),
-    "pagato": frozenset(),
-    "rifiutato": frozenset(),
-    "revocato": frozenset(),
-    "non_fatturabile": frozenset(),
+    "invoiced": frozenset({"paid", "disputed"}),
+    "disputed": frozenset({"worked", "revoked", "non_billable"}),
+    "paid": frozenset(),
+    "rejected": frozenset(),
+    "revoked": frozenset(),
+    "non_billable": frozenset(),
 }
 
 # mastro's `noticeChannel` (`client.ts:11-17`), reused verbatim for an approval's own
 # evidence channel (spec §6).
-APPROVAL_CANALI: tuple[str, ...] = (
+APPROVAL_CHANNELS: tuple[str, ...] = (
     "email",
-    "posta_certificata",
-    "raccomandata",
-    "corriere",
+    "certified_mail",
+    "registered_mail",
+    "courier",
     "altro",
 )
 
@@ -157,12 +157,12 @@ class WorkUnit(Base, PrimaryKeyMixin, TimestampMixin):
     """One day (or fraction of a day, or hourly figure) of a contract's ledger --
     mastro's `work_unit` (`work-unit.ts`), spec §5.
 
-    No `SoftDeleteMixin`: nothing here is ever hard-removed. `revocato` is the
+    No `SoftDeleteMixin`: nothing here is ever hard-removed. `revoked` is the
     withdrawal state -- a day that should no longer count is moved there, not
     deleted, which is also what frees its `(contract_id, data)` slot for a fresh
     proposal (the partial unique index below).
 
-    `quantita` is not validated against the rate card's own unit here -- "which one
+    `quantity` is not validated against the rate card's own unit here -- "which one
     applies is resolved against the contract's rate card at pricing time, not
     validated here" (`work-unit.ts:54-56`, spec §5), i.e. by `invoicing.py`.
     """
@@ -173,10 +173,10 @@ class WorkUnit(Base, PrimaryKeyMixin, TimestampMixin):
         ForeignKey("contracts.id"), nullable=False, index=True
     )
     data: Mapped[date] = mapped_column(Date, nullable=False)
-    quantita: Mapped[Any] = mapped_column(Numeric(6, 2), nullable=False)
-    descrizione: Mapped[str] = mapped_column(Text, nullable=False)
-    stato: Mapped[str] = mapped_column(
-        String(40), nullable=False, default="proposto", server_default=text("'proposto'")
+    quantity: Mapped[Any] = mapped_column(Numeric(6, 2), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="proposed", server_default=text("'proposto'")
     )
     # No explicit `ondelete`: RESTRICT is the schema-wide default, and mastro's own
     # reasoning applies unchanged -- a day already relying on an approval cannot have
@@ -195,11 +195,11 @@ class WorkUnit(Base, PrimaryKeyMixin, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text, default=None)
 
     __table_args__ = (
-        CheckConstraint(f"stato IN {WORK_UNIT_STATI!r}", name="ck_work_units_stato"),
+        CheckConstraint(f"stato IN {WORK_UNIT_STATUSES!r}", name="ck_work_units_status"),
         # At most one *live* day per contract per date -- mirroring
-        # `0012_work_unit_state_machine.sql:40-42`. `rifiutato`/`revocato` are
+        # `0012_work_unit_state_machine.sql:40-42`. `rejected`/`revoked` are
         # excluded because those are exactly the two outcomes that leave a date free
-        # for a fresh proposal; `non_fatturabile` stays counted because it is still
+        # for a fresh proposal; `non_billable` stays counted because it is still
         # real, recorded work, just not billable.
         Index(
             "uq_work_units_contract_data_live",
@@ -226,13 +226,13 @@ class WorkUnitTransition(Base, PrimaryKeyMixin):
     __tablename__ = "work_unit_transitions"
 
     work_unit_id: Mapped[UUID] = mapped_column(ForeignKey("work_units.id"), nullable=False)
-    stato_precedente: Mapped[str | None] = mapped_column(String(40), default=None)
-    stato_nuovo: Mapped[str] = mapped_column(String(40), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(40), default=None)
+    new_status: Mapped[str] = mapped_column(String(40), nullable=False)
     # Mirrors mastro's `TransitionActor` (`work-unit.ts:84-87`), derived from
     # PigroCRM's own `Actor` (`actor.py:135`) by `service.py::actor_to_transition_json`
     # rather than invented as a new authentication concept.
-    attore: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    motivo: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False
     )
@@ -258,21 +258,21 @@ class Approval(Base, PrimaryKeyMixin, TimestampMixin):
     contract_id: Mapped[UUID] = mapped_column(
         ForeignKey("contracts.id"), nullable=False, index=True
     )
-    canale: Mapped[str] = mapped_column(String(20), nullable=False)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
     # Free text, an email address or a name, never validated against
     # `Person`/`client_contact` (spec §2, §6) -- `canApprove` is deliberately not
     # ported.
-    mittente: Mapped[str] = mapped_column(Text, nullable=False)
-    ricevuto_il: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sender: Mapped[str] = mapped_column(Text, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     message_id: Mapped[str | None] = mapped_column(Text, default=None)
     # No explicit `ondelete`: RESTRICT is the schema-wide default -- the archived
     # original this approval interprets cannot be deleted out from under it.
     document_id: Mapped[UUID] = mapped_column(
         ForeignKey("documents.id"), nullable=False, index=True
     )
-    estratto: Mapped[str] = mapped_column(Text, nullable=False)
-    origine: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    excerpt: Mapped[str] = mapped_column(Text, nullable=False)
+    origin: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     __table_args__ = (
-        CheckConstraint(f"canale IN {APPROVAL_CANALI!r}", name="ck_approvals_canale"),
+        CheckConstraint(f"canale IN {APPROVAL_CHANNELS!r}", name="ck_approvals_channel"),
     )

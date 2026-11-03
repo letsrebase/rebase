@@ -67,11 +67,11 @@ describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => 
       if (url === '/api/hub/companies/c1/audit') return answer(200, [])
       // Both answers come from `_to_read`, which leaves the grant `null`: only `get` reads it.
       if (url === '/api/hub/companies/c1' && init?.method === 'PATCH') {
-        stored = { ...COMPANY_TEAM_BUILDER, stato: 'contattato' }
+        stored = { ...COMPANY_TEAM_BUILDER, status: 'contacted' }
         return answer(200, stored)
       }
       if (url === '/api/hub/companies/c1/override' && init?.method === 'PATCH') {
-        stored = { ...COMPANY_TEAM_BUILDER, stato: 'contattato', durata: '6 mesi' }
+        stored = { ...COMPANY_TEAM_BUILDER, status: 'contacted', duration: '6 mesi' }
         return answer(200, stored)
       }
       return answer(200, { ...stored, talent_cloud_grant: GRANT })
@@ -87,9 +87,9 @@ describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => 
     expect(within(section).queryByRole('button', { name: 'Apri il talent cloud' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Modifica richiesta' }))
-    const durata = await screen.findByLabelText('Durata')
-    await userEvent.clear(durata)
-    await userEvent.type(durata, '6 mesi')
+    const duration = await screen.findByLabelText('Durata')
+    await userEvent.clear(duration)
+    await userEvent.type(duration, '6 mesi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(screen.getByText(/6 mesi/)).toBeInTheDocument())
     expect(

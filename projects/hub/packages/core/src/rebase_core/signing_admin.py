@@ -21,7 +21,7 @@ from rebase_core.documenso import UNREACHABLE, outcome_from_envelope
 from rebase_core.errors import DocumensoFailed, InvalidState, SigningUnavailable
 from rebase_core.framework import is_active
 from rebase_core.mail_contracts import signing_cancelled_mail
-from rebase_core.match_rows import ENTITY, QUADRO, lock_freelancer, lock_match, match_freelancer
+from rebase_core.match_rows import ENTITY, FRAMEWORK, lock_freelancer, lock_match, match_freelancer
 from rebase_core.models import ContractDocument
 from rebase_core.signing_words import (
     CANCEL_REFUSED,
@@ -58,13 +58,13 @@ class SigningAdmin:
 
         A match the signature turns active is not linked to Pigro here (REB-499): the
         admin is waiting on this click, and a new freelancer's first link opens a space,
-        which takes up to 90 seconds. It stays `da_collegare`, with its sentence, until
+        which takes up to 90 seconds. It stays `to_link`, with its sentence, until
         the sweep or «Riprova» links it."""
         document = self.service.document(document_id)
         if document.documenso_id is None:
             raise InvalidState(
                 "Questo documento non è mai partito per la firma: non c'è nulla da aggiornare.",
-                stato=document.stato,
+                status=document.status,
             )
         envelope = self.service.require_documenso().get(document.documenso_id)
         self.session.rollback()
@@ -79,10 +79,10 @@ class SigningAdmin:
         still waits for the signature."""
         self.service.require_sender()
         document = self.service.document(document_id)
-        if document.stato != "inviato" or document.signing_url is None:
+        if document.status != "sent" or document.signing_url is None:
             raise InvalidState(
                 "Si reinvia la mail solo di un documento che aspetta la firma.",
-                stato=document.stato,
+                status=document.status,
             )
         if not self.service.mail_signing_request(document):
             raise SigningUnavailable(
@@ -106,18 +106,18 @@ class SigningAdmin:
         document = self.service.lock_document(document_id)
         was_sent = False
         try:
-            if document.kind != QUADRO:
+            if document.kind != FRAMEWORK:
                 raise InvalidState("Una lettera di incarico si annulla con il suo match.")
-            if document.stato not in ("generato", "inviato"):
+            if document.status not in ("generated", "sent"):
                 raise InvalidState(
                     f"Si annulla solo un contratto quadro non ancora firmato: questo è "
-                    f"{document.stato}.",
-                    stato=document.stato,
+                    f"{document.status}.",
+                    status=document.status,
                 )
-            was_sent = document.stato == "inviato"
+            was_sent = document.status == "sent"
             if was_sent and document.documenso_id is not None:
                 self._cancel_envelope(document.documenso_id, CANCELLED_BY_REBASE)
-            document.stato = "annullato"
+            document.status = "cancelled"
             document.cancel_reason = CANCELLED_BY_REBASE
             self.session.commit()
         except Exception:
@@ -138,42 +138,42 @@ class SigningAdmin:
         freelancer_id = match_freelancer(self.session, match_id)
         lock_freelancer(self.session, freelancer_id)
         match = lock_match(self.session, match_id)
-        if match.stato == "bozza":
+        if match.status == "draft":
             return self.service.matches.cancel(match_id, admin_id)
         letters: list[ContractDocument] = []
         mailed: list[ContractDocument] = []
         try:
-            if match.stato != "in_firma":
+            if match.status != "awaiting_signature":
                 raise InvalidState(
-                    f"Si annulla solo un match in bozza o in firma: questo è {match.stato}.",
-                    stato=match.stato,
+                    f"Si annulla solo un match in bozza o in firma: questo è {match.status}.",
+                    status=match.status,
                 )
             letters = list(
                 self.session.scalars(
                     select(ContractDocument)
                     .where(
                         ContractDocument.match_id == match.id,
-                        ContractDocument.stato.in_(("generato", "in_attesa", "inviato")),
+                        ContractDocument.status.in_(("generated", "pending", "sent")),
                     )
                     .with_for_update()
                     .execution_options(populate_existing=True)
                 )
             )
             for letter in letters:
-                if letter.stato == "inviato":
+                if letter.status == "sent":
                     if letter.documenso_id is not None:
                         self._cancel_envelope(letter.documenso_id, CANCELLED_BY_REBASE)
                     mailed.append(letter)
-                letter.stato = "annullato"
+                letter.status = "cancelled"
                 letter.cancel_reason = CANCELLED_WITH_MATCH
-            match.stato = "annullato"
+            match.status = "cancelled"
             match.cancelled_at = self.service.now()
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
         AdminActionService(self.session).record(
-            ENTITY, match_id, "match_cancelled", admin_id, {"documenti": [d.id for d in letters]}
+            ENTITY, match_id, "match_cancelled", admin_id, {"documents": [d.id for d in letters]}
         )
         for letter in mailed:
             self._mail_cancellation(letter)
@@ -190,10 +190,10 @@ class SigningAdmin:
             self.session.rollback()
             raise InvalidState(
                 "Si registra la disdetta solo di un contratto quadro attivo.",
-                stato=document.stato,
+                status=document.status,
             )
         document.notice_at = self.service.now()
-        document.stato = "disdetto"
+        document.status = "notice_served"
         self.session.commit()
         self._record(document, "notice_recorded", admin_id)
         return self.service.read(document_id)
@@ -206,7 +206,7 @@ class SigningAdmin:
         else:
             entity, entity_id = FREELANCER, document.freelancer_id
         AdminActionService(self.session).record(
-            entity, entity_id, kind, admin_id, {"documento": document.id, "kind": document.kind}
+            entity, entity_id, kind, admin_id, {"document": document.id, "kind": document.kind}
         )
 
     def _mail_cancellation(self, document: ContractDocument) -> None:
@@ -219,7 +219,7 @@ class SigningAdmin:
             return
         user = self.service.owner(document.freelancer_id)
         mail = signing_cancelled_mail(
-            user.email, user.nome, document.kind, document.numero, regime=document.regime
+            user.email, user.nome, document.kind, document.number, regime=document.regime
         )
         if not self.service.sender.send(mail):
             _log.warning(

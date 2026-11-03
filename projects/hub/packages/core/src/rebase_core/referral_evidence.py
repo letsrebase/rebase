@@ -1,6 +1,6 @@
 """The evidence behind a referral (REB-657), derived in one place.
 
-A referral is taken from a public `rif` code and the email it is posted with, and the
+A referral is taken from a public `ref` code and the email it is posted with, and the
 first writer wins an address's attribution (design record 2026-10-05, REB-646). An
 admin deciding whether an attribution is wrong or collusive needs the facts around it,
 not only who referred whom: the code used, when the referred person signed up, whether
@@ -11,7 +11,7 @@ Everything here is read from rows that already exist -- nothing is stored, nothi
 a migration. The ledger (`ReferralService.list_rewards`) reads it for a page of
 referrals with `referral_evidence`; whatever later needs the same facts imports
 `domains_match` and `referral_evidence` from here instead of deriving them a second
-time. Whether a referral counts is not derived here: that is `Referral.stato`, set by
+time. Whether a referral counts is not derived here: that is `Referral.status`, set by
 `ReferralService.verify_on_login` and `record_reward_if_signed` (REB-658), and
 `ever_logged_in` below is the plain fact, whenever the login happened.
 """

@@ -43,7 +43,7 @@ class GoogleDriveOAuthService(GoogleConsentFlow[GoogleDriveAccount]):
     settings_tab = "Impostazioni → Drive"
     identity_noun = "dell'account"
     needs_user_message = "solo un utente può collegare Google Drive"
-    connected_event = "drive.account_collegato"
+    connected_event = "drive.account_connected"
 
     def __init__(self, session: Session, *, settings: Settings, tokens: GoogleTokenClient) -> None:
         super().__init__(session, settings=settings, tokens=tokens)
@@ -71,7 +71,7 @@ class GoogleDriveOAuthService(GoogleConsentFlow[GoogleDriveAccount]):
         self.activities.record(
             "google_drive_account",
             account.id,
-            "drive.account_scollegato",
+            "drive.account_disconnected",
             actor,
             {"email_address": account.email_address},
         )
@@ -84,7 +84,7 @@ class GoogleDriveOAuthService(GoogleConsentFlow[GoogleDriveAccount]):
         its two failure exits name Gmail: `CredentialRevoked` reads "ricollega la
         casella da Impostazioni → Gmail" under the entity `google_account`, and
         `GmailUnavailable` reads "Gmail non ha risposto correttamente". The router
-        turns either into `?esito=errore`, so the browser flow is unchanged -- but the
+        turns either into `?outcome=error`, so the browser flow is unchanged -- but the
         same `Conflict` is what a direct caller renders as a problem document or an
         MCP message, and there it would send somebody to reconnect a mailbox, or to
         wait for Gmail, over a *Drive* consent. Re-shaped for the same reason

@@ -6,8 +6,8 @@ not a router-level dependency that does not exist in this codebase.
 from typing import Any
 
 import pytest
-from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
 from sqlalchemy import text
 
 from pigrocrm.core.db.clock import today_local
@@ -22,11 +22,11 @@ from pigrocrm.core.invoices.artifacts import InvoiceArtifacts
 # ("una consegna non si registra con data futura") whenever the two clocks disagreed.
 TODAY = today_local().isoformat()
 
-COLLABORATORE_EMAIL = "collaboratore-dual@pigro.it"
-COLLABORATORE_PASSWORD = "supersegreta1"
+COLLABORATOR_EMAIL = "collaboratore-dual@pigro.it"
+COLLABORATOR_PASSWORD = "supersegreta1"
 
 
-def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
+def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     """A genuinely independent session, not `admin_client`'s own cookie jar.
 
     `logged_in` and `collaborator_client` (`apps/api/tests/conftest.py`) both build
@@ -42,15 +42,15 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
     the same ASGI app, and therefore the same database session and storage overrides,
     so the two identities can be exercised concurrently within a single test.
     """
-    email = f"{ruolo}-{id(admin_client)}@pigro.it"
+    email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": COLLABORATORE_PASSWORD, "nome": "Test", "ruolo": ruolo},
+        json={"email": email, "password": COLLABORATOR_PASSWORD, "nome": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
     response = client.post(
-        "/api/auth/login", json={"email": email, "password": COLLABORATORE_PASSWORD}
+        "/api/auth/login", json={"email": email, "password": COLLABORATOR_PASSWORD}
     )
     assert response.status_code == 200, response.text
     return client
@@ -59,25 +59,25 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
 @pytest.fixture
 def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
+        legal_entity_url(logged_in, "/fiscal-profile"), json={"regime_code": "RF19"}
     )
     assert response.status_code == 200, response.text
     return response.json()
 
 
 @pytest.fixture
-def emitter(logged_in: TestClient) -> dict[str, Any]:
+def legal_entity(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        azienda_url(logged_in),
+        legal_entity_url(logged_in),
         json={
-            "ragione_sociale": "Studio Rossi",
-            "partita_iva": "01234567890",
-            "codice_fiscale": "HMCRFT00A01H501K",
-            "indirizzo": "Via Vittorio Veneto 12",
+            "legal_name": "Studio Rossi",
+            "vat_number": "01234567890",
+            "tax_code": "HMCRFT00A01H501K",
+            "address": "Via Vittorio Veneto 12",
             "cap": "20124",
-            "comune": "Milano",
-            "provincia": "MI",
-            "nazione": "IT",
+            "city": "Milano",
+            "province": "MI",
+            "country": "IT",
             "email": "mario@example.com",
         },
     )
@@ -90,27 +90,27 @@ def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
         "/api/customers",
         json={
-            "ragione_sociale": "Acme S.r.l.",
-            "partita_iva": "12345678901",
-            "codice_sdi": "ABCDEFG",
-            "indirizzo": "Corso Italia 5",
+            "legal_name": "Acme S.r.l.",
+            "vat_number": "12345678901",
+            "sdi_code": "ABCDEFG",
+            "address": "Corso Italia 5",
             "cap": "00100",
-            "comune": "Roma",
-            "provincia": "RM",
-            "nazione": "IT",
+            "city": "Roma",
+            "province": "RM",
+            "country": "IT",
         },
     )
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def _draft(client: TestClient, customer_id: str, prezzo: str = "1000.00") -> dict[str, Any]:
+def _draft(client: TestClient, customer_id: str, price: str = "1000.00") -> dict[str, Any]:
     response = client.post(
         "/api/invoices",
         json={
             "customer_id": customer_id,
-            "causale": "Consulenza",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": prezzo}],
+            "memo": "Consulenza",
+            "lines": [{"description": "Consulenza", "unit_price": price}],
         },
     )
     assert response.status_code == 201, response.text
@@ -120,17 +120,18 @@ def _draft(client: TestClient, customer_id: str, prezzo: str = "1000.00") -> dic
 def test_the_fiscal_profile_round_trips(
     logged_in: TestClient, fiscal_profile: dict[str, Any]
 ) -> None:
-    assert fiscal_profile["codice_regime"] == "RF19"
-    assert fiscal_profile["soglia_bollo"] == "77.47"
+    assert fiscal_profile["regime_code"] == "RF19"
+    assert fiscal_profile["stamp_duty_threshold"] == "77.47"
     assert (
-        logged_in.get(azienda_url(logged_in, "/fiscal-profile")).json()["codice_regime"] == "RF19"
+        logged_in.get(legal_entity_url(logged_in, "/fiscal-profile")).json()["regime_code"]
+        == "RF19"
     )
 
 
 def test_reading_a_missing_fiscal_profile_is_a_problem_document(
     logged_in: TestClient,
 ) -> None:
-    response = logged_in.get(azienda_url(logged_in, "/fiscal-profile"))
+    response = logged_in.get(legal_entity_url(logged_in, "/fiscal-profile"))
     if response.status_code == 404:
         assert response.headers["content-type"].startswith("application/problem+json")
         assert response.json()["code"] == "not_found"
@@ -138,7 +139,7 @@ def test_reading_a_missing_fiscal_profile_is_a_problem_document(
 
 def test_only_an_admin_may_write_the_fiscal_profile(collaborator_client: TestClient) -> None:
     response = collaborator_client.put(
-        azienda_url(collaborator_client, "/fiscal-profile"), json={"codice_regime": "RF19"}
+        legal_entity_url(collaborator_client, "/fiscal-profile"), json={"regime_code": "RF19"}
     )
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
@@ -148,9 +149,9 @@ def test_creating_a_draft_returns_201_with_no_number(
     logged_in: TestClient, customer: dict[str, Any], fiscal_profile: dict[str, Any]
 ) -> None:
     draft = _draft(logged_in, customer["id"])
-    assert draft["stato"] == "bozza"
-    assert draft["numero"] is None
-    assert draft["totale"] == "1000.00"
+    assert draft["status"] == "draft"
+    assert draft["number"] is None
+    assert draft["total"] == "1000.00"
 
 
 def test_replacing_the_lines_recomputes_the_total(
@@ -159,27 +160,27 @@ def test_replacing_the_lines_recomputes_the_total(
     draft = _draft(logged_in, customer["id"])
     response = logged_in.put(
         f"/api/invoices/{draft['id']}/lines",
-        json={"righe": [{"descrizione": "Altro", "prezzo_unitario": "250.00"}]},
+        json={"lines": [{"description": "Altro", "unit_price": "250.00"}]},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["totale"] == "250.00"
+    assert response.json()["total"] == "250.00"
     lines = logged_in.get(f"/api/invoices/{draft['id']}/lines").json()
-    assert [line["numero_linea"] for line in lines] == [1]
+    assert [line["line_number"] for line in lines] == [1]
 
 
 def test_issuing_assigns_a_number_and_produces_both_artefacts(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     draft = _draft(logged_in, customer["id"])
     response = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
     assert response.status_code == 200, response.text
     issued = response.json()
-    assert issued["stato"] == "emessa"
-    assert issued["numero"] == 1
-    assert issued["anno"] == today_local().year
+    assert issued["status"] == "issued"
+    assert issued["number"] == 1
+    assert issued["year"] == today_local().year
     # The row is read back after the render (REB-143), so the answer already says both
     # files exist and the web has no reason to render them a second time.
     assert issued["pdf_document_id"] is not None
@@ -202,7 +203,7 @@ def test_the_invoices_pdf_document_refuses_an_xml_version_with_a_422(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     """REB-480, the reproduction of REB-463 at the HTTP surface: an XHTML file typed
     `application/xml`, posted as a new version of the invoice's PDF document, used to
@@ -240,7 +241,7 @@ def test_the_invoices_pdf_document_refuses_an_xml_version_with_a_422(
         files={"file": ("fattura.pdf", b"%PDF-1.7\nfinto\n", "application/pdf")},
     )
     assert accepted.status_code == 201, accepted.text
-    assert accepted.json()["numero"] == 2
+    assert accepted.json()["number"] == 2
     pdf = logged_in.get(f"/api/invoices/{issued['id']}/pdf")
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content == b"%PDF-1.7\nfinto\n"
@@ -250,7 +251,7 @@ def test_a_render_that_raises_after_the_commit_still_answers_the_issued_row(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """REB-143: `issue` commits, then the PDF render raises. The number is consumed and
@@ -267,14 +268,14 @@ def test_a_render_that_raises_after_the_commit_still_answers_the_issued_row(
         assert response.status_code == 200, response.text
         issued = response.json()
         assert issued["id"] == draft["id"]
-        assert issued["stato"] == "emessa"
-        assert issued["numero"] == 1
+        assert issued["status"] == "issued"
+        assert issued["number"] == 1
         assert issued["pdf_document_id"] is None
         assert issued["xml_document_id"] is None
 
         # What the server answers from now on agrees with the response: the invoice is
         # issued, and the file that was never produced is a 404, not an empty download.
-        assert logged_in.get(f"/api/invoices/{issued['id']}").json()["stato"] == "emessa"
+        assert logged_in.get(f"/api/invoices/{issued['id']}").json()["status"] == "issued"
         assert logged_in.get(f"/api/invoices/{issued['id']}/pdf").status_code == 404
 
     # And «Rigenera documenti» is the retry: once the render works, both files appear
@@ -283,7 +284,7 @@ def test_a_render_that_raises_after_the_commit_still_answers_the_issued_row(
     assert retried.status_code == 200, retried.text
     assert sorted(artifact["kind"] for artifact in retried.json()) == ["pdf", "xml"]
     again = logged_in.get(f"/api/invoices/{issued['id']}").json()
-    assert again["numero"] == 1
+    assert again["number"] == 1
     assert again["pdf_document_id"] is not None
     assert again["xml_document_id"] is not None
 
@@ -292,7 +293,7 @@ def test_an_xml_export_that_breaks_the_transaction_leaves_the_pdf_it_already_com
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The half-way case: `produce_artifacts` commits the PDF before it exports the XML,
@@ -310,48 +311,48 @@ def test_an_xml_export_that_breaks_the_transaction_leaves_the_pdf_it_already_com
     response = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
     assert response.status_code == 200, response.text
     issued = response.json()
-    assert issued["stato"] == "emessa"
+    assert issued["status"] == "issued"
     assert issued["pdf_document_id"] is not None
     assert issued["xml_document_id"] is None
     assert logged_in.get(f"/api/invoices/{issued['id']}/pdf").status_code == 200
     assert logged_in.get(f"/api/invoices/{issued['id']}/xml").status_code == 404
 
 
-def test_a_collaboratore_cannot_issue(
+def test_to_collaborator_cannot_issue(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     draft = _draft(logged_in, customer["id"])
-    collaboratore = _second_actor(logged_in, "collaboratore")
-    response = collaboratore.post(f"/api/invoices/{draft['id']}/issue", json={})
+    collaborator = _second_actor(logged_in, "collaborator")
+    response = collaborator.post(f"/api/invoices/{draft['id']}/issue", json={})
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
 
 
-def test_a_collaboratore_may_record_a_payment(
+def test_to_collaborator_may_record_to_payment(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     draft = _draft(logged_in, customer["id"])
     issued = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={}).json()
-    collaboratore = _second_actor(logged_in, "collaboratore")
-    response = collaboratore.patch(
+    collaborator = _second_actor(logged_in, "collaborator")
+    response = collaborator.patch(
         f"/api/invoices/{issued['id']}/payment",
-        json={"stato_pagamento": "incassato", "data_incasso": TODAY},
+        json={"payment_status": "paid", "payment_date": TODAY},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["stato_pagamento"] == "incassato"
+    assert response.json()["payment_status"] == "paid"
 
 
 def test_deleting_an_issued_invoice_is_a_409(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     """Criterion 4: `DELETE` is refused by the API."""
     draft = _draft(logged_in, customer["id"])
@@ -372,29 +373,29 @@ def test_annul_then_reissue_is_the_correction_route(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     first = logged_in.post(
         f"/api/invoices/{_draft(logged_in, customer['id'])['id']}/issue", json={}
     ).json()
     annulled = logged_in.post(
-        f"/api/invoices/{first['id']}/annul", json={"motivo": "importo errato"}
+        f"/api/invoices/{first['id']}/annul", json={"reason": "importo errato"}
     )
     assert annulled.status_code == 200, annulled.text
-    assert annulled.json()["stato"] == "annullata"
-    assert annulled.json()["numero"] == 1
+    assert annulled.json()["status"] == "cancelled"
+    assert annulled.json()["number"] == 1
 
     second = logged_in.post(
         f"/api/invoices/{_draft(logged_in, customer['id'])['id']}/issue", json={}
     ).json()
-    assert second["numero"] == 2
+    assert second["number"] == 2
 
 
 def test_a_transmitted_invoice_refuses_annulment_and_says_where_to_go(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     issued = logged_in.post(
         f"/api/invoices/{_draft(logged_in, customer['id'])['id']}/issue", json={}
@@ -406,7 +407,7 @@ def test_a_transmitted_invoice_refuses_annulment_and_says_where_to_go(
         == 200
     )
     response = logged_in.post(
-        f"/api/invoices/{issued['id']}/annul", json={"motivo": "importo errato"}
+        f"/api/invoices/{issued['id']}/annul", json={"reason": "importo errato"}
     )
     assert response.status_code == 409
     assert "nota di credito" in response.json()["detail"]
@@ -416,14 +417,14 @@ def test_a_proforma_refuses_to_produce_xml(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     proforma = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "500.00"}],
+            "type": "proforma",
+            "lines": [{"description": "Consulenza", "unit_price": "500.00"}],
         },
     ).json()
     logged_in.post(f"/api/invoices/{proforma['id']}/confirm", json={})
@@ -439,37 +440,37 @@ def test_converting_a_confirmed_proforma_creates_a_new_numbered_row(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     proforma = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "500.00"}],
+            "type": "proforma",
+            "lines": [{"description": "Consulenza", "unit_price": "500.00"}],
         },
     ).json()
     logged_in.post(f"/api/invoices/{proforma['id']}/confirm", json={})
     issued = logged_in.post(f"/api/invoices/{proforma['id']}/issue", json={}).json()
     assert issued["id"] != proforma["id"]
-    assert issued["origine_proforma_id"] == proforma["id"]
-    assert logged_in.get(f"/api/invoices/{proforma['id']}").json()["stato"] == "consumata"
+    assert issued["origin_proforma_id"] == proforma["id"]
+    assert logged_in.get(f"/api/invoices/{proforma['id']}").json()["status"] == "consumed"
 
 
 def test_a_refusal_names_the_field_in_the_problem_document(
-    logged_in: TestClient, fiscal_profile: dict[str, Any], emitter: dict[str, Any]
+    logged_in: TestClient, fiscal_profile: dict[str, Any], legal_entity: dict[str, Any]
 ) -> None:
     """Criterion 9: an RFC 9457 problem document with `entity` and `field` populated,
     which is what `fieldErrorFrom` in the web client reads."""
     customer = logged_in.post(
         "/api/customers",
         json={
-            "ragione_sociale": "Senza recapito",
-            "nazione": "IT",
+            "legal_name": "Senza recapito",
+            "country": "IT",
             "cap": "00100",
-            "comune": "Roma",
-            "provincia": "RM",
-            "indirizzo": "Via Roma 1",
+            "city": "Roma",
+            "province": "RM",
+            "address": "Via Roma 1",
         },
     ).json()
     draft = _draft(logged_in, customer["id"])
@@ -478,7 +479,7 @@ def test_a_refusal_names_the_field_in_the_problem_document(
     body = response.json()
     assert response.headers["content-type"].startswith("application/problem+json")
     assert body["entity"] == "customer"
-    assert body["field"] == "codice_sdi"
+    assert body["field"] == "sdi_code"
     assert body["expected"]
 
 
@@ -490,52 +491,52 @@ def test_the_list_filters_and_paginates(
     page = logged_in.get("/api/invoices", params={"limit": 2}).json()
     assert len(page["items"]) == 2
     assert page["next_cursor"]
-    filtered = logged_in.get("/api/invoices", params={"tipo": "proforma"}).json()
+    filtered = logged_in.get("/api/invoices", params={"type": "proforma"}).json()
     assert filtered["items"] == []
 
 
-def test_the_list_answers_the_fattura_a_consumed_proforma_became(
+def test_the_list_answers_the_invoice_to_consumed_proforma_became(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     """After «Emetti» on a proforma the numbered row is a different one (spec 5), and the
-    consumed proforma's page needs a way to it: `?origine_proforma_id=` answers exactly
+    consumed proforma's page needs a way to it: `?origin_proforma_id=` answers exactly
     that row (ORB-134)."""
     proforma = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "100.00"}],
+            "type": "proforma",
+            "lines": [{"description": "Consulenza", "unit_price": "100.00"}],
         },
     ).json()
     assert logged_in.post(f"/api/invoices/{proforma['id']}/confirm").status_code == 200
     issued = logged_in.post(f"/api/invoices/{proforma['id']}/issue", json={}).json()
     assert issued["id"] != proforma["id"]
-    assert issued["origine_proforma_id"] == proforma["id"]
+    assert issued["origin_proforma_id"] == proforma["id"]
 
-    page = logged_in.get("/api/invoices", params={"origine_proforma_id": proforma["id"]}).json()
+    page = logged_in.get("/api/invoices", params={"origin_proforma_id": proforma["id"]}).json()
     assert [row["id"] for row in page["items"]] == [issued["id"]]
-    assert logged_in.get("/api/invoices", params={"origine_proforma_id": "x"}).status_code == 422
+    assert logged_in.get("/api/invoices", params={"origin_proforma_id": "x"}).status_code == 422
 
 
 def test_the_list_leaves_out_consumed_proformas_when_asked(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
-    """The web's «Tutte» sends `escludi_consumate=true` so an issued proforma is one row,
-    its fattura, and not two (ORB-169). Without the flag, and under `stato=consumata`,
+    """The web's «Tutte» sends `exclude_consumed=true` so an issued proforma is one row,
+    its fattura, and not two (ORB-169). Without the flag, and under `status=consumed`,
     the proforma still answers."""
     proforma = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "100.00"}],
+            "type": "proforma",
+            "lines": [{"description": "Consulenza", "unit_price": "100.00"}],
         },
     ).json()
     assert logged_in.post(f"/api/invoices/{proforma['id']}/confirm").status_code == 200
@@ -546,9 +547,9 @@ def test_the_list_leaves_out_consumed_proformas_when_asked(
 
     everything = ids(logged_in.get("/api/invoices"))
     assert {proforma["id"], issued["id"]} <= everything
-    trimmed = ids(logged_in.get("/api/invoices", params={"escludi_consumate": "true"}))
+    trimmed = ids(logged_in.get("/api/invoices", params={"exclude_consumed": "true"}))
     assert trimmed == everything - {proforma["id"]}
-    consumed = ids(logged_in.get("/api/invoices", params={"stato": "consumata"}))
+    consumed = ids(logged_in.get("/api/invoices", params={"status": "consumed"}))
     assert consumed == {proforma["id"]}
 
 
@@ -560,7 +561,7 @@ def test_the_timeline_of_an_invoice_is_readable(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     issued = logged_in.post(
         f"/api/invoices/{_draft(logged_in, customer['id'])['id']}/issue", json={}
@@ -586,48 +587,48 @@ def test_the_openapi_document_declares_invoice_as_an_entity_type(
 def test_a_proforma_is_created_with_its_own_date_and_an_accrual_period(
     logged_in: TestClient, customer: dict[str, Any], fiscal_profile: dict[str, Any]
 ) -> None:
-    """The contract the web draft editor is written against: `data_emissione`,
-    `competenza_da` and `competenza_a` go in on POST and come back on every read."""
+    """The contract the web draft editor is written against: `issue_date`,
+    `accrual_from` and `accrual_to` go in on POST and come back on every read."""
     response = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "causale": "FDE, agosto 2026",
-            "data_emissione": "2026-09-05",
-            "competenza_da": "2026-08-01",
-            "competenza_a": "2026-08-31",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "1000.00"}],
+            "type": "proforma",
+            "memo": "FDE, agosto 2026",
+            "issue_date": "2026-09-05",
+            "accrual_from": "2026-08-01",
+            "accrual_to": "2026-08-31",
+            "lines": [{"description": "Consulenza", "unit_price": "1000.00"}],
         },
     )
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["data_emissione"] == "2026-09-05"
-    assert body["competenza_da"] == "2026-08-01"
-    assert body["competenza_a"] == "2026-08-31"
+    assert body["issue_date"] == "2026-09-05"
+    assert body["accrual_from"] == "2026-08-01"
+    assert body["accrual_to"] == "2026-08-31"
 
     read = logged_in.get(f"/api/invoices/{body['id']}").json()
-    assert (read["competenza_da"], read["competenza_a"]) == ("2026-08-01", "2026-08-31")
+    assert (read["accrual_from"], read["accrual_to"]) == ("2026-08-01", "2026-08-31")
 
 
-def test_a_proforma_defaults_to_today_and_a_fattura_draft_has_no_date(
+def test_to_proforma_defaults_to_today_and_to_invoice_draft_has_no_date(
     logged_in: TestClient, customer: dict[str, Any], fiscal_profile: dict[str, Any]
 ) -> None:
     proforma = logged_in.post(
-        "/api/invoices", json={"customer_id": customer["id"], "tipo": "proforma"}
+        "/api/invoices", json={"customer_id": customer["id"], "type": "proforma"}
     )
     assert proforma.status_code == 201, proforma.text
-    assert proforma.json()["data_emissione"] == TODAY
+    assert proforma.json()["issue_date"] == TODAY
 
     draft = _draft(logged_in, customer["id"])
-    assert draft["data_emissione"] is None
-    assert draft["competenza_da"] is None and draft["competenza_a"] is None
+    assert draft["issue_date"] is None
+    assert draft["accrual_from"] is None and draft["accrual_to"] is None
     refused = logged_in.post(
         "/api/invoices",
-        json={"customer_id": customer["id"], "tipo": "fattura", "data_emissione": TODAY},
+        json={"customer_id": customer["id"], "type": "invoice", "issue_date": TODAY},
     )
     assert refused.status_code == 422, refused.text
-    assert refused.json()["field"] == "data_emissione"
+    assert refused.json()["field"] == "issue_date"
 
 
 def test_the_period_and_the_proforma_date_are_patched_on_a_draft(
@@ -637,59 +638,57 @@ def test_the_period_and_the_proforma_date_are_patched_on_a_draft(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "1000.00"}],
+            "type": "proforma",
+            "lines": [{"description": "Consulenza", "unit_price": "1000.00"}],
         },
     ).json()
     patched = logged_in.patch(
         f"/api/invoices/{proforma['id']}",
         json={
-            "data_emissione": "2026-09-05",
-            "competenza_da": "2026-08-01",
-            "competenza_a": "2026-08-31",
+            "issue_date": "2026-09-05",
+            "accrual_from": "2026-08-01",
+            "accrual_to": "2026-08-31",
         },
     )
     assert patched.status_code == 200, patched.text
-    assert patched.json()["data_emissione"] == "2026-09-05"
-    assert patched.json()["competenza_da"] == "2026-08-01"
+    assert patched.json()["issue_date"] == "2026-09-05"
+    assert patched.json()["accrual_from"] == "2026-08-01"
 
     # Half a period is a 422 naming the missing end, and the row is untouched.
-    half = logged_in.patch(f"/api/invoices/{proforma['id']}", json={"competenza_da": None})
+    half = logged_in.patch(f"/api/invoices/{proforma['id']}", json={"accrual_from": None})
     assert half.status_code == 422, half.text
-    assert half.json()["field"] == "competenza_da"
-    assert logged_in.get(f"/api/invoices/{proforma['id']}").json()["competenza_da"] == (
-        "2026-08-01"
-    )
+    assert half.json()["field"] == "accrual_from"
+    assert logged_in.get(f"/api/invoices/{proforma['id']}").json()["accrual_from"] == ("2026-08-01")
     # Both ends as null clear the period.
     cleared = logged_in.patch(
-        f"/api/invoices/{proforma['id']}", json={"competenza_da": None, "competenza_a": None}
+        f"/api/invoices/{proforma['id']}", json={"accrual_from": None, "accrual_to": None}
     )
     assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["competenza_da"] is None
+    assert cleared.json()["accrual_from"] is None
 
 
 def test_the_period_is_frozen_once_issued_and_travels_to_the_xml(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     draft = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "competenza_da": "2026-08-01",
-            "competenza_a": "2026-08-31",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "1000.00"}],
+            "accrual_from": "2026-08-01",
+            "accrual_to": "2026-08-31",
+            "lines": [{"description": "Consulenza", "unit_price": "1000.00"}],
         },
     ).json()
     issued = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
     assert issued.status_code == 200, issued.text
-    assert issued.json()["competenza_da"] == "2026-08-01"
+    assert issued.json()["accrual_from"] == "2026-08-01"
 
-    frozen = logged_in.patch(f"/api/invoices/{draft['id']}", json={"competenza_a": "2026-09-30"})
+    frozen = logged_in.patch(f"/api/invoices/{draft['id']}", json={"accrual_to": "2026-09-30"})
     assert frozen.status_code == 409, frozen.text
-    assert frozen.json()["field"] == "competenza_a"
+    assert frozen.json()["field"] == "accrual_to"
 
     assert logged_in.post(f"/api/invoices/{draft['id']}/artifacts").status_code == 200
     xml = logged_in.get(f"/api/invoices/{draft['id']}/xml")
@@ -708,51 +707,67 @@ def test_a_proforma_carries_its_purchase_order_through_post_and_patch(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "tipo": "proforma",
-            "ordine_numero": "ODA-14",
-            "ordine_data": "2026-10-09",
-            "ordine_cig": "z0a1b2c3d4",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "250.00"}],
+            "type": "proforma",
+            "purchase_order_number": "ODA-14",
+            "purchase_order_date": "2026-10-09",
+            "purchase_order_tender_code": "z0a1b2c3d4",
+            "lines": [{"description": "Consulenza", "unit_price": "250.00"}],
         },
     )
     assert created.status_code == 201, created.text
     body = created.json()
-    assert (body["ordine_numero"], body["ordine_data"], body["ordine_cig"], body["ordine_cup"]) == (
+    assert (
+        body["purchase_order_number"],
+        body["purchase_order_date"],
+        body["purchase_order_tender_code"],
+        body["purchase_order_project_code"],
+    ) == (
         "ODA-14",
         "2026-10-09",
         "Z0A1B2C3D4",
         None,
     )
 
-    patched = logged_in.patch(f"/api/invoices/{body['id']}", json={"ordine_cup": "J41E22000110005"})
+    patched = logged_in.patch(
+        f"/api/invoices/{body['id']}", json={"purchase_order_project_code": "J41E22000110005"}
+    )
     assert patched.status_code == 200, patched.text
-    assert patched.json()["ordine_cup"] == "J41E22000110005"
-    assert patched.json()["ordine_numero"] == "ODA-14"
+    assert patched.json()["purchase_order_project_code"] == "J41E22000110005"
+    assert patched.json()["purchase_order_number"] == "ODA-14"
 
-    bad = logged_in.patch(f"/api/invoices/{body['id']}", json={"ordine_cig": "Z0A1"})
+    bad = logged_in.patch(
+        f"/api/invoices/{body['id']}", json={"purchase_order_tender_code": "Z0A1"}
+    )
     assert bad.status_code == 422, bad.text
-    assert bad.json()["field"] == "ordine_cig"
+    assert bad.json()["field"] == "purchase_order_tender_code"
 
-    orphan = logged_in.patch(f"/api/invoices/{body['id']}", json={"ordine_numero": None})
+    orphan = logged_in.patch(f"/api/invoices/{body['id']}", json={"purchase_order_number": None})
     assert orphan.status_code == 422, orphan.text
-    assert orphan.json()["field"] == "ordine_numero"
+    assert orphan.json()["field"] == "purchase_order_number"
 
     cleared = logged_in.patch(
         f"/api/invoices/{body['id']}",
-        json={"ordine_numero": None, "ordine_data": None, "ordine_cig": None, "ordine_cup": None},
+        json={
+            "purchase_order_number": None,
+            "purchase_order_date": None,
+            "purchase_order_tender_code": None,
+            "purchase_order_project_code": None,
+        },
     )
     assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["ordine_numero"] is None
+    assert cleared.json()["purchase_order_number"] is None
 
 
 def test_the_order_of_an_issued_invoice_cannot_change(
     logged_in: TestClient,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> None:
     draft = _draft(logged_in, customer["id"])
     issued = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={}).json()
-    response = logged_in.patch(f"/api/invoices/{issued['id']}", json={"ordine_numero": "ODA-14"})
+    response = logged_in.patch(
+        f"/api/invoices/{issued['id']}", json={"purchase_order_number": "ODA-14"}
+    )
     assert response.status_code == 409, response.text
     assert response.json()["code"] == "immutable_field"

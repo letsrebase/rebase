@@ -30,7 +30,7 @@ UNSUBSCRIBE_LINE = "Non vuoi più ricevere queste mail?"
 class RenderTarget:
     email: str
     nome: str | None
-    codice: str
+    code: str
     token: str
     recipient_id: str | None = None
 
@@ -57,10 +57,10 @@ def one_line(text: str) -> str:
     return _CONTROL.sub(" ", text).strip()
 
 
-def personalise(testo: str, nome: str | None) -> str:
+def personalise(text: str, nome: str | None) -> str:
     if nome:
-        return testo.replace("{nome}", nome)
-    return testo.replace(" {nome}", "").replace("{nome}", "")
+        return text.replace("{nome}", nome)
+    return text.replace(" {nome}", "").replace("{nome}", "")
 
 
 def _paragraphs(text: str) -> list[str]:
@@ -68,32 +68,32 @@ def _paragraphs(text: str) -> list[str]:
 
 
 def destination(campaign: Campaign, settings: Settings) -> str:
-    if campaign.bottone_meta == LINK:
+    if campaign.button_meta == LINK:
         # «Un link» (REB-530): the address as the admin wrote it.
-        if not campaign.bottone_url:
-            raise ValidationFailed(ENTITY, "bottone_url", LINK_URL_MISSING)
-        return campaign.bottone_url
+        if not campaign.button_url:
+            raise ValidationFailed(ENTITY, "button_url", LINK_URL_MISSING)
+        return campaign.button_url
     base = settings.hub_url.rstrip("/")
-    if campaign.bottone_meta in ("area", "richiesta"):
+    if campaign.button_meta in ("area", "request"):
         return f"{base}/login"
-    if campaign.bottone_meta == "wizard":
+    if campaign.button_meta == "wizard":
         return f"{base}/freelance"
-    raise ValidationFailed(ENTITY, "bottone_meta", PIGRO_LATER)
+    raise ValidationFailed(ENTITY, "button_meta", PIGRO_LATER)
 
 
-def _tracked(url: str, campaign: Campaign, codice: str) -> str:
+def _tracked(url: str, campaign: Campaign, code: str) -> str:
     """The button's address with our utm parameters: always for the hub's own pages,
     and for «Un link» only on letsrebase.com, since a page somebody else owns (Luma, a
     WhatsApp group) neither reads them nor asked for them (REB-530)."""
-    if campaign.bottone_meta == LINK and not is_ours(url):
+    if campaign.button_meta == LINK and not is_ours(url):
         return url
     query = urlencode(
         {
             "utm_source": "email",
-            "utm_medium": "campagna",
+            "utm_medium": "campaign",
             "utm_campaign": campaign.slug,
-            "utm_content": campaign.azione,
-            "utm_term": codice,
+            "utm_content": campaign.action,
+            "utm_term": code,
         }
     )
     return with_query(url, query)
@@ -101,24 +101,24 @@ def _tracked(url: str, campaign: Campaign, codice: str) -> str:
 
 def unsubscribe_urls(token: str, settings: Settings) -> tuple[str, str]:
     parts = urlsplit(settings.hub_url)
-    page = f"{settings.hub_url.rstrip('/')}/disiscrizione?t={token}"
-    api = f"{parts.scheme}://{parts.netloc}/api/hub/campagne/disiscrizione?t={token}"
+    page = f"{settings.hub_url.rstrip('/')}/unsubscribe?t={token}"
+    api = f"{parts.scheme}://{parts.netloc}/api/hub/campaigns/unsubscribe?t={token}"
     return page, api
 
 
 def render(
     campaign: Campaign, target: RenderTarget, settings: Settings, *, test: bool = False
 ) -> RenderedMail:
-    paragraphs = _paragraphs(personalise(campaign.testo, target.nome))
+    paragraphs = _paragraphs(personalise(campaign.text, target.nome))
     # The subject follows the body's rule (REB-524): «{nome}» was left literal there. A
     # name is the person's own input, so it goes in on one line, and so does the whole.
-    subject = one_line(personalise(campaign.oggetto, one_line(target.nome or "") or None))
-    url = _tracked(destination(campaign, settings), campaign, target.codice)
+    subject = one_line(personalise(campaign.subject, one_line(target.nome or "") or None))
+    url = _tracked(destination(campaign, settings), campaign, target.code)
     page, api = unsubscribe_urls(target.token, settings)
     text = "\n\n".join(
         (
             *paragraphs,
-            f"{campaign.bottone_testo}: {url}",
+            f"{campaign.button_text}: {url}",
             "Ivan\nrebase",
             f"{UNSUBSCRIBE_LINE} Disiscriviti: {page}",
         )
@@ -127,7 +127,7 @@ def render(
     body = "\n".join(
         (
             *(f"<p {_PARA}>{html.escape(p).replace(chr(10), '<br>')}</p>" for p in paragraphs),
-            button(href, html.escape(campaign.bottone_testo)),
+            button(href, html.escape(campaign.button_text)),
             f"<p {_FINE}>{FALLBACK}<br>{quiet_link(href, href)}</p>",
             f"<p {_AFTER}>Ivan<br>rebase</p>",
             f"<p {_FINE}>{UNSUBSCRIBE_LINE} "
@@ -146,7 +146,7 @@ def render(
     }
     tags = {
         "campaign": campaign.slug,
-        "azione": campaign.azione,
+        "action": campaign.action,
         "kind": "test" if test else "real",
     }
     if target.recipient_id is not None:

@@ -25,7 +25,7 @@ from rebase_core.regimes import as_regime, document_label, text_name
 
 ROME = ZoneInfo("Europe/Rome")
 NOTICE_DAYS = 30
-QUADRO = "quadro"
+FRAMEWORK = "framework"
 
 
 def rome_today() -> date:
@@ -62,7 +62,7 @@ def signed_on(document: ContractDocument) -> date | None:
 
 
 def is_active(document: ContractDocument) -> bool:
-    return document.kind == QUADRO and document.stato == "firmato" and document.notice_at is None
+    return document.kind == FRAMEWORK and document.status == "signed" and document.notice_at is None
 
 
 def framework_dates(
@@ -83,10 +83,10 @@ def active_framework(session: Session, freelancer_id: UUID, regime: str) -> Cont
     return session.scalars(
         select(ContractDocument)
         .where(
-            ContractDocument.kind == QUADRO,
+            ContractDocument.kind == FRAMEWORK,
             ContractDocument.freelancer_id == freelancer_id,
             ContractDocument.regime == regime,
-            ContractDocument.stato == "firmato",
+            ContractDocument.status == "signed",
             ContractDocument.notice_at.is_(None),
         )
         .order_by(ContractDocument.signed_at.desc(), ContractDocument.created_at.desc())
@@ -98,29 +98,29 @@ def pending_framework(
     session: Session, freelancer_id: UUID, regime: str
 ) -> ContractDocument | None:
     """A framework agreement of `regime` written and not signed yet: the one out for
-    signature (`inviato`, phase 3) when there is one, else the newest merely generated.
+    signature (`sent`, phase 3) when there is one, else the newest merely generated.
     One of the other regime never counts (REB-687)."""
     pending = list(
         session.scalars(
             select(ContractDocument)
             .where(
-                ContractDocument.kind == QUADRO,
+                ContractDocument.kind == FRAMEWORK,
                 ContractDocument.freelancer_id == freelancer_id,
                 ContractDocument.regime == regime,
-                ContractDocument.stato.in_(("generato", "inviato")),
+                ContractDocument.status.in_(("generated", "sent")),
             )
             .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
         )
     )
     for document in pending:
-        if document.stato == "inviato":
+        if document.status == "sent":
             return document
     return pending[0] if pending else None
 
 
 # Which framework agreement a waiting letter reads, when a freelancer has several: an
 # active one first, then one out for signature, then one merely generated.
-_FRAMEWORK_RANK = {"firmato": 0, "inviato": 1, "generato": 2}
+_FRAMEWORK_RANK = {"signed": 0, "sent": 1, "generated": 2}
 
 
 def _standing(documents: Iterable[tuple[str, datetime | None]]) -> str | None:
@@ -128,20 +128,22 @@ def _standing(documents: Iterable[tuple[str, datetime | None]]) -> str | None:
     (no notice recorded, as `is_active` reads it); a cancelled one, or one given notice,
     not at all."""
     counted = [
-        stato
-        for stato, notice_at in documents
-        if stato in _FRAMEWORK_RANK and (stato != "firmato" or notice_at is None)
+        status
+        for status, notice_at in documents
+        if status in _FRAMEWORK_RANK and (status != "signed" or notice_at is None)
     ]
     return min(counted, key=_FRAMEWORK_RANK.__getitem__, default=None)
 
 
 def framework_state(frameworks: Iterable[ContractDocument], regime: str) -> str | None:
     """Where one freelancer's framework agreement of `regime` stands, from the rows
-    already read: `firmato` for an active one (`active_framework`), else
-    `pending_framework`'s state, `inviato` or `generato`, else `None`. A match reads the
+    already read: `signed` for an active one (`active_framework`), else
+    `pending_framework`'s state, `sent` or `generated`, else `None`. A match reads the
     one of its letter's regime (REB-687)."""
     return _standing(
-        (document.stato, document.notice_at) for document in frameworks if document.regime == regime
+        (document.status, document.notice_at)
+        for document in frameworks
+        if document.regime == regime
     )
 
 
@@ -155,19 +157,19 @@ def framework_states(
     if not ids:
         return {}
     documents: dict[tuple[UUID, str], list[tuple[str, datetime | None]]] = {}
-    for freelancer_id, regime, stato, notice_at in session.execute(
+    for freelancer_id, regime, status, notice_at in session.execute(
         select(
             ContractDocument.freelancer_id,
             ContractDocument.regime,
-            ContractDocument.stato,
+            ContractDocument.status,
             ContractDocument.notice_at,
         ).where(
-            ContractDocument.kind == QUADRO,
+            ContractDocument.kind == FRAMEWORK,
             ContractDocument.freelancer_id.in_(ids),
-            ContractDocument.stato.in_(tuple(_FRAMEWORK_RANK)),
+            ContractDocument.status.in_(tuple(_FRAMEWORK_RANK)),
         )
     ):
-        documents.setdefault((freelancer_id, regime), []).append((stato, notice_at))
+        documents.setdefault((freelancer_id, regime), []).append((status, notice_at))
     return {
         key: standing
         for key, pairs in documents.items()
@@ -175,11 +177,11 @@ def framework_states(
     }
 
 
-def current_quadro_version(regime: str) -> str:
+def current_framework_version(regime: str) -> str:
     """The `version` of `regime`'s framework agreement text as it is in the package
-    today: what a quadro's own `text_version` is compared with for `nuova_versione`,
+    today: what a quadro's own `text_version` is compared with for `new_version`,
     each against its own text (REB-687)."""
-    return text_version(text_name(QUADRO, regime))
+    return text_version(text_name(FRAMEWORK, regime))
 
 
 def next_letter_number(session: Session, year: int) -> str:
@@ -188,11 +190,11 @@ def next_letter_number(session: Session, year: int) -> str:
     second transaction asking at the same moment waits on this row, then takes the next."""
     taken = session.execute(
         pg_insert(LetterCounter)
-        .values(anno=year, ultimo=1)
+        .values(year=year, last=1)
         .on_conflict_do_update(
-            index_elements=[LetterCounter.anno], set_={"ultimo": LetterCounter.ultimo + 1}
+            index_elements=[LetterCounter.year], set_={"last": LetterCounter.last + 1}
         )
-        .returning(LetterCounter.ultimo)
+        .returning(LetterCounter.last)
     ).scalar_one()
     return f"{year}-{taken:03d}"
 
@@ -202,17 +204,17 @@ def document_facts(document: ContractDocument, today: date) -> DocumentFacts:
     active, renewal, last_notice = framework_dates(document, today)
     return DocumentFacts(
         kind=document.kind,
-        stato=document.stato,
-        numero=document.numero,
-        testo_bozza=bool(document.testo_bozza),
+        status=document.status,
+        number=document.number,
+        draft_text=bool(document.draft_text),
         sent_on=rome_day(document.sent_at),
         signed_on=signed_on(document),
         notice_on=rome_day(document.notice_at),
         cancel_reason=document.cancel_reason,
-        ha_pdf_firmato=document.signed_pdf is not None,
-        attivo=active,
-        rinnovo=renewal,
-        ultimo_giorno_disdetta=last_notice,
+        has_pdf_signed=document.signed_pdf is not None,
+        active=active,
+        renewal=renewal,
+        last_notice_day=last_notice,
     )
 
 
@@ -225,7 +227,7 @@ def document_read(
     """`facts`, when the caller already built them from `document` for the same `today`,
     are not built again."""
     facts = facts or document_facts(document, today)
-    situazione, prossima_azione, altre_azioni = document_words(facts)
+    situation, next_action, other_actions = document_words(facts)
     return ContractDocumentRead(
         id=document.id,
         kind=document.kind,
@@ -233,22 +235,22 @@ def document_read(
         tipo=document_label(document.kind, document.regime),
         freelancer_id=document.freelancer_id,
         match_id=document.match_id,
-        numero=document.numero,
+        number=document.number,
         text_version=document.text_version,
-        testo_bozza=document.testo_bozza,
-        stato=document.stato,
+        draft_text=document.draft_text,
+        status=document.status,
         created_at=document.created_at,
         created_by=document.created_by,
         sent_at=document.sent_at,
         signed_at=document.signed_at,
         notice_at=document.notice_at,
         cancel_reason=document.cancel_reason,
-        ha_pdf_firmato=facts.ha_pdf_firmato,
-        attivo=facts.attivo,
-        rinnovo=facts.rinnovo,
-        ultimo_giorno_disdetta=facts.ultimo_giorno_disdetta,
-        nuova_versione=document.kind == QUADRO and document.text_version != current_version,
-        situazione=situazione,
-        prossima_azione=prossima_azione,
-        altre_azioni=altre_azioni,
+        has_pdf_signed=facts.has_pdf_signed,
+        active=facts.active,
+        renewal=facts.renewal,
+        last_notice_day=facts.last_notice_day,
+        new_version=document.kind == FRAMEWORK and document.text_version != current_version,
+        situation=situation,
+        next_action=next_action,
+        other_actions=other_actions,
     )

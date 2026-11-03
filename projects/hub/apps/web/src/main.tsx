@@ -1,5 +1,5 @@
 import { initAnalytics } from '@rebase/analytics/browser'
-import { stripEntraToken } from '@rebase/analytics/entra-token'
+import { stripVerifyToken } from '@rebase/analytics/verify-token'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
@@ -13,7 +13,7 @@ import './styles/tokens.css'
 // would already be in that event by the time the entra route ever mounts to strip it
 // itself (REB-273). A no-op on every other route. The availability mail's answer page
 // carries a token of the same kind, and loses it the same way (REB-517).
-stripEntraToken(/^\/hub\/verify$/)
+stripVerifyToken(/^\/hub\/verify$/)
 stripAnswerLink()
 
 // Once, before anything renders: `initAnalytics` decides on the hostname whether this

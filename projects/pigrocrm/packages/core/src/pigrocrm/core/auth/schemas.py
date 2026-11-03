@@ -10,13 +10,13 @@ from pigrocrm.core.validation import SafeStr
 
 MIN_PASSWORD_LENGTH = 10
 
-# `tariffa_oraria_default`/`costo_orario_default` are Numeric(12,6) -- factors, not
+# `default_hourly_rate`/`default_hourly_cost` are Numeric(12,6) -- factors, not
 # amounts. Declared locally rather than imported from `deals/schemas.py`: `deals`
 # and `auth` do not depend on each other today and this is not the reason to start.
 FACTOR_MAX_DIGITS = 12
 FACTOR_DECIMAL_PLACES = 6
 
-# Mirrors `users.nome`'s column width (auth/models.py: String(200)). Predates every
+# Mirrors `users.name`'s column width (auth/models.py: String(200)). Predates every
 # other domain's *_MAX_LENGTH sweep and was never itself swept until the final
 # review: without this, an over-length value sails past Pydantic, reaches flush(),
 # and comes back as a raw sqlalchemy.exc.DataError (StringDataRightTruncation) --
@@ -27,7 +27,7 @@ FACTOR_DECIMAL_PLACES = 6
 # installed email-validator, not assumed. `password` is never stored: only its
 # argon2 hash is, in a column of its own, so no column width applies to it here at
 # all.
-NOME_MAX_LENGTH = 200
+NAME_MAX_LENGTH = 200
 
 
 class InvitationCreate(BaseModel):
@@ -40,12 +40,12 @@ class InvitationCreate(BaseModel):
     form."""
 
     email: EmailStr
-    nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
-    ruolo: Role = "collaboratore"
+    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    role: Role = "collaborator"
     # The aziende the invitee will see (spec 2026-10-03 §1.11): omitted or `null` is
     # every azienda, as before; a list scopes them to those; an empty list is refused by
     # the service, since «nessuna azienda» is a deactivation and not a scope.
-    aziende: list[UUID] | None = None
+    legal_entities: list[UUID] | None = None
 
     @field_validator("email", mode="before")
     @classmethod
@@ -70,8 +70,8 @@ class InvitationRead(BaseModel):
     id: UUID
     email: str
     nome: str | None
-    ruolo: Role
-    aziende: list[UUID] | None = None
+    role: Role
+    legal_entities: list[UUID] | None = None
     invited_by: UUID
     expires_at: datetime
     created_at: datetime
@@ -84,8 +84,8 @@ class InvitationPeek(BaseModel):
     space, and whether a name is still missing. Deliberately not a `InvitationRead`:
     the invitee has no business seeing the row's ids or expiry arithmetic."""
 
-    spazio: str
-    invitato_da: str
+    space: str
+    invited_from: str
     nome: str | None
 
 
@@ -95,8 +95,8 @@ class InvitationOffer(BaseModel):
     when the acceptance page will have to ask. Like `InvitationPeek`, never the row's
     ids or its expiry arithmetic."""
 
-    ruolo: Role
-    invitato_da: str
+    role: Role
+    invited_from: str
     nome: str | None
 
 
@@ -105,17 +105,17 @@ class UserCreate(BaseModel):
     # The aziende the new account will see (spec 2026-10-03 §1.11), written in the same
     # transaction as the row: an account is never, not even between two commits, an
     # unscoped admin it was not meant to be. `null` or left out is the whole space.
-    aziende: list[UUID] | None = None
+    legal_entities: list[UUID] | None = None
     # `None` only for a space's first admin, created by the signup wizard (spec
     # 2026-09-12 §6.4): the person enters with a link by mail and never had a password.
     # `UserService.create` refuses it from anyone but the system.
     password: str | None = None
-    nome: SafeStr = Field(max_length=NOME_MAX_LENGTH)
-    ruolo: Role = "collaboratore"
-    tariffa_oraria_default: Decimal | None = Field(
+    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    role: Role = "collaborator"
+    default_hourly_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_DECIMAL_PLACES, ge=0
     )
-    costo_orario_default: Decimal | None = Field(
+    default_hourly_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_DECIMAL_PLACES, ge=0
     )
 
@@ -126,18 +126,18 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
-    ruolo: Role | None = None
-    attivo: bool | None = None
+    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    role: Role | None = None
+    active: bool | None = None
     # The member's scope (spec 2026-10-03 §1.11): a list scopes them, an explicit
     # `null` clears the scope back to every azienda, and a key left out leaves it as it
     # is, which `UserService.update` tells apart through `model_fields_set`.
-    aziende: list[UUID] | None = None
-    digest_settimanale: bool | None = None
-    tariffa_oraria_default: Decimal | None = Field(
+    legal_entities: list[UUID] | None = None
+    weekly_digest: bool | None = None
+    default_hourly_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_DECIMAL_PLACES, ge=0
     )
-    costo_orario_default: Decimal | None = Field(
+    default_hourly_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_DECIMAL_PLACES, ge=0
     )
 
@@ -148,7 +148,7 @@ class MeUpdate(BaseModel):
     rather than a reuse of `UserUpdate`: `PATCH /api/auth/me` must never grow a
     second field that only `update`'s `actor.require_admin` was meant to gate."""
 
-    digest_settimanale: bool
+    weekly_digest: bool
 
 
 class MemberRead(BaseModel):
@@ -167,7 +167,7 @@ class MemberDetail(MemberRead):
     The email is the administrators' (`UserService.directory`), as it is on the Team page,
     and `None` for anybody else."""
 
-    ruolo: Role
+    role: Role
     email: str | None = None
 
 
@@ -177,13 +177,13 @@ class UserRead(BaseModel):
     id: UUID
     email: str
     nome: str
-    ruolo: Role
-    attivo: bool
+    role: Role
+    active: bool
     # `None` for a member who sees the whole space, the ids otherwise (REB-633): what
     # the SPA reads to pin the selector and what the Team panel shows on a row.
-    aziende: list[UUID] | None = None
-    digest_settimanale: bool
-    tariffa_oraria_default: Decimal | None
-    costo_orario_default: Decimal | None
+    legal_entities: list[UUID] | None = None
+    weekly_digest: bool
+    default_hourly_rate: Decimal | None
+    default_hourly_cost: Decimal | None
     created_at: datetime
     last_login_at: datetime | None

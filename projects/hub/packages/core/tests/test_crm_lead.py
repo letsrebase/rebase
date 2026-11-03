@@ -17,10 +17,10 @@ from rebase_core.errors import LlmCapReached, LlmNotConfigured, LlmUnavailable
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 
 ARGS = {
-    "figura_richiesta": "Sviluppatore backend",
-    "progetto": "Portare un gestionale su servizi più piccoli.",
-    "durata": "3 mesi",
-    "periodo_da": date(2030, 1, 15),
+    "requested_role": "Sviluppatore backend",
+    "project": "Portare un gestionale su servizi più piccoli.",
+    "duration": "3 mesi",
+    "period_from": date(2030, 1, 15),
 }
 
 
@@ -45,11 +45,11 @@ def _out(**fields: object) -> LeadDraftOut:
 def test_a_draft_inside_every_bound_is_kept() -> None:
     draft = LeadDraft.from_output(
         _out(
-            ruolo="Sviluppatore backend",
-            giorni_settimana=3,
-            durata_settimane=12,
-            competenze=["Python", "Docker"],
-            sintesi="Serve una persona per tre mesi.",
+            role="Sviluppatore backend",
+            week_days=3,
+            duration_weeks=12,
+            skills=["Python", "Docker"],
+            profile_summary="Serve una persona per tre mesi.",
         )
     )
     assert draft == LeadDraft(
@@ -61,21 +61,21 @@ def test_a_draft_inside_every_bound_is_kept() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("ruolo", "x" * 81),
-        ("giorni_settimana", 0.4),
-        ("giorni_settimana", 5.5),
-        ("durata_settimane", 0),
-        ("durata_settimane", 105),
-        ("durata_settimane", 2.5),
-        ("sintesi", "x" * 801),
+        ("role", "x" * 81),
+        ("week_days", 0.4),
+        ("week_days", 5.5),
+        ("duration_weeks", 0),
+        ("duration_weeks", 105),
+        ("duration_weeks", 2.5),
+        ("profile_summary", "x" * 801),
     ],
 )
 def test_an_out_of_bounds_value_is_dropped_not_clamped(field: str, value: object) -> None:
     good = {
-        "ruolo": "Dev",
-        "giorni_settimana": 3,
-        "durata_settimane": 12,
-        "sintesi": "Ok.",
+        "role": "Dev",
+        "week_days": 3,
+        "duration_weeks": 12,
+        "profile_summary": "Ok.",
     }
     draft = LeadDraft.from_output(_out(**{**good, field: value}))
     kept = draft.to_json()
@@ -88,57 +88,57 @@ def test_an_out_of_bounds_value_is_dropped_not_clamped(field: str, value: object
 def test_the_edges_of_every_bound_are_kept() -> None:
     draft = LeadDraft.from_output(
         _out(
-            ruolo="x" * 80,
-            giorni_settimana=0.5,
-            durata_settimane=104,
-            sintesi="x" * 800,
+            role="x" * 80,
+            week_days=0.5,
+            duration_weeks=104,
+            profile_summary="x" * 800,
         )
     )
-    assert (len(draft.ruolo), draft.giorni_settimana, draft.durata_settimane) == (80, 0.5, 104)
-    assert len(draft.sintesi) == 800
-    assert LeadDraft.from_output(_out(giorni_settimana=5, durata_settimane=1)).durata_settimane == 1
+    assert (len(draft.role), draft.week_days, draft.duration_weeks) == (80, 0.5, 104)
+    assert len(draft.profile_summary) == 800
+    assert LeadDraft.from_output(_out(week_days=5, duration_weeks=1)).duration_weeks == 1
 
 
 def test_skills_are_cleaned_bounded_and_at_most_ten() -> None:
     draft = LeadDraft.from_output(
-        _out(competenze=["Python", "  Docker ", "x" * 41, "", "Python", *map(str, range(20))])
+        _out(skills=["Python", "  Docker ", "x" * 41, "", "Python", *map(str, range(20))])
     )
-    assert draft.competenze[:2] == ("Python", "Docker")
-    assert all(0 < len(skill) <= 40 for skill in draft.competenze)
-    assert len(draft.competenze) == 10
+    assert draft.skills[:2] == ("Python", "Docker")
+    assert all(0 < len(skill) <= 40 for skill in draft.skills)
+    assert len(draft.skills) == 10
 
 
 def test_a_field_the_text_does_not_say_is_empty() -> None:
     draft = LeadDraft.from_output(_out())
     assert draft.empty
     assert draft.to_json() == {
-        "ruolo": "",
-        "giorni_settimana": None,
-        "durata_settimane": None,
-        "competenze": [],
-        "sintesi": "",
+        "role": "",
+        "week_days": None,
+        "duration_weeks": None,
+        "skills": [],
+        "profile_summary": "",
     }
 
 
 def test_a_kept_draft_is_read_again_through_the_same_bounds() -> None:
     kept = LeadDraft("Dev", 3.0, 12, ("Python",), "Ok.").to_json()
     assert LeadDraft.from_json(kept) == LeadDraft("Dev", 3.0, 12, ("Python",), "Ok.")
-    assert LeadDraft.from_json({**kept, "giorni_settimana": 40}).giorni_settimana is None
+    assert LeadDraft.from_json({**kept, "week_days": 40}).week_days is None
     assert LeadDraft.from_json("not a draft").empty
-    assert LeadDraft.from_json({"competenze": "Python"}).empty
+    assert LeadDraft.from_json({"skills": "Python"}).empty
 
 
 def test_the_model_sees_the_four_fields_and_nothing_that_names_anyone() -> None:
-    call = RecordingCall([_response(_out(ruolo="Dev"))])
+    call = RecordingCall([_response(_out(role="Dev"))])
     draft = draft_lead(call, **ARGS)  # type: ignore[arg-type]
-    assert draft is not None and draft.ruolo == "Dev"
+    assert draft is not None and draft.role == "Dev"
     request = call.requests[0]
     sent = request.system + "\n".join(m.text for m in request.messages)
-    for expected in (ARGS["figura_richiesta"], ARGS["progetto"], "3 mesi", "2030-01-15"):
+    for expected in (ARGS["requested_role"], ARGS["project"], "3 mesi", "2030-01-15"):
         assert expected in sent
     assert request.output_model is LeadDraftOut
     # The function takes no name, contact or budget: they cannot reach the request.
-    assert "nome_azienda" not in lead_request.__code__.co_varnames
+    assert "company_name" not in lead_request.__code__.co_varnames
 
 
 def test_the_requests_text_cannot_close_its_block_and_speak_as_the_prompt() -> None:

@@ -24,18 +24,18 @@ import type { Deal } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
-  { key: 'valore_previsto', label: 'Valore previsto', type: 'currency', required: false, options: [] },
-  { key: 'probabilita', label: 'Probabilità (%)', type: 'number', required: false, options: [] },
+  { key: 'expected_value', label: 'Valore previsto', type: 'currency', required: false, options: [] },
+  { key: 'probability', label: 'Probabilità (%)', type: 'number', required: false, options: [] },
   {
-    key: 'data_chiusura_prevista',
+    key: 'expected_close_date',
     label: 'Chiusura prevista',
     type: 'date',
     required: false,
     options: [],
   },
-  { key: 'ore_preventivate', label: 'Ore preventivate', type: 'number', required: false, options: [] },
+  { key: 'budgeted_hours', label: 'Ore preventivate', type: 'number', required: false, options: [] },
   {
-    key: 'valore_preventivato',
+    key: 'budgeted_value',
     label: 'Valore preventivato',
     type: 'currency',
     required: false,
@@ -170,8 +170,8 @@ export function DealForm({
   }
 
   function submit() {
-    // `nome` clears on `""`, while `valore_previsto`, `ore_preventivate`,
-    // `valore_preventivato` and `data_chiusura_prevista` clear on `null` -- sending `""`
+    // `nome` clears on `""`, while `expected_value`, `budgeted_hours`,
+    // `budgeted_value` and `expected_close_date` clear on `null` -- sending `""`
     // for those four was a 422 from Pydantic: an estimate typed once could not be taken
     // back. `customer_id` and `owner_id` are handled below instead.
     const body = toRequestBody(values, {

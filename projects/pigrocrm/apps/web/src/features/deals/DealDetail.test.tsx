@@ -66,17 +66,17 @@ const DEAL = {
   id: 'd1',
   nome: 'Sito vetrina',
   customer_id: 'c1',
-  azienda_id: 'a2',
-  customer_ragione_sociale: 'ACME Srl',
+  legal_entity_id: 'a2',
+  customer_legal_name: 'ACME Srl',
   pipeline_stage_id: 's1',
-  valore_previsto: '4500.00',
-  probabilita: 50,
-  data_chiusura_prevista: null,
-  ore_preventivate: null,
-  valore_preventivato: null,
-  tariffa_oraria: null,
+  expected_value: '4500.00',
+  probability: 50,
+  expected_close_date: null,
+  budgeted_hours: null,
+  budgeted_value: null,
+  hourly_rate: null,
   owner_id: null,
-  chiuso_il: null,
+  closed_at: null,
   custom_fields: {},
 } as never
 
@@ -84,14 +84,14 @@ const NOTE = {
   id: 'n1',
   entity_type: 'deal',
   entity_id: 'd1',
-  testo: 'Richiamare a settembre.',
-  autore: 'Giulia Rossi',
-  autore_id: 'u1',
-  fonte: 'web',
+  text: 'Richiamare a settembre.',
+  author: 'Giulia Rossi',
+  author_id: 'u1',
+  source: 'web',
   created_at: '2026-10-01T09:00:00Z',
-  modificata_at: null,
-  modificata_da: null,
-  modificabile: true,
+  edited_at: null,
+  edited_by: null,
+  editable: true,
 } as never
 
 function renderWithClient(ui: ReactElement) {
@@ -162,9 +162,9 @@ describe('DealDetail', () => {
           // `useStages` unwraps to a bare array, not to a page.
           if (path === '/api/pipeline-stages')
             return ok([
-              { id: 's1', nome: 'Lead', posizione: 1, tipo: 'open', code: null, probabilita_default: 10 },
-              { id: 'won', nome: 'Vinto', posizione: 4, tipo: 'won', code: 'won', probabilita_default: 100 },
-              { id: 'lost', nome: 'Perso', posizione: 5, tipo: 'lost', code: 'lost', probabilita_default: 0 },
+              { id: 's1', nome: 'Lead', position: 1, type: 'open', code: null, default_probability: 10 },
+              { id: 'won', nome: 'Vinto', position: 4, type: 'won', code: 'won', default_probability: 100 },
+              { id: 'lost', nome: 'Perso', position: 5, type: 'lost', code: 'lost', default_probability: 0 },
             ])
           // So does the timeline, which the Pipedrive-shaped page mounts in its right
           // column («Ultimi eventi», 2026-09-09). Handed a page envelope it would
@@ -233,10 +233,10 @@ describe('DealDetail', () => {
 })
 
 describe('the azienda in the header (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
-    aziende: [HUMANCRAFT, REBASE],
+    legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
     several: true, scoped: false, pinned: false,
@@ -249,7 +249,7 @@ describe('the azienda in the header (REB-626)', () => {
       ((path: string) => {
         if (path === '/api/deals/{deal_id}') return ok(DEAL)
         if (path === '/api/pipeline-stages')
-          return ok([{ id: 's1', nome: 'Lead', posizione: 1, tipo: 'open', code: null, probabilita_default: 10 }])
+          return ok([{ id: 's1', nome: 'Lead', position: 1, type: 'open', code: null, default_probability: 10 }])
         return ok([])
       }) as never,
     )

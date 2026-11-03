@@ -18,18 +18,18 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.schemas import (
-    DEFAULT_RIFERIMENTO_NORMATIVO,
-    RIFERIMENTO_NORMATIVO_EXTRA_UE,
-    RIFERIMENTO_NORMATIVO_UE,
+    DEFAULT_LEGAL_REFERENCE,
+    LEGAL_REFERENCE_EXTRA_UE,
+    LEGAL_REFERENCE_UE,
     FiscalProfileUpsert,
 )
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -42,17 +42,17 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
             cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
@@ -63,14 +63,14 @@ def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -81,8 +81,8 @@ def _issue(service: InvoiceService, customer_id: UUID) -> UUID:
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            causale="Consulenza",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00"))],
+            memo="Consulenza",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00"))],
         ),
         ADMIN,
     )
@@ -97,7 +97,7 @@ def test_the_first_export_writes_a_document_a_version_and_the_hash(
     invoice = service.get(invoice_id, ADMIN)
 
     assert artifact.kind == "xml"
-    assert artifact.version_numero == 1
+    assert artifact.version_number == 1
     assert artifact.content_type == "application/xml"
     assert invoice.xml_document_id == artifact.document_id
     assert invoice.xml_hash_sha256 == artifact.hash_sha256
@@ -115,7 +115,7 @@ def test_the_stored_bytes_validate_against_the_official_schema(
     assert filename.endswith(".xml")
 
 
-def test_the_download_name_follows_the_sdi_convention_using_the_frozen_emitter_id(
+def test_the_download_name_follows_the_sdi_convention_using_the_frozen_legal_entity_id(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     """The name comes from the snapshot, not from the live profile: the file goes to an
@@ -126,14 +126,14 @@ def test_the_download_name_follows_the_sdi_convention_using_the_frozen_emitter_i
     _, _, before = service.download(invoice_id, "xml", ADMIN)
     LegalEntityService(service.session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Altro Nome",
-            partita_iva="01234567890",
-            codice_fiscale="RSSMRA80A01H501U",
-            indirizzo="Via Nuova 1",
+            legal_name="Altro Nome",
+            vat_number="01234567890",
+            tax_code="RSSMRA80A01H501U",
+            address="Via Nuova 1",
             cap="20125",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
         ),
         ADMIN,
     )
@@ -151,26 +151,26 @@ def test_the_bytes_live_under_the_fiscal_prefix(
         text(
             "SELECT storage_key FROM document_versions WHERE document_id = :id AND numero = :numero"
         ),
-        {"id": artifact.document_id, "numero": artifact.version_numero},
+        {"id": artifact.document_id, "number": artifact.version_number},
     ).scalar_one()
     invoice = service.get(invoice_id, ADMIN)
     # The azienda first since REB-619: `2026/1` names one invoice per azienda.
-    assert key == f"fatture/{invoice.azienda_id}/{invoice.anno}/{invoice.numero}/v1.xml"
+    assert key == f"fatture/{invoice.legal_entity_id}/{invoice.year}/{invoice.number}/v1.xml"
 
 
-def test_the_xml_gets_its_own_documents_row_typed_fattura_xml(
+def test_the_xml_gets_its_own_documents_row_typed_invoice_xml(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     invoice_id = _issue(service, customer_id)
     artifact = service.export_xml(invoice_id, ADMIN)
-    tipo, stato = db_session.execute(
+    type, status = db_session.execute(
         text("SELECT tipo, stato FROM documents WHERE id = :id"), {"id": artifact.document_id}
     ).one()
-    assert tipo == "fattura_xml"
-    # `documents.stato` stays NULL for all three invoice artefact types: the
+    assert type == "invoice_xml"
+    # `documents.status` stays NULL for all three invoice artefact types: the
     # authoritative state is the invoice's. Duplicating a state machine in two tables
     # produces two truths.
-    assert stato is None
+    assert status is None
 
 
 def test_re_exporting_returns_the_same_artifact_without_writing_a_second_version(
@@ -198,19 +198,19 @@ def test_a_regenerated_export_is_byte_identical_to_the_original(
     original, _, _ = service.download(invoice_id, "xml", ADMIN)
 
     FiscalProfileService(service.session).upsert(
-        FiscalProfileUpsert(pack_id="it-standard", giorni_scadenza=60),
+        FiscalProfileUpsert(pack_id="it-standard", due_days=60),
         ADMIN,
     )
     LegalEntityService(service.session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Altro Nome",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Nuova 1",
+            legal_name="Altro Nome",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Nuova 1",
             cap="20125",
-            comune="Torino",
-            provincia="TO",
-            nazione="IT",
+            city="Torino",
+            province="TO",
+            country="IT",
         ),
         ADMIN,
     )
@@ -236,7 +236,7 @@ def test_a_lost_file_is_repaired_as_a_new_identical_version(
     storage.delete(key)
 
     repaired = service.export_xml(invoice_id, ADMIN)
-    assert repaired.version_numero == 2
+    assert repaired.version_number == 2
     assert repaired.hash_sha256 == artifact.hash_sha256
     data, _, _ = service.download(invoice_id, "xml", ADMIN)
     assert hashlib.sha256(data).hexdigest() == artifact.hash_sha256
@@ -270,8 +270,8 @@ def test_a_proforma_produces_no_xml(service: InvoiceService, customer_id: UUID) 
     proforma = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("100.00"))],
+            type="proforma",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("100.00"))],
         ),
         ADMIN,
     )
@@ -284,7 +284,7 @@ def test_a_draft_produces_no_xml(service: InvoiceService, customer_id: UUID) -> 
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("100.00"))],
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("100.00"))],
         ),
         ADMIN,
     )
@@ -301,7 +301,7 @@ def test_an_annulled_invoice_still_exports_its_xml(
 
     invoice_id = _issue(service, customer_id)
     service.export_xml(invoice_id, ADMIN)
-    service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+    service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     assert service.export_xml(invoice_id, ADMIN).kind == "xml"
 
 
@@ -319,14 +319,14 @@ def test_the_hostile_customer_name_survives_the_whole_round_trip(
     """Criterion 2, end to end through storage rather than in memory."""
     hostile = 'Rossi & C. <IdCodice>999</IdCodice> "#$@\\ ]]>'
     customer = Customer(
-        ragione_sociale=hostile,
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name=hostile,
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -344,15 +344,15 @@ def test_the_hostile_customer_name_survives_the_whole_round_trip(
     assert len(list(root.iter("IdCodice"))) == 3
 
 
-def _non_resident_customer(db_session: Session, nazione: str = "GB") -> UUID:
+def _non_resident_customer(db_session: Session, country: str = "GB") -> UUID:
     customer = Customer(
-        ragione_sociale="Example Ltd",
-        partita_iva="GB123456789",
-        indirizzo="1 Old Street",
+        legal_name="Example Ltd",
+        vat_number="GB123456789",
+        address="1 Old Street",
         cap="EC1V 9HL",
-        comune="London",
-        provincia="",
-        nazione=nazione,
+        city="London",
+        province="",
+        country=country,
     )
     db_session.add(customer)
     db_session.flush()
@@ -360,17 +360,17 @@ def _non_resident_customer(db_session: Session, nazione: str = "GB") -> UUID:
 
 
 @pytest.mark.parametrize(
-    ("nazione", "riferimento"),
-    [("GB", RIFERIMENTO_NORMATIVO_EXTRA_UE), ("FR", RIFERIMENTO_NORMATIVO_UE)],
+    ("country", "reference"),
+    [("GB", LEGAL_REFERENCE_EXTRA_UE), ("FR", LEGAL_REFERENCE_UE)],
 )
 def test_the_xml_for_a_non_resident_customer_carries_n2_1_and_the_7_ter_reference(
-    service: InvoiceService, db_session: Session, nazione: str, riferimento: str
+    service: InvoiceService, db_session: Session, country: str, reference: str
 ) -> None:
     """ORB-32, on the surface the SdI reads. Every line and the summary group say
     `N2.1`, the summary's `RiferimentoNormativo` carries the art. 21 c. 6-bis
     annotation for where the customer is, and the file validates against FPR12 1.2.3
     in both cases."""
-    invoice_id = _issue(service, _non_resident_customer(db_session, nazione))
+    invoice_id = _issue(service, _non_resident_customer(db_session, country))
     service.export_xml(invoice_id, ADMIN)
     data, _, _ = service.download(invoice_id, "xml", ADMIN)
     assert_valid(data)
@@ -379,7 +379,7 @@ def test_the_xml_for_a_non_resident_customer_carries_n2_1_and_the_7_ter_referenc
     body = root.find("FatturaElettronicaBody")
     assert body is not None
     assert [n.text for n in body.iter("Natura")] == ["N2.1", "N2.1"]
-    assert body.findtext("DatiBeniServizi/DatiRiepilogo/RiferimentoNormativo") == riferimento
+    assert body.findtext("DatiBeniServizi/DatiRiepilogo/RiferimentoNormativo") == reference
 
 
 def test_a_foreign_customer_with_a_real_postcode_is_issued_and_exported(
@@ -391,17 +391,17 @@ def test_a_foreign_customer_with_a_real_postcode_is_issued_and_exported(
     the `00000` the specifications prescribe for a foreign address, `Provincia` is
     omitted, and the postcode survives at the end of `Indirizzo`."""
     invoice_id = _issue(service, _non_resident_customer(db_session))
-    assert service.get(invoice_id, ADMIN).numero is not None
+    assert service.get(invoice_id, ADMIN).number is not None
     service.export_xml(invoice_id, ADMIN)
     data, _, _ = service.download(invoice_id, "xml", ADMIN)
     assert_valid(data)
 
-    sede = etree.fromstring(data).find(".//CessionarioCommittente/Sede")
-    assert sede is not None
-    assert sede.findtext("CAP") == "00000"
-    assert sede.find("Provincia") is None
-    assert sede.findtext("Indirizzo") == "1 Old Street, EC1V 9HL"
-    assert sede.findtext("Nazione") == "GB"
+    headquarters = etree.fromstring(data).find(".//CessionarioCommittente/Sede")
+    assert headquarters is not None
+    assert headquarters.findtext("CAP") == "00000"
+    assert headquarters.find("Provincia") is None
+    assert headquarters.findtext("Indirizzo") == "1 Old Street, EC1V 9HL"
+    assert headquarters.findtext("Nazione") == "GB"
 
 
 def test_the_xml_for_an_italian_customer_keeps_n2_2_and_the_domestic_declaration(
@@ -415,7 +415,7 @@ def test_the_xml_for_an_italian_customer_keeps_n2_2_and_the_domestic_declaration
     assert body is not None
     assert [n.text for n in body.iter("Natura")] == ["N2.2", "N2.2"]
     assert body.findtext("DatiBeniServizi/DatiRiepilogo/RiferimentoNormativo") == (
-        DEFAULT_RIFERIMENTO_NORMATIVO
+        DEFAULT_LEGAL_REFERENCE
     )
 
 
@@ -434,12 +434,12 @@ def test_the_stored_xml_carries_the_frozen_accrual_period_on_every_line(
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            causale="Consulenza agosto",
-            competenza_da=date(2026, 8, 1),
-            competenza_a=date(2026, 8, 31),
-            righe=[
-                InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00")),
-                InvoiceLineIn(descrizione="Sviluppo", prezzo_unitario=Decimal("500.00")),
+            memo="Consulenza agosto",
+            accrual_from=date(2026, 8, 1),
+            accrual_to=date(2026, 8, 31),
+            lines=[
+                InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00")),
+                InvoiceLineIn(description="Sviluppo", unit_price=Decimal("500.00")),
             ],
         ),
         ADMIN,
@@ -451,5 +451,5 @@ def test_the_stored_xml_carries_the_frozen_accrual_period_on_every_line(
     assert_valid(data)
     linee = list(etree.fromstring(data).iter("DettaglioLinee"))
     assert len(linee) == 2
-    assert [linea.findtext("DataInizioPeriodo") for linea in linee] == ["2026-08-01"] * 2
-    assert [linea.findtext("DataFinePeriodo") for linea in linee] == ["2026-08-31"] * 2
+    assert [line.findtext("DataInizioPeriodo") for line in linee] == ["2026-08-01"] * 2
+    assert [line.findtext("DataFinePeriodo") for line in linee] == ["2026-08-31"] * 2

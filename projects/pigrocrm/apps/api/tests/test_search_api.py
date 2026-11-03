@@ -37,20 +37,20 @@ def _search(client: TestClient, **params: Any) -> Any:
 
 
 def test_a_search_returns_all_four_groups(logged_in: TestClient) -> None:
-    created = logged_in.post("/api/customers", json={"ragione_sociale": "Vulcano Impianti Srl"})
+    created = logged_in.post("/api/customers", json={"legal_name": "Vulcano Impianti Srl"})
     assert created.status_code == 201, created.text
 
     response = _search(logged_in, q="Vulcano")
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["termine"] == "Vulcano"
+    assert body["deadline"] == "Vulcano"
     assert [group["entity"] for group in body["gruppi"]] == _ENTITIES
     customer = body["gruppi"][0]
-    assert customer["totale"] == 1
-    assert customer["totale_e_un_minimo"] is False
-    assert customer["hits"][0]["etichetta"] == "Vulcano Impianti Srl"
-    assert customer["hits"][0]["campo"] == "ragione_sociale"
+    assert customer["total"] == 1
+    assert customer["total_and_a_minimum"] is False
+    assert customer["hits"][0]["label"] == "Vulcano Impianti Srl"
+    assert customer["hits"][0]["field"] == "legal_name"
     assert customer["hits"][0]["id"] == created.json()["id"]
 
 
@@ -65,14 +65,14 @@ def test_a_term_that_matches_nothing_is_four_empty_groups_and_not_a_404(
     body = response.json()
     assert [group["entity"] for group in body["gruppi"]] == _ENTITIES
     assert all(group["hits"] == [] for group in body["gruppi"])
-    assert all(group["totale"] == 0 for group in body["gruppi"])
-    assert all(group["totale_e_un_minimo"] is False for group in body["gruppi"])
+    assert all(group["total"] == 0 for group in body["gruppi"])
+    assert all(group["total_and_a_minimum"] is False for group in body["gruppi"])
 
 
 def test_more_matches_than_the_ceiling_are_declared_as_a_minimum(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    """§8.6's second state, and the whole reason `totale_e_un_minimo` exists.
+    """§8.6's second state, and the whole reason `total_and_a_minimum` exists.
 
     Inserted straight onto the session rather than through 201 `POST`s: the endpoint under
     test is the `GET`, and two hundred round trips through the writing half of the API
@@ -83,8 +83,8 @@ def test_more_matches_than_the_ceiling_are_declared_as_a_minimum(
         [
             {
                 "id": uuid7(),
-                "ragione_sociale": f"Moltissimi Srl {index:03d}",
-                "nazione": "IT",
+                "legal_name": f"Moltissimi Srl {index:03d}",
+                "country": "IT",
                 "custom_fields": {},
             }
             for index in range(COUNT_CEILING + 1)
@@ -95,8 +95,8 @@ def test_more_matches_than_the_ceiling_are_declared_as_a_minimum(
     body = _search(logged_in, q="Moltissimi").json()
 
     customer = body["gruppi"][0]
-    assert customer["totale"] == COUNT_CEILING
-    assert customer["totale_e_un_minimo"] is True
+    assert customer["total"] == COUNT_CEILING
+    assert customer["total_and_a_minimum"] is True
     # Still five on screen, and five is what the palette shows -- the count being a
     # minimum must not change the page.
     assert len(customer["hits"]) == 5
@@ -106,15 +106,15 @@ def test_the_score_is_serialised_as_a_decimal_string_not_a_float(logged_in: Test
     """A float score renders as 0.6000000238418579 and breaks criterion 4.
 
     The value is asserted as well as the type: `"0.8000"` is §8.5's prefix rung at the
-    identifying weight, at the four-place scale `SearchHit.punteggio` declares, and a
+    identifying weight, at the four-place scale `SearchHit.score` declares, and a
     `Decimal` that had lost its trailing zeros would still be a string here.
     """
-    logged_in.post("/api/customers", json={"ragione_sociale": "Vulcano Impianti Srl"})
+    logged_in.post("/api/customers", json={"legal_name": "Vulcano Impianti Srl"})
 
-    punteggio = _search(logged_in, q="Vulcano").json()["gruppi"][0]["hits"][0]["punteggio"]
+    score = _search(logged_in, q="Vulcano").json()["gruppi"][0]["hits"][0]["score"]
 
-    assert isinstance(punteggio, str), type(punteggio)
-    assert punteggio == "0.8000"
+    assert isinstance(score, str), type(score)
+    assert score == "0.8000"
 
 
 @pytest.mark.parametrize("term", ["", "a", "ab"])
@@ -154,15 +154,15 @@ def test_the_limit_is_bounded(logged_in: TestClient, limit: int) -> None:
 
 def test_the_limit_is_honoured(logged_in: TestClient, api_session: Session) -> None:
     """A bound nobody applies is a bound that does nothing. Twelve matching rows, a limit
-    of three, three hits and a `totale` of twelve -- the limit pages the hits and does not
+    of three, three hits and a `total` of twelve -- the limit pages the hits and does not
     touch the count."""
     api_session.execute(
         insert(Customer),
         [
             {
                 "id": uuid7(),
-                "ragione_sociale": f"Limitabile Srl {index:02d}",
-                "nazione": "IT",
+                "legal_name": f"Limitabile Srl {index:02d}",
+                "country": "IT",
                 "custom_fields": {},
             }
             for index in range(12)
@@ -173,7 +173,7 @@ def test_the_limit_is_honoured(logged_in: TestClient, api_session: Session) -> N
     body = _search(logged_in, q="Limitabile", limit=3).json()
 
     assert len(body["gruppi"][0]["hits"]) == 3
-    assert body["gruppi"][0]["totale"] == 12
+    assert body["gruppi"][0]["total"] == 12
 
 
 def test_the_endpoint_appears_in_the_openapi_document(client: TestClient) -> None:
@@ -192,8 +192,8 @@ def test_the_openapi_document_pins_the_bounds_the_generated_types_erase(
     operation = client.get("/openapi.json").json()["paths"]["/api/search"]["get"]
     parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
 
-    # `azienda_id` joined with REB-624: the sidebar's azienda narrows the palette too.
-    assert set(parameters) == {"q", "limit", "azienda_id"}, parameters
+    # `legal_entity_id` joined with REB-624: the sidebar's azienda narrows the palette too.
+    assert set(parameters) == {"q", "limit", "legal_entity_id"}, parameters
     assert parameters["q"]["required"] is True
     assert parameters["q"]["schema"]["minLength"] == 3
     assert parameters["q"]["schema"]["maxLength"] == 100

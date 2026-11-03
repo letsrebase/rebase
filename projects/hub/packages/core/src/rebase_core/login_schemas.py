@@ -15,7 +15,7 @@ class GuideDownloadRead(ResponseModel):
     user_id: UUID
     freelancer_id: UUID | None
     nome: str
-    cognome: str
+    last_name: str
     email: str
     downloaded_at: datetime
 
@@ -28,10 +28,10 @@ class LoginRead(ResponseModel):
     id: UUID
     user_id: UUID
     nome: str
-    cognome: str
+    last_name: str
     email: str
     logged_at: datetime
-    origine: str | None = None
+    origin: str | None = None
     utm_source: str | None = None
     utm_medium: str | None = None
     utm_campaign: str | None = None
@@ -42,29 +42,29 @@ class LoginRead(ResponseModel):
 
 class LoginStats(ResponseModel):
     """The logins as the admin area reads them (ORB-158), the shape of `GuideStats`:
-    `totale` every login, `membri` the distinct people behind them, `membri_totali`
-    everybody on file, `ultimi_7_giorni` the last week -- four counters unaffected by
-    `q` (REB-313), always read off the whole table. `recenti` is the searched, paged
+    `total` every login, `members` the distinct people behind them, `total_members`
+    everybody on file, `last_7_days` the last week -- four counters unaffected by
+    `q` (REB-313), always read off the whole table. `recent` is the searched, paged
     part: newest first with no term, best-match first once `q` narrows it by name or
     email, no longer capped at 20. `next_cursor` is `None` on the last page, additive
     to the shape `GET /api/hub/logins` already answered."""
 
-    totale: int
-    membri: int
-    membri_totali: int
-    ultimi_7_giorni: int
-    recenti: list[LoginRead]
+    total: int
+    members: int
+    total_members: int
+    last_7_days: int
+    recent: list[LoginRead]
     next_cursor: str | None = None
 
 
 class GuideStats(ResponseModel):
-    """The guide's numbers for the admin area (ORB-156). `totale` counts every download,
-    `membri` the distinct people behind them, `membri_totali` everybody who could have
-    (the freelancers on file), `ultimi_7_giorni` the downloads of the last week, and
-    `recenti` the latest ones, newest first, with a name each."""
+    """The guide's numbers for the admin area (ORB-156). `total` counts every download,
+    `members` the distinct people behind them, `total_members` everybody who could have
+    (the freelancers on file), `last_7_days` the downloads of the last week, and
+    `recent` the latest ones, newest first, with a name each."""
 
-    totale: int
-    membri: int
-    membri_totali: int
-    ultimi_7_giorni: int
-    recenti: list[GuideDownloadRead]
+    total: int
+    members: int
+    total_members: int
+    last_7_days: int
+    recent: list[GuideDownloadRead]

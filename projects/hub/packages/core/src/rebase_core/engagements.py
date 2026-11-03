@@ -23,7 +23,7 @@ the claim back for the next call.
 `report` stores nothing but one fact: every «Consuntivo» asks the CRM again, in windows
 of at most the CRM's 800 days, and `engagement_report` sums the rows by day, ISO week and
 month. The fact is the CRM's `409`, a deal deleted in the space (spec § 3.10), which
-`report` writes over a `collegato` match as `rifiutato`, the way `link` would, so the
+`report` writes over a `linked` match as `rejected`, the way `link` would, so the
 card, the sweep and «Riprova» all know it.
 """
 
@@ -78,13 +78,13 @@ from rebase_core.mail_contracts import engagement_ready_mail
 from rebase_core.match_reads import MatchReads
 from rebase_core.match_rows import ENTITY, lock_freelancer, lock_match, match_freelancer
 from rebase_core.match_words import (
-    COLLEGATO,
-    DA_COLLEGARE,
-    ERRORE,
+    ERROR,
     HTTPS_ONLY,
+    LINKED,
     PIGRO_NOT_CONFIGURED,
     PROFILE_WITHOUT_NAME,
-    RIFIUTATO,
+    REJECTED,
+    TO_LINK,
     pigro_state_sentence,
 )
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
@@ -104,7 +104,7 @@ _log = logging.getLogger(__name__)
 
 ENGAGEMENTS_PATH = "/api/rebase/engagements"
 NOT_ACTIVE = "Si collega a Pigro solo un match attivo."
-# The report's refusal for a match with no link state yet (`pigro_stato` NULL: not
+# The report's refusal for a match with no link state yet (`pigro_status` NULL: not
 # signed, so not active): `pigro_state_sentence` says nothing there, since the card
 # has its own words for a match waiting on its signature.
 REPORT_NOT_ACTIVE = "Il match non è ancora attivo: nessun consuntivo da leggere."
@@ -176,7 +176,7 @@ class _Linked(BaseModel):
     slug: str = Field(min_length=1, max_length=32)
     deal_id: UUID
     deal_url: str = Field(min_length=1)
-    spazio_creato: bool = False
+    space_created: bool = False
 
     @field_validator("deal_url")
     @classmethod
@@ -188,7 +188,7 @@ class _Linked(BaseModel):
 
 class _NotAsked(Exception):
     """A match the hub will not send to the CRM yet, with the sentence its card shows
-    (`PROFILE_WITHOUT_NAME`): recorded as `errore`, never as `rifiutato`, since it is
+    (`PROFILE_WITHOUT_NAME`): recorded as `error`, never as `rejected`, since it is
     the hub's own data to complete, and a retry after that may well succeed."""
 
     def __init__(self, sentence: str) -> None:
@@ -201,8 +201,8 @@ class _Recipient(NamedTuple):
 
     email: str
     nome: str
-    numero: str
-    azienda: str
+    number: str
+    company: str
 
 
 class EngagementService:
@@ -225,7 +225,7 @@ class EngagementService:
         self.now = now
         self.today = today
         self.reads = MatchReads(
-            session, today, pigro_configurato=bool(settings.pigro_engagements_token)
+            session, today, pigro_configured=bool(settings.pigro_engagements_token)
         )
 
     # ---- the body ----------------------------------------------------------------------
@@ -241,45 +241,47 @@ class EngagementService:
         typo never blocks the link and the space's fiscal profile is completed later.
         Refused for a letter not signed: only an active match links. Refused with
         `_NotAsked` for a freelancer whose name or surname is empty, which the CRM's door
-        would refuse in English: `link` records it as `errore`, so the sweep and
+        would refuse in English: `link` records it as `error`, so the sweep and
         «Riprova» try again once the profile is complete."""
-        if letter.stato != "firmato":
-            raise InvalidState(LETTER_NOT_SIGNED, stato=letter.stato)
-        if not user.nome.strip() or not user.cognome.strip():
+        if letter.status != "signed":
+            raise InvalidState(LETTER_NOT_SIGNED, status=letter.status)
+        if not user.nome.strip() or not user.last_name.strip():
             raise _NotAsked(PROFILE_WITHOUT_NAME)
         signer = merge_data(company_defaults(), signer_data(self.settings.signer_json))
-        pec = _text(signer.get("rebase-pec"))
-        codice_fiscale = normalise_fiscal_code(_text(signer.get("rebase-cf")))
+        certified_email = _text(signer.get("rebase-pec"))
+        tax_code = normalise_fiscal_code(_text(signer.get("rebase-cf")))
         data = letter.data
-        start = match.lettera_data_inizio or _printed_date(data, "data-inizio")
+        start = match.letter_start_date or _printed_date(data, "data-inizio")
         if start is None:
-            raise ContractFailed(f"letter {letter.numero} printed no data-inizio")
-        end = match.lettera_data_fine or _printed_date(data, "data-fine")
-        fee = match.lettera_compenso if match.lettera_compenso is not None else amount(data, FEE)
-        sede = _text(signer.get("rebase-sede"))
+            raise ContractFailed(f"letter {letter.number} printed no data-inizio")
+        end = match.letter_end_date or _printed_date(data, "data-fine")
+        fee = match.letter_fee if match.letter_fee is not None else amount(data, FEE)
+        headquarters = _text(signer.get("rebase-sede"))
         sdi = _text(signer.get("rebase-codice-destinatario"))
         return {
-            "freelancer": {"email": user.email, "nome": user.nome, "cognome": user.cognome},
-            "lettera": {
-                "numero": letter.numero,
-                "ruolo": data.get("ruolo"),
-                "azienda": company.nome_azienda,
-                "data_inizio": start.isoformat(),
+            "freelancer": {"email": user.email, "nome": user.nome, "last_name": user.last_name},
+            "letter": {
+                "number": letter.number,
+                "role": data.get("role"),
+                "company": company.company_name,
+                "start_date": start.isoformat(),
                 "data_fine": end.isoformat() if end is not None else None,
-                "compenso": str(fee.quantize(CENT)) if fee is not None else None,
-                "giorni_previsti": match.giorni_previsti,
+                "fee": str(fee.quantize(CENT)) if fee is not None else None,
+                "expected_days": match.expected_days,
             },
             "rebase": {
-                "ragione_sociale": _text(signer.get("rebase-ragione-sociale")),
+                "legal_name": _text(signer.get("rebase-ragione-sociale")),
                 "partita_iva": normalise_vat(_text(signer.get("rebase-piva"))),
-                "codice_fiscale": (
-                    codice_fiscale
-                    if codice_fiscale is not None and len(codice_fiscale) <= FISCAL_CODE_MAX_LENGTH
+                "tax_code": (
+                    tax_code
+                    if tax_code is not None and len(tax_code) <= FISCAL_CODE_MAX_LENGTH
                     else None
                 ),
-                "indirizzo": sede[:ADDRESS_MAX_LENGTH] if sede is not None else None,
-                "pec": pec if pec is not None and _is_email(pec) else None,
-                "codice_sdi": sdi if sdi is not None and len(sdi) == SDI_LENGTH else None,
+                "address": headquarters[:ADDRESS_MAX_LENGTH] if headquarters is not None else None,
+                "certified_email": certified_email
+                if certified_email is not None and _is_email(certified_email)
+                else None,
+                "sdi_code": sdi if sdi is not None and len(sdi) == SDI_LENGTH else None,
             },
         }
 
@@ -287,14 +289,14 @@ class EngagementService:
 
     def link(self, match_id: UUID, admin_id: UUID | None = None) -> MatchRead:
         """Links an active match to its deal on Pigro, or records why not (spec § 3.3):
-        `collegato` on a `201` or `200`; `rifiutato` with the CRM's sentence on a `409`
-        or `422`, which only an admin's «Riprova» asks again; `errore` with its cause
+        `linked` on a `201` or `200`; `rejected` with the CRM's sentence on a `409`
+        or `422`, which only an admin's «Riprova» asks again; `error` with its cause
         (`CAUSE_*`, or the CRM's sentence on a `503`) on anything else, and with
         `HTTPS_ONLY` for a CRM not on HTTPS, which the sweep retries. A match already
-        `collegato` keeps its state, except on a `409`: its deal was deleted in the
+        `linked` keeps its state, except on a `409`: its deal was deleted in the
         space (spec § 3.10), unless another caller linked it after this call began. A
         match closed while the CRM answered is left as it stands and mailed nothing.
-        Without a token nothing is asked: the match waits as `da_collegare`. With
+        Without a token nothing is asked: the match waits as `to_link`. With
         `admin_id`, the trail says who asked (`pigro_link`)."""
         unasked: Outcome[_Linked] | None = None
         body: dict[str, Any] = {}
@@ -302,20 +304,20 @@ class EngagementService:
             freelancer_id = match_freelancer(self.session, match_id)
             lock_freelancer(self.session, freelancer_id)
             match = lock_match(self.session, match_id)
-            if match.stato != "attivo":
-                raise InvalidState(NOT_ACTIVE, stato=match.stato)
+            if match.status != "active":
+                raise InvalidState(NOT_ACTIVE, status=match.status)
             waiting = not self.settings.pigro_engagements_token
             if waiting:
-                if match.pigro_stato is None:
-                    match.pigro_stato = DA_COLLEGARE
+                if match.pigro_status is None:
+                    match.pigro_status = TO_LINK
             else:
                 letter, user, company = self._parts(match)
                 try:
                     body = self.payload(match, letter, user, company)
                 except _NotAsked as missing:
-                    unasked = Outcome(ERRORE, missing.sentence)
+                    unasked = Outcome(ERROR, missing.sentence)
                 recipient = _Recipient(
-                    user.email, user.nome, letter.numero or "", company.nome_azienda
+                    user.email, user.nome, letter.number or "", company.company_name
                 )
                 started = self.now()
                 match.pigro_attempted_at = started
@@ -335,17 +337,17 @@ class EngagementService:
             match = lock_match(self.session, match_id)
             # A match closed while the CRM answered is left as it stands: no link
             # written over it, no mail telling the freelancer it is active.
-            still_active = match.stato == "attivo"
+            still_active = match.status == "active"
             # A link made by another caller after this one began may be newer than this
             # call's 409, which then says nothing about the deal it found.
             linked_since = match.pigro_linked_at is not None and match.pigro_linked_at > started
             if still_active and (
-                match.pigro_stato != COLLEGATO or (outcome.gone and not linked_since)
+                match.pigro_status != LINKED or (outcome.gone and not linked_since)
             ):
                 self._write(match, outcome)
             if (
                 still_active
-                and match.pigro_stato == COLLEGATO
+                and match.pigro_status == LINKED
                 and match.pigro_mail_sent_at is None
                 and match.pigro_url is not None
                 and self.sender is not None
@@ -354,45 +356,45 @@ class EngagementService:
                 # sends, and gives it back below if the provider refuses.
                 match.pigro_mail_sent_at = self.now()
                 claimed_by = self.sender
-        stato, errore, deal_url = match.pigro_stato, match.pigro_errore, match.pigro_url
+        status, error, deal_url = match.pigro_status, match.pigro_error, match.pigro_url
         if not still_active:
             _log.warning("match %s was closed while Pigro answered: nothing written", match_id)
-        elif stato != COLLEGATO:
-            _log.warning("match %s is not linked to Pigro: %s", match_id, stato)
+        elif status != LINKED:
+            _log.warning("match %s is not linked to Pigro: %s", match_id, status)
         if claimed_by is not None and deal_url is not None:
-            spazio_creato = outcome.answer is not None and outcome.answer.spazio_creato
-            self._mail(claimed_by, match_id, freelancer_id, recipient, deal_url, spazio_creato)
+            space_created = outcome.answer is not None and outcome.answer.space_created
+            self._mail(claimed_by, match_id, freelancer_id, recipient, deal_url, space_created)
         if admin_id is not None:
             AdminActionService(self.session).record(
-                ENTITY, match_id, "pigro_link", admin_id, {"esito": stato, "errore": errore}
+                ENTITY, match_id, "pigro_link", admin_id, {"outcome": status, "error": error}
             )
         return self.reads.get(match_id)
 
     def link_pending(self) -> SweepCount:
         """The sweep's round (spec § 3.3): `link` on every active match waiting
-        (`da_collegare`) or failed (`errore`), and on a linked one whose mail the
+        (`to_link`) or failed (`error`), and on a linked one whose mail the
         provider refused, each on its own, a failure logged without stopping the rest.
-        A `rifiutato` match is not asked again. Without a token nothing is asked; without
+        A `rejected` match is not asked again. Without a token nothing is asked; without
         a mail sender a linked match has nothing left to do here."""
         if not self.settings.pigro_engagements_token:
             _log.info("no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: no match linked")
             return SweepCount(linked=0, failed=0)
-        due: ColumnElement[bool] = Match.pigro_stato.in_((DA_COLLEGARE, ERRORE))
+        due: ColumnElement[bool] = Match.pigro_status.in_((TO_LINK, ERROR))
         if self.sender is not None:
-            due = or_(due, and_(Match.pigro_stato == COLLEGATO, Match.pigro_mail_sent_at.is_(None)))
+            due = or_(due, and_(Match.pigro_status == LINKED, Match.pigro_mail_sent_at.is_(None)))
         rows = self.session.execute(
-            select(Match.id, Match.pigro_stato)
+            select(Match.id, Match.pigro_status)
             .join(Freelancer, Freelancer.id == Match.freelancer_id)
-            .where(Match.stato == "attivo", Freelancer.deleted_at.is_(None), due)
+            .where(Match.status == "active", Freelancer.deleted_at.is_(None), due)
             .order_by(Match.created_at, Match.id)
         ).all()
         before = dict(rows)
 
         def link(match_id: UUID) -> bool | None:
-            if self.link(match_id).pigro_stato != COLLEGATO:
+            if self.link(match_id).pigro_status != LINKED:
                 return False
-            # A match already `collegato` was picked for its refused mail alone.
-            return True if before[match_id] != COLLEGATO else None
+            # A match already `linked` was picked for its refused mail alone.
+            return True if before[match_id] != LINKED else None
 
         return sweep_round(self.session, list(before), link, what="match")
 
@@ -403,10 +405,10 @@ class EngagementService:
         engagement: from the letter's start (the printed one for a match older than
         migration 0021, the match's own creation day when the letter has none) to
         today, asked in windows of at most `REPORT_MAX_DAYS`. `InvalidState` for a
-        match not `collegato`, with where its link stands (`REPORT_NOT_ACTIVE` when it
+        match not `linked`, with where its link stands (`REPORT_NOT_ACTIVE` when it
         has no link state yet), and for a deal the CRM says was deleted in the space (a
-        `409`, spec § 3.10), after writing the match `rifiutato` with the CRM's sentence
-        if it is still `collegato`, as `link` would: the sweep then leaves it alone, and
+        `409`, spec § 3.10), after writing the match `rejected` with the CRM's sentence
+        if it is still `linked`, as `link` would: the sweep then leaves it alone, and
         «Riprova» links it again once the freelancer restores the deal.
         `PigroUnavailable` for a CRM not configured here (`PIGRO_NOT_CONFIGURED`), not on
         HTTPS (`HTTPS_ONLY`) or not answering with a report."""
@@ -419,14 +421,14 @@ class EngagementService:
             raise PigroUnavailable(PIGRO_NOT_CONFIGURED)
         if not speaks_https(self.door.api_url):
             raise PigroUnavailable(HTTPS_ONLY)
-        if match.pigro_stato != COLLEGATO:
+        if match.pigro_status != LINKED:
             sentence = (
                 REPORT_NOT_ACTIVE
-                if match.pigro_stato is None
-                else pigro_state_sentence(match.pigro_stato, match.pigro_errore)
+                if match.pigro_status is None
+                else pigro_state_sentence(match.pigro_status, match.pigro_error)
             )
-            raise InvalidState(sentence, pigro_stato=match.pigro_stato)
-        pigro_url, giorni_previsti = match.pigro_url, match.giorni_previsti
+            raise InvalidState(sentence, pigro_status=match.pigro_status)
+        pigro_url, expected_days = match.pigro_url, match.expected_days
         freelancer_id = match.freelancer_id
         started = self.now()
         a = a if a is not None else self.today()
@@ -447,13 +449,13 @@ class EngagementService:
         except Gone as gone:
             self._refused(match_id, freelancer_id, gone.cause, started)
             raise InvalidState(
-                pigro_state_sentence(RIFIUTATO, gone.cause), pigro_stato=RIFIUTATO
+                pigro_state_sentence(REJECTED, gone.cause), pigro_status=REJECTED
             ) from None
         return MatchReport(
             match_id=match_id,
             pigro_url=pigro_url,
-            pigro_stato=COLLEGATO,
-            **group(join_windows(windows), giorni_previsti),
+            pigro_status=LINKED,
+            **group(join_windows(windows), expected_days),
         )
 
     # ---- the steps ---------------------------------------------------------------------
@@ -467,7 +469,7 @@ class EngagementService:
         than from the session's memory."""
         letter = self._letter(match.id)
         if letter is None:
-            raise NotFound("lettera", match.id)
+            raise NotFound("letter", match.id)
         user = self.session.scalars(
             select(User)
             .join(Freelancer, Freelancer.user_id == User.id)
@@ -495,24 +497,24 @@ class EngagementService:
         """Where the engagement's report starts by default: the letter's start as the
         match kept it, else as the letter printed it, else the day the match was
         written, in Rome. Never today, which would hide every hour before it."""
-        if match.lettera_data_inizio is not None:
-            return match.lettera_data_inizio
+        if match.letter_start_date is not None:
+            return match.letter_start_date
         letter = self._letter(match.id)
         printed = _printed_date(letter.data, "data-inizio") if letter is not None else None
         return printed or match.created_at.astimezone(ROME).date()
 
     def _refused(self, match_id: UUID, freelancer_id: UUID, cause: str, started: datetime) -> None:
         """The report's `409` written over the match, under the locks `link` takes in the
-        same order: `rifiutato` with the CRM's sentence, if the match is still
-        `collegato` (another caller may have written something newer meanwhile) and was
+        same order: `rejected` with the CRM's sentence, if the match is still
+        `linked` (another caller may have written something newer meanwhile) and was
         not linked again after the report was asked (`started`), as `link` guards its
         own `409`: that link found the deal this answer says is gone."""
         with committed(self.session):
             lock_freelancer(self.session, freelancer_id)
             match = lock_match(self.session, match_id)
             linked_since = match.pigro_linked_at is not None and match.pigro_linked_at > started
-            if match.pigro_stato == COLLEGATO and not linked_since:
-                self._write(match, Outcome(RIFIUTATO, cause))
+            if match.pigro_status == LINKED and not linked_since:
+                self._write(match, Outcome(REJECTED, cause))
         _log.warning("the deal of match %s is gone from its Pigro space", match_id)
 
     def _put(self, match_id: UUID, body: dict[str, Any]) -> Outcome[_Linked]:
@@ -528,7 +530,7 @@ class EngagementService:
         )
 
     def _write(self, match: Match, outcome: Outcome[_Linked]) -> None:
-        write(match, outcome, state="pigro_stato", error="pigro_errore", copy=self._copy_link)
+        write(match, outcome, state="pigro_status", error="pigro_errore", copy=self._copy_link)
 
     def _copy_link(self, match: Match, linked: _Linked) -> None:
         match.pigro_slug = linked.slug
@@ -543,17 +545,17 @@ class EngagementService:
         freelancer_id: UUID,
         recipient: _Recipient,
         deal_url: str,
-        spazio_creato: bool,
+        space_created: bool,
     ) -> None:
         """The freelancer's mail, by the one caller that claimed it, with no lock held; a
         refusal takes the claim back under the lock, for the next call to send."""
         mail = engagement_ready_mail(
             recipient.email,
             nome=recipient.nome,
-            numero=recipient.numero,
-            azienda=recipient.azienda,
+            number=recipient.number,
+            company=recipient.company,
             deal_url=deal_url,
-            spazio_creato=spazio_creato,
+            space_created=space_created,
         )
         if sender.send(mail):
             return

@@ -8,8 +8,8 @@ import { formatIsoDateItalian } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import { useCanWrite } from '@/lib/auth'
 import { cn } from '@rebase/ui/cn'
-import { AttivitaDialog } from '@/features/attivita/AttivitaDialog'
-import { AttivitaItem } from '@/features/attivita/AttivitaItem'
+import { TaskDialog } from '@/features/tasks/TaskDialog'
+import { TaskItem } from '@/features/tasks/TaskItem'
 import { CellDays } from '@/features/days/CalendarDays'
 import { cellDaysLabel } from '@/features/days/labels'
 import { DayPanel } from './DayPanel'
@@ -33,10 +33,10 @@ import { useCalendarMonth, type CalendarDay } from './queries'
  * noise.
  */
 export function CalendarPage({
-  mese,
+  month: mese,
   onMonthChange,
 }: {
-  mese: string
+  month: string
   onMonthChange: (mese: string) => void
 }) {
   const month = useCalendarMonth(mese)
@@ -52,10 +52,10 @@ export function CalendarPage({
   }, [mese])
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarDay>()
-    for (const day of month.data?.giorni ?? []) map.set(day.giorno, day)
+    for (const day of month.data?.days ?? []) map.set(day.day, day)
     return map
   }, [month.data])
-  const oggi = month.data?.oggi
+  const today = month.data?.today
 
   const header = (
     <PageHeader
@@ -108,7 +108,7 @@ export function CalendarPage({
     )
   }
 
-  const senzaScadenza = month.data?.attivita_senza_scadenza ?? []
+  const withoutDueDate = month.data?.task_without_due_date ?? []
 
   return (
     <>
@@ -152,7 +152,7 @@ export function CalendarPage({
                       day={cell.day}
                       weekday={WEEKDAY_LABELS[column] ?? ''}
                       inMonth={cell.inMonth}
-                      isToday={cell.iso === oggi}
+                      isToday={cell.iso === today}
                       data={byDay.get(cell.iso)}
                       onOpen={() => setOpenDay(cell.iso)}
                     />
@@ -164,11 +164,11 @@ export function CalendarPage({
             <p className="text-sm text-muted-foreground">
               Ore del mese:{' '}
               <span className="font-medium text-foreground">
-                {formatItalianQuantity(month.data.ore_totali)}
+                {formatItalianQuantity(month.data.total_hours)}
               </span>
             </p>
 
-            {senzaScadenza.length > 0 && (
+            {withoutDueDate.length > 0 && (
               <section aria-labelledby="senza-scadenza" className="space-y-2">
                 {/* Outside the grid, and that is the point: a commitment with no date
                     cannot be drawn in a cell, is not late and is not for today. A NULL
@@ -177,8 +177,8 @@ export function CalendarPage({
                   Senza scadenza
                 </h2>
                 <ul className="space-y-2 text-sm">
-                  {senzaScadenza.map((item) => (
-                    <AttivitaItem key={item.id} attivita={item} />
+                  {withoutDueDate.map((item) => (
+                    <TaskItem key={item.id} attivita={item} />
                   ))}
                 </ul>
               </section>
@@ -189,12 +189,12 @@ export function CalendarPage({
 
       {openDay !== null && (
         <DayPanel
-          giorno={openDay}
+          day={openDay}
           data={byDay.get(openDay)}
           onClose={() => setOpenDay(null)}
         />
       )}
-      <AttivitaDialog open={creating} onOpenChange={setCreating} />
+      <TaskDialog open={creating} onOpenChange={setCreating} />
     </>
   )
 }
@@ -221,11 +221,11 @@ function DayCell({
   onOpen: () => void
 }) {
   const attivita = data?.attivita ?? []
-  const fatture = data?.fatture ?? []
-  const giornate = data?.giornate ?? []
-  const aperte = attivita.filter((item) => item.stato === 'aperta').length
-  const chiuse = attivita.length - aperte
-  const ore = data ? formatItalianQuantity(data.ore) : null
+  const invoices = data?.invoices ?? []
+  const work_units = data?.work_units ?? []
+  const open = attivita.filter((item) => item.status === 'open').length
+  const closed = attivita.length - open
+  const hours = data ? formatItalianQuantity(data.hours) : null
 
   return (
     // The cell is the `gridcell`; the button inside it is what opens the day. On a phone
@@ -243,7 +243,7 @@ function DayCell({
         // label of «1: …» named two cells -- unusable for a screen reader and ambiguous
         // for a test. `aria-current` is what marks today to a reader; the pill marks it
         // to an eye.
-        aria-label={`${formatIsoDateItalian(iso)}: ${ore !== null ? `${ore} ore` : 'niente'}${cellDaysLabel(giornate)}`}
+        aria-label={`${formatIsoDateItalian(iso)}: ${hours !== null ? `${hours} ore` : 'niente'}${cellDaysLabel(work_units)}`}
         aria-current={isToday ? 'date' : undefined}
         className={cn(
           'flex size-full min-h-12 flex-row items-start gap-3 p-2 text-left align-top transition-colors hover:bg-muted/50',
@@ -260,23 +260,23 @@ function DayCell({
           </span>
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1">
-          {ore !== null && data !== undefined && data.ore !== '0.00' && (
-            <span className="text-sm font-medium tabular-nums">{ore} h</span>
+          {hours !== null && data !== undefined && data.hours !== '0.00' && (
+            <span className="text-sm font-medium tabular-nums">{hours} h</span>
           )}
-          {aperte > 0 && (
+          {open > 0 && (
             <span className="text-xs text-muted-foreground">
-              {aperte} {aperte === 1 ? 'scadenza' : 'scadenze'}
+              {open} {open === 1 ? 'due_date' : 'due_dates'}
             </span>
           )}
-          {chiuse > 0 && aperte === 0 && (
-            <span className="text-xs text-muted-foreground line-through">{chiuse} fatte</span>
+          {closed > 0 && open === 0 && (
+            <span className="text-xs text-muted-foreground line-through">{closed} fatte</span>
           )}
-          {fatture.length > 0 && (
+          {invoices.length > 0 && (
             <span className="text-xs text-muted-foreground">
-              {fatture.length === 1 ? '1 fattura' : `${fatture.length} fatture`}
+              {invoices.length === 1 ? '1 fattura' : `${invoices.length} fatture`}
             </span>
           )}
-          <CellDays days={giornate} />
+          <CellDays days={work_units} />
         </span>
       </button>
     </div>

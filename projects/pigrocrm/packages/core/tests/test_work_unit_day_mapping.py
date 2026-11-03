@@ -18,38 +18,38 @@ CONTRACT_ID = uuid4()
 
 DAILY_CARD = RateCard(
     contract_id=CONTRACT_ID,
-    valido_da=date(2024, 1, 1),
-    valido_a=None,
-    tipo="giornaliero",
-    importo=Decimal("600.00"),
-    unita="giorno",
-    frazioni_ammesse=[Decimal("1"), Decimal("0.5")],
+    valid_from=date(2024, 1, 1),
+    valid_to=None,
+    type="daily",
+    amount=Decimal("600.00"),
+    unit="day",
+    allowed_fractions=[Decimal("1"), Decimal("0.5")],
 )
 
 HOURLY_CARD = RateCard(
     contract_id=CONTRACT_ID,
-    valido_da=date(2024, 1, 1),
-    valido_a=None,
-    tipo="orario",
-    importo=Decimal("90.00"),
-    unita="ora",
-    frazioni_ammesse=[Decimal("1")],
+    valid_from=date(2024, 1, 1),
+    valid_to=None,
+    type="hourly",
+    amount=Decimal("90.00"),
+    unit="ora",
+    allowed_fractions=[Decimal("1")],
 )
 
 
-def test_an_unpriceable_picked_day_contributes_zero_and_importi_coincidono_is_false() -> None:
+def test_an_unpriceable_picked_day_contributes_zero_and_match_amounts_is_false() -> None:
     """The design's own edge case: a picked day dated before the rate card's own
-    `valido_da` prices as unknown, not zero-but-billable -- `sum_money` skips it
+    `valid_from` prices as unknown, not zero-but-billable -- `sum_money` skips it
     rather than raising, so the proposal still stands (a complete quantity match),
-    but `importo_proposto` undercounts and `importi_coincidono` is honestly `False`."""
+    but `proposed_amount` undercounts and `match_amounts` is honestly `False`."""
     late_start_card = RateCard(
         contract_id=CONTRACT_ID,
-        valido_da=date(2024, 2, 1),
-        valido_a=None,
-        tipo="giornaliero",
-        importo=Decimal("600.00"),
-        unita="giorno",
-        frazioni_ammesse=[Decimal("1")],
+        valid_from=date(2024, 2, 1),
+        valid_to=None,
+        type="daily",
+        amount=Decimal("600.00"),
+        unit="day",
+        allowed_fractions=[Decimal("1")],
     )
     unpriceable_day = uuid4()
     days = [_day(unpriceable_day, date(2024, 1, 25))]
@@ -60,18 +60,18 @@ def test_an_unpriceable_picked_day_contributes_zero_and_importi_coincidono_is_fa
 
     assert proposal is not None
     assert proposal.work_unit_ids == [unpriceable_day]
-    assert proposal.importo_proposto == Decimal("0")
-    assert proposal.importo_riga == Decimal("600.00")
-    assert proposal.importi_coincidono is False
+    assert proposal.proposed_amount == Decimal("0")
+    assert proposal.line_amount == Decimal("600.00")
+    assert proposal.match_amounts is False
 
 
-def _day(day_id: UUID, data: date, quantita: Decimal = Decimal("1")) -> WorkUnit:
+def _day(day_id: UUID, data: date, quantity: Decimal = Decimal("1")) -> WorkUnit:
     return WorkUnit(
         id=day_id,
         contract_id=CONTRACT_ID,
         data=data,
-        quantita=quantita,
-        descrizione="lavoro",
+        quantity=quantity,
+        description="lavoro",
     )
 
 
@@ -87,15 +87,15 @@ def test_picks_the_oldest_eligible_days_first_up_to_the_line_quantity() -> None:
 
     assert proposal is not None
     assert proposal.work_unit_ids == [D1, D2]
-    assert proposal.periodo_da == date(2024, 3, 1)
-    assert proposal.periodo_a == date(2024, 3, 4)
-    assert proposal.numero_giorni == 2
-    assert proposal.importo_proposto == Decimal("1200.00")
-    assert proposal.importo_riga == Decimal("1200.00")
-    assert proposal.importi_coincidono is True
+    assert proposal.period_from == date(2024, 3, 1)
+    assert proposal.period_to == date(2024, 3, 4)
+    assert proposal.days_number == 2
+    assert proposal.proposed_amount == Decimal("1200.00")
+    assert proposal.line_amount == Decimal("1200.00")
+    assert proposal.match_amounts is True
 
 
-def test_importi_coincidono_is_false_when_the_rate_card_price_disagrees() -> None:
+def test_match_amounts_is_false_when_the_rate_card_price_disagrees() -> None:
     days = [_day(D1, date(2024, 3, 1))]
 
     proposal = propose_day_mapping(
@@ -103,9 +103,9 @@ def test_importi_coincidono_is_false_when_the_rate_card_price_disagrees() -> Non
     )
 
     assert proposal is not None
-    assert proposal.importo_proposto == Decimal("600.00")
-    assert proposal.importo_riga == Decimal("550.00")
-    assert proposal.importi_coincidono is False
+    assert proposal.proposed_amount == Decimal("600.00")
+    assert proposal.line_amount == Decimal("550.00")
+    assert proposal.match_amounts is False
 
 
 def test_half_day_and_full_day_quantities_combine_to_an_exact_match() -> None:
@@ -117,7 +117,7 @@ def test_half_day_and_full_day_quantities_combine_to_an_exact_match() -> None:
 
     assert proposal is not None
     assert proposal.work_unit_ids == [D1, D2]
-    assert proposal.numero_giorni == 2
+    assert proposal.days_number == 2
 
 
 def test_proposes_nothing_when_there_are_not_enough_eligible_days_to_reach_the_line_quantity() -> (
@@ -176,12 +176,12 @@ def test_proposes_nothing_when_no_rate_card_covers_the_issue_date_at_all() -> No
 def test_resolves_the_rate_card_in_force_on_the_issue_date_not_the_first_one_in_the_list() -> None:
     old_daily_card = RateCard(
         contract_id=CONTRACT_ID,
-        valido_da=date(2023, 1, 1),
-        valido_a=date(2023, 12, 31),
-        tipo="giornaliero",
-        importo=Decimal("600.00"),
-        unita="giorno",
-        frazioni_ammesse=[Decimal("1")],
+        valid_from=date(2023, 1, 1),
+        valid_to=date(2023, 12, 31),
+        type="daily",
+        amount=Decimal("600.00"),
+        unit="day",
+        allowed_fractions=[Decimal("1")],
     )
     days = [_day(D1, date(2024, 3, 1))]
 
@@ -200,5 +200,5 @@ def test_resolve_rate_card_is_none_when_no_card_covers_the_date() -> None:
     assert resolve_rate_card([DAILY_CARD], date(2023, 12, 31)) is None
 
 
-def test_resolve_rate_card_treats_a_null_valido_a_as_still_open() -> None:
+def test_resolve_rate_card_treats_to_null_valid_to_as_still_open() -> None:
     assert resolve_rate_card([DAILY_CARD], date(2099, 1, 1)) is DAILY_CARD

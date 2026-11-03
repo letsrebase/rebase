@@ -7,7 +7,7 @@ at most 200 (`CloudTalentService`); never the freelancer's own rate, their state
 admin's notes. The CV has a route of its own here, behind the grant and the cloud's one
 filter, never the member's own `/me/cv`.
 
-The builder inside is the public engine with the caller's name on it: `origine`
+The builder inside is the public engine with the caller's name on it: `origin`
 `cloud` and the caller's user, behind the same slots of the process and the same daily
 cap as the public page (`rebase_core.team_slots`), so a company cannot run up what a
 stranger cannot; its read keeps who each member is. The public page's per-client share
@@ -81,7 +81,7 @@ def propose_in_the_cloud(
     """«Proponi il team» and «Rigenera» in the cloud: the public route's answers (503
     off, 503 busy, 502, 422), with `previous_id` a cloud proposal of the caller's own."""
     return slots.propose(
-        builder, data, origine="cloud", user_id=caller.user_id, company_id=caller.company_id
+        builder, data, origin="cloud", user_id=caller.user_id, company_id=caller.company_id
     )
 
 
@@ -109,9 +109,9 @@ def request_in_the_cloud(
     elif data.freelancer_id is not None:
         read = service.create_for_talent(
             data.freelancer_id,
-            azienda=caller.azienda,
+            company=caller.company,
             email=caller.email,
-            telefono=caller.telefono,
+            phone=caller.phone,
             user_id=caller.user_id,
             company_id=caller.company_id,
         )

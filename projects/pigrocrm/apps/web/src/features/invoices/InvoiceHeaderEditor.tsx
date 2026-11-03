@@ -12,7 +12,7 @@ import { useUpdateInvoice, type Invoice } from './queries'
 
 interface Errors {
   data?: string
-  competenza?: string
+  accrual?: string
 }
 
 /**
@@ -20,11 +20,11 @@ interface Errors {
  * the accrual period (ORB-61). The detail page renders this in place of the read-only
  * rows while the document can change, so a date is either stated or asked, never both.
  *
- * A draft fattura has no date to edit here: `data_emissione` is assigned at emission
+ * A draft fattura has no date to edit here: `issue_date` is assigned at emission
  * (`InvoiceService.issue`) and `InvoiceUpdate` refuses it on a fattura, so the input
  * exists only on a proforma. The period is asked on both.
  *
- * Saved through `PATCH /api/invoices/{id}`, the call `causale` and `note_interne`
+ * Saved through `PATCH /api/invoices/{id}`, the call `memo` and `note_interne`
  * already travel on. The freeze is the server's, not a prop: a consumed proforma or an
  * issued fattura answers 409, and the banner shows it as it comes.
  */
@@ -32,37 +32,37 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
   const update = useUpdateInvoice(invoice.id)
   // `?? ''`: a `null` from the API, and also an absent key from an API that predates
   // the two columns, both read as "not set" rather than as the string "undefined".
-  const [dataEmissione, setDataEmissione] = useState(invoice.data_emissione ?? '')
+  const [issueDate, setIssueDate] = useState(invoice.issue_date ?? '')
   // The due date (REB-326), on both kinds: written here it is what `issue` prints;
-  // empty, the customer's terms decide at emission and `scadenza_prevista` (the
+  // empty, the customer's terms decide at emission and `expected_due_date` (the
   // server's own forecast, never recomputed here) says what they would give today.
-  const [dataScadenza, setDataScadenza] = useState(invoice.data_scadenza ?? '')
-  const [competenza, setCompetenza] = useState<AccrualPeriodDraft>({
-    competenza_da: invoice.competenza_da ?? '',
-    competenza_a: invoice.competenza_a ?? '',
+  const [dueDate, setDueDate] = useState(invoice.due_date ?? '')
+  const [accrual, setAccrual] = useState<AccrualPeriodDraft>({
+    accrual_from: invoice.accrual_from ?? '',
+    accrual_to: invoice.accrual_to ?? '',
   })
   const [errors, setErrors] = useState<Errors>({})
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
-  const isProforma = invoice.tipo === 'proforma'
+  const isProforma = invoice.type === 'proforma'
 
   function submit() {
     const found: Errors = {}
-    if (isProforma && dataEmissione === '') found.data = 'La proforma ha bisogno di una data.'
-    const periodError = validateAccrualPeriod(competenza)
-    if (periodError !== undefined) found.competenza = periodError
+    if (isProforma && issueDate === '') found.data = 'La proforma ha bisogno di una data.'
+    const periodError = validateAccrualPeriod(accrual)
+    if (periodError !== undefined) found.accrual = periodError
     setErrors(found)
     setProblem(null)
     if (Object.keys(found).length > 0) return
 
     // The period always, `null` when cleared (see `accrualPeriodBody`); the date only
     // where the server accepts it.
-    const body: Record<string, unknown> = accrualPeriodBody(competenza)
-    if (isProforma) body.data_emissione = dataEmissione
+    const body: Record<string, unknown> = accrualPeriodBody(accrual)
+    if (isProforma) body.issue_date = issueDate
     // Sent only when it changed: an explicit `null` is how the server clears it back to
     // the terms, and an untouched empty input must not clear anything.
-    if (dataScadenza !== (invoice.data_scadenza ?? '')) {
-      body.data_scadenza = dataScadenza === '' ? null : dataScadenza
+    if (dueDate !== (invoice.due_date ?? '')) {
+      body.due_date = dueDate === '' ? null : dueDate
     }
     update.mutate(body, {
       onSuccess: () => toast.success('Date salvate'),
@@ -83,30 +83,30 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
               id="fattura-data"
               type="date"
               required
-              value={dataEmissione}
-              onChange={(event) => setDataEmissione(event.target.value)}
+              value={issueDate}
+              onChange={(event) => setIssueDate(event.target.value)}
             />
           </div>
         ) : null}
-        <AccrualPeriodFields idPrefix="fattura" value={competenza} onChange={setCompetenza} />
+        <AccrualPeriodFields idPrefix="invoice" value={accrual} onChange={setAccrual} />
         <div className="space-y-2">
           <Label htmlFor="fattura-scadenza">Scadenza</Label>
           <Input
             id="fattura-scadenza"
             type="date"
-            value={dataScadenza}
-            onChange={(event) => setDataScadenza(event.target.value)}
+            value={dueDate}
+            onChange={(event) => setDueDate(event.target.value)}
           />
         </div>
       </div>
-      {dataScadenza === '' && invoice.scadenza_prevista ? (
+      {dueDate === '' && invoice.expected_due_date ? (
         <p className="text-muted-foreground text-xs">
           Scadenza vuota: all’emissione viene calcolata dai termini del cliente:{' '}
-          {formatIsoDateItalian(invoice.scadenza_prevista)} se emessa oggi.
+          {formatIsoDateItalian(invoice.expected_due_date)} se emessa oggi.
         </p>
       ) : null}
       {errors.data ? <p className="text-sm text-destructive">{errors.data}</p> : null}
-      {errors.competenza ? <p className="text-sm text-destructive">{errors.competenza}</p> : null}
+      {errors.accrual ? <p className="text-sm text-destructive">{errors.accrual}</p> : null}
 
       <div className="flex items-center justify-between gap-4">
         {/* Where each date goes, in one line: the period is what the P&L «per competenza»

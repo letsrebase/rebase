@@ -45,15 +45,15 @@ function respond(routes: Record<string, () => Promise<never>>) {
   })
 }
 
-const LOCK = { anno: 2026, mese: 3, chiuso_il: '2026-04-02T10:00:00Z', chiuso_da: 'u1' }
+const LOCK = { year: 2026, month: 3, closed_at: '2026-04-02T10:00:00Z', closed_by: 'u1' }
 const IVAN = {
   id: 'u1',
   nome: 'Ivan',
   email: 'i@x.test',
-  ruolo: 'admin',
-  attivo: true,
-  tariffa_oraria_default: null,
-  costo_orario_default: null,
+  role: 'admin',
+  active: true,
+  default_hourly_rate: null,
+  default_hourly_cost: null,
   created_at: '2026-01-01T00:00:00Z',
 }
 
@@ -65,10 +65,10 @@ const IVAN = {
  *  a loaded full `pnpm --filter web test` run this lost the race (REB-405), the same
  *  shape `vite.config.ts`'s own `testTimeout: 20_000` comment already describes for the
  *  suite as a whole. Matching that headroom here. */
-async function openRowMenu(mese: string) {
+async function openRowMenu(month: string) {
   await userEvent.click(
     // The button renders from `locks.data`, so waiting on it here is waiting on the data.
-    await screen.findByRole('button', { name: `Azioni per ${mese}` }, { timeout: 10_000 }),
+    await screen.findByRole('button', { name: `Azioni per ${month}` }, { timeout: 10_000 }),
   )
   // Radix opens the menu content into a portal, so the trigger's click resolving does
   // not itself guarantee the content has mounted: wait for the menu here so every
@@ -106,7 +106,7 @@ describe('PeriodsPanel', () => {
 
   it('asks for confirmation before reopening, and shows the server error if it fails', async () => {
     respond({
-      '/api/period-locks': () => ok([{ ...LOCK, chiuso_da: null }]),
+      '/api/period-locks': () => ok([{ ...LOCK, closed_by: null }]),
       '/api/users': () => ok([]),
     })
     mockConfirm.mockReturnValue(true)
@@ -157,8 +157,8 @@ describe('PeriodsPanel', () => {
     await openRowMenu('marzo 2026')
     await userEvent.click(screen.getByRole('menuitem', { name: /riapri/i }))
     await waitFor(() =>
-      expect(mockDelete).toHaveBeenCalledWith('/api/period-locks/{anno}/{mese}', {
-        params: { path: { anno: 2026, mese: 3 } },
+      expect(mockDelete).toHaveBeenCalledWith('/api/period-locks/{year}/{month}', {
+        params: { path: { year: 2026, month: 3 } },
       }),
     )
   })
@@ -185,7 +185,7 @@ describe('PeriodsPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /chiudi periodo/i }))
     await waitFor(() =>
       expect(mockPost).toHaveBeenCalledWith('/api/period-locks', {
-        body: { anno: 2026, mese: 3 },
+        body: { year: 2026, month: 3 },
       }),
     )
   })

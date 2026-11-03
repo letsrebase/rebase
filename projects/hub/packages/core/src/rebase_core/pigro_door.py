@@ -9,9 +9,9 @@ parameters.
 
 **The `PUT`** (`PigroDoor.put`) never raises: whatever happens, a refused connection, a
 timeout, a status, a body that is too long or not the shape, is an `Outcome` to write on the
-row. The status maps to the state the row is left in (`200`/`201` is `collegato`; a status
-the caller names as refused is `rifiutato`, which only a person asks again; a `503` and any
-other is `errore`, which the sweep retries) and to the cause the row stores (`CAUSE_*`, or
+row. The status maps to the state the row is left in (`200`/`201` is `linked`; a status
+the caller names as refused is `rejected`, which only a person asks again; a `503` and any
+other is `error`, which the sweep retries) and to the cause the row stores (`CAUSE_*`, or
 the CRM's own sentence when its answer carries one). The bearer travels only over HTTPS
 (`speaks_https`), plain HTTP only to this machine.
 
@@ -40,7 +40,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from rebase_core.http import MAX_BODY_BYTES, HttpCall
-from rebase_core.match_words import COLLEGATO, ERRORE, HTTPS_ONLY, RIFIUTATO
+from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 
 _log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ ANSWERED_STATUS = "Pigro non ha risposto ({status})."
 TOO_LONG = "Pigro ha risposto qualcosa di troppo lungo."
 NOT_THE_SHAPE = "Pigro ha risposto qualcosa che non è un elenco."
 
-# What a failed or refused call stores in `pigro_errore` / `crm_errore`: the cause alone,
+# What a failed or refused call stores in `pigro_error` / `crm_error`: the cause alone,
 # never a sentence of its own, since the card wraps it (spec § 3.5): «Pigro non ha
 # risposto: HTTP 503.», «Pigro ha rifiutato il collegamento: <the CRM's sentence>». A seam
 # sentence there would say «Pigro» twice. The CRM's own sentence is the cause whenever its
@@ -67,7 +67,7 @@ CAUSE_NOT_THE_SHAPE = "risposta non leggibile"
 CAUSE_FIELD = "{field}: non valido"
 # A refusal's sentence as stored on a row: the CRM's own words, bounded, since a body of a
 # megabyte is still a body the seam lets through.
-ERRORE_MAX_LENGTH = 500
+ERROR_MAX_LENGTH = 500
 # Where plain HTTP is still acceptable: a CRM running on this machine, in development.
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 _PUT_OK = (200, 201)
@@ -93,17 +93,17 @@ class Gone(Exception):
 class Outcome[Answer: BaseModel]:
     """What one `PUT` came to: the state to write, the sentence for anything but a link,
     and the CRM's answer for a link. `gone` marks a status the caller named as the thing
-    having been deleted on the CRM's side, which its `link` writes even over `collegato`."""
+    having been deleted on the CRM's side, which its `link` writes even over `linked`."""
 
-    stato: str
-    errore: str | None = None
+    status: str
+    error: str | None = None
     answer: Answer | None = None
     gone: bool = False
 
 
 class SweepCount(NamedTuple):
     """A sweep round's count, for its line: `linked` is how many rows it took to
-    `collegato`, `failed` how many it tried and left otherwise (an `errore`, a `rifiutato`,
+    `linked`, `failed` how many it tried and left otherwise (an `error`, a `rejected`,
     or a call that raised)."""
 
     linked: int
@@ -158,10 +158,10 @@ def crm_sentence(raw: bytes) -> str | None:
         return None
     reason = body.get("reason")
     if body.get("code") == "conflict" and isinstance(reason, str) and reason.strip():
-        return reason.strip()[:ERRORE_MAX_LENGTH]
+        return reason.strip()[:ERROR_MAX_LENGTH]
     detail = body.get("detail")
     if isinstance(detail, str) and detail.strip():
-        return detail.strip()[:ERRORE_MAX_LENGTH]
+        return detail.strip()[:ERROR_MAX_LENGTH]
     if isinstance(detail, list):
         fields = dict.fromkeys(
             ".".join(str(part) for part in error["loc"] if part != "body")
@@ -170,7 +170,7 @@ def crm_sentence(raw: bytes) -> str | None:
         )
         named = [CAUSE_FIELD.format(field=field) for field in fields if field]
         if named:
-            return "; ".join(named)[:ERRORE_MAX_LENGTH]
+            return "; ".join(named)[:ERROR_MAX_LENGTH]
     return None
 
 
@@ -205,35 +205,35 @@ class PigroDoor:
     ) -> Outcome[A]:
         """The one `PUT`, with no row lock held and only over HTTPS. Never raises:
         whatever happens is an outcome to write. `answer` is the model a `200`/`201` must
-        parse as; `refused` the statuses that are a `rifiutato` (the CRM's refusal of this
+        parse as; `refused` the statuses that are a `rejected` (the CRM's refusal of this
         very request, which only a person asks again); `gone` those among them that mean
         the thing was deleted on the CRM's side (checked first, and marked on the
         outcome). `subject` names the call in the log («the link of match ...»), never the
         token or an address."""
         if not speaks_https(self.api_url):
-            return Outcome(ERRORE, HTTPS_ONLY)
+            return Outcome(ERROR, HTTPS_ONLY)
         try:
             status, raw = self.http(
                 "PUT", self.url(path), self.headers(with_body=True), _json(body)
             )
         except Exception as exc:  # noqa: BLE001 - never raises: any failure is an outcome
             _log.warning("the CRM did not answer %s (%s)", subject, type(exc).__name__)
-            return Outcome(ERRORE, failure_cause(exc))
+            return Outcome(ERROR, failure_cause(exc))
         if status in _PUT_OK:
             if too_long(raw):
-                return Outcome(ERRORE, CAUSE_TOO_LONG)
+                return Outcome(ERROR, CAUSE_TOO_LONG)
             try:
-                return Outcome(COLLEGATO, answer=answer.model_validate_json(raw))
+                return Outcome(LINKED, answer=answer.model_validate_json(raw))
             except ValueError:  # pydantic's `ValidationError` is one
-                return Outcome(ERRORE, CAUSE_NOT_THE_SHAPE)
+                return Outcome(ERROR, CAUSE_NOT_THE_SHAPE)
         if status in gone:
-            return Outcome(RIFIUTATO, cause_of(raw, status), gone=True)
+            return Outcome(REJECTED, cause_of(raw, status), gone=True)
         if status in refused:
-            return Outcome(RIFIUTATO, cause_of(raw, status))
+            return Outcome(REJECTED, cause_of(raw, status))
         if status == _NOT_NOW:
             # The door's «not now» (its lock busy, the space unreachable), in its words.
-            return Outcome(ERRORE, cause_of(raw, status))
-        return Outcome(ERRORE, CAUSE_STATUS.format(status=status))
+            return Outcome(ERROR, cause_of(raw, status))
+        return Outcome(ERROR, CAUSE_STATUS.format(status=status))
 
     def get[T](self, path: str, parse: Callable[[bytes], T], *, gone: Collection[int] = ()) -> T:
         """One `GET`, parsed by `parse`, which raises a `ValueError` (Pydantic's
@@ -268,13 +268,13 @@ def write[Row, A: BaseModel](
     error: str,
     copy: Callable[[Row, A], None],
 ) -> None:
-    """The outcome on the row: `state` and `error` are the names of its two columns (`pigro_stato`
-    and `pigro_errore`, `crm_stato` and `crm_errore`); a link's answer is copied by `copy`,
+    """The outcome on the row: `state` and `error` are the names of its two columns (`pigro_status`
+    and `pigro_error`, `crm_status` and `crm_error`); a link's answer is copied by `copy`,
     which sets the row's own columns for it and leaves the error cleared. An outcome with no
     answer leaves what the row already holds of the last link and sets only the cause."""
-    setattr(row, state, outcome.stato)
+    setattr(row, state, outcome.status)
     if outcome.answer is None:
-        setattr(row, error, outcome.errore)
+        setattr(row, error, outcome.error)
         return
     copy(row, outcome.answer)
     setattr(row, error, None)
@@ -302,7 +302,7 @@ def sweep_round(
     """The recovery round: `link` on every id, each on its own, a failure logged under
     `what` («match», «request») without stopping the rest. `ids` were read with no lock;
     the transaction that read them is let go before the first call, so nothing is held
-    while the CRM answers. `link` says `True` for a row it took to `collegato`, `False`
+    while the CRM answers. `link` says `True` for a row it took to `linked`, `False`
     for one it left otherwise and `None` for one that needed nothing (counted in neither)."""
     session.rollback()
     linked = failed = 0

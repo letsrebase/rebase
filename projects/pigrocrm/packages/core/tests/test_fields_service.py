@@ -8,7 +8,7 @@ from pigrocrm.core.fields.schemas import FieldDefinitionCreate, FieldDefinitionU
 from pigrocrm.core.fields.service import FieldDefinitionService
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLAB = Actor(id=None, type="user", role="collaboratore")
+COLLAB = Actor(id=None, type="user", role="collaborator")
 
 
 def _create(service: FieldDefinitionService, key: str = "settore", **kw):
@@ -50,7 +50,7 @@ def test_the_same_key_on_a_different_entity_is_allowed(db_session: Session) -> N
 def test_select_without_options_is_rejected(db_session: Session) -> None:
     service = FieldDefinitionService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        _create(service, key="stato", field_type="select", options=[])
+        _create(service, key="status", field_type="select", options=[])
     assert exc.value.details["field"] == "options"
 
 
@@ -116,19 +116,19 @@ def test_only_admins_change_the_schema(db_session: Session) -> None:
 
 
 def test_specs_for_returns_field_specs_usable_by_the_validator(db_session: Session) -> None:
-    """`key="stato_operativo"`, not `"stato"`: `customer` already has a native
-    `stato` column (customers/schemas.py), so a custom field with that key would
+    """`key="stato_operativo"`, not `"status"`: `customer` already has a native
+    `status` column (customers/schemas.py), so a custom field with that key would
     now be refused by the A13 guard (fields/service.py) -- exactly the collision
     this test would otherwise have silently exercised without ever noticing it
     was shadowing a real column."""
     from pigrocrm.core.fields.validator import validate_custom_fields
 
     service = FieldDefinitionService(db_session)
-    _create(service, key="stato_operativo", field_type="select", options=["attivo", "sospeso"])
+    _create(service, key="stato_operativo", field_type="select", options=["active", "sospeso"])
 
     specs = service.specs_for("customer")
-    assert validate_custom_fields("customer", specs, {"stato_operativo": "attivo"}) == {
-        "stato_operativo": "attivo"
+    assert validate_custom_fields("customer", specs, {"stato_operativo": "active"}) == {
+        "stato_operativo": "active"
     }
 
 
@@ -232,7 +232,7 @@ def test_duplicate_key_race_past_the_precheck_still_becomes_a_domain_conflict(
 # --- Final review item 2 (CRITICAL): position is a bare Integer, unbounded -------
 #
 # `field_definitions.position` is `Integer`. Nothing anywhere checked its range --
-# unlike `probabilita`/`probabilita_default`, this column has no equivalent
+# unlike `probability`/`default_probability`, this column has no equivalent
 # service-level guard, so `2**40` reached `flush()` raw as
 # `psycopg.errors.NumericValueOutOfRange` before `Field(ge=..., le=...)` existed on
 # `FieldDefinitionCreate.position`/`FieldDefinitionUpdate.position`.
@@ -260,7 +260,7 @@ def test_position_far_beyond_the_bound_is_rejected_on_update() -> None:
 
 
 def test_a_negative_position_is_rejected() -> None:
-    """Unlike `pipeline_stages.posizione` (which legitimately goes negative -- see
+    """Unlike `pipeline_stages.position` (which legitimately goes negative -- see
     test_pipeline.py), nothing in this project ever creates a custom field with a
     negative display order, so `position` is bounded to `>= 0`."""
     with pytest.raises(ValidationError):

@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.passwords import hash_password, verify_password
-from pigrocrm.core.auth.schemas import NOME_MAX_LENGTH, UserCreate, UserUpdate
+from pigrocrm.core.auth.schemas import NAME_MAX_LENGTH, UserCreate, UserUpdate
 from pigrocrm.core.auth.service import LastActiveAdmin, SelfAccountChange, UserService
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLAB = Actor(id=None, type="user", role="collaboratore")
+COLLAB = Actor(id=None, type="user", role="collaborator")
 
 
 def test_password_hash_is_argon2_and_never_the_plaintext() -> None:
@@ -37,24 +37,24 @@ def test_create_user_stores_a_hash_and_normalises_the_email(db_session: Session)
     service = UserService(db_session)
     user = service.create(
         UserCreate(
-            email="  Mario@Example.IT ", password="supersegreta1", nome="Mario", ruolo="admin"
+            email="  Mario@Example.IT ", password="supersegreta1", nome="Mario", role="admin"
         ),
         ADMIN,
     )
     assert user.email == "mario@example.it"
-    assert user.ruolo == "admin"
-    assert user.attivo is True
+    assert user.role == "admin"
+    assert user.active is True
     assert not hasattr(user, "password_hash"), "UserRead must never expose the hash"
 
 
 def test_duplicate_email_is_a_conflict(db_session: Session) -> None:
     service = UserService(db_session)
     service.create(
-        UserCreate(email="a@b.it", password="supersegreta1", nome="A", ruolo="admin"), ADMIN
+        UserCreate(email="a@b.it", password="supersegreta1", nome="A", role="admin"), ADMIN
     )
     with pytest.raises(Conflict) as exc:
         service.create(
-            UserCreate(email="A@B.it", password="supersegreta1", nome="A2", ruolo="admin"), ADMIN
+            UserCreate(email="A@B.it", password="supersegreta1", nome="A2", role="admin"), ADMIN
         )
     assert exc.value.details["entity"] == "user"
 
@@ -62,7 +62,7 @@ def test_duplicate_email_is_a_conflict(db_session: Session) -> None:
 def test_short_password_is_rejected(db_session: Session) -> None:
     service = UserService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        service.create(UserCreate(email="c@d.it", password="corta", nome="C", ruolo="admin"), ADMIN)
+        service.create(UserCreate(email="c@d.it", password="corta", nome="C", role="admin"), ADMIN)
     assert exc.value.details["field"] == "password"
 
 
@@ -70,7 +70,7 @@ def test_only_admins_manage_users(db_session: Session) -> None:
     service = UserService(db_session)
     with pytest.raises(PermissionDenied) as exc:
         service.create(
-            UserCreate(email="e@f.it", password="supersegreta1", nome="E", ruolo="readonly"), COLLAB
+            UserCreate(email="e@f.it", password="supersegreta1", nome="E", role="readonly"), COLLAB
         )
     assert exc.value.details["required_roles"] == ["admin"]
 
@@ -78,7 +78,7 @@ def test_only_admins_manage_users(db_session: Session) -> None:
 def test_authenticate_accepts_correct_credentials(db_session: Session) -> None:
     service = UserService(db_session)
     service.create(
-        UserCreate(email="g@h.it", password="supersegreta1", nome="G", ruolo="admin"), ADMIN
+        UserCreate(email="g@h.it", password="supersegreta1", nome="G", role="admin"), ADMIN
     )
     assert service.authenticate("G@H.it", "supersegreta1").email == "g@h.it"
 
@@ -89,7 +89,7 @@ def test_authenticate_records_last_login_at(db_session: Session) -> None:
     leave it untouched."""
     service = UserService(db_session)
     created = service.create(
-        UserCreate(email="k@h.it", password="supersegreta1", nome="K", ruolo="admin"), ADMIN
+        UserCreate(email="k@h.it", password="supersegreta1", nome="K", role="admin"), ADMIN
     )
     assert created.last_login_at is None
     before = datetime.now(UTC)
@@ -115,7 +115,7 @@ def test_authenticate_rejects_bad_credentials_without_saying_which(
     """Distinguishing 'unknown user' from 'wrong password' leaks which emails exist."""
     service = UserService(db_session)
     service.create(
-        UserCreate(email="g@h.it", password="supersegreta1", nome="G", ruolo="admin"), ADMIN
+        UserCreate(email="g@h.it", password="supersegreta1", nome="G", role="admin"), ADMIN
     )
     with pytest.raises(ValidationFailed) as exc:
         service.authenticate(email, password)
@@ -128,13 +128,13 @@ def test_deactivated_user_cannot_authenticate(db_session: Session) -> None:
     # one, and this test is about authentication, not about the guard (its own tests
     # are at the bottom of this file).
     service.create(
-        UserCreate(email="altro@j.it", password="supersegreta1", nome="Altro", ruolo="admin"),
+        UserCreate(email="altro@j.it", password="supersegreta1", nome="Altro", role="admin"),
         ADMIN,
     )
     user = service.create(
-        UserCreate(email="i@j.it", password="supersegreta1", nome="I", ruolo="admin"), ADMIN
+        UserCreate(email="i@j.it", password="supersegreta1", nome="I", role="admin"), ADMIN
     )
-    service.update(user.id, UserUpdate(attivo=False), ADMIN)
+    service.update(user.id, UserUpdate(active=False), ADMIN)
     with pytest.raises(ValidationFailed) as exc:
         service.authenticate("i@j.it", "supersegreta1")
     assert exc.value.details["reason"] == "credenziali non valide", (
@@ -203,7 +203,7 @@ def test_authenticate_timing_does_not_reveal_whether_the_email_exists(
     flake on a slower or faster machine than whatever ran it last."""
     service = UserService(db_session)
     service.create(
-        UserCreate(email="timing@race.it", password="supersegreta1", nome="T", ruolo="admin"),
+        UserCreate(email="timing@race.it", password="supersegreta1", nome="T", role="admin"),
         ADMIN,
     )
 
@@ -253,7 +253,7 @@ def test_duplicate_email_race_past_the_precheck_still_becomes_a_domain_conflict(
     usable for whatever the caller does next."""
     service = UserService(db_session)
     service.create(
-        UserCreate(email="race@conflict.it", password="supersegreta1", nome="R1", ruolo="admin"),
+        UserCreate(email="race@conflict.it", password="supersegreta1", nome="R1", role="admin"),
         ADMIN,
     )
 
@@ -261,9 +261,7 @@ def test_duplicate_email_race_past_the_precheck_still_becomes_a_domain_conflict(
 
     with pytest.raises(Conflict) as exc:
         service.create(
-            UserCreate(
-                email="race@conflict.it", password="supersegreta1", nome="R2", ruolo="admin"
-            ),
+            UserCreate(email="race@conflict.it", password="supersegreta1", nome="R2", role="admin"),
             ADMIN,
         )
     assert exc.value.details["entity"] == "user"
@@ -285,8 +283,8 @@ def test_case_insensitive_email_uniqueness_is_enforced_by_the_database(
             email="CaseTest@Example.com",
             password_hash=hash_password("supersegreta1"),
             nome="Case1",
-            ruolo="admin",
-            attivo=True,
+            role="admin",
+            active=True,
         )
     )
     db_session.commit()
@@ -296,8 +294,8 @@ def test_case_insensitive_email_uniqueness_is_enforced_by_the_database(
             email="casetest@example.com",
             password_hash=hash_password("supersegreta1"),
             nome="Case2",
-            ruolo="admin",
-            attivo=True,
+            role="admin",
+            active=True,
         )
     )
     with pytest.raises(IntegrityError):
@@ -329,7 +327,7 @@ def test_users_email_has_a_case_insensitive_unique_index_in_postgres(
 
 # --- Final review item 4 (CRITICAL): UserCreate/UserUpdate.nome had no max_length -
 #
-# `users.nome` is `String(200)` (auth/models.py). Every other domain's Create/Update
+# `users.name` is `String(200)` (auth/models.py). Every other domain's Create/Update
 # schema mirrors its own String columns' widths; `UserCreate`/`UserUpdate` predate
 # that sweep and were missed until the final review. Without this bound, an
 # over-length value sails past Pydantic, reaches flush(), and comes back as a raw
@@ -340,17 +338,17 @@ def test_users_email_has_a_case_insensitive_unique_index_in_postgres(
 
 def test_nome_over_the_column_width_is_rejected_on_create() -> None:
     with pytest.raises(ValidationError):
-        UserCreate(email="x@example.it", password="supersegreta1", nome="x" * (NOME_MAX_LENGTH + 1))
+        UserCreate(email="x@example.it", password="supersegreta1", nome="x" * (NAME_MAX_LENGTH + 1))
 
 
 def test_nome_over_the_column_width_is_rejected_on_update() -> None:
     with pytest.raises(ValidationError):
-        UserUpdate(nome="x" * (NOME_MAX_LENGTH + 1))
+        UserUpdate(nome="x" * (NAME_MAX_LENGTH + 1))
 
 
 def test_nome_at_the_column_width_is_accepted_on_create() -> None:
-    user = UserCreate(email="x@example.it", password="supersegreta1", nome="x" * NOME_MAX_LENGTH)
-    assert len(user.nome) == NOME_MAX_LENGTH
+    user = UserCreate(email="x@example.it", password="supersegreta1", nome="x" * NAME_MAX_LENGTH)
+    assert len(user.nome) == NAME_MAX_LENGTH
 
 
 def test_a_nul_byte_in_nome_is_rejected_not_stored(db_session: Session) -> None:
@@ -368,7 +366,7 @@ def test_reset_password_replaces_the_hash_and_records_only_that_it_happened(
     service = UserService(db_session)
     admin = Actor.system()
     user = service.create(
-        UserCreate(email="reset@studio.it", password="vecchia-password-1", nome="R", ruolo="admin"),
+        UserCreate(email="reset@studio.it", password="vecchia-password-1", nome="R", role="admin"),
         admin,
     )
     service.reset_password("Reset@Studio.it", "nuova-password-2026", admin)
@@ -395,7 +393,7 @@ def test_reset_password_refuses_a_short_password_and_an_unknown_email(db_session
     with pytest.raises(NotFound):
         service.reset_password("nessuno@studio.it", "lunghissima-1", Actor.system())
     service.create(
-        UserCreate(email="corta@studio.it", password="vecchia-password-1", nome="C", ruolo="admin"),
+        UserCreate(email="corta@studio.it", password="vecchia-password-1", nome="C", role="admin"),
         Actor.system(),
     )
     with pytest.raises(ValidationFailed):
@@ -409,7 +407,7 @@ def test_a_user_without_a_password_cannot_log_in_with_one(db_session: Session) -
 
     service = UserService(db_session)
     created = service.create(
-        UserCreate(email="link@x.it", password="lunghissima1", nome="Link", ruolo="admin"),
+        UserCreate(email="link@x.it", password="lunghissima1", nome="Link", role="admin"),
         Actor.system(),
     )
     row = UserRepository(db_session).get(created.id)
@@ -428,7 +426,7 @@ def test_only_the_system_may_create_a_user_without_a_password(db_session: Sessio
 
     service = UserService(db_session)
     admin = service.create(
-        UserCreate(email="capo@x.it", password="lunghissima1", nome="Capo", ruolo="admin"),
+        UserCreate(email="capo@x.it", password="lunghissima1", nome="Capo", role="admin"),
         Actor.system(),
     )
     human = Actor(id=admin.id, type="user", role="admin")
@@ -452,7 +450,7 @@ def test_an_unverified_passwordless_admin_cannot_create_users_until_the_first_li
 
     service = UserService(db_session)
     admin = service.create(
-        UserCreate(email="link@x.it", password=None, nome="Link", ruolo="admin"), Actor.system()
+        UserCreate(email="link@x.it", password=None, nome="Link", role="admin"), Actor.system()
     )
     actor = Actor(id=admin.id, type="user", role="admin")
     with pytest.raises(ValidationFailed) as excinfo:
@@ -460,7 +458,7 @@ def test_an_unverified_passwordless_admin_cannot_create_users_until_the_first_li
     assert "conferma il tuo indirizzo" in str(excinfo.value)
     row = UserRepository(db_session).get(admin.id)
     assert row is not None
-    row.email_verificata_il = datetime.now(UTC)
+    row.email_verified_at = datetime.now(UTC)
     db_session.flush()
     assert (
         service.create(UserCreate(email="c@x.it", password="lunghissima1", nome="C"), actor).email
@@ -478,17 +476,17 @@ def test_update_own_digest_needs_no_admin(db_session: Session) -> None:
     service = UserService(db_session)
     collab = service.create(
         UserCreate(
-            email="collab@x.it", password="lunghissima1", nome="Collab", ruolo="collaboratore"
+            email="collab@x.it", password="lunghissima1", nome="Collab", role="collaborator"
         ),
         Actor.system(),
     )
-    actor = Actor(id=collab.id, type="user", role="collaboratore")
+    actor = Actor(id=collab.id, type="user", role="collaborator")
 
     updated = service.update_own_digest(actor, False)
 
-    assert updated.digest_settimanale is False
+    assert updated.weekly_digest is False
     row = UserRepository(db_session).get(collab.id)
-    assert row is not None and row.digest_settimanale is False
+    assert row is not None and row.weekly_digest is False
 
 
 def test_setting_the_digest_to_what_it_already_is_records_nothing(db_session: Session) -> None:
@@ -506,20 +504,20 @@ def test_setting_the_digest_to_what_it_already_is_records_nothing(db_session: Se
     attivita = ActivityRepository(db_session)
 
     service.update_own_digest(actor, False)
-    dopo_il_cambio = len(attivita.timeline("user", user.id, limit=50))
+    after_the_cambio = len(attivita.timeline("user", user.id, limit=50))
 
-    assert service.update_own_digest(actor, False).digest_settimanale is False
+    assert service.update_own_digest(actor, False).weekly_digest is False
 
-    assert len(attivita.timeline("user", user.id, limit=50)) == dopo_il_cambio
+    assert len(attivita.timeline("user", user.id, limit=50)) == after_the_cambio
     # The one that did change something is still on the timeline, with the new value.
-    ultima = attivita.timeline("user", user.id, limit=50)[0]
-    assert ultima.kind == "updated"
-    assert ultima.payload == {"digest_settimanale": False}
+    last = attivita.timeline("user", user.id, limit=50)[0]
+    assert last.kind == "updated"
+    assert last.payload == {"weekly_digest": False}
 
 
 def _admin_actor(service: UserService, db_session: Session, email: str, nome: str):
     admin = service.create(
-        UserCreate(email=email, password="lunghissima1", nome=nome, ruolo="admin"),
+        UserCreate(email=email, password="lunghissima1", nome=nome, role="admin"),
         Actor.system(),
     )
     return Actor(id=admin.id, type="user", role="admin"), admin
@@ -533,9 +531,9 @@ def test_the_last_admin_cannot_demote_themselves(db_session: Session) -> None:
     actor, solo = _admin_actor(service, db_session, "solo@x.it", "Solo")
 
     with pytest.raises(LastActiveAdmin) as excinfo:
-        service.update(solo.id, UserUpdate(ruolo="readonly"), actor)
+        service.update(solo.id, UserUpdate(role="readonly"), actor)
 
-    assert excinfo.value.details["field"] == "ruolo"
+    assert excinfo.value.details["field"] == "role"
     assert "almeno un amministratore attivo" in str(excinfo.value)
 
 
@@ -544,7 +542,7 @@ def test_the_last_admin_cannot_deactivate_themselves(db_session: Session) -> Non
     actor, solo = _admin_actor(service, db_session, "solo2@x.it", "Solo")
 
     with pytest.raises(LastActiveAdmin):
-        service.update(solo.id, UserUpdate(attivo=False), actor)
+        service.update(solo.id, UserUpdate(active=False), actor)
 
 
 def test_an_admin_can_demote_the_other_admin_while_two_exist(db_session: Session) -> None:
@@ -553,28 +551,28 @@ def test_an_admin_can_demote_the_other_admin_while_two_exist(db_session: Session
     pinned next to its mirror in `test_the_self_change_rule...`."""
     service = UserService(db_session)
     carla = service.create(
-        UserCreate(email="carla@x.it", password="lunghissima1", nome="Carla", ruolo="admin"),
+        UserCreate(email="carla@x.it", password="lunghissima1", nome="Carla", role="admin"),
         Actor.system(),
     )
     actor, _ = _admin_actor(service, db_session, "giulia@x.it", "Giulia")
 
-    demoted = service.update(carla.id, UserUpdate(ruolo="readonly"), actor)
+    demoted = service.update(carla.id, UserUpdate(role="readonly"), actor)
 
-    assert demoted.ruolo == "readonly"
+    assert demoted.role == "readonly"
 
 
 def test_an_admin_cannot_demote_themselves_while_two_exist(db_session: Session) -> None:
     service = UserService(db_session)
     # Two admins: the count rule passes, and the self-change rule is what refuses.
     service.create(
-        UserCreate(email="prima@x.it", password="lunghissima1", nome="Prima", ruolo="admin"),
+        UserCreate(email="prima@x.it", password="lunghissima1", nome="Prima", role="admin"),
         Actor.system(),
     )
     actor, second = _admin_actor(service, db_session, "seconda@x.it", "Seconda")
     with pytest.raises(SelfAccountChange) as excinfo:
-        service.update(second.id, UserUpdate(ruolo="collaboratore"), actor)
+        service.update(second.id, UserUpdate(role="collaborator"), actor)
 
-    assert excinfo.value.details["field"] == "ruolo"
+    assert excinfo.value.details["field"] == "role"
     assert "un altro amministratore" in str(excinfo.value)
 
 
@@ -599,29 +597,29 @@ def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
     actor, solo = _admin_actor(service, db_session, "pulito@x.it", "Pulito")
 
     with pytest.raises(LastActiveAdmin):
-        service.update(solo.id, UserUpdate(ruolo="readonly", attivo=False), actor)
+        service.update(solo.id, UserUpdate(role="readonly", active=False), actor)
     db_session.commit()
 
     row = UserRepository(db_session).get(solo.id)
-    assert row is not None and row.ruolo == "admin" and row.attivo is True
+    assert row is not None and row.role == "admin" and row.active is True
 
 
 # --- the member's scope (REB-633, spec 2026-10-03 §1.11) -----------------------------
 
 
-def _azienda(session: Session, nome: str) -> UUID:
-    from pigrocrm.core.emitter.models import LegalEntity
+def _legal_entity(session: Session, nome: str) -> UUID:
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
-    row = LegalEntity(nome=nome, ragione_sociale=nome.title(), nazione="GB")
+    row = LegalEntity(nome=nome, legal_name=nome.title(), country="GB")
     session.add(row)
     session.flush()
     return row.id
 
 
-def _member(session: Session, email: str, ruolo: str = "collaboratore") -> UUID:
+def _member(session: Session, email: str, role: str = "collaborator") -> UUID:
     return (
         UserService(session)
-        .create(UserCreate(email=email, password="supersegreta1", nome="M", ruolo=ruolo), ADMIN)  # type: ignore[arg-type]
+        .create(UserCreate(email=email, password="supersegreta1", nome="M", role=role), ADMIN)  # type: ignore[arg-type]
         .id
     )
 
@@ -629,17 +627,17 @@ def _member(session: Session, email: str, ruolo: str = "collaboratore") -> UUID:
 def test_create_writes_the_scope_with_the_row_and_refuses_an_empty_one(db_session: Session) -> None:
     from pigrocrm.core.activities.models import Activity
 
-    ltd = _azienda(db_session, "rebase ltd")
+    ltd = _legal_entity(db_session, "rebase ltd")
     created = UserService(db_session).create(
         UserCreate(
-            email="s@x.it", password="supersegreta1", nome="S", ruolo="admin", aziende=[ltd]
+            email="s@x.it", password="supersegreta1", nome="S", role="admin", legal_entities=[ltd]
         ),
         ADMIN,
     )
-    assert created.aziende == [ltd]
+    assert created.legal_entities == [ltd]
     row = db_session.get(User, created.id)
-    assert row is not None and row.ambito_limitato is True
-    assert [s.azienda_id for s in row.scopes] == [ltd]
+    assert row is not None and row.limited_scope is True
+    assert [s.legal_entity_id for s in row.scopes] == [ltd]
     entry = (
         db_session.execute(
             select(Activity).where(Activity.entity_type == "user", Activity.entity_id == created.id)
@@ -647,34 +645,34 @@ def test_create_writes_the_scope_with_the_row_and_refuses_an_empty_one(db_sessio
         .scalars()
         .all()[0]
     )
-    assert entry.payload["aziende"] == [str(ltd)]
+    assert entry.payload["legal_entities"] == [str(ltd)]
     with pytest.raises(ValidationFailed) as refused:
         UserService(db_session).create(
-            UserCreate(email="t@x.it", password="supersegreta1", nome="T", aziende=[]), ADMIN
+            UserCreate(email="t@x.it", password="supersegreta1", nome="T", legal_entities=[]), ADMIN
         )
-    assert refused.value.details["field"] == "aziende"
+    assert refused.value.details["field"] == "legal_entities"
 
 
 def test_update_scopes_a_member_and_null_clears_the_scope(db_session: Session) -> None:
-    ltd = _azienda(db_session, "rebase ltd")
+    ltd = _legal_entity(db_session, "rebase ltd")
     member = _member(db_session, "m@x.it")
     service = UserService(db_session)
-    scoped = service.update(member, UserUpdate(aziende=[ltd]), ADMIN)
-    assert scoped.aziende == [ltd]
+    scoped = service.update(member, UserUpdate(legal_entities=[ltd]), ADMIN)
+    assert scoped.legal_entities == [ltd]
     # Left out: left alone.
-    assert service.update(member, UserUpdate(nome="Mara"), ADMIN).aziende == [ltd]
+    assert service.update(member, UserUpdate(nome="Mara"), ADMIN).legal_entities == [ltd]
     # Explicit null: the whole space again.
-    assert service.update(member, UserUpdate(aziende=None), ADMIN).aziende is None
+    assert service.update(member, UserUpdate(legal_entities=None), ADMIN).legal_entities is None
     row = db_session.get(User, member)
-    assert row is not None and row.ambito_limitato is False and row.scopes == []
+    assert row is not None and row.limited_scope is False and row.scopes == []
 
 
 def test_the_scope_change_is_on_the_timeline(db_session: Session) -> None:
     from pigrocrm.core.activities.models import Activity
 
-    ltd = _azienda(db_session, "rebase ltd")
+    ltd = _legal_entity(db_session, "rebase ltd")
     member = _member(db_session, "m@x.it")
-    UserService(db_session).update(member, UserUpdate(aziende=[ltd]), ADMIN)
+    UserService(db_session).update(member, UserUpdate(legal_entities=[ltd]), ADMIN)
     rows = (
         db_session.execute(
             select(Activity).where(Activity.entity_type == "user", Activity.entity_id == member)
@@ -683,29 +681,31 @@ def test_the_scope_change_is_on_the_timeline(db_session: Session) -> None:
         .all()
     )
     last = rows[-1]
-    assert "aziende" in last.payload["changed"] and "ambito_limitato" in last.payload["changed"]
-    assert last.payload["aziende"] == [str(ltd)]
+    assert (
+        "legal_entities" in last.payload["changed"] and "limited_scope" in last.payload["changed"]
+    )
+    assert last.payload["legal_entities"] == [str(ltd)]
 
 
 def test_the_space_keeps_one_active_admin_who_sees_everything(db_session: Session) -> None:
     from pigrocrm.core.auth.service import LastUnscopedAdmin
 
-    ltd = _azienda(db_session, "rebase ltd")
+    ltd = _legal_entity(db_session, "rebase ltd")
     only = _member(db_session, "a@x.it", "admin")
     second = _member(db_session, "b@x.it", "admin")
     service = UserService(db_session)
     # Two unscoped admins: either may be scoped.
-    assert service.update(second, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+    assert service.update(second, UserUpdate(legal_entities=[ltd]), ADMIN).legal_entities == [ltd]
     # Now `only` is the last one who sees the whole space: scoping them is refused,
     # and so is demoting them, with the field that caused it named.
     with pytest.raises(LastUnscopedAdmin) as refused:
-        service.update(only, UserUpdate(aziende=[ltd]), ADMIN)
-    assert refused.value.details["field"] == "aziende"
+        service.update(only, UserUpdate(legal_entities=[ltd]), ADMIN)
+    assert refused.value.details["field"] == "legal_entities"
     with pytest.raises(LastUnscopedAdmin):
-        service.update(only, UserUpdate(ruolo="collaboratore"), ADMIN)
+        service.update(only, UserUpdate(role="collaborator"), ADMIN)
     # Widening the second back makes room again.
-    service.update(second, UserUpdate(aziende=None), ADMIN)
-    assert service.update(only, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+    service.update(second, UserUpdate(legal_entities=None), ADMIN)
+    assert service.update(only, UserUpdate(legal_entities=[ltd]), ADMIN).legal_entities == [ltd]
 
 
 def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
@@ -722,7 +722,7 @@ def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
     prefix = f"race-{uuid4().hex[:8]}"
     factory = session_factory(db_engine)
     with factory() as session:
-        ltd = _azienda(session, f"{prefix} ltd")
+        ltd = _legal_entity(session, f"{prefix} ltd")
         first = _member(session, f"{prefix}-a@x.it", "admin")
         second = _member(session, f"{prefix}-b@x.it", "admin")
         session.commit()
@@ -733,7 +733,7 @@ def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
         with factory() as session:
             ready.wait()
             try:
-                UserService(session).update(user_id, UserUpdate(aziende=[ltd]), ADMIN)
+                UserService(session).update(user_id, UserUpdate(legal_entities=[ltd]), ADMIN)
                 outcomes[user_id] = "scoped"
             except LastUnscopedAdmin:
                 outcomes[user_id] = "refused"
@@ -748,14 +748,14 @@ def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
         with factory() as session:
             left = session.execute(
                 select(func.count(User.id)).where(
-                    User.id.in_([first, second]), User.ambito_limitato.is_(False)
+                    User.id.in_([first, second]), User.limited_scope.is_(False)
                 )
             ).scalar_one()
             assert left == 1
     finally:
         with factory() as session:
             from pigrocrm.core.activities.models import Activity
-            from pigrocrm.core.emitter.models import LegalEntity
+            from pigrocrm.core.legal_entities.models import LegalEntity
 
             session.execute(delete(Activity).where(Activity.entity_id.in_([first, second])))
             session.execute(delete(User).where(User.id.in_([first, second])))
@@ -766,9 +766,9 @@ def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
 def test_a_scoped_admin_cannot_manage_the_team(db_session: Session) -> None:
     from pigrocrm.core.errors import ScopedAdmin
 
-    ltd = _azienda(db_session, "rebase ltd")
-    scoped = Actor(id=None, type="user", role="admin", aziende=(ltd,))
+    ltd = _legal_entity(db_session, "rebase ltd")
+    scoped = Actor(id=None, type="user", role="admin", legal_entities=(ltd,))
     with pytest.raises(ScopedAdmin):
         UserService(db_session).create(
-            UserCreate(email="e@f.it", password="supersegreta1", nome="E", ruolo="readonly"), scoped
+            UserCreate(email="e@f.it", password="supersegreta1", nome="E", role="readonly"), scoped
         )

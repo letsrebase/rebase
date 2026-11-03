@@ -75,7 +75,7 @@ def test_labels_are_the_bounds_in_euro() -> None:
     assert Band(min=800, max=None).bounds() == "oltre 800"
     assert Band(min=800, max=None).label() == f"oltre 800{NBSP}€ al giorno"
     # A team's band per month runs into thousands, written the Italian way.
-    assert Band(min=17600, max=23100).label("mese") == f"17.600–23.100{NBSP}€ al mese"
+    assert Band(min=17600, max=23100).label("month") == f"17.600–23.100{NBSP}€ al mese"
     assert " €" not in Band(min=400, max=500).label()  # never a breaking space
 
 
@@ -84,7 +84,7 @@ def test_the_lowest_band_says_only_its_top() -> None:
     assert Band(min=0, max=300).label() == f"fino a 300{NBSP}€ al giorno"
     day, month = team_bands([Band(min=0, max=300)])
     assert day is not None and month is not None
-    assert month.label("mese") == f"fino a 6.600{NBSP}€ al mese"
+    assert month.label("month") == f"fino a 6.600{NBSP}€ al mese"
 
 
 def test_team_bands_are_the_sum_per_day_and_per_month_at_22_days() -> None:

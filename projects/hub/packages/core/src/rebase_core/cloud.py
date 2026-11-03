@@ -117,7 +117,7 @@ class TalentCloudService:
         mail = talent_cloud_opened_mail(
             user.email,
             nome=user.nome,
-            azienda=company.nome_azienda,
+            company=company.company_name,
             url=f"{settings.hub_url.rstrip('/')}/me/cloud",
         )
         return self._reads([row])[0], mail
@@ -243,14 +243,14 @@ class TalentCloudService:
                     id=row.id,
                     user_id=row.user_id,
                     company_id=row.company_id,
-                    azienda=company.nome_azienda,
-                    referente=f"{user.nome} {user.cognome}".strip(),
+                    company=company.company_name,
+                    contact_person=f"{user.nome} {user.last_name}".strip(),
                     email=user.email,
                     granted_by=row.granted_by,
-                    granted_by_nome=granted_by.nome if granted_by is not None else None,
+                    granted_by_name=granted_by.nome if granted_by is not None else None,
                     granted_at=row.granted_at,
                     revoked_by=row.revoked_by,
-                    revoked_by_nome=revoked_by.nome if revoked_by is not None else None,
+                    revoked_by_name=revoked_by.nome if revoked_by is not None else None,
                     revoked_at=row.revoked_at,
                 )
             )
@@ -297,9 +297,9 @@ class CloudCaller:
 
     user_id: UUID
     email: str
-    telefono: str | None
+    phone: str | None
     company_id: UUID
-    azienda: str
+    company: str
     granted_at: datetime
 
 
@@ -322,17 +322,17 @@ def cloud_card(session: Session, freelancer_id: UUID) -> Card:
 
 def _band_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
     """The band filter as conditions on the client's price per day (the rate plus 40%),
-    so the database decides it: a band's bottom is at or above `fascia_min` when the
+    so the database decides it: a band's bottom is at or above `min_band` when the
     price reaches the first band bound at or above it, and its top is at or below
-    `fascia_max` when the price stays under the last bound at or below it; no such bound,
+    `max_band` when the price stays under the last bound at or below it; no such bound,
     no band. A talent with no rate has no price, and no band filter finds them."""
-    price = Freelancer.tariffa_giornaliera * CLIENT_MARKUP
+    price = Freelancer.daily_rate * CLIENT_MARKUP
     clauses: list[ColumnElement[bool]] = []
-    if query.fascia_min is not None:
-        floors = [low for low, _ in BANDS if low >= query.fascia_min]
+    if query.min_band is not None:
+        floors = [low for low, _ in BANDS if low >= query.min_band]
         clauses.append(price >= min(floors) if floors else false())
-    if query.fascia_max is not None:
-        tops = [high for _, high in BANDS if high is not None and high <= query.fascia_max]
+    if query.max_band is not None:
+        tops = [high for _, high in BANDS if high is not None and high <= query.max_band]
         clauses.append(price < max(tops) if tops else false())
     return clauses
 
@@ -342,8 +342,8 @@ def _filter_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
     among the words the hub knows (`ValidationFailed` otherwise), the skill inside any of
     the card's skills whatever the case, `%` and `_` taken for themselves, and the band."""
     clauses: list[ColumnElement[bool]] = []
-    if query.ruolo:
-        clauses.append(FreelancerCard.card["ruolo"].astext == query.ruolo)
+    if query.role:
+        clauses.append(FreelancerCard.card["role"].astext == query.role)
     if query.seniority:
         if query.seniority not in CARD_SENIORITIES:
             raise ValidationFailed(
@@ -354,14 +354,12 @@ def _filter_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
             func.coalesce(Freelancer.seniority_admin, FreelancerCard.card["seniority"].astext)
             == query.seniority
         )
-    if query.modalita:
-        if query.modalita not in REMOTE_OPTIONS:
-            raise ValidationFailed(
-                TALENT_ENTITY, "modalita", f"uno fra {', '.join(REMOTE_OPTIONS)}"
-            )
-        clauses.append(Freelancer.remoto == query.modalita)
-    if query.competenza:
-        clauses.append(any_element_matches(FreelancerCard.card["competenze"], query.competenza))
+    if query.mode:
+        if query.mode not in REMOTE_OPTIONS:
+            raise ValidationFailed(TALENT_ENTITY, "mode", f"uno fra {', '.join(REMOTE_OPTIONS)}")
+        clauses.append(Freelancer.remote == query.mode)
+    if query.skill:
+        clauses.append(any_element_matches(FreelancerCard.card["skills"], query.skill))
     clauses.extend(_band_clauses(query))
     return clauses
 
@@ -370,8 +368,8 @@ def _cloud_roles(session: Session) -> list[str]:
     """Each role of the cloud's cards once, sorted as a person reads them."""
     # `astext` of a JSON path is untyped, and a select of it is a select of unknown shape
     # whose `scalars()` SQLAlchemy 2.1 cannot type: the annotation says what the path
-    # answers, `None` included, for a card with no `ruolo`.
-    ruolo: ColumnElement[str | None] = FreelancerCard.card["ruolo"].astext
+    # answers, `None` included, for a card with no `role`.
+    ruolo: ColumnElement[str | None] = FreelancerCard.card["role"].astext
     roles = session.scalars(cloud_visible(select(ruolo).select_from(Freelancer)).distinct()).all()
     return sorted({role for role in roles if role}, key=str.casefold)
 
@@ -395,9 +393,9 @@ class CloudTalentService:
         return CloudCaller(
             user_id=user.id,
             email=user.email,
-            telefono=user.telefono,
+            phone=user.phone,
             company_id=company.id,
-            azienda=company.nome_azienda,
+            company=company.company_name,
             granted_at=grant.granted_at,
         )
 
@@ -412,8 +410,8 @@ class CloudTalentService:
             select(
                 Freelancer.id,
                 Freelancer.links,
-                Freelancer.remoto,
-                Freelancer.tariffa_giornaliera,
+                Freelancer.remote,
+                Freelancer.daily_rate,
                 Freelancer.vetted_at,
                 and_(
                     Freelancer.cv_bytes.is_not(None),
@@ -421,17 +419,17 @@ class CloudTalentService:
                     Freelancer.cv_mime.is_not(None),
                 ).label("ha_cv"),
                 User.nome,
-                User.cognome,
+                User.last_name,
                 User.linkedin_url,
                 FreelancerCard.card,
                 Freelancer.seniority_admin,
-                Freelancer.anni_admin,
+                Freelancer.experience_years_admin,
             ).join(User, User.id == Freelancer.user_id)
         ).where(*_filter_clauses(query))
         rows = self.session.execute(
             stmt.order_by(
                 Freelancer.vetted_at.is_(None),
-                func.lower(User.cognome),
+                func.lower(User.last_name),
                 func.lower(User.nome),
                 Freelancer.id,
             ).limit(CLOUD_LIST_CAP + CLOUD_LIST_SLACK)
@@ -441,7 +439,7 @@ class CloudTalentService:
             if len(items) > CLOUD_LIST_CAP:
                 break
             try:
-                card = card_read(row.card, row.seniority_admin, row.anni_admin)
+                card = card_read(row.card, row.seniority_admin, row.experience_years_admin)
             except ValidationError:
                 logger.warning("cloud: the card of freelancer %s is not a card", row.id)
                 continue
@@ -449,19 +447,19 @@ class CloudTalentService:
                 CloudTalentRead(
                     freelancer_id=row.id,
                     nome=row.nome,
-                    cognome=row.cognome,
+                    last_name=row.last_name,
                     linkedin_url=row.linkedin_url,
                     links=list(row.links or []),
                     vetted=row.vetted_at is not None,
-                    card=card.model_copy(update={"luogo": None}),
-                    modalita=row.remoto,
-                    fascia=band_for(row.tariffa_giornaliera),
+                    card=card.model_copy(update={"location": None}),
+                    mode=row.remote,
+                    band=band_for(row.daily_rate),
                     ha_cv=bool(row.ha_cv),
                 )
             )
         return CloudTalentList(
             items=items[:CLOUD_LIST_CAP],
-            ruoli=_cloud_roles(self.session),
+            roles=_cloud_roles(self.session),
             capped=len(items) > CLOUD_LIST_CAP,
         )
 

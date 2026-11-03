@@ -27,7 +27,7 @@ _GENERIC_WORDS = frozenset(
         "agency",
         "agenzia",
         "associati",
-        "azienda",
+        "company",
         "company",
         "consulenza",
         "consulting",
@@ -71,8 +71,8 @@ _GENERIC_WORDS = frozenset(
 )
 
 
-def names_the_company(riassunto: str, azienda: str) -> bool:
-    """First, `azienda` as one phrase (legal-form tokens dropped, the rest rejoined)
+def names_the_company(summary: str, company: str) -> bool:
+    """First, `company` as one phrase (legal-form tokens dropped, the rest rejoined)
     matched inside the summary case-insensitively, as a whole word on both ends,
     whatever its length, when one of its tokens is written all in capitals: an
     initialism such as «HP», «3M» or «IBM» is too short for the word rule below and
@@ -83,23 +83,23 @@ def names_the_company(riassunto: str, azienda: str) -> bool:
     which one, and rarely repeated in a summary. A name typed in ordinary case, such as
     «Di Più», is left to the word rule below, so everyday Italian is not mistaken for it.
 
-    Below that, any word of four letters or more of `azienda` that is neither a legal
+    Below that, any word of four letters or more of `company` that is neither a legal
     form nor a generic word of a company's kind, case-insensitively, inside the summary
     as a whole word: «Acme S.r.l.» is named by «ACME rifà il gestionale», «Data Srl» is
     not by «un database», «Acme Srls» is not by «una srls di Torino», and «Logistica
     Veneta S.r.l.» is not by «un'azienda di logistica»."""
     kept = [
         token
-        for token in azienda.split()
+        for token in company.split()
         if token.replace(".", "").strip(",;:").casefold() not in _LEGAL_FORMS
     ]
     if any(token.replace(".", "").strip(",;:").isupper() for token in kept):
         phrase = " ".join(kept)
         if phrase and re.search(
-            rf"(?<![^\W_]){re.escape(phrase)}(?![^\W_])", riassunto, re.IGNORECASE
+            rf"(?<![^\W_]){re.escape(phrase)}(?![^\W_])", summary, re.IGNORECASE
         ):
             return True
-    for token in azienda.split():
+    for token in company.split():
         if token.replace(".", "").strip(",;:").casefold() in _LEGAL_FORMS:
             continue
         for word in _WORD.findall(token):
@@ -107,6 +107,6 @@ def names_the_company(riassunto: str, azienda: str) -> bool:
                 continue
             if word.casefold() in _LEGAL_FORMS or word.casefold() in _GENERIC_WORDS:
                 continue
-            if re.search(rf"(?<![^\W_]){re.escape(word)}(?![^\W_])", riassunto, re.IGNORECASE):
+            if re.search(rf"(?<![^\W_]){re.escape(word)}(?![^\W_])", summary, re.IGNORECASE):
                 return True
     return False

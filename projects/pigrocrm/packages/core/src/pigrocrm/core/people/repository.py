@@ -23,7 +23,7 @@ class PersonRepository:
         return person
 
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `ragione_sociale` of each given customer, in one query.
+        """The `legal_name` of each given customer, in one query.
 
         One statement for a whole page, not one per row: `PersonService` reads this
         once with every distinct `customer_id` on the page it is about to return, so a
@@ -44,7 +44,7 @@ class PersonRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.ragione_sociale).where(Customer.id.in_(customer_ids))
+            select(Customer.id, Customer.legal_name).where(Customer.id.in_(customer_ids))
         ).all()
         return {row[0]: row[1] for row in rows}
 
@@ -68,7 +68,7 @@ class PersonRepository:
             stmt = stmt.where(
                 or_(
                     Person.nome.ilike(like, escape="\\"),
-                    Person.cognome.ilike(like, escape="\\"),
+                    Person.last_name.ilike(like, escape="\\"),
                     Person.email.ilike(like, escape="\\"),
                 )
             )
@@ -78,10 +78,10 @@ class PersonRepository:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Person.custom_fields.contains(query.custom))
 
-        # Residuo R9 -- see `CustomerRepository.list` for the reasoning. `cognome` is
+        # Residuo R9 -- see `CustomerRepository.list` for the reasoning. `last_name` is
         # the one nullable column in any of the four whitelists, so this is the `list`
         # where `keyset_predicate`'s `OR col IS NULL` arm actually fires: without it a
-        # scan ordered by `cognome` stops at the last surname and never returns the
+        # scan ordered by `last_name` stops at the last surname and never returns the
         # people who have none.
         spec = PERSON_SORTS.resolve(query.sort)
         if query.cursor:

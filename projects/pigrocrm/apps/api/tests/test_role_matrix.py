@@ -13,7 +13,7 @@ or 201 where the sweep demanded 403.
 Two assertions, one per role:
 
 * every row as `readonly` must answer 403 with `code: permission_denied`;
-* every row as `collaboratore` must answer 403 iff the route is admin-gated, and must
+* every row as `collaborator` must answer 403 iff the route is admin-gated, and must
   *not* be role-refused otherwise (the walk past the gate may land on a 404 or a 422,
   which is the point: the refusal the suite forbids is the role's, not the entity's).
 
@@ -120,25 +120,25 @@ class Row:
 # period/year shapes the paths ask for; every gate that runs after them is admin-gated,
 # so their values never matter -- but they must parse or FastAPI answers 422 and the
 # assertion goes vacuous.
-PATH_VALUES = {"anno": "2026", "mese": "1", "numero": "1", "collection": "deals"}
+PATH_VALUES = {"year": "2026", "month": "1", "number": "1", "collection": "deals"}
 
 ROWS: list[Row] = [
     # --- notes thread of a deal, a customer, a person: `require_write` (notes/service.py) --
-    Row("POST", "/api/{collection}/{entity_id}/notes", body={"testo": "matrice-nota"}),
-    Row("PATCH", "/api/notes/{note_id}", body={"testo": "matrice-nota"}),
+    Row("POST", "/api/{collection}/{entity_id}/notes", body={"text": "matrice-nota"}),
+    Row("PATCH", "/api/notes/{note_id}", body={"text": "matrice-nota"}),
     Row("DELETE", "/api/notes/{note_id}"),
     # --- activities: `require_write` on every method (attivita/service.py) ----------
-    Row("POST", "/api/activities", body={"titolo": "matrice-attivita"}),
-    Row("DELETE", "/api/activities/{attivita_id}"),
-    Row("PATCH", "/api/activities/{attivita_id}", body={}),
-    Row("POST", "/api/activities/{attivita_id}/cancel"),
-    Row("POST", "/api/activities/{attivita_id}/complete"),
-    Row("POST", "/api/activities/{attivita_id}/reopen"),
-    Row("POST", "/api/activities/{attivita_id}/restore"),
+    Row("POST", "/api/activities", body={"title": "matrice-attivita"}),
+    Row("DELETE", "/api/activities/{task_id}"),
+    Row("PATCH", "/api/activities/{task_id}", body={}),
+    Row("POST", "/api/activities/{task_id}/cancel"),
+    Row("POST", "/api/activities/{task_id}/complete"),
+    Row("POST", "/api/activities/{task_id}/reopen"),
+    Row("POST", "/api/activities/{task_id}/restore"),
     # --- auth: the one write a readonly person legitimately performs ----------------
     # Their own digest switch (spec 2026-09-16 §3.6; `update_own_digest` has no gate
     # deliberately). Asserted open here so nobody adds one by accident.
-    Row("PATCH", "/api/auth/me", expect="open", body={"digest_settimanale": False}),
+    Row("PATCH", "/api/auth/me", expect="open", body={"weekly_digest": False}),
     # --- automation config: admin (config_service.py:103) ---------------------------
     Row("PUT", "/api/automation-config", admin_only=True, body={}),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
@@ -154,8 +154,8 @@ ROWS: list[Row] = [
         body={
             "category_id": "__FAKE__",
             "data": "2026-01-05",
-            "importo": "10.00",
-            "descrizione": "matrice-costo",
+            "amount": "10.00",
+            "description": "matrice-costo",
         },
     ),
     Row("DELETE", "/api/costs/{cost_id}"),
@@ -167,26 +167,26 @@ ROWS: list[Row] = [
         "/api/contracts",
         body={
             "customer_id": "__CUST__",
-            "titolo": "Matrice",
-            "inizio": "2026-01-01",
-            "tipo_rinnovo": "nessuno",
-            "preavviso_disdetta_giorni": 30,
-            "cadenza_fatturazione": "mensile",
-            "politica_spese": {"kind": "non_rimborsabile"},
+            "title": "Matrice",
+            "start": "2026-01-01",
+            "renewal_type": "none",
+            "termination_notice_days": 30,
+            "billing_cadence": "monthly",
+            "expense_policy": {"kind": "not_reimbursable"},
         },
     ),
     Row(
         "POST",
         "/api/contracts/{contract_id}/rate-cards",
         body={
-            "valido_da": "2026-01-01",
-            "tipo": "ricorrente_fisso",
-            "importo": "1000.00",
-            "unita": "mese",
+            "valid_from": "2026-01-01",
+            "type": "fixed_recurring",
+            "amount": "1000.00",
+            "unit": "month",
         },
     ),
-    Row("PATCH", "/api/contracts/{contract_id}", body={"titolo": "Matrice 2"}),
-    Row("POST", "/api/contracts/{contract_id}/state", body={"stato": "attivo"}),
+    Row("PATCH", "/api/contracts/{contract_id}", body={"title": "Matrice 2"}),
+    Row("POST", "/api/contracts/{contract_id}/state", body={"status": "active"}),
     Row("POST", "/api/contracts/{contract_id}/renew", body={}),
     Row("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}", body={}),
     # --- contracts / clause notes (REB-762): `require_write` (contracts/service.py) ---
@@ -194,9 +194,9 @@ ROWS: list[Row] = [
         "POST",
         "/api/contracts/{contract_id}/clause-notes",
         body={
-            "riferimento_clausola": "Art. 8.3 Rinnovo",
-            "testo_letterale": "Il contratto si rinnova salvo disdetta.",
-            "interpretazione_adottata": "Rinnovo tacito, disdetta a 60 giorni.",
+            "clause_reference": "Art. 8.3 Rinnovo",
+            "literal_text": "Il contratto si rinnova salvo disdetta.",
+            "adopted_interpretation": "Rinnovo tacito, disdetta a 60 giorni.",
         },
     ),
     Row("PATCH", "/api/contracts/{contract_id}/clause-notes/{note_id}", body={}),
@@ -207,8 +207,8 @@ ROWS: list[Row] = [
         body={
             "category_id": "__FAKE__",
             "data": "2026-01-01",
-            "importo": "10.00",
-            "descrizione": "Matrice",
+            "amount": "10.00",
+            "description": "Matrice",
         },
     ),
     Row("PATCH", "/api/contracts/{contract_id}/expenses/{expense_id}", body={}),
@@ -225,7 +225,7 @@ ROWS: list[Row] = [
     Row(
         "POST",
         "/api/contracts/{contract_id}/email-templates",
-        body={"nome": "Matrice", "oggetto": "Matrice", "corpo": "Matrice"},
+        body={"nome": "Matrice", "subject": "Matrice", "body": "Matrice"},
     ),
     Row("PATCH", "/api/contracts/{contract_id}/email-templates/{template_id}", body={}),
     Row(
@@ -249,7 +249,7 @@ ROWS: list[Row] = [
     Row(
         "PUT",
         "/api/contracts/{contract_id}/renewal-assumption",
-        body={"probabilita": 50, "volume_atteso": "1000.00", "orizzonte_al": "2027-01-01"},
+        body={"probability": 50, "expected_volume": "1000.00", "horizon_until": "2027-01-01"},
     ),
     # --- proposals (REB-362): `require_write` (proposals/service.py) ----------------
     Row(
@@ -258,20 +258,20 @@ ROWS: list[Row] = [
         body={
             "document_id": "__FAKE__",
             "contract_id": "__FAKE__",
-            "target_type": "giornata",
-            "campi_proposti": {
+            "target_type": "work_unit",
+            "proposed_fields": {
                 "contract_id": "__FAKE__",
                 "data": "2026-01-01",
-                "quantita": "1.00",
-                "descrizione": "Matrice",
-                "approvazione": {
-                    "canale": "email",
-                    "mittente": "matrice@example.it",
-                    "ricevuto_il": "2026-01-01T00:00:00Z",
+                "quantity": "1.00",
+                "description": "Matrice",
+                "approval": {
+                    "channel": "email",
+                    "sender": "matrice@example.it",
+                    "received_at": "2026-01-01T00:00:00Z",
                 },
             },
-            "estratto": "Matrice",
-            "confidenza": "0.90",
+            "excerpt": "Matrice",
+            "confidence": "0.90",
         },
     ),
     Row("POST", "/api/proposals/{proposal_id}/accept", body={}),
@@ -283,19 +283,19 @@ ROWS: list[Row] = [
         body={
             "contract_id": "__FAKE__",
             "data": "2026-01-01",
-            "quantita": "1.00",
-            "descrizione": "Matrice",
-            "stato": "lavorato",
+            "quantity": "1.00",
+            "description": "Matrice",
+            "status": "worked",
         },
     ),
     Row(
         "POST",
         "/api/contracts/{contract_id}/approval-request",
         body={
-            "days": [{"data": "2026-01-05", "quantita": "1.00", "descrizione": "Matrice"}],
+            "days": [{"data": "2026-01-05", "quantity": "1.00", "description": "Matrice"}],
             "to_addresses": ["cliente@example.it"],
-            "oggetto": "Matrice",
-            "corpo": "Matrice",
+            "subject": "Matrice",
+            "body": "Matrice",
         },
     ),
     # The preview is a render of the request, written and not stored: a read, like a template's.
@@ -303,17 +303,17 @@ ROWS: list[Row] = [
         "POST",
         "/api/contracts/{contract_id}/approval-request/preview",
         expect="open",
-        body={"days": [{"data": "2026-01-05", "quantita": "1.00", "descrizione": "Matrice"}]},
+        body={"days": [{"data": "2026-01-05", "quantity": "1.00", "description": "Matrice"}]},
     ),
     Row(
         "POST",
         "/api/approvals",
         body={
             "contract_id": "__FAKE__",
-            "canale": "email",
-            "mittente": "cliente@example.it",
-            "ricevuto_il": "2026-01-01T09:00:00Z",
-            "estratto": "Matrice",
+            "channel": "email",
+            "sender": "cliente@example.it",
+            "received_at": "2026-01-01T09:00:00Z",
+            "excerpt": "Matrice",
             "document_id": "__FAKE__",
             "work_unit_ids": ["__FAKE__"],
         },
@@ -321,15 +321,15 @@ ROWS: list[Row] = [
     Row(
         "POST",
         "/api/work-units/{work_unit_id}/transitions",
-        body={"stato": "contestato", "motivo": "Matrice"},
+        body={"status": "disputed", "reason": "Matrice"},
     ),
     # --- customers / people / deals: `require_write` on every plain write ------------
-    Row("POST", "/api/customers", body={"ragione_sociale": "Matrice Due Srl"}),
+    Row("POST", "/api/customers", body={"legal_name": "Matrice Due Srl"}),
     # The ticked Gmail proposals (REB-223): `require_write`, like one «Nuovo cliente».
     Row(
         "POST",
         "/api/customers/from-suggestions",
-        body={"clienti": [{"dominio": "matrice.it", "ragione_sociale": "Matrice", "persone": []}]},
+        body={"customers": [{"domain": "matrice.it", "legal_name": "Matrice", "people": []}]},
     ),
     Row("DELETE", "/api/customers/{customer_id}"),
     Row("PATCH", "/api/customers/{customer_id}", body={}),
@@ -337,14 +337,14 @@ ROWS: list[Row] = [
     Row(
         "POST",
         "/api/customers/{customer_id}/people-from-mail",
-        body={"indirizzo": "marco@acme.it", "nome": "Marco"},
+        body={"address": "marco@acme.it", "nome": "Marco"},
     ),
     Row("POST", "/api/deals", body={"nome": "matrice-deal", "customer_id": "__CUST__"}),
     Row("DELETE", "/api/deals/{deal_id}"),
     Row("PATCH", "/api/deals/{deal_id}", body={}),
     # Rates rewrite what a quarter's work was worth: admin (timetracking/service.py:440,
     # :472), and `bind_time_to_invoice` is the same class (analytics/service.py:613).
-    Row("PUT", "/api/deals/{deal_id}/rate", admin_only=True, body={"tariffa_oraria": "50.00"}),
+    Row("PUT", "/api/deals/{deal_id}/rate", admin_only=True, body={"hourly_rate": "50.00"}),
     Row(
         "POST",
         "/api/deals/{deal_id}/rates/recalculate",
@@ -360,20 +360,20 @@ ROWS: list[Row] = [
         body={"entry_ids": ["__FAKE__"]},
     ),
     # The PDF of a month's hours archives a document (REB-880: a POST, not a GET).
-    Row("POST", "/api/deals/{deal_id}/time-report/pdf", params={"mese": "2026-01"}),
+    Row("POST", "/api/deals/{deal_id}/time-report/pdf", params={"month": "2026-01"}),
     # --- documents: `require_write` on every method (documents/service.py) -----------
-    Row("POST", "/api/documents", body={"titolo": "matrice-doc"}),
+    Row("POST", "/api/documents", body={"title": "matrice-doc"}),
     Row(
         "POST",
         "/api/documents/from-template",
-        body={"template_id": "__FAKE__", "titolo": "matrice-doc"},
+        body={"template_id": "__FAKE__", "title": "matrice-doc"},
     ),
     Row("DELETE", "/api/documents/{document_id}"),
     Row("PATCH", "/api/documents/{document_id}", body={}),
     Row("POST", "/api/documents/{document_id}/restore"),
-    Row("POST", "/api/documents/{document_id}/status", body={"stato": "inviata"}),
+    Row("POST", "/api/documents/{document_id}/status", body={"status": "sent"}),
     Row("POST", "/api/documents/{document_id}/versions", multipart=True),
-    Row("POST", "/api/documents/{document_id}/versions/{numero}/regenerate"),
+    Row("POST", "/api/documents/{document_id}/versions/{number}/regenerate"),
     # --- drive: connect/disconnect/roots are writes on the credential, not on data --
     # (`require_write`; `GoogleDriveOAuthService` mirrors the Gmail one). The two
     # `oauth/start|callback` GETs are in this sweep because they *are* gated
@@ -425,31 +425,34 @@ ROWS: list[Row] = [
     # --- the aziende and their fiscal profiles: admin (aziende/) ----------------------
     Row(
         "POST",
-        "/api/aziende",
+        "/api/legal-entities",
         admin_only=True,
         body={
             "nome": "matrice",
-            "ragione_sociale": "Matrice Ltd",
-            "nazione": "GB",
-            "fiscal_profile": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+            "legal_name": "Matrice Ltd",
+            "country": "GB",
+            "fiscal_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
         },
     ),
     Row(
-        "PUT", "/api/aziende/{azienda_id}", admin_only=True, body={"ragione_sociale": "Matrice Srl"}
+        "PUT",
+        "/api/legal-entities/{legal_entity_id}",
+        admin_only=True,
+        body={"legal_name": "Matrice Srl"},
     ),
-    Row("POST", "/api/aziende/{azienda_id}/predefinita", admin_only=True),
-    Row("DELETE", "/api/aziende/{azienda_id}", admin_only=True),
+    Row("POST", "/api/legal-entities/{legal_entity_id}/default", admin_only=True),
+    Row("DELETE", "/api/legal-entities/{legal_entity_id}", admin_only=True),
     # The logo and the signature (REB-628): admin writes, every role reads them, since
     # the panel's preview and every PDF header need them.
-    Row("PUT", "/api/aziende/{azienda_id}/logo", admin_only=True, multipart=True),
-    Row("DELETE", "/api/aziende/{azienda_id}/logo", admin_only=True),
-    Row("PUT", "/api/aziende/{azienda_id}/firma", admin_only=True, multipart=True),
-    Row("DELETE", "/api/aziende/{azienda_id}/firma", admin_only=True),
+    Row("PUT", "/api/legal-entities/{legal_entity_id}/logo", admin_only=True, multipart=True),
+    Row("DELETE", "/api/legal-entities/{legal_entity_id}/logo", admin_only=True),
+    Row("PUT", "/api/legal-entities/{legal_entity_id}/signature", admin_only=True, multipart=True),
+    Row("DELETE", "/api/legal-entities/{legal_entity_id}/signature", admin_only=True),
     Row(
         "PUT",
-        "/api/aziende/{azienda_id}/fiscal-profile",
+        "/api/legal-entities/{legal_entity_id}/fiscal-profile",
         admin_only=True,
-        body={"codice_regime": "RF19"},
+        body={"regime_code": "RF19"},
     ),
     # --- field definitions: admin, they reshape every entity's stored data -----------
     Row(
@@ -494,8 +497,8 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/invoices/{invoice_id}", body={}),
     Row("POST", "/api/invoices/{invoice_id}/artifacts"),
     Row("POST", "/api/invoices/{invoice_id}/confirm"),
-    Row("PUT", "/api/invoices/{invoice_id}/lines", body={"righe": []}),
-    Row("PATCH", "/api/invoices/{invoice_id}/payment", body={"stato_pagamento": "da_incassare"}),
+    Row("PUT", "/api/invoices/{invoice_id}/lines", body={"lines": []}),
+    Row("PATCH", "/api/invoices/{invoice_id}/payment", body={"payment_status": "unpaid"}),
     # --- invoices, fiscal half: `require_admin` -- every one of these consumes or
     # rewrites the gap-free register (spec 2026-08-20 slice 3 §4; the AGENT_FORBIDDEN
     # list in core/actor.py names the same five for agents).
@@ -504,23 +507,23 @@ ROWS: list[Row] = [
         "/api/invoices/import",
         admin_only=True,
         body={
-            "anno": 2026,
-            "numero": 9500,
-            "data_emissione": "2026-01-02",
+            "year": 2026,
+            "number": 9500,
+            "issue_date": "2026-01-02",
             "customer_id": "__CUST__",
-            "righe": [
+            "lines": [
                 {
-                    "descrizione": "matrice",
-                    "prezzo_unitario": "10.00",
-                    "prezzo_totale": "10.00",
-                    "aliquota_iva": "0.00",
-                    "natura": "N2.2",
+                    "description": "matrice",
+                    "unit_price": "10.00",
+                    "total_price": "10.00",
+                    "vat_rate": "0.00",
+                    "vat_nature": "N2.2",
                 }
             ],
-            "imponibile": "10.00",
-            "imposta": "0.00",
-            "bollo": "0.00",
-            "totale": "10.00",
+            "taxable_amount": "10.00",
+            "vat_amount": "0.00",
+            "stamp_duty": "0.00",
+            "total": "10.00",
         },
     ),
     Row(
@@ -539,11 +542,11 @@ ROWS: list[Row] = [
     Row("POST", "/api/invoices/import/upload/confirm", admin_only=True, multipart=True),
     Row(
         "POST",
-        "/api/invoices/register/{anno}/gaps",
+        "/api/invoices/register/{year}/gaps",
         admin_only=True,
-        body={"buchi": [{"numero": 9501, "motivo": "matrice"}]},
+        body={"gaps": [{"number": 9501, "reason": "matrice"}]},
     ),
-    Row("POST", "/api/invoices/{invoice_id}/annul", admin_only=True, body={"motivo": "matrice"}),
+    Row("POST", "/api/invoices/{invoice_id}/annul", admin_only=True, body={"reason": "matrice"}),
     Row("POST", "/api/invoices/{invoice_id}/issue", admin_only=True, body={}),
     Row(
         "POST",
@@ -559,10 +562,10 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/people/{person_id}", body={}),
     Row("POST", "/api/people/{person_id}/restore"),
     # --- period locks: closing a period freezes the register: admin ------------------
-    Row("POST", "/api/period-locks", admin_only=True, body={"anno": 2020, "mese": 1}),
-    Row("DELETE", "/api/period-locks/{anno}/{mese}", admin_only=True),
+    Row("POST", "/api/period-locks", admin_only=True, body={"year": 2020, "month": 1}),
+    Row("DELETE", "/api/period-locks/{year}/{month}", admin_only=True),
     # --- pipeline: configuration, admin (pipeline/service.py) -------------------------
-    Row("POST", "/api/pipeline-stages", admin_only=True, body={"nome": "Matrice", "posizione": 99}),
+    Row("POST", "/api/pipeline-stages", admin_only=True, body={"nome": "Matrice", "position": 99}),
     Row("POST", "/api/pipeline-stages/seed", admin_only=True),
     Row("DELETE", "/api/pipeline-stages/{stage_id}", admin_only=True),
     Row("PATCH", "/api/pipeline-stages/{stage_id}", admin_only=True, body={}),
@@ -574,7 +577,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/templates",
         admin_only=True,
-        body={"nome": "matrice-tpl", "tipo": "offerta", "corpo_markdown": "ciao"},
+        body={"nome": "matrice-tpl", "type": "offer", "body_markdown": "ciao"},
     ),
     Row("DELETE", "/api/templates/{template_id}", admin_only=True),
     Row("PATCH", "/api/templates/{template_id}", admin_only=True, body={}),
@@ -591,8 +594,8 @@ ROWS: list[Row] = [
             "deal_id": "__FAKE__",
             "user_id": "__ADMIN__",
             "data": "2026-01-05",
-            "ore": "1.00",
-            "descrizione": "matrice",
+            "hours": "1.00",
+            "description": "matrice",
         },
     ),
     Row("DELETE", "/api/time-entries/timer"),
@@ -618,7 +621,7 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/tokens/{token_id}", expect="open", body={"full_access": False}),
     # --- users, invites, rates: admin (auth/service.py, auth/invitations.py) ---------
     # `PATCH /api/users/{user_id}` is REB-292's route: its last-admin guard sits behind
-    # `require_admin`, so as `collaboratore` this answers 403 before and after that
+    # `require_admin`, so as `collaborator` this answers 403 before and after that
     # lands. What 292 can change is only what an *admin* caller sees, and no caller
     # here is one.
     Row(
@@ -646,7 +649,7 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/users/{user_id}", admin_only=True, body={}),
     Row("PUT", "/api/users/{user_id}/rates", admin_only=True, body={}),
     # --- the fiscal estimate: the one *read* admin gates (analytics/service.py:552) --
-    Row("GET", "/api/analytics/fiscal", admin_only=True, params={"anno": 2026}),
+    Row("GET", "/api/analytics/fiscal", admin_only=True, params={"year": 2026}),
 ]
 
 # The routes the sweep never calls, each open on purpose. Every entry is a
@@ -836,9 +839,9 @@ GOOGLE_SETTINGS = BASE_SETTINGS.model_copy(
 )
 
 
-def _logged_in_as(app: FastAPI, session: Session, *, email: str, ruolo: str) -> TestClient:
+def _logged_in_as(app: FastAPI, session: Session, *, email: str, role: str) -> TestClient:
     UserService(session).create(
-        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Matrice", ruolo=ruolo),  # type: ignore[arg-type]
+        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Matrice", role=role),  # type: ignore[arg-type]
         Actor.system(),
     )
     client = TestClient(app, base_url="https://testserver")
@@ -867,13 +870,13 @@ def matrix(api_engine: Engine) -> Iterator[Matrix]:
     app.dependency_overrides[get_storage] = lambda: LocalFileStorage(storage_dir)
     app.dependency_overrides[get_settings] = lambda: BASE_SETTINGS
     try:
-        admin = _logged_in_as(app, session, email="matrice-admin@pigro.it", ruolo="admin")
+        admin = _logged_in_as(app, session, email="matrice-admin@pigro.it", role="admin")
         users = {
             "readonly": _logged_in_as(
-                app, session, email="matrice-readonly@pigro.it", ruolo="readonly"
+                app, session, email="matrice-readonly@pigro.it", role="readonly"
             ),
-            "collaboratore": _logged_in_as(
-                app, session, email="matrice-collab@pigro.it", ruolo="collaboratore"
+            "collaborator": _logged_in_as(
+                app, session, email="matrice-collab@pigro.it", role="collaborator"
             ),
         }
         admin_id = users and admin.get("/api/auth/me").json()["id"]
@@ -888,7 +891,7 @@ def matrix(api_engine: Engine) -> Iterator[Matrix]:
         # refused to the two roles exactly as the other admin routes; the seed here
         # happens before the sweep, so running it early costs the sweep nothing.
         assert admin.post("/api/pipeline-stages/seed").status_code == 200
-        customer = admin.post("/api/customers", json={"ragione_sociale": "Matrice Srl"})
+        customer = admin.post("/api/customers", json={"legal_name": "Matrice Srl"})
         assert customer.status_code == 201, customer.text
         ids["__CUST__"] = customer.json()["id"]
         deal = admin.post("/api/deals", json={"nome": "Matrice", "customer_id": ids["__CUST__"]})
@@ -930,18 +933,16 @@ def test_readonly_is_refused_on_every_gated_route(row: Row, matrix: Matrix) -> N
         return
     _assert_role_refused(
         response,
-        action_required_roles=["admin"] if row.admin_only else ["admin", "collaboratore"],
+        action_required_roles=["admin"] if row.admin_only else ["admin", "collaborator"],
         role="readonly",
     )
 
 
 @pytest.mark.parametrize("row", ROWS, ids=lambda r: f"{r.method} {r.path}")
-def test_collaboratore_holds_writes_and_is_refused_on_admin_routes(
-    row: Row, matrix: Matrix
-) -> None:
-    response = matrix.call("collaboratore", row)
+def test_collaborator_holds_writes_and_is_refused_on_admin_routes(row: Row, matrix: Matrix) -> None:
+    response = matrix.call("collaborator", row)
     if row.admin_only:
-        _assert_role_refused(response, action_required_roles=["admin"], role="collaboratore")
+        _assert_role_refused(response, action_required_roles=["admin"], role="collaborator")
     else:
         # The pass-through half of the card: a collaboratore must clear the role gate on
         # every row that is not admin-only, whatever the service then makes of a
@@ -965,7 +966,7 @@ def test_collaboratore_holds_writes_and_is_refused_on_admin_routes(
 # operation; adding one here is the decision to give an agent that operation.
 AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
     {
-        ("DELETE", "/api/activities/{attivita_id}"),
+        ("DELETE", "/api/activities/{task_id}"),
         ("DELETE", "/api/costs/{cost_id}"),
         ("DELETE", "/api/customers/{customer_id}"),
         ("DELETE", "/api/deals/{deal_id}"),
@@ -976,7 +977,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("DELETE", "/api/time-entries/{entry_id}"),
         ("DELETE", "/api/time-entries/timer"),
         ("GET", "/api/users/directory"),
-        ("PATCH", "/api/activities/{attivita_id}"),
+        ("PATCH", "/api/activities/{task_id}"),
         ("PATCH", "/api/auth/me"),
         ("PATCH", "/api/contracts/{contract_id}"),
         ("PATCH", "/api/contracts/{contract_id}/clause-notes/{note_id}"),
@@ -993,11 +994,11 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("PATCH", "/api/time-entries/{entry_id}"),
         ("PATCH", "/api/time-entries/timer"),
         ("POST", "/api/activities"),
-        ("POST", "/api/activities/{attivita_id}/cancel"),
-        ("POST", "/api/activities/{attivita_id}/complete"),
-        ("POST", "/api/activities/{attivita_id}/reopen"),
-        ("POST", "/api/activities/{attivita_id}/restore"),
-        ("POST", "/api/aziende"),
+        ("POST", "/api/activities/{task_id}/cancel"),
+        ("POST", "/api/activities/{task_id}/complete"),
+        ("POST", "/api/activities/{task_id}/reopen"),
+        ("POST", "/api/activities/{task_id}/restore"),
+        ("POST", "/api/legal-entities"),
         ("POST", "/api/{collection}/{entity_id}/notes"),
         ("POST", "/api/contracts"),
         ("POST", "/api/contracts/{contract_id}/approval-request/preview"),
@@ -1019,7 +1020,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/documents/{document_id}/restore"),
         ("POST", "/api/documents/{document_id}/status"),
         ("POST", "/api/documents/{document_id}/versions"),
-        ("POST", "/api/documents/{document_id}/versions/{numero}/regenerate"),
+        ("POST", "/api/documents/{document_id}/versions/{number}/regenerate"),
         ("POST", "/api/documents/from-template"),
         ("POST", "/api/deals/{deal_id}/time-report/pdf"),
         ("POST", "/api/email-drafts"),
@@ -1034,8 +1035,8 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/time-entries/{entry_id}/restore"),
         ("POST", "/api/time-entries/timer/start"),
         ("POST", "/api/time-entries/timer/stop"),
-        ("PUT", "/api/aziende/{azienda_id}"),
-        ("PUT", "/api/aziende/{azienda_id}/fiscal-profile"),
+        ("PUT", "/api/legal-entities/{legal_entity_id}"),
+        ("PUT", "/api/legal-entities/{legal_entity_id}/fiscal-profile"),
         ("PUT", "/api/contracts/{contract_id}/renewal-assumption"),
         ("PUT", "/api/invoices/{invoice_id}/lines"),
     }
@@ -1087,9 +1088,9 @@ def test_the_digest_switch_is_the_readonly_users_own_profile_write(matrix: Matri
     sweep because it is the only row that *succeeds* as readonly and therefore must not
     leave the flag flipped for whoever reads this module next: PATCH, flip back."""
     client = matrix.clients["readonly"]
-    before = client.get("/api/auth/me").json()["digest_settimanale"]
-    flipped = client.patch("/api/auth/me", json={"digest_settimanale": not before})
+    before = client.get("/api/auth/me").json()["weekly_digest"]
+    flipped = client.patch("/api/auth/me", json={"weekly_digest": not before})
     assert flipped.status_code == 200
-    assert flipped.json()["digest_settimanale"] is (not before)
-    restored = client.patch("/api/auth/me", json={"digest_settimanale": before})
+    assert flipped.json()["weekly_digest"] is (not before)
+    restored = client.patch("/api/auth/me", json={"weekly_digest": before})
     assert restored.status_code == 200

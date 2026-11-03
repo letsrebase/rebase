@@ -41,7 +41,7 @@ function CategoryRow({
   // the parent and outlives this row's own mutation.
   onProblem: (message: string | null) => void
 }) {
-  const [nome, setNome] = useState(category.nome)
+  const [nome, setName] = useState(category.nome)
   const rename = useUpdateCostCategory(category.id)
   const archive = useArchiveCostCategory()
   const unarchive = useUnarchiveCostCategory()
@@ -73,7 +73,7 @@ function CategoryRow({
       )
     },
   }
-  const toggle: RowAction = category.archiviata
+  const toggle: RowAction = category.archived
     ? {
         label: 'Ripristina',
         disabled: unarchive.isPending,
@@ -103,7 +103,7 @@ function CategoryRow({
       <Input
         aria-label={`Nome della categoria ${category.nome}`}
         value={nome}
-        onChange={(event) => setNome(event.target.value)}
+        onChange={(event) => setName(event.target.value)}
         className="max-w-xs"
       />
       {/* The code, beside the name and never in a control: it is the category's
@@ -115,7 +115,7 @@ function CategoryRow({
           half of the pair is one click away in the row's own menu. Only on an archived
           row -- «attiva» is what a configured category is, and a list where every row
           repeats it says nothing while costing a line of noise on each one. */}
-      {category.archiviata && <StatusPill tone="muted">Archiviata</StatusPill>}
+      {category.archived && <StatusPill tone="muted">Archiviata</StatusPill>}
       <div className="ml-auto">
         <RowActions label={`Azioni per ${category.nome}`} items={items} />
       </div>
@@ -126,7 +126,7 @@ function CategoryRow({
 export function CostCategoriesPanel() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [open, setOpen] = useState(false)
-  const [nome, setNome] = useState('')
+  const [nome, setName] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   // Separate from `problem` on purpose: the list banner sits behind the dialog overlay,
   // so a create that fails there would report itself somewhere nobody can see. Kept as
@@ -146,7 +146,7 @@ export function CostCategoriesPanel() {
 
   if (categories.isError) return <QueryErrorBanner error={categories.error} />
 
-  const rows = [...(categories.data ?? [])].sort((a, b) => a.posizione - b.posizione)
+  const rows = [...(categories.data ?? [])].sort((a, b) => a.position - b.position)
   const empty = rows.length === 0 && !categories.isLoading
 
   return (
@@ -184,7 +184,7 @@ export function CostCategoriesPanel() {
           <Button
             onClick={() => {
               setDialogProblem(null)
-              setNome('')
+              setName('')
               setOpen(true)
             }}
           >
@@ -242,7 +242,7 @@ export function CostCategoriesPanel() {
               id="categoria-nome"
               aria-invalid={dialogFieldError?.field === 'nome'}
               value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              onChange={(event) => setName(event.target.value)}
             />
             {dialogFieldError?.field === 'nome' ? (
               <p className="text-sm text-destructive">{dialogFieldError.message}</p>
@@ -261,7 +261,7 @@ export function CostCategoriesPanel() {
               onClick={() => {
                 setDialogProblem(null)
                 create.mutate(
-                  { nome, posizione: rows.length },
+                  { nome, position: rows.length },
                   {
                     onSuccess: () => {
                       toast.success('Categoria creata')

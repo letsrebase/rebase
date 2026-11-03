@@ -19,7 +19,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -27,7 +27,6 @@ from sqlalchemy.orm import Session
 import pigrocrm.core.cli as cli
 import pigrocrm.core.cli.cron as cli_cron
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory, today_local
@@ -39,6 +38,7 @@ from pigrocrm.core.reminders.run import (
     ReminderRun,
 )
 from pigrocrm.core.reminders.service import ReminderService
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
@@ -46,7 +46,7 @@ from pigrocrm.core.tenants.service import migrate_to_head
 UNO = "prova-promemoria-uno"
 DUE = "prova-promemoria-due"
 TITOLARI = {UNO: "uno@studio.it", DUE: "due@studio.it"}
-SPAZI = (UNO, DUE)
+SPACES = (UNO, DUE)
 ROOT_DB = "prova_promemoria_radice"
 ROOT_OWNER = "titolare@radice.it"
 
@@ -68,8 +68,8 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     try:
         migrate_to_head(configured, configured.database_url)
         with _engine(configured.database_url) as engine, session_factory(engine)() as session:
-            session.add(User(email=ROOT_OWNER, nome="Titolare", ruolo="admin", attivo=True))
-            committed_default_azienda(session, nome="Radice")
+            session.add(User(email=ROOT_OWNER, nome="Titolare", role="admin", active=True))
+            committed_default_legal_entity(session, nome="Radice")
             session.commit()
         yield configured
     finally:
@@ -97,18 +97,18 @@ def registry(settings: Settings) -> Iterator[Engine]:
 
 
 @pytest.fixture(scope="module")
-def spazi(settings: Settings, registry: Engine) -> Iterator[None]:
+def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     session: Session = session_factory(registry)()
     service = TenantService(session, settings)
     try:
-        for slug in SPAZI:
+        for slug in SPACES:
             service.provision(TenantSignup(slug=slug, nome=f"Studio {slug}", email=TITOLARI[slug]))
         yield
     finally:
-        for slug in SPAZI:
+        for slug in SPACES:
             drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))
         session.execute(
-            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPAZI)}
+            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPACES)}
         )
         session.commit()
         session.close()
@@ -131,17 +131,17 @@ def _owner_id(settings: Settings, slug: str | None) -> UUID:
 
 
 @pytest.fixture(autouse=True)
-def _a_due_attivita_in_every_space(settings: Settings, spazi: None) -> Iterator[None]:
+def _to_due_task_in_every_space(settings: Settings, spaces: None) -> Iterator[None]:
     """One attività due today, assigned to each installation's owner, and everything a pass
     writes undone afterwards so each test starts from a space nobody has reminded."""
     today = today_local(settings)
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         owner = _owner_id(settings, slug)
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-            session.add(Attivita(titolo="Mandare il preventivo", scadenza=today, assegnata_a=owner))
+            session.add(Task(title="Mandare il preventivo", due_date=today, assigned_to=owner))
             session.commit()
     yield
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, engine.begin() as connection:
             for table in (
                 "reminder_delivery",
@@ -193,13 +193,13 @@ def test_the_cron_raises_a_reminder_in_every_space_on_its_own(
     assert f"{UNO}: promemoria 1, nuovi 1, chiusi 0" in lines
     assert f"{DUE}: promemoria 1, nuovi 1, chiusi 0" in lines
     # Each space's owner has the reminder, with the time the pass put it in their list.
-    for slug in SPAZI:
+    for slug in SPACES:
         owner = _owner_id(settings, slug)
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
             listed = ReminderService(session, settings).list(
                 Actor(id=owner, type="user", role="admin")
             )
-        assert [(item.type, item.severity) for item in listed] == [("attivita_due", "warning")]
+        assert [(item.type, item.severity) for item in listed] == [("task_due", "warning")]
         assert listed[0].delivered_at is not None, "the pass wrote it down"
         assert _clock(settings, slug) == 1, "and the clock `job_late` reads"
 
@@ -258,7 +258,7 @@ def test_another_day_is_rehearsed_as_that_day_and_writes_nothing(
 ) -> None:
     tomorrow = (today_local(settings) + timedelta(days=1)).isoformat()
 
-    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow, "--dry-run"]) == 0
+    assert cli.main(["reminders", "--slug", UNO, "--date", tomorrow, "--dry-run"]) == 0
 
     # Due today is overdue by tomorrow: a `serious` where today it was a `warning`.
     assert capsys.readouterr().out.splitlines() == [
@@ -273,7 +273,7 @@ def test_another_day_is_refused_without_a_dry_run(
 ) -> None:
     tomorrow = (today_local(settings) + timedelta(days=1)).isoformat()
 
-    assert cli.main(["reminders", "--slug", UNO, "--data", tomorrow]) == 2
+    assert cli.main(["reminders", "--slug", UNO, "--date", tomorrow]) == 2
 
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -379,7 +379,7 @@ def test_an_unreachable_registry_is_a_line_and_the_root_still_runs(
 
 def test_the_reminder_arguments_reject_a_date_that_is_not_one() -> None:
     with pytest.raises(SystemExit) as raised:
-        cli.main(["reminders", "--data", "domani"])
+        cli.main(["reminders", "--date", "domani"])
 
     assert raised.value.code == 2
 
@@ -391,14 +391,14 @@ def test_the_line_tells_what_the_other_channels_sent_only_when_they_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("acme", "eseguito", raised=3, delivered=2), dry_run=False
+        ReminderOutcome("acme", "run", raised=3, delivered=2), dry_run=False
     )
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("acme", "eseguito", raised=3, delivered=2, pushes=2, emails=1),
+        ReminderOutcome("acme", "run", raised=3, delivered=2, pushes=2, emails=1),
         dry_run=False,
     )
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("acme", "eseguito", raised=3, delivered=2, emails=1), dry_run=True
+        ReminderOutcome("acme", "run", raised=3, delivered=2, emails=1), dry_run=True
     )
 
     assert capsys.readouterr().out.splitlines() == [

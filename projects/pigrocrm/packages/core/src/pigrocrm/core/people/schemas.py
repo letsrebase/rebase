@@ -18,11 +18,11 @@ from pigrocrm.core.validation import SafeStr
 #
 # `note` is deliberately absent: it is the text of the person's first note, a row of the
 # `notes` thread, not a column.
-NOME_MAX_LENGTH = 120
-COGNOME_MAX_LENGTH = 120
+NAME_MAX_LENGTH = 120
+LAST_NAME_MAX_LENGTH = 120
 EMAIL_MAX_LENGTH = 320
-TELEFONO_MAX_LENGTH = 40
-RUOLO_MAX_LENGTH = 120
+PHONE_MAX_LENGTH = 40
+ROLE_MAX_LENGTH = 120
 LINKEDIN_MAX_LENGTH = 255
 
 
@@ -31,14 +31,14 @@ def _normalise_email(value: str | None) -> str | None:
 
 
 class PersonCreate(BaseModel):
-    nome: SafeStr = Field(max_length=NOME_MAX_LENGTH)
-    cognome: SafeStr | None = Field(default=None, max_length=COGNOME_MAX_LENGTH)
+    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    last_name: SafeStr | None = Field(default=None, max_length=LAST_NAME_MAX_LENGTH)
     # Plain `str`, not `EmailStr`: format is checked separately by the service's own
     # `_check_email` regex below, not by the schema. `SafeStr` closes the NUL-byte gap
     # that regex does not: `[^@\s]` matches a NUL byte just as readily as a letter.
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
-    ruolo: SafeStr | None = Field(default=None, max_length=RUOLO_MAX_LENGTH)
+    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
+    role: SafeStr | None = Field(default=None, max_length=ROLE_MAX_LENGTH)
     linkedin: SafeStr | None = Field(default=None, max_length=LINKEDIN_MAX_LENGTH)
     note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
     customer_id: UUID | None = None
@@ -58,11 +58,11 @@ class PersonCreate(BaseModel):
 class PersonUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
-    cognome: SafeStr | None = Field(default=None, max_length=COGNOME_MAX_LENGTH)
+    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    last_name: SafeStr | None = Field(default=None, max_length=LAST_NAME_MAX_LENGTH)
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
-    telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
-    ruolo: SafeStr | None = Field(default=None, max_length=RUOLO_MAX_LENGTH)
+    phone: SafeStr | None = Field(default=None, max_length=PHONE_MAX_LENGTH)
+    role: SafeStr | None = Field(default=None, max_length=ROLE_MAX_LENGTH)
     linkedin: SafeStr | None = Field(default=None, max_length=LINKEDIN_MAX_LENGTH)
     customer_id: UUID | None = None
     custom_fields: dict[str, Any] | None = None
@@ -97,10 +97,10 @@ class PersonRead(BaseModel):
 
     id: UUID
     nome: str
-    cognome: str | None
+    last_name: str | None
     email: str | None
-    telefono: str | None
-    ruolo: str | None
+    phone: str | None
+    role: str | None
     linkedin: str | None
     customer_id: UUID | None
     # The person's "azienda di riferimento", denormalised onto the read shape: it is not
@@ -115,7 +115,7 @@ class PersonRead(BaseModel):
     # `native_fields` (schema_registry.py derives that list from `PersonCreate`), which
     # is correct twice over -- it is not writable, and it is not a column an
     # administrator could collide with by slugifying a custom field into it.
-    customer_ragione_sociale: str | None = None
+    customer_legal_name: str | None = None
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -130,10 +130,10 @@ PERSON_SORTS = SortWhitelist(
         # The one nullable sort column in the whole whitelist, and the only spec for which
         # `order_by` emits NULLS LAST at all -- on a NOT NULL column that spelling matches
         # no index and costs a sequential scan. It is also why `people` carries a second,
-        # descending index (`ix_people_cognome_desc_id`), and why `keyset_predicate` keeps
+        # descending index (`ix_people_last_name_desc_id`), and why `keyset_predicate` keeps
         # its `OR cognome IS NULL` disjunction here instead of the row-value seek the other
         # eleven use.
-        SortSpec(key="cognome", column=Person.cognome, kind="text", nullable=True),
+        SortSpec(key="last_name", column=Person.last_name, kind="text", nullable=True),
     ),
     default_key="created_at",
 )

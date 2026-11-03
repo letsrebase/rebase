@@ -29,7 +29,7 @@ export function TalentCloudDoor({
       {grant ? (
         <p className="text-sm">
           Aperto il {formatDate(grant.granted_at)}
-          {grant.granted_by_nome ? ` da ${grant.granted_by_nome}` : ''} per {grant.referente} ({grant.email}).
+          {grant.granted_by_name ? ` da ${grant.granted_by_name}` : ''} per {grant.contact_person} ({grant.email}).
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">

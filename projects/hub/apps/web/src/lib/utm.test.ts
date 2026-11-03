@@ -65,7 +65,7 @@ describe('the page the person started from (ORB-167)', () => {
   })
 
   it('folds the page into the attribution an application sends', () => {
-    expect(resolveAttribution('?utm_source=linkedin&da=home')).toEqual({ utm_source: 'linkedin', origine: 'home' })
+    expect(resolveAttribution('?utm_source=linkedin&da=home')).toEqual({ utm_source: 'linkedin', origin: 'home' })
     window.sessionStorage.clear()
     expect(resolveAttribution('')).toEqual({})
   })
@@ -106,12 +106,12 @@ describe('what a login sends, remembered for the tab by the login page only (REB
     expect(loginAttribution('?utm_campaign=outreach-2026-09-r2&utm_term=11425b70&da=home')).toEqual({
       utm_campaign: 'outreach-2026-09-r2',
       utm_term: '11425b70',
-      origine: 'home',
+      origin: 'home',
     })
     expect(loginAttribution('')).toEqual({
       utm_campaign: 'outreach-2026-09-r2',
       utm_term: '11425b70',
-      origine: 'home',
+      origin: 'home',
     })
   })
 
@@ -126,17 +126,17 @@ describe('what a login sends, remembered for the tab by the login page only (REB
     expect(loginAttribution('?da=home')).toEqual({
       utm_campaign: 'outreach',
       utm_term: '11425b70',
-      origine: 'home',
+      origin: 'home',
     })
     expect(loginAttribution('')).toEqual({
       utm_campaign: 'outreach',
       utm_term: '11425b70',
-      origine: 'home',
+      origin: 'home',
     })
   })
 
   it('takes the page alone when the tab remembers no campaign', () => {
-    expect(loginAttribution('?da=pigrocrm')).toEqual({ origine: 'pigrocrm' })
+    expect(loginAttribution('?da=pigrocrm')).toEqual({ origin: 'pigrocrm' })
   })
 
   it('drops the page of an older campaign when a new campaign arrives without one', () => {
@@ -181,7 +181,7 @@ describe('the keys a tab opened before the rename still holds (REB-668)', () => 
   afterEach(() => window.sessionStorage.clear())
 
   it('names the keys rebase.*, and the old ones orbiters.*', () => {
-    expect([UTM_STORAGE_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY]).toEqual(['rebase.utm', 'rebase.da', 'rebase.rif'])
+    expect([UTM_STORAGE_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY]).toEqual(['rebase.utm', 'rebase.da', 'rebase.ref'])
     expect([LEGACY_UTM_STORAGE_KEY, LEGACY_ORIGIN_STORAGE_KEY, LEGACY_REFERRAL_STORAGE_KEY]).toEqual(['orbiters.utm', 'orbiters.da', 'orbiters.rif'])
   })
 

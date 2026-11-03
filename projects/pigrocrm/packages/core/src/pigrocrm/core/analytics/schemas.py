@@ -1,7 +1,7 @@
 """Every shape this slice's reports return.
 
 Declared together, and ahead of the methods that build them (tasks 4B-5 to 4B-8), so
-that the vocabulary of the whole slice is readable in one file: `ricavi` means the same
+that the vocabulary of the whole slice is readable in one file: `revenue` means the same
 thing in `DealPnl`, `PnlTotals` and `FiscalEstimate`, and a second meaning would have to
 be introduced here, in the open, rather than discovered in a service.
 
@@ -26,85 +26,85 @@ from pigrocrm.core.fiscal.pack import CeilingConsequence
 # as a raw `DataError`. Declared locally rather than imported from `deals.schemas`:
 # `pigrocrm.core.deals`'s own `__init__.py` imports `DealService`, which reaches
 # `dashboard.schemas`, which imports back from this very module -- the same
-# reasoning `auth/schemas.py` already gives for declaring `tariffa_oraria_default`'s
+# reasoning `auth/schemas.py` already gives for declaring `default_hourly_rate`'s
 # own width locally rather than importing it.
-CEILING_ORE_MAX_DIGITS = 8
-CEILING_VALORE_MAX_DIGITS = 12
+CEILING_HOURS_MAX_DIGITS = 8
+CEILING_VALUE_MAX_DIGITS = 12
 CEILING_DECIMAL_PLACES = 2
 CEILING_FACTOR_MAX_DIGITS = 12
 CEILING_FACTOR_DECIMAL_PLACES = 6
 
-# The same three values as `DealTimeSummary.stato`, and deliberately a separate
+# The same three values as `DealTimeSummary.status`, and deliberately a separate
 # declaration rather than an import: `timetracking` answers "what is the state of these
 # hours" and `analytics` answers "what is the state of this deal's economics". They
 # coincide today because the second is derived from the first, and the day they stop
 # coinciding a shared alias would silently pick a side.
-DealStato = Literal["in corso", "da fatturare", "chiuso"]
+DealStatus = Literal["in_progress", "to_invoice", "closed"]
 
 
 class DealPnl(BaseModel):
     """One deal's profit and loss, every figure computed by the service and returned
     already summed -- the browser adds nothing (§6).
 
-    `valore_maturato` is deliberately a separate field from `ricavi` and not a variant of
+    `accrued_value` is deliberately a separate field from `revenue` and not a variant of
     it: it is the estimate of §3 decision 2, it is **not revenue**, it enters no P&L row,
-    and it lives under a heading of its own. On an `in corso` deal it is the honest number
+    and it lives under a heading of its own. On an `in_progress` deal it is the honest number
     to look at and the margin is provisional; the margin is only reportable in the
-    `chiuso` state.
+    `closed` state.
     """
 
     deal_id: UUID
-    stato: DealStato
-    ricavi: Decimal
-    costi_diretti: Decimal
-    costo_lavoro: Decimal
-    margine_lordo: Decimal
+    status: DealStatus
+    revenue: Decimal
+    direct_costs: Decimal
+    work_cost: Decimal
+    gross_margin: Decimal
     # `None`, never `0.00`, when revenue is zero: zero per cent means "everything I
     # earned went out in costs", a zero denominator means nothing has been earned. Two
     # different facts (§7.1, criterion 6).
-    margine_percentuale: Decimal | None
-    ore_totali: Decimal
-    ore_fatturabili_non_fatturate: Decimal
-    valore_maturato: Decimal
-    ore_senza_tariffa: int
-    fatture_emesse: int
+    percentage_margin: Decimal | None
+    total_hours: Decimal
+    billable_uninvoiced_hours: Decimal
+    accrued_value: Decimal
+    hours_without_rate: int
+    issued_invoices: int
 
 
-# Which date puts an invoice's revenue in a period. `emissione` is the recorded decision
+# Which date puts an invoice's revenue in a period. `issue` is the recorded decision
 # (§7.1: revenue is what was invoiced, by the document's own date) and the default; the
-# fiscal reports never take the other. `competenza` reads the same revenue by the accrual
+# fiscal reports never take the other. `accrual` reads the same revenue by the accrual
 # period the document declares, `coalesce(competenza_da, data_emissione)`, because
 # invoicing runs late and August's work issued in September must be readable in August
 # (ORB-61; `docs/design/DECISIONS.md`, 2026-09-09). Costs and hours ignore it: each
 # quantity is attributed by its own date whatever the base.
-RevenueBase = Literal["emissione", "competenza"]
+RevenueBase = Literal["issue", "accrual"]
 
-# Which month a document's money belongs to in the cash view (ORB-133). `competenza` is
+# Which month a document's money belongs to in the cash view (ORB-133). `accrual` is
 # the default Ivan asked for: every invoice, paid or not, and every draft or proforma
 # sits in the month of the accrual period it declares, `coalesce(competenza_da,
 # data_emissione)`, the same rule `RevenueBase` "competenza" uses. `incasso` is the
-# reading the charts had before: a paid invoice by `data_incasso`, an unpaid one by
-# `data_scadenza`, a draft or proforma by its own document date. Costs are by their own
+# reading the charts had before: a paid invoice by `payment_date`, an unpaid one by
+# `due_date`, a draft or proforma by its own document date. Costs are by their own
 # date under both. The fiscal estimate never takes this base: it is on the money.
-CashBase = Literal["competenza", "incasso"]
+CashBase = Literal["accrual", "collection"]
 
 
 class PeriodPnlQuery(BaseModel):
     da: date
     a: date
     customer_id: UUID | None = None
-    base: RevenueBase = "emissione"
+    base: RevenueBase = "issue"
     # One azienda's deals, costs and hours, or every azienda's (REB-630, spec
     # 2026-10-03 §1.9). A cost without a deal is shared and counts only in «tutte».
-    azienda_id: UUID | None = None
+    legal_entity_id: UUID | None = None
 
 
 class PnlTotals(BaseModel):
-    ricavi: Decimal
-    costi_diretti: Decimal
-    costo_lavoro: Decimal
-    margine_lordo: Decimal
-    margine_percentuale: Decimal | None
+    revenue: Decimal
+    direct_costs: Decimal
+    work_cost: Decimal
+    gross_margin: Decimal
+    percentage_margin: Decimal | None
     deal: int
 
 
@@ -113,7 +113,7 @@ class PeriodPnl(BaseModel):
 
     Adding a finished job's margin to a half-done one produces a figure that is neither,
     and that changes every week for reasons which are not business performance. The
-    reportable number is `chiusi`.
+    reportable number is `closed`.
     """
 
     da: date
@@ -123,14 +123,14 @@ class PeriodPnl(BaseModel):
     # of revenue produced it (ORB-61) without keeping the request beside the response.
     base: RevenueBase
     # Echoed too (REB-630): `None` is every azienda, which is what «tutte» shows.
-    azienda_id: UUID | None = None
-    chiusi: PnlTotals
-    in_corso: PnlTotals
+    legal_entity_id: UUID | None = None
+    closed: PnlTotals
+    in_progress: PnlTotals
     # A cost with `deal_id IS NULL`: it enters the period P&L in a row of its own and is
     # **never apportioned** onto any deal. Every apportionment key has one precise and
     # unacceptable consequence -- a deal's margin would move when a *different* deal was
     # invoiced.
-    spese_generali: Decimal
+    general_expenses: Decimal
     # Added by slice 6 §5: the informative rows the economic dashboard shows under a
     # heading that is not "ricavi", and which enter no margin. Same names as `DealPnl`'s
     # because they are the same quantity on a different object; the scope lives in the
@@ -138,22 +138,22 @@ class PeriodPnl(BaseModel):
     # field name, and §5 forbids the two ever being rendered side by side.
     #
     # One difference from `DealPnl` is deliberate and is recorded here because the names
-    # are identical: `DealPnl.valore_maturato` is `ricavi + valore delle ore non
+    # are identical: `DealPnl.accrued_value` is `ricavi + valore delle ore non
     # fatturate`, an estimate of what the deal will finally have been worth. There is no
     # such reading for a period -- a period's revenue is already its own reported row, and
     # adding it in again would put revenue under a heading that says "non sono ricavi".
     # So this one is the accrued value of the unbilled billable hours **alone**, which is
     # what the card that prints it is labelled: "Valore maturato non fatturato".
-    valore_maturato: Decimal = Field(max_digits=12, decimal_places=2)
-    ore_fatturabili_non_fatturate: Decimal = Field(max_digits=8, decimal_places=2)
-    # A count of entries, not a quantity of hours, exactly like `DealPnl.ore_senza_tariffa`
+    accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
+    billable_uninvoiced_hours: Decimal = Field(max_digits=8, decimal_places=2)
+    # A count of entries, not a quantity of hours, exactly like `DealPnl.hours_without_rate`
     # -- and scoped to the same rows as the two figures above it, so the three can be
     # reconciled with each other on the card that shows them together.
-    ore_senza_tariffa: int
+    hours_without_rate: int
     # Whether the number can still move, which is the thing a reader most needs to know
     # and costs a COUNT over two columns that already exist (§6.4).
-    periodo_chiuso: bool
-    voci_scritte_in_ritardo: int
+    closed_period: bool
+    written_entries_overdue: int
 
 
 class UnbilledBacklog(BaseModel):
@@ -166,20 +166,20 @@ class UnbilledBacklog(BaseModel):
     rendered side by side.
     """
 
-    ore_fatturabili_non_fatturate: Decimal = Field(max_digits=8, decimal_places=2)
+    billable_uninvoiced_hours: Decimal = Field(max_digits=8, decimal_places=2)
     # `Σ ROUND(ore × tariffa_applicata, 2)` over `time_entries` -- slice 4 §7.3's
     # formula, computed here because §3 forbids `core/dashboard/` any multiplication at
     # all -- plus REB-372's own contribution from approved-or-later `work_units`, priced
     # against their own contract's rate card. It is **not** revenue and enters no
     # margin: the revenue is the invoice.
-    valore_maturato: Decimal = Field(max_digits=12, decimal_places=2)
+    accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
     # A rate of zero and no rate are different facts (slice 4 §5.1); the same holds for
     # a `work_unit` day whose date has no rate card in force (REB-372). Every row here
-    # contributes nothing to `valore_maturato`; only the `time_entries` half also
-    # contributes to `ore_fatturabili_non_fatturate` -- a `work_unit`'s own quantity is
+    # contributes nothing to `accrued_value`; only the `time_entries` half also
+    # contributes to `billable_uninvoiced_hours` -- a `work_unit`'s own quantity is
     # priced in whatever unit its rate card names, not always an hour.
-    voci_senza_tariffa: int
-    voci: int
+    entries_without_rate: int
+    entries: int
 
 
 class BudgetQuery(BaseModel):
@@ -195,25 +195,25 @@ class BudgetQuery(BaseModel):
 class BudgetVsActualRow(BaseModel):
     deal_id: UUID
     nome: str
-    ore_preventivate: Decimal | None
-    ore_consuntivate: Decimal
-    valore_preventivato: Decimal | None
-    ricavi: Decimal
+    budgeted_hours: Decimal | None
+    actuals_hours: Decimal
+    budgeted_value: Decimal | None
+    revenue: Decimal
     # Per cent, two places: 40 hours of an estimated 100 is `"40.00"`.
-    avanzamento_ore: Decimal | None
+    hours_progress: Decimal | None
     budget_pro_rata: Decimal | None
-    scostamento_valore: Decimal | None
-    scostamento_ore: Decimal | None
-    tariffa_media_preventivata: Decimal | None
-    tariffa_media_consuntivata: Decimal | None
+    value_variance: Decimal | None
+    hours_variance: Decimal | None
+    average_budgeted_rate: Decimal | None
+    average_actual_rate: Decimal | None
     # An absent estimate is not an estimate of zero: the row says so, is excluded from
     # the budget aggregates, and is never counted as a 100% overrun (§9.2).
-    non_preventivato: bool
-    # `valore_preventivato` set with `ore_preventivate` null: no progress figure exists
+    unbudgeted: bool
+    # `budgeted_value` set with `budgeted_hours` null: no progress figure exists
     # to derive a pro-rata from, so only the absolute comparison is shown rather than a
     # progress invented from the invoiced value -- which would be circular, because the
     # invoiced value is the very quantity being judged.
-    pro_rata_non_calcolabile: bool
+    pro_rata_not_calculable: bool
 
 
 class BudgetPage(BaseModel):
@@ -221,10 +221,10 @@ class BudgetPage(BaseModel):
     next_cursor: UUID | None
     # Only over rows with both estimate columns populated: including the unestimated ones
     # would make the aggregate depend on how many deals nobody estimated.
-    totale_preventivato: Decimal
-    totale_ricavi: Decimal
-    deal_preventivati: int
-    deal_non_preventivati: int
+    budgeted_total: Decimal
+    revenue_total: Decimal
+    budgeted_deals: int
+    unbudgeted_deals: int
 
 
 class FiscalEstimate(BaseModel):
@@ -234,29 +234,29 @@ class FiscalEstimate(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    anno: int
+    year: int
     # The azienda whose profile and invoices this was computed on (REB-630): an
     # estimate is one azienda's, never the space's, and the card says whose.
-    azienda_id: UUID
-    stima: Literal[True] = True
-    avvertenza: str
-    ricavi: Decimal
-    coefficiente_redditivita: Decimal | None
-    imponibile: Decimal | None
-    aliquota_imposta_sostitutiva: Decimal | None
-    imposta_sostitutiva: Decimal | None
-    aliquota_inps: Decimal | None
-    contributi: Decimal | None
-    reddito_netto_stimato: Decimal | None
+    legal_entity_id: UUID
+    estimate: Literal[True] = True
+    warning: str
+    revenue: Decimal
+    profitability_coefficient: Decimal | None
+    taxable_amount: Decimal | None
+    substitute_tax_rate: Decimal | None
+    substitute_tax: Decimal | None
+    social_security_rate: Decimal | None
+    contributions: Decimal | None
+    estimated_net_income: Decimal | None
     # Substitute tax plus contributions: the one figure a person actually has to set
     # aside. Computed here, once, so no screen adds the two lines up on its own.
-    totale_dovuto: Decimal | None = None
+    due_total: Decimal | None = None
 
 
 class CashMonth(BaseModel):
     """One month of the cash view: what came in, what is still owed, what sits in
-    drafts and proformas, what went out. Amounts are `totale` (VAT included: money in
-    the bank), costs are `importo`.
+    drafts and proformas, what went out. Amounts are `total` (VAT included: money in
+    the bank), costs are `amount`.
 
     `quote` are the same four amounts as a share of the tallest month of their chart, in
     [0, 1], computed here: the browser scales a bar with them and never turns an amount
@@ -264,17 +264,17 @@ class CashMonth(BaseModel):
     the heights of the two stacked columns as money (ORB-139), summed here for the same
     reason: what the cash chart stacks (`incassato + costi`) and what the projection
     stacks (all four). A column's height, not an income: the costs are inside it, which
-    is why the field is not called a total and `proiettato` on `CashOverview` excludes
+    is why the field is not called a total and `projected` on `CashOverview` excludes
     them. The chart prints it above a stacked month, where the figure has to match the
     bar a reader measures."""
 
-    anno: int
-    mese: int
-    incassato: Decimal = Field(max_digits=12, decimal_places=2)
-    da_incassare: Decimal = Field(max_digits=12, decimal_places=2)
-    bozze: Decimal = Field(max_digits=12, decimal_places=2)
-    costi: Decimal = Field(max_digits=12, decimal_places=2)
-    pila_andamento: Decimal = Field(
+    year: int
+    month: int
+    paid: Decimal = Field(max_digits=12, decimal_places=2)
+    unpaid: Decimal = Field(max_digits=12, decimal_places=2)
+    drafts: Decimal = Field(max_digits=12, decimal_places=2)
+    costs: Decimal = Field(max_digits=12, decimal_places=2)
+    trend_stack: Decimal = Field(
         max_digits=12,
         decimal_places=2,
         description=(
@@ -282,7 +282,7 @@ class CashMonth(BaseModel):
             "Non e' un ricavo: i costi sono dentro."
         ),
     )
-    pila_proiezione: Decimal = Field(
+    projection_stack: Decimal = Field(
         max_digits=12,
         decimal_places=2,
         description=(
@@ -290,8 +290,8 @@ class CashMonth(BaseModel):
             "bozze/proforma + costi passivi. Non e' un ricavo: i costi sono dentro."
         ),
     )
-    quote_andamento: dict[str, float]
-    quote_proiezione: dict[str, float]
+    trend_shares: dict[str, float]
+    projection_shares: dict[str, float]
 
 
 class ContractDateMarker(BaseModel):
@@ -305,108 +305,111 @@ class ContractDateMarker(BaseModel):
     """
 
     contract_id: UUID
-    titolo: str
+    title: str
     customer_id: UUID
-    tipo: Literal["fine_irrevocabilita", "scadenza_rinnovo"]
+    type: Literal["irrevocability_end", "renewal_due"]
     data: date
 
 
 class CashOverview(BaseModel):
-    """The year as money: `incassato` is invoices paid, `da_incassare` invoices issued
-    and unpaid, `bozze` drafts and proformas not yet turned into invoices, `costi` what
+    """The year as money: `paid` is invoices paid, `unpaid` invoices issued
+    and unpaid, `drafts` drafts and proformas not yet turned into invoices, `costs` what
     was spent. Which month each document falls in is `base` (`CashBase`): by the
-    accrual period it declares, or by the money's own dates. `proiettato` is the first
+    accrual period it declares, or by the money's own dates. `projected` is the first
     three added up -- what the year would collect if everything issued and drafted came
     in -- and the two `lordo` figures are income less costs, actual and projected."""
 
-    anno: int
+    year: int
     # Echoed from the request, so the page can label the reading it shows (ORB-133).
     base: CashBase
     # Echoed as well (REB-630): one azienda's cash, or `None` for every azienda added
     # up, which is the sum «tutte» exists to show.
-    azienda_id: UUID | None = None
-    incassato: Decimal = Field(max_digits=12, decimal_places=2)
-    da_incassare: Decimal = Field(max_digits=12, decimal_places=2)
-    bozze: Decimal = Field(max_digits=12, decimal_places=2)
-    proiettato: Decimal = Field(max_digits=12, decimal_places=2)
-    costi: Decimal = Field(max_digits=12, decimal_places=2)
-    lordo_effettivo: Decimal = Field(max_digits=12, decimal_places=2)
-    lordo_proiettato: Decimal = Field(max_digits=12, decimal_places=2)
-    mesi: list[CashMonth]
+    legal_entity_id: UUID | None = None
+    paid: Decimal = Field(max_digits=12, decimal_places=2)
+    unpaid: Decimal = Field(max_digits=12, decimal_places=2)
+    drafts: Decimal = Field(max_digits=12, decimal_places=2)
+    projected: Decimal = Field(max_digits=12, decimal_places=2)
+    costs: Decimal = Field(max_digits=12, decimal_places=2)
+    actual_gross: Decimal = Field(max_digits=12, decimal_places=2)
+    projected_gross: Decimal = Field(max_digits=12, decimal_places=2)
+    months: list[CashMonth]
     # REB-352 §1.6's overlay: every irrevocability-window close and renewal
-    # deadline that falls inside `anno`, across every contract -- computed "as of"
-    # today regardless of which `anno` is on screen (an irrevocability window is
+    # deadline that falls inside `year`, across every contract -- computed "as of"
+    # today regardless of which `year` is on screen (an irrevocability window is
     # always a forward-looking promise), so a marker on a past year's calendar
     # never appears and a marker on a future one only does once today's window
     # actually reaches into it.
-    scadenze_contrattuali: list[ContractDateMarker]
+    contractual_due_dates: list[ContractDateMarker]
 
 
 class CeilingStatusRead(BaseModel):
-    """One ceiling of the configured jurisdiction pack, evaluated against `anno`'s
+    """One ceiling of the configured jurisdiction pack, evaluated against `year`'s
     real paid revenue -- REB-352 §1.4's headroom figure, the reader-facing shape of
-    `fiscal.ceiling.evaluate_ceiling`'s own output. `residuo` (`soglia - ricavi`) is
+    `fiscal.ceiling.evaluate_ceiling`'s own output. `remaining` (`soglia - ricavi`) is
     the "one number a ceiling exists to produce" mastro's own audit named as
     computed nowhere until REB-361 added `evaluate_ceiling`; this class only
     exposes it, and adds no arithmetic of its own.
     """
 
     id: str
-    etichetta: str
-    soglia: Decimal = Field(max_digits=12, decimal_places=2)
-    conseguenza: CeilingConsequence
-    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
-    residuo: Decimal = Field(max_digits=12, decimal_places=2)
-    superata: bool
-    livello_allerta: str | None
+    label: str
+    threshold: Decimal = Field(max_digits=12, decimal_places=2)
+    consequence: CeilingConsequence
+    revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    remaining: Decimal = Field(max_digits=12, decimal_places=2)
+    exceeded: bool
+    alert_level: str | None
     # `ricavi / soglia`: `0.7125` is 71.25% of the ceiling used, above `1` once crossed.
     # Sent so a progress bar is drawn from a figure the server computed.
-    utilizzo: float
+    usage: float
 
 
 class CeilingHeadroom(BaseModel):
     """Every active ceiling of the fiscal profile's own pack, for one calendar
     year -- `evaluate_pack`'s own list, unmodified."""
 
-    anno: int
+    year: int
     # The azienda whose pack these ceilings belong to (REB-630).
-    azienda_id: UUID
+    legal_entity_id: UUID
     pack_id: str
     pack_version: str
-    soglie: list[CeilingStatusRead]
+    thresholds: list[CeilingStatusRead]
 
 
 class CeilingSimulationQuery(BaseModel):
     """A not-yet-won deal's own estimate, in the shape its three columns already
     carry (`deals/schemas.py`'s own `DealCreate`) -- accepted raw and never by
     `deal_id`, so REB-352 §1.4's "would this fit?" simulator answers before the
-    deal is ever saved. `valore_preventivato` is the synthetic addition directly
-    when typed; with only `ore_preventivate` and `tariffa_oraria` set, the service
+    deal is ever saved. `budgeted_value` is the synthetic addition directly
+    when typed; with only `budgeted_hours` and `hourly_rate` set, the service
     derives it as their product, the same two columns `budget_vs_actual` already
     reads plus the one it does not.
 
     `contract_id` (REB-761) names a contract whose cap on its customer's share the same
     addition is also read against, over the contract's own anniversary year containing
-    `data_prevista` (the day the money is expected, today when absent): the addition goes
+    `expected_date` (the day the money is expected, today when absent): the addition goes
     to that contract's customer. The pack's ceilings are asked either way."""
 
-    ore_preventivate: Decimal | None = Field(
-        default=None, max_digits=CEILING_ORE_MAX_DIGITS, decimal_places=CEILING_DECIMAL_PLACES, ge=0
-    )
-    valore_preventivato: Decimal | None = Field(
+    budgeted_hours: Decimal | None = Field(
         default=None,
-        max_digits=CEILING_VALORE_MAX_DIGITS,
+        max_digits=CEILING_HOURS_MAX_DIGITS,
         decimal_places=CEILING_DECIMAL_PLACES,
         ge=0,
     )
-    tariffa_oraria: Decimal | None = Field(
+    budgeted_value: Decimal | None = Field(
+        default=None,
+        max_digits=CEILING_VALUE_MAX_DIGITS,
+        decimal_places=CEILING_DECIMAL_PLACES,
+        ge=0,
+    )
+    hourly_rate: Decimal | None = Field(
         default=None,
         max_digits=CEILING_FACTOR_MAX_DIGITS,
         decimal_places=CEILING_FACTOR_DECIMAL_PLACES,
         ge=0,
     )
     contract_id: UUID | None = None
-    data_prevista: date | None = None
+    expected_date: date | None = None
 
 
 class CeilingSimulationResult(BaseModel):
@@ -415,106 +418,106 @@ class CeilingSimulationResult(BaseModel):
     revenue to or past its threshold."""
 
     id: str
-    etichetta: str
-    soglia: Decimal = Field(max_digits=12, decimal_places=2)
-    conseguenza: CeilingConsequence
-    ricavi_attuali: Decimal = Field(max_digits=12, decimal_places=2)
-    residuo_attuale: Decimal = Field(max_digits=12, decimal_places=2)
-    # `CeilingStatusRead.utilizzo`, before and after the synthetic addition.
-    utilizzo_attuale: float
-    utilizzo_simulato: float
-    ricavi_simulati: Decimal = Field(max_digits=12, decimal_places=2)
-    residuo_simulato: Decimal = Field(max_digits=12, decimal_places=2)
-    rientra: bool
-    livello_allerta_simulato: str | None
+    label: str
+    threshold: Decimal = Field(max_digits=12, decimal_places=2)
+    consequence: CeilingConsequence
+    current_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    current_remaining: Decimal = Field(max_digits=12, decimal_places=2)
+    # `CeilingStatusRead.usage`, before and after the synthetic addition.
+    current_usage: float
+    simulated_usage: float
+    simulated_revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    simulated_remaining: Decimal = Field(max_digits=12, decimal_places=2)
+    falls_within: bool
+    alert_level_simulated: str | None
 
 
 class CeilingSimulation(BaseModel):
-    anno: int
-    azienda_id: UUID
+    year: int
+    legal_entity_id: UUID
     pack_id: str
     pack_version: str
-    aggiunta_sintetica: Decimal = Field(max_digits=12, decimal_places=2)
-    soglie: list[CeilingSimulationResult]
+    brief_addition: Decimal = Field(max_digits=12, decimal_places=2)
+    thresholds: list[CeilingSimulationResult]
     # The cap of the contract the request named, read against the same addition; `None`
     # when it named none (REB-761).
-    tetto_contratto: ContractCapSimulation | None = None
+    contract_cap: ContractCapSimulation | None = None
 
 
 class YearTotals(BaseModel):
-    """The register of one azienda's year, summed. `imponibile` is `annual_revenue`'s
-    figure over the same invoices, and `rivalsa` is already inside it: the rivalsa line
+    """The register of one azienda's year, summed. `taxable_amount` is `annual_revenue`'s
+    figure over the same invoices, and `social_security_surcharge` is already inside it: the rivalsa line
     is a line of the invoice like any other (REB-352 §2)."""
 
-    fatture: int
-    imponibile: Decimal = Field(max_digits=12, decimal_places=2)
-    rivalsa: Decimal = Field(max_digits=12, decimal_places=2)
-    bollo: Decimal = Field(max_digits=12, decimal_places=2)
-    totale: Decimal = Field(max_digits=12, decimal_places=2)
+    invoices: int
+    taxable_amount: Decimal = Field(max_digits=12, decimal_places=2)
+    social_security_surcharge: Decimal = Field(max_digits=12, decimal_places=2)
+    stamp_duty: Decimal = Field(max_digits=12, decimal_places=2)
+    total: Decimal = Field(max_digits=12, decimal_places=2)
 
 
 class YearRegime(BaseModel):
     """Revenue of the year under one regime, read from what each invoice froze at issue
-    (`snapshot.fiscale`), never from today's profile: an azienda that changed regime in
+    (`snapshot.tax`), never from today's profile: an azienda that changed regime in
     the year has two rows, and each invoice is counted under the one it was issued in."""
 
-    codice_regime: str | None
+    regime_code: str | None
     pack_id: str
-    fatture: int
-    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
+    invoices: int
+    revenue: Decimal = Field(max_digits=12, decimal_places=2)
 
 
 class YearTreatment(BaseModel):
     """Revenue of the year under one tax treatment: a rate, its `Natura` and the legal
     reference printed beside it, exactly as the lines carry them."""
 
-    aliquota_iva: Decimal = Field(max_digits=5, decimal_places=2)
-    natura: str | None
-    riferimento_normativo: str | None
-    righe: int
-    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
+    vat_rate: Decimal = Field(max_digits=5, decimal_places=2)
+    vat_nature: str | None
+    legal_reference: str | None
+    lines: int
+    revenue: Decimal = Field(max_digits=12, decimal_places=2)
 
 
 class YearRegisterRow(BaseModel):
-    """One issued invoice of the register. `ragione_sociale` and `partita_iva` are the
+    """One issued invoice of the register. `legal_name` and `vat_number` are the
     customer's as they were at issue (the snapshot), the way the document printed them."""
 
     invoice_id: UUID
-    anno: int
-    numero: int
-    data_emissione: date
+    year: int
+    number: int
+    issue_date: date
     customer_id: UUID
-    ragione_sociale: str
-    partita_iva: str | None
-    tipo_documento: str
-    imponibile: Decimal = Field(max_digits=12, decimal_places=2)
-    rivalsa: Decimal = Field(max_digits=12, decimal_places=2)
-    bollo: Decimal = Field(max_digits=12, decimal_places=2)
-    totale: Decimal = Field(max_digits=12, decimal_places=2)
+    legal_name: str
+    vat_number: str | None
+    sdi_document_type: str
+    taxable_amount: Decimal = Field(max_digits=12, decimal_places=2)
+    social_security_surcharge: Decimal = Field(max_digits=12, decimal_places=2)
+    stamp_duty: Decimal = Field(max_digits=12, decimal_places=2)
+    total: Decimal = Field(max_digits=12, decimal_places=2)
     # The sentence the invoice itself prints for its stamp duty, or `None` without one.
-    dichiarazione_bollo: str | None
-    stato_pagamento: str
-    data_incasso: date | None
+    stamp_duty_declaration: str | None
+    payment_status: str
+    payment_date: date | None
 
 
 class YearOverview(BaseModel):
     """The year of one azienda as the accountant reads it: what was issued, under which
     regime and tax treatment, with the stamp duty and the rivalsa kept apart.
 
-    Scoped by the register year (`Invoice.anno`), the same `fattura`/`emessa` universe
-    `annual_revenue` sums, so `totali.imponibile` is the revenue figure of the year and
-    the CSV's total is this one. `annullate` counts the invoices struck from the register
+    Scoped by the register year (`Invoice.year`), the same `invoice`/`issued` universe
+    `annual_revenue` sums, so `totali.taxable_amount` is the revenue figure of the year and
+    the CSV's total is this one. `cancelled` counts the invoices struck from the register
     in the year: they keep their number and are listed in none of the figures.
     """
 
-    anno: int
-    azienda_id: UUID
-    azienda_nome: str
-    totali: YearTotals
-    regimi: list[YearRegime]
-    trattamenti: list[YearTreatment]
-    registro: list[YearRegisterRow]
-    annullate: int
+    year: int
+    legal_entity_id: UUID
+    legal_entity_name: str
+    total: YearTotals
+    regimes: list[YearRegime]
+    treatments: list[YearTreatment]
+    register: list[YearRegisterRow]
+    cancelled: int
 
 
 class RevenueByCustomer(BaseModel):
@@ -524,7 +527,7 @@ class RevenueByCustomer(BaseModel):
     `Σ Invoice.imponibile` for this customer over the calendar year, divided by that
     same year's `annual_revenue`.
 
-    Not `EsposizioneCliente` (`dashboard/schemas.py`), whose `quota` is a share of the
+    Not `ExposureCustomer` (`dashboard/schemas.py`), whose `share` is a share of the
     *largest* customer's outstanding receivable and answers "who currently owes the
     most". This answers a different question -- "what share of total invoiced income
     comes from this one client" -- against the whole year's revenue, and the two do not
@@ -532,15 +535,15 @@ class RevenueByCustomer(BaseModel):
     """
 
     customer_id: UUID
-    ragione_sociale: str
-    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
-    fatture: int
-    quota: float
-    # The azienda whose revenue `quota` is a share of (REB-630, spec 2026-10-03 §1.9):
+    legal_name: str
+    revenue: Decimal = Field(max_digits=12, decimal_places=2)
+    invoices: int
+    share: float
+    # The azienda whose revenue `share` is a share of (REB-630, spec 2026-10-03 §1.9):
     # a share of revenue is a share of one azienda's revenue, so in «tutte» the rows
     # come grouped by it and a customer billed by two aziende appears twice, once per
     # share. With one azienda every row carries the same id and nothing changes.
-    azienda_id: UUID
+    legal_entity_id: UUID
 
 
 class EconomicOverview(BaseModel):
@@ -549,21 +552,21 @@ class EconomicOverview(BaseModel):
     incassati e sui ricavi proiettati -- con i netti che ne seguono. Per chi non e'
     admin, o senza profilo, la parte fiscale e' `None` e la pagina mostra solo la cassa."""
 
-    calcolato_alle: datetime
+    calculated_at: datetime
     # The azienda the whole answer speaks for, or `None` for every azienda (REB-630).
     # In that case the fiscal block below is empty when the space has several, because
     # two regimes' taxes do not add: the page then asks `/api/analytics/fiscal` once per
     # azienda instead (spec 2026-10-03 §1.9).
-    azienda_id: UUID | None = None
-    cassa: CashOverview
-    fiscale: FiscalEstimate | None
-    fiscale_proiettato: FiscalEstimate | None
+    legal_entity_id: UUID | None = None
+    pension_fund: CashOverview
+    tax: FiscalEstimate | None
+    projected_tax: FiscalEstimate | None
     # Whole-practice, calendar-year concentration (§1.5): not blocked on the ledger
-    # milestone the way a contract-anchored cap is, and distinct from `per_cliente`'s
+    # milestone the way a contract-anchored cap is, and distinct from `by_customer`'s
     # receivables exposure on the dashboard's own page (`dashboard/schemas.py`).
-    concentrazione_clienti: list[RevenueByCustomer]
-    netto_effettivo: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
-    netto_proiettato: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    customer_concentration: list[RevenueByCustomer]
+    actual_net: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    projected_net: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
 
 
 class BindTimeRequest(BaseModel):
@@ -572,58 +575,58 @@ class BindTimeRequest(BaseModel):
     of "all of them" is that decision made silently."""
 
     entry_ids: list[UUID] = Field(min_length=1)
-    raggruppa_per_mese: bool = True
+    group_by_by_month: bool = True
 
 
 class DaysStateShare(BaseModel):
-    """One state's days in one month. `quota` is a share of the tallest month's total in
+    """One state's days in one month. `share` is a share of the tallest month's total in
     [0, 1], computed here so the browser draws a bar and never adds a figure."""
 
-    stato: str
-    giorni: Decimal = Field(max_digits=10, decimal_places=2)
-    quota: float
+    status: str
+    days: Decimal = Field(max_digits=10, decimal_places=2)
+    share: float
 
 
 class DaysMonth(BaseModel):
     """One calendar month of the days analysis.
 
-    `registrati` is the days that really happened (worked, worked without approval,
-    invoiced, paid, disputed, written off); `media_precedente` is the mean of the three
-    months before this one, a quiet month counting as zero. `completo` is false for a
-    month that has not yet ended. `senza_approvazione` is the days (by quantity, so a half day
+    `register` is the days that really happened (worked, worked without approval,
+    invoiced, paid, disputed, written off); `media_previous` is the mean of the three
+    months before this one, a quiet month counting as zero. `complete` is false for a
+    month that has not yet ended. `without_approval` is the days (by quantity, so a half day
     is a half) that slipped into «lavorato senza approvazione» in the month, by the moment
     of the transition, so a day since regularised still counts: it is history, not a figure
     about the present.
     """
 
-    mese: str
-    completo: bool
-    per_stato: list[DaysStateShare]
-    totale: Decimal = Field(max_digits=10, decimal_places=2)
-    quota_totale: float
-    registrati: Decimal = Field(max_digits=10, decimal_places=2)
-    quota_registrati: float
-    media_precedente: Decimal = Field(max_digits=10, decimal_places=2)
-    senza_approvazione: Decimal = Field(max_digits=10, decimal_places=2)
-    quota_senza_approvazione: float
+    month: str
+    complete: bool
+    by_status: list[DaysStateShare]
+    total: Decimal = Field(max_digits=10, decimal_places=2)
+    total_share: float
+    register: Decimal = Field(max_digits=10, decimal_places=2)
+    register_share: float
+    media_previous: Decimal = Field(max_digits=10, decimal_places=2)
+    without_approval: Decimal = Field(max_digits=10, decimal_places=2)
+    share_without_approval: float
 
 
 class DaysRate(BaseModel):
     """The realised day rate of one customer or one contract against the rate card.
 
-    `tariffa_reale` is what the invoice lines billed over the days they bill, `None` when
-    nothing was invoiced. `tariffa_nominale` is the rate card's own price over the days a
-    card covers, `None` when no billed day is covered; `giorni_senza_listino` are the days
+    `actual_rate` is what the invoice lines billed over the days they bill, `None` when
+    nothing was invoiced. `nominal_rate` is the rate card's own price over the days a
+    card covers, `None` when no billed day is covered; `days_without_list_price` are the days
     no card covered, reported on their own and never priced at zero.
     """
 
     id: UUID
-    etichetta: str
-    giorni_fatturati: Decimal = Field(max_digits=10, decimal_places=2)
-    importo_fatturato: Decimal = Field(max_digits=12, decimal_places=2)
-    tariffa_reale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
-    giorni_senza_listino: Decimal = Field(max_digits=10, decimal_places=2)
-    tariffa_nominale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    label: str
+    invoiced_days: Decimal = Field(max_digits=10, decimal_places=2)
+    invoiced_amount: Decimal = Field(max_digits=12, decimal_places=2)
+    actual_rate: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    days_without_list_price: Decimal = Field(max_digits=10, decimal_places=2)
+    nominal_rate: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
 
 
 class DaysAnalysis(BaseModel):
@@ -633,17 +636,17 @@ class DaysAnalysis(BaseModel):
 
     da: date
     a: date
-    azienda_id: UUID | None
-    oggi: date
-    mesi: list[DaysMonth]
-    ultimo_mese_completo: str | None
-    giorni_nel_periodo: Decimal = Field(max_digits=10, decimal_places=2)
-    giorni_fatturati: Decimal = Field(max_digits=10, decimal_places=2)
-    tariffa_reale: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
-    per_cliente: list[DaysRate]
-    per_contratto: list[DaysRate]
-    senza_approvazione_nel_periodo: Decimal = Field(max_digits=10, decimal_places=2)
-    senza_approvazione_sempre: Decimal = Field(max_digits=10, decimal_places=2)
+    legal_entity_id: UUID | None
+    today: date
+    months: list[DaysMonth]
+    last_complete_month: str | None
+    days_in_period: Decimal = Field(max_digits=10, decimal_places=2)
+    invoiced_days: Decimal = Field(max_digits=10, decimal_places=2)
+    actual_rate: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
+    by_customer: list[DaysRate]
+    by_contract: list[DaysRate]
+    without_approval_in_period: Decimal = Field(max_digits=10, decimal_places=2)
+    without_approval_always: Decimal = Field(max_digits=10, decimal_places=2)
 
 
 __all__ = [
@@ -652,7 +655,7 @@ __all__ = [
     "BudgetQuery",
     "BudgetVsActualRow",
     "DealPnl",
-    "DealStato",
+    "DealStatus",
     "FiscalEstimate",
     "PeriodPnl",
     "PeriodPnlQuery",

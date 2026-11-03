@@ -20,7 +20,7 @@ from rebase_core.duplicates import (
     FLAGS_PER_ROW,
     LINKEDIN,
     NOME,
-    TELEFONO,
+    PHONE,
     UNIQUE_INDEXES,
     IndexesEnsured,
     duplicate_list,
@@ -42,7 +42,7 @@ from rebase_core.merge import PersonMergeService
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupCreate
-from rebase_core.talenti import TalentiService
+from rebase_core.talents import TalentsService
 from rebase_core.users import LINKEDIN_TAKEN
 
 NOW = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
@@ -85,12 +85,12 @@ def twice(hub_session: Session) -> Iterator[Session]:
 def _apply(session: Session, email: str, linkedin: str | None = ADA, **extra: Any) -> Any:
     payload: dict[str, Any] = {
         "nome": "Ada",
-        "cognome": "Lovelace",
+        "last_name": "Lovelace",
         "email": email,
         "linkedin_url": linkedin,
-        "tariffa_giornaliera": Decimal("450"),
+        "daily_rate": Decimal("450"),
         "posizione": "Backend developer",
-        "remoto": "remoto",
+        "remote": "remote",
     }
     payload.update(extra)
     return FreelancerService(session).apply(FreelancerCreate(**payload))
@@ -100,7 +100,7 @@ def _user(session: Session, email: str, **extra: Any) -> User:
     row = User(
         email=email,
         nome=extra.pop("nome", "Marco"),
-        cognome=extra.pop("cognome", "Rossi"),
+        last_name=extra.pop("last_name", "Rossi"),
         **extra,
     )
     session.add(row)
@@ -171,13 +171,13 @@ def test_a_second_address_with_no_profile_is_still_a_second_person(clean: Sessio
 def test_the_signup_form_attaches_to_the_row_that_holds_the_profile(clean: Session) -> None:
     service = SignupService(clean)
     first = service.subscribe(
-        SignupCreate(email="a@studio.it", nome="Ada", cognome="Lovelace", linkedin_url=ADA)
+        SignupCreate(email="a@studio.it", nome="Ada", last_name="Lovelace", linkedin_url=ADA)
     )
     second = service.subscribe(
         SignupCreate(
             email="b@studio.it",
             nome="Ada",
-            cognome="Lovelace",
+            last_name="Lovelace",
             linkedin_url="linkedin.com/in/ADA-lovelace/",
         )
     )
@@ -187,9 +187,9 @@ def test_the_signup_form_attaches_to_the_row_that_holds_the_profile(clean: Sessi
 
 def test_a_repeat_signup_does_not_fill_in_a_profile_another_row_holds(clean: Session) -> None:
     service = SignupService(clean)
-    service.subscribe(SignupCreate(email="a@studio.it", nome="A", cognome="A", linkedin_url=ADA))
-    service.subscribe(SignupCreate(email="b@studio.it", nome="B", cognome="B"))
-    service.subscribe(SignupCreate(email="b@studio.it", nome="B", cognome="B", linkedin_url=ADA))
+    service.subscribe(SignupCreate(email="a@studio.it", nome="A", last_name="A", linkedin_url=ADA))
+    service.subscribe(SignupCreate(email="b@studio.it", nome="B", last_name="B"))
+    service.subscribe(SignupCreate(email="b@studio.it", nome="B", last_name="B", linkedin_url=ADA))
     other = clean.scalar(select(Signup).where(Signup.email == "b@studio.it"))
     assert other is not None and other.linkedin_url is None
 
@@ -197,7 +197,7 @@ def test_a_repeat_signup_does_not_fill_in_a_profile_another_row_holds(clean: Ses
 def test_the_database_refuses_two_people_with_one_profile(clean: Session) -> None:
     _user(clean, "a@b.it", linkedin_url=ADA)
     clean.commit()
-    clean.add(User(email="c@b.it", nome="C", cognome="C", linkedin_url=ADA.upper()))
+    clean.add(User(email="c@b.it", nome="C", last_name="C", linkedin_url=ADA.upper()))
     with pytest.raises(IntegrityError):
         clean.commit()
     clean.rollback()
@@ -212,14 +212,14 @@ def test_an_admin_cannot_draft_a_card_with_a_profile_that_is_already_on_one(
 ) -> None:
     _apply(clean, "ada@studio.it", ADA)
     signup = SignupService(clean).subscribe(
-        SignupCreate(email="altra@studio.it", nome="Ada", cognome="Lovelace")
+        SignupCreate(email="altra@studio.it", nome="Ada", last_name="Lovelace")
     )
     draft = FreelancerDraft(
         nome="Ada",
-        cognome="Lovelace",
+        last_name="Lovelace",
         linkedin_url=ADA,
         posizione="Backend",
-        fonti=["https://www.linkedin.com/in/ada-lovelace"],
+        sources=["https://www.linkedin.com/in/ada-lovelace"],
     )
     with pytest.raises(ValidationFailed) as refused:
         FreelancerService(clean).draft_from_signup(signup.id, draft, an_admin(clean), "web")
@@ -231,11 +231,11 @@ def test_a_member_cannot_take_the_profile_of_another_card(clean: Session) -> Non
     bob, _ = _apply(clean, "bob@studio.it", "https://www.linkedin.com/in/bob")
     update = MemberUpdate(
         nome="Bob",
-        cognome="Lovelace",
+        last_name="Lovelace",
         linkedin_url=ADA,
-        tariffa_giornaliera=Decimal("450"),
+        daily_rate=Decimal("450"),
         posizione="Backend",
-        remoto="remoto",
+        remote="remote",
         links=[],
     )
     with pytest.raises(ValidationFailed) as refused:
@@ -256,9 +256,9 @@ def test_an_admin_override_cannot_take_the_profile_of_another_card(clean: Sessio
 def test_a_sign_up_whose_profile_is_on_a_card_is_no_lead(clean: Session) -> None:
     _apply(clean, "ada@studio.it", ADA)
     SignupService(clean).subscribe(
-        SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace")
+        SignupCreate(email="ada@studio.it", nome="Ada", last_name="Lovelace")
     )
-    clean.add(Signup(email="altra@studio.it", nome="Ada", cognome="L", linkedin_url=None))
+    clean.add(Signup(email="altra@studio.it", nome="Ada", last_name="L", linkedin_url=None))
     clean.commit()
     # The same profile under another address, written the way a row from before the
     # rule reads: it is that person, not a lead to chase.
@@ -275,57 +275,57 @@ def test_a_sign_up_whose_profile_is_on_a_card_is_no_lead(clean: Session) -> None
     leads = FreelancerService(clean)._leads(50)
     assert sorted(item.email for item in leads[0]) == ["fantasma@studio.it"]
     assert leads[1] == 1
-    talenti = TalentiService(clean).list_recent(limit=50)
-    assert sorted(i.email for i in talenti.items if i.stato == "lead") == ["fantasma@studio.it"]
+    talents = TalentsService(clean).list_recent(limit=50)
+    assert sorted(i.email for i in talents.items if i.status == "lead") == ["fantasma@studio.it"]
 
 
 # ---- the finder --------------------------------------------------------------------------
 
 
-def test_two_cards_with_one_profile_are_one_unibile_pair_and_the_newest_cv_wins(
+def test_two_cards_with_one_profile_are_one_mergeable_pair_and_the_newest_cv_wins(
     twice: Session,
 ) -> None:
-    older = _user(twice, "vecchia@studio.it", cognome="Lanzo", linkedin_url=ADA)
-    newer = _user(twice, "nuova@studio.it", cognome="Lanzo", linkedin_url=ADA.upper())
+    older = _user(twice, "vecchia@studio.it", last_name="Lanzo", linkedin_url=ADA)
+    newer = _user(twice, "nuova@studio.it", last_name="Lanzo", linkedin_url=ADA.upper())
     old_card = _card(twice, older, NOW - timedelta(days=40))
     new_card = _card(twice, newer, NOW)
     twice.commit()
 
     report = find_duplicates(twice)
 
-    assert len(report.unibili) == 1 and report.da_rivedere == []
-    pair = report.unibili[0]
+    assert len(report.mergeable) == 1 and report.from_review == []
+    pair = report.mergeable[0]
     assert pair.survivor.freelancer_id == new_card.id
-    assert pair.assorbito.freelancer_id == old_card.id
-    assert LINKEDIN in pair.segnali and NOME in pair.segnali
+    assert pair.absorbed.freelancer_id == old_card.id
+    assert LINKEDIN in pair.signals and NOME in pair.signals
 
 
-def test_the_same_name_or_telephone_only_flags_and_is_never_unibile(twice: Session) -> None:
-    one = _user(twice, "uno@studio.it", telefono="+39 333 1234567")
-    two = _user(twice, "due@studio.it", telefono="333-1234567", nome="Luca", cognome="Bianchi")
-    three = _user(twice, "tre@studio.it", nome="rossi", cognome="MARCO")
+def test_the_same_name_or_telephone_only_flags_and_is_never_mergeable(twice: Session) -> None:
+    one = _user(twice, "uno@studio.it", phone="+39 333 1234567")
+    two = _user(twice, "due@studio.it", phone="333-1234567", nome="Luca", last_name="Bianchi")
+    three = _user(twice, "tre@studio.it", nome="rossi", last_name="MARCO")
     for user in (one, two, three):
         _card(twice, user)
     twice.commit()
 
     report = find_duplicates(twice)
 
-    assert report.unibili == []
-    signals = sorted(p.segnali for p in report.da_rivedere)
-    assert signals == [(NOME,), (TELEFONO,)]
-    assert not any(p.unibile for p in report.da_rivedere)
+    assert report.mergeable == []
+    signals = sorted(p.signals for p in report.from_review)
+    assert signals == [(NOME,), (PHONE,)]
+    assert not any(p.mergeable for p in report.from_review)
 
 
-def test_a_pair_with_an_admins_card_is_not_unibile_and_keeps_the_admin(twice: Session) -> None:
+def test_to_pair_with_an_admins_card_is_not_mergeable_and_keeps_the_admin(twice: Session) -> None:
     admin = _user(twice, "admin@rebase.it", role="admin", linkedin_url=ADA)
-    member = _user(twice, "membro@rebase.it", nome="Ada", cognome="Lovelace", linkedin_url=ADA)
+    member = _user(twice, "membro@rebase.it", nome="Ada", last_name="Lovelace", linkedin_url=ADA)
     _card(twice, admin, NOW - timedelta(days=90))
     _card(twice, member, NOW)
     twice.commit()
     report = find_duplicates(twice)
-    assert report.unibili != [] or report.da_rivedere != []
-    pair = (report.unibili + report.da_rivedere)[0]
-    assert pair.survivor.admin is True and pair.assorbito.admin is False
+    assert report.mergeable != [] or report.from_review != []
+    pair = (report.mergeable + report.from_review)[0]
+    assert pair.survivor.admin is True and pair.absorbed.admin is False
 
 
 def test_a_merged_card_is_no_longer_a_pair(twice: Session) -> None:
@@ -333,11 +333,11 @@ def test_a_merged_card_is_no_longer_a_pair(twice: Session) -> None:
     newer = _user(twice, "nuova@studio.it", linkedin_url=ADA.upper())
     old_card = _card(twice, older, NOW - timedelta(days=40))
     new_card = _card(twice, newer, NOW)
-    admin = _user(twice, "admin@rebase.it", role="admin", nome="Root", cognome="Admin")
+    admin = _user(twice, "admin@rebase.it", role="admin", nome="Root", last_name="Admin")
     twice.commit()
     PersonMergeService(twice).merge(new_card.id, old_card.id, admin.id)
     report = find_duplicates(twice)
-    assert report.unibili == [] and report.da_rivedere == []
+    assert report.mergeable == [] and report.from_review == []
 
 
 def test_sign_ups_that_repeat_a_profile_are_listed_and_never_merged(twice: Session) -> None:
@@ -349,8 +349,8 @@ def test_sign_ups_that_repeat_a_profile_are_listed_and_never_merged(twice: Sessi
     twice.add(Signup(email="ada@studio.it", linkedin_url=ADA))
     twice.commit()
     report = find_duplicates(twice)
-    assert report.unibili == []
-    reasons = sorted("card" if item.card_user_id else "signup" for item in report.iscrizioni)
+    assert report.mergeable == []
+    reasons = sorted("card" if item.card_user_id else "signup" for item in report.signups)
     # `altra` repeats the card's profile; `y` repeats `x`; and `ada@`, the card's own
     # address, repeats `altra`: two sign-ups on one profile either way.
     assert reasons == ["card", "signup", "signup"]
@@ -361,7 +361,7 @@ def test_the_unique_indexes_wait_for_the_merge_and_are_then_created(twice: Sessi
     newer = _user(twice, "nuova@studio.it", linkedin_url=ADA)
     old_card = _card(twice, older, NOW - timedelta(days=40))
     new_card = _card(twice, newer, NOW)
-    admin = _user(twice, "admin@rebase.it", role="admin", nome="Root", cognome="Admin")
+    admin = _user(twice, "admin@rebase.it", role="admin", nome="Root", last_name="Admin")
     twice.commit()
     # While the pair is there the users' index is refused, by name and count, not raised.
     waiting = ensure_unique_indexes(twice)
@@ -373,22 +373,22 @@ def test_the_unique_indexes_wait_for_the_merge_and_are_then_created(twice: Sessi
     assert ensure_unique_indexes(twice) == IndexesEnsured()
 
 
-def test_a_talenti_row_names_the_cards_it_may_be(twice: Session) -> None:
-    older = _user(twice, "vecchia@studio.it", cognome="Lanzo", linkedin_url=ADA)
-    newer = _user(twice, "nuova@studio.it", cognome="Lanzo", linkedin_url=ADA)
-    alone = _user(twice, "sola@studio.it", nome="Sola", cognome="Persona")
+def test_to_talents_row_names_the_cards_it_may_be(twice: Session) -> None:
+    older = _user(twice, "vecchia@studio.it", last_name="Lanzo", linkedin_url=ADA)
+    newer = _user(twice, "nuova@studio.it", last_name="Lanzo", linkedin_url=ADA)
+    alone = _user(twice, "sola@studio.it", nome="Sola", last_name="Persona")
     old_card, new_card, alone_card = (
         _card(twice, older, NOW - timedelta(days=40)),
         _card(twice, newer, NOW),
         _card(twice, alone),
     )
     twice.commit()
-    rows = {row.id: row for row in TalentiService(twice).list_recent(limit=50).items}
-    assert rows[old_card.id].possibile_duplicato_di == [new_card.id]
-    assert rows[new_card.id].possibile_duplicato_di == [old_card.id]
-    assert rows[alone_card.id].possibile_duplicato_di == []
-    one = TalentiService(twice).row_for_freelancer(old_card.id)
-    assert one.possibile_duplicato_di == [new_card.id]
+    rows = {row.id: row for row in TalentsService(twice).list_recent(limit=50).items}
+    assert rows[old_card.id].duplicate_possible_of == [new_card.id]
+    assert rows[new_card.id].duplicate_possible_of == [old_card.id]
+    assert rows[alone_card.id].duplicate_possible_of == []
+    one = TalentsService(twice).row_for_freelancer(old_card.id)
+    assert one.duplicate_possible_of == [new_card.id]
 
 
 def test_the_admin_list_names_both_sides_of_a_pair(twice: Session) -> None:
@@ -398,19 +398,19 @@ def test_the_admin_list_names_both_sides_of_a_pair(twice: Session) -> None:
     _card(twice, newer, NOW)
     twice.commit()
     listed = duplicate_list(twice)
-    assert len(listed.unibili) == 1 and listed.da_rivedere == [] and listed.iscrizioni == 0
-    pair = listed.unibili[0]
-    assert (pair.survivor.email, pair.assorbito.email) == ("nuova@studio.it", "vecchia@studio.it")
-    assert pair.unibile is True and pair.survivor.ha_cv is True
+    assert len(listed.mergeable) == 1 and listed.from_review == [] and listed.signups == 0
+    pair = listed.mergeable[0]
+    assert (pair.survivor.email, pair.absorbed.email) == ("nuova@studio.it", "vecchia@studio.it")
+    assert pair.mergeable is True and pair.survivor.ha_cv is True
 
 
 # ---- `rebase talent-duplicates` ---------------------------------------------------------
 
 
 def _production_like(session: Session) -> tuple[Freelancer, Freelancer, User]:
-    older = _user(session, "vecchia@studio.it", cognome="Lanzo", linkedin_url=ADA)
-    newer = _user(session, "nuova@studio.it", cognome="Lanzo", linkedin_url=ADA)
-    admin = _user(session, "admin@rebase.it", role="admin", nome="Root", cognome="Admin")
+    older = _user(session, "vecchia@studio.it", last_name="Lanzo", linkedin_url=ADA)
+    newer = _user(session, "nuova@studio.it", last_name="Lanzo", linkedin_url=ADA)
+    admin = _user(session, "admin@rebase.it", role="admin", nome="Root", last_name="Admin")
     old_card = _card(session, older, NOW - timedelta(days=40))
     new_card = _card(session, newer, NOW)
     session.commit()
@@ -480,9 +480,9 @@ def test_a_pair_a_merge_refuses_is_reported_and_the_rest_goes_on(twice: Session)
 def test_an_admin_can_choose_the_survivor_and_merge_a_pair_that_only_looks_alike(
     twice: Session,
 ) -> None:
-    one = _user(twice, "uno@studio.it", telefono="333 1234567")
-    two = _user(twice, "due@studio.it", nome="Luca", cognome="Bianchi", telefono="3331234567")
-    admin = _user(twice, "admin@rebase.it", role="admin", nome="Root", cognome="Admin")
+    one = _user(twice, "uno@studio.it", phone="333 1234567")
+    two = _user(twice, "due@studio.it", nome="Luca", last_name="Bianchi", phone="3331234567")
+    admin = _user(twice, "admin@rebase.it", role="admin", nome="Root", last_name="Admin")
     keep, other = _card(twice, one, NOW), _card(twice, two, NOW + timedelta(days=1))
     twice.commit()
     code, lines = talent_duplicates(
@@ -501,7 +501,7 @@ def test_undo_by_action_id_puts_the_merge_back(twice: Session) -> None:
         next(line for line in lines if "unite (azione " in line).split("azione ")[1].split(")")[0]
     )
     code, undone = talent_duplicates(twice, undo=UUID(action), admin_email="admin@rebase.it")
-    assert code == 0 and "annullata" in undone[0]
+    assert code == 0 and "cancelled" in undone[0]
     twice.expire_all()
     assert twice.get(Freelancer, absorbed.id).deleted_at is None  # type: ignore[union-attr]
     # Both cards held one profile: the survivor keeps it (the unique index wants one holder),
@@ -539,19 +539,19 @@ def test_a_page_that_is_not_a_personal_profile_never_identifies_anybody(clean: S
     assert (created, created_two) == (True, True) and one.id != two.id
     service = SignupService(clean)
     first = service.subscribe(
-        SignupCreate(email="a@studio.it", nome="A", cognome="A", linkedin_url=company)
+        SignupCreate(email="a@studio.it", nome="A", last_name="A", linkedin_url=company)
     )
     second = service.subscribe(
-        SignupCreate(email="b@studio.it", nome="B", cognome="B", linkedin_url=company)
+        SignupCreate(email="b@studio.it", nome="B", last_name="B", linkedin_url=company)
     )
     assert first.nuova and second.nuova
-    assert find_duplicates(clean).unibili == []
+    assert find_duplicates(clean).mergeable == []
 
 
 def test_a_profile_held_by_somebody_with_no_card_is_not_taken_by_a_wizard_run(
     clean: Session,
 ) -> None:
-    contact = _user(clean, "referente@acme.it", nome="Wile", cognome="Coyote", linkedin_url=ADA)
+    contact = _user(clean, "referente@acme.it", nome="Wile", last_name="Coyote", linkedin_url=ADA)
     clean.commit()
     read, created = _apply(clean, "ada@studio.it", ADA)
     assert created is True and read.email == "ada@studio.it"
@@ -577,10 +577,10 @@ def _full_scan_flags(session: Session, ids: list[UUID]) -> dict[UUID, list[UUID]
     wanted = set(ids)
     answer: dict[UUID, list[UUID]] = {}
     report = find_duplicates(session)
-    for pair in (*report.unibili, *report.da_rivedere):
+    for pair in (*report.mergeable, *report.from_review):
         for mine, other in (
-            (pair.survivor, pair.assorbito),
-            (pair.assorbito, pair.survivor),
+            (pair.survivor, pair.absorbed),
+            (pair.absorbed, pair.survivor),
         ):
             if mine.freelancer_id in wanted:
                 flagged = answer.setdefault(mine.freelancer_id, [])
@@ -593,41 +593,41 @@ def _seed_a_crowd(session: Session) -> list[UUID]:
     """Forty cards where every kind of match, and every kind of near miss, is present."""
     people: list[dict[str, Any]] = [
         # One profile on three cards, one of them an admin's.
-        {"nome": "Ada", "cognome": "Lovelace", "linkedin_url": ADA},
-        {"nome": "Augusta", "cognome": "King", "linkedin_url": ADA},
-        {"nome": "Lady", "cognome": "Byron", "linkedin_url": ADA, "role": "admin"},
+        {"nome": "Ada", "last_name": "Lovelace", "linkedin_url": ADA},
+        {"nome": "Augusta", "last_name": "King", "linkedin_url": ADA},
+        {"nome": "Lady", "last_name": "Byron", "linkedin_url": ADA, "role": "admin"},
         # One name written four ways: case, accents, the two words swapped, punctuation.
-        {"nome": "José", "cognome": "Álvarez"},
-        {"nome": "jose", "cognome": "alvarez"},
-        {"nome": "ÁLVAREZ", "cognome": "José"},
-        {"nome": "Jose'", "cognome": "Alvarez-"},
+        {"nome": "José", "last_name": "Álvarez"},
+        {"nome": "jose", "last_name": "alvarez"},
+        {"nome": "ÁLVAREZ", "last_name": "José"},
+        {"nome": "Jose'", "last_name": "Alvarez-"},
         # One number written four ways, and a short one nobody shares.
-        {"nome": "Uno", "cognome": "Telefono", "telefono": "+39 333 1234567"},
-        {"nome": "Due", "cognome": "Telefono", "telefono": "0039 3331234567"},
-        {"nome": "Tre", "cognome": "Telefono", "telefono": "333-123-4567"},
-        {"nome": "Quattro", "cognome": "Telefono", "telefono": "3331234567"},
-        {"nome": "Corto", "cognome": "Numero", "telefono": "12345"},
-        {"nome": "Corto", "cognome": "Altro", "telefono": "12345"},
+        {"nome": "Uno", "last_name": "Telefono", "phone": "+39 333 1234567"},
+        {"nome": "Due", "last_name": "Telefono", "phone": "0039 3331234567"},
+        {"nome": "Tre", "last_name": "Telefono", "phone": "333-123-4567"},
+        {"nome": "Quattro", "last_name": "Telefono", "phone": "3331234567"},
+        {"nome": "Corto", "last_name": "Numero", "phone": "12345"},
+        {"nome": "Corto", "last_name": "Altro", "phone": "12345"},
         # More than the five flags a row carries: seven people called Maria Bianchi.
-        *({"nome": "Maria", "cognome": "Bianchi"} for _ in range(7)),
+        *({"nome": "Maria", "last_name": "Bianchi"} for _ in range(7)),
         # Not Latin letters, an empty word, and a number outside ASCII.
-        {"nome": "山田", "cognome": "太郎"},
-        {"nome": "山田", "cognome": "太郎"},
-        {"nome": "Solo", "cognome": ""},
-        {"nome": "Solo", "cognome": ""},
-        {"nome": "Arabo", "cognome": "Uno", "telefono": "٠٣٣٣١٢٣٤٥٦٧"},
-        {"nome": "Arabo", "cognome": "Due", "telefono": "٠٣٣٣١٢٣٤٥٦٧"},
+        {"nome": "山田", "last_name": "太郎"},
+        {"nome": "山田", "last_name": "太郎"},
+        {"nome": "Solo", "last_name": ""},
+        {"nome": "Solo", "last_name": ""},
+        {"nome": "Arabo", "last_name": "Uno", "phone": "٠٣٣٣١٢٣٤٥٦٧"},
+        {"nome": "Arabo", "last_name": "Due", "phone": "٠٣٣٣١٢٣٤٥٦٧"},
         # Alone.
-        *({"nome": f"Sola{n}", "cognome": f"Persona{n}"} for n in range(6)),
+        *({"nome": f"Sola{n}", "last_name": f"Persona{n}"} for n in range(6)),
     ]
     ids: list[UUID] = []
     for n, person in enumerate(people):
         user = _user(session, f"p{n}@studio.it", **person)
         ids.append(_card(session, user, NOW - timedelta(days=n)).id)
     # The same name as a card that was deleted, and as a person merged away: neither counts.
-    gone = _user(session, "gone@studio.it", nome="Maria", cognome="Bianchi")
+    gone = _user(session, "gone@studio.it", nome="Maria", last_name="Bianchi")
     _card(session, gone).deleted_at = NOW
-    merged = _user(session, "merged@studio.it", nome="Maria", cognome="Bianchi")
+    merged = _user(session, "merged@studio.it", nome="Maria", last_name="Bianchi")
     _card(session, merged)
     merged.merged_into_id = gone.id
     session.commit()
@@ -651,9 +651,9 @@ def test_the_list_flags_a_pair_that_straddles_two_pages(twice: Session) -> None:
     cursor = None
     pages = 0
     while True:
-        page = TalentiService(twice).list_recent(limit=6, cursor=cursor)
+        page = TalentsService(twice).list_recent(limit=6, cursor=cursor)
         pages += 1
-        seen.update({row.id: row.possibile_duplicato_di for row in page.items})
+        seen.update({row.id: row.duplicate_possible_of for row in page.items})
         cursor = page.next_cursor
         if cursor is None:
             break

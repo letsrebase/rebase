@@ -10,9 +10,9 @@ export const UTM_KEYS = [
   'utm_id',
 ] as const
 
-/** The six UTM keys, plus `origine`: the page of the site the person started from,
+/** The six UTM keys, plus `origin`: the page of the site the person started from,
  *  `home` or `pigrocrm`, which the landing puts on its doors as `da=` (ORB-167). */
-export type Utm = Partial<Record<(typeof UTM_KEYS)[number] | 'origine', string>>
+export type Utm = Partial<Record<(typeof UTM_KEYS)[number] | 'origin', string>>
 
 /** Where the landing leaves the page it was, beside the campaign. */
 export const ORIGIN_STORAGE_KEY = 'rebase.da'
@@ -128,16 +128,16 @@ export function resolveOrigin(search: string): string | null {
 
 /** Where a member's own link leaves the code it carried, the same tab-lasting
  *  attribution `ORIGIN_STORAGE_KEY` already keeps for `da=` (P-REB-44). */
-export const REFERRAL_STORAGE_KEY = 'rebase.rif'
+export const REFERRAL_STORAGE_KEY = 'rebase.ref'
 const REFERRAL_SHAPE = /^[A-Za-z0-9]{1,10}$/
 
-/** `rif=` off a search string, when it looks like a code; anything else is unknown. */
+/** `ref=` off a search string, when it looks like a code; anything else is unknown. */
 export function readReferral(search: string): string | null {
-  const value = new URLSearchParams(search).get('rif')?.trim() ?? ''
+  const value = new URLSearchParams(search).get('ref')?.trim() ?? ''
   return REFERRAL_SHAPE.test(value) ? value : null
 }
 
-/** The referral code to send with an application: the URL's own `rif=` when it has
+/** The referral code to send with an application: the URL's own `ref=` when it has
  *  one, remembered for the tab; otherwise what the tab remembers from an earlier page
  *  of this app (a detour through the chooser, say). Kept apart from `Utm`/
  *  `resolveAttribution`: a code is not ad attribution, and `Freelancer(**utm_dict)`
@@ -159,7 +159,7 @@ export function resolveReferral(search: string): string | null {
 /** Everything an application says about where it came from: the campaign and the page. */
 export function resolveAttribution(search: string): Utm {
   const origin = resolveOrigin(search)
-  return { ...resolveUtm(search), ...(origin ? { origine: origin } : {}) }
+  return { ...resolveUtm(search), ...(origin ? { origin: origin } : {}) }
 }
 
 /** What this URL says and nothing else: no campaign the tab remembers from an earlier
@@ -168,7 +168,7 @@ export function resolveAttribution(search: string): Utm {
  *  a detour, which is `resolveAttribution`. */
 export function ownAttribution(search: string): Utm {
   const origin = readOrigin(search)
-  return { ...readUtm(search), ...(origin ? { origine: origin } : {}) }
+  return { ...readUtm(search), ...(origin ? { origin: origin } : {}) }
 }
 
 /** Where the login page leaves the campaign its own URL carried (REB-455), so a detour
@@ -197,8 +197,8 @@ export function loginAttribution(search: string): Utm {
   const utm = readUtm(search)
   const origin = readOrigin(search)
   const base = Object.keys(utm).length > 0 ? utm : recallLoginAttribution()
-  const attribution: Utm = origin ? { ...base, origine: origin } : base
-  const { origine, ...keys } = attribution
+  const attribution: Utm = origin ? { ...base, origin: origin } : base
+  const { origin: origine, ...keys } = attribution
   const params = new URLSearchParams(keys)
   if (origine) params.set('da', origine)
   if ([...params.keys()].length > 0) {

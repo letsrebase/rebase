@@ -54,18 +54,18 @@ SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
 def _person(
     session: Session,
     email: str = "ada@studio.it",
-    cognome: str = "Lovelace",
+    last_name: str = "Lovelace",
     cv: bytes = CV,
     label: str | None = None,
 ) -> UUID:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
             nome="Ada",
-            cognome=cognome,
+            last_name=last_name,
             email=email,
-            tariffa_giornaliera=Decimal("450.00"),
+            daily_rate=Decimal("450.00"),
             posizione="Backend developer",
-            remoto="remoto",
+            remote="remote",
         ),
         cv,
         "cv.pdf",
@@ -82,7 +82,7 @@ def _card(**changes: Any) -> dict[str, Any]:
 
 
 def _bare_card_response(card: dict[str, Any] | None = None) -> LlmResponse:
-    """An answer under prompt version 1: the card alone, no `fonti`, no employers."""
+    """An answer under prompt version 1: the card alone, no `sources`, no employers."""
     body = json.dumps(card or CARD)
     return LlmResponse(
         text=body,

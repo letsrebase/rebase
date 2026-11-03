@@ -11,8 +11,8 @@ import type { ContractExpense } from './queries'
 
 describe('nextStates', () => {
   it('offers every state but the one the contract is in', () => {
-    expect(nextStates('bozza')).toEqual(['attivo', 'terminato', 'scaduto'])
-    expect(nextStates('attivo')).toEqual(['bozza', 'terminato', 'scaduto'])
+    expect(nextStates('draft')).toEqual(['active', 'terminated', 'expired'])
+    expect(nextStates('active')).toEqual(['draft', 'terminated', 'expired'])
   })
 
   it('shows a state this build does not know as it is stored', () => {
@@ -23,9 +23,9 @@ describe('nextStates', () => {
 describe('the expense policy', () => {
   it('round-trips the three tagged shapes', () => {
     for (const policy of [
-      { kind: 'non_rimborsabile' },
-      { kind: 'rimborsabile', richiede_preautorizzazione: true },
-      { kind: 'rimborsabile_con_tetto', importo_tetto: '500.00', richiede_preautorizzazione: false },
+      { kind: 'not_reimbursable' },
+      { kind: 'reimbursable', richiede_preautorizzazione: true },
+      { kind: 'reimbursable_with_cap', amount_cap: '500.00', richiede_preautorizzazione: false },
     ] as const) {
       const body = expensePolicyBody(policy)
       expect(body).toEqual(policy)
@@ -35,34 +35,34 @@ describe('the expense policy', () => {
 
   it('does not write a cap or an authorisation flag on a policy that has none', () => {
     expect(
-      expensePolicyBody({ kind: 'non_rimborsabile', importo_tetto: '9', richiede_preautorizzazione: true }),
-    ).toEqual({ kind: 'non_rimborsabile' })
+      expensePolicyBody({ kind: 'not_reimbursable', amount_cap: '9', richiede_preautorizzazione: true }),
+    ).toEqual({ kind: 'not_reimbursable' })
   })
 
   it('reads a numeric cap as the string a form can show', () => {
-    expect(readExpensePolicy({ kind: 'rimborsabile_con_tetto', importo_tetto: 500 })?.importo_tetto).toBe('500')
+    expect(readExpensePolicy({ kind: 'reimbursable_with_cap', amount_cap: 500 })?.amount_cap).toBe('500')
   })
 
   it('reads a document another writer made as nothing, never as a guess', () => {
-    expect(readExpensePolicy({ tipo: 'non_rimborsabile' })).toBeNull()
+    expect(readExpensePolicy({ type: 'not_reimbursable' })).toBeNull()
   })
 })
 
 describe('expenseStanding', () => {
-  const base = { rimborsabile: true, invoice_line_id: null } as ContractExpense
+  const base = { reimbursable: true, invoice_line_id: null } as ContractExpense
 
   it('says an unbilled rebillable expense is waiting to be invoiced', () => {
     expect(expenseStanding(base)).toEqual({ tone: 'gold', label: 'Da fatturare' })
   })
 
   it('says a billed one is on an invoice, whatever the policy says now', () => {
-    expect(expenseStanding({ ...base, invoice_line_id: 'l1', rimborsabile: false }).label).toBe(
+    expect(expenseStanding({ ...base, invoice_line_id: 'l1', reimbursable: false }).label).toBe(
       'In fattura',
     )
   })
 
   it('says an expense the policy does not rebill is not rebillable', () => {
-    expect(expenseStanding({ ...base, rimborsabile: false }).label).toBe('Non rimborsabile')
+    expect(expenseStanding({ ...base, reimbursable: false }).label).toBe('Non rimborsabile')
   })
 })
 

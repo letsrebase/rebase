@@ -164,7 +164,7 @@ describe('privacy.html', () => {
     expect(policy).not.toMatch(/nessuna analitica e nessun\s+tracciamento/)
     // What is sent about a signed-in person, named, and the legal basis.
     expect(policy).toMatch(/interesse legittimo/i)
-    for (const claim of ['email', 'nome', 'ruolo', 'spazio']) expect(policy).toContain(claim)
+    for (const claim of ['email', 'nome', 'role', 'spazio']) expect(policy).toContain(claim)
     // The site records sessions too (consent.js sets `session_recording`), and the hub
     // masks its inputs but not every text: the policy says exactly that, no more.
     expect(policy).toContain('registra la sessione con i campi mascherati')

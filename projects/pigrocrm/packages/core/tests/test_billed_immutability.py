@@ -22,7 +22,7 @@ from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate, TimeEntryUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_ids
 
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 
 
 def _bind(session: Session, entry_id: UUID, line_id: UUID) -> TimeEntry:
@@ -45,8 +45,8 @@ def _log(service: TimeEntryService, deal_id: UUID, user_id: UUID) -> UUID:
             deal_id=deal_id,
             user_id=user_id,
             data=date(2026, 3, 4),
-            ore=Decimal("2.00"),
-            descrizione="x",
+            hours=Decimal("2.00"),
+            description="x",
         ),
         WRITER,
     )
@@ -64,9 +64,9 @@ def test_an_hour_on_a_draft_invoice_is_still_editable(
     entry = _bind(db_session, entry_id, draft_invoice_line_id)
 
     assert billed_entry_ids(db_session, [entry]) == set()
-    assert service.update(entry_id, TimeEntryUpdate(ore=Decimal("3.00")), WRITER).ore == Decimal(
-        "3.00"
-    )
+    assert service.update(
+        entry_id, TimeEntryUpdate(hours=Decimal("3.00")), WRITER
+    ).hours == Decimal("3.00")
 
 
 def test_deleting_an_hour_bound_to_a_draft_is_refused_in_words_not_in_a_500(
@@ -117,10 +117,10 @@ def test_issuing_the_invoice_freezes_the_bound_hour(
     _bind(db_session, entry_id, issued_invoice_line_id)
 
     for field, value in [
-        ("ore", Decimal("3.00")),
+        ("hours", Decimal("3.00")),
         ("data", date(2026, 3, 5)),
-        ("tariffa_applicata", Decimal("99.000000")),
-        ("descrizione", "Altro"),
+        ("applied_rate", Decimal("99.000000")),
+        ("description", "Altro"),
     ]:
         with pytest.raises(ImmutableField) as excinfo:
             service.update(entry_id, TimeEntryUpdate(**{field: value}), WRITER)
@@ -175,7 +175,7 @@ def test_a_line_that_does_not_exist_cannot_be_bound_at_all(
 def test_an_annulled_invoice_does_not_freeze_its_hours(
     db_session: Session, seeded_entry_id: UUID, annulled_invoice_line_id: UUID
 ) -> None:
-    """Only `emessa` freezes. An annulled invoice keeps its number but not its revenue
+    """Only `issued` freezes. An annulled invoice keeps its number but not its revenue
     (§7.1) -- it is the struck-through page of a paper register -- so the hours behind it
     are CRM data again and can be re-invoiced."""
     entry = _bind(db_session, seeded_entry_id, annulled_invoice_line_id)
@@ -187,8 +187,8 @@ def test_a_proforma_never_freezes_anything(
     seeded_entry_id: UUID,
     proforma_invoice_line_id: UUID,
 ) -> None:
-    """A proforma never touches the register (slice 3 §5): `confermata` is not
-    `emessa`, and the join filters on `tipo` as well as `stato` so a proforma's own
+    """A proforma never touches the register (slice 3 §5): `confirmed` is not
+    `issued`, and the join filters on `type` as well as `status` so a proforma's own
     states can never be mistaken for an emission."""
     entry = _bind(db_session, seeded_entry_id, proforma_invoice_line_id)
     assert billed_entry_ids(db_session, [entry]) == set()

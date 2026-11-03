@@ -25,13 +25,13 @@ import { capture } from '@rebase/analytics/browser'
 /** The wizard mounted on its own little router, so `navigate` has somewhere to go.
  *  `strict` wraps it the way `main.tsx` does, so React 19 simulates the unmount and
  *  remount of every effect. */
-function mount(path = '/freelance?utm_source=linkedin&da=pigrocrm', { strict = false } = {}) {
+function mount(path = '/freelance?utm_source=linkedin&from=pigrocrm', { strict = false } = {}) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const freelance = createRoute({ getParentRoute: () => root, path: '/freelance', component: FreelancerWizard })
   const thanks = createRoute({
     getParentRoute: () => root,
     path: '/thanks',
-    validateSearch: (s: Record<string, unknown>) => ({ chi: String(s.chi ?? '') }),
+    validateSearch: (s: Record<string, unknown>) => ({ who: String(s.who ?? '') }),
     component: () => <h1>Grazie</h1>,
   })
   const router = createRouter({
@@ -101,24 +101,24 @@ describe('the freelancer fields', () => {
   })
 
   it('read the Italian comma in the rate', () => {
-    const validate = field('tariffa_giornaliera').validate
-    expect(validate({ ...base, tariffa_giornaliera: '450,50' } as never)).toBeNull()
-    expect(validate({ ...base, tariffa_giornaliera: 'tanto' } as never)).not.toBeNull()
+    const validate = field('daily_rate').validate
+    expect(validate({ ...base, daily_rate: '450,50' } as never)).toBeNull()
+    expect(validate({ ...base, daily_rate: 'tanto' } as never)).not.toBeNull()
   })
 
   it('read the Italian thousands in the rate (REB-485)', () => {
-    const validate = field('tariffa_giornaliera').validate
-    expect(validate({ ...base, tariffa_giornaliera: '1.500' } as never)).toBeNull()
+    const validate = field('daily_rate').validate
+    expect(validate({ ...base, daily_rate: '1.500' } as never)).toBeNull()
     // 150000, over the ceiling: read as 150 it would have gone through.
-    expect(validate({ ...base, tariffa_giornaliera: '150.000' } as never)).not.toBeNull()
+    expect(validate({ ...base, daily_rate: '150.000' } as never)).not.toBeNull()
   })
 
   it('refuse what the API would refuse or misread: three decimals, English notation, an exponent (REB-485)', () => {
-    const validate = field('tariffa_giornaliera').validate
+    const validate = field('daily_rate').validate
     for (const typed of ['12,345', '12.3456', '1,000.00', '1e3', '0x10']) {
-      expect(validate({ ...base, tariffa_giornaliera: typed } as never)).not.toBeNull()
+      expect(validate({ ...base, daily_rate: typed } as never)).not.toBeNull()
     }
-    expect(validate({ ...base, tariffa_giornaliera: '1.000,50' } as never)).toBeNull()
+    expect(validate({ ...base, daily_rate: '1.000,50' } as never)).toBeNull()
   })
 
   it('want a PDF under five megabytes, or no CV at all', () => {
@@ -173,15 +173,15 @@ describe('FreelancerWizard', () => {
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
-    expect(router.state.location.search).toEqual({ chi: 'freelance' })
+    expect(router.state.location.search).toEqual({ who: 'freelance' })
 
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(url).toBe('/api/hub/freelancers')
     const body = init?.body as FormData
     expect(body.get('email')).toBe('ada@studio.it')
-    expect(body.get('remoto')).toBe('remoto')
+    expect(body.get('remote')).toBe('remote')
     expect(body.get('utm_source')).toBe('linkedin')
-    expect(body.get('origine')).toBe('pigrocrm')
+    expect(body.get('origin')).toBe('pigrocrm')
     expect(body.getAll('links')).toEqual(['https://github.com/ada'])
     expect((body.get('cv') as File).name).toBe('Ada CV.pdf')
   })
@@ -199,7 +199,7 @@ describe('FreelancerWizard', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
 
     const body = fetchSpy.mock.calls[0]![1]?.body as FormData
-    expect(body.get('tariffa_giornaliera')).toBe('1500.00')
+    expect(body.get('daily_rate')).toBe('1500.00')
   })
 
   it('refuses a rate with three decimals on its own step, before any request (REB-485)', async () => {
@@ -290,20 +290,20 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
   it('reports wizard_iniziato once, with the kind and the perk the URL carries', async () => {
     const user = userEvent.setup()
     // Under StrictMode the engine's step effect runs, is cleaned up and runs again on
-    // mount: the guard against a second `wizard_iniziato` is what this exercises.
+    // mount: the guard against a second `wizard_started` is what this exercises.
     mount('/freelance?perk=guida&utm_source=linkedin', { strict: true })
     const nome = await screen.findByLabelText('Nome')
-    expect(captured('wizard_iniziato')).toEqual([{ tipo: 'freelance', perk: 'guida' }])
+    expect(captured('wizard_started')).toEqual([{ kind: 'freelance', perk: 'guida' }])
     // Started first, then the first step on screen, with the same properties: a funnel
     // reads the two in this order and never ties on the timestamps.
     expect(vi.mocked(capture).mock.calls.slice(0, 2)).toEqual([
-      ['wizard_iniziato', { tipo: 'freelance', perk: 'guida' }],
-      ['wizard_passo', { tipo: 'freelance', perk: 'guida', passo: 0, passi: 8, schermata: 'nome' }],
+      ['wizard_started', { kind: 'freelance', perk: 'guida' }],
+      ['wizard_step', { kind: 'freelance', perk: 'guida', step: 0, steps: 8, screen: 'nome' }],
     ])
 
     // Typing re-renders the page; the person did not start twice.
     await user.type(nome, 'Ada')
-    expect(captured('wizard_iniziato')).toHaveLength(1)
+    expect(captured('wizard_started')).toHaveLength(1)
   })
 
   it('reports every step the person reaches, by index, and no perk when the URL has none', async () => {
@@ -313,18 +313,18 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     await user.type(screen.getByLabelText('Cognome'), 'Lovelace{Enter}')
     await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
     await user.click(screen.getByRole('button', { name: 'Indietro' }))
-    expect(captured('wizard_passo').map((p) => p?.passo)).toEqual([0, 1, 2, 1])
-    expect(captured('wizard_passo').map((p) => p?.schermata)).toEqual([
+    expect(captured('wizard_step').map((p) => p?.step)).toEqual([0, 1, 2, 1])
+    expect(captured('wizard_step').map((p) => p?.screen)).toEqual([
       'nome',
       'email',
       'linkedin_url',
       'email',
     ])
-    expect(captured('wizard_passo')[0]).toEqual({
-      tipo: 'freelance',
-      passo: 0,
-      passi: 8,
-      schermata: 'nome',
+    expect(captured('wizard_step')[0]).toEqual({
+      kind: 'freelance',
+      step: 0,
+      steps: 8,
+      screen: 'nome',
     })
   })
 
@@ -335,18 +335,18 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     )
     const router = mount('/freelance?perk=guida')
     await walkToReview(user)
-    expect(captured('wizard_passo').at(-1)).toEqual({
-      tipo: 'freelance',
+    expect(captured('wizard_step').at(-1)).toEqual({
+      kind: 'freelance',
       perk: 'guida',
-      passo: 8,
-      passi: 8,
-      schermata: 'riepilogo',
+      step: 8,
+      steps: 8,
+      screen: 'recap',
     })
-    expect(captured('wizard_completato')).toEqual([])
+    expect(captured('wizard_completed')).toEqual([])
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
-    expect(captured('wizard_completato')).toEqual([{ tipo: 'freelance', perk: 'guida' }])
+    expect(captured('wizard_completed')).toEqual([{ kind: 'freelance', perk: 'guida' }])
   })
 
   it('reports nothing completed when the API refused, and the jump back as a step', async () => {
@@ -362,12 +362,12 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     await user.click(screen.getByRole('button', { name: /Invia/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Questo indirizzo è già iscritto.')
     expect(router.state.location.pathname).toBe('/freelance')
-    expect(captured('wizard_completato')).toEqual([])
-    expect(captured('wizard_passo').at(-1)).toEqual({
-      tipo: 'freelance',
-      passo: 1,
-      passi: 8,
-      schermata: 'email',
+    expect(captured('wizard_completed')).toEqual([])
+    expect(captured('wizard_step').at(-1)).toEqual({
+      kind: 'freelance',
+      step: 1,
+      steps: 8,
+      screen: 'email',
     })
   })
 })
@@ -391,7 +391,7 @@ describe('FreelancerWizard, the draft and the intro (REB-215)', () => {
     await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
     expect(loadDraft<FreelancerApplication>(FREELANCER_DRAFT_KEY)).toMatchObject({
       index: 2,
-      value: { nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.it' },
+      value: { nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' },
     })
 
     // The next visit: the same question they were on, the answers still there.

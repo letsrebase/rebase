@@ -11,12 +11,12 @@ import { booleanSearchParam } from '@/lib/searchParams'
  * back, which is how a fast typist loses characters.
  */
 function DealsListRoute() {
-  const { search, fatturato_non_vinto, da_fatturare } = Route.useSearch()
+  const { search, invoiced_unwon, to_invoice } = Route.useSearch()
   return (
     <DealsList
       key={search ?? ''}
       initialSearch={search ?? ''}
-      filters={{ fatturato_non_vinto, da_fatturare }}
+      filters={{ invoiced_unwon, to_invoice }}
     />
   )
 }
@@ -28,13 +28,13 @@ export const Route = createFileRoute('/app/deal/list')({
   // this function's *return* type, not its parameter type). An empty or non-string value
   // is dropped rather than carried as `?search=`, so the URL never claims a filter that is
   // not applied -- and the two booleans are carried only when they are literally `true`,
-  // so `?da_fatturare=false` is the absence of a filter rather than a third state.
+  // so `?to_invoice=false` is the absence of a filter rather than a third state.
   validateSearch: (
     search: Record<string, unknown>,
-  ): { search?: string; fatturato_non_vinto?: boolean; da_fatturare?: boolean } => ({
+  ): { search?: string; invoiced_unwon?: boolean; to_invoice?: boolean } => ({
     search:
       typeof search.search === 'string' && search.search.length > 0 ? search.search : undefined,
-    fatturato_non_vinto: booleanSearchParam(search.fatturato_non_vinto),
-    da_fatturare: booleanSearchParam(search.da_fatturare),
+    invoiced_unwon: booleanSearchParam(search.invoiced_unwon),
+    to_invoice: booleanSearchParam(search.to_invoice),
   }),
 })

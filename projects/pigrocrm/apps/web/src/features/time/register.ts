@@ -30,7 +30,7 @@ export function groupByDay(entries: TimeEntry[], days: WeekDay[]): DayGroup[] {
       iso,
       label: labels.get(iso) ?? formatIsoDateItalian(iso),
       total: sumDecimalStrings(
-        items.map((item) => item.ore),
+        items.map((item) => item.hours),
         HOURS_SCALE,
       ),
       entries: [...items].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),

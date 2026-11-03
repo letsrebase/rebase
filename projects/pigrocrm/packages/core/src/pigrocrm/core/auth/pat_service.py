@@ -64,7 +64,7 @@ class TeamPatRead(PatRead):
     that should not reach the invoice tools can be closed without asking its owner."""
 
     user_id: UUID
-    owner_nome: str
+    owner_name: str
 
 
 def _digest(raw: str) -> str:
@@ -189,7 +189,7 @@ class PatService:
             record.user_id,
             "pat_full_access_changed",
             actor,
-            {**_audit_payload(record), "full_access_prima": not full_access},
+            {**_audit_payload(record), "full_access_before": not full_access},
         )
         self.session.commit()
         return PatRead.model_validate(record)
@@ -210,7 +210,7 @@ class PatService:
             TeamPatRead(
                 **PatRead.model_validate(record).model_dump(),
                 user_id=record.user_id,
-                owner_nome=nome,
+                owner_name=nome,
             )
             for record, nome in self.session.execute(stmt)
         ]
@@ -253,14 +253,14 @@ class PatService:
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
         # `populate_existing` forces a fresh read of the owner even when this session
-        # already holds it: the role and `attivo` that build the Actor below are the
+        # already holds it: the role and `active` that build the Actor below are the
         # CURRENT ones, never a copy a previous `resolve` cached. Over HTTP each
         # request opens its own session and reads fresh anyway; the flag makes that
         # true for every caller, which is the guarantee hub's `admin_tokens.resolve`
         # was given in REB-278 (#225) and the shape copied here. The behavior is
         # pinned by `test_a_second_resolve_on_the_same_session_sees_the_current_role`.
         user = self.session.get(User, record.user_id, populate_existing=True)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             # Same message and details as above, on purpose -- see INVALID_TOKEN.
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
@@ -276,7 +276,7 @@ class PatService:
         if last_used is None or now - last_used >= LAST_USED_RESOLUTION:
             record.last_used_at = now
 
-        role = as_role(user.ruolo)
+        role = as_role(user.role)
         # type="mcp": a PAT identifies an agent, which is what makes the timeline honest.
         #
         # `full_access` is stamped here, and this is the only place it is decided. It
@@ -295,7 +295,7 @@ class PatService:
             full_access=record.full_access and self.settings.mcp_full_access,
             # The owner's scope travels on the credential (REB-634): an agent sees the
             # aziende its person sees, read fresh here like the role.
-            aziende=scope_of(user),
+            legal_entities=scope_of(user),
         )
         # Only the *first* use is recorded, not every one. `resolve()` runs on every
         # single request an agent makes, so an entry per call would double the write

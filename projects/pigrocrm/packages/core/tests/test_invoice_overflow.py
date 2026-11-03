@@ -9,16 +9,16 @@ on it fails too.
 
 Every previous instance was a column the caller wrote directly, and the sweep that found
 them looked at exactly those. This one is the first on a *derived* column, which is why it
-survived: `InvoiceLineIn.quantita` and `prezzo_unitario` correctly mirror
-`Numeric(12, 6)`, and their **product** goes to `invoice_lines.prezzo_totale`,
-`invoices.imponibile` and `invoices.totale`, all `Numeric(12, 2)`. No bound on the two
+survived: `InvoiceLineIn.quantity` and `unit_price` correctly mirror
+`Numeric(12, 6)`, and their **product** goes to `invoice_lines.total_price`,
+`invoices.taxable_amount` and `invoices.total`, all `Numeric(12, 2)`. No bound on the two
 factors can express a bound on the product -- `100000 x 100000` is two perfectly valid
 six-digit factors and an eleven-digit result -- so the check cannot live in Pydantic and
 belongs in the service, before the flush.
 
 There are two arithmetic routes to the overflow and both are tested here: one line whose own
 product is too large, and two hundred lines that each fit while their sum does not.
-`InvoiceCreate.righe` allows 200 lines, so the second needs no exotic input at all.
+`InvoiceCreate.lines` allows 200 lines, so the second needs no exotic input at all.
 """
 
 from decimal import Decimal
@@ -53,32 +53,32 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     return InvoiceService(db_session, storage)
 
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
     return customer.id
 
 
-def _line(quantita: str, prezzo: str, **kw: object) -> InvoiceLineIn:
+def _line(quantity: str, price: str, **kw: object) -> InvoiceLineIn:
     payload: dict[str, object] = {
-        "descrizione": "Consulenza",
-        "quantita": Decimal(quantita),
-        "prezzo_unitario": Decimal(prezzo),
+        "description": "Consulenza",
+        "quantity": Decimal(quantity),
+        "unit_price": Decimal(price),
     }
     payload.update(kw)
     return InvoiceLineIn(**payload)  # type: ignore[arg-type]
@@ -103,9 +103,9 @@ def test_a_line_whose_product_overflows_is_refused_with_a_domain_error(
     """
     with pytest.raises(ValidationFailed) as caught:
         service.create(
-            InvoiceCreate(customer_id=customer_id, righe=[_line("100000", "100000")]), ADMIN
+            InvoiceCreate(customer_id=customer_id, lines=[_line("100000", "100000")]), ADMIN
         )
-    assert caught.value.details["field"] == "righe"
+    assert caught.value.details["field"] == "lines"
     # The line is named, because an invoice can carry two hundred of them and "one of your
     # lines is too large" is not a message anyone can act on.
     assert "1" in caught.value.details["reason"]
@@ -121,13 +121,13 @@ def test_the_refusal_leaves_the_session_usable(service: InvoiceService, customer
     """
     with pytest.raises(ValidationFailed):
         service.create(
-            InvoiceCreate(customer_id=customer_id, righe=[_line("100000", "100000")]), ADMIN
+            InvoiceCreate(customer_id=customer_id, lines=[_line("100000", "100000")]), ADMIN
         )
 
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, righe=[_line("2", "500.00")]), ADMIN
+        InvoiceCreate(customer_id=customer_id, lines=[_line("2", "500.00")]), ADMIN
     )
-    assert invoice.totale == Decimal("1000.00")
+    assert invoice.total == Decimal("1000.00")
 
 
 def test_a_negative_product_overflows_the_same_way(
@@ -138,9 +138,9 @@ def test_a_negative_product_overflows_the_same_way(
     exactly half of the range open."""
     with pytest.raises(ValidationFailed) as caught:
         service.create(
-            InvoiceCreate(customer_id=customer_id, righe=[_line("100000", "-100000")]), ADMIN
+            InvoiceCreate(customer_id=customer_id, lines=[_line("100000", "-100000")]), ADMIN
         )
-    assert caught.value.details["field"] == "righe"
+    assert caught.value.details["field"] == "lines"
 
 
 def test_the_largest_storable_line_is_still_accepted(
@@ -151,11 +151,11 @@ def test_the_largest_storable_line_is_still_accepted(
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[_line("1", "999999.999999", sconto_importo=Decimal("0.01"))],
+            lines=[_line("1", "999999.999999", discount_amount=Decimal("0.01"))],
         ),
         ADMIN,
     )
-    assert invoice.totale == Decimal("999999.99")
+    assert invoice.total == Decimal("999999.99")
 
     # 100000 x 100000 is 10^10 exactly -- the first value the column refuses -- and one cent
     # of discount is what turns it into the last value the column accepts. The pair is
@@ -164,11 +164,11 @@ def test_the_largest_storable_line_is_still_accepted(
     at_the_boundary = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[_line("100000", "100000", sconto_importo=Decimal("0.01"))],
+            lines=[_line("100000", "100000", discount_amount=Decimal("0.01"))],
         ),
         ADMIN,
     )
-    assert at_the_boundary.totale == _LARGEST_STORABLE
+    assert at_the_boundary.total == _LARGEST_STORABLE
 
 
 def test_two_hundred_lines_that_each_fit_can_still_overflow_the_total(
@@ -181,14 +181,14 @@ def test_two_hundred_lines_that_each_fit_can_still_overflow_the_total(
     the first value the column cannot hold.
 
     The fifty million is spelled `100 x 500000` rather than as a unit price, and that is
-    itself part of the finding: `prezzo_unitario` mirrors `Numeric(12, 6)` and so admits
+    itself part of the finding: `unit_price` mirrors `Numeric(12, 6)` and so admits
     only six whole digits, which is exactly the bound that looks like it covers this case
     and does not. The product is where the money scale begins.
     """
-    righe = [_line("100", "500000") for _ in range(MAX_LINES)]
+    lines = [_line("100", "500000") for _ in range(MAX_LINES)]
     with pytest.raises(ValidationFailed) as caught:
-        service.create(InvoiceCreate(customer_id=customer_id, righe=righe), ADMIN)
-    assert caught.value.details["field"] in {"imponibile", "totale"}
+        service.create(InvoiceCreate(customer_id=customer_id, lines=lines), ADMIN)
+    assert caught.value.details["field"] in {"taxable_amount", "total"}
 
 
 def test_replace_lines_refuses_on_the_same_arithmetic(
@@ -197,17 +197,17 @@ def test_replace_lines_refuses_on_the_same_arithmetic(
     """`create` is not the only door. `replace_lines` recomputes every total from the whole
     list, so it reaches the same columns by the same route and must refuse identically."""
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, righe=[_line("1", "100.00")]), ADMIN
+        InvoiceCreate(customer_id=customer_id, lines=[_line("1", "100.00")]), ADMIN
     )
     with pytest.raises(ValidationFailed) as caught:
         service.replace_lines(invoice.id, [_line("100000", "100000")], ADMIN)
-    assert caught.value.details["field"] == "righe"
+    assert caught.value.details["field"] == "lines"
 
     # And the draft is untouched: a refusal that had already replaced the lines would be a
     # partial write, which is what "one service method, one transaction" forbids.
     unchanged = service.get(invoice.id, ADMIN)
-    assert unchanged.totale == Decimal("100.00")
+    assert unchanged.total == Decimal("100.00")
     # Read through the repository: `InvoiceRead` carries the totals but not the lines, and
     # the lines are the half `replace_lines` would have already cleared.
-    righe = InvoiceRepository(db_session).lines(invoice.id)
-    assert [r.prezzo_totale for r in righe] == [Decimal("100.00")]
+    lines = InvoiceRepository(db_session).lines(invoice.id)
+    assert [r.total_price for r in lines] == [Decimal("100.00")]

@@ -401,33 +401,33 @@ test('/ defines each window global before landing.js reads it, in the built bund
 test.describe('the team builder on the first screen', () => {
   const PROPOSAL = {
     id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
-    descrizione: 'x',
-    persone: null,
-    riassunto: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-    luogo: { locale: false, dove: null },
+    description: 'x',
+    people: null,
+    summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
+    location: { locale: false, dove: null },
     team: [
       {
         posizione: 1,
-        ruolo: 'Backend developer',
-        motivazione: 'Ha costruito le API di pagamento di due banche.',
-        giorni_settimana: 5,
-        scheda: { ruolo: 'Sviluppatore backend', seniority: 'senior', anni: 9, competenze: [], settori: [], lingue: [], luogo: null, sintesi: '' },
-        modalita: 'remoto',
-        fascia: { min: 400, max: 500 },
+        role: 'Backend developer',
+        reasoning: 'Ha costruito le API di pagamento di due banche.',
+        week_days: 5,
+        card: { role: 'Sviluppatore backend', seniority: 'senior', experience_years: 9, skills: [], industries: [], languages: [], location: null, profile_summary: '' },
+        mode: 'remote',
+        band: { min: 400, max: 500 },
       },
       {
         posizione: 2,
-        ruolo: 'Frontend developer',
-        motivazione: 'Porta React.',
-        giorni_settimana: 3,
-        scheda: { ruolo: 'Sviluppatrice frontend', seniority: 'mid', anni: 4, competenze: [], settori: [], lingue: [], luogo: null, sintesi: '' },
-        modalita: 'ibrido',
-        fascia: { min: 400, max: 500 },
+        role: 'Frontend developer',
+        reasoning: 'Porta React.',
+        week_days: 3,
+        card: { role: 'Sviluppatrice frontend', seniority: 'mid', experience_years: 4, skills: [], industries: [], languages: [], location: null, profile_summary: '' },
+        mode: 'hybrid',
+        band: { min: 400, max: 500 },
       },
     ],
-    economia: { giorno: { min: 800, max: 1000 }, mese: { min: 17600, max: 22000 }, giorni_mese: 22 },
+    economics: { day: { min: 800, max: 1000 }, month: { min: 17600, max: 22000 }, days_month: 22 },
     previous_id: null,
-    origine: 'pubblico',
+    origin: 'public',
     created_at: '2026-10-07T08:00:00Z',
   }
 
@@ -466,8 +466,8 @@ test.describe('the team builder on the first screen', () => {
     await expect(page.getByRole('heading', { name: 'La nostra proposta' })).toBeVisible()
     await expect(page.locator('.loader')).toHaveCount(0)
     // The example's own headcount travels with the description (three for the fintech).
-    expect(bodies).toEqual([{ descrizione: expect.stringContaining('fintech'), persone: 3 }])
-    await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.riassunto)
+    expect(bodies).toEqual([{ description: expect.stringContaining('fintech'), people: 3 }])
+    await expect(page.locator('.team-summary')).toHaveText(PROPOSAL.summary)
     const members = page.locator('.team-member')
     await expect(members).toHaveCount(2)
     await expect(members.first()).toContainText('Backend developer')
@@ -478,7 +478,7 @@ test.describe('the team builder on the first screen', () => {
     const href = new URL((await door.getAttribute('href'))!, 'http://localhost:4173')
     expect(href.pathname).toBe('/hub/team')
     expect(Object.fromEntries(href.searchParams)).toEqual({
-      proposta: PROPOSAL.id,
+      proposal: PROPOSAL.id,
       utm_source: 'linkedin',
       utm_campaign: 'orbita',
       da: 'home',
@@ -518,8 +518,8 @@ test.describe('the team builder on the first screen', () => {
       await page.waitForURL(/\/hub\/team\?descrizione=/)
       const url = new URL(page.url())
       expect(url.pathname).toBe('/hub/team')
-      expect(url.searchParams.get('descrizione')).toBe(description)
-      expect(url.searchParams.get('persone')).toBe('1')
+      expect(url.searchParams.get('description')).toBe(description)
+      expect(url.searchParams.get('people')).toBe('1')
     })
   })
 })
@@ -578,7 +578,7 @@ test.describe('the path map, as production serves it', () => {
   })
 
   test('/termini redirects to /terms, its name before REB-318', async ({ request }) => {
-    const response = await request.get('/termini', { maxRedirects: 0 })
+    const response = await request.get('/terms', { maxRedirects: 0 })
     expect(response.status()).toBe(301)
     expect(response.headers()['location']).toBe('/terms')
   })
@@ -801,7 +801,7 @@ test.describe('the referral band on /', () => {
     const order = await page.evaluate(() =>
       [...document.querySelectorAll('main > section')].map((section) => section.getAttribute('aria-labelledby')),
     )
-    expect(order.indexOf('referral')).toBe(order.indexOf('aziende') + 1)
+    expect(order.indexOf('referral')).toBe(order.indexOf('companies') + 1)
     expect(order.indexOf('worked-with')).toBe(order.indexOf('referral') + 1)
   })
 

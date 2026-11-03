@@ -171,10 +171,10 @@ describe('Wizard', () => {
     rerender(
       <Harness
         onSubmit={() => {}}
-        submitError={{ message: 'Cognome troppo lungo.', field: 'cognome' }}
+        submitError={{ message: 'Cognome troppo lungo.', field: 'last_name' }}
       />,
     )
-    // No field here is called `cognome`, so the engine cannot jump anywhere: the person
+    // No field here is called `last_name`, so the engine cannot jump anywhere: the person
     // stays on the review and the message is never dropped -- it is exactly this
     // silence REB-243 is about.
     expect(screen.getByRole('heading', { name: 'Tutto giusto?' })).toBeInTheDocument()

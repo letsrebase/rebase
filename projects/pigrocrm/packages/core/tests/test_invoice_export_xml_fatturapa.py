@@ -17,21 +17,21 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.storage import LocalFileStorage
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
-CONSULENZA = "fpr12-consulenza-marzo.xml"
-LOTTO = "fpr12-lotto-due-fatture.xml"
+CONSULTING = "fpr-12-march-consulting.xml"
+LOTTO = "fpr-12-batch-due-invoices.xml"
 ADMIN = Actor(id=None, type="user", role="admin")
 
-FORNITORE_PIVA = "01234567890"
-FORNITORE_CF = "BNCCHR85M41H501Z"
-CLIENTE_PIVA = "09876543210"
+SUPPLIER_VAT_NUMBER = "01234567890"
+SUPPLIER_CF = "BNCCHR85M41H501Z"
+CUSTOMER_VAT_NUMBER = "09876543210"
 
 
 def _fixture(name: str) -> bytes:
@@ -40,21 +40,21 @@ def _fixture(name: str) -> bytes:
 
 def _svc(session: Session, storage: LocalFileStorage) -> InvoiceService:
     from pigrocrm.core.actor import Actor
-    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-    from pigrocrm.core.emitter.service import LegalEntityService
+    from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+    from pigrocrm.core.legal_entities.service import LegalEntityService
 
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Chiara Bianchi",
-            partita_iva=FORNITORE_PIVA,
-            codice_fiscale=FORNITORE_CF,
-            nazione="IT",
+            legal_name="Chiara Bianchi",
+            vat_number=SUPPLIER_VAT_NUMBER,
+            tax_code=SUPPLIER_CF,
+            country="IT",
         ),
         Actor(id=None, type="system", role="admin"),
     )
-    azienda = LegalEntityRepository(session).default()
-    assert azienda is not None
-    session.add(FiscalProfile(codice_regime="RF19", azienda_id=azienda.id))
+    legal_entity = LegalEntityRepository(session).default()
+    assert legal_entity is not None
+    session.add(FiscalProfile(regime_code="RF19", legal_entity_id=legal_entity.id))
     session.flush()
     return InvoiceService(session, storage)
 
@@ -64,9 +64,7 @@ def _document(
 ) -> UUID:
     owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)
-    document = service.create(
-        DocumentCreate(customer_id=owner.id, titolo="Fattura ricevuta"), ADMIN
-    )
+    document = service.create(DocumentCreate(customer_id=owner.id, title="Fattura ricevuta"), ADMIN)
     service.add_version(document.id, content, "application/xml", ADMIN)
     return document.id
 
@@ -77,9 +75,9 @@ def _confirm_single(
     """Confirms a single-invoice document through the real service call and returns
     the resulting row, already `"fatturapa"` -- `confirm_import` sets it natively."""
     [row] = service.confirm_import(document_id, ADMIN, customer_id=customer_id)
-    assert row.outcome == "imported" and row.fattura is not None
-    assert row.fattura.importata_da == "fatturapa"
-    invoice = service.repo.get(row.fattura.id)
+    assert row.outcome == "imported" and row.invoice is not None
+    assert row.invoice.imported_from == "fatturapa"
+    invoice = service.repo.get(row.invoice.id)
     assert invoice is not None
     return invoice
 
@@ -88,8 +86,8 @@ def test_export_xml_serves_the_original_file_for_a_single_invoice_fatturapa_row(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    content = _fixture(CONSULTING)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     document_id = _document(db_session, local_storage, content, owner=customer)
     invoice = _confirm_single(service, document_id, customer_id=customer.id)
     expected_digest = hashlib.sha256(content).hexdigest()
@@ -100,13 +98,13 @@ def test_export_xml_serves_the_original_file_for_a_single_invoice_fatturapa_row(
 
     assert artifact.kind == "xml"
     assert artifact.document_id == document_id
-    assert artifact.version_numero == 1
+    assert artifact.version_number == 1
     assert artifact.hash_sha256 == expected_digest
 
     # No reconstruction happened: still exactly one version on that document.
     document = service.documents.repo.get(document_id)
     assert document is not None
-    assert document.versione_corrente == 1
+    assert document.current_version == 1
 
     data, content_type, _ = service.download(invoice.id, "xml", ADMIN)
     assert data == content
@@ -117,8 +115,8 @@ def test_export_xml_is_idempotent_and_never_writes_a_second_version(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    content = _fixture(CONSULTING)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     document_id = _document(db_session, local_storage, content, owner=customer)
     invoice = _confirm_single(service, document_id, customer_id=customer.id)
 
@@ -128,26 +126,26 @@ def test_export_xml_is_idempotent_and_never_writes_a_second_version(
     assert second == first
     document = service.documents.repo.get(document_id)
     assert document is not None
-    assert document.versione_corrente == 1
+    assert document.current_version == 1
 
 
 def test_export_xml_refuses_a_batch_sourced_fatturapa_row_exactly_as_before(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """A `lotto` batch never gets `xml_document_id` (design §5 item 3), so a
-    `"fatturapa"` row out of one -- `confirm_import` sets `importata_da` the same
+    `"fatturapa"` row out of one -- `confirm_import` sets `imported_from` the same
     way regardless of batch size -- still has nothing on file to serve back."""
     service = _svc(db_session, local_storage)
     content = _fixture(LOTTO)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     document_id = _document(db_session, local_storage, content, owner=customer)
     rows = service.confirm_import(document_id, ADMIN, customer_id=customer.id)
     assert len(rows) == 2
-    invoice_ids = [row.fattura.id for row in rows if row.fattura is not None]
+    invoice_ids = [row.invoice.id for row in rows if row.invoice is not None]
     for row in rows:
-        assert row.fattura is not None
-        assert row.fattura.importata_da == "fatturapa"
-        assert row.fattura.xml_document_id is None
+        assert row.invoice is not None
+        assert row.invoice.imported_from == "fatturapa"
+        assert row.invoice.xml_document_id is None
 
     for invoice_id in invoice_ids:
         with pytest.raises(Conflict) as caught:
@@ -155,10 +153,10 @@ def test_export_xml_refuses_a_batch_sourced_fatturapa_row_exactly_as_before(
         assert "non ne produce un secondo" in caught.value.message
 
 
-def test_export_xml_still_refuses_an_esterno_row_exactly_as_before(
+def test_export_xml_still_refuses_an_external_row_exactly_as_before(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    """The hand-declared `"esterno"` path is untouched by the `"fatturapa"` branch:
+    """The hand-declared `"external"` path is untouched by the `"fatturapa"` branch:
     it never has an `xml_document_id` to serve, and keeps refusing unconditionally."""
     from datetime import date
     from decimal import Decimal
@@ -167,16 +165,16 @@ def test_export_xml_still_refuses_an_esterno_row_exactly_as_before(
     customer = make_customer_with_address(db_session)
     row = Invoice(
         customer_id=customer.id,
-        tipo="fattura",
-        stato="emessa",
-        anno=2026,
-        numero=1,
-        data_emissione=date(2026, 3, 15),
-        importata_da="esterno",
-        imponibile=Decimal("100.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("0.00"),
-        totale=Decimal("100.00"),
+        type="invoice",
+        status="issued",
+        year=2026,
+        number=1,
+        issue_date=date(2026, 3, 15),
+        imported_from="external",
+        taxable_amount=Decimal("100.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal("100.00"),
     )
     db_session.add(row)
     db_session.flush()
@@ -191,20 +189,20 @@ def test_export_xml_refuses_a_fatturapa_row_whose_stored_file_no_longer_matches_
 ) -> None:
     """Hash-verified, genuinely: if the document's own storage bytes have drifted
     from what the register recorded at confirm time, this refuses rather than
-    handing back a file it cannot vouch for -- there is no `FatturaPAExporter` to
+    handing back a file it cannot vouch for -- there is no `InvoicePaExporter` to
     regenerate from and repair with, unlike the native path's own `_store_artifact`."""
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    content = _fixture(CONSULTING)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     document_id = _document(db_session, local_storage, content, owner=customer)
     invoice = _confirm_single(service, document_id, customer_id=customer.id)
 
     document = service.documents.repo.get(document_id)
     assert document is not None
-    version = service.documents.repo.version(document.id, document.versione_corrente)
+    version = service.documents.repo.version(document.id, document.current_version)
     assert version is not None
     local_storage.put(version.storage_key, b"<tampered/>", "application/xml")
 
     with pytest.raises(Conflict) as caught:
         service.export_xml(invoice.id, ADMIN)
-    assert caught.value.details["campo"] == "xml_hash_sha256"
+    assert caught.value.details["field"] == "xml_hash_sha256"

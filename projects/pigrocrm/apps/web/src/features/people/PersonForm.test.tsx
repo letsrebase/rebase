@@ -14,7 +14,7 @@ import type { FieldDefinition } from '@/lib/schema'
 // form's own handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 
-function customerPage(items: { id: string; ragione_sociale: string }[]) {
+function customerPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -40,10 +40,10 @@ function renderWithClient(ui: ReactElement) {
 const BASE_PERSON: Person = {
   id: 'p1',
   nome: 'Mario',
-  cognome: 'Rossi',
+  last_name: 'Rossi',
   email: null,
-  telefono: null,
-  ruolo: null,
+  phone: null,
+  role: null,
   linkedin: null,
   customer_id: null,
   custom_fields: {},
@@ -59,8 +59,8 @@ const SENIORITY: FieldDefinition = {
   options: ['Junior', 'Senior'],
 }
 
-const DISPONIBILE: FieldDefinition = {
-  key: 'disponibile',
+const AVAILABLE: FieldDefinition = {
+  key: 'available',
   label: 'Disponibile',
   type: 'checkbox',
   required: false,
@@ -132,7 +132,7 @@ describe('PersonForm', () => {
 
     expect(submitted(onSubmit)).toEqual({
       nome: 'Mario',
-      cognome: 'Rossi',
+      last_name: 'Rossi',
       custom_fields: { seniority: 'Senior' },
     })
   })
@@ -165,7 +165,7 @@ describe('PersonForm', () => {
     const payload = submitted(onSubmit)
     expect(payload).not.toHaveProperty('seniority')
     expect(payload.custom_fields).toEqual({})
-    expect(payload).toEqual({ nome: 'Mario', cognome: 'Rossi', custom_fields: {} })
+    expect(payload).toEqual({ nome: 'Mario', last_name: 'Rossi', custom_fields: {} })
   })
 
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
@@ -175,7 +175,7 @@ describe('PersonForm', () => {
         title="Nuova persona"
         open
         onOpenChange={vi.fn()}
-        customFields={[DISPONIBILE]}
+        customFields={[AVAILABLE]}
         onSubmit={onSubmit}
       />,
     )
@@ -183,7 +183,7 @@ describe('PersonForm', () => {
     await userEvent.type(screen.getByLabelText(/^Nome/), 'Luigi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
-    expect(submitted(onSubmit)).toEqual({ nome: 'Luigi', custom_fields: { disponibile: false } })
+    expect(submitted(onSubmit)).toEqual({ nome: 'Luigi', custom_fields: { available: false } })
   })
 
   /** The other side of the same rule (see `DynamicForm.test.tsx`): doing this on
@@ -196,7 +196,7 @@ describe('PersonForm', () => {
         title="Modifica persona"
         open
         onOpenChange={vi.fn()}
-        customFields={[DISPONIBILE]}
+        customFields={[AVAILABLE]}
         initial={personToFormValues(BASE_PERSON)}
         onSubmit={onSubmit}
       />,
@@ -209,8 +209,8 @@ describe('PersonForm', () => {
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({
       nome: 'Mario',
-      cognome: 'Rossi',
-      telefono: '02123456',
+      last_name: 'Rossi',
+      phone: '02123456',
       custom_fields: {},
     })
   })
@@ -219,7 +219,7 @@ describe('PersonForm', () => {
     const onSubmit = vi.fn()
     const initial = personToFormValues({
       ...BASE_PERSON,
-      telefono: '02123456',
+      phone: '02123456',
       custom_fields: { seniority: 'Senior' },
     })
     renderWithClient(
@@ -240,8 +240,8 @@ describe('PersonForm', () => {
 
     expect(submitted(onSubmit)).toEqual({
       nome: 'Mario',
-      cognome: 'Rossi',
-      telefono: '',
+      last_name: 'Rossi',
+      phone: '',
       custom_fields: { seniority: null },
     })
   })
@@ -293,7 +293,7 @@ describe('PersonForm', () => {
     })
 
     it('sends a chosen customer_id on create', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -328,7 +328,7 @@ describe('PersonForm', () => {
      * rejects, both leave the stale association in place.
      */
     it('detaches an existing customer with `detach: true`, never `customer_id: null`', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -350,7 +350,7 @@ describe('PersonForm', () => {
     })
 
     it('keeps sending the same customer_id when the association is untouched on edit', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm

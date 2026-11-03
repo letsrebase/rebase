@@ -24,7 +24,7 @@ from pigrocrm.core.validation import SafeStr
 PAGE_LIMIT_MAX = 200
 PAGE_LIMIT_DEFAULT = 50
 
-AZIENDA_QUERY_DESCRIPTION = "Solo le righe di questa azienda; omesso, tutte"
+LEGAL_ENTITY_QUERY_DESCRIPTION = "Solo le righe di questa azienda; omesso, tutte"
 
 CUSTOM_QUERY_DESCRIPTION = (
     "Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: "

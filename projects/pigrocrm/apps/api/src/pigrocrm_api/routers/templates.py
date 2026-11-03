@@ -10,7 +10,7 @@ from pigrocrm.core.templates.schemas import (
     TemplateListQuery,
     TemplatePage,
     TemplateRead,
-    TemplateTipo,
+    TemplateType,
     TemplateUpdate,
 )
 from pigrocrm.core.templates.service import TemplateService
@@ -27,7 +27,7 @@ router = APIRouter(
 
 
 class PreviewBody(BaseModel):
-    variabili: dict[str, Any] = {}
+    variables: dict[str, Any] = {}
 
 
 class PreviewResult(BaseModel):
@@ -74,7 +74,7 @@ def describe(template_id: UUID, session: SessionDep, actor: ActorDep) -> Templat
 def preview(
     template_id: UUID, body: PreviewBody, session: SessionDep, actor: ActorDep
 ) -> PreviewResult:
-    markdown = TemplateService(session).preview(template_id, body.variabili, actor)
+    markdown = TemplateService(session).preview(template_id, body.variables, actor)
     return PreviewResult(markdown=markdown)
 
 
@@ -87,7 +87,7 @@ def preview(
 # anyway so the rule stays mechanically obvious to the next person editing this
 # file, rather than "safe by accident."
 class TemplateListParams(KeysetParams, SearchParams):
-    tipo: TemplateTipo | None = None
+    type: TemplateType | None = None
     include_inactive: bool = False
 
 

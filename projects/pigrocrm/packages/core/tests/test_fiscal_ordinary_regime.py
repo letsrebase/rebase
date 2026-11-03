@@ -17,18 +17,18 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.clock import today_local
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
-ANNO = today_local().year
+YEAR = today_local().year
 
 
 @pytest.fixture
@@ -36,14 +36,14 @@ def service(db_session: Session, local_storage: LocalFileStorage) -> InvoiceServ
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
             nome="rossi",
-            ragione_sociale="Studio Rossi S.r.l.",
-            partita_iva="09876543210",
-            codice_fiscale="09876543210",
-            indirizzo="Via Vittorio Veneto 12",
+            legal_name="Studio Rossi S.r.l.",
+            vat_number="09876543210",
+            tax_code="09876543210",
+            address="Via Vittorio Veneto 12",
             cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="info@example.com",
         ),
         ADMIN,
@@ -55,14 +55,14 @@ def service(db_session: Session, local_storage: LocalFileStorage) -> InvoiceServ
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
     customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -74,36 +74,36 @@ def test_the_ordinary_pack_proposes_the_regime_and_the_standard_rate(db_session:
     of the forfettario's three income parameters, which are the pack's defaults and not
     the forfettario's."""
     LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio Rossi"), ADMIN
+        LegalEntityUpsert(legal_name="Studio Rossi"), ADMIN
     )
     profile = FiscalProfileService(db_session).upsert(
         FiscalProfileUpsert(pack_id="it-standard"), ADMIN
     )
-    assert (profile.pack_id, profile.codice_regime) == ("it-standard", "RF01")
-    assert profile.aliquota_iva_default == Decimal("22.00")
-    assert profile.natura_default is None and profile.riferimento_normativo is None
-    assert profile.applica_bollo is False
-    assert profile.coefficiente_redditivita is None
-    assert profile.aliquota_imposta_sostitutiva is None
-    assert profile.aliquota_inps is None
+    assert (profile.pack_id, profile.regime_code) == ("it-standard", "RF01")
+    assert profile.default_vat_rate == Decimal("22.00")
+    assert profile.default_vat_nature is None and profile.legal_reference is None
+    assert profile.apply_stamp_duty is False
+    assert profile.profitability_coefficient is None
+    assert profile.substitute_tax_rate is None
+    assert profile.social_security_rate is None
 
 
 @pytest.mark.parametrize(
     ("overrides", "field"),
     [
-        ({"codice_regime": "RF19"}, "codice_regime"),
-        ({"aliquota_iva_default": Decimal("0.00")}, "aliquota_iva_default"),
-        ({"applica_bollo": True}, "applica_bollo"),
-        ({"coefficiente_redditivita": Decimal("78.00")}, "coefficiente_redditivita"),
-        ({"aliquota_inps": Decimal("26.07")}, "aliquota_inps"),
-        ({"natura_default": "N2.2"}, "natura_default"),
+        ({"regime_code": "RF19"}, "regime_code"),
+        ({"default_vat_rate": Decimal("0.00")}, "default_vat_rate"),
+        ({"apply_stamp_duty": True}, "apply_stamp_duty"),
+        ({"profitability_coefficient": Decimal("78.00")}, "profitability_coefficient"),
+        ({"social_security_rate": Decimal("26.07")}, "social_security_rate"),
+        ({"default_vat_nature": "N2.2"}, "default_vat_nature"),
     ],
 )
 def test_the_ordinary_pack_refuses_what_is_not_its_own(
     db_session: Session, overrides: dict[str, object], field: str
 ) -> None:
     LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio Rossi"), ADMIN
+        LegalEntityUpsert(legal_name="Studio Rossi"), ADMIN
     )
     with pytest.raises(ValidationFailed) as caught:
         FiscalProfileService(db_session).upsert(
@@ -112,24 +112,24 @@ def test_the_ordinary_pack_refuses_what_is_not_its_own(
     assert caught.value.details["field"] == field
 
 
-def test_the_forfettario_pack_refuses_the_ordinary_code(db_session: Session) -> None:
+def test_the_flat_rate_pack_refuses_the_ordinary_code(db_session: Session) -> None:
     LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio Rossi"), ADMIN
+        LegalEntityUpsert(legal_name="Studio Rossi"), ADMIN
     )
     with pytest.raises(ValidationFailed) as caught:
         FiscalProfileService(db_session).upsert(
             FiscalProfileUpsert(
                 pack_id="it-flat-rate",
-                codice_regime="RF01",
-                aliquota_iva_default=Decimal("22.00"),
-                natura_default=None,
+                regime_code="RF01",
+                default_vat_rate=Decimal("22.00"),
+                default_vat_nature=None,
             ),
             ADMIN,
         )
-    assert caught.value.details["field"] == "codice_regime"
+    assert caught.value.details["field"] == "regime_code"
 
 
-def test_an_ordinary_azienda_issues_with_vat_and_no_stamp_duty(
+def test_an_ordinary_legal_entity_issues_with_vat_and_no_stamp_duty(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     """Done when: «issues invoices with VAT». A line with no rate takes the profile's
@@ -138,27 +138,27 @@ def test_an_ordinary_azienda_issues_with_vat_and_no_stamp_duty(
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[
-                InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00")),
+            lines=[
+                InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00")),
                 InvoiceLineIn(
-                    descrizione="Formazione",
-                    prezzo_unitario=Decimal("200.00"),
-                    aliquota_iva=Decimal("10.00"),
+                    description="Formazione",
+                    unit_price=Decimal("200.00"),
+                    vat_rate=Decimal("10.00"),
                 ),
             ],
         ),
         ADMIN,
     )
-    issued = service.issue(draft.id, InvoiceIssue(data_emissione=date(ANNO, 3, 1)), ADMIN)
+    issued = service.issue(draft.id, InvoiceIssue(issue_date=date(YEAR, 3, 1)), ADMIN)
 
-    assert issued.imponibile == Decimal("1200.00")
-    assert issued.imposta == Decimal("240.00")  # 22% of 1000 and 10% of 200
-    assert issued.bollo == Decimal("0.00")
-    assert issued.totale == Decimal("1440.00")
+    assert issued.taxable_amount == Decimal("1200.00")
+    assert issued.vat_amount == Decimal("240.00")  # 22% of 1000 and 10% of 200
+    assert issued.stamp_duty == Decimal("0.00")
+    assert issued.total == Decimal("1440.00")
     row = db_session.get(Invoice, draft.id)
     assert row is not None and row.snapshot is not None
-    assert row.snapshot["fiscale"]["pack_id"] == "it-standard"
-    assert row.snapshot["fiscale"]["codice_regime"] == "RF01"
+    assert row.snapshot["tax"]["pack_id"] == "it-standard"
+    assert row.snapshot["tax"]["regime_code"] == "RF01"
 
     service.export_xml(draft.id, ADMIN)
     content, _, _ = service.download(draft.id, "xml", ADMIN)
@@ -169,7 +169,7 @@ def test_an_ordinary_azienda_issues_with_vat_and_no_stamp_duty(
     assert "<DatiBollo>" not in text
 
 
-def test_an_ordinary_azienda_has_no_ceiling_and_no_forfettario_estimate(
+def test_an_ordinary_legal_entity_has_no_ceiling_and_no_flat_rate_estimate(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     """No room under a threshold it is not subject to, for the headroom and the
@@ -178,21 +178,21 @@ def test_an_ordinary_azienda_has_no_ceiling_and_no_forfettario_estimate(
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("90000.00"))],
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("90000.00"))],
         ),
         ADMIN,
     )
-    service.issue(draft.id, InvoiceIssue(data_emissione=date(ANNO, 3, 1)), ADMIN)
+    service.issue(draft.id, InvoiceIssue(issue_date=date(YEAR, 3, 1)), ADMIN)
 
     analytics = AnalyticsService(db_session)
-    headroom = analytics.ceiling_headroom(ANNO, ADMIN)
-    assert (headroom.pack_id, headroom.soglie) == ("it-standard", [])
-    estimate = analytics.get_fiscal_estimate(ANNO, ADMIN)
-    assert estimate.ricavi == Decimal("90000.00")
-    assert estimate.imponibile is None
-    assert estimate.imposta_sostitutiva is None
-    assert estimate.contributi is None
-    assert estimate.totale_dovuto is None
+    headroom = analytics.ceiling_headroom(YEAR, ADMIN)
+    assert (headroom.pack_id, headroom.thresholds) == ("it-standard", [])
+    estimate = analytics.get_fiscal_estimate(YEAR, ADMIN)
+    assert estimate.revenue == Decimal("90000.00")
+    assert estimate.taxable_amount is None
+    assert estimate.substitute_tax is None
+    assert estimate.contributions is None
+    assert estimate.due_total is None
 
 
 def test_the_economic_overview_draws_no_estimate_for_a_regime_without_one(
@@ -200,9 +200,9 @@ def test_the_economic_overview_draws_no_estimate_for_a_regime_without_one(
 ) -> None:
     """The cash is shown and the forfettario's cards are not: an ordinary azienda gets no
     card of zeros where the estimate would be, while the forfettario keeps its own."""
-    overview = AnalyticsService(db_session).economic_overview(ANNO, ADMIN)
-    assert overview.fiscale is None and overview.fiscale_proiettato is None
-    assert overview.netto_effettivo is None
+    overview = AnalyticsService(db_session).economic_overview(YEAR, ADMIN)
+    assert overview.tax is None and overview.projected_tax is None
+    assert overview.actual_net is None
 
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    assert AnalyticsService(db_session).economic_overview(ANNO, ADMIN).fiscale is not None
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
+    assert AnalyticsService(db_session).economic_overview(YEAR, ADMIN).tax is not None

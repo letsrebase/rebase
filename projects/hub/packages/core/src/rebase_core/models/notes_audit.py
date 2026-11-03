@@ -21,13 +21,13 @@ from rebase_core.models.identity import NAME_MAX_LENGTH
 
 NOTE_ENTITY_TYPES = ("freelancer", "company")
 NOTE_MAX_LENGTH = 4000
-AUTORE_MAX_LENGTH = NAME_MAX_LENGTH
+AUTHOR_MAX_LENGTH = NAME_MAX_LENGTH
 # Where a note came from (REB-856). `web` and `mcp` are an admin writing, through the admin
-# area or an agent's token; `persona` is the person's own change of their profile, `sistema`
+# area or an agent's token; `person` is the person's own change of their profile, `system`
 # what the hub itself recorded (a merge). The last two are events of the row's life, not
 # remarks: they are never edited or deleted. A row written before the source was tracked has
-# `fonte` NULL and is an admin's, so it may be edited.
-NOTE_SOURCES = ("web", "mcp", "persona", "sistema")
+# `source` NULL and is an admin's, so it may be edited.
+NOTE_SOURCES = ("web", "mcp", "person", "system")
 NOTE_ADMIN_SOURCES = ("web", "mcp")
 
 
@@ -36,8 +36,8 @@ class Note(Base, PrimaryKeyMixin):
     person's own change leaves a remark (REB-856; it replaced the append-only `comments`
     of ORB-59 and the `note` column of both rows, at Lorenzo's request of 2026-10-29).
 
-    The text carries no date or author: `created_at`, `autore` (the display name as it
-    read when it was written), `autore_id` and `fonte` say who and when and by which door,
+    The text carries no date or author: `created_at`, `author` (the display name as it
+    read when it was written), `author_id` and `source` say who and when and by which door,
     and `modificata_*` who changed it last. An admin may edit or delete a note of their own
     kind (`NOTE_ADMIN_SOURCES`, or an old row with no source); the delete is soft
     (`eliminata_*`), so the trail (`AdminAction` `note_*`) can still say what was there.
@@ -50,17 +50,17 @@ class Note(Base, PrimaryKeyMixin):
 
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(nullable=False)
-    testo: Mapped[str] = mapped_column(Text, nullable=False)
-    autore: Mapped[str] = mapped_column(String(AUTORE_MAX_LENGTH), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str] = mapped_column(String(AUTHOR_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    autore_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-    fonte: Mapped[str | None] = mapped_column(String(10), default=None)
-    modificata_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-    modificata_da_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-    eliminata_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-    eliminata_da_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    author_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    source: Mapped[str | None] = mapped_column(String(10), default=None)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    edited_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    deleted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
     __table_args__ = (
         Index("ix_notes_entity", "entity_type", "entity_id", "created_at"),
@@ -98,9 +98,9 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # sostituita» and the last four characters, never the key), `ai_task`, `ai_price` and
 # `ai_switch` (a provider turned on or off), the last three with the before and after.
 # REB-868 adds `crm_link` on `company`: an admin's «Riprova» or «Collega a un altro deal»,
-# its payload the outcome (`esito`), the CRM's sentence (`errore`) and, for the second,
+# its payload the outcome (`outcome`), the CRM's sentence (`error`) and, for the second,
 # `deal_id`. REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
-# outcome (`esito`) and the CRM's sentence (`errore`). REB-517 adds `talents_contacted`,
+# outcome (`outcome`) and the CRM's sentence (`error`). REB-517 adds `talents_contacted`,
 # on entity type `team_request`: «Contatta i talenti» and «Rimanda», with how many talents
 # were mailed. No `CHECK` holds this list: it is the record of what the code writes.
 # REB-800 adds `merged` (on the card that was absorbed: whose it went into, and every row
@@ -111,7 +111,7 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # expected card is personal data), `eval_accept` and `eval_rate`. REB-839 adds
 # `cards_regenerate` on `ai_config`: an admin's start of the regeneration of the cards
 # that are stale by prompt version or by their inputs (its payload: the limit, how many
-# were queued, `fonte`, `batch` and its `batch_id`). REB-861 signs and sources every start
+# were queued, `source`, `batch` and its `batch_id`). REB-861 signs and sources every start
 # (the command line too: `--admin`), records the end of each bulk regeneration as
 # `cards_regenerated` on `ai_config` (counts, cost, failures by reason, no personal data)
 # and each card a regeneration rewrites, or fails to, as `card_regenerated` on the
@@ -229,7 +229,7 @@ class AdminToken(Base, PrimaryKeyMixin, TimestampMixin):
         # the name the admin gave it -- there is no linked `users` row to search
         # instead, unlike Talenti and Aziende.
         Index(
-            "ix_admin_tokens_nome_trgm",
+            "ix_admin_tokens_name_trgm",
             "nome",
             postgresql_using="gin",
             postgresql_ops={"nome": "gin_trgm_ops"},

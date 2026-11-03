@@ -38,7 +38,7 @@ export function missingFilesSentence(
 export function downloadErrorSentence(
   problem: ProblemDetail,
   kind: 'pdf' | 'xml',
-  noun: 'fattura' | 'proforma',
+  noun: 'invoice' | 'proforma',
   canRegenerate: boolean,
 ): string {
   if (!isMissingFile(problem)) return problem.detail

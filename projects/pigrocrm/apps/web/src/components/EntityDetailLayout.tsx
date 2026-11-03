@@ -119,9 +119,9 @@ export function EntityDetailLayout({
           <TabsList variant="line">
             <TabsTrigger value="panoramica">Panoramica</TabsTrigger>
             {documents && <TabsTrigger value="documenti">Documenti</TabsTrigger>}
-            {invoices && <TabsTrigger value="fatture">Fatture</TabsTrigger>}
+            {invoices && <TabsTrigger value="invoices">Fatture</TabsTrigger>}
             {contracts && <TabsTrigger value="contratti">Contratti</TabsTrigger>}
-            {hours && <TabsTrigger value="ore">Ore</TabsTrigger>}
+            {hours && <TabsTrigger value="hours">Ore</TabsTrigger>}
             {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
             {/* Before the Email and the Timeline tabs: those two are a record of what
                 already happened, and this is what is still to be done. */}
@@ -145,7 +145,7 @@ export function EntityDetailLayout({
           </TabsContent>
         )}
         {invoices && (
-          <TabsContent value="fatture" className="mt-6">
+          <TabsContent value="invoices" className="mt-6">
             {invoices}
           </TabsContent>
         )}
@@ -155,7 +155,7 @@ export function EntityDetailLayout({
           </TabsContent>
         )}
         {hours && (
-          <TabsContent value="ore" className="mt-6">
+          <TabsContent value="hours" className="mt-6">
             {hours}
           </TabsContent>
         )}

@@ -33,7 +33,7 @@ class Clock:
 @pytest.fixture
 def token(mcp_engine: Engine) -> Iterator[tuple[str, User]]:
     with session_factory(mcp_engine)() as session:
-        user = User(email="ivan@rebase.it", nome="Ivan", cognome="Fiore", role="admin")
+        user = User(email="ivan@rebase.it", nome="Ivan", last_name="Fiore", role="admin")
         session.add(user)
         session.commit()
         _, raw = AdminTokenService(session).create(user.id, "Claude Code")
@@ -115,11 +115,11 @@ async def test_a_revoked_token_stops_the_writes_of_a_running_server(
         from rebase_core.signup_schemas import SignupCreate
 
         signup = SignupService(session).subscribe(
-            SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace")
+            SignupCreate(email="ada@studio.it", nome="Ada", last_name="Lovelace")
         )
         signup_id = str(signup.id)
     async with Client(build_server(factory, admin)) as client:
-        assert not (await client.call_tool("list_talenti", {})).is_error
+        assert not (await client.call_tool("list_talents", {})).is_error
         with factory() as session:
             [record] = AdminTokenService(session).list(owner.id)
             AdminTokenService(session).revoke(owner.id, record.id)
@@ -129,8 +129,8 @@ async def test_a_revoked_token_stops_the_writes_of_a_running_server(
             {
                 "signup_id": signup_id,
                 "nome": "Ada",
-                "cognome": "Lovelace",
-                "fonti": ["https://www.linkedin.com/in/ada"],
+                "last_name": "Lovelace",
+                "sources": ["https://www.linkedin.com/in/ada"],
             },
         )
     assert refused.is_error

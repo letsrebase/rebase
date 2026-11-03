@@ -42,9 +42,9 @@ def logs(clean_hub: Session, caplog: pytest.LogCaptureFixture) -> pytest.LogCapt
 
 def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
     """The numbers in the prompt are `card_level`'s, so the rule Claude is told and the
-    rule the parser applies cannot drift apart; `anni` is asked from dated roles and may
+    rule the parser applies cannot drift apart; `experience_years` is asked from dated roles and may
     be null, and `lead` needs leadership as well as years."""
-    cv = CvText(filename="cv.pdf", pagine=1, testo="Backend developer, Python.", troncato=False)
+    cv = CvText(filename="cv.pdf", pages=1, text="Backend developer, Python.", truncated=False)
     system = card_prompt(cv, "Backend developer").system
 
     assert f"junior under {MID_FROM} years" in system
@@ -60,32 +60,36 @@ def test_the_prompt_states_the_bands_the_parser_enforces() -> None:
 
 
 def test_the_schema_lets_the_model_say_the_years_are_unknown() -> None:
-    """`anni` is required (a key silently missing is a shape failure) and nullable, and
+    """`experience_years` is required (a key silently missing is a shape failure) and nullable, and
     comes before `seniority`, which is read from it."""
     schema = card_schema()
     properties = schema["properties"]
-    assert "anni" in schema["required"]
+    assert "experience_years" in schema["required"]
     assert schema["additionalProperties"] is False
-    assert {"type": "null"} in properties["luogo"]["anyOf"]
-    assert {"type": "null"} in properties["anni"]["anyOf"]
-    assert list(properties).index("anni") < list(properties).index("seniority")
+    assert {"type": "null"} in properties["location"]["anyOf"]
+    assert {"type": "null"} in properties["experience_years"]["anyOf"]
+    assert list(properties).index("experience_years") < list(properties).index("seniority")
 
 
 @pytest.mark.parametrize(
-    ("answer", "seniority", "anni", "incerta"),
+    ("answer", "seniority", "experience_years", "incerta"),
     [
         # The audit's inconsistent cards, as the parser stores them now.
-        ({"seniority": "lead", "anni": 3}, "mid", 3, False),
-        ({"seniority": "senior", "anni": 3}, "mid", 3, False),
-        ({"seniority": "mid", "anni": 7}, "senior", 7, False),
-        ({"seniority": "lead", "anni": 12}, "lead", 12, False),
+        ({"seniority": "lead", "experience_years": 3}, "mid", 3, False),
+        ({"seniority": "senior", "experience_years": 3}, "mid", 3, False),
+        ({"seniority": "mid", "experience_years": 7}, "senior", 7, False),
+        ({"seniority": "lead", "experience_years": 12}, "lead", 12, False),
         # A CV that dates nothing: years unknown, the seniority a guess, never lead.
-        ({"seniority": "junior", "anni": None}, "junior", None, True),
-        ({"seniority": "lead", "anni": None}, "senior", None, True),
+        ({"seniority": "junior", "experience_years": None}, "junior", None, True),
+        ({"seniority": "lead", "experience_years": None}, "senior", None, True),
     ],
 )
 def test_the_writer_stores_the_banded_seniority_and_marks_a_guess(
-    clean_hub: Session, answer: dict[str, Any], seniority: str, anni: int | None, incerta: bool
+    clean_hub: Session,
+    answer: dict[str, Any],
+    seniority: str,
+    experience_years: int | None,
+    uncertain: bool,
 ) -> None:
     freelancer_id = apply_freelancer(clean_hub)
     llm = RecordingCall([card_response({**CARD, **answer})])
@@ -93,14 +97,17 @@ def test_the_writer_stores_the_banded_seniority_and_marks_a_guess(
     read = CardWriter(clean_hub, llm).write(freelancer_id)
 
     assert read.error is None and read.card is not None
-    assert (read.card.seniority, read.card.anni, read.card.seniority_incerta) == (
+    assert (read.card.seniority, read.card.experience_years, read.card.seniority_uncertain) == (
         seniority,
-        anni,
-        incerta,
+        experience_years,
+        uncertain,
     )
     stored = stored_card(clean_hub, freelancer_id)
     assert stored is not None and stored.card is not None
-    assert (stored.card["seniority"], stored.card["anni"]) == (seniority, anni)
+    assert (stored.card["seniority"], stored.card["experience_years"]) == (
+        seniority,
+        experience_years,
+    )
 
 
 def test_an_admins_level_beats_the_card_and_survives_a_regenerate(clean_hub: Session) -> None:
@@ -111,41 +118,44 @@ def test_an_admins_level_beats_the_card_and_survives_a_regenerate(clean_hub: Ses
     admin = an_admin(clean_hub)
     llm = RecordingCall(
         [
-            card_response({**CARD, "seniority": "junior", "anni": 2}),
-            card_response({**CARD, "seniority": "mid", "anni": 4}),
+            card_response({**CARD, "seniority": "junior", "experience_years": 2}),
+            card_response({**CARD, "seniority": "mid", "experience_years": 4}),
         ]
     )
     writer = CardWriter(clean_hub, llm)
     assert writer.write(freelancer_id).card is not None
 
     FreelancerService(clean_hub).override(
-        freelancer_id, FreelancerOverride(seniority_admin="lead", anni_admin=15), admin
+        freelancer_id, FreelancerOverride(seniority_admin="lead", experience_years_admin=15), admin
     )
 
     read = writer.read(freelancer_id)
     assert read.card is not None
-    assert (read.card.seniority, read.card.anni) == ("lead", 15)
-    assert (read.seniority_admin, read.anni_admin) == ("lead", 15)
-    assert read.card.seniority_incerta is False
+    assert (read.card.seniority, read.card.experience_years) == ("lead", 15)
+    assert (read.seniority_admin, read.experience_years_admin) == ("lead", 15)
+    assert read.card.seniority_uncertain is False
     stored = stored_card(clean_hub, freelancer_id)
     assert stored is not None and stored.card is not None
-    assert (stored.card["seniority"], stored.card["anni"]) == ("junior", 2)  # Claude's, untouched
+    assert (stored.card["seniority"], stored.card["experience_years"]) == (
+        "junior",
+        2,
+    )  # Claude's, untouched
 
     regenerated = writer.write(freelancer_id, force=True)
     assert regenerated.card is not None
-    assert (regenerated.card.seniority, regenerated.card.anni) == ("lead", 15)
+    assert (regenerated.card.seniority, regenerated.card.experience_years) == ("lead", 15)
     stored = stored_card(clean_hub, freelancer_id)
     assert stored is not None and stored.card is not None
-    assert (stored.card["seniority"], stored.card["anni"]) == ("mid", 4)
+    assert (stored.card["seniority"], stored.card["experience_years"]) == ("mid", 4)
 
     # A CV replaced by a scan retires the card, and the correction is still on the row.
     MemberService(clean_hub).replace_cv(freelancer_id, SCAN, "scansione.pdf", "application/pdf")
     retired = CardWriter(clean_hub, RecordingCall([])).write(freelancer_id)
     assert retired.card is None
-    assert (retired.seniority_admin, retired.anni_admin) == ("lead", 15)
+    assert (retired.seniority_admin, retired.experience_years_admin) == ("lead", 15)
 
     FreelancerService(clean_hub).override(
-        freelancer_id, FreelancerOverride(seniority_admin=None, anni_admin=None), admin
+        freelancer_id, FreelancerOverride(seniority_admin=None, experience_years_admin=None), admin
     )
     assert writer.read(freelancer_id).seniority_admin is None
 
@@ -155,24 +165,30 @@ def test_a_year_alone_from_the_admin_leaves_an_undated_seniority_uncertain(
 ) -> None:
     freelancer_id = apply_freelancer(clean_hub)
     admin = an_admin(clean_hub)
-    writer = CardWriter(clean_hub, RecordingCall([card_response({**CARD, "anni": None})]))
+    writer = CardWriter(
+        clean_hub, RecordingCall([card_response({**CARD, "experience_years": None})])
+    )
     writer.write(freelancer_id)
 
-    FreelancerService(clean_hub).override(freelancer_id, FreelancerOverride(anni_admin=6), admin)
+    FreelancerService(clean_hub).override(
+        freelancer_id, FreelancerOverride(experience_years_admin=6), admin
+    )
     read = writer.read(freelancer_id)
     assert read.card is not None
-    assert (read.card.anni, read.card.seniority_incerta) == (6, True)
+    assert (read.card.experience_years, read.card.seniority_uncertain) == (6, True)
 
     FreelancerService(clean_hub).override(
         freelancer_id, FreelancerOverride(seniority_admin="senior"), admin
     )
     read = writer.read(freelancer_id)
     assert read.card is not None
-    assert (read.card.seniority, read.card.seniority_incerta) == ("senior", False)
+    assert (read.card.seniority, read.card.seniority_uncertain) == ("senior", False)
 
 
 @pytest.mark.parametrize(
-    "bad", [{"seniority_admin": "guru"}, {"anni_admin": -1}, {"anni_admin": 61}], ids=str
+    "bad",
+    [{"seniority_admin": "guru"}, {"experience_years_admin": -1}, {"experience_years_admin": 61}],
+    ids=str,
 )
 def test_an_override_refuses_a_level_outside_the_cards_words(bad: dict[str, Any]) -> None:
     with pytest.raises(ValueError, match="seniority_admin|anni_admin"):

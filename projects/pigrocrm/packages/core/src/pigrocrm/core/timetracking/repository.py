@@ -41,10 +41,10 @@ def won_with_unbilled_hours_predicate() -> tuple[ColumnElement[bool], ...]:
     """
     return (
         TimeEntry.deleted_at.is_(None),
-        TimeEntry.fatturabile.is_(True),
+        TimeEntry.billable.is_(True),
         TimeEntry.invoice_line_id.is_(None),
         Deal.deleted_at.is_(None),
-        PipelineStage.tipo == "won",
+        PipelineStage.type == "won",
     )
 
 
@@ -80,11 +80,11 @@ class TimeEntryRepository:
             ).scalars()
         )
 
-    def for_month(self, deal_id: UUID, anno: int, mese: int) -> list[TimeEntry]:
-        da, a = month_bounds(anno, mese)
+    def for_month(self, deal_id: UUID, year: int, month: int) -> list[TimeEntry]:
+        da, a = month_bounds(year, month)
         return self.in_range(deal_id, da, a)
 
-    def week_hours(self, da: date, a: date, azienda_id: UUID | None = None) -> WeekHours:
+    def week_hours(self, da: date, a: date, legal_entity_id: UUID | None = None) -> WeekHours:
         """`SUM(ore) GROUP BY data` over the window, filled out to **every** day in it.
 
         Assembled here rather than in the dashboard for two reasons that agree: it is a
@@ -96,12 +96,12 @@ class TimeEntryRepository:
 
         The fill is the point. A `GROUP BY` returns only the days that have rows, so a week
         with three worked days comes back as three points and any chart drawn from it shows
-        three consecutive bars -- a shape the week never had. `giorni` therefore carries one
+        three consecutive bars -- a shape the week never had. `days` therefore carries one
         entry per day of the window, in calendar order, zeros included, and an empty week
         is seven zeros rather than nothing at all.
 
         A day *present* in the grouped result counts as **logged** whatever it sums to, so
-        membership of `giorni_senza_ore` is decided by the presence of a row and never by
+        membership of `days_without_hours` is decided by the presence of a row and never by
         the total being zero. Under `ck_time_entries_ore_range` (`ore > 0 AND ore <= 24`)
         the two readings are today indistinguishable -- a day with rows cannot sum to zero,
         and no test can separate them, which is why this is written down rather than
@@ -116,7 +116,7 @@ class TimeEntryRepository:
         two totals of the same hours begin to disagree.
         """
         stmt = (
-            select(TimeEntry.data, func.sum(TimeEntry.ore))
+            select(TimeEntry.data, func.sum(TimeEntry.hours))
             .where(
                 TimeEntry.deleted_at.is_(None),
                 TimeEntry.data >= da,
@@ -124,11 +124,13 @@ class TimeEntryRepository:
             )
             .group_by(TimeEntry.data)
         )
-        if azienda_id is not None:
+        if legal_entity_id is not None:
             # An entry's azienda is its deal's (REB-623, REB-630): the same subquery
             # `list` below uses, so the week and the filtered list agree on the rows.
             stmt = stmt.where(
-                TimeEntry.deal_id.in_(select(Deal.id).where(Deal.azienda_id == azienda_id))
+                TimeEntry.deal_id.in_(
+                    select(Deal.id).where(Deal.legal_entity_id == legal_entity_id)
+                )
             )
         rows = self.session.execute(stmt).all()
         # `func.sum` over a group is never null -- a group exists because it has at least
@@ -137,26 +139,23 @@ class TimeEntryRepository:
         logged: dict[date, Decimal] = {row[0]: round_hours(Decimal(row[1])) for row in rows}
 
         span = (a - da).days + 1
-        giorni_finestra = [da + timedelta(days=offset) for offset in range(span)]
-        giorni = [
-            DayHours(giorno=giorno, ore=logged.get(giorno, ZERO_HOURS))
-            for giorno in giorni_finestra
-        ]
+        days_window = [da + timedelta(days=offset) for offset in range(span)]
+        days = [DayHours(day=day, hours=logged.get(day, ZERO_HOURS)) for day in days_window]
         return WeekHours(
             da=da,
             a=a,
-            giorni=giorni,
+            days=days,
             # Membership by presence in `logged`, not by `ore == 0`: the zero-hour day is
             # exactly the case the two readings disagree on, and this is the one that is
             # right.
-            giorni_senza_ore=[giorno for giorno in giorni_finestra if giorno not in logged],
-            ore_totali=sum_hours([row.ore for row in giorni]),
+            days_without_hours=[day for day in days_window if day not in logged],
+            total_hours=sum_hours([row.hours for row in days]),
         )
 
-    def count_won_deals_to_invoice(self, azienda_id: UUID | None = None) -> int:
+    def count_won_deals_to_invoice(self, legal_entity_id: UUID | None = None) -> int:
         """§6.2's third signal: deals in a `won` stage with billable, unbilled hours.
 
-        The `da fatturare` state slice 4 §7.3 already defines, counted here rather than
+        The `to_invoice` state slice 4 §7.3 already defines, counted here rather than
         redefined -- a second definition of "ready to invoice" is a second source of truth
         about when to bill a customer.
 
@@ -175,7 +174,11 @@ class TimeEntryRepository:
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
                 .where(
                     *won_with_unbilled_hours_predicate(),
-                    *(() if azienda_id is None else (Deal.azienda_id == azienda_id,)),
+                    *(
+                        ()
+                        if legal_entity_id is None
+                        else (Deal.legal_entity_id == legal_entity_id,)
+                    ),
                 )
             ).scalar_one()
         )
@@ -194,11 +197,13 @@ class TimeEntryRepository:
         stmt = select(TimeEntry).where(TimeEntry.deleted_at.is_(None))
         if query.deal_id is not None:
             stmt = stmt.where(TimeEntry.deal_id == query.deal_id)
-        if query.azienda_id is not None:
+        if query.legal_entity_id is not None:
             # An entry's azienda is its deal's (REB-623): a subquery on `deals`, served
-            # by `ix_deals_azienda_id`, rather than a column this table would copy.
+            # by `ix_deals_legal_entity_id`, rather than a column this table would copy.
             stmt = stmt.where(
-                TimeEntry.deal_id.in_(select(Deal.id).where(Deal.azienda_id == query.azienda_id))
+                TimeEntry.deal_id.in_(
+                    select(Deal.id).where(Deal.legal_entity_id == query.legal_entity_id)
+                )
             )
         if query.user_id is not None:
             stmt = stmt.where(TimeEntry.user_id == query.user_id)
@@ -206,12 +211,12 @@ class TimeEntryRepository:
             stmt = stmt.where(TimeEntry.data >= query.da)
         if query.a is not None:
             stmt = stmt.where(TimeEntry.data <= query.a)
-        if query.fatturabile is not None:
-            stmt = stmt.where(TimeEntry.fatturabile.is_(query.fatturabile))
-        if query.fatturato is not None:
+        if query.billable is not None:
+            stmt = stmt.where(TimeEntry.billable.is_(query.billable))
+        if query.invoiced is not None:
             stmt = stmt.where(
                 TimeEntry.invoice_line_id.isnot(None)
-                if query.fatturato
+                if query.invoiced
                 else TimeEntry.invoice_line_id.is_(None)
             )
         if query.custom:
@@ -266,16 +271,16 @@ class CostRepository:
     # `list` stays the last method in this class.
     def list(self, query: CostListQuery) -> list[Cost]:
         stmt = select(Cost).where(Cost.deleted_at.is_(None))
-        if query.solo_generali:
+        if query.only_general:
             # `deal_id IS NULL` is a general expense (§7.4). A separate flag is needed
             # because `deal_id=None` on the query already means "do not filter".
             stmt = stmt.where(Cost.deal_id.is_(None))
         elif query.deal_id is not None:
             stmt = stmt.where(Cost.deal_id == query.deal_id)
-        if query.azienda_id is not None:
+        if query.legal_entity_id is not None:
             # A shared cost (`NULL`) is nobody's in particular: it answers only the
             # view over every azienda (REB-623, spec §1.7).
-            stmt = stmt.where(Cost.azienda_id == query.azienda_id)
+            stmt = stmt.where(Cost.legal_entity_id == query.legal_entity_id)
         if query.category_id is not None:
             stmt = stmt.where(Cost.category_id == query.category_id)
         if query.da is not None:

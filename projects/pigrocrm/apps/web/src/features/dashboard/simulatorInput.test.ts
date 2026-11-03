@@ -8,7 +8,7 @@ import {
   type SimulatorFields,
 } from './simulatorInput'
 
-const BLANK: SimulatorFields = { source: 'importo', valore: '', ore: '', tariffa: '', deal: null }
+const BLANK: SimulatorFields = { source: 'amount', value: '', hours: '', rate: '', deal: null }
 
 describe('the amounts an Italian keyboard produces', () => {
   it.each([
@@ -42,23 +42,23 @@ describe('the amounts an Italian keyboard produces', () => {
 
 describe('the request the fields make', () => {
   it('sends a typed amount as the deal value', () => {
-    expect(simulatorRequest({ ...BLANK, valore: '20.000,00' })).toEqual({
+    expect(simulatorRequest({ ...BLANK, value: '20.000,00' })).toEqual({
       ok: true,
-      input: { valore_preventivato: '20000.00' },
+      input: { budgeted_value: '20000.00' },
     })
   })
 
   it('sends hours with a rate when there is no amount', () => {
-    expect(simulatorRequest({ ...BLANK, ore: '100', tariffa: '80,5' })).toEqual({
+    expect(simulatorRequest({ ...BLANK, hours: '100', rate: '80,5' })).toEqual({
       ok: true,
-      input: { ore_preventivate: '100', tariffa_oraria: '80.5' },
+      input: { budgeted_hours: '100', hourly_rate: '80.5' },
     })
   })
 
   it('lets the amount win over hours and rate, as the server does', () => {
-    expect(simulatorRequest({ ...BLANK, valore: '500', ore: '10', tariffa: '50' })).toEqual({
+    expect(simulatorRequest({ ...BLANK, value: '500', hours: '10', rate: '50' })).toEqual({
       ok: true,
-      input: { valore_preventivato: '500' },
+      input: { budgeted_value: '500' },
     })
   })
 
@@ -67,30 +67,30 @@ describe('the request the fields make', () => {
       ok: false,
       errors: { form: 'Scrivi un importo, oppure le ore e la tariffa oraria.' },
     })
-    expect(simulatorRequest({ ...BLANK, ore: '100' })).toMatchObject({ ok: false })
+    expect(simulatorRequest({ ...BLANK, hours: '100' })).toMatchObject({ ok: false })
   })
 
   it('names the field that is wrong, and only that one', () => {
-    const request = simulatorRequest({ ...BLANK, valore: 'tanto', ore: '10' })
+    const request = simulatorRequest({ ...BLANK, value: 'tanto', hours: '10' })
     expect(request).toEqual({
       ok: false,
-      errors: { valore: 'Importo: scrivi un numero, per esempio 12.000,50' },
+      errors: { value: 'Importo: scrivi un numero, per esempio 12.000,50' },
     })
   })
 
   it('takes a deal\'s own estimate: its value, else its hours at its rate', () => {
-    const deal = { valore_preventivato: '9000.00', ore_preventivate: null, tariffa_oraria: null }
+    const deal = { budgeted_value: '9000.00', budgeted_hours: null, hourly_rate: null }
     expect(simulatorRequest({ ...BLANK, source: 'deal', deal })).toEqual({
       ok: true,
-      input: { valore_preventivato: '9000.00' },
+      input: { budgeted_value: '9000.00' },
     })
     expect(
       simulatorRequest({
         ...BLANK,
         source: 'deal',
-        deal: { valore_preventivato: null, ore_preventivate: '40.00', tariffa_oraria: '75.000000' },
+        deal: { budgeted_value: null, budgeted_hours: '40.00', hourly_rate: '75.000000' },
       }),
-    ).toEqual({ ok: true, input: { ore_preventivate: '40.00', tariffa_oraria: '75.000000' } })
+    ).toEqual({ ok: true, input: { budgeted_hours: '40.00', hourly_rate: '75.000000' } })
   })
 
   it('refuses a deal with no estimate, and no deal at all', () => {
@@ -98,7 +98,7 @@ describe('the request the fields make', () => {
       ok: false,
       errors: { deal: 'Scegli un deal.' },
     })
-    const empty = { valore_preventivato: null, ore_preventivate: '40.00', tariffa_oraria: null }
+    const empty = { budgeted_value: null, budgeted_hours: '40.00', hourly_rate: null }
     expect(simulatorRequest({ ...BLANK, source: 'deal', deal: empty })).toMatchObject({
       ok: false,
       errors: { deal: expect.stringContaining('non ha una stima') },
@@ -107,14 +107,14 @@ describe('the request the fields make', () => {
 
   it('carries the day the money arrives, and the contract chosen, beside the estimate', () => {
     expect(
-      simulatorRequest({ ...BLANK, valore: '20000', data: '2027-03-15', contractId: 'c1' }),
+      simulatorRequest({ ...BLANK, value: '20000', data: '2027-03-15', contractId: 'c1' }),
     ).toEqual({
       ok: true,
-      input: { valore_preventivato: '20000', data_prevista: '2027-03-15', contract_id: 'c1' },
+      input: { budgeted_value: '20000', expected_date: '2027-03-15', contract_id: 'c1' },
     })
-    expect(simulatorRequest({ ...BLANK, valore: '20000', data: '2027-03-15', contractId: null })).toEqual({
+    expect(simulatorRequest({ ...BLANK, value: '20000', data: '2027-03-15', contractId: null })).toEqual({
       ok: true,
-      input: { valore_preventivato: '20000', data_prevista: '2027-03-15' },
+      input: { budgeted_value: '20000', expected_date: '2027-03-15' },
     })
   })
 

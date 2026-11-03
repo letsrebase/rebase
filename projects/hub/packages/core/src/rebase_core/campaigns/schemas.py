@@ -30,7 +30,7 @@ from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.vocabulary import (
     CampaignAction,
     CampaignDestination,
-    CampaignFonte,
+    CampaignSource,
     CampaignState,
     RecipientKind,
     RecipientState,
@@ -43,43 +43,43 @@ from rebase_core.vocabulary import (
 FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 
 
-class TalentiFiltri(ResponseModel):
-    """The Talenti list's own filters (`GET /api/hub/talent`, `talenti.py:191`), stored
-    on the campaign and replayed through `TalentiService` when the list is shown and when
-    a mail is about to leave. `origine` is the marketing page the person started from
+class TalentsFilters(ResponseModel):
+    """The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
+    on the campaign and replayed through `TalentsService` when the list is shown and when
+    a mail is about to leave. `origin` is the marketing page the person started from
     (`home`, `pigrocrm`), stored under that key since before the list named it
-    `pagina_origine` (REB-798); `audience._from_talenti` translates it on replay."""
+    `origin_page` (REB-798); `audience._from_talents` translates it on replay."""
 
-    lista: Literal["talenti"]
-    stato: str | None = Field(default=None, max_length=20)
+    list: Literal["talents"]
+    status: str | None = Field(default=None, max_length=20)
     q: str | None = Field(default=None, max_length=SEARCH_MAX_LENGTH)
     posizione: str | None = Field(default=None, max_length=160)
-    remoto: str | None = Field(default=None, max_length=10)
-    tariffa_min: FilterAmount | None = None
-    tariffa_max: FilterAmount | None = None
-    origine: str | None = Field(default=None, max_length=40)
+    remote: str | None = Field(default=None, max_length=10)
+    min_rate: FilterAmount | None = None
+    max_rate: FilterAmount | None = None
+    origin: str | None = Field(default=None, max_length=40)
     utm_source: str | None = Field(default=None, max_length=200)
     has_cv: bool | None = None
-    con_accessi: bool | None = None
-    creato_da: datetime | None = None
-    creato_a: datetime | None = None
+    with_logins: bool | None = None
+    created_from: datetime | None = None
+    created_to: datetime | None = None
 
 
-class AziendeFiltri(ResponseModel):
+class CompaniesFilters(ResponseModel):
     """The company list's own filters (`companies.py:160`)."""
 
-    lista: Literal["aziende"]
-    stato: str | None = Field(default=None, max_length=20)
+    list: Literal["companies"]
+    status: str | None = Field(default=None, max_length=20)
     q: str | None = Field(default=None, max_length=SEARCH_MAX_LENGTH)
     budget_min: FilterAmount | None = None
     budget_max: FilterAmount | None = None
-    periodo_da: date | None = None
-    origine: str | None = Field(default=None, max_length=40)
-    creato_da: datetime | None = None
-    creato_a: datetime | None = None
+    period_from: date | None = None
+    origin: str | None = Field(default=None, max_length=40)
+    created_from: datetime | None = None
+    created_to: datetime | None = None
 
 
-Filtri = Annotated[TalentiFiltri | AziendeFiltri, Field(discriminator="lista")]
+Filters = Annotated[TalentsFilters | CompaniesFilters, Field(discriminator="list")]
 
 NAME_IS_BLANK = "Il nome della campagna non può essere vuoto."
 
@@ -106,62 +106,62 @@ CampaignName = Annotated[
     AfterValidator(_not_blank),
 ]
 
-Azione = Literal[
-    "entrato",
+Action = Literal[
+    "signed_in",
     "cv",
-    "scheda_completa",
-    "profilo_creato",
-    "richiesta_aggiornata",
-    "pigro_cliente",
-    "clic",
+    "card_complete",
+    "profile_created",
+    "request_updated",
+    "pigro_customer",
+    "click",
 ]
-Meta = Literal["area", "wizard", "pigro", "richiesta", "link"]
+Meta = Literal["area", "wizard", "pigro", "request", "link"]
 
 
 class CampaignDraft(BaseModel):
     nome: CampaignName
-    fonte: Literal["stato", "filtri"]
-    stato_percorso: str | None = Field(default=None, max_length=30)
-    filtri: Filtri | None = None
-    oggetto: str = Field(default="", max_length=CAMPAIGN_SUBJECT_MAX_LENGTH)
-    testo: str = Field(default="", max_length=CAMPAIGN_TEXT_MAX_LENGTH)
-    bottone_testo: str = Field(default="", max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
-    bottone_meta: Meta
+    source: Literal["status", "filters"]
+    journey_status: str | None = Field(default=None, max_length=30)
+    filters: Filters | None = None
+    subject: str = Field(default="", max_length=CAMPAIGN_SUBJECT_MAX_LENGTH)
+    text: str = Field(default="", max_length=CAMPAIGN_TEXT_MAX_LENGTH)
+    button_text: str = Field(default="", max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
+    button_meta: Meta
     # With «Un link» only (REB-530). The service checks it with the destination and the
     # action, in Italian, since whether it may be there depends on both.
-    bottone_url: str | None = None
-    azione: Azione
+    button_url: str | None = None
+    action: Action
 
 
 # The `CampaignPatch` fields whose column is `NOT NULL` in `models.py`'s `Campaign`:
 # `None` on one of them is how a field is typed here (so leaving it out of the request
 # means "no change"), never a value the row can hold. Left unchecked, an explicit
 # `null` on one reaches `CampaignService.update`'s blanket `setattr` and raises an
-# `IntegrityError`, a 500, instead of a sentence naming the field. `stato_percorso` and
-# `filtri` are not here: the row legitimately holds `NULL` in one of them, depending on
-# `fonte`.
-_NOT_NULLABLE = ("nome", "fonte", "oggetto", "testo", "bottone_testo", "bottone_meta", "azione")
+# `IntegrityError`, a 500, instead of a sentence naming the field. `journey_status` and
+# `filters` are not here: the row legitimately holds `NULL` in one of them, depending on
+# `source`.
+_NOT_NULLABLE = ("nome", "source", "subject", "text", "button_text", "button_meta", "action")
 
 
 class CampaignPatch(BaseModel):
     nome: CampaignName | None = None
-    fonte: Literal["stato", "filtri"] | None = None
-    stato_percorso: str | None = Field(default=None, max_length=30)
-    filtri: Filtri | None = None
-    oggetto: str | None = Field(default=None, max_length=CAMPAIGN_SUBJECT_MAX_LENGTH)
-    testo: str | None = Field(default=None, max_length=CAMPAIGN_TEXT_MAX_LENGTH)
-    bottone_testo: str | None = Field(default=None, max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
-    bottone_meta: Meta | None = None
+    source: Literal["status", "filters"] | None = None
+    journey_status: str | None = Field(default=None, max_length=30)
+    filters: Filters | None = None
+    subject: str | None = Field(default=None, max_length=CAMPAIGN_SUBJECT_MAX_LENGTH)
+    text: str | None = Field(default=None, max_length=CAMPAIGN_TEXT_MAX_LENGTH)
+    button_text: str | None = Field(default=None, max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
+    button_meta: Meta | None = None
     # `null` is a value here, not «no change»: the address of a button that no longer
     # leads to a link. Left out, it follows the destination (`CampaignService.update`).
-    bottone_url: str | None = None
-    azione: Azione | None = None
+    button_url: str | None = None
+    action: Action | None = None
 
     @field_validator(*_NOT_NULLABLE, mode="after")
     @classmethod
     def _no_explicit_null_on_a_required_field(cls, value: object, info: ValidationInfo) -> object:
         """The database's own `NOT NULL` columns, enforced here too, the same way
-        `CompanyFields._giorni_presenza_matches_remoto` enforces a check constraint: a
+        `CompanyFields._onsite_days_matches_remote` enforces a check constraint: a
         sentence naming the field rather than the `IntegrityError` a blanket `setattr`
         would otherwise reach. A `field_validator`, not a `model_validator`, so the
         error's `loc` ends in the field's own name: the hub web reads `ApiError.fields`
@@ -182,12 +182,12 @@ Unticked = Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True
 
 
 class ScheduleRequest(BaseModel):
-    """`giorno` and `ora` are Europe/Rome wall-clock time, both or neither; neither is
+    """`day` and `ora` are Europe/Rome wall-clock time, both or neither; neither is
     «Invia adesso». `esclusi` are the addresses the admin unticked on step 1."""
 
-    giorno: date | None = None
+    day: date | None = None
     ora: time | None = None
-    esclusi: list[Unticked] = []
+    excluded: list[Unticked] = []
 
 
 class NeverWriteRequest(BaseModel):
@@ -195,16 +195,16 @@ class NeverWriteRequest(BaseModel):
 
 
 class CampaignCounts(ResponseModel):
-    destinatari: int = 0
+    recipients: int = 0
     in_coda: int = 0
-    inviate: int = 0
-    saltate: int = 0
-    fallite: int = 0
-    consegnate: int = 0
-    rimbalzate: int = 0
-    cliccate: int = 0
-    entrate: int = 0
-    azioni: int = 0
+    sent: int = 0
+    skipped: int = 0
+    failed: int = 0
+    delivered: int = 0
+    bounced: int = 0
+    clicked: int = 0
+    income: int = 0
+    actions: int = 0
 
 
 class CampaignRead(ResponseModel):
@@ -213,36 +213,36 @@ class CampaignRead(ResponseModel):
     id: UUID
     nome: str
     slug: str
-    fonte: CampaignFonte
-    stato_percorso: str | None
-    filtri: Filtri | None
+    source: CampaignSource
+    journey_status: str | None
+    filters: Filters | None
     segue_id: UUID | None
-    oggetto: str
-    testo: str
-    bottone_testo: str
-    bottone_meta: CampaignDestination
-    bottone_url: str | None = None
-    azione: CampaignAction
-    stato: CampaignState
-    contenuto_at: datetime
-    programmata_per: datetime | None
-    prova_inviata_at: datetime | None
-    inviata_at: datetime | None
+    subject: str
+    text: str
+    button_text: str
+    button_meta: CampaignDestination
+    button_url: str | None = None
+    action: CampaignAction
+    status: CampaignState
+    content_at: datetime
+    scheduled_for: datetime | None
+    test_sent_at: datetime | None
+    sent_at: datetime | None
     created_at: datetime
     # REB-524: set while a send is stopped on something that will not fix itself; the
     # page reads «Invio fermo: <fermo_motivo>».
-    fermo_at: datetime | None
-    fermo_motivo: str | None
+    stalled_at: datetime | None
+    stalled_reason: str | None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def pronta(self) -> bool:
+    def ready(self) -> bool:
         """A test has left since the last edit: what enables «Invia» (Review Focus 1)."""
-        return self.prova_inviata_at is not None and self.prova_inviata_at >= self.contenuto_at
+        return self.test_sent_at is not None and self.test_sent_at >= self.content_at
 
 
 class CampaignListItem(CampaignRead):
-    conteggi: CampaignCounts
+    counts: CampaignCounts
 
 
 class CampaignList(ResponseModel):
@@ -258,26 +258,26 @@ class RecipientRead(ResponseModel):
     id: UUID
     email: str
     nome: str | None
-    tipo: RecipientKind
-    stato: RecipientState
-    motivo: str | None
-    inviata_at: datetime | None
-    consegnata_at: datetime | None
-    rimbalzata_at: datetime | None
-    primo_clic_at: datetime | None
-    reclamo_at: datetime | None
-    entrato_at: datetime | None
-    azione_at: datetime | None
+    kind: RecipientKind
+    status: RecipientState
+    reason: str | None
+    sent_at: datetime | None
+    delivered_at: datetime | None
+    bounced_at: datetime | None
+    first_click_at: datetime | None
+    complaint_at: datetime | None
+    signed_in_at: datetime | None
+    action_at: datetime | None
     # Read at detail time, never stored: the login or the card carries this campaign's
     # link (REB-426), so the mail was the door (spec § 4.3).
-    entrato_dalla_mail: bool = False
-    azione_dalla_mail: bool = False
+    signed_in_from_mail: bool = False
+    action_from_mail: bool = False
 
 
 class CampaignDetail(ResponseModel):
-    campagna: CampaignRead
-    conteggi: CampaignCounts
-    destinatari: list[RecipientRead]
+    campaign: CampaignRead
+    counts: CampaignCounts
+    recipients: list[RecipientRead]
     # The cursor after the last recipient listed, when a page was asked for (REB-804).
     next_cursor: str | None = None
 
@@ -285,23 +285,23 @@ class CampaignDetail(ResponseModel):
 class AudienceRowRead(ResponseModel):
     email: str
     nome: str | None
-    tipo: RecipientKind
-    escluso: str | None
+    kind: RecipientKind
+    excluded: str | None
 
 
 class AudiencePreview(ResponseModel):
-    righe: list[AudienceRowRead]
-    incluse: int
-    escluse: int
+    lines: list[AudienceRowRead]
+    included: int
+    excluded: int
 
 
 class TemplateRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    stato_percorso: str
-    etichetta: str
-    oggetto: str
-    testo: str
-    bottone_testo: str
-    bottone_meta: CampaignDestination
-    azione: CampaignAction
+    journey_status: str
+    label: str
+    subject: str
+    text: str
+    button_text: str
+    button_meta: CampaignDestination
+    action: CampaignAction

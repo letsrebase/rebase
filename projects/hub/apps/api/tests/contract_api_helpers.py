@@ -15,27 +15,27 @@ MISSING = "00000000-0000-7000-8000-000000000000"
 # What the company would pay rebase a day: it must appear nowhere this flow answers.
 BUDGET = "777.77"
 FISCAL = {
-    "codice_fiscale": "LVLDAA85T50H501Z",
+    "tax_code": "LVLDAA85T50H501Z",
     "partita_iva": "01234567890",
-    "domicilio": "Via Roma 1, Milano",
-    "pec": None,
+    "domicile": "Via Roma 1, Milano",
+    "certified_email": None,
 }
-CLIENTE = {
-    "cliente_ragione_sociale": "ACME S.r.l.",
-    "cliente_piva": "01234567890",
-    "cliente_sede": "Milano",
+CUSTOMER = {
+    "customer_legal_name": "ACME S.r.l.",
+    "customer_vat_number": "01234567890",
+    "customer_registered_office": "Milano",
 }
-LETTERA = {
-    "ruolo": "Backend developer",
-    "attivita": "Le API del prodotto.",
-    "data_inizio": "2026-10-01",
-    "modalita": "a corpo",
-    "compenso": "450",
-    "giorni_pagamento": 30,
-    "fine_mese": True,
+LETTER = {
+    "role": "Backend developer",
+    "activities": "Le API del prodotto.",
+    "start_date": "2026-10-01",
+    "mode": "to_body",
+    "fee": "450",
+    "payment_days": 30,
+    "month_end": True,
 }
 # The same letter priced by the day, which is what a reward can project without an estimate.
-DAY_RATE_LETTERA = {**LETTERA, "modalita": "a giornata", "unita": "a giornata"}
+DAY_RATE_LETTER = {**LETTER, "mode": "to_work_unit", "unit": "to_work_unit"}
 TABLES = (
     "referral_rewards",
     "referrals",
@@ -69,11 +69,11 @@ def apply_freelancer(client: TestClient) -> str:
         "/api/hub/freelancers",
         data={
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "email": "ada@studio.it",
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -85,18 +85,18 @@ def request_company(client: TestClient) -> str:
     response = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": "ACME Srl",
-            "referente_nome": "Wile",
-            "referente_cognome": "E.",
+            "company_name": "ACME Srl",
+            "contact_first_name": "Wile",
+            "contact_last_name": "E.",
             "email": "wile@acme.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend developer per tre mesi.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": BUDGET,
-            "remoto": "remoto",
-            "numero_risorse": 1,
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Un backend developer per tre mesi.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": BUDGET,
+            "remote": "remote",
+            "headcount": 1,
         },
     )
     assert response.status_code == 201, response.text
@@ -117,11 +117,11 @@ def apply_member(client: TestClient, email: str) -> None:
         "/api/hub/freelancers",
         data={
             "nome": "Bob",
-            "cognome": "Ross",
+            "last_name": "Ross",
             "email": email,
-            "tariffa_giornaliera": "300",
+            "daily_rate": "300",
             "posizione": "Designer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Bob CV.pdf", PDF, "application/pdf")},
     )

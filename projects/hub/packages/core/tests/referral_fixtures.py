@@ -31,8 +31,8 @@ from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
-    ClienteData,
-    LetteraFields,
+    CustomerDate,
+    LetterFields,
     MatchCreate,
     MatchListItem,
 )
@@ -54,7 +54,7 @@ from rebase_core.users import UserService
 
 
 def _member(session: Session, email: str = "mario@community.it") -> UUID:
-    user = User(email=email, nome="Mario", cognome="Rossi", role="member")
+    user = User(email=email, nome="Mario", last_name="Rossi", role="member")
     session.add(user)
     session.commit()
     return user.id
@@ -64,18 +64,18 @@ def _card(
     session: Session,
     *,
     email: str = "ada@studio.it",
-    rif: str | None = None,
+    ref: str | None = None,
     utm_source: str | None = None,
 ) -> UUID:
     row, _ = FreelancerService(session).apply(
         FreelancerCreate(
             nome="Ada",
-            cognome="Lovelace",
+            last_name="Lovelace",
             email=email,
-            tariffa_giornaliera=Decimal("450"),
+            daily_rate=Decimal("450"),
             posizione="Backend developer",
-            remoto="remoto",
-            rif=rif,
+            remote="remote",
+            ref=ref,
             utm=SignupUtm(utm_source=utm_source) if utm_source else None,
         ),
         PDF,
@@ -86,22 +86,22 @@ def _card(
 
 
 def _request(
-    session: Session, *, email: str = "wile@acme.it", rif: str | None = None, **change: object
+    session: Session, *, email: str = "wile@acme.it", ref: str | None = None, **change: object
 ) -> UUID:
     payload: dict[str, object] = {
-        "nome_azienda": "ACME Srl",
-        "referente_nome": "Wile",
-        "referente_cognome": "E.",
+        "company_name": "ACME Srl",
+        "contact_first_name": "Wile",
+        "contact_last_name": "E.",
         "email": email,
-        "telefono": "+39 345 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Le API del prodotto, per tre mesi.",
-        "periodo_da": date(2026, 10, 1),
-        "durata": "3 mesi",
-        "budget_giornaliero": Decimal("800"),
-        "remoto": "remoto",
-        "numero_risorse": 1,
-        "rif": rif,
+        "phone": "+39 345 1234567",
+        "requested_role": "Backend developer",
+        "project": "Le API del prodotto, per tre mesi.",
+        "period_from": date(2026, 10, 1),
+        "duration": "3 mesi",
+        "daily_budget": Decimal("800"),
+        "remote": "remote",
+        "headcount": 1,
+        "ref": ref,
     }
     payload.update(change)
     row, _ = CompanyService(session).request(CompanyCreate(**payload))  # type: ignore[arg-type]
@@ -121,24 +121,26 @@ def _log_in(session: Session, email: str) -> None:
 
 
 def _match_body(
-    company_id: UUID, *, giorni_previsti: int | None = 20, modalita: str = "a giornata"
+    company_id: UUID, *, expected_days: int | None = 20, mode: str = "to_work_unit"
 ) -> MatchCreate:
     return MatchCreate(
         company_id=company_id,
-        cliente=ClienteData(
-            cliente_ragione_sociale="ACME S.r.l.", cliente_piva="01234567890", cliente_sede="Milano"
+        customer=CustomerDate(
+            customer_legal_name="ACME S.r.l.",
+            customer_vat_number="01234567890",
+            customer_registered_office="Milano",
         ),
-        lettera=LetteraFields(
-            ruolo="Backend developer",
-            attivita="Le API del prodotto.",
-            data_inizio=date(2026, 10, 1),
-            compenso=Decimal("450"),
-            modalita=modalita,
-            unita=modalita,
-            giorni_pagamento=30,
-            fine_mese=True,
+        letter=LetterFields(
+            role="Backend developer",
+            activities="Le API del prodotto.",
+            start_date=date(2026, 10, 1),
+            fee=Decimal("450"),
+            mode=mode,
+            unit=mode,
+            payment_days=30,
+            month_end=True,
         ),
-        giorni_previsti=giorni_previsti,
+        expected_days=expected_days,
     )
 
 
@@ -149,13 +151,13 @@ def _sent_with_body(
     freelancer_id: UUID,
     company_id: UUID,
     admin_id: UUID,
-    modalita: str = "a giornata",
+    mode: str = "to_work_unit",
 ) -> Match:
     """`test_signing._sent`'s own recipe (`_matches`/`_draft`/`send_match`), with
     `_match_body`'s explicit day rate and estimate instead of `match_fixtures._body`'s
     default, so the reward this earns is deterministic."""
     match = MatchService(session, renderer, SIGNER, today=lambda: TODAY).create(
-        freelancer_id, _match_body(company_id, modalita=modalita), admin_id
+        freelancer_id, _match_body(company_id, mode=mode), admin_id
     )
     _signing(session, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
     row = session.get(Match, match.id)
@@ -166,7 +168,7 @@ def _sent_with_body(
 def _signup_with(session: Session, **extra: object) -> UUID:
     from rebase_core.service import SignupService
 
-    payload: dict[str, object] = {"email": "cold@studio.it", "nome": "Cold", "cognome": "Lead"}
+    payload: dict[str, object] = {"email": "cold@studio.it", "nome": "Cold", "last_name": "Lead"}
     payload.update(extra)
     return SignupService(session).subscribe(SignupCreate(**payload)).id  # type: ignore[arg-type]
 
@@ -178,9 +180,9 @@ def _draft_for(session: Session, signup_id: UUID) -> UUID:
             signup_id,
             FreelancerDraft(
                 nome="Cold",
-                cognome="Lead",
+                last_name="Lead",
                 posizione="Backend developer",
-                fonti=["https://cold.dev"],
+                sources=["https://cold.dev"],
             ),
             an_admin(session),
             "web",
@@ -193,12 +195,10 @@ def _draft_for(session: Session, signup_id: UUID) -> UUID:
 
 
 def _public_request(
-    session: Session, *, email: str = "wile@acme.it", rif: str | None, azienda: str = "ACME Srl"
+    session: Session, *, email: str = "wile@acme.it", ref: str | None, company: str = "ACME Srl"
 ) -> None:
     session.add(
-        TeamRequest(
-            origine="pubblico", azienda=azienda, email=email, telefono="+39 345 1234567", rif=rif
-        )
+        TeamRequest(origin="public", company=company, email=email, phone="+39 345 1234567", ref=ref)
     )
     session.commit()
 
@@ -241,7 +241,7 @@ def _referral_of(session: Session, entity_id: UUID) -> Referral:
 def _signed_reward(clean_referrals: Session, admin_id: UUID) -> UUID:
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
@@ -276,8 +276,8 @@ def _referred_pair(clean_referrals: Session) -> tuple[UUID, UUID, UUID, UUID]:
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
     _log_in(clean_referrals, "wile@acme.it")
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
@@ -286,7 +286,7 @@ def _referred_pair(clean_referrals: Session) -> tuple[UUID, UUID, UUID, UUID]:
 
 def _match_list(session: Session) -> list[MatchListItem]:
     service = MatchService(session, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
-    return service.reads.list_all(stato=None, q=None, limit=100, offset=0).items
+    return service.reads.list_all(status=None, q=None, limit=100, offset=0).items
 
 
 def _evidence(session: Session, entity_id: UUID):  # type: ignore[no-untyped-def]

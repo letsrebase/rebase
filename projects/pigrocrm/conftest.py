@@ -116,7 +116,7 @@ _TEMPLATE = "pigrocrm_template"
 # The revisions whose DDL `create_all` cannot express and the template applies after it,
 # in the order Alembic runs them: the policies of 0048 (REB-633), then 0049's rewrite of
 # the through-the-parent ones with the «tutte» fast path first (REB-656).
-_AZIENDA_SCOPE_REVISIONS = (
+_LEGAL_ENTITY_SCOPE_REVISIONS = (
     "0048_azienda_scope.py",
     "0049_azienda_scope_fast_path.py",
     "0056_contract_email_templates.py",
@@ -126,7 +126,7 @@ _AZIENDA_SCOPE_REVISIONS = (
 )
 
 
-def _azienda_scope_statements() -> list[str]:
+def _legal_entity_scope_statements() -> list[str]:
     """`statements()` of each revision above, loaded from the file: a revision is a
     script in `versions/`, not a module on the path."""
     import importlib.util
@@ -134,7 +134,7 @@ def _azienda_scope_statements() -> list[str]:
 
     versions = Path(__file__).resolve().parent / "packages/core/migrations/versions"
     out: list[str] = []
-    for filename in _AZIENDA_SCOPE_REVISIONS:
+    for filename in _LEGAL_ENTITY_SCOPE_REVISIONS:
         spec = importlib.util.spec_from_file_location(
             f"pigrocrm_migration_{filename[:4]}", versions / filename
         )
@@ -188,7 +188,7 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
             # predicate. The suite's user is a superuser, which
             # Postgres keeps outside every policy, so no existing test sees them; the
             # scope tests connect as the application role the boot creates and do.
-            for statement in _azienda_scope_statements():
+            for statement in _legal_entity_scope_statements():
                 connection.execute(text(statement))
         # A template must have no session connected while it is copied.
         engine.dispose()

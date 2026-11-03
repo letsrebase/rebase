@@ -44,7 +44,7 @@ export const SECTIONS = [
     items: [
       { to: '/app/activities', label: 'Attività', icon: ListChecks },
       { to: '/app/calendar', label: 'Calendario', icon: CalendarDays },
-      { to: '/app/avvisi', label: 'Avvisi', icon: Bell },
+      { to: '/app/reminders', label: 'Avvisi', icon: Bell },
       { to: '/app/proposals', label: 'Proposte', icon: Inbox },
     ],
   },
@@ -74,7 +74,7 @@ export const SECTIONS = [
  * belongs to whoever creates it, any role (`PatService` scopes by `actor.id`, not role), so
  * the page is every role's own and its route, `/app/token`, carries no admin guard.
  */
-export const AGENTI = { to: '/app/token', label: 'Agenti', icon: Bot } as const
+export const Agents = { to: '/app/token', label: 'Agenti', icon: Bot } as const
 
 /**
  * One literal path per settings tab. `satisfies Record<SettingsTabValue, ...>` is what
@@ -89,7 +89,7 @@ export const SETTINGS_PATHS = {
   fields: '/app/settings/fields',
   pipeline: '/app/settings/pipeline',
   template: '/app/settings/template',
-  aziende: '/app/settings/aziende',
+  legal_entities: '/app/settings/legal-entities',
   users: '/app/settings/users',
   'cost-categories': '/app/settings/cost-categories',
   rates: '/app/settings/rates',
@@ -149,7 +149,7 @@ export function settingsSubItems(role: Role, pathname: string) {
 export type LinkTo =
   | typeof HOME.to
   | (typeof SECTIONS)[number]['items'][number]['to']
-  | typeof AGENTI.to
+  | typeof Agents.to
   | (typeof SETTINGS_PATHS)[SettingsTabValue]
 
 /** Is `pathname` this entry, or a page below it (a detail route, a tab)? */

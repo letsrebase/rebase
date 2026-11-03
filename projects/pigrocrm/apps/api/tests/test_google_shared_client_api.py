@@ -49,7 +49,7 @@ TOKEN_KEY_B64 = base64.b64encode(b"k" * 32).decode()
 ROOT_CALLBACK = "https://pigro.test/api/gmail/oauth/callback"
 REFRESH = "1//0gSharedClientRefresh"
 # Where the root's own callback sends a browser with no session of the root's (REB-446).
-ROOT_NO_SESSION = "/app/get-started?esito=sessione"
+ROOT_NO_SESSION = "/app/get-started?outcome=sessione"
 
 
 def _settings(api_engine: Engine, *, shared: bool) -> Settings:
@@ -170,7 +170,7 @@ def test_a_space_connects_gmail_through_the_root_callback(
     # beside the door that was pressed (REB-222).
     done = shared.get(back.headers["location"], follow_redirects=False)
     assert done.status_code == 307, done.text
-    assert done.headers["location"] == f"/{SLUG}/app/?esito=collegato"
+    assert done.headers["location"] == f"/{SLUG}/app/?outcome=collegato"
     exchanges = _exchanges(google)
     assert len(exchanges) == 1
     assert exchanges[0]["redirect_uri"] == [ROOT_CALLBACK]
@@ -208,7 +208,7 @@ def test_a_refusal_on_googles_side_comes_back_to_the_space_home(
     assert urlparse(back.headers["location"]).path == f"/{SLUG}/api/gmail/oauth/callback"
     landed = shared.get(back.headers["location"], follow_redirects=False)
     # Google's own `error` is English and never reaches the page (`routers/gmail.py`).
-    assert landed.headers["location"] == f"/{SLUG}/app/?esito=negato"
+    assert landed.headers["location"] == f"/{SLUG}/app/?outcome=negato"
     assert _exchanges(google) == []
 
 
@@ -230,14 +230,14 @@ def test_a_state_carried_to_another_space_lands_no_token_there(
     )
     assert urlparse(back.headers["location"]).path == f"/{OTHER}/api/gmail/oauth/callback"
     landed = shared.get(back.headers["location"], follow_redirects=False)
-    assert landed.headers["location"] == f"/{OTHER}/app/?esito=errore"
+    assert landed.headers["location"] == f"/{OTHER}/app/?outcome=errore"
     # And handed straight to the space it was not minted for, past the root.
     direct = shared.get(
         f"/{OTHER}/api/gmail/oauth/callback",
         params={"code": "4/0A-code", "state": state},
         follow_redirects=False,
     )
-    assert direct.headers["location"] == f"/{OTHER}/app/?esito=errore"
+    assert direct.headers["location"] == f"/{OTHER}/app/?outcome=errore"
     # Nothing reached Google, and neither space holds a mailbox.
     assert _exchanges(google) == []
     for slug in (SLUG, OTHER):
@@ -258,7 +258,7 @@ def test_drive_consent_takes_the_same_way_back(shared: TestClient, google: FakeG
     )
     assert urlparse(back.headers["location"]).path == f"/{SLUG}/api/drive/oauth/callback"
     landed = shared.get(back.headers["location"], follow_redirects=False)
-    assert landed.headers["location"] == f"/{SLUG}/app/settings/drive?esito=negato"
+    assert landed.headers["location"] == f"/{SLUG}/app/settings/drive?outcome=negato"
 
 
 # --- a session that ran out on Google's screens (REB-446) -----------------------------
@@ -335,7 +335,7 @@ def test_a_space_consent_that_outlasts_the_access_cookie_still_connects(
 def test_a_space_consent_with_no_session_left_lands_in_the_space_not_on_json(
     product: str, shared: TestClient, google: FakeGmail, api_engine: Engine
 ) -> None:
-    """Both cookies gone: the space's own page, with `sessione` for the SPA to say in
+    """Both cookies gone: the space's own page, with `session_expired` for the SPA to say in
     Italian once its login has brought the person back, and nothing sent to Google."""
     _sign_up(shared, SLUG, "ada@studio.it")
     _enter(shared, api_engine, SLUG, "ada@studio.it")

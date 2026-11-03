@@ -43,8 +43,8 @@ export function monthOf(value: Date): string {
  * month» from a 31st silently skips a month. Anchoring to the first makes every shift
  * exact.
  */
-export function shiftMonth(mese: string, months: number): string {
-  const first = firstOfMonth(mese)
+export function shiftMonth(month: string, months: number): string {
+  const first = firstOfMonth(month)
   first.setMonth(first.getMonth() + months)
   return toIsoMonth(first)
 }
@@ -94,6 +94,6 @@ export function monthCells(mese: string): MonthCell[] {
 /** `settembre 2026`, for the page's own description. */
 const monthLabelFormatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' })
 
-export function monthLabel(mese: string): string {
-  return monthLabelFormatter.format(firstOfMonth(mese))
+export function monthLabel(month: string): string {
+  return monthLabelFormatter.format(firstOfMonth(month))
 }

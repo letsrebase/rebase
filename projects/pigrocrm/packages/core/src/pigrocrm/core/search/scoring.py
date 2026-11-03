@@ -76,11 +76,11 @@ WEIGHT_IDENTIFYING = Decimal("1.00")
 # exactly what they are looking for.
 WEIGHT_CODE = Decimal("1.00")
 WEIGHT_EMAIL = Decimal("0.90")
-WEIGHT_CAUSALE = Decimal("0.80")
+WEIGHT_MEMO = Decimal("0.80")
 
 # Precision 6 leaves room the formula cannot actually use (its ceiling is 1.0000) and
 # costs nothing; the scale is the one that matters, and it is the same number the
-# `SearchHit.punteggio` field declares.
+# `SearchHit.score` field declares.
 _NUMERIC = Numeric(6, SCORE_SCALE)
 _ZERO = literal(Decimal("0.0000"), type_=_NUMERIC)
 
@@ -161,8 +161,8 @@ def combine_scores(scores: Sequence[ColumnElement[Decimal]]) -> ColumnElement[De
     if len(scores) == 1:
         # `greatest` of one argument is legal in Postgres, but writing it would put a
         # function call around every single-field entity's score for nothing.
-        return func.round(scores[0], SCORE_SCALE).label("punteggio")
-    return func.round(func.greatest(*scores), SCORE_SCALE).label("punteggio")
+        return func.round(scores[0], SCORE_SCALE).label("score")
+    return func.round(func.greatest(*scores), SCORE_SCALE).label("score")
 
 
 def pick_field(
@@ -180,7 +180,7 @@ def pick_field(
         (func.round(score, SCORE_SCALE) == top, literal(field.name))
         for field, score in zip(fields, scores, strict=True)
     ]
-    return case(*branches, else_=literal(fields[0].name)).label("campo")
+    return case(*branches, else_=literal(fields[0].name)).label("field")
 
 
 def row_score(fields: Sequence[ScoredField], term: str) -> ColumnElement[Decimal]:

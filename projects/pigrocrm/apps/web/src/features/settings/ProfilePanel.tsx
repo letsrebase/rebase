@@ -32,7 +32,7 @@ export function ProfilePanel() {
         <dt className="text-muted-foreground">Email</dt>
         <dd>{user.email}</dd>
         <dt className="text-muted-foreground">Ruolo</dt>
-        <dd>{roleLabel(user.ruolo)}</dd>
+        <dd>{roleLabel(user.role)}</dd>
       </dl>
     </div>
   )

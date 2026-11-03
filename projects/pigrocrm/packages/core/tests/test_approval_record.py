@@ -33,23 +33,23 @@ from pigrocrm.core.work_units.models import Approval
 from pigrocrm.core.work_units.schemas import ApprovalRecord, WorkUnitCreate
 from pigrocrm.core.work_units.service import ApprovalService, WorkUnitService
 
-WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
+WRITER = Actor(id=uuid4(), type="user", role="collaborator")
 AGENT = Actor(id=uuid4(), type="mcp", role="admin")
 READER = Actor(id=None, type="user", role="readonly")
 
 
 def _contract(session: Session, *, requires_prior_approval: bool = True) -> Contract:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}")
+    customer = Customer(legal_name=f"ACME {uuid4()}")
     session.add(customer)
     session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
         requires_prior_approval=requires_prior_approval,
     )
     session.add(contract)
@@ -57,16 +57,16 @@ def _contract(session: Session, *, requires_prior_approval: bool = True) -> Cont
     return contract
 
 
-def _day(session: Session, contract: Contract, giorno: date, stato: str) -> UUID:
+def _day(session: Session, contract: Contract, day: date, status: str) -> UUID:
     return (
         WorkUnitService(session)
         .create(
             WorkUnitCreate(
                 contract_id=contract.id,
-                data=giorno,
-                quantita=Decimal("1.00"),
-                descrizione="Giornata",
-                stato=stato,  # type: ignore[arg-type]
+                data=day,
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status=status,  # type: ignore[arg-type]
             ),
             WRITER,
         )
@@ -78,9 +78,9 @@ def _document(session: Session, contract: Contract, *, filed: bool = True) -> Do
     """A document of the contract; `filed` gives it the one version an archived original has."""
     document = Document(
         contract_id=contract.id,
-        tipo="documento",
-        titolo="Mail di conferma",
-        versione_corrente=1 if filed else 0,
+        type="document",
+        title="Mail di conferma",
+        current_version=1 if filed else 0,
     )
     session.add(document)
     session.flush()
@@ -88,10 +88,10 @@ def _document(session: Session, contract: Contract, *, filed: bool = True) -> Do
         session.add(
             DocumentVersion(
                 document_id=document.id,
-                numero=1,
+                number=1,
                 storage_key=f"test/{document.id}",
                 content_type="text/plain",
-                dimensione=1,
+                size=1,
                 hash_sha256="0" * 64,
             )
         )
@@ -102,10 +102,10 @@ def _document(session: Session, contract: Contract, *, filed: bool = True) -> Do
 def _record(contract: Contract, days: list[UUID], **extra: object) -> ApprovalRecord:
     return ApprovalRecord(
         contract_id=contract.id,
-        canale="email",
-        mittente="giulia@cliente.example",
-        ricevuto_il=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
-        estratto="Confermo le giornate.",
+        channel="email",
+        sender="giulia@cliente.example",
+        received_at=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
+        excerpt="Confermo le giornate.",
         work_unit_ids=days,
         **extra,  # type: ignore[arg-type]
     )
@@ -115,51 +115,51 @@ def test_a_proposed_day_becomes_approved_and_a_flagged_one_is_recovered(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
-    proposed = _day(db_session, contract, date(2026, 3, 2), "proposto")
-    flagged = _day(db_session, contract, date(2026, 3, 3), "lavorato")
-    assert WorkUnitService(db_session).get(flagged).stato == "lavorato_senza_approvazione"
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    flagged = _day(db_session, contract, date(2026, 3, 3), "worked")
+    assert WorkUnitService(db_session).get(flagged).status == "worked_without_approval"
     document = _document(db_session, contract)
 
     recorded = ApprovalService(db_session).record(
         _record(contract, [proposed, flagged], document_id=document.id), WRITER
     )
 
-    assert {day.id: day.stato for day in recorded.work_units} == {
-        proposed: "approvato",
-        flagged: "lavorato",
+    assert {day.id: day.status for day in recorded.work_units} == {
+        proposed: "approved",
+        flagged: "worked",
     }
     assert all(day.approval_id == recorded.approval.id for day in recorded.work_units)
-    assert recorded.approval.documento_titolo == "Mail di conferma"
-    assert recorded.approval.origine == {"kind": "manuale"}
+    assert recorded.approval.title_document == "Mail di conferma"
+    assert recorded.approval.origin == {"kind": "manual"}
     # The log says who moved them and that an approval was recorded; the sender is on the approval.
     steps = WorkUnitService(db_session).transitions_for(proposed)
-    assert steps[-1].stato_nuovo == "approvato"
-    assert steps[-1].attore == {"kind": "human", "id": str(WRITER.id)}
-    assert steps[-1].motivo == "Approvazione registrata"
+    assert steps[-1].new_status == "approved"
+    assert steps[-1].actor == {"kind": "human", "id": str(WRITER.id)}
+    assert steps[-1].reason == "Approvazione registrata"
 
 
 def test_one_day_that_cannot_use_the_approval_refuses_all_and_writes_nothing(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
-    fine = _day(db_session, contract, date(2026, 3, 2), "proposto")
-    worked = _day(db_session, contract, date(2026, 3, 3), "approvato")
+    end = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    worked = _day(db_session, contract, date(2026, 3, 3), "approved")
     document = _document(db_session, contract)
 
     with pytest.raises(Conflict) as refused:
         ApprovalService(db_session).record(
-            _record(contract, [fine, worked], document_id=document.id), WRITER
+            _record(contract, [end, worked], document_id=document.id), WRITER
         )
-    assert refused.value.details["giornate"] == ["2026-03-03 (approvato)"]
+    assert refused.value.details["work_units"] == ["2026-03-03 (approvato)"]
 
-    assert WorkUnitService(db_session).get(fine).stato == "proposto"
+    assert WorkUnitService(db_session).get(end).status == "proposed"
     assert db_session.scalars(select(Approval)).all() == []
 
 
 def test_a_day_of_another_contract_is_not_found(db_session: Session) -> None:
     contract = _contract(db_session)
     other = _contract(db_session)
-    foreign = _day(db_session, other, date(2026, 3, 2), "proposto")
+    foreign = _day(db_session, other, date(2026, 3, 2), "proposed")
     document = _document(db_session, contract)
 
     with pytest.raises(NotFound):
@@ -170,21 +170,21 @@ def test_a_day_of_another_contract_is_not_found(db_session: Session) -> None:
 
 def test_a_document_with_no_archived_file_cannot_be_the_proof(db_session: Session) -> None:
     contract = _contract(db_session)
-    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
     empty = _document(db_session, contract, filed=False)
 
     with pytest.raises(ValidationFailed) as refused:
         ApprovalService(db_session).record(_record(contract, [day], document_id=empty.id), WRITER)
     assert refused.value.details["field"] == "document_id"
 
-    assert WorkUnitService(db_session).get(day).stato == "proposto"
+    assert WorkUnitService(db_session).get(day).status == "proposed"
     assert db_session.scalars(select(Approval)).all() == []
 
 
 def test_a_document_of_another_customer_is_refused(db_session: Session) -> None:
     contract = _contract(db_session)
     other = _contract(db_session)
-    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
 
     with pytest.raises(ValidationFailed) as refused:
         ApprovalService(db_session).record(
@@ -197,10 +197,10 @@ def test_the_proof_is_exactly_one_of_a_document_and_a_message() -> None:
     contract_id = uuid4()
     base = {
         "contract_id": contract_id,
-        "canale": "email",
-        "mittente": "a@b.example",
-        "ricevuto_il": datetime(2026, 3, 1, tzinfo=UTC),
-        "estratto": "ok",
+        "channel": "email",
+        "sender": "a@b.example",
+        "received_at": datetime(2026, 3, 1, tzinfo=UTC),
+        "excerpt": "ok",
         "work_unit_ids": [uuid4()],
     }
     with pytest.raises(ValueError, match="una sola prova"):
@@ -216,7 +216,7 @@ def test_a_synced_email_is_filed_as_a_document_of_the_contract(
     db_session: Session, tmp_path
 ) -> None:
     contract = _contract(db_session)
-    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
     account = connected_account(db_session)
     message = GmailMessage(
         google_account_id=account.id,
@@ -243,7 +243,7 @@ def test_a_synced_email_is_filed_as_a_document_of_the_contract(
     db_session.flush()
     storage = LocalFileStorage(str(tmp_path / "documents"))
     # A real user: the filed version records who created it.
-    person = Actor(id=account.user_id, type="user", role="collaboratore")
+    person = Actor(id=account.user_id, type="user", role="collaborator")
 
     recorded = ApprovalService(db_session, storage).record(
         _record(contract, [day], gmail_message_id=message.id), person
@@ -255,16 +255,16 @@ def test_a_synced_email_is_filed_as_a_document_of_the_contract(
     document = db_session.get(Document, approval.document_id)
     assert document is not None
     assert document.contract_id == contract.id
-    assert document.titolo == "Email di giulia@cliente.example: Re: giornate di marzo"
-    assert recorded.work_units[0].stato == "approvato"
+    assert document.title == "Email di giulia@cliente.example: Re: giornate di marzo"
+    assert recorded.work_units[0].status == "approved"
     # The log keeps the fact, not the sender's address: that is on the approval.
-    assert WorkUnitService(db_session).transitions_for(day)[-1].motivo == "Approvazione registrata"
+    assert WorkUnitService(db_session).transitions_for(day)[-1].reason == "Approvazione registrata"
 
 
 def test_an_email_of_another_customer_cannot_be_the_proof(db_session: Session, tmp_path) -> None:
     contract = _contract(db_session)
     other = _contract(db_session)
-    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
     account = connected_account(db_session)
     message = GmailMessage(
         google_account_id=account.id,
@@ -300,7 +300,7 @@ def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
     db_session: Session, tmp_path
 ) -> None:
     contract = _contract(db_session)
-    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
     account = connected_account(db_session)
     message = GmailMessage(
         google_account_id=account.id,
@@ -336,7 +336,7 @@ def test_an_agent_credential_and_a_reader_cannot_record_an_approval(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
-    day = _day(db_session, contract, date(2026, 3, 2), "proposto")
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
     document = _document(db_session, contract)
     body = _record(contract, [day], document_id=document.id)
 

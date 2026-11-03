@@ -33,7 +33,7 @@ class GmailOAuthService(GoogleConsentFlow[GoogleAccount]):
     settings_tab = "Impostazioni → Gmail"
     identity_noun = "della casella"
     needs_user_message = "solo un utente può collegare una casella Google"
-    connected_event = "gmail.account_collegato"
+    connected_event = "gmail.account_connected"
 
     def __init__(self, session: Session, *, settings: Settings, tokens: GoogleTokenClient) -> None:
         super().__init__(session, settings=settings, tokens=tokens)
@@ -62,15 +62,15 @@ class GmailOAuthService(GoogleConsentFlow[GoogleAccount]):
         self.activities.record(
             "google_account",
             account.id,
-            "gmail.account_scollegato",
+            "gmail.account_disconnected",
             actor,
             {
                 "email_address": account.email_address,
-                "messaggi_cancellati": delete_messages,
+                "deleted_messages": delete_messages,
                 # The count, not the messages: the timeline has to be able to say how
                 # much correspondence this irreversible choice destroyed, and it is the
                 # one place that answer survives the deletion.
-                "messaggi_cancellati_conteggio": deleted,
+                "count_deleted_messages": deleted,
             },
         )
         self.session.commit()

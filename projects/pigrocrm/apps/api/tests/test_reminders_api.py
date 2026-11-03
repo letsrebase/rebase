@@ -12,12 +12,12 @@ def test_the_catalogue_lists_the_types_with_their_default_ladders(logged_in: Tes
 
     assert response.status_code == 200
     by_key = {item["key"]: item for item in response.json()}
-    assert by_key["attivita_overdue"]["ladder"] == {"serious": 1, "critical": 14}
+    assert by_key["task_overdue"]["ladder"] == {"serious": 1, "critical": 14}
     assert by_key["timer_running_long"]["unit"] == "hours"
     assert by_key["ceiling_approaching"]["unit"] == "percent"
     assert by_key["ceiling_approaching"]["audience"] == "admins"
     assert by_key["job_late"]["unit"] == "minutes"
-    assert by_key["attivita_due"]["direction"] == "until"
+    assert by_key["task_due"]["direction"] == "until"
 
 
 def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
@@ -33,7 +33,7 @@ def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
     assert mine.status_code == 200, mine.text
 
     read = logged_in.get("/api/reminders/preferences").json()
-    effective = {item["type"]: item for item in read["effective"]}["attivita_overdue"]
+    effective = {item["type"]: item for item in read["effective"]}["task_overdue"]
     assert effective["enabled"] is False
     assert effective["channels"] == ["in_app", "email"]
     assert [row["scope"] for row in read["space"]] == ["space"]
@@ -124,14 +124,14 @@ def test_the_reminders_of_a_person_are_listed_and_closing_one_changes_its_status
     me = logged_in.get("/api/auth/me").json()["id"]
     created = logged_in.post(
         "/api/activities",
-        json={"titolo": "Mandare il preventivo", "scadenza": _today(logged_in), "assegnata_a": me},
+        json={"title": "Mandare il preventivo", "due_date": _today(logged_in), "assigned_to": me},
     )
     assert created.status_code == 201, created.text
 
     listed = logged_in.get("/api/reminders")
     assert listed.status_code == 200, listed.text
     (reminder,) = listed.json()
-    assert reminder["type"] == "attivita_due"
+    assert reminder["type"] == "task_due"
     assert reminder["severity"] == "warning"
     assert reminder["title"] == "Attività in scadenza: Mandare il preventivo"
     assert reminder["detail"] == "Scade oggi"

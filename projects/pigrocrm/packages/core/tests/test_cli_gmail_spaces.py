@@ -25,9 +25,9 @@ from collections.abc import Iterator
 from urllib.parse import parse_qs
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda
 from fakes.fake_gmail import TOKEN_HOST, FakeGmail
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings
+from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -168,10 +168,10 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
     try:
         with session_factory(engine)() as session:
             owner = session.scalars(
-                select(User).where(User.ruolo == "admin").order_by(User.created_at)
+                select(User).where(User.role == "admin").order_by(User.created_at)
             ).first()
             if owner is None:
-                owner = User(email=ROOT_OWNER, nome="Owner", ruolo="admin", attivo=True)
+                owner = User(email=ROOT_OWNER, nome="Owner", role="admin", active=True)
                 session.add(owner)
                 session.flush()
             ciphertext, nonce = seal(refresh_token, _key(settings, slug))
@@ -188,8 +188,8 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
             )
             # The azienda the customer is billed by (REB-623): a root seeded by hand has
             # none until somebody writes it, as `createadmin` does on a real one.
-            committed_default_azienda(session, nome="Radice")
-            session.add(Customer(ragione_sociale="CLI Acme", email="info@acme.it"))
+            committed_default_legal_entity(session, nome="Radice")
+            session.add(Customer(legal_name="CLI Acme", email="info@acme.it"))
             session.commit()
     finally:
         engine.dispose()
@@ -303,7 +303,7 @@ def test_a_revoked_mailbox_is_its_own_line_and_the_next_space_still_runs(
 
     captured = capsys.readouterr()
     assert _line(ONE, ONE) in captured.err
-    assert "revocato" in captured.err
+    assert "revoked" in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, ONE) is None
     assert _watermark(settings, TWO) is not None
@@ -327,7 +327,7 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
 ) -> None:
     """A space migrates only when the API boots (`ensure-space-defaults`), and this
     command migrates nothing, like the digest. A space whose schema is behind the image
-    is one `saltato` line naming the exception's type and never its text (a psycopg
+    is one `skipped` line naming the exception's type and never its text (a psycopg
     error can carry the URL), and the space after it is synchronised all the same.
 
     The frames of its traceback follow the line, for whoever has to find which read broke:
@@ -602,7 +602,7 @@ def test_a_space_with_a_good_and_a_refused_mailbox_records_the_refusal_and_keeps
                 {"at": datetime(2026, 10, 1, tzinfo=UTC)},
             )
         with session_factory(engine)() as session:
-            second = User(email="seconda@one.example", nome="Seconda", ruolo="admin", attivo=True)
+            second = User(email="seconda@one.example", nome="Seconda", role="admin", active=True)
             session.add(second)
             session.flush()
             ciphertext, nonce = seal(MAILBOXES[ONE][1], _key(settings, ONE))

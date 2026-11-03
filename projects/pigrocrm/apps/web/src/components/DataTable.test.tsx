@@ -213,7 +213,7 @@ describe('DataTable column meta', () => {
   it('passes a column width through to the header, so the «⋯» column can stay narrow', () => {
     const sized: ColumnDef<DataTableFeatures, Riga>[] = [
       { accessorKey: 'nome', header: 'Nome' },
-      { id: 'azioni', header: '', meta: { width: '3rem' } /* jsdom resolves rem against a 16px root */, cell: () => null },
+      { id: 'actions', header: '', meta: { width: '3rem' } /* jsdom resolves rem against a 16px root */, cell: () => null },
     ]
     render(<DataTable label="Clienti" columns={sized} data={DATA} />)
     const headers = screen.getAllByRole('columnheader')

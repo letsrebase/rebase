@@ -22,7 +22,6 @@ from pigrocrm.core.customers.schemas import (
     PersonFromSuggestion,
 )
 from pigrocrm.core.db import encode_cursor
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
@@ -30,10 +29,11 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.gmail.query import customer_domain
 from pigrocrm.core.gmail.roster import AddressRoster
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.people.schemas import (
-    COGNOME_MAX_LENGTH,
-    NOME_MAX_LENGTH,
+    LAST_NAME_MAX_LENGTH,
+    NAME_MAX_LENGTH,
     PersonCreate,
     PersonRead,
 )
@@ -54,11 +54,11 @@ ENTITY: EntityType = "customer"
 # session-poisoning `DataError`. `.fullmatch()` requires the *entire* string to be
 # consumed, which has no such exception. A pasted VAT number or an MCP agent's tool
 # call carrying a trailing newline is not a lab-only case.
-PARTITA_IVA_RE = re.compile(r"^\d{11}$")
-CODICE_SDI_LENGTH = 7
+VAT_NUMBER_RE = re.compile(r"^\d{11}$")
+SDI_CODE_LENGTH = 7
 
 
-def _check_fiscal(data: dict[str, Any], nazione: str) -> None:
+def _check_fiscal(data: dict[str, Any], country: str) -> None:
     """Mutates `data` in place: an empty string is normalized to `None` for both
     fiscal fields before either is checked. Without this, `if piva`/`if sdi` below are
     falsy on "", so an empty string skipped the check entirely and was stored as "" --
@@ -67,31 +67,31 @@ def _check_fiscal(data: dict[str, Any], nazione: str) -> None:
     normalization applies equally to a brand-new row and to a patch that clears the
     field with "".
     """
-    if data.get("partita_iva") == "":
-        data["partita_iva"] = None
-    if data.get("codice_sdi") == "":
-        data["codice_sdi"] = None
+    if data.get("vat_number") == "":
+        data["vat_number"] = None
+    if data.get("sdi_code") == "":
+        data["sdi_code"] = None
 
-    piva = data.get("partita_iva")
+    vat_number = data.get("vat_number")
     # The eleven-digit rule is Italian, so it is applied to Italian customers and to
     # nobody else. It used to apply to everyone, which made a foreign customer
     # unrepresentable: a UK company's VAT number ("123456789", nine digits, and GB VATs
     # are not always numeric at all) was refused, so the only way to record it was the
-    # `codice_fiscale` field, which is not validated -- a workaround that stores the
+    # `tax_code` field, which is not validated -- a workaround that stores the
     # right value under the wrong name and then writes it into the wrong XML element.
     #
-    # `nazione` is passed in rather than read from `data`, because on an update the
+    # `country` is passed in rather than read from `data`, because on an update the
     # caller may be patching the VAT number without mentioning the country: the check
     # has to run against the country the row will actually have, not against the subset
     # of fields this request happened to name.
-    if piva and nazione.upper() == "IT" and not PARTITA_IVA_RE.fullmatch(piva):
+    if vat_number and country.upper() == "IT" and not VAT_NUMBER_RE.fullmatch(vat_number):
         raise ValidationFailed(
-            ENTITY, "partita_iva", "deve essere di 11 cifre", expected="11 cifre numeriche"
+            ENTITY, "vat_number", "deve essere di 11 cifre", expected="11 cifre numeriche"
         )
-    sdi = data.get("codice_sdi")
-    if sdi and len(sdi) != CODICE_SDI_LENGTH:
+    sdi = data.get("sdi_code")
+    if sdi and len(sdi) != SDI_CODE_LENGTH:
         raise ValidationFailed(
-            ENTITY, "codice_sdi", "deve essere di 7 caratteri", expected="7 caratteri"
+            ENTITY, "sdi_code", "deve essere di 7 caratteri", expected="7 caratteri"
         )
 
 
@@ -108,7 +108,7 @@ def _person_name(display: str, address: str) -> tuple[str, str | None]:
         name = " ".join(word.capitalize() for word in re.split(r"[._\-]+", local) if word)
     first, _, rest = (name or address).partition(" ")
     # Clipped to what a Person holds: a header can carry a name longer than the column.
-    return first[:NOME_MAX_LENGTH], rest.strip()[:COGNOME_MAX_LENGTH] or None
+    return first[:NAME_MAX_LENGTH], rest.strip()[:LAST_NAME_MAX_LENGTH] or None
 
 
 class CustomerService:
@@ -117,7 +117,7 @@ class CustomerService:
         self.repo = CustomerRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
-        self.aziende = LegalEntityService(session)
+        self.legal_entities = LegalEntityService(session)
         self.users = UserRepository(session)
 
     def _owner_for(self, owner_id: UUID | None, actor: Actor, *, creating: bool) -> UUID | None:
@@ -142,7 +142,7 @@ class CustomerService:
         owner = self.users.get(owner_id)
         if owner is None:
             raise NotFound("user", owner_id)
-        if not owner.attivo:
+        if not owner.active:
             raise ValidationFailed(
                 ENTITY,
                 "owner_id",
@@ -170,34 +170,36 @@ class CustomerService:
         payload = data.model_dump()
         # Not a column: the first note of the customer, written below by the creating actor.
         first_note = payload.pop("note", None)
-        _check_fiscal(payload, payload.get("nazione") or "IT")
+        _check_fiscal(payload, payload.get("country") or "IT")
         payload["custom_fields"] = validate_custom_fields(
             ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
         )
-        payload["azienda_id"] = self._azienda_for(payload.get("azienda_id"), payload.get("nazione"))
+        payload["legal_entity_id"] = self._legal_entity_for(
+            payload.get("legal_entity_id"), payload.get("country")
+        )
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
 
         customer = self.repo.add(Customer(**payload))
         self.activities.record(
-            ENTITY, customer.id, "created", actor, {"ragione_sociale": customer.ragione_sociale}
+            ENTITY, customer.id, "created", actor, {"legal_name": customer.legal_name}
         )
         append_first_note(self.session, ENTITY, customer.id, first_note, actor)
         return customer
 
-    def _azienda_for(self, azienda_id: UUID | None, nazione: str | None) -> UUID:
+    def _legal_entity_for(self, legal_entity_id: UUID | None, country: str | None) -> UUID:
         """The azienda a customer is billed by: the one named, which must exist and be
         active, or the one its nation proposes (REB-623, spec §1.6)."""
-        if azienda_id is None:
-            return self.aziende.propose(nazione).id
-        azienda = self.aziende.resolve(azienda_id)
-        if not azienda.attiva:
+        if legal_entity_id is None:
+            return self.legal_entities.propose(country).id
+        legal_entity = self.legal_entities.resolve(legal_entity_id)
+        if not legal_entity.active:
             raise ValidationFailed(
                 ENTITY,
-                "azienda_id",
+                "legal_entity_id",
                 "l'azienda non e' attiva: un cliente si assegna a un'azienda attiva",
                 expected="l'id di un'azienda attiva",
             )
-        return azienda.id
+        return legal_entity.id
 
     def create(self, data: CustomerCreate, actor: Actor) -> CustomerRead:
         customer = self._insert(data, actor)
@@ -231,39 +233,39 @@ class CustomerService:
         taken = set(
             roster.domains_taken(
                 domain
-                for choice in data.clienti
-                if (domain := customer_domain(sito_web=choice.dominio, email=None))
+                for choice in data.customers
+                if (domain := customer_domain(website=choice.domain, email=None))
             )
         )
         known = set(
             roster.known_among(
-                person.indirizzo.strip().lower()
-                for choice in data.clienti
-                for person in choice.persone
+                person.address.strip().lower()
+                for choice in data.customers
+                for person in choice.people
             )
         )
         # Everything is checked before anything is written, so a refusal names the
         # first thing wrong and leaves the session as it found it.
         plan: list[tuple[str, CustomerFromSuggestion, list[tuple[str, str]]]] = []
-        for choice in data.clienti:
-            domain = customer_domain(sito_web=choice.dominio, email=None)
-            if domain is None or domain != choice.dominio.strip().lower():
+        for choice in data.customers:
+            domain = customer_domain(website=choice.domain, email=None)
+            if domain is None or domain != choice.domain.strip().lower():
                 raise ValidationFailed(
                     ENTITY,
-                    "dominio",
-                    f"{choice.dominio} non è il dominio di un'azienda",
+                    "domain",
+                    f"{choice.domain} non è il dominio di un'azienda",
                     expected="dominio.tld, non una webmail",
                 )
             if domain in taken:
-                raise Conflict(ENTITY, f"{domain} è già un cliente", dominio=domain)
+                raise Conflict(ENTITY, f"{domain} è già un cliente", domain=domain)
             taken.add(domain)
             people: list[tuple[str, str]] = []
-            for person in choice.persone:
-                address = person.indirizzo.strip().lower()
+            for person in choice.people:
+                address = person.address.strip().lower()
                 if not address.endswith(f"@{domain}"):
                     raise ValidationFailed(
                         ENTITY,
-                        "persone",
+                        "people",
                         f"{address} non è un indirizzo di {domain}",
                         expected=f"nome@{domain}",
                     )
@@ -277,13 +279,13 @@ class CustomerService:
         try:
             for domain, choice, people in plan:
                 customer = self._insert(
-                    CustomerCreate(ragione_sociale=choice.ragione_sociale, sito_web=domain), actor
+                    CustomerCreate(legal_name=choice.legal_name, website=domain), actor
                 )
                 for address, display in people:
-                    nome, cognome = _person_name(display, address)
+                    nome, last_name = _person_name(display, address)
                     persons._insert(
                         PersonCreate(
-                            nome=nome, cognome=cognome, email=address, customer_id=customer.id
+                            nome=nome, last_name=last_name, email=address, customer_id=customer.id
                         ),
                         actor,
                     )
@@ -317,28 +319,30 @@ class CustomerService:
         customer = self.repo.get(customer_id)
         if customer is None:
             raise NotFound(ENTITY, customer_id)
-        domain = customer_domain(sito_web=customer.sito_web, email=customer.email)
+        domain = customer_domain(website=customer.website, email=customer.email)
         if domain is None:
             raise Conflict(
                 ENTITY,
                 f"il cliente {customer_id} non ha un dominio: indica il sito web o "
                 "un'email aziendale (non webmail) sulla scheda cliente",
             )
-        address = data.indirizzo.strip().lower()
+        address = data.address.strip().lower()
         if not address.endswith(f"@{domain}"):
             raise ValidationFailed(
                 ENTITY,
-                "indirizzo",
+                "address",
                 f"{address} non è un indirizzo di {domain}",
                 expected=f"nome@{domain}",
             )
         if AddressRoster(self.session).known_among([address]):
-            raise Conflict(ENTITY, f"{address} è già in anagrafica", indirizzo=address)
+            raise Conflict(ENTITY, f"{address} è già in anagrafica", address=address)
         persons = PersonService(self.session)
-        nome, cognome = _person_name(data.nome, address)
+        nome, last_name = _person_name(data.nome, address)
         try:
             person = persons._insert(
-                PersonCreate(nome=nome, cognome=cognome, email=address, customer_id=customer.id),
+                PersonCreate(
+                    nome=nome, last_name=last_name, email=address, customer_id=customer.id
+                ),
                 actor,
             )
         except DomainError:
@@ -361,11 +365,11 @@ class CustomerService:
         changes = supplied_changes(data, exclude={"custom_fields"})
         reject_cleared_columns(ENTITY, Customer, changes)
         # The country after this patch, not merely the one it mentions.
-        _check_fiscal(changes, changes.get("nazione") or customer.nazione)
-        if changes.get("azienda_id") is not None:
+        _check_fiscal(changes, changes.get("country") or customer.country)
+        if changes.get("legal_entity_id") is not None:
             # Named, so no proposal: a move is a decision, and it moves nothing already
             # created under the customer (spec §1.7).
-            changes["azienda_id"] = self._azienda_for(changes["azienda_id"], None)
+            changes["legal_entity_id"] = self._legal_entity_for(changes["legal_entity_id"], None)
         if "owner_id" in changes and changes["owner_id"] != customer.owner_id:
             changes["owner_id"] = self._owner_for(changes["owner_id"], actor, creating=False)
         else:

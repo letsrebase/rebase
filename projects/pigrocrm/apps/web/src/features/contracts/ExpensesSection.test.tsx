@@ -17,26 +17,26 @@ function ok(data: unknown) {
 }
 
 const CATEGORIES = [
-  { id: 'cat-1', nome: 'Trasferte', archiviata: false },
-  { id: 'cat-2', nome: 'Vecchia', archiviata: true },
+  { id: 'cat-1', nome: 'Trasferte', archived: false },
+  { id: 'cat-2', nome: 'Vecchia', archived: true },
 ]
 const base = {
   contract_id: 'c1',
   category_id: 'cat-1',
   data: '2026-03-05',
-  pre_autorizzata: false,
-  riferimento_autorizzazione: null,
+  pre_authorized: false,
+  authorization_reference: null,
   document_id: null,
 }
-const WAITING = { ...base, id: 'e1', importo: '42.00', descrizione: 'Treno', rimborsabile: true, invoice_line_id: null }
-const BILLED = { ...base, id: 'e2', importo: '10.00', descrizione: 'Taxi', rimborsabile: true, invoice_line_id: 'l1' }
-const NOT_REBILLABLE = { ...base, id: 'e3', importo: '5.00', descrizione: 'Caffè', rimborsabile: false, invoice_line_id: null }
+const WAITING = { ...base, id: 'e1', amount: '42.00', description: 'Treno', reimbursable: true, invoice_line_id: null }
+const BILLED = { ...base, id: 'e2', amount: '10.00', description: 'Taxi', reimbursable: true, invoice_line_id: 'l1' }
+const NOT_REBILLABLE = { ...base, id: 'e3', amount: '5.00', description: 'Caffè', reimbursable: false, invoice_line_id: null }
 
 function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <ExpensesSection contractId="c1" divisa="EUR" />
+      <ExpensesSection contractId="c1" currency="EUR" />
     </QueryClientProvider>,
   )
 }
@@ -88,10 +88,10 @@ describe('ExpensesSection', () => {
         params: { path: { contract_id: 'c1' } },
         body: expect.objectContaining({
           category_id: 'cat-1',
-          importo: '42.00',
-          descrizione: 'Treno',
-          pre_autorizzata: false,
-          riferimento_autorizzazione: null,
+          amount: '42.00',
+          description: 'Treno',
+          pre_authorized: false,
+          authorization_reference: null,
         }),
       }),
     )
@@ -112,14 +112,14 @@ describe('ExpensesSection', () => {
     renderSection()
     await userEvent.click(await screen.findByRole('button', { name: 'Modifica la spesa Treno' }))
     const dialog = screen.getByRole('dialog')
-    const importo = within(dialog).getByLabelText('Importo (€)')
-    await userEvent.clear(importo)
-    await userEvent.type(importo, '50.00')
+    const amount = within(dialog).getByLabelText('Importo (€)')
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '50.00')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Salva' }))
 
     const call = vi.mocked(api.PATCH).mock.calls[0]
     const body = (call?.[1] as unknown as { body: Record<string, unknown> }).body
-    expect(body.importo).toBe('50.00')
+    expect(body.amount).toBe('50.00')
     expect('category_id' in body).toBe(false)
   })
 })

@@ -38,26 +38,26 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def list_team_requests(
-        stato: str | None = None,
-        origine: str | None = None,
+        status: str | None = None,
+        origin: str | None = None,
         limit: int = TEAM_REQUEST_LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """«Richieste team» (spec § 3.5), dalla più recente: azienda, origine, stato,
         quando è arrivata, e quanti talenti sono stati chiesti e quanti hanno già
-        risposto sì. `stato` e `origine` filtrano sulle parole che quei campi usano; una
+        risposto sì. `status` e `origin` filtrano sulle parole che quei campi usano; una
         parola che non è una di quelle è rifiutata nominando il campo. `next_cursor` è
         il cursore opaco della pagina successiva, `None` all'ultima. Solo lettura."""
         return deps.run(
             lambda s: TeamRequestService(s, settings=deps.team_settings()).list_recent(
-                stato=stato, origine=origine, limit=limit, cursor=cursor
+                status=status, origin=origin, limit=limit, cursor=cursor
             )
         )
 
     @mcp.tool()
     def list_team_proposals(
-        origine: str | None = None,
-        esito: str | None = None,
+        origin: str | None = None,
+        outcome: str | None = None,
         limit: int = TEAM_PROPOSAL_LIST_LIMIT_DEFAULT,
         cursor: str | None = None,
     ) -> dict[str, Any]:
@@ -68,15 +68,15 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         riassunto, quanti membri aveva la proposta e chi erano (`team`: posizione,
         `freelancer_id`, ruolo proposto, nome e cognome, vuoti per un talento nel
         frattempo eliminato), e `request_id` della richiesta «Assumi team» se c'è.
-        `errore` è vuoto su una
+        `error` è vuoto su una
         proposta che ha risposto e il codice del rifiuto (`llm_unavailable`,
-        `team_builder_busy`) su un tentativo senza proposta. `origine` (`pubblico`,
-        `cloud`, `admin`) ed `esito` (`ok`, `errore`) filtrano; una parola che non è
+        `team_builder_busy`) su un tentativo senza proposta. `origin` (`public`,
+        `cloud`, `admin`) ed `outcome` (`ok`, `error`) filtrano; una parola che non è
         una di quelle è rifiutata nominando il campo. `next_cursor` è il cursore opaco
         della pagina successiva, `None` all'ultima. Solo lettura."""
         return deps.run(
             lambda s: TeamBuilder(s, None, deps.team_settings()).list_recent(
-                origine=origine, esito=esito, limit=limit, cursor=cursor
+                origin=origin, outcome=outcome, limit=limit, cursor=cursor
             )
         )
 
@@ -90,16 +90,16 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         return deps.run(lambda s: TeamRequestService(s, settings=deps.team_settings()).get(key))
 
     @mcp.tool()
-    def set_team_request_summary(request_id: str, riassunto: str) -> dict[str, Any]:
+    def set_team_request_summary(request_id: str, summary: str) -> dict[str, Any]:
         """«Salva il riassunto» (spec § 3.5): il testo che i talenti leggeranno nella
         mail di disponibilità, riscritto qui dall'admin prima di scrivere loro.
         Rifiutato con la stessa frase di `contact_team_talents` se nomina ancora
         l'azienda: il riassunto va corretto dove è scritto."""
         key = to_uuid(request_id, "request_id")
-        change = TeamRequestSummary(riassunto=riassunto)
+        change = TeamRequestSummary(summary=summary)
         return deps.run(
             lambda s: TeamRequestService(s, settings=deps.team_settings()).set_summary(
-                key, change.riassunto, deps.admin().id
+                key, change.summary, deps.admin().id
             )
         )
 
@@ -123,7 +123,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def set_team_request_status(
-        request_id: str, stato: str, note: str | None = None
+        request_id: str, status: str, note: str | None = None
     ) -> dict[str, Any]:
         """«Segna come contattata», «Chiudi» (spec § 3.5), con una nota facoltativa per
         chi la rileggerà; `note` omesso lascia la nota com'era. Una nota rifiutata
@@ -138,7 +138,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
         def call(session: Session) -> TeamRequestRead:
             service = TeamRequestService(session, settings=deps.team_settings())
-            read = service.set_status(key, stato, deps.admin().id)
+            read = service.set_status(key, status, deps.admin().id)
             if cleaned is not None:
                 read = service.set_note(key, cleaned.note, deps.admin().id)
             return read
@@ -150,7 +150,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         """«Apri il talent cloud» (spec § 4.1): apre alla referente di questa richiesta
         l'accesso al cloud privato, e le manda «Il talent cloud di rebase è aperto per
         …» quando è una concessione nuova; su una già viva per questa azienda e questa
-        persona risponde quella, senza mandare altro. `mail_inviata` dice se la mail è
+        persona risponde quella, senza mandare altro. `mail_sent` dice se la mail è
         partita; senza una chiave di invio configurata il cloud si apre comunque e
         nessuno la riceve."""
 
@@ -158,18 +158,18 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             read, mail = TalentCloudService(session, deps.team_settings()).grant(
                 to_uuid(company_id, "company_id"), deps.admin().id
             )
-            mail_inviata = False
+            mail_sent = False
             if mail is not None:
                 if deps.sender is None:
                     logger.info("talent cloud grant %s: no mail sender, not mailed", read.id)
                 else:
-                    mail_inviata = deps.sender.send(mail)
-                    if not mail_inviata:
+                    mail_sent = deps.sender.send(mail)
+                    if not mail_sent:
                         logger.warning(
                             "talent cloud grant %s: the mail was refused by the provider",
                             read.id,
                         )
-            return {**read.model_dump(mode="json"), "mail_inviata": mail_inviata}
+            return {**read.model_dump(mode="json"), "mail_sent": mail_sent}
 
         return deps.call(call)
 

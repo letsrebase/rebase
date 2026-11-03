@@ -9,18 +9,18 @@ from pigrocrm_mcp.context import McpContext
 # How many notes of a deal, a customer or a person `get_deal` and its two siblings carry:
 # the latest ones, newest first. The whole thread is in the `deal://`, `customer://` and
 # `person://` resources. The cap is stated in each tool's description, like `get_contract`'s
-# `note_clausole`.
+# `note_clauses`.
 THREAD_LIMIT = 50
 
 
 def add(
     context: McpContext,
-    testo: str,
+    text: str,
     deal_id: str | None,
     customer_id: str | None,
     person_id: str | None,
 ) -> dict[str, Any]:
-    """The note on the one record named: exactly one of the three ids, as `create_attivita`
+    """The note on the one record named: exactly one of the three ids, as `create_task`
     takes its single reference."""
     named = {
         entity_type: entity_id
@@ -43,15 +43,15 @@ def add(
     ((entity_type, entity_id),) = named.items()
     return (
         NoteService(context.session)
-        .add(entity_type, UUID(entity_id), NoteCreate(testo=testo), context.actor)
+        .add(entity_type, UUID(entity_id), NoteCreate(text=text), context.actor)
         .model_dump(mode="json")
     )
 
 
-def update(context: McpContext, note_id: str, testo: str) -> dict[str, Any]:
+def update(context: McpContext, note_id: str, text: str) -> dict[str, Any]:
     return (
         NoteService(context.session)
-        .update(UUID(note_id), NoteUpdate(testo=testo), context.actor)
+        .update(UUID(note_id), NoteUpdate(text=text), context.actor)
         .model_dump(mode="json")
     )
 

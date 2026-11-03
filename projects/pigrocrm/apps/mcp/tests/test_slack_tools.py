@@ -65,7 +65,7 @@ async def test_describe_slack_is_present_only_with_a_slack_app(
 async def test_an_agent_reads_who_is_matched_and_never_the_token(
     mcp_session: Session, admin: Any, tmp_path: Path
 ) -> None:
-    ada = make_user(mcp_session, email="ada@example.it", nome="Ada", ruolo="collaboratore")
+    ada = make_user(mcp_session, email="ada@example.it", nome="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     connect(mcp_session, fake, admin)
@@ -96,11 +96,11 @@ async def test_a_workspace_nobody_connected_is_a_state_not_an_error(
     assert health == {"configured": True, "workspace": None, "members": [], "problem": None}
 
 
-async def test_a_collaboratore_cannot_read_the_matches_of_everyone(
+async def test_to_collaborator_cannot_read_the_matches_of_everyone(
     mcp_session: Session, tmp_path: Path
 ) -> None:
-    member = make_user(mcp_session, ruolo="collaboratore")
-    actor = Actor(id=member.id, type="mcp", role="collaboratore")
+    member = make_user(mcp_session, role="collaborator")
+    actor = Actor(id=member.id, type="mcp", role="collaborator")
     async with Client(_server(mcp_session, actor, tmp_path)) as client:
         result = await client.call_tool("describe_slack", {})
     assert result.is_error is True

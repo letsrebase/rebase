@@ -1,21 +1,21 @@
 """The sentences signing stores and refuses with, and why a document a webhook cancels is
-`annullato` (REB-387, REB-892).
+`cancelled` (REB-387, REB-892).
 
 Apart from `signing` so that the service's three parts (`SigningService`, `SigningRecovery`,
 `SigningAdmin`) all read the same words without importing one another.
 """
 
 from rebase_core.documenso import REJECTED, Outcome
-from rebase_core.match_rows import LETTERA, QUADRO
+from rebase_core.match_rows import FRAMEWORK, LETTER
 from rebase_core.models import CANCEL_REASON_MAX_LENGTH
 
 _ALLOW_DRAFT_NOTE = " Su un ambiente di prova lo permette REBASE_CONTRACTS_ALLOW_DRAFT."
 DRAFT_REFUSED = {
-    QUADRO: (
+    FRAMEWORK: (
         "Il testo del contratto quadro è ancora una bozza (status: draft): si genera e si "
         "salva, ma non parte per la firma." + _ALLOW_DRAFT_NOTE
     ),
-    LETTERA: (
+    LETTER: (
         "Il testo della lettera di incarico è ancora una bozza (status: draft): si genera "
         "e si salva, ma non parte per la firma." + _ALLOW_DRAFT_NOTE
     ),
@@ -39,7 +39,7 @@ CANCEL_REFUSED = (
 
 
 def cancel_reason(outcome: Outcome) -> str:
-    """Why a document the webhook cancels is `annullato`, as the page shows it."""
+    """Why a document the webhook cancels is `cancelled`, as the page shows it."""
     if outcome.kind == REJECTED:
         reason = (outcome.reason or "").strip()
         if not reason:

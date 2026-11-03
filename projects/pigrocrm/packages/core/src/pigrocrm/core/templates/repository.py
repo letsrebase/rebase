@@ -15,7 +15,7 @@ class TemplateRepository:
     def get(self, template_id: UUID) -> Template | None:
         return self.session.get(Template, template_id)
 
-    def get_by_nome(self, nome: str) -> Template | None:
+    def get_by_name(self, nome: str) -> Template | None:
         """Case-insensitive, matching the `uq_templates_nome` functional unique index
         on `lower(nome)` (models.py) exactly. `func.lower(Template.nome)` references
         the mapped column -- never a string literal, which `func.lower` would bind as
@@ -37,9 +37,9 @@ class TemplateRepository:
     def list(self, query: TemplateListQuery) -> list[Template]:
         stmt = select(Template)
         if not query.include_inactive:
-            stmt = stmt.where(Template.attivo.is_(True))
-        if query.tipo:
-            stmt = stmt.where(Template.tipo == query.tipo)
+            stmt = stmt.where(Template.active.is_(True))
+        if query.type:
+            stmt = stmt.where(Template.type == query.type)
         if query.search:
             # escape_like neutralizes "%"/"_"/"\" in the user's own term before it is
             # wrapped in the wildcard this method builds -- see

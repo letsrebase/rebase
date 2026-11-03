@@ -374,10 +374,10 @@ TeamLlmDep = Annotated[LlmCall | None, Depends(get_team_llm)]
 
 def get_cv_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
     """The model seam for the anonymous CV (REB-862), or `None` when no model is configured
-    for the `cv_anonimo` task: a kept body is then still served, and only a CV that needs
+    for the `anonymous_cv` task: a kept body is then still served, and only a CV that needs
     writing is refused. The writer names the talent on each request, so every usage row of
     the call names the person it was about."""
-    return call_for_task(opener, settings, "cv_anonimo")
+    return call_for_task(opener, settings, "anonymous_cv")
 
 
 def get_cv_renderer() -> CvRenderer:
@@ -396,17 +396,17 @@ def get_model_factory() -> ModelFactory:
     return build_model
 
 
-def get_prova_call(
+def get_test_call(
     settings: SettingsDep,
     opener: SessionOpenerDep,
     model_factory: Annotated[ModelFactory, Depends(get_model_factory)],
 ) -> Callable[[str], LlmCall]:
     """«Prova» on «Modelli AI» (REB-833): the seam for one task, recording its usage as
-    `purpose="prova"`."""
-    return lambda task: AiCall(opener, settings, task, purpose="prova", model_factory=model_factory)
+    `purpose="test"`."""
+    return lambda task: AiCall(opener, settings, task, purpose="test", model_factory=model_factory)
 
 
-ProvaCallDep = Annotated[Callable[[str], LlmCall], Depends(get_prova_call)]
+TestCallDep = Annotated[Callable[[str], LlmCall], Depends(get_test_call)]
 
 
 def get_clock() -> Callable[[], datetime]:

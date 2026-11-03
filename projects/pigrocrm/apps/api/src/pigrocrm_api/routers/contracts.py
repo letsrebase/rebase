@@ -36,7 +36,7 @@ from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.query_params import AZIENDA_QUERY_DESCRIPTION, SortedParams, sort_field
+from pigrocrm_api.query_params import LEGAL_ENTITY_QUERY_DESCRIPTION, SortedParams, sort_field
 from pigrocrm_api.timeline import timeline_router
 
 router = APIRouter(
@@ -54,9 +54,9 @@ def create(data: ContractCreate, session: SessionDep, actor: ActorDep) -> Contra
 
 class ContractListParams(SortedParams):
     customer_id: UUID | None = None
-    stato: str | None = None
-    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
-    sort: SafeStr | None = sort_field("created_at", "updated_at", "titolo")
+    status: str | None = None
+    legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "title")
 
 
 @router.get("", response_model=ContractPage)
@@ -94,7 +94,7 @@ def renew(
     contract_id: UUID, data: ContractRenew, session: SessionDep, actor: ActorDep
 ) -> ContractRead:
     """Rinnova il contratto (REB-763): il successore ha gli stessi termini, comincia il
-    giorno dopo la fine di questo e dura quanto durava, salvo `inizio`, `fine` o `durata`.
+    giorno dopo la fine di questo e dura quanto durava, salvo `start`, `end` o `duration`.
     Le schede tariffarie che arrivano al nuovo termine passano con lui; le sue restano
     dove sono. Un contratto si rinnova una volta (409) e solo se ha una fine (422)."""
     return ContractService(session).renew(contract_id, data, actor)
@@ -113,9 +113,9 @@ def concentration_cap(
     session: SessionDep,
     actor: ActorDep,
     as_of: Annotated[date | None, Query()] = None,
-    soglia: Annotated[float | None, Query(ge=0, le=1)] = None,
+    threshold: Annotated[float | None, Query(ge=0, le=1)] = None,
 ) -> ContractConcentrationCap:
-    return ContractService(session).concentration_cap(contract_id, actor, as_of, soglia)
+    return ContractService(session).concentration_cap(contract_id, actor, as_of, threshold)
 
 
 @router.post(
@@ -128,7 +128,7 @@ def create_rate_card(
     data: RateCardCreate,
     session: SessionDep,
     actor: ActorDep,
-    chiudi_precedente: Annotated[
+    close_previous: Annotated[
         bool,
         Query(
             description="Chiude il giorno prima la scheda in vigore alla data di inizio "
@@ -136,9 +136,7 @@ def create_rate_card(
         ),
     ] = False,
 ) -> RateCardRead:
-    return RateCardService(session).create(
-        contract_id, data, actor, close_previous=chiudi_precedente
-    )
+    return RateCardService(session).create(contract_id, data, actor, close_previous=close_previous)
 
 
 @router.patch("/{contract_id}/rate-cards/{rate_card_id}", response_model=RateCardRead)
@@ -218,7 +216,7 @@ def project_revenue(
     ] = None,
 ) -> ContractProjectionRead:
     """Il ricavo «programmato» oltre la finestra di irrevocabilità, più il contributo
-    dell'eventuale assunzione di rinnovo -- una figura distinta dal `proiettato` di
+    dell'eventuale assunzione di rinnovo -- una figura distinta dal `projected` di
     `GET /api/analytics/overview`, mai combinata con esso."""
     query = ContractProjectionQuery(da=da, a=a, come_di=come_di)
     return ContractProjectionService(session).project(contract_id, query, actor)

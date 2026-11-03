@@ -30,7 +30,7 @@ class DriveRepository:
         """The account whose credential may write generated documents, or `None`.
 
         Three conditions, and all are refusals rather than filters. The owner is an
-        admin *now* (REB-457): `users.ruolo` is joined at every call, never remembered,
+        admin *now* (REB-457): `users.role` is joined at every call, never remembered,
         so a demoted admin stops supplying the space's storage at the next operation.
         The write folder receives every document the space generates, so it is the
         space's setting, and only an admin may choose it (`set_roots` refuses the field
@@ -90,7 +90,7 @@ class DriveRepository:
             .where(
                 GoogleDriveAccount.status == "active",
                 GoogleDriveAccount.storage_folder_id.is_not(None),
-                User.ruolo.in_(ADMIN_ROLES),
+                User.role.in_(ADMIN_ROLES),
             )
             .order_by(GoogleDriveAccount.updated_at.desc(), GoogleDriveAccount.id.desc())
             .limit(1)

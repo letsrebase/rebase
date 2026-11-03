@@ -48,31 +48,28 @@ def _card(session: Session, email: str) -> Freelancer | None:
 
 
 def _complete(card: Freelancer) -> bool:
-    return (
-        card_state(card.cv_size, card.tariffa_giornaliera, card.posizione, card.remoto)
-        == "completo"
-    )
+    return card_state(card.cv_size, card.daily_rate, card.posizione, card.remote) == "complete"
 
 
 def snapshot(session: Session, candidate: Candidate, now: datetime) -> dict[str, Any]:
     card = _card(session, candidate.email)
-    richieste: dict[str, str] = {}
+    requests: dict[str, str] = {}
     if candidate.company_ids:
         rows = session.execute(
             select(Company.id, Company.updated_at).where(Company.id.in_(candidate.company_ids))
         ).all()
-        richieste = {str(company_id): updated.isoformat() for company_id, updated in rows}
+        requests = {str(company_id): updated.isoformat() for company_id, updated in rows}
     return {
         "t": now.isoformat(),
-        "ha_scheda": card is not None,
+        "has_card": card is not None,
         "ha_cv": card is not None and card.cv_size is not None,
-        "completa": card is not None and _complete(card),
-        "richieste": richieste,
+        "complete": card is not None and _complete(card),
+        "requests": requests,
     }
 
 
 # The moment an action must follow, when the caller has no moment of its own for a row:
-# the list's snapshot (`prima["t"]`), which `done_at_many` reads itself.
+# the list's snapshot (`before["t"]`), which `done_at_many` reads itself.
 _NO_SINCE: Callable[[CampaignRecipient], datetime | None] = lambda _row: None  # noqa: E731
 
 _Moments = dict[UUID, datetime]
@@ -179,11 +176,11 @@ def _earlier_clicks(
             select(
                 CampaignRecipient.campaign_id,
                 CampaignRecipient.email,
-                CampaignRecipient.primo_clic_at,
+                CampaignRecipient.first_click_at,
             ).where(
                 CampaignRecipient.campaign_id.in_(every_chain),
                 CampaignRecipient.email.in_({r.email for r in recipients}),
-                CampaignRecipient.primo_clic_at.is_not(None),
+                CampaignRecipient.first_click_at.is_not(None),
             )
         ):
             if clicked is not None:
@@ -204,17 +201,17 @@ def _earlier_clicks(
 def done_at(
     session: Session,
     recipient: CampaignRecipient,
-    azione: str,
+    action: str,
     *,
     since: datetime | None = None,
     now: datetime | None = None,
 ) -> datetime | None:
-    """When the recipient did `azione`, or `None`. `since` is what the action must
-    follow: the list's snapshot (`prima["t"]`) when omitted, which is what the
-    send-time check wants, and the mail's own `inviata_at` when the tick stamps the
+    """When the recipient did `action`, or `None`. `since` is what the action must
+    follow: the list's snapshot (`before["t"]`) when omitted, which is what the
+    send-time check wants, and the mail's own `sent_at` when the tick stamps the
     outcome. Completing a card has no moment of its own (spec § 6.2), so `c` answers
     `now`, the tick that saw it, when given, and the card's `updated_at` otherwise."""
-    return done_at_many(session, [recipient], azione, since=lambda _row: since, now=now)[
+    return done_at_many(session, [recipient], action, since=lambda _row: since, now=now)[
         recipient.id
     ]
 
@@ -222,7 +219,7 @@ def done_at(
 def done_at_many(
     session: Session,
     recipients: Sequence[CampaignRecipient],
-    azione: str,
+    action: str,
     *,
     since: Callable[[CampaignRecipient], datetime | None] = _NO_SINCE,
     now: datetime | None = None,
@@ -234,37 +231,39 @@ def done_at_many(
     moments: _Moments = {}
     for r in recipients:
         own = since(r)
-        moments[r.id] = own if own is not None else datetime.fromisoformat((r.prima or {})["t"])
-    if azione == "entrato":
+        moments[r.id] = own if own is not None else datetime.fromisoformat((r.before or {})["t"])
+    if action == "signed_in":
         return _entered_many(session, recipients, moments)
-    if azione in ("cv", "scheda_completa", "profilo_creato"):
-        return _card_action(session, recipients, azione, moments, now)
-    if azione == "richiesta_aggiornata":
+    if action in ("cv", "card_complete", "profile_created"):
+        return _card_action(session, recipients, action, moments, now)
+    if action == "request_updated":
         return _requests_updated(session, recipients, moments)
-    if azione == "clic":
+    if action == "click":
         # «Un link» (REB-530): of a page outside the hub, the first click Resend reports
         # is all the hub sees. This mail's own, or, for a «Riscrivi», the click on a mail
         # of the campaigns it follows.
-        clicks = _earlier_clicks(session, [r for r in recipients if r.primo_clic_at is None], since)
-        return {r.id: r.primo_clic_at or clicks.get(r.id) for r in recipients}
-    return {r.id: None for r in recipients}  # `pigro_cliente`: phase 3 (spec § 6.3)
+        clicks = _earlier_clicks(
+            session, [r for r in recipients if r.first_click_at is None], since
+        )
+        return {r.id: r.first_click_at or clicks.get(r.id) for r in recipients}
+    return {r.id: None for r in recipients}  # `pigro_customer`: phase 3 (spec § 6.3)
 
 
 def _card_action(
     session: Session,
     recipients: Sequence[CampaignRecipient],
-    azione: str,
+    action: str,
     moments: _Moments,
     now: datetime | None,
 ) -> dict[UUID, datetime | None]:
     cards = _cards_by_email(session, {r.email.lower() for r in recipients})
     noted: dict[UUID, datetime] = {}
-    if azione == "cv":
+    if action == "cv":
         pending = {
             r.id: (card.id, moments[r.id])
             for r in recipients
             if (card := cards.get(r.email.lower())) is not None
-            and not (r.prima or {}).get("ha_cv")
+            and not (r.before or {}).get("ha_cv")
             and card.cv_size is not None
         }
         noted = _first_after(
@@ -274,26 +273,26 @@ def _card_action(
             Note.created_at,
             pending,
             Note.entity_type == "freelancer",
-            Note.fonte == "persona",
-            Note.eliminata_at.is_(None),
-            Note.testo.startswith(CV_NOTE_PREFIX),
+            Note.source == "person",
+            Note.deleted_at.is_(None),
+            Note.text.startswith(CV_NOTE_PREFIX),
         )
     answer: dict[UUID, datetime | None] = {}
     for r in recipients:
-        prima = r.prima or {}
+        before = r.before or {}
         card = cards.get(r.email.lower())
         moment = moments[r.id]
         if card is None:
             answer[r.id] = None
-        elif azione == "profilo_creato":
-            created = not prima.get("ha_scheda") and card.created_at > moment
+        elif action == "profile_created":
+            created = not before.get("has_card") and card.created_at > moment
             answer[r.id] = card.created_at if created else None
-        elif azione == "cv":
-            if prima.get("ha_cv") or card.cv_size is None:
+        elif action == "cv":
+            if before.get("ha_cv") or card.cv_size is None:
                 answer[r.id] = None
             else:
                 answer[r.id] = noted.get(r.id) or card.updated_at
-        elif prima.get("completa") or not _complete(card):
+        elif before.get("complete") or not _complete(card):
             answer[r.id] = None
         else:
             answer[r.id] = now or card.updated_at
@@ -306,7 +305,7 @@ def _requests_updated(
     company_ids = {
         UUID(company_id)
         for r in recipients
-        for company_id in (r.prima or {}).get("richieste") or {}
+        for company_id in (r.before or {}).get("requests") or {}
     }
     updated: dict[UUID, datetime] = {}
     if company_ids:
@@ -319,7 +318,7 @@ def _requests_updated(
     answer: dict[UUID, datetime | None] = {}
     for r in recipients:
         moved: list[datetime] = []
-        for company_id, was in ((r.prima or {}).get("richieste") or {}).items():
+        for company_id, was in ((r.before or {}).get("requests") or {}).items():
             stamp = updated.get(UUID(company_id))
             if stamp is not None and stamp > max(datetime.fromisoformat(was), moments[r.id]):
                 moved.append(stamp)

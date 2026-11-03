@@ -33,20 +33,20 @@ export function buildCostColumns(
       // "it does not exist": the backend has no way to delete one.
       accessorFn: (row) => names.get(row.category_id) ?? EMPTY,
     },
-    { header: 'Descrizione', accessorKey: 'descrizione' },
-    { header: 'Fornitore', id: 'fornitore', accessorFn: (row) => row.fornitore ?? EMPTY },
+    { header: 'Descrizione', accessorKey: 'description' },
+    { header: 'Fornitore', id: 'supplier', accessorFn: (row) => row.supplier ?? EMPTY },
     {
       header: 'Importo',
-      id: 'importo',
+      id: 'amount',
       // Straight from the API string. A negative amount is a refund or a credit note
       // received (§4.4), so it is labelled rather than treated as an error.
       accessorFn: (row) =>
-        `${formatMoneyValue(row.importo)}${row.importo.startsWith('-') ? ' (rimborso)' : ''}`,
+        `${formatMoneyValue(row.amount)}${row.amount.startsWith('-') ? ' (rimborso)' : ''}`,
       meta: { align: 'right' },
       cell: ({ row }) => (
         <MoneyCell>
-          {formatMoneyValue(row.original.importo)}
-          {row.original.importo.startsWith('-') ? ' (rimborso)' : ''}
+          {formatMoneyValue(row.original.amount)}
+          {row.original.amount.startsWith('-') ? ' (rimborso)' : ''}
         </MoneyCell>
       ),
     },

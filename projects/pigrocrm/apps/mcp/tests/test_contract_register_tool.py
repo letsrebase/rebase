@@ -15,17 +15,17 @@ from pigrocrm.core.work_units.models import WorkUnit
 
 
 def _contract(mcp_session: Session) -> Contract:
-    customer = Customer(ragione_sociale="ACME Srl")
+    customer = Customer(legal_name="ACME Srl")
     mcp_session.add(customer)
     mcp_session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
     )
     mcp_session.add(contract)
     mcp_session.flush()
@@ -34,17 +34,17 @@ def _contract(mcp_session: Session) -> Contract:
 
 async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_session) -> None:
     contract = _contract(mcp_session)
-    invoice = Invoice(customer_id=contract.customer_id, tipo="fattura", stato="bozza")
+    invoice = Invoice(customer_id=contract.customer_id, type="invoice", status="draft")
     mcp_session.add(invoice)
     mcp_session.flush()
     line = InvoiceLine(
         invoice_id=invoice.id,
-        numero_linea=1,
-        descrizione="Attività",
-        quantita=Decimal("1.000000"),
-        prezzo_unitario=Decimal("1.000000"),
-        prezzo_totale=Decimal("1.00"),
-        aliquota_iva=Decimal("22.00"),
+        line_number=1,
+        description="Attività",
+        quantity=Decimal("1.000000"),
+        unit_price=Decimal("1.000000"),
+        total_price=Decimal("1.00"),
+        vat_rate=Decimal("22.00"),
     )
     mcp_session.add(line)
     mcp_session.flush()
@@ -52,20 +52,20 @@ async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_se
         contract_id=contract.id,
         invoice_line_id=line.id,
         data=date(2026, 10, 7),
-        quantita=Decimal("1.50"),
-        descrizione="Giornata",
-        stato="lavorato",
+        quantity=Decimal("1.50"),
+        description="Giornata",
+        status="worked",
     )
     mcp_session.add(billed)
     mcp_session.flush()
-    billed.stato = "fatturato"
+    billed.status = "invoiced"
     mcp_session.add(
         WorkUnit(
             contract_id=contract.id,
             data=date(2026, 10, 8),
-            quantita=Decimal("1.00"),
-            descrizione="Non ancora fatturata",
-            stato="lavorato",
+            quantity=Decimal("1.00"),
+            description="Non ancora fatturata",
+            status="worked",
         )
     )
     mcp_session.commit()
@@ -77,9 +77,9 @@ async def test_the_register_lists_the_billed_days_and_their_total(server, mcp_se
         )
 
     body = result.structured_content
-    assert body["totale_quantita"] == "1.50"
-    assert [v["data"] for v in body["voci"]] == ["2026-10-07"]
-    assert body["senza_approvazione"] == 1
+    assert body["quantity_total"] == "1.50"
+    assert [v["data"] for v in body["entries"]] == ["2026-10-07"]
+    assert body["without_approval"] == 1
 
 
 async def test_a_malformed_date_comes_back_as_guidance(server, mcp_session) -> None:

@@ -86,7 +86,7 @@ class Detection:
     detail: str
     entity: str
     entity_id: UUID
-    azienda_id: UUID | None = None
+    legal_entity_id: UUID | None = None
     customer_id: UUID | None = None
 
 
@@ -117,6 +117,6 @@ class Reminder:
     detail: str
     entity: str
     entity_id: UUID
-    azienda_id: UUID | None
+    legal_entity_id: UUID | None
     customer_id: UUID | None
     period: date | None

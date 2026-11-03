@@ -9,7 +9,7 @@ describe('the old /accedi address', () => {
     const router = createRouter({
       routeTree,
       history: createMemoryHistory({
-        initialEntries: ['/accedi?utm_source=email&utm_campaign=outreach-2026-09-r2&utm_term=abc1'],
+        initialEntries: ['/login?utm_source=email&utm_campaign=outreach-2026-09-r2&utm_term=abc1'],
       }),
     })
     await router.load()
@@ -47,17 +47,17 @@ describe('the team builder', () => {
   })
 
   it('answers the availability mail at /team/risposta, public, with the token and the answer', async () => {
-    // REB-517: the mail's links are `{hub_url}/team/risposta?t=…&r=si|no`.
+    // REB-517: the mail's links are `{hub_url}/team/answer?t=…&r=si|no`.
     const router = createRouter({
       routeTree,
-      history: createMemoryHistory({ initialEntries: ['/team/risposta?t=abc_-1&r=no'] }),
+      history: createMemoryHistory({ initialEntries: ['/team/answer?t=abc_-1&r=no'] }),
     })
     await router.load()
-    expect(router.state.location.pathname).toBe('/team/risposta')
+    expect(router.state.location.pathname).toBe('/team/answer')
     expect(router.state.matches.map((match) => match.routeId)).toEqual([
       '__root__',
       '/public',
-      '/public/team/risposta',
+      '/public/team/answer',
     ])
     expect(router.state.location.search).toEqual({ t: 'abc_-1', r: 'no' })
   })
@@ -69,7 +69,7 @@ describe('«Richieste team» in the admin area', () => {
       ['/admin/team', '/signedIn/admin/team'],
       ['/admin/team/r1', '/signedIn/admin/team/$id'],
       // 0028: the static segment wins over `$id`.
-      ['/admin/team/proposte', '/signedIn/admin/team/proposte'],
+      ['/admin/team/proposals', '/signedIn/admin/team/proposals'],
     ] as const) {
       const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
       await router.load()
@@ -87,19 +87,19 @@ describe('«Richieste team» in the admin area', () => {
 describe('«Consuntivo»’s address (REB-503)', () => {
   it.each([
     ['2026-10', '2026-10'],
-    ['tutto', 'tutto'],
+    ['all', 'all'],
     ['2026-13', undefined],
     ['ottobre', undefined],
-  ])('opens the match’s report and keeps ?mese=%s as %s', async (mese, kept) => {
+  ])('opens the match’s report and keeps ?mese=%s as %s', async (month, kept) => {
     const router = createRouter({
       routeTree,
-      history: createMemoryHistory({ initialEntries: [`/admin/matches/m1/report?mese=${mese}`] }),
+      history: createMemoryHistory({ initialEntries: [`/admin/matches/m1/report?month=${month}`] }),
     })
     await router.load()
     const page = router.state.matches.at(-1)!
     expect(page.routeId).toBe('/signedIn/admin/matches/$id/report')
     expect(page.params).toMatchObject({ id: 'm1' })
-    expect(page.search).toEqual({ mese: kept })
+    expect(page.search).toEqual({ month: kept })
   })
 })
 

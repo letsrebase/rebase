@@ -23,7 +23,7 @@ from pigrocrm.core.tenants.models import TenantsBase
 class Identity(TenantsBase, PrimaryKeyMixin):
     """One row per lowercase email that has proven itself once, anywhere in this
     installation (§1). No name, no password, no role: those already live once each,
-    on `users.nome`/`password_hash`/`ruolo` inside whichever space actually knows
+    on `users.name`/`password_hash`/`role` inside whichever space actually knows
     this person -- duplicating any of them here would be the second copy
     `projects/pigrocrm/AGENTS.md`'s "no duplication" principle exists to rule out."""
 

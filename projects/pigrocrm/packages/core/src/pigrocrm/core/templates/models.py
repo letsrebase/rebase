@@ -10,7 +10,7 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 class Template(Base, PrimaryKeyMixin, TimestampMixin):
     """A document body plus the variables it declares.
 
-    `variabili_dichiarate` is declared, never deduced (spec 4.3): the compilation
+    `declared_variables` is declared, never deduced (spec 4.3): the compilation
     form shows each variable with its label, type and whether it is required, and the
     render fails with a precise error if a required one is missing -- instead of
     producing a PDF with a hole in it.
@@ -26,11 +26,11 @@ class Template(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "templates"
 
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
-    tipo: Mapped[str] = mapped_column(String(20), nullable=False, default="offerta")
-    corpo_markdown: Mapped[str] = mapped_column(Text, nullable=False)
-    variabili_dichiarate: Mapped[list[dict[str, Any]]] = mapped_column(
+    type: Mapped[str] = mapped_column(String(20), nullable=False, default="offer")
+    body_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    declared_variables: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list
     )
-    attivo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (Index("uq_templates_nome", func.lower(nome), unique=True),)

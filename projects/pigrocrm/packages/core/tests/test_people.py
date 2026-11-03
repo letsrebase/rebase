@@ -13,12 +13,12 @@ from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, Validatio
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.people.schemas import (
-    COGNOME_MAX_LENGTH,
     EMAIL_MAX_LENGTH,
+    LAST_NAME_MAX_LENGTH,
     LINKEDIN_MAX_LENGTH,
-    NOME_MAX_LENGTH,
-    RUOLO_MAX_LENGTH,
-    TELEFONO_MAX_LENGTH,
+    NAME_MAX_LENGTH,
+    PHONE_MAX_LENGTH,
+    ROLE_MAX_LENGTH,
     PersonCreate,
     PersonListQuery,
     PersonUpdate,
@@ -26,7 +26,7 @@ from pigrocrm.core.people.schemas import (
 from pigrocrm.core.people.service import PersonService, _check_email
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLAB = Actor(id=None, type="user", role="collaboratore")
+COLLAB = Actor(id=None, type="user", role="collaborator")
 READONLY = Actor(id=None, type="user", role="readonly")
 
 
@@ -37,9 +37,9 @@ def test_a_person_can_exist_without_a_customer(db_session: Session) -> None:
 
 
 def test_a_person_can_be_attached_to_a_customer(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
     person = PersonService(db_session).create(
-        PersonCreate(nome="Mario", cognome="Rossi", customer_id=customer.id), ADMIN
+        PersonCreate(nome="Mario", last_name="Rossi", customer_id=customer.id), ADMIN
     )
     assert person.customer_id == customer.id
 
@@ -75,7 +75,7 @@ def test_email_with_a_trailing_newline_is_rejected() -> None:
     string, so "a@b.it\n" would pass the check and could reach `flush()` as a raw,
     session-poisoning `DataError` once combined with a value long enough to exceed
     the `String(320)` column. This was the Critical finding on Customers
-    (`partita_iva`, checked the same way) -- the fifth time this project has hit the
+    (`vat_number`, checked the same way) -- the fifth time this project has hit the
     class of bug -- and `.fullmatch()`, which requires the entire string to be
     consumed, is what closes it.
 
@@ -84,7 +84,7 @@ def test_email_with_a_trailing_newline_is_rejected() -> None:
     trailing whitespace -- including a trailing newline -- before `_check_email` ever
     runs, which is exactly why a literal `PersonCreate(email="a@b.it\n")` cannot
     observe the difference end to end (verified separately: the stripped value is
-    "a@b.it", and `.match()`/`.fullmatch()` agree on that). `partita_iva` has no such
+    "a@b.it", and `.match()`/`.fullmatch()` agree on that). `vat_number` has no such
     normalisation in front of `_check_fiscal`, which is why Customer's own regression
     test could stay end-to-end. `_check_email` is still the function `create()` and
     `update()` actually call, and it must reject the raw value on its own terms --
@@ -106,8 +106,8 @@ def test_email_is_normalised_to_lowercase(db_session: Session) -> None:
 def test_empty_string_email_is_normalized_to_none(db_session: Session) -> None:
     """An empty string is falsy, so a bare `if email` would skip the format check
     entirely and let "" reach storage as an empty string -- a different thing from
-    "not provided", mirroring the identical fix on Customer's `partita_iva`/
-    `codice_sdi` (`_check_fiscal` in customers/service.py)."""
+    "not provided", mirroring the identical fix on Customer's `vat_number`/
+    `sdi_code` (`_check_fiscal` in customers/service.py)."""
     person = PersonService(db_session).create(PersonCreate(nome="Mario", email=""), ADMIN)
     assert person.email is None
 
@@ -115,11 +115,11 @@ def test_empty_string_email_is_normalized_to_none(db_session: Session) -> None:
 @pytest.mark.parametrize(
     "field,limit",
     [
-        ("nome", NOME_MAX_LENGTH),
-        ("cognome", COGNOME_MAX_LENGTH),
+        ("nome", NAME_MAX_LENGTH),
+        ("last_name", LAST_NAME_MAX_LENGTH),
         ("email", EMAIL_MAX_LENGTH),
-        ("telefono", TELEFONO_MAX_LENGTH),
-        ("ruolo", RUOLO_MAX_LENGTH),
+        ("phone", PHONE_MAX_LENGTH),
+        ("role", ROLE_MAX_LENGTH),
         ("linkedin", LINKEDIN_MAX_LENGTH),
     ],
 )
@@ -138,11 +138,11 @@ def test_string_fields_are_bounded_to_their_column_width_on_create(field: str, l
 @pytest.mark.parametrize(
     "field,limit",
     [
-        ("nome", NOME_MAX_LENGTH),
-        ("cognome", COGNOME_MAX_LENGTH),
+        ("nome", NAME_MAX_LENGTH),
+        ("last_name", LAST_NAME_MAX_LENGTH),
         ("email", EMAIL_MAX_LENGTH),
-        ("telefono", TELEFONO_MAX_LENGTH),
-        ("ruolo", RUOLO_MAX_LENGTH),
+        ("phone", PHONE_MAX_LENGTH),
+        ("role", ROLE_MAX_LENGTH),
         ("linkedin", LINKEDIN_MAX_LENGTH),
     ],
 )
@@ -182,7 +182,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
     `test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be_cleared`
     in test_customers.py exactly."""
     fields = FieldDefinitionService(db_session)
-    settore = fields.create(
+    industry = fields.create(
         FieldDefinitionCreate(
             entity_type="person", key="settore", label="Settore", field_type="text"
         ),
@@ -196,7 +196,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
     )
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", custom_fields={"settore": "IT"}), ADMIN)
-    fields.archive(settore.id, ADMIN)
+    fields.archive(industry.id, ADMIN)
 
     updated = service.update(person.id, PersonUpdate(custom_fields={"priorita": "alta"}), ADMIN)
     assert updated.custom_fields == {"settore": "IT", "priorita": "alta"}
@@ -210,12 +210,12 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
             key="stato_persona",
             label="Stato",
             field_type="select",
-            options=["attivo", "sospeso"],
+            options=["active", "sospeso"],
         ),
         ADMIN,
     )
     with pytest.raises(ValidationFailed):
-        service.update(person.id, PersonUpdate(custom_fields={"stato_persona": "chiuso"}), ADMIN)
+        service.update(person.id, PersonUpdate(custom_fields={"stato_persona": "closed"}), ADMIN)
 
 
 def test_required_active_custom_field_set_to_none_is_rejected_like_empty_string(
@@ -271,7 +271,7 @@ def test_archived_custom_field_set_to_none_is_removed_even_if_it_was_required(
     clearing an archived field's stored value must stay possible even if the
     definition was required back when it was active."""
     fields = FieldDefinitionService(db_session)
-    settore = fields.create(
+    industry = fields.create(
         FieldDefinitionCreate(
             entity_type="person",
             key="settore",
@@ -283,7 +283,7 @@ def test_archived_custom_field_set_to_none_is_removed_even_if_it_was_required(
     )
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", custom_fields={"settore": "IT"}), ADMIN)
-    fields.archive(settore.id, ADMIN)
+    fields.archive(industry.id, ADMIN)
 
     updated = service.update(person.id, PersonUpdate(custom_fields={"settore": None}), ADMIN)
     assert updated.custom_fields == {}
@@ -347,7 +347,7 @@ def test_collaborator_can_create(db_session: Session) -> None:
 
 
 def test_update_can_detach_a_person_from_a_customer(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
 
@@ -363,8 +363,8 @@ def test_detach_wins_over_a_valid_customer_id_supplied_in_the_same_update(
     state alongside an "unlink" action is not exotic) must not be silently
     honoured instead, nor interact with the detach at all -- the person ends up
     detached regardless of what `customer_id` said."""
-    original = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
-    other = CustomerService(db_session).create(CustomerCreate(ragione_sociale="Beta"), ADMIN)
+    original = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
+    other = CustomerService(db_session).create(CustomerCreate(legal_name="Beta"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=original.id), ADMIN)
 
@@ -378,7 +378,7 @@ def test_detach_succeeds_even_with_a_nonexistent_customer_id_in_the_same_update(
     """The detach's own success must not depend on `customer_id` being valid, or
     even resolvable at all: `_check_customer` must never run when `detach=True`,
     since the caller's intent to unlink does not depend on that field."""
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
 
@@ -441,7 +441,7 @@ def test_get_missing_person_raises_not_found(db_session: Session) -> None:
 
 
 def test_list_can_be_filtered_by_customer(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     service.create(PersonCreate(nome="Dentro", customer_id=customer.id), ADMIN)
     service.create(PersonCreate(nome="Fuori"), ADMIN)
@@ -452,8 +452,8 @@ def test_list_can_be_filtered_by_customer(db_session: Session) -> None:
 
 def test_search_matches_name_surname_and_email(db_session: Session) -> None:
     service = PersonService(db_session)
-    service.create(PersonCreate(nome="Mario", cognome="Rossi", email="mr@acme.it"), ADMIN)
-    service.create(PersonCreate(nome="Luigi", cognome="Verdi"), ADMIN)
+    service.create(PersonCreate(nome="Mario", last_name="Rossi", email="mr@acme.it"), ADMIN)
+    service.create(PersonCreate(nome="Luigi", last_name="Verdi"), ADMIN)
 
     assert len(service.list(PersonListQuery(search="rossi"), ADMIN).items) == 1
     assert len(service.list(PersonListQuery(search="mr@acme.it"), ADMIN).items) == 1
@@ -574,7 +574,7 @@ def test_restoring_a_person_whose_customer_is_now_archived_is_refused(
     still points at it (soft_delete on a customer only ever counted active deals,
     never people) -- but restoring a person onto an archived customer is still the
     operation this fix closes, mirroring DealService.restore exactly."""
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
     service.soft_delete(person.id, ADMIN)
@@ -583,11 +583,11 @@ def test_restoring_a_person_whose_customer_is_now_archived_is_refused(
     with pytest.raises(Conflict) as exc:
         service.restore(person.id, ADMIN)
     assert exc.value.details["entity"] == "person"
-    assert "cliente" in exc.value.message
+    assert "customer" in exc.value.message
 
 
 def test_restoring_the_customer_first_then_the_person_works(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
     service.soft_delete(person.id, ADMIN)
@@ -615,17 +615,17 @@ def test_every_read_path_names_the_person_s_company(db_session: Session) -> None
     owner actually reads: `customer_id` alone forces every caller to look the name up
     again, one request per row. Asserted on all four read paths at once because they
     must agree -- a person's company cannot depend on which endpoint asked."""
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME Srl"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME Srl"), ADMIN)
     service = PersonService(db_session)
 
     created = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
-    assert created.customer_ragione_sociale == "ACME Srl"
-    assert service.get(created.id, ADMIN).customer_ragione_sociale == "ACME Srl"
-    updated = service.update(created.id, PersonUpdate(ruolo="CTO"), ADMIN)
-    assert updated.customer_ragione_sociale == "ACME Srl"
+    assert created.customer_legal_name == "ACME Srl"
+    assert service.get(created.id, ADMIN).customer_legal_name == "ACME Srl"
+    updated = service.update(created.id, PersonUpdate(role="CTO"), ADMIN)
+    assert updated.customer_legal_name == "ACME Srl"
 
     page = service.list(PersonListQuery(customer_id=customer.id), ADMIN)
-    assert [p.customer_ragione_sociale for p in page.items] == ["ACME Srl"]
+    assert [p.customer_legal_name for p in page.items] == ["ACME Srl"]
 
 
 def test_a_person_with_no_customer_has_no_company_name(db_session: Session) -> None:
@@ -634,19 +634,19 @@ def test_a_person_with_no_customer_has_no_company_name(db_session: Session) -> N
     schema's."""
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario"), ADMIN)
-    assert person.customer_ragione_sociale is None
-    assert service.get(person.id, ADMIN).customer_ragione_sociale is None
-    assert service.list(PersonListQuery(), ADMIN).items[0].customer_ragione_sociale is None
+    assert person.customer_legal_name is None
+    assert service.get(person.id, ADMIN).customer_legal_name is None
+    assert service.list(PersonListQuery(), ADMIN).items[0].customer_legal_name is None
 
 
 def test_detaching_a_person_clears_the_company_name_too(db_session: Session) -> None:
-    customer = CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME Srl"), ADMIN)
+    customer = CustomerService(db_session).create(CustomerCreate(legal_name="ACME Srl"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
 
     detached = service.update(person.id, PersonUpdate(detach=True), ADMIN)
     assert detached.customer_id is None
-    assert detached.customer_ragione_sociale is None
+    assert detached.customer_legal_name is None
 
 
 def test_an_archived_customer_still_names_the_company(db_session: Session) -> None:
@@ -658,15 +658,15 @@ def test_an_archived_customer_still_names_the_company(db_session: Session) -> No
     Persone list. Mirrors `SearchRepository._with_customer_names`, whose own join
     carries no `deleted_at` filter for the identical reason."""
     customers = CustomerService(db_session)
-    customer = customers.create(CustomerCreate(ragione_sociale="ACME Srl"), ADMIN)
+    customer = customers.create(CustomerCreate(legal_name="ACME Srl"), ADMIN)
     service = PersonService(db_session)
     person = service.create(PersonCreate(nome="Mario", customer_id=customer.id), ADMIN)
 
     customers.soft_delete(customer.id, ADMIN)
 
-    assert service.get(person.id, ADMIN).customer_ragione_sociale == "ACME Srl"
+    assert service.get(person.id, ADMIN).customer_legal_name == "ACME Srl"
     page = service.list(PersonListQuery(customer_id=customer.id), ADMIN)
-    assert [p.customer_ragione_sociale for p in page.items] == ["ACME Srl"]
+    assert [p.customer_legal_name for p in page.items] == ["ACME Srl"]
 
 
 def test_the_company_name_costs_one_query_for_the_whole_page(db_session: Session) -> None:
@@ -677,7 +677,7 @@ def test_the_company_name_costs_one_query_for_the_whole_page(db_session: Session
     customers = CustomerService(db_session)
     service = PersonService(db_session)
     for index in range(3):
-        customer = customers.create(CustomerCreate(ragione_sociale=f"ACME {index}"), ADMIN)
+        customer = customers.create(CustomerCreate(legal_name=f"ACME {index}"), ADMIN)
         service.create(PersonCreate(nome=f"Mario {index}", customer_id=customer.id), ADMIN)
 
     statements: list[str] = []
@@ -693,7 +693,7 @@ def test_the_company_name_costs_one_query_for_the_whole_page(db_session: Session
         event.remove(connection, "after_cursor_execute", record)
 
     assert len(page.items) == 3
-    assert sorted(p.customer_ragione_sociale or "" for p in page.items) == [
+    assert sorted(p.customer_legal_name or "" for p in page.items) == [
         "ACME 0",
         "ACME 1",
         "ACME 2",

@@ -14,8 +14,8 @@ import { WeekGrid } from './WeekGrid'
 import { shiftWeek, weekDays } from './week'
 
 const TABS = [
-  { id: 'registro', label: 'Registro' },
-  { id: 'settimana', label: 'Settimana' },
+  { id: 'register', label: 'Registro' },
+  { id: 'week', label: 'Settimana' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
@@ -36,7 +36,7 @@ export function TimePage() {
   const canWrite = useCanWrite()
   const userId = user?.id
   const [anchor, setAnchor] = useState(() => new Date())
-  const [tab, setTab] = useState<TabId>('registro')
+  const [tab, setTab] = useState<TabId>('register')
   const days = useMemo(() => weekDays(anchor), [anchor])
 
   const entries = useTimeEntries(
@@ -104,7 +104,7 @@ export function TimePage() {
         Caricamento…
       </p>
     )
-  } else if (tab === 'registro') {
+  } else if (tab === 'register') {
     body = (
       <>
         <TimerBar deals={deals.data.items} userId={userId} canWrite={canWrite} />

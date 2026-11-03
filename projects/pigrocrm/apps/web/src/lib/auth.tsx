@@ -128,15 +128,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const userId = user?.id
   const email = user?.email
   const nome = user?.nome
-  const ruolo = user?.ruolo
+  const role = user?.role
   useEffect(() => {
-    if (userId === undefined || email === undefined || nome === undefined || ruolo === undefined) {
+    if (userId === undefined || email === undefined || nome === undefined || role === undefined) {
       if (identified.current !== undefined) forget()
       return
     }
     identified.current = userId
-    identifySession({ id: userId, email, nome, ruolo })
-  }, [userId, email, nome, ruolo, forget])
+    identifySession({ id: userId, email, nome, role })
+  }, [userId, email, nome, role, forget])
 
   const value = useMemo<AuthValue>(
     () => ({
@@ -228,17 +228,17 @@ export function useAuth(): AuthValue {
  */
 export function useCan(action: Action): boolean {
   const { user } = useAuth()
-  return user !== null && can(user.ruolo, action)
+  return user !== null && can(user.role, action)
 }
 
 /** The page-level "chi può scrivere nello spazio": everything the coarse write gates
  *  asked for, now read from the same table as the named checks. */
 export function useCanWrite(): boolean {
   const { user } = useAuth()
-  return user !== null && canWrite(user.ruolo)
+  return user !== null && canWrite(user.role)
 }
 
 export function useIsAdmin(): boolean {
   const { user } = useAuth()
-  return user !== null && isAdmin(user.ruolo)
+  return user !== null && isAdmin(user.role)
 }

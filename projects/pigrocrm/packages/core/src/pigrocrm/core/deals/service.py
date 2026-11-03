@@ -22,12 +22,12 @@ from pigrocrm.core.deals.schemas import (
     DealRead,
     DealUpdate,
 )
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -41,33 +41,33 @@ ENTITY: EntityType = "deal"
 
 
 def _check_numbers(values: dict[str, Any]) -> None:
-    """Shared by `create` and `update`: `probabilita` must be a percentage, and none
+    """Shared by `create` and `update`: `probability` must be a percentage, and none
     of the money/hours fields can be negative. Values arriving here are already
     Decimal/int (or None) courtesy of the Pydantic schemas -- this only checks range,
     it does not coerce or normalize anything, unlike `_check_fiscal`/`_check_email`
     in the Customer/Person services."""
-    probabilita = values.get("probabilita")
-    if probabilita is not None and not 0 <= probabilita <= 100:
-        raise ValidationFailed(ENTITY, "probabilita", "fuori intervallo", expected="0-100")
-    for field in ("valore_previsto", "valore_preventivato", "ore_preventivate", "tariffa_oraria"):
+    probability = values.get("probability")
+    if probability is not None and not 0 <= probability <= 100:
+        raise ValidationFailed(ENTITY, "probability", "fuori intervallo", expected="0-100")
+    for field in ("expected_value", "budgeted_value", "budgeted_hours", "hourly_rate"):
         value = values.get(field)
         if value is not None and Decimal(value) < 0:
             raise ValidationFailed(ENTITY, field, "non può essere negativo", expected=">= 0")
 
 
-def _settle_probability(stage: PipelineStageRead, probabilita: int | None) -> int:
-    """The single authority on what a deal's `probabilita` becomes once its stage is
+def _settle_probability(stage: PipelineStageRead, probability: int | None) -> int:
+    """The single authority on what a deal's `probability` becomes once its stage is
     known -- shared by `create`, `move_stage`, and `update` so "won at 60%" cannot be
     reached through any one of them individually. Before this function existed, only
     `move_stage` settled the probability on a terminal transition, and the class
     docstring's own claim ("'Won at 60%' is not a state a deal can be left in") was
     false in two different ways the tests never caught: `create()` with an explicit
-    `pipeline_stage_id` on a terminal stage and a contradicting `probabilita` kept
-    that value verbatim, and an ordinary `update(probabilita=...)` after a
+    `pipeline_stage_id` on a terminal stage and a contradicting `probability` kept
+    that value verbatim, and an ordinary `update(probability=...)` after a
     `move_stage()` had already settled it to 100/0 could walk it back down with no
     check at all.
 
-    A terminal stage's `tipo` overrides any candidate value outright, the same way
+    A terminal stage's `type` overrides any candidate value outright, the same way
     `move_stage` already did before this fix -- silently, not by raising. Overriding
     was kept rather than switched to rejecting an inconsistent explicit value: the
     override already had a passing, documented precedent
@@ -75,19 +75,19 @@ def _settle_probability(stage: PipelineStageRead, probabilita: int | None) -> in
     design would have had to invalidate, and consistency across all three write paths
     mattered more than which of the two reasonable designs was picked. A non-terminal
     stage keeps the candidate if one was supplied, or falls back to the stage's own
-    `probabilita_default` -- unchanged from `create`'s original default-from-stage
+    `default_probability` -- unchanged from `create`'s original default-from-stage
     behavior."""
-    if stage.tipo == "won":
+    if stage.type == "won":
         return 100
-    if stage.tipo == "lost":
+    if stage.type == "lost":
         return 0
-    return probabilita if probabilita is not None else stage.probabilita_default
+    return probability if probability is not None else stage.default_probability
 
 
 def _settle_closure_date(
     deal: Deal, previous: PipelineStageRead, target: PipelineStageRead
 ) -> None:
-    """The single authority on `deals.chiuso_il`, at module level for the same reason
+    """The single authority on `deals.closed_at`, at module level for the same reason
     `_settle_probability` is: `AutomationRunner` reaches it through
     `set_stage_in_transaction` (slice 6 §9.3), and an invariant reachable through two
     paths must live in one function or it holds on one of them.
@@ -96,19 +96,19 @@ def _settle_closure_date(
     31 March in UTC, and a deal won just after midnight would land in the previous
     month's conversion rate.
 
-    The three cases are deliberately asymmetric. `target.tipo` is tested first, so a
-    reopening clears the stamp whatever the deal came from; `previous.tipo` then decides
+    The three cases are deliberately asymmetric. `target.type` is tested first, so a
+    reopening clears the stamp whatever the deal came from; `previous.type` then decides
     whether entering a terminal stage is a closure at all.
     """
-    if target.tipo == "open":
+    if target.type == "open":
         # Reopened. A reopened deal is not a deal closed in March, and leaving the stamp
         # would put it in the conversion rate and in the open pipeline at once.
-        deal.chiuso_il = None
+        deal.closed_at = None
         return
-    if previous.tipo != "open":
+    if previous.type != "open":
         # won -> lost or lost -> won: a correction, not a closure.
         return
-    deal.chiuso_il = today_local()
+    deal.closed_at = today_local()
 
 
 class DealService:
@@ -140,7 +140,7 @@ class DealService:
         owner = self.users.get(owner_id)
         if owner is None:
             raise NotFound("user", owner_id)
-        if not owner.attivo:
+        if not owner.active:
             raise ValidationFailed(
                 ENTITY,
                 "owner_id",
@@ -160,7 +160,7 @@ class DealService:
         return self._reads([deal])[0]
 
     def _reads(self, deals: list[Deal]) -> list[DealRead]:
-        """The batched form, and the reason `customer_ragione_sociale` is resolved here
+        """The batched form, and the reason `customer_legal_name` is resolved here
         and not inside `DealRead` itself: one lookup for the whole page (see
         `DealRepository.customer_names`), so a page of deals costs two queries rather
         than one per row. A schema-level validator or a lazy ORM relationship would both
@@ -173,7 +173,7 @@ class DealService:
         names = self.repo.customer_names({deal.customer_id for deal in deals})
         return [
             DealRead.model_validate(deal).model_copy(
-                update={"customer_ragione_sociale": names.get(deal.customer_id)}
+                update={"customer_legal_name": names.get(deal.customer_id)}
             )
             for deal in deals
         ]
@@ -196,8 +196,8 @@ class DealService:
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
         # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
         # refused when that azienda is deactivated, since nothing new is born on one.
-        payload["azienda_id"] = LegalEntityService(self.session).inherited(
-            customer.azienda_id, ENTITY
+        payload["legal_entity_id"] = LegalEntityService(self.session).inherited(
+            customer.legal_entity_id, ENTITY
         )
 
         # `PipelineService.get` raises NotFound for a stage id that does not resolve
@@ -209,7 +209,7 @@ class DealService:
             else self.pipeline.default_stage()
         )
         payload["pipeline_stage_id"] = stage.id
-        payload["probabilita"] = _settle_probability(stage, payload.get("probabilita"))
+        payload["probability"] = _settle_probability(stage, payload.get("probability"))
         payload["custom_fields"] = validate_custom_fields(
             ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
         )
@@ -258,15 +258,15 @@ class DealService:
                 del changes["owner_id"]
             else:
                 changes["owner_id"] = self._owner_for(changes["owner_id"], actor, creating=False)
-        if "probabilita" in changes:
+        if "probability" in changes:
             # `update` never changes `deal.pipeline_stage_id` -- that is
             # `move_stage`'s job alone -- so the deal's *current* stage is what
             # settling must be checked against here. Without this, an ordinary
-            # `update(probabilita=60)` on a deal a previous `move_stage` had already
+            # `update(probability=60)` on a deal a previous `move_stage` had already
             # settled to 100/0 could walk it back down with no check at all -- the
             # third of the three gates "won at 60%" needed closed.
             current_stage = self.pipeline.get(deal.pipeline_stage_id)
-            changes["probabilita"] = _settle_probability(current_stage, changes["probabilita"])
+            changes["probability"] = _settle_probability(current_stage, changes["probability"])
         if data.custom_fields is not None:
             changes["custom_fields"] = merge_custom(
                 ENTITY, self.fields.specs_for(ENTITY), deal.custom_fields, data.custom_fields
@@ -285,7 +285,7 @@ class DealService:
         unreachable through *any* of the three; this method no longer settles the
         probability by itself.
 
-        Since slice 6 it also maintains `chiuso_il`, and the three cases are not
+        Since slice 6 it also maintains `closed_at`, and the three cases are not
         symmetric: entering a terminal stage from an open one stamps today, returning to
         an open stage clears it, and moving between two terminal stages leaves it alone --
         that is a correction of *which* outcome, not a new closure, and restamping would
@@ -300,7 +300,7 @@ class DealService:
         previous = self.pipeline.get(deal.pipeline_stage_id)
 
         deal.pipeline_stage_id = target.id
-        deal.probabilita = _settle_probability(target, deal.probabilita)
+        deal.probability = _settle_probability(target, deal.probability)
         _settle_closure_date(deal, previous, target)
 
         self.activities.record(
@@ -336,13 +336,13 @@ class DealService:
         and an invariant reachable through two paths has to live in one place.
 
         The previous stage is read **before** the assignment, and the order is
-        load-bearing: `_settle_closure_date` decides on `previous.tipo`, so looking it up
+        load-bearing: `_settle_closure_date` decides on `previous.type`, so looking it up
         afterwards would hand it the target as the previous stage and every move would take
         the "correction between two terminal stages" branch, which stamps nothing at all.
         """
         previous = self.pipeline.get(deal.pipeline_stage_id)
         deal.pipeline_stage_id = stage.id
-        deal.probabilita = _settle_probability(stage, deal.probabilita)
+        deal.probability = _settle_probability(stage, deal.probability)
         _settle_closure_date(deal, previous, stage)
 
     def get(self, deal_id: UUID, actor: Actor) -> DealRead:
@@ -391,12 +391,12 @@ class DealService:
         if deal is None:
             raise NotFound(ENTITY, deal_id)
 
-        ore_attive = self.repo.count_active_time_entries(deal_id)
-        if ore_attive:
+        hours_attive = self.repo.count_active_time_entries(deal_id)
+        if hours_attive:
             raise Conflict(
                 ENTITY,
                 "il deal ha ore registrate: fatturale o archiviale prima",
-                ore_attive=ore_attive,
+                hours_attive=hours_attive,
             )
 
         deal.deleted_at = datetime.now(UTC)

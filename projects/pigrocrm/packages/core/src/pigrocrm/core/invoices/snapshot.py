@@ -8,7 +8,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.invoices.context import InvoiceContext
-from pigrocrm.core.invoices.schemas import SNAPSHOT_VERSIONE, InvoiceSnapshot, PartySnapshot
+from pigrocrm.core.invoices.schemas import SNAPSHOT_VERSION, InvoiceSnapshot, PartySnapshot
 
 
 class _Party(Protocol):
@@ -16,50 +16,50 @@ class _Party(Protocol):
     prints about one of its two parties."""
 
     @property
-    def ragione_sociale(self) -> str: ...
+    def legal_name(self) -> str: ...
     @property
-    def partita_iva(self) -> str | None: ...
+    def vat_number(self) -> str | None: ...
     @property
-    def codice_fiscale(self) -> str | None: ...
+    def tax_code(self) -> str | None: ...
     @property
-    def codice_sdi(self) -> str | None: ...
+    def sdi_code(self) -> str | None: ...
     @property
-    def pec(self) -> str | None: ...
+    def certified_email(self) -> str | None: ...
     @property
-    def indirizzo(self) -> str | None: ...
+    def address(self) -> str | None: ...
     @property
     def cap(self) -> str | None: ...
     @property
-    def comune(self) -> str | None: ...
+    def city(self) -> str | None: ...
     @property
-    def provincia(self) -> str | None: ...
+    def province(self) -> str | None: ...
     @property
-    def nazione(self) -> str: ...
+    def country(self) -> str: ...
     @property
     def email(self) -> str | None: ...
     @property
-    def telefono(self) -> str | None: ...
+    def phone(self) -> str | None: ...
     @property
-    def sito_web(self) -> str | None: ...
+    def website(self) -> str | None: ...
 
 
 def party_snapshot(party: _Party) -> PartySnapshot:
     """One party as the document freezes it. A missing address part is the empty string,
     the shape `PartySnapshot` stores."""
     return PartySnapshot(
-        ragione_sociale=party.ragione_sociale,
-        partita_iva=party.partita_iva,
-        codice_fiscale=party.codice_fiscale,
-        codice_sdi=party.codice_sdi,
-        pec=party.pec,
-        indirizzo=party.indirizzo or "",
+        legal_name=party.legal_name,
+        vat_number=party.vat_number,
+        tax_code=party.tax_code,
+        sdi_code=party.sdi_code,
+        certified_email=party.certified_email,
+        address=party.address or "",
         cap=party.cap or "",
-        comune=party.comune or "",
-        provincia=party.provincia or "",
-        nazione=party.nazione,
+        city=party.city or "",
+        province=party.province or "",
+        country=party.country,
         email=party.email,
-        telefono=party.telefono,
-        sito_web=party.sito_web,
+        phone=party.phone,
+        website=party.website,
     )
 
 
@@ -68,27 +68,27 @@ def build_snapshot(
     customer_id: UUID,
     profile: FiscalSnapshot,
     actor: Actor,
-    azienda_id: UUID,
+    legal_entity_id: UUID,
 ) -> InvoiceSnapshot:
     """The frozen identities, from an id rather than from a row, for one azienda.
 
     `customer_id` and not an `Invoice` on purpose: reading the issuer raises
-    `NotFound("emitter_profile")` whenever the issuer's own profile is missing -- the
+    `NotFound("legal_entities")` whenever the issuer's own profile is missing -- the
     exact state a fresh installation is in before §2.3 is done -- and `import_issued` has
     to be able to hit that refusal *before* it flushes anything. `issue` and the proforma
     PDF pass `invoice.customer_id`.
 
     The issuer is the azienda the document belongs to (REB-619).
-    `emitter_profile.regime_fiscale` is deliberately not read: it is a human-readable
+    `legal_entities.tax_regime` is deliberately not read: it is a human-readable
     caption for the PDF header, free text, and the machine value the SdI validates is
-    `fiscal_profile.codice_regime`. Two columns, two jobs.
+    `fiscal_profile.regime_code`. Two columns, two jobs.
     """
     customer = ctx.session.get(Customer, customer_id)
     if customer is None:  # pragma: no cover - the FK makes this unreachable
         raise NotFound("customer", customer_id)
     return InvoiceSnapshot(
-        versione=SNAPSHOT_VERSIONE,
-        emittente=party_snapshot(ctx.emitter.get(actor, azienda_id)),
-        cliente=party_snapshot(customer),
-        fiscale=profile,
+        version=SNAPSHOT_VERSION,
+        legal_entity=party_snapshot(ctx.legal_entity.get(actor, legal_entity_id)),
+        customer=party_snapshot(customer),
+        tax=profile,
     )

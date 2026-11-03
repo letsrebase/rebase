@@ -31,10 +31,10 @@ export function DealStageBar({
   onMove: (stageId: string) => void
 }) {
   const open = stages
-    .filter((stage) => stage.tipo === 'open')
-    .sort((a, b) => a.posizione - b.posizione)
+    .filter((stage) => stage.type === 'open')
+    .sort((a, b) => a.position - b.position)
   const current = stages.find((stage) => stage.id === deal.pipeline_stage_id)
-  const outcome = current?.tipo === 'won' || current?.tipo === 'lost' ? current.tipo : null
+  const outcome = current?.type === 'won' || current?.type === 'lost' ? current.type : null
   const currentIndex = open.findIndex((stage) => stage.id === deal.pipeline_stage_id)
 
   return (

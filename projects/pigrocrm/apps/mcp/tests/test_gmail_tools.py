@@ -50,7 +50,7 @@ from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLin
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
+from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
 
 # 32 bytes of "k", base64. Written out rather than imported from
@@ -90,8 +90,8 @@ def gmail_actor(mcp_session: Session) -> Actor:
         email="agent-owner@example.test",
         password_hash="x",
         nome="Owner",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     mcp_session.add(user)
     mcp_session.flush()
@@ -136,7 +136,7 @@ def customer(mcp_session: Session) -> Customer:
     surface that *validates* the entity against the right table, so it needs a row that
     exists.
     """
-    row = Customer(ragione_sociale="Acme S.r.l.", email=CLIENT)
+    row = Customer(legal_name="Acme S.r.l.", email=CLIENT)
     mcp_session.add(row)
     mcp_session.flush()
     return row
@@ -303,14 +303,14 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
     rows = _payload(result)
     rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
     # Mail written by somebody else: each item carries the marker, the list stays a list.
-    assert all(row["provenienza"] == PROVENIENZA_TESTO_LIBERO for row in rows)
+    assert all(row["provenance"] == PROVENANCE_TEXT_FREE for row in rows)
     assert [row["id"] for row in rows] == [str(message_id)]
     assert rows[0]["da"] == CLIENT
-    assert rows[0]["oggetto"] == "Preventivo per il rifacimento del sito"
+    assert rows[0]["subject"] == "Preventivo per il rifacimento del sito"
     # The listing is a listing: the body belongs to `get_gmail_message`, so an agent
     # that only needs to know a conversation exists does not pull a customer's whole
     # correspondence into its context to find out.
-    assert "corpo" not in rows[0]
+    assert "body" not in rows[0]
 
 
 async def test_get_gmail_message_returns_the_body_marked_as_untrusted(
@@ -326,9 +326,9 @@ async def test_get_gmail_message_returns_the_body_marked_as_untrusted(
         result = await client.call_tool("get_gmail_message", {"message_id": str(message_id)})
 
     body = _payload(result)
-    assert body["corpo"] == "Ciao, ci mandi un preventivo per il rifacimento del sito?"
-    assert body["allegati"][0]["name"] == "brief.pdf"
-    assert "non attendibile" in body["provenienza"]
+    assert body["body"] == "Ciao, ci mandi un preventivo per il rifacimento del sito?"
+    assert body["attachments"][0]["name"] == "brief.pdf"
+    assert "non attendibile" in body["provenance"]
 
 
 async def test_get_gmail_message_marks_our_own_mail_as_ours(
@@ -358,7 +358,7 @@ async def test_get_gmail_message_marks_our_own_mail_as_ours(
     async with Client(gmail_server) as client:
         result = await client.call_tool("get_gmail_message", {"message_id": str(message.id)})
 
-    assert "non attendibile" not in _payload(result)["provenienza"]
+    assert "non attendibile" not in _payload(result)["provenance"]
 
 
 async def test_a_message_id_nobody_stored_is_guidance_not_a_stack_trace(
@@ -438,7 +438,7 @@ async def test_draft_email_is_the_one_writing_tool_an_agent_gets(gmail_server: A
 async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
     gmail_server: Any, mcp_session: Session, filed_message: tuple[UUID, UUID]
 ) -> None:
-    """`bozza` is a state only `EmailSendService` can leave, and this surface holds no
+    """`draft` is a state only `EmailSendService` can leave, and this surface holds no
     tool that could. The silence is proved by the repository-root socket guard, which
     fails any test that opens one."""
     customer_id, _message_id = filed_message
@@ -456,11 +456,11 @@ async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
         )
 
     answer = _payload(result)
-    assert answer["stato"] == "bozza"
-    assert "persona" in answer["nota"]
+    assert answer["status"] == "draft"
+    assert "persona" in answer["note"]
 
     draft = mcp_session.execute(select(EmailDraft)).scalars().one()
-    assert draft.send_state == "bozza"
+    assert draft.send_state == "draft"
     assert draft.subject == "Accompagnamento offerta"
     assert draft.sent_gmail_message_id is None
     assert draft.google_account_id is None
@@ -528,21 +528,21 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
     """The one method of 5B-2 that genuinely earns a tool: crossing due dates against
     payments against what has already gone out is the laborious part of chasing money.
 
-    `importo` travels as the invoice's own frozen decimal, as a string. A float here
+    `amount` travels as the invoice's own frozen decimal, as a string. A float here
     would be a demand for payment naming a figure the client's copy does not carry.
     """
-    scadenza = today_local() - timedelta(days=40)
+    due_date = today_local() - timedelta(days=40)
     invoice = Invoice(
         customer_id=customer.id,
-        tipo="fattura",
-        stato="emessa",
-        anno=scadenza.year,
-        numero=4321,
-        data_emissione=scadenza - timedelta(days=30),
-        data_scadenza=scadenza,
-        imponibile=Decimal("1000.00"),
-        imposta=Decimal("220.00"),
-        totale=Decimal("1220.00"),
+        type="invoice",
+        status="issued",
+        year=due_date.year,
+        number=4321,
+        issue_date=due_date - timedelta(days=30),
+        due_date=due_date,
+        taxable_amount=Decimal("1000.00"),
+        vat_amount=Decimal("220.00"),
+        total=Decimal("1220.00"),
     )
     mcp_session.add(invoice)
     mcp_session.flush()
@@ -552,13 +552,13 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
 
     rows = _payload(result)
     rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
-    assert all(row["provenienza"] == PROVENIENZA_TESTO_LIBERO for row in rows)
+    assert all(row["provenance"] == PROVENANCE_TEXT_FREE for row in rows)
     mine = [row for row in rows if row["invoice_id"] == str(invoice.id)]
     assert len(mine) == 1
-    assert mine[0]["importo"] == "1220.00"
-    assert mine[0]["cliente"] == "Acme S.r.l."
-    assert mine[0]["giorni_di_ritardo"] == 40
-    assert mine[0]["prossimo_livello"] == 1
+    assert mine[0]["amount"] == "1220.00"
+    assert mine[0]["customer"] == "Acme S.r.l."
+    assert mine[0]["days_of_delay"] == 40
+    assert mine[0]["next_level"] == 1
 
 
 async def test_no_tool_prepares_a_payment_reminder(gmail_server: Any) -> None:

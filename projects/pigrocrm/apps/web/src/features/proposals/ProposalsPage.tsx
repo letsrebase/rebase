@@ -5,27 +5,27 @@ import { PageHeader } from '@/components/PageHeader'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { formatOccurredAt } from '@/components/activityLabels'
-import { Confidence, ProposalStatoPill, ProposalSubject, TargetBadge } from './ProposalBits'
+import { Confidence, ProposalStatusPill, ProposalSubject, TargetBadge } from './ProposalBits'
 import {
-  STATI,
+  Statuses,
   decisionLine,
   describeProposal,
   excerptPreview,
   type Proposal,
-  type ProposalStato,
+  type ProposalStatus,
 } from './fields'
 import { QUEUE_LIMIT, useProposals } from './queries'
 
-const EMPTY: Record<ProposalStato, { title: string; body: string }> = {
-  in_attesa: {
+const EMPTY: Record<ProposalStatus, { title: string; body: string }> = {
+  pending: {
     title: 'Niente da rivedere',
     body: 'Quando un assistente propone un contratto o una giornata letti da un documento, li trovi qui per confermarli o rifiutarli.',
   },
-  accettata: {
+  accepted: {
     title: 'Nessuna proposta accettata',
     body: 'Le proposte che confermi compaiono qui, con il contratto o la giornata che hanno creato.',
   },
-  rifiutata: {
+  rejected: {
     title: 'Nessuna proposta rifiutata',
     body: 'Le proposte che rifiuti restano qui, con il motivo.',
   },
@@ -36,37 +36,37 @@ const EMPTY: Record<ProposalStato, { title: string; body: string }> = {
  * decided yet, oldest first because a queue is worked in the order things arrived, and the
  * two decided lists behind their own tabs, newest decision first.
  *
- * The tab is in the URL (`?stato=`) for the reason the Home's period is: a link to «le
+ * The tab is in the URL (`?status=`) for the reason the Home's period is: a link to «le
  * rifiutate» reopens the same list. Deciding happens on the detail page, where the source
  * excerpt and every proposed field sit next to the buttons; a row here is a way to get
  * there, never a one-click accept of something the reader has not seen.
  */
 export function ProposalsPage({
-  stato,
-  onStatoChange,
+  status,
+  onStatusChange,
 }: {
-  stato: ProposalStato
-  onStatoChange: (next: ProposalStato) => void
+  status: ProposalStatus
+  onStatusChange: (next: ProposalStatus) => void
 }) {
-  const proposals = useProposals(stato)
-  const pending = useProposals('in_attesa')
+  const proposals = useProposals(status)
+  const pending = useProposals('pending')
   // The API orders each list (the queue by arrival, the decided ones by decision, newest
   // first), so what comes back is what is drawn.
   const rows = proposals.data?.items ?? []
   const waiting = pending.data?.items.length
 
   return (
-    <Tabs value={stato} onValueChange={(next) => onStatoChange(next as ProposalStato)}>
+    <Tabs value={status} onValueChange={(next) => onStatusChange(next as ProposalStatus)}>
       <PageHeader
         icon={Inbox}
         title="Proposte"
         description="Quello che gli assistenti hanno letto dai documenti e aspetta la tua conferma."
         tabs={
           <TabsList variant="line">
-            {STATI.map((candidate) => (
+            {Statuses.map((candidate) => (
               <TabsTrigger key={candidate.id} value={candidate.id}>
                 {candidate.label}
-                {candidate.id === 'in_attesa' && waiting ? (
+                {candidate.id === 'pending' && waiting ? (
                   <span className="ml-2 tabular-nums text-muted-foreground">
                     {waiting >= QUEUE_LIMIT ? `${QUEUE_LIMIT}+` : waiting}
                   </span>
@@ -87,8 +87,8 @@ export function ProposalsPage({
           </div>
         ) : rows.length === 0 ? (
           <div className="border border-dashed px-6 py-12 text-center">
-            <h2 className="font-semibold">{EMPTY[stato].title}</h2>
-            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{EMPTY[stato].body}</p>
+            <h2 className="font-semibold">{EMPTY[status].title}</h2>
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{EMPTY[status].body}</p>
           </div>
         ) : (
           <ul className="border-t">
@@ -104,7 +104,7 @@ export function ProposalsPage({
 
 function ProposalRow({ proposal }: { proposal: Proposal }) {
   const description = describeProposal(proposal)
-  const decided = proposal.stato !== 'in_attesa'
+  const decided = proposal.status !== 'pending'
   return (
     <li className="border-b">
       <Link
@@ -121,12 +121,12 @@ function ProposalRow({ proposal }: { proposal: Proposal }) {
             </span>
           </div>
           <p className="line-clamp-2 text-sm text-muted-foreground">
-            «{excerptPreview(proposal.estratto)}»
+            «{excerptPreview(proposal.excerpt)}»
           </p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {decided ? <ProposalStatoPill stato={proposal.stato} /> : <Confidence proposal={proposal} />}
+            {decided ? <ProposalStatusPill status={proposal.status} /> : <Confidence proposal={proposal} />}
             <span>
-              {decided && proposal.deciso_il
+              {decided && proposal.decided_at
                 ? decisionLine(proposal)
                 : `Arrivata ${formatOccurredAt(proposal.created_at)}`}
             </span>

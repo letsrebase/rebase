@@ -14,33 +14,33 @@ import {
   type ReviewRow,
 } from './importPlan'
 
-function invoice(overrides: Partial<ParsedInvoice['cliente']> = {}): ParsedInvoice {
+function invoice(overrides: Partial<ParsedInvoice['customer']> = {}): ParsedInvoice {
   return {
-    numero: '2026/6',
-    data_emissione: '2026-03-15',
-    tipo_documento: 'fattura',
-    divisa: 'EUR',
-    fornitore: party({ ragione_sociale: 'Chiara Bianchi', partita_iva: 'IT01234567890' }),
-    cliente: party(overrides),
-    righe: [],
-    riepiloghi: [],
-    imponibile: '1000.00',
-    imposta: '0.00',
-    totale: '1000.00',
-    cassa_previdenziale: [],
-    termini_pagamento: [],
-    trasmissione: {} as ParsedInvoice['trasmissione'],
+    number: '2026/6',
+    issue_date: '2026-03-15',
+    sdi_document_type: 'invoice',
+    currency: 'EUR',
+    supplier: party({ legal_name: 'Chiara Bianchi', vat_number: 'IT01234567890' }),
+    customer: party(overrides),
+    lines: [],
+    recaps: [],
+    taxable_amount: '1000.00',
+    vat_amount: '0.00',
+    total: '1000.00',
+    social_security_pension_fund: [],
+    termini_payment: [],
+    transmission: {} as ParsedInvoice['transmission'],
   }
 }
 
-function party(overrides: Partial<ParsedInvoice['cliente']> = {}): ParsedInvoice['cliente'] {
+function party(overrides: Partial<ParsedInvoice['customer']> = {}): ParsedInvoice['customer'] {
   return {
-    ragione_sociale: 'Esempio Servizi S.r.l.',
-    partita_iva: 'IT09876543210',
-    indirizzo: 'Piazza dei Modelli 4',
+    legal_name: 'Esempio Servizi S.r.l.',
+    vat_number: 'IT09876543210',
+    address: 'Piazza dei Modelli 4',
     cap: '00187',
-    comune: 'Roma',
-    nazione: 'IT',
+    city: 'Roma',
+    country: 'IT',
     ...overrides,
   }
 }
@@ -81,13 +81,13 @@ describe('the new customers of a review', () => {
       row('needs_customer_confirmation', '2'),
       row('needs_customer_confirmation', '3', {
         party_key: '11111111111',
-        azienda_id: 'az-2',
-        invoice: invoice({ ragione_sociale: 'Altro S.r.l.', partita_iva: 'IT11111111111' }),
+        legal_entity_id: 'az-2',
+        invoice: invoice({ legal_name: 'Altro S.r.l.', vat_number: 'IT11111111111' }),
       }),
       row('ready', '4'),
     ]
 
-    // `aziendaId` is the azienda the party's invoices are written on, which bounds the
+    // `legalEntityId` is the azienda the party's invoices are written on, which bounds the
     // customers it may be attached to.
     expect(newParties(rows)).toEqual([
       {
@@ -95,27 +95,27 @@ describe('the new customers of a review', () => {
         name: 'Esempio Servizi S.r.l.',
         taxId: 'IT09876543210',
         invoices: 2,
-        aziendaId: null,
-        mixedAziende: false,
+        legalEntityId: null,
+        mixedLegalEntities: false,
       },
       {
         key: '11111111111',
         name: 'Altro S.r.l.',
         taxId: 'IT11111111111',
         invoices: 1,
-        aziendaId: 'az-2',
-        mixedAziende: false,
+        legalEntityId: 'az-2',
+        mixedLegalEntities: false,
       },
     ])
   })
 
   it('flags a party whose invoices are written on more than one azienda', () => {
     const rows = [
-      row('needs_customer_confirmation', '1', { azienda_id: 'az-1' }),
-      row('needs_customer_confirmation', '2', { azienda_id: 'az-2' }),
+      row('needs_customer_confirmation', '1', { legal_entity_id: 'az-1' }),
+      row('needs_customer_confirmation', '2', { legal_entity_id: 'az-2' }),
     ]
 
-    expect(newParties(rows)).toMatchObject([{ invoices: 2, aziendaId: 'az-1', mixedAziende: true }])
+    expect(newParties(rows)).toMatchObject([{ invoices: 2, legalEntityId: 'az-1', mixedLegalEntities: true }])
   })
 })
 
@@ -143,9 +143,9 @@ describe('what a confirmation would write', () => {
   })
 
   it('sends one decision per new customer: create for one ticked, an explicit skip for one unticked', () => {
-    expect(decisionsFor(rows, NONE)).toEqual({ clienti: { '09876543210': { create_customer: true } } })
+    expect(decisionsFor(rows, NONE)).toEqual({ customers: { '09876543210': { create_customer: true } } })
     expect(decisionsFor(rows, new Set(['09876543210']))).toEqual({
-      clienti: { '09876543210': { skip: true } },
+      customers: { '09876543210': { skip: true } },
     })
   })
 
@@ -153,7 +153,7 @@ describe('what a confirmation would write', () => {
     const created = new Map([['09876543210', 'customer-1']])
 
     expect(decisionsFor(rows, NONE, created)).toEqual({
-      clienti: { '09876543210': { customer_id: 'customer-1' } },
+      customers: { '09876543210': { customer_id: 'customer-1' } },
     })
   })
 
@@ -161,7 +161,7 @@ describe('what a confirmation would write', () => {
     const chosen = new Map([['09876543210', { id: 'customer-9', name: 'Acme Ltd' }]])
 
     expect(decisionsFor(rows, NONE, new Map(), chosen)).toEqual({
-      clienti: { '09876543210': { customer_id: 'customer-9' } },
+      customers: { '09876543210': { customer_id: 'customer-9' } },
     })
   })
 
@@ -170,10 +170,10 @@ describe('what a confirmation would write', () => {
     const created = new Map([['09876543210', 'customer-1']])
 
     expect(decisionsFor(rows, new Set(['09876543210']), new Map(), chosen)).toEqual({
-      clienti: { '09876543210': { skip: true } },
+      customers: { '09876543210': { skip: true } },
     })
     expect(decisionsFor(rows, NONE, created, chosen)).toEqual({
-      clienti: { '09876543210': { customer_id: 'customer-1' } },
+      customers: { '09876543210': { customer_id: 'customer-1' } },
     })
   })
 
@@ -184,7 +184,7 @@ describe('what a confirmation would write', () => {
     ]
 
     expect(decisionsFor(two, new Set(['AAA']))).toEqual({
-      clienti: { AAA: { skip: true }, BBB: { create_customer: true } },
+      customers: { AAA: { skip: true }, BBB: { create_customer: true } },
     })
     expect(countWrites(two, new Set(['AAA']))).toBe(1)
   })
@@ -193,7 +193,7 @@ describe('what a confirmation would write', () => {
 describe('the customers an import created', () => {
   it('are read from the confirmed rows, per party', () => {
     const rows = [
-      { file: 'a', sha256: 'a', outcome: 'imported', party_key: 'AAA', fattura: { customer_id: 'c1' } },
+      { file: 'a', sha256: 'a', outcome: 'imported', party_key: 'AAA', invoice: { customer_id: 'c1' } },
       { file: 'b', sha256: 'b', outcome: 'conflict', party_key: 'BBB' },
     ] as ConfirmRow[]
 
@@ -230,14 +230,14 @@ describe('the batches a year of files is cut into', () => {
 })
 
 describe('the register after an import', () => {
-  function imported(anno: number, numero: number, missing: number[], azienda = 'az-1'): ConfirmRow {
+  function imported(year: number, number: number, missing: number[], legal_entity = 'az-1'): ConfirmRow {
     return {
-      file: `${numero}.xml`,
-      sha256: String(numero),
+      file: `${number}.xml`,
+      sha256: String(number),
       outcome: 'imported',
-      azienda_id: azienda,
-      fattura: { anno, numero } as ConfirmRow['fattura'],
-      buchi_non_dichiarati: missing,
+      legal_entity_id: legal_entity,
+      invoice: { year, number } as ConfirmRow['invoice'],
+      undeclared_gaps: missing,
     }
   }
 
@@ -246,19 +246,19 @@ describe('the register after an import', () => {
       imported(2026, 1, [2, 3]),
       imported(2025, 9, [1]),
       imported(2026, 2, [3]),
-      { file: 'x', sha256: 'x', outcome: 'already_present', azienda_id: 'az-1' },
+      { file: 'x', sha256: 'x', outcome: 'already_present', legal_entity_id: 'az-1' },
     ])
 
     expect(years).toEqual([
-      { aziendaId: 'az-1', anno: 2025, missing: [1] },
-      { aziendaId: 'az-1', anno: 2026, missing: [3] },
+      { legalEntityId: 'az-1', year: 2025, missing: [1] },
+      { legalEntityId: 'az-1', year: 2026, missing: [3] },
     ])
   })
 
   it('keeps two aziende of the same year apart', () => {
     const years = registerYears([imported(2026, 1, [], 'az-1'), imported(2026, 1, [4], 'az-2')])
 
-    expect(years.map((y) => [y.aziendaId, y.missing])).toEqual([
+    expect(years.map((y) => [y.legalEntityId, y.missing])).toEqual([
       ['az-1', []],
       ['az-2', [4]],
     ])

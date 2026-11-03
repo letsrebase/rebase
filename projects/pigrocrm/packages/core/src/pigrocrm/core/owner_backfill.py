@@ -124,7 +124,7 @@ def plan_owner_backfill(session: Session, *, generic_emails: Collection[str] = (
             plan.listed.append(Listed(entity, entity_id, label, "no_user"))
         elif creator.email.lower() in generic:
             plan.listed.append(Listed(entity, entity_id, label, "generic_account", creator.nome))
-        elif not creator.attivo:
+        elif not creator.active:
             plan.listed.append(Listed(entity, entity_id, label, "inactive_creator", creator.nome))
         else:
             plan.assignments.append(Assignment(entity, entity_id, label, creator.id, creator.nome))
@@ -136,7 +136,7 @@ def plan_owner_backfill(session: Session, *, generic_emails: Collection[str] = (
         if customer.owner_id is not None:
             plan.already_owned["customer"] += 1
         else:
-            decide("customer", customer.id, customer.ragione_sociale, customer_creators)
+            decide("customer", customer.id, customer.legal_name, customer_creators)
 
     deal_creators = _creators(session, "deal")
     for deal in session.scalars(

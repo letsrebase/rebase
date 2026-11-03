@@ -16,26 +16,26 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.automations.daily import AutomationPass
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.service import migrate_to_head
 
 UNO = "prova-automazioni-uno"
 DUE = "prova-automazioni-due"
-SPAZI = (UNO, DUE)
+SPACES = (UNO, DUE)
 ROOT_DB = "prova_automazioni_radice"
 
 
@@ -64,7 +64,7 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     try:
         migrate_to_head(configured, configured.database_url)
         with _engine(configured.database_url) as engine, session_factory(engine)() as session:
-            committed_default_azienda(session, nome="Radice")
+            committed_default_legal_entity(session, nome="Radice")
             session.commit()
         yield configured
     finally:
@@ -79,20 +79,20 @@ def registry(settings: Settings) -> Iterator[Engine]:
 
 
 @pytest.fixture(scope="module")
-def spazi(settings: Settings, registry: Engine) -> Iterator[None]:
+def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     session: Session = session_factory(registry)()
     service = TenantService(session, settings)
     try:
-        for slug in SPAZI:
+        for slug in SPACES:
             service.provision(
                 TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"{slug}@studio.it")
             )
         yield
     finally:
-        for slug in SPAZI:
+        for slug in SPACES:
             drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))
         session.execute(
-            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPAZI)}
+            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPACES)}
         )
         session.commit()
         session.close()
@@ -107,34 +107,34 @@ def _url(settings: Settings, slug: str | None) -> object:
 
 
 @pytest.fixture(autouse=True)
-def _an_overdue_invoice_in_every_space(settings: Settings, spazi: None) -> Iterator[None]:
+def _an_overdue_invoice_in_every_space(settings: Settings, spaces: None) -> Iterator[None]:
     """One issued, unpaid invoice a few days late in the root and in each space, and what a
     pass wrote undone afterwards so every test starts from spaces nobody has run."""
     today = today_local(settings)
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-            customer = Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={})
+            customer = Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={})
             session.add(customer)
             session.flush()
             session.add(
                 Invoice(
                     customer_id=customer.id,
-                    tipo="fattura",
-                    stato="emessa",
-                    stato_pagamento="da_incassare",
-                    anno=2026,
-                    numero=1,
-                    imponibile=Decimal("100.00"),
-                    imposta=Decimal("22.00"),
-                    bollo=Decimal("0.00"),
-                    totale=Decimal("122.00"),
-                    data_emissione=today - timedelta(days=40),
-                    data_scadenza=today - timedelta(days=5),
+                    type="invoice",
+                    status="issued",
+                    payment_status="unpaid",
+                    year=2026,
+                    number=1,
+                    taxable_amount=Decimal("100.00"),
+                    vat_amount=Decimal("22.00"),
+                    stamp_duty=Decimal("0.00"),
+                    total=Decimal("122.00"),
+                    issue_date=today - timedelta(days=40),
+                    due_date=today - timedelta(days=5),
                 )
             )
             session.commit()
     yield
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         with _engine(_url(settings, slug)) as engine, engine.begin() as connection:
             connection.execute(text("delete from activities where entity_type = 'attivita'"))
             connection.execute(text("delete from attivita"))
@@ -151,7 +151,7 @@ def _the_environment(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def _count(settings: Settings, slug: str | None) -> int:
     with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
-        return len(session.query(Attivita).filter(Attivita.regola == "fattura_scaduta").all())
+        return len(session.query(Task).filter(Task.rule == "overdue_invoice").all())
 
 
 def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
@@ -168,13 +168,13 @@ def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | No
     return row.ran_at is not None, row.failure
 
 
-def test_the_command_opens_one_attivita_in_the_root_and_in_every_space(
+def test_the_command_opens_one_task_in_the_root_and_in_every_space(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli.main(["automations"]) == 0
 
     out = capsys.readouterr().out
-    for label in ("root", *SPAZI):
+    for label in ("root", *SPACES):
         assert f"{label}: fattura_scaduta aperte 1, già aperte 0" in out
         assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
         assert _count(settings, None if label == "root" else label) == 1
@@ -186,7 +186,7 @@ def test_a_run_moves_the_clock_of_every_space_it_walked(
     """REB-764: the row Impostazioni → Esecuzioni and `job_late` read."""
     assert cli.main(["automations"]) == 0
 
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         assert _clock(settings, slug) == (True, None), slug
 
 
@@ -195,7 +195,7 @@ def test_a_rehearsal_leaves_the_clock_alone(
 ) -> None:
     assert cli.main(["automations", "--dry-run"]) == 0
 
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         assert _clock(settings, slug) is None, slug
 
 
@@ -248,7 +248,7 @@ def test_the_second_run_opens_nothing_new(
     assert cli.main(["automations"]) == 0
 
     out = capsys.readouterr().out
-    for label in ("root", *SPAZI):
+    for label in ("root", *SPACES):
         assert f"{label}: fattura_scaduta aperte 0, già aperte 1" in out
         assert _count(settings, None if label == "root" else label) == 1
 
@@ -284,7 +284,7 @@ def test_a_switched_off_rule_is_reported_and_opens_nothing(
 def test_another_day_is_only_a_rehearsal(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert cli.main(["automations", "--data", "2030-01-01"]) == 2
+    assert cli.main(["automations", "--date", "2030-01-01"]) == 2
     assert "--data cambia il giorno" in capsys.readouterr().err
 
 

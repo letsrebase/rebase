@@ -27,7 +27,7 @@ from rebase_core.company_schemas import (
     CompanyOverride,
     CompanyRead,
 )
-from rebase_core.crm_words import DA_COLLEGARE, crm_state_sentence
+from rebase_core.crm_words import TO_LINK, crm_state_sentence
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
 from rebase_core.notes import NoteService
@@ -40,44 +40,44 @@ ENTITY = "company"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 _SEARCH_COLUMNS = (
-    Company.nome_azienda,
+    Company.company_name,
     User.nome,
-    User.cognome,
+    User.last_name,
     User.email,
-    Company.progetto,
-    Company.figura_richiesta,
+    Company.project,
+    Company.requested_role,
 )
 # The three fields a request's referente shares with its `users` row (REB-281): an
 # override of one of these lands on the identity, never on the row, the same split
 # `rebase_core.freelancers`' own `_ADMIN_IDENTITY_FIELDS` keeps for a freelancer card.
-_ADMIN_IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
+_ADMIN_IDENTITY_FIELDS = ("nome", "last_name", "linkedin_url")
 
 
 def _to_read(row: Company, user: User) -> CompanyRead:
-    """`referente`/`email` read off the linked `users` row since migration B (REB-281)
+    """`contact_person`/`email` read off the linked `users` row since migration B (REB-281)
     dropped the request's own copies: a company's several requests over time all name
     the one person on file, not a free-text string each request could drift from."""
     return CompanyRead(
         id=row.id,
-        nome_azienda=row.nome_azienda,
-        referente=f"{user.nome} {user.cognome}".strip(),
+        company_name=row.company_name,
+        contact_person=f"{user.nome} {user.last_name}".strip(),
         email=user.email,
-        telefono=user.telefono,
-        figura_richiesta=row.figura_richiesta,
-        progetto=row.progetto,
-        periodo_da=row.periodo_da,
-        durata=row.durata,
-        budget_giornaliero=row.budget_giornaliero,
-        remoto=row.remoto,
-        giorni_presenza=row.giorni_presenza,
-        numero_risorse=row.numero_risorse,
-        stato=row.stato,
-        crm_stato=row.crm_stato,
-        crm_errore=row.crm_errore,
-        crm_situazione=crm_state_sentence(row.crm_stato, row.crm_errore) or None,
+        phone=user.phone,
+        requested_role=row.requested_role,
+        project=row.project,
+        period_from=row.period_from,
+        duration=row.duration,
+        daily_budget=row.daily_budget,
+        remote=row.remote,
+        onsite_days=row.onsite_days,
+        headcount=row.headcount,
+        status=row.status,
+        crm_status=row.crm_status,
+        crm_error=row.crm_error,
+        crm_situation=crm_state_sentence(row.crm_status, row.crm_error) or None,
         crm_deal_url=row.crm_deal_url,
         crm_attempted_at=row.crm_attempted_at,
-        origine=row.origine,
+        origin=row.origin,
         utm_source=row.utm_source,
         utm_medium=row.utm_medium,
         utm_campaign=row.utm_campaign,
@@ -95,12 +95,12 @@ def _list_stmt(
     q: str,
     budget_min: Decimal | None,
     budget_max: Decimal | None,
-    periodo_da: date | None,
-    origine: str | None,
-    creato_da: datetime | None,
-    creato_a: datetime | None,
+    period_from: date | None,
+    origin: str | None,
+    created_from: datetime | None,
+    created_to: datetime | None,
 ) -> Select[Company, User]:
-    """Every company request, `stato` left for the caller to filter separately -- this
+    """Every company request, `status` left for the caller to filter separately -- this
     statement backs both the listing and the per-state `GROUP BY` counts, which must
     see every state at once."""
     stmt = select(Company, User).join(User, User.id == Company.user_id)
@@ -108,17 +108,17 @@ def _list_stmt(
     if q:
         stmt = stmt.where(matches_any(_SEARCH_COLUMNS, q))
     if budget_min is not None:
-        stmt = stmt.where(Company.budget_giornaliero >= budget_min)
+        stmt = stmt.where(Company.daily_budget >= budget_min)
     if budget_max is not None:
-        stmt = stmt.where(Company.budget_giornaliero <= budget_max)
-    if periodo_da is not None:
-        stmt = stmt.where(Company.periodo_da >= periodo_da)
-    if origine is not None:
-        stmt = stmt.where(Company.origine == origine)
-    if creato_da is not None:
-        stmt = stmt.where(Company.created_at >= creato_da)
-    if creato_a is not None:
-        stmt = stmt.where(Company.created_at <= creato_a)
+        stmt = stmt.where(Company.daily_budget <= budget_max)
+    if period_from is not None:
+        stmt = stmt.where(Company.period_from >= period_from)
+    if origin is not None:
+        stmt = stmt.where(Company.origin == origin)
+    if created_from is not None:
+        stmt = stmt.where(Company.created_at >= created_from)
+    if created_to is not None:
+        stmt = stmt.where(Company.created_at <= created_to)
     return stmt
 
 
@@ -133,8 +133,8 @@ class CompanyService:
         week apart are two things to answer, not one to merge. The referente's `users`
         row is get-or-created by lowercased email (REB-278), from the two fields the
         wizard collects (REB-279, decision (f)) plus, since REB-380, a phone number,
-        and left as it was found on a repeat request: the answer's `referente`/`email`
-        (and now `telefono`) read off that one row (REB-281), whether or not it
+        and left as it was found on a repeat request: the answer's `contact_person`/`email`
+        (and now `phone`) read off that one row (REB-281), whether or not it
         matches what this particular request said.
 
         The second element is whether this `user_id` already had at least one other
@@ -144,26 +144,26 @@ class CompanyService:
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         email = data.email.strip().lower()
         user = UserService(self.session).get_or_create(
-            email, data.referente_nome, data.referente_cognome, telefono=data.telefono
+            email, data.contact_first_name, data.contact_last_name, phone=data.phone
         )
-        richiedente_esistente = (
+        richiedente_existing = (
             self.session.scalar(select(Company.id).where(Company.user_id == user.id).limit(1))
             is not None
         )
         row = Company(
             user_id=user.id,
-            nome_azienda=data.nome_azienda,
-            figura_richiesta=data.figura_richiesta,
-            progetto=data.progetto,
-            periodo_da=data.periodo_da,
-            durata=data.durata,
-            budget_giornaliero=data.budget_giornaliero,
-            remoto=data.remoto,
-            giorni_presenza=data.giorni_presenza,
-            numero_risorse=data.numero_risorse,
+            company_name=data.company_name,
+            requested_role=data.requested_role,
+            project=data.project,
+            period_from=data.period_from,
+            duration=data.duration,
+            daily_budget=data.daily_budget,
+            remote=data.remote,
+            onsite_days=data.onsite_days,
+            headcount=data.headcount,
             # The same transaction as the row: a request is never committed without its
             # place in the CRM's queue (REB-868). The first attempt runs after the response.
-            crm_stato=DA_COLLEGARE,
+            crm_status=TO_LINK,
             # A deal the admin named (REB-870), kept until the CRM links it.
             crm_deal_id=deal_id,
             **utm,
@@ -176,18 +176,18 @@ class CompanyService:
         # team request of the same contact kept (REB-600). `link_team_request` does
         # nothing once any company of the contact carries a referral, so only a first
         # attribution is ever made, from a first or a returning request alike.
-        ReferralService(self.session).link_team_request(row.id, user, own_code=data.rif)
+        ReferralService(self.session).link_team_request(row.id, user, own_code=data.ref)
         self.session.commit()
-        return _to_read(row, user), richiedente_esistente
+        return _to_read(row, user), richiedente_existing
 
     def create_by_admin(
-        self, data: CompanyAdminCreate, admin_id: UUID, *, fonte: str
+        self, data: CompanyAdminCreate, admin_id: UUID, *, source: str
     ) -> CompanyRead:
         """An admin opens the request on the referente's behalf (REB-870): the row the
-        wizard writes, `da_collegare`, with the CRM deal when one is named. No mail goes to
+        wizard writes, `to_link`, with the CRM deal when one is named. No mail goes to
         anybody; the trail records `company_created` with the admin, the door and the deal."""
         read, _ = self.request(data, deal_id=data.deal_id)
-        payload: dict[str, str] = {"fonte": fonte}
+        payload: dict[str, str] = {"source": source}
         if data.deal_id is not None:
             payload["deal_id"] = str(data.deal_id)
         AdminActionService(self.session).record(
@@ -198,19 +198,19 @@ class CompanyService:
     def list_recent(
         self,
         limit: int = LIST_LIMIT_DEFAULT,
-        stato: str | None = None,
+        status: str | None = None,
         *,
         q: str | None = None,
         cursor: str | None = None,
         budget_min: Decimal | None = None,
         budget_max: Decimal | None = None,
-        periodo_da: date | None = None,
-        origine: str | None = None,
-        creato_da: datetime | None = None,
-        creato_a: datetime | None = None,
+        period_from: date | None = None,
+        origin: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> CompanyList:
         """Newest-or-best-match first (REB-285 adds `q`, `cursor` and the filters below
-        `stato`; the field itself is unvalidated pass-through, like every other filter
+        `status`; the field itself is unvalidated pass-through, like every other filter
         in this package -- an unknown value is simply an empty list, never a 422)."""
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         term = (q or "").strip()
@@ -219,20 +219,20 @@ class CompanyService:
             q=term,
             budget_min=budget_min,
             budget_max=budget_max,
-            periodo_da=periodo_da,
-            origine=origine,
-            creato_da=creato_da,
-            creato_a=creato_a,
+            period_from=period_from,
+            origin=origin,
+            created_from=created_from,
+            created_to=created_to,
         )
 
         grouped = self.session.execute(
-            base.with_only_columns(Company.stato, func.count()).group_by(Company.stato)
+            base.with_only_columns(Company.status, func.count()).group_by(Company.status)
         ).all()
         by_state: dict[str, int] = {state: count for state, count in grouped}
-        per_stato = {state: by_state.get(state, 0) for state in COMPANY_STATES}
-        totale = sum(per_stato.values()) if stato is None else per_stato.get(stato, 0)
+        by_status = {state: by_state.get(state, 0) for state in COMPANY_STATES}
+        total = sum(by_status.values()) if status is None else by_status.get(status, 0)
 
-        stmt = base if stato is None else base.where(Company.stato == stato)
+        stmt = base if status is None else base.where(Company.status == status)
         sort_spec = SortSpec("score", "float") if term else SortSpec("created_at", "datetime")
         sort_column: Any
         if term:
@@ -256,9 +256,9 @@ class CompanyService:
             next_cursor = encode_cursor(sort_spec, last_sort, last[0].id)
 
         return CompanyList(
-            totale=totale,
+            total=total,
             items=[_to_read(row[0], row[1]) for row in page_rows],
-            per_stato=per_stato,
+            by_status=by_status,
             next_cursor=next_cursor,
         )
 
@@ -273,23 +273,23 @@ class CompanyService:
         return read
 
     def set_status(
-        self, company_id: UUID, change: StatusChange, *, admin_id: UUID, fonte: str
+        self, company_id: UUID, change: StatusChange, *, admin_id: UUID, source: str
     ) -> CompanyRead:
-        """Moves the request to `change.stato` and, when it moved, records who and by
-        which door (`fonte`, `web` or `mcp`) as a `status_changed` entry of the trail."""
-        if change.stato not in COMPANY_STATES:
-            raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(COMPANY_STATES)}")
+        """Moves the request to `change.status` and, when it moved, records who and by
+        which door (`source`, `web` or `mcp`) as a `status_changed` entry of the trail."""
+        if change.status not in COMPANY_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(COMPANY_STATES)}")
         row, user = self._require(company_id)
-        before = row.stato
-        row.stato = change.stato
-        if before != change.stato:
+        before = row.status
+        row.status = change.status
+        if before != change.status:
             # In the transaction of the change itself (HCORE-09).
             AdminActionService(self.session).record(
                 ENTITY,
                 row.id,
                 "status_changed",
                 admin_id,
-                {"before": before, "after": change.stato, "fonte": fonte},
+                {"before": before, "after": change.status, "source": source},
                 commit=False,
             )
         self.session.commit()
@@ -313,15 +313,15 @@ class CompanyService:
             )
         reject_cleared_columns(ENTITY, Company, row_changes)
         # A partial override may touch only one side of the together-rule
-        # (`ck_companies_giorni_presenza_together`): computed and refused here, on the
+        # (`ck_companies_onsite_days_together`): computed and refused here, on the
         # prospective values and before anything is mutated, rather than left for the
         # commit below to hit the database's own `CHECK` and surface as a raw
         # `IntegrityError`.
-        final_remoto = row_changes.get("remoto", row.remoto)
-        final_giorni_presenza = row_changes.get("giorni_presenza", row.giorni_presenza)
-        if (final_remoto == "ibrido") != (final_giorni_presenza is not None):
+        final_remote = row_changes.get("remote", row.remote)
+        final_onsite_days = row_changes.get("onsite_days", row.onsite_days)
+        if (final_remote == "hybrid") != (final_onsite_days is not None):
             raise ValidationFailed(
-                ENTITY, "giorni_presenza", "va indicato solo, e sempre, per il lavoro ibrido"
+                ENTITY, "onsite_days", "va indicato solo, e sempre, per il lavoro ibrido"
             )
         before = {
             **{field: getattr(user, field) for field in identity_changes},

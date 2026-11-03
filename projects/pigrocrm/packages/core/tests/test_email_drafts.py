@@ -70,7 +70,7 @@ def test_a_draft_is_written_to_the_database_before_anything_else(db_session: Ses
 
     stored = db_session.get(EmailDraft, read.id)
     assert stored is not None
-    assert stored.send_state == "bozza"
+    assert stored.send_state == "draft"
     assert stored.body_markdown == BODY
     assert stored.to_addresses == ["ada@acme.it"]
     assert stored.sent_gmail_message_id is None
@@ -115,7 +115,7 @@ def test_the_caller_cannot_choose_the_send_state_or_the_gmail_id(db_session: Ses
                 to_addresses=["a@b.it"],
                 subject="x",
                 body_markdown="y",
-                **{hostile: "inviato"},  # type: ignore[arg-type]
+                **{hostile: "sent"},  # type: ignore[arg-type]
             )
 
 
@@ -155,27 +155,27 @@ def test_a_draft_is_recorded_on_its_record_with_the_member_and_never_its_text(
     entries = {e.kind: e for e in ActivityService(db_session).timeline("customer", customer.id)}
 
     assert set(entries) == {
-        "gmail.bozza_creata",
-        "gmail.bozza_modificata",
-        "gmail.bozza_eliminata",
+        "gmail.draft_created",
+        "gmail.draft_edited",
+        "gmail.draft_deleted",
     }
     assert {(e.actor_id, e.actor_type) for e in entries.values()} == {(actor.id, actor.type)}
-    assert entries["gmail.bozza_creata"].payload == {"draft_id": str(created.id)}
-    assert entries["gmail.bozza_modificata"].payload["changed"] == ["body_markdown"]
+    assert entries["gmail.draft_created"].payload == {"draft_id": str(created.id)}
+    assert entries["gmail.draft_edited"].payload["changed"] == ["body_markdown"]
     assert BODY not in str([e.payload for e in entries.values()])
 
 
 def test_a_draft_being_sent_or_already_sent_can_no_longer_be_edited(
     db_session: Session,
 ) -> None:
-    """Three states, and each for its own reason: `in_invio` is a message in flight, so
-    an edit would change what is being sent underneath the sender; `inviato` has left;
-    `incerto` may have left, and editing it would make the reconciliation of spec 6.3
+    """Three states, and each for its own reason: `sending` is a message in flight, so
+    an edit would change what is being sent underneath the sender; `sent` has left;
+    `uncertain` may have left, and editing it would make the reconciliation of spec 6.3
     compare a Gmail message against text that is no longer the text that was sent."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
-    for state in ("in_invio", "inviato", "incerto"):
+    for state in ("sending", "sent", "uncertain"):
         created = service.create(_payload(customer), actor_for(account))
         draft = service.repo_draft(created.id)
         draft.send_state = state
@@ -197,14 +197,14 @@ def test_a_failed_draft_is_editable_again_and_loses_its_stale_error(
     service = _service(db_session)
     created = service.create(_payload(customer), actor_for(account))
     draft = service.repo_draft(created.id)
-    draft.send_state = "fallito"
+    draft.send_state = "failed"
     draft.last_error = "Gmail ha rifiutato il destinatario"
     db_session.flush()
 
     updated = service.update(
         created.id, EmailDraftUpdate(to_addresses=["ada.rossi@acme.it"]), actor_for(account)
     )
-    assert updated.send_state == "bozza"
+    assert updated.send_state == "draft"
     assert updated.last_error is None
     assert updated.to_addresses == ["ada.rossi@acme.it"]
 
@@ -218,12 +218,12 @@ def test_deleting_a_draft_in_flight_is_refused(db_session: Session) -> None:
     service = _service(db_session)
     created = service.create(_payload(customer), actor_for(account))
     draft = service.repo_draft(created.id)
-    draft.send_state = "in_invio"
+    draft.send_state = "sending"
     db_session.flush()
     with pytest.raises(Conflict):
         service.delete(created.id, actor_for(account))
 
-    draft.send_state = "bozza"
+    draft.send_state = "draft"
     db_session.flush()
     service.delete(created.id, actor_for(account))
     with pytest.raises(NotFound):
@@ -246,7 +246,7 @@ def test_each_entity_type_is_checked_against_its_own_table(db_session: Session) 
     draft against a row of the wrong kind."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    person = Person(nome="Ada", cognome="Rossi", email="ada@acme.it", customer_id=customer.id)
+    person = Person(nome="Ada", last_name="Rossi", email="ada@acme.it", customer_id=customer.id)
     db_session.add(person)
     db_session.flush()
     service = _service(db_session)
@@ -428,7 +428,7 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
 ) -> None:
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    other = Customer(ragione_sociale="Beta", email="info@beta.it")
+    other = Customer(legal_name="Beta", email="info@beta.it")
     db_session.add(other)
     db_session.flush()
     service = _service(db_session)
@@ -436,7 +436,7 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
     mine = service.create(_payload(customer), actor_for(account))
     service.create(_payload(customer, entity_id=other.id), actor_for(account))
     sent = service.create(_payload(customer, subject="Inviata"), actor_for(account))
-    service.repo_draft(sent.id).send_state = "inviato"
+    service.repo_draft(sent.id).send_state = "sent"
     db_session.flush()
 
     page = service.list(
@@ -446,15 +446,15 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
     assert {item.id for item in page.items} == {mine.id, sent.id}
 
     only_drafts = service.list(
-        EmailDraftListQuery(entity_type="customer", entity_id=customer.id, send_state="bozza"),
+        EmailDraftListQuery(entity_type="customer", entity_id=customer.id, send_state="draft"),
         actor_for(account),
     )
     assert [item.id for item in only_drafts.items] == [mine.id]
 
-    # REB-415: what the Email tab asks for. Every state but `inviato`, counted the same
+    # REB-415: what the Email tab asks for. Every state but `sent`, counted the same
     # way, so a page of sent drafts can never push an unsent one out of the list.
     uncertain = service.create(_payload(customer, subject="Incerta"), actor_for(account))
-    service.repo_draft(uncertain.id).send_state = "incerto"
+    service.repo_draft(uncertain.id).send_state = "uncertain"
     db_session.flush()
     unsent = service.list(
         EmailDraftListQuery(entity_type="customer", entity_id=customer.id, unsent=True, limit=1),
@@ -478,19 +478,19 @@ def test_every_read_names_the_attachments_the_send_will_carry(db_session: Sessio
     way the send will (`attach.attachment_filename`), in the order the draft keeps."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta Q1")
+    document = Document(customer_id=customer.id, type="offer", title="Offerta Q1")
     db_session.add(document)
     db_session.flush()
     versions = [
         DocumentVersion(
             document_id=document.id,
-            numero=numero,
-            storage_key=f"acme/offerta-v{numero}-{uuid4().hex}.pdf",
+            number=number,
+            storage_key=f"acme/offerta-v{number}-{uuid4().hex}.pdf",
             content_type="application/pdf",
-            dimensione=1024 * numero,
+            size=1024 * number,
             hash_sha256="0" * 64,
         )
-        for numero in (1, 2)
+        for number in (1, 2)
     ]
     db_session.add_all(versions)
     db_session.flush()
@@ -511,7 +511,7 @@ def test_every_read_names_the_attachments_the_send_will_carry(db_session: Sessio
             "offerta-q1-v1.pdf",
         ]
         assert [a.version_id for a in draft.attachments] == draft.attachment_version_ids
-        assert [a.dimensione for a in draft.attachments] == [2048, 1024]
+        assert [a.size for a in draft.attachments] == [2048, 1024]
 
     plain = service.create(_payload(customer), actor_for(account))
     assert plain.attachments == []
@@ -571,7 +571,7 @@ def test_the_draft_is_on_disk_before_the_caller_does_anything_else(db_engine: En
             found = reader.get(EmailDraft, draft_id)
             assert found is not None, "the draft was never committed: an HTTP error loses it"
             assert found.body_markdown == BODY
-            assert found.send_state == "bozza"
+            assert found.send_state == "draft"
             assert found.message_id_header.endswith("@crm.example.it>")
     finally:
         if customer_id is not None and user_id is not None:

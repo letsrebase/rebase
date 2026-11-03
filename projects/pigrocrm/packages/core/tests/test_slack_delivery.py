@@ -21,7 +21,6 @@ from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
@@ -35,6 +34,7 @@ from pigrocrm.core.reminders.models import (
 from pigrocrm.core.reminders.run import ReminderRun
 from pigrocrm.core.slack.models import SlackChannelPost, SlackUserLink, SlackWorkspace
 from pigrocrm.core.slack.service import SlackService
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import space_base_settings
 from pigrocrm.core.tenants.service import migrate_to_head
 
@@ -84,12 +84,12 @@ class World:
             assert admin is not None
             connect(session, self.fake, admin, settings or self.settings)
 
-    def attivita(self, titolo: str, *, days_late: int = 3, assignee: UUID | None = None) -> UUID:
+    def attivita(self, title: str, *, days_late: int = 3, assignee: UUID | None = None) -> UUID:
         with self.session() as session:
-            row = Attivita(
-                titolo=titolo,
-                scadenza=self.today - timedelta(days=days_late),
-                assegnata_a=assignee or self.ada,
+            row = Task(
+                title=title,
+                due_date=self.today - timedelta(days=days_late),
+                assigned_to=assignee or self.ada,
             )
             session.add(row)
             session.commit()
@@ -144,13 +144,13 @@ def world(settings: Settings, engine: Engine) -> Iterator[World]:
             email=f"mario-{uuid4().hex[:6]}@example.it",
             nome="Mario",
             password_hash="x",
-            ruolo="admin",
+            role="admin",
         )
         ada = User(
             email=f"ada-{uuid4().hex[:6]}@example.it",
             nome="Ada",
             password_hash="x",
-            ruolo="collaboratore",
+            role="collaborator",
         )
         session.add_all([admin, ada])
         session.commit()
@@ -168,7 +168,7 @@ def _text_of(fake: FakeSlack, channel: str) -> str:
 # --- the card's proof --------------------------------------------------------------------
 
 
-def test_an_overdue_attivita_reaches_its_assignee_by_direct_message_once(world: World) -> None:
+def test_an_overdue_task_reaches_its_assignee_by_direct_message_once(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
     world.connect()
     world.attivita("Richiamare Rossi")
@@ -179,7 +179,7 @@ def test_an_overdue_attivita_reaches_its_assignee_by_direct_message_once(world: 
     message = _text_of(world.fake, "DUADA")
     assert "Richiamare Rossi" in message
     assert "Hai un promemoria" in message
-    assert f"{PUBLIC_URL}/app/activities?apri=" in message
+    assert f"{PUBLIC_URL}/app/activities?open=" in message
     # The direct message was opened with the member's id, and posted with the bot's token.
     (opened,) = world.fake.calls("conversations.open")
     assert opened.form == {"users": "UADA"}
@@ -208,7 +208,7 @@ def test_a_daily_reminder_is_sent_again_the_next_morning(world: World) -> None:
 
 def test_the_reminder_a_person_switched_off_for_slack_is_not_sent(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
-    world.preference(user=world.ada, type="attivita_overdue", channels=["push"])
+    world.preference(user=world.ada, type="task_overdue", channels=["push"])
     world.connect()
     world.attivita("Richiamare Rossi")
 
@@ -222,7 +222,7 @@ def test_the_reminder_a_person_switched_off_for_slack_is_not_sent(world: World) 
 
 def test_a_space_that_turned_slack_off_by_default_does_not_send_either(world: World) -> None:
     world.preference(quiet_hours=NO_QUIET)
-    world.preference(type="attivita_overdue", channels=["push", "email"])
+    world.preference(type="task_overdue", channels=["push", "email"])
     world.connect()
     world.attivita("Richiamare Rossi")
     assert world.pass_().slacks == 0
@@ -403,7 +403,7 @@ def test_slack_down_during_the_pass_sends_nothing_records_nothing_and_does_not_r
 
     outcome = world.pass_()
 
-    assert outcome.esito == "eseguito"
+    assert outcome.outcome == "run"
     assert outcome.slacks == 0
     assert outcome.delivered == 1  # the app still has it
     assert world.deliveries() == []
@@ -615,11 +615,11 @@ def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
     from pigrocrm.core.reminders.run import ReminderOutcome
 
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0, slacks=2, emails=1),
+        ReminderOutcome("root", "run", raised=3, delivered=2, ended=0, slacks=2, emails=1),
         dry_run=False,
     )
     cli_cron._print_reminder_outcome(
-        ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0), dry_run=True
+        ReminderOutcome("root", "run", raised=3, delivered=2, ended=0), dry_run=True
     )
 
     lines = capsys.readouterr().out.splitlines()
@@ -641,14 +641,14 @@ def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Se
             session.add(ReminderJobRun(job="duplicated", ran_at=datetime.now(UTC)))
             session.flush()
 
-    def fine(session: Session) -> None:
+    def end(session: Session) -> None:
         session.add(ReminderJobRun(job="kept", ran_at=datetime.now(UTC)))
 
     engine = ReminderEngine(db_session, slack_settings())
     result = engine.record_pass(
         Evaluation((), frozenset(), frozenset(), Directory([], None), ReminderSettings([])),
         job="reminders",
-        sent=ChannelResult(writes=[refused, fine]),
+        sent=ChannelResult(writes=[refused, end]),
     )
 
     assert result.raised == 0
@@ -747,7 +747,7 @@ def test_a_key_that_is_not_a_key_stops_slack_and_nothing_else(world: World) -> N
 
     outcome = world.pass_(settings=slack_settings(slack_token_key="not base64 at all!"))
 
-    assert outcome.esito == "eseguito"
+    assert outcome.outcome == "run"
     assert outcome.slacks == 0
     assert outcome.delivered == 1  # the app list still has it
     with world.session() as session:

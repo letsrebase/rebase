@@ -19,13 +19,13 @@ describe('the addresses a customer page found', () => {
       response: new Response(null, { status: 204 }),
     } as never)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(correspondentKeys.customer('c1'), { dominio: 'acme.it', corrispondenti: [] })
+    client.setQueryData(correspondentKeys.customer('c1'), { domain: 'acme.it', matching: [] })
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     )
     const { result } = renderHook(() => useDisconnectGmail(), { wrapper })
 
-    result.current.mutate({ eliminaMessaggi: false })
+    result.current.mutate({ deleteMessages: false })
 
     await waitFor(() => expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeUndefined())
   })
@@ -36,7 +36,7 @@ describe('the addresses a customer page found', () => {
       response: new Response(null, { status: 200 }),
     } as never)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(correspondentKeys.customer('c1'), { dominio: 'acme.it', corrispondenti: [] })
+    client.setQueryData(correspondentKeys.customer('c1'), { domain: 'acme.it', matching: [] })
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     )
@@ -46,7 +46,7 @@ describe('the addresses a customer page found', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeDefined()
 
-    result.current.mutate({ sito_web: 'acme.com' })
+    result.current.mutate({ website: 'acme.com' })
     await waitFor(() => expect(client.getQueryData(correspondentKeys.customer('c1'))).toBeUndefined())
   })
 })

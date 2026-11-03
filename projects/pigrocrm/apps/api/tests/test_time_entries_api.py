@@ -9,15 +9,15 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 
-def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
+def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     """A genuinely independent session, not `admin_client`'s own cookie jar. Copied
     from `test_invoices_api.py`'s helper of the same name and purpose -- see its
     docstring for why `logged_in` and `collaborator_client` cannot both be requested
     in the same test."""
-    email = f"{ruolo}-{id(admin_client)}@pigro.it"
+    email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "ruolo": ruolo},
+        json={"email": email, "password": "supersegreta1", "nome": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -32,7 +32,7 @@ def _seed_pipeline(logged_in: TestClient) -> None:
 
 def _seed_deal_and_user(logged_in: TestClient) -> tuple[str, str]:
     _seed_pipeline(logged_in)
-    customer = logged_in.post("/api/customers", json={"ragione_sociale": "ACME Srl"})
+    customer = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     deal = logged_in.post(
         "/api/deals", json={"nome": "Progetto", "customer_id": customer.json()["id"]}
@@ -44,7 +44,7 @@ def _seed_deal_and_user(logged_in: TestClient) -> tuple[str, str]:
             "email": "worker@pigro.it",
             "password": "supersegreta1",
             "nome": "Worker",
-            "ruolo": "collaboratore",
+            "role": "collaborator",
         },
     )
     assert user.status_code == 201, user.text
@@ -62,23 +62,23 @@ def test_post_creates_and_returns_decimals_as_strings(logged_in: TestClient) -> 
             "deal_id": deal_id,
             "user_id": user_id,
             "data": "2026-03-10",
-            "ore": "3.50",
-            "descrizione": "Sviluppo",
-            "tariffa_applicata": "80.000000",
+            "hours": "3.50",
+            "description": "Sviluppo",
+            "applied_rate": "80.000000",
         },
     )
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["ore"] == "3.50"
-    assert body["tariffa_applicata"] == "80.000000"
-    assert body["valore_riga"] == "280.00"
+    assert body["hours"] == "3.50"
+    assert body["applied_rate"] == "80.000000"
+    assert body["line_value"] == "280.00"
     assert '"ore":"3.50"' in response.text.replace(" ", "")
 
 
 def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClient) -> None:
     """The PDF is rendered and archived by a POST (a GET must not create anything: a
     cross-site navigation sends the session cookie). The GET is the XLSX, whatever
-    `formato` a stale client still sends."""
+    `format` a stale client still sends."""
     deal_id, user_id = _seed_deal_and_user(logged_in)
     logged_in.post(
         "/api/time-entries",
@@ -86,13 +86,13 @@ def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClien
             "deal_id": deal_id,
             "user_id": user_id,
             "data": "2026-03-10",
-            "ore": "2.00",
-            "descrizione": "Sviluppo",
-            "tariffa_applicata": "80.000000",
+            "hours": "2.00",
+            "description": "Sviluppo",
+            "applied_rate": "80.000000",
         },
     )
 
-    for params in ({"mese": "2026-03"}, {"mese": "2026-03", "formato": "pdf"}):
+    for params in ({"month": "2026-03"}, {"month": "2026-03", "format": "pdf"}):
         response = logged_in.get(f"/api/deals/{deal_id}/time-report", params=params)
         assert response.status_code == 200, response.text
         assert "spreadsheetml" in response.headers["content-type"]
@@ -101,7 +101,7 @@ def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClien
     assert logged_in.get(f"/api/deals/{deal_id}/time-report/pdf").status_code == 405
     unknown = logged_in.post(
         "/api/deals/00000000-0000-0000-0000-000000000000/time-report/pdf",
-        params={"mese": "2026-03"},
+        params={"month": "2026-03"},
     )
     assert unknown.status_code == 404
 
@@ -110,22 +110,22 @@ def test_a_closed_period_is_a_409_problem_document_naming_the_month(
     logged_in: TestClient,
 ) -> None:
     deal_id, user_id = _seed_deal_and_user(logged_in)
-    assert logged_in.post("/api/period-locks", json={"anno": 2026, "mese": 3}).status_code == 201
+    assert logged_in.post("/api/period-locks", json={"year": 2026, "month": 3}).status_code == 201
     response = logged_in.post(
         "/api/time-entries",
         json={
             "deal_id": deal_id,
             "user_id": user_id,
             "data": "2026-03-10",
-            "ore": "1.00",
-            "descrizione": "x",
+            "hours": "1.00",
+            "description": "x",
         },
     )
     assert response.status_code == 409
     assert response.headers["content-type"].startswith("application/problem+json")
     problem = response.json()
     assert problem["code"] == "conflict"
-    assert problem["mese"] == 3 and problem["anno"] == 2026
+    assert problem["month"] == 3 and problem["year"] == 2026
     assert "marzo 2026" in problem["detail"]
 
 
@@ -137,8 +137,8 @@ def test_a_future_date_is_a_422_naming_the_field(logged_in: TestClient) -> None:
             "deal_id": deal_id,
             "user_id": user_id,
             "data": "2099-01-01",
-            "ore": "1.00",
-            "descrizione": "x",
+            "hours": "1.00",
+            "description": "x",
         },
     )
     assert response.status_code == 422
@@ -155,8 +155,8 @@ def test_over_range_hours_are_refused_before_the_database(logged_in: TestClient)
             "deal_id": deal_id,
             "user_id": user_id,
             "data": "2026-03-10",
-            "ore": "80.00",
-            "descrizione": "x",
+            "hours": "80.00",
+            "description": "x",
         },
     )
     assert response.status_code == 422
@@ -171,7 +171,7 @@ def test_the_list_is_bounded_and_paginated(logged_in: TestClient) -> None:
 
 def test_recalculate_requires_admin(logged_in: TestClient) -> None:
     deal_id, _ = _seed_deal_and_user(logged_in)
-    collaborator = _second_actor(logged_in, "collaboratore")
+    collaborator = _second_actor(logged_in, "collaborator")
     response = collaborator.post(
         f"/api/deals/{deal_id}/rates/recalculate",
         json={"da": "2026-03-01", "a": "2026-03-31"},
@@ -208,7 +208,7 @@ def test_the_timer_round_trip_over_http(logged_in: TestClient) -> None:
     assert empty.status_code == 200
     assert empty.json() is None
 
-    started = logged_in.post("/api/time-entries/timer/start", json={"descrizione": "Call"})
+    started = logged_in.post("/api/time-entries/timer/start", json={"description": "Call"})
     assert started.status_code == 201, started.text
     assert started.json()["deal_id"] is None
 
@@ -218,15 +218,15 @@ def test_the_timer_round_trip_over_http(logged_in: TestClient) -> None:
     adjusted = logged_in.patch("/api/time-entries/timer", json={"deal_id": deal_id})
     assert adjusted.status_code == 200
     assert adjusted.json()["deal_id"] == deal_id
-    assert logged_in.get("/api/time-entries/timer").json()["descrizione"] == "Call"
+    assert logged_in.get("/api/time-entries/timer").json()["description"] == "Call"
 
     stopped = logged_in.post("/api/time-entries/timer/stop", json={})
     assert stopped.status_code == 201, stopped.text
     entry = stopped.json()
     assert entry["deal_id"] == deal_id
-    assert entry["descrizione"] == "Call"
+    assert entry["description"] == "Call"
     # Decimal-as-string, like every hour on this API; the smallest entry there is.
-    assert entry["ore"] == "0.01"
+    assert entry["hours"] == "0.01"
     assert logged_in.get("/api/time-entries/timer").json() is None
     assert logged_in.get(f"/api/time-entries/{entry['id']}").status_code == 200
 

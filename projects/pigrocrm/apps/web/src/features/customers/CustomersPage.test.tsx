@@ -28,7 +28,7 @@ const PAGE = { items: [], next_cursor: null, custom_fields: [] }
 const NO_MAILBOX = { account: null, banner: null, banner_text: null, missing_scopes: [], configured: true }
 const MAILBOX = { ...NO_MAILBOX, account: { email_address: 'ada@studio.it', status: 'active' } }
 const PROPOSALS = [
-  { dominio: 'acme.it', nome: 'Acme', conversazioni: 2, ultimo_messaggio: null, persone: [] },
+  { domain: 'acme.it', nome: 'Acme', conversations: 2, last_message: null, people: [] },
 ]
 
 function answering(gmail: unknown) {

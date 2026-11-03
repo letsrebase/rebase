@@ -111,7 +111,7 @@ describe.each(PAGES)('%s', (name) => {
     // login (`/app/`), a leftover from before the hub had one of its own; the hub
     // is the front door now, and a member reaches PigroCRM from inside it
     // (`Area.tsx`'s "Apri PigroCRM") or with its own URL directly. REB-319 then
-    // renamed the hub's own `/accedi` to `/login`; the hub keeps a redirect from
+    // renamed the hub's own `/login` to `/login`; the hub keeps a redirect from
     // the old path, but this link points at the new one directly.
     expect(page).toMatch(/href="\/hub\/login"/)
     expect(page).toContain('Accedi')
@@ -175,7 +175,7 @@ describe('index.html', () => {
     // keeps its claim, its lead, its two doors and its fine print, and between the lead
     // and the doors sits the builder: one line, the composer with «Proponi il team»
     // inside it, the four examples. The form is a plain GET to the hub's page, which
-    // fills its box from `?descrizione=`, so a visitor without JavaScript still gets a
+    // fills its box from `?description=`, so a visitor without JavaScript still gets a
     // team one page later; team.js turns the same form into a call to the hub's API.
     const hero = page.match(/<section class="hero">([\s\S]*?)<\/section>/)?.[1] ?? ''
     const order = ['<h1 class="measure-tight">', '<p class="lead measure">', '<form class="team-form', '<div class="team-result', '<p class="actions">', 'Sei già dentro?']
@@ -239,7 +239,7 @@ describe('index.html', () => {
     // No invented plan or trial: the one price is "be in the community". The services
     // band is the one place a subscription is real, the talent cloud's (REB-681), so the
     // guard reads the page without it.
-    expect(page.replace(section('aziende'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
+    expect(page.replace(section('companies'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
   })
 
   it('explains itself in three steps and says what is inside', () => {
@@ -291,7 +291,7 @@ describe('index.html', () => {
     expect(page).toContain('Il top 1% di chi fa software')
     expect(page.match(/top 1%/g)).toHaveLength(1)
     expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
-    const cards = section('aziende').match(/<article[\s\S]*?<\/article>/g) ?? []
+    const cards = section('companies').match(/<article[\s\S]*?<\/article>/g) ?? []
     expect(cards).toHaveLength(3)
     for (const [name, price] of [
       ['Team guidato', 'Pensiamo a tutto noi, prezzo su misura.'],
@@ -301,8 +301,8 @@ describe('index.html', () => {
       const card = cards.find((c) => c.includes(`<h3>${name}</h3>`)) ?? ''
       expect(card, name).toContain(`<p class="price">${price}</p>`)
     }
-    expect(section('aziende')).toContain('Ricerca continua: apri una posizione')
-    expect(section('aziende')).not.toContain('<h3>Ricerca</h3>')
+    expect(section('companies')).toContain('Ricerca continua: apri una posizione')
+    expect(section('companies')).not.toContain('<h3>Ricerca</h3>')
     // Seven roles, and the line that keeps the door open for an eighth.
     expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
     expect(page).toContain('Candidati lo stesso')
@@ -325,7 +325,7 @@ describe('index.html', () => {
     // of the page outside the client quotes (REB-686).
     expect(faq).toContain('Con Team guidato, due o tre nomi giusti entro 48 ore.')
     expect(faq).toContain("Con Team guidato c'è un CTO di rebase dentro dal primo giorno")
-    expect(section('aziende')).toContain('entro 48 ore ti portiamo due o tre')
+    expect(section('companies')).toContain('entro 48 ore ti portiamo due o tre')
     expect(page.replace(/<figure class="testimonial"[\s\S]*?<\/figure>/g, '')).not.toMatch(/sette giorni|7 giorni|una settimana/i)
     // The two company doors under the services are hub links, so utm.js carries the
     // campaign into them like the hero's.
@@ -361,7 +361,7 @@ describe('index.html', () => {
   it('says who it is for, in the words that qualify a reader in fifteen seconds', () => {
     // The words are docs/design/positioning.md's (ORB-24): the roles by name, the
     // fiscal reality, the price.
-    for (const word of ['developer', 'ai engineer', 'fractional', 'forfettario', 'self-hosted', 'gratis', 'tariffa']) {
+    for (const word of ['developer', 'ai engineer', 'fractional', 'forfettario', 'self-hosted', 'gratis', 'rate']) {
       expect(page.toLowerCase()).toContain(word)
     }
     expect(page).toMatch(/\bCTO\b/)

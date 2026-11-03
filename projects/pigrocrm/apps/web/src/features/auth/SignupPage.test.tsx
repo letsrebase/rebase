@@ -32,11 +32,11 @@ import { SignupPage } from './SignupPage'
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
 
-const NOBODY = { membro: false, has_spaces: false }
-const MEMBER = { membro: true, has_spaces: false }
-const OWNER = { membro: true, has_spaces: true }
+const NOBODY = { member: false, has_spaces: false }
+const MEMBER = { member: true, has_spaces: false }
+const OWNER = { member: true, has_spaces: true }
 // A late answer for another address: a non-member, so landing it would drop the greeting.
-const OTHER = { membro: false, has_spaces: true }
+const OTHER = { member: false, has_spaces: true }
 
 /** `POST` answers by path: the member question, the link, the signup. */
 function answers(by: Record<string, unknown>) {
@@ -67,7 +67,7 @@ beforeEach(() => {
   POST.mockReset()
   navigate.mockReset()
   sessionStorage.clear()
-  GET.mockResolvedValue({ data: { slug: 'ada-lovelace', disponibile: true } })
+  GET.mockResolvedValue({ data: { slug: 'ada-lovelace', available: true } })
 })
 
 describe('the signup wizard', () => {
@@ -85,7 +85,7 @@ describe('the signup wizard', () => {
       () => expect(screen.getByRole('status')).toHaveTextContent(/\/ada-lovelace è libero/),
       PROBE_TIMEOUT,
     )
-    expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
+    expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/available', {
       params: { path: { slug: 'ada-lovelace' } },
     })
     expect(screen.queryByLabelText('Password')).toBeNull()
@@ -149,7 +149,7 @@ describe('the signup wizard', () => {
     await user.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', membro: true },
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', member: true },
       }),
     )
     await waitFor(() => expect(go).toHaveBeenCalledWith('/ada-lovelace/app/'))
@@ -252,7 +252,7 @@ describe('the signup wizard', () => {
     await user.click(button)
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', membro: false },
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', member: false },
       }),
     )
   })
@@ -284,7 +284,7 @@ describe('the signup wizard', () => {
     await user.click(button)
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', membro: false },
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', member: false },
       }),
     )
   })
@@ -303,7 +303,7 @@ describe('the signup wizard', () => {
     const slug = screen.getByLabelText('Indirizzo dello spazio')
     await waitFor(
       () =>
-        expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
+        expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/available', {
           params: { path: { slug: 'alpha' } },
         }),
       PROBE_TIMEOUT,
@@ -312,19 +312,19 @@ describe('the signup wizard', () => {
     await user.type(slug, 'beta')
     await waitFor(
       () =>
-        expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
+        expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/available', {
           params: { path: { slug: 'beta' } },
         }),
       PROBE_TIMEOUT,
     )
     // The newer probe (beta) answers first.
-    resolveBeta({ data: { slug: 'beta', disponibile: true }, response: { status: 200 } })
+    resolveBeta({ data: { slug: 'beta', available: true }, response: { status: 200 } })
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/\/beta è libero/))
     // The older probe (alpha) answers late, for a slug that is no longer current: it
     // must not overwrite beta's already-landed answer with its own.
     await act(async () => {
       resolveAlpha({
-        data: { slug: 'alpha', disponibile: false, motivo: 'riservato' },
+        data: { slug: 'alpha', available: false, reason: 'riservato' },
         response: { status: 200 },
       })
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -382,7 +382,7 @@ describe('the fast path (REB-488)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', membro: true },
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', member: true },
       }),
     )
     await waitFor(() => expect(go).toHaveBeenCalledWith('/ada-lovelace/app/'))

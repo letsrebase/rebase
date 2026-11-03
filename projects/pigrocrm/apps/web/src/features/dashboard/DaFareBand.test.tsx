@@ -3,8 +3,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import type { Attivita } from '@/features/calendar/queries'
-import { useOverdueCount } from '@/features/attivita/queries'
+import type { Task } from '@/features/calendar/queries'
+import { useOverdueCount } from '@/features/tasks/queries'
 import { BAND_ROWS, DaFareBand } from './DaFareBand'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -17,7 +17,7 @@ const ME = '33333333-3333-7333-8333-333333333333'
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Giulia Demo', ruolo: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, nome: 'Giulia Demo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -38,21 +38,21 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-function row(over: Partial<Attivita>): Attivita {
+function row(over: Partial<Task>): Task {
   return {
     id: 'a',
-    titolo: 'x',
+    title: 'x',
     note: null,
-    scadenza: null,
-    stato: 'aperta',
-    completata_il: null,
-    assegnata_a: ME,
+    due_date: null,
+    status: 'open',
+    completed_at: null,
+    assigned_to: ME,
     customer_id: null,
     person_id: null,
     deal_id: null,
     invoice_id: null,
-    origine: 'manuale',
-    regola: null,
+    origin: 'manual',
+    rule: null,
     custom_fields: {},
     created_at: '2026-10-01T00:00:00Z',
     updated_at: '2026-10-01T00:00:00Z',
@@ -64,37 +64,37 @@ function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
 }
 
-interface Gruppo {
-  totale: number
-  items: Attivita[]
+interface Group {
+  total: number
+  items: Task[]
 }
 
-const gruppo = (items: Attivita[], totale = items.length): Gruppo => ({ totale, items })
+const group = (items: Task[], total = items.length): Group => ({ total, items })
 
 /** The server's panel, held in a variable so completing a row can take it out. */
 let panel: {
-  oggi: string
-  in_ritardo: Gruppo
-  scadono_oggi: Gruppo
-  prossimi_sette_giorni: Gruppo
-  senza_scadenza: Gruppo
+  today: string
+  overdue: Group
+  today_due: Group
+  next_seven_days: Group
+  without_due_date: Group
 }
 
 function serve() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
-    if (path === '/api/activities/oggi') return ok(panel)
-    if (path === '/api/users') return ok([{ id: ME, nome: 'Giulia Demo', attivo: true }])
+    if (path === '/api/activities/today') return ok(panel)
+    if (path === '/api/users') return ok([{ id: ME, nome: 'Giulia Demo', active: true }])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
-  vi.mocked(api.POST).mockImplementation(((path: string, options: { params: { path: { attivita_id: string } } }) => {
-    if (path === '/api/activities/{attivita_id}/complete') {
-      const id = options.params.path.attivita_id
+  vi.mocked(api.POST).mockImplementation(((path: string, options: { params: { path: { task_id: string } } }) => {
+    if (path === '/api/activities/{task_id}/complete') {
+      const id = options.params.path.task_id
       panel = {
         ...panel,
-        in_ritardo: gruppo(panel.in_ritardo.items.filter((item) => item.id !== id)),
-        scadono_oggi: gruppo(panel.scadono_oggi.items.filter((item) => item.id !== id)),
+        overdue: group(panel.overdue.items.filter((item) => item.id !== id)),
+        today_due: group(panel.today_due.items.filter((item) => item.id !== id)),
       }
-      return ok(row({ id, stato: 'completata' }))
+      return ok(row({ id, status: 'completed' }))
     }
     throw new Error(`unexpected POST ${path}`)
   }) as never)
@@ -102,7 +102,7 @@ function serve() {
 
 /** The sidebar reads the same panel for its overdue count; it must move with the band. */
 function Count() {
-  return <span data-testid="count">{useOverdueCount() ?? 'nessuno'}</span>
+  return <span data-testid="count">{useOverdueCount() ?? 'none'}</span>
 }
 
 function renderBand() {
@@ -119,14 +119,14 @@ beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   panel = {
-    oggi: '2026-10-26',
-    in_ritardo: gruppo([
-      row({ id: 'late-1', titolo: 'Sollecitare Rossi', scadenza: '2026-10-20' }),
-      row({ id: 'late-2', titolo: 'Inviare il preventivo', scadenza: '2026-10-25' }),
+    today: '2026-10-26',
+    overdue: group([
+      row({ id: 'late-1', title: 'Sollecitare Rossi', due_date: '2026-10-20' }),
+      row({ id: 'late-2', title: 'Inviare il preventivo', due_date: '2026-10-25' }),
     ]),
-    scadono_oggi: gruppo([row({ id: 'today', titolo: 'Telefonare a Bianchi', scadenza: '2026-10-26' })]),
-    prossimi_sette_giorni: gruppo([row({ id: 'soon', titolo: 'Preventivo Acme', scadenza: '2026-10-28' })]),
-    senza_scadenza: gruppo([row({ id: 'undated', titolo: 'Chiedere il codice SDI' })]),
+    today_due: group([row({ id: 'today', title: 'Telefonare a Bianchi', due_date: '2026-10-26' })]),
+    next_seven_days: group([row({ id: 'soon', title: 'Preventivo Acme', due_date: '2026-10-28' })]),
+    without_due_date: group([row({ id: 'undated', title: 'Chiedere il codice SDI' })]),
   }
   serve()
 })
@@ -162,13 +162,13 @@ describe('DaFareBand', () => {
     renderBand()
     await screen.findByText('Sollecitare Rossi')
 
-    expect(api.GET).toHaveBeenCalledWith('/api/activities/oggi', {
-      params: { query: { assegnata_a: ME, anche_non_assegnate: true, limit: BAND_ROWS } },
+    expect(api.GET).toHaveBeenCalledWith('/api/activities/today', {
+      params: { query: { assigned_to: ME, include_unassigned: true, limit: BAND_ROWS } },
     })
   })
 
   it('names only the section that has something', async () => {
-    panel.in_ritardo = gruppo([])
+    panel.overdue = group([])
     renderBand()
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Da fare: 1 oggi' }),
@@ -179,15 +179,15 @@ describe('DaFareBand', () => {
     renderBand()
     const link = await screen.findByRole('link', { name: 'Tutte le attività' })
     expect(link).toHaveAttribute('href', '/app/activities')
-    expect(link).toHaveAttribute('data-search', JSON.stringify({ vista: 'tutte' }))
+    expect(link).toHaveAttribute('data-search', JSON.stringify({ view: 'all' }))
     // Nothing is left out here, so there is nothing to count.
     expect(screen.queryByText(/e altre/)).not.toBeInTheDocument()
   })
 
   it('stops at five rows and says how many more there are, counting what the server did not send', async () => {
-    panel.in_ritardo = gruppo(
+    panel.overdue = group(
       Array.from({ length: 5 }, (_, index) =>
-        row({ id: `late-${index}`, titolo: `In ritardo ${index}`, scadenza: '2026-10-20' }),
+        row({ id: `late-${index}`, title: `In ritardo ${index}`, due_date: '2026-10-20' }),
       ),
       12,
     )
@@ -203,8 +203,8 @@ describe('DaFareBand', () => {
   })
 
   it('is one line, and not a card, when nothing is late or due today', async () => {
-    panel.in_ritardo = gruppo([])
-    panel.scadono_oggi = gruppo([])
+    panel.overdue = group([])
+    panel.today_due = group([])
     renderBand()
 
     const line = await screen.findByText('Niente in ritardo né in scadenza oggi.')
@@ -223,8 +223,8 @@ describe('DaFareBand', () => {
     await userEvent.click(within(item).getByRole('button', { name: 'Fatto' }))
 
     await waitFor(() => expect(screen.queryByText('Sollecitare Rossi')).not.toBeInTheDocument())
-    expect(api.POST).toHaveBeenCalledWith('/api/activities/{attivita_id}/complete', {
-      params: { path: { attivita_id: 'late-1' } },
+    expect(api.POST).toHaveBeenCalledWith('/api/activities/{task_id}/complete', {
+      params: { path: { task_id: 'late-1' } },
     })
     // The counts in the heading follow the refetch.
     expect(
@@ -234,7 +234,7 @@ describe('DaFareBand', () => {
   })
 
   it('turns into the one line when the last row is done', async () => {
-    panel.in_ritardo = gruppo([])
+    panel.overdue = group([])
     renderBand()
     const item = (await screen.findByText('Telefonare a Bianchi')).closest('li')!
     await userEvent.click(within(item).getByRole('button', { name: 'Fatto' }))

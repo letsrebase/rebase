@@ -46,7 +46,7 @@ def owner_backfill(
         print(f"{slug}: saltato ({type(exc).__name__})", file=sys.stderr)
         return 1
 
-    label = {"customer": "cliente", "deal": "deal"}
+    label = {"customer": "customer", "deal": "deal"}
     for assignment in plan.assignments:
         print(f"{slug}: {label[assignment.entity]} «{assignment.label}» -> {assignment.owner_name}")
     for listed in plan.listed:

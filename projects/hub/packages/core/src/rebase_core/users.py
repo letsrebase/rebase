@@ -60,7 +60,7 @@ LINKEDIN_TAKEN = (
 )
 ADMIN_LIST_LIMIT_DEFAULT = 100
 ADMIN_LIST_LIMIT_MAX = 500
-_ADMIN_SEARCH_COLUMNS = (User.nome, User.cognome, User.email)
+_ADMIN_SEARCH_COLUMNS = (User.nome, User.last_name, User.email)
 _LINK_REQUEST_THROTTLE_SECONDS = 60
 
 
@@ -158,29 +158,29 @@ class UserService:
         self,
         email: str,
         nome: str = "",
-        cognome: str = "",
+        last_name: str = "",
         linkedin_url: str | None = None,
-        telefono: str | None = None,
+        phone: str | None = None,
     ) -> User:
         """The `users` row for this address, made on the spot when none exists yet: one
         row per lowercased email, never two for a repeat application or request racing
         itself, the same guard `Freelancer.apply` already keeps for its own table.
-        `nome`/`cognome`/`linkedin_url` are left exactly as they were found on a
-        repeat call, never overwritten by a later request's own answer. `telefono`
+        `nome`/`last_name`/`linkedin_url` are left exactly as they were found on a
+        repeat call, never overwritten by a later request's own answer. `phone`
         (REB-380) is different: a `users` row can predate it entirely (a freelancer
         application never asked for one, and it did not exist before migration 0016),
         so a still-`None` phone number is backfilled from whichever call first
         supplies one -- "leave as found" here means "never overwrite a real answer,"
         not "never touch a blank one." Left uncommitted on purpose: every caller of
         this method commits its own row right after (`CompanyService.request`, the
-        only caller that ever passes a real `telefono`), so the backfill lands in the
+        only caller that ever passes a real `phone`), so the backfill lands in the
         same transaction as whatever the caller was doing, atomically -- committing it
         here would persist the phone number even if the caller's own insert then
         failed."""
         row = self.find_person(email, linkedin_url)
         if row is not None:
-            if telefono is not None and row.telefono is None:
-                row.telefono = telefono
+            if phone is not None and row.phone is None:
+                row.phone = phone
             return row
         # A profile somebody else holds (a user with no card, see `find_person`) is not
         # written on a second row: the index would refuse it, and it is theirs.
@@ -188,9 +188,9 @@ class UserService:
         row = User(
             email=email.strip().lower(),
             nome=nome,
-            cognome=cognome,
+            last_name=last_name,
             linkedin_url=None if taken else linkedin_url,
-            telefono=telefono,
+            phone=phone,
         )
         self.session.add(row)
         try:
@@ -257,12 +257,12 @@ class UserService:
         self,
         email: str,
         nome: str | None = None,
-        cognome: str | None = None,
+        last_name: str | None = None,
         *,
         admin_id: UUID,
     ) -> tuple[User, bool]:
         """Whatever `users` row already answers to this address is promoted with one
-        click and no form; an address with none yet needs `nome`/`cognome` to create a
+        click and no form; an address with none yet needs `nome`/`last_name` to create a
         bare row first, no freelancer card invented for it (§1, Nav and Amministratori).
         The second element is whether a row was created, so the caller knows to mail a
         fresh promotion the same link everyone else gets.
@@ -276,12 +276,12 @@ class UserService:
         created = row is None
         was = None if row is None else row.role
         if row is None:
-            nome, cognome = (nome or "").strip(), (cognome or "").strip()
-            if not nome or not cognome:
+            nome, last_name = (nome or "").strip(), (last_name or "").strip()
+            if not nome or not last_name:
                 raise ValidationFailed(
                     ENTITY, "nome", "servono nome e cognome per un indirizzo nuovo"
                 )
-            row = User(email=email.strip().lower(), nome=nome, cognome=cognome)
+            row = User(email=email.strip().lower(), nome=nome, last_name=last_name)
             self.session.add(row)
         row.role = "admin"
         if was != "admin":
@@ -326,22 +326,22 @@ class UserService:
         return row
 
     def set_role(
-        self, email: str, role: str, nome: str = "", cognome: str = ""
+        self, email: str, role: str, nome: str = "", last_name: str = ""
     ) -> tuple[User, bool]:
         """`rebase setrole`'s own shape: a minimal row created when none exists
-        (`nome`/`cognome` required for it), the role set either way."""
+        (`nome`/`last_name` required for it), the role set either way."""
         if role not in USER_ROLES:
             raise ValidationFailed(ENTITY, "role", f"uno fra {', '.join(USER_ROLES)}")
         row = self.by_email(email)
         self._refuse_merged(row)
         created = row is None
         if row is None:
-            nome, cognome = nome.strip(), cognome.strip()
-            if not nome or not cognome:
+            nome, last_name = nome.strip(), last_name.strip()
+            if not nome or not last_name:
                 raise ValidationFailed(
                     ENTITY, "nome", "servono nome e cognome per un indirizzo nuovo"
                 )
-            row = User(email=email.strip().lower(), nome=nome, cognome=cognome)
+            row = User(email=email.strip().lower(), nome=nome, last_name=last_name)
             self.session.add(row)
         row.role = role
         self.session.commit()
@@ -435,7 +435,7 @@ class UserService:
             )
         )
         self.session.commit()
-        link = f"{settings.hub_url.rstrip('/')}/entra?t={raw}"
+        link = f"{settings.hub_url.rstrip('/')}/verify?t={raw}"
         return magic_link_mail(typed.email, link, settings.magic_link_minutes, note)
 
     def _asked_today(self, user_id: UUID, now: datetime) -> int:

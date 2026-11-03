@@ -39,11 +39,11 @@ def owner(mcp_engine: Engine) -> Iterator[Owner]:
     factory = session_factory(mcp_engine)
     with factory() as session:
         user = UserService(session).create(
-            UserCreate(email=EMAIL, password="supersegreta1", nome="Stdio", ruolo="collaboratore"),
+            UserCreate(email=EMAIL, password="supersegreta1", nome="Stdio", role="collaborator"),
             Actor.system(),
         )
         _, raw = PatService(session, settings=Settings(_env_file=None)).create(  # type: ignore[call-arg]
-            "prova", Actor(id=user.id, type="user", role="collaboratore")
+            "prova", Actor(id=user.id, type="user", role="collaborator")
         )
         session.commit()
     try:
@@ -65,7 +65,7 @@ def test_the_actor_is_resolved_inside_a_scope_and_outside_one(owner: Owner) -> N
     # Outside any tool's scope, where the analytics' identity callback runs: a session
     # of its own, and an answer rather than a refusal.
     outside = provider()
-    assert outside.id == owner.user_id and outside.role == "collaboratore"
+    assert outside.id == owner.user_id and outside.role == "collaborator"
     with sessions.scope():
         inside = provider()
         # Once per call: the guard's read and a tool's read are the same actor, and the
@@ -79,9 +79,9 @@ def test_the_actor_is_resolved_inside_a_scope_and_outside_one(owner: Owner) -> N
 def test_a_role_changed_meanwhile_reaches_the_next_call(owner: Owner) -> None:
     sessions = ScopedSessionProvider(session_factory(owner.engine))
     provider = TokenActorProvider(sessions, owner.raw)
-    assert provider().role == "collaboratore"
+    assert provider().role == "collaborator"
     with session_factory(owner.engine)() as session:
-        UserService(session).update(owner.user_id, UserUpdate(ruolo="readonly"), Actor.system())
+        UserService(session).update(owner.user_id, UserUpdate(role="readonly"), Actor.system())
     assert provider().role == "readonly"
 
 
@@ -96,8 +96,8 @@ async def test_a_token_refused_meanwhile_is_the_tool_s_answer_not_a_crash(
         Settings(_env_file=None),  # type: ignore[call-arg]
     )
     async with Client(server) as client:
-        fine = await client.call_tool("describe_schema", {"entity_type": "customer"})
-        assert not fine.is_error
+        end = await client.call_tool("describe_schema", {"entity_type": "customer"})
+        assert not end.is_error
         with session_factory(owner.engine)() as session:
             row = session.execute(
                 select(PersonalAccessToken).where(PersonalAccessToken.user_id == owner.user_id)

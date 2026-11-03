@@ -10,24 +10,24 @@ function values(native: Record<string, unknown>): TimeEntryFormValues {
 describe('toRequestBody', () => {
   it('clears a rate with null and a description with an empty string', () => {
     // The two spellings task 4B-1 made distinct, on the one form that carries both
-    // kinds of column. `tariffa_applicata` is a `numeric` -- `""` is not a decimal, so
+    // kinds of column. `applied_rate` is a `numeric` -- `""` is not a decimal, so
     // before this it came back as a 422 and the rate the user was trying to remove
     // stayed in force. `null` clears it, and `TimeEntryService.update` records the
     // clearing as `origine = "assente"` rather than silently re-resolving the deal's
     // rate underneath it.
-    const initial = values({ descrizione: 'Analisi', tariffa_applicata: '80.000000' })
-    const body = toRequestBody(values({ descrizione: '', tariffa_applicata: '' }), {
+    const initial = values({ description: 'Analisi', applied_rate: '80.000000' })
+    const body = toRequestBody(values({ description: '', applied_rate: '' }), {
       initial,
       locked: false,
       isRenderedCustomKey: noArchivedKeys,
     })
 
-    expect(body).toEqual({ descrizione: '', tariffa_applicata: null, custom_fields: {} })
+    expect(body).toEqual({ description: '', applied_rate: null, custom_fields: {} })
   })
 
   it('says nothing about a column that was blank before and is blank now', () => {
-    const body = toRequestBody(values({ tariffa_applicata: '' }), {
-      initial: values({ tariffa_applicata: null }),
+    const body = toRequestBody(values({ applied_rate: '' }), {
+      initial: values({ applied_rate: null }),
       locked: false,
       isRenderedCustomKey: noArchivedKeys,
     })

@@ -1,7 +1,7 @@
 """The three trigger functions spec §12 ports, verified against mastro's own
 migrations (`0012_work_unit_state_machine.sql`, widened by
 `0013_worked_without_approval.sql`, and `0011_approval_constraints.sql`): the
-state-machine enforcement (with the automatic `lavorato_senza_approvazione` redirect
+state-machine enforcement (with the automatic `worked_without_approval` redirect
 and recovery), the append-only transition log, and the generic immutability guard
 `approvals` and `work_unit_transitions` both attach to.
 
@@ -57,7 +57,7 @@ CREATE OR REPLACE FUNCTION work_unit_enforce_state_machine() RETURNS TRIGGER AS 
 DECLARE
     v_requires_approval boolean;
     -- What the caller actually asked for, captured before anything below rewrites
-    -- `NEW.stato` -- the edge check runs against this, not against the possibly
+    -- `NEW.status` -- the edge check runs against this, not against the possibly
     -- redirected value, so a state that was never allowed to reach 'lavorato' at
     -- all cannot sneak into 'lavorato_senza_approvazione' by asking for the
     -- unapproved write instead.

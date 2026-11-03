@@ -12,7 +12,7 @@ ADMIN_EMAIL = "ivan@rebase.it"
 
 
 def an_admin(
-    session: Session, email: str = ADMIN_EMAIL, nome: str = "Ivan", cognome: str = ""
+    session: Session, email: str = ADMIN_EMAIL, nome: str = "Ivan", last_name: str = ""
 ) -> UUID:
     """The admin with this address, created (and committed) on first call. The one place a
     test makes an admin: another address, name or surname is a parameter, not another
@@ -20,7 +20,7 @@ def an_admin(
     existing = session.scalar(select(User).where(User.email == email))
     if existing is not None:
         return existing.id
-    admin = User(email=email, nome=nome, cognome=cognome, role="admin")
+    admin = User(email=email, nome=nome, last_name=last_name, role="admin")
     session.add(admin)
     session.commit()
     return admin.id

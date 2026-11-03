@@ -6,7 +6,7 @@ with: the fields of a framework agreement and of a letter as they stand today
 (`data_for_sending`), and the framework agreement written for a freelancer who has none
 (`write_framework`, one write for its two callers, REB-406).
 
-The company's `budget_giornaliero` is read nowhere in this module: what rebase agrees with
+The company's `daily_budget` is read nowhere in this module: what rebase agrees with
 the client never reaches a freelancer's document (spec § 1h).
 """
 
@@ -21,21 +21,21 @@ from rebase_core.contracts.fields import ContractFailed, Value, italian_date, me
 from rebase_core.contracts.render import Renderer, company_defaults
 from rebase_core.framework import rome_today, signed_on
 from rebase_core.match_rows import (
-    QUADRO,
+    FRAMEWORK,
     fiscal_row,
     freelancer_row,
     full_name,
 )
 from rebase_core.models import ContractDocument, FreelancerFiscal, User
 from rebase_core.referrals import ReferralService
-from rebase_core.regimes import PARTITA_IVA, text_name
+from rebase_core.regimes import VAT_REGISTERED, text_name
 
 SIGNED_ELECTRONICALLY = "firmato elettronicamente"
-PEC_MISSING = "non indicata"
+CERTIFIED_EMAIL_MISSING = "non indicata"
 # The common case: a party nobody referred prints this instead of a blank, hand-fillable
-# line -- `PEC_MISSING`'s own convention for a fact that is usually absent, not a
+# line -- `CERTIFIED_EMAIL_MISSING`'s own convention for a fact that is usually absent, not a
 # signature waiting to happen.
-SEGNALATO_NONE = "nessuno"
+FLAGGED_NONE = "nessuno"
 
 
 def issued_by_rebase(day: date) -> str:
@@ -84,20 +84,20 @@ class MatchDocuments:
         (REB-687), so only the ordinary one gets the field."""
         party: dict[str, Value] = {
             "professionista-nome": full_name(user),
-            "professionista-cf": fiscal.codice_fiscale,
-            "professionista-domicilio": fiscal.domicilio,
+            "professionista-cf": fiscal.tax_code,
+            "professionista-domicilio": fiscal.domicile,
             "professionista-email": user.email,
-            "professionista-pec": fiscal.pec or PEC_MISSING,
+            "professionista-pec": fiscal.certified_email or CERTIFIED_EMAIL_MISSING,
         }
-        if regime == PARTITA_IVA:
-            party["professionista-piva"] = fiscal.partita_iva
+        if regime == VAT_REGISTERED:
+            party["professionista-piva"] = fiscal.vat_number
         return {
             **self.rebase_fields(),
             **party,
             "segnalato-da": ReferralService(self.session).referrer_name(
                 "freelancer", fiscal.freelancer_id
             )
-            or SEGNALATO_NONE,
+            or FLAGGED_NONE,
             **self.signing_fields(today),
         }
 
@@ -107,13 +107,13 @@ class MatchDocuments:
         """A letter's own fields that must always be today's, not the draft's: the
         framework agreement's signature date, the freelancer's name, and the identifier
         the letter prints, the partita IVA on an ordinary letter and the codice fiscale on
-        an occasional one (REB-687). Shared by `_lettera_data` (`create`) and
+        an occasional one (REB-687). Shared by `_letter_date` (`create`) and
         `data_for_sending` (a send), so a field added to one cannot print stale data on
         the other (REB-406)."""
         identifier: dict[str, Value] = (
-            {"professionista-piva": fiscal.partita_iva}
-            if regime == PARTITA_IVA
-            else {"professionista-cf": fiscal.codice_fiscale}
+            {"professionista-piva": fiscal.vat_number}
+            if regime == VAT_REGISTERED
+            else {"professionista-cf": fiscal.tax_code}
         )
         return {
             "data-contratto-quadro": italian_date(signed) if signed is not None else None,
@@ -126,23 +126,23 @@ class MatchDocuments:
         user: User,
         fiscal: FreelancerFiscal,
         data: MatchCreate,
-        numero: str | None,
+        number: str | None,
         active: ContractDocument | None,
         today: date,
     ) -> dict[str, Value]:
         signed = signed_on(active) if active is not None else None
         return {
             **self.rebase_fields(),
-            **data.lettera.to_fields(),
-            "numero": numero,
+            **data.letter.to_fields(),
+            "number": number,
             **self.letter_party_fields(user, fiscal, signed, data.regime),
-            "cliente-ragione-sociale": data.cliente.cliente_ragione_sociale,
-            "cliente-piva": data.cliente.cliente_piva,
-            "cliente-sede": data.cliente.cliente_sede,
+            "cliente-ragione-sociale": data.customer.customer_legal_name,
+            "cliente-piva": data.customer.customer_vat_number,
+            "cliente-sede": data.customer.customer_registered_office,
             "azienda-segnalata-da": ReferralService(self.session).referrer_name(
                 "company", data.company_id
             )
-            or SEGNALATO_NONE,
+            or FLAGGED_NONE,
             **self.signing_fields(today),
         }
 
@@ -154,8 +154,8 @@ class MatchDocuments:
         data: dict[str, Value],
         freelancer_id: UUID,
         match_id: UUID | None,
-        numero: str | None,
-        stato: str,
+        number: str | None,
+        status: str,
         admin_id: UUID,
     ) -> ContractDocument:
         rendered = renderer.render(text_name(kind, regime), data)
@@ -164,12 +164,12 @@ class MatchDocuments:
             regime=regime,
             freelancer_id=freelancer_id,
             match_id=match_id,
-            numero=numero,
+            number=number,
             text_version=rendered.version,
-            testo_bozza=rendered.draft,
+            draft_text=rendered.draft,
             data=dict(data),
             pdf=rendered.pdf,
-            stato=stato,
+            status=status,
             created_by=admin_id,
         )
 
@@ -183,7 +183,7 @@ class MatchDocuments:
         agreement was signed, in Rome."""
         freelancer, user = freelancer_row(self.session, document.freelancer_id)
         fiscal = fiscal_row(self.session, freelancer.id)
-        if document.kind == QUADRO:
+        if document.kind == FRAMEWORK:
             return self.quadro_data(user, fiscal, today, document.regime)
         signed = signed_on(framework) if framework is not None else None
         return {
@@ -204,13 +204,13 @@ class MatchDocuments:
         fiscal = fiscal_row(self.session, freelancer.id)
         document = self.document(
             renderer,
-            QUADRO,
+            FRAMEWORK,
             regime,
             self.quadro_data(user, fiscal, self.today(), regime),
             freelancer.id,
             None,
             None,
-            "generato",
+            "generated",
             admin_id,
         )
         self.session.add(document)

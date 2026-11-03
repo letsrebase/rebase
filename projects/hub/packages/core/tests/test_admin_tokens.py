@@ -15,7 +15,7 @@ from rebase_core.models import User
 
 @pytest.fixture
 def ivan(hub_engine: Engine, hub_session: Session) -> Iterator[User]:
-    row = User(email="ivan@rebase.it", nome="Ivan", cognome="Fiore", role="admin")
+    row = User(email="ivan@rebase.it", nome="Ivan", last_name="Fiore", role="admin")
     hub_session.add(row)
     hub_session.commit()
     yield row
@@ -68,7 +68,7 @@ def test_every_failure_of_resolve_is_the_same_sentence(ivan: User, hub_session: 
 
 
 def test_a_demoted_owner_fails_a_resolve_the_same_way(ivan: User, hub_session: Session) -> None:
-    """Since REB-278 the owner's role, not only `attivo`, decides: a token minted while
+    """Since REB-278 the owner's role, not only `active`, decides: a token minted while
     the row was an admin must stop resolving the moment it is demoted."""
     tokens = AdminTokenService(hub_session)
     _, raw = tokens.create(ivan.id, "Claude Code")

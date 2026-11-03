@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
-import { EntityAttivita } from '@/features/attivita/EntityAttivita'
+import { EntityTask } from '@/features/tasks/EntityTask'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -45,11 +45,11 @@ const EMPTY = '—'
  * dash, since a dash would read as "no terms" on a customer that does have a rule.
  */
 function paymentTerms(customer: Customer): string {
-  const fineMese = customer.pagamento_fine_mese ? ' fine mese' : ''
-  if (customer.giorni_pagamento === null || customer.giorni_pagamento === undefined) {
-    return `Dal profilo fiscale${fineMese ? `,${fineMese}` : ''}`
+  const endMonth = customer.payment_end_of_month ? ' fine mese' : ''
+  if (customer.payment_days === null || customer.payment_days === undefined) {
+    return `Dal profilo fiscale${endMonth ? `,${endMonth}` : ''}`
   }
-  return `${customer.giorni_pagamento} giorni data fattura${fineMese}`
+  return `${customer.payment_days} giorni data fattura${endMonth}`
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -148,7 +148,7 @@ export function CustomerDetail() {
     // here) -- a plain confirm is a cheap guard against a misclick, not a
     // client-side re-implementation of any server rule.
     const confirmed = window.confirm(
-      `Archiviare ${customer.ragione_sociale}? Il cliente non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
+      `Archiviare ${customer.legal_name}? Il cliente non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
     )
     if (!confirmed) return
 
@@ -178,7 +178,7 @@ export function CustomerDetail() {
     <>
       <EntityDetailLayout
         icon={Building2}
-        title={customer.ragione_sociale}
+        title={customer.legal_name}
         subtitle="Cliente"
         entityType="customer"
         entityId={customerId}
@@ -192,13 +192,13 @@ export function CustomerDetail() {
         }
         contracts={<ContractsTab customerId={customerId} />}
         economics={<EconomicsTab customerId={customerId} />}
-        attivita={<EntityAttivita link={{ kind: 'customer', id: customerId }} />}
+        attivita={<EntityTask link={{ kind: 'customer', id: customerId }} />}
         emails={
           gmailConfigured ? (
             <EmailTab
               entityType="customer"
               entityId={customerId}
-              domainSource={`${customer.sito_web ?? ''}|${customer.email ?? ''}`}
+              domainSource={`${customer.website ?? ''}|${customer.email ?? ''}`}
             />
           ) : undefined
         }
@@ -224,28 +224,28 @@ export function CustomerDetail() {
         }
         overview={
           <div className="grid gap-6 lg:grid-cols-2">
-            {customer.stato && (
+            {customer.status && (
               <div className="lg:col-span-2">
-                <Badge variant="secondary">{customer.stato}</Badge>
+                <Badge variant="secondary">{customer.status}</Badge>
               </div>
             )}
 
             <Card>
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Dati fiscali</h2>
-                <Row label="P.IVA" value={displayNative(customer.partita_iva)} />
-                <Row label="Codice fiscale" value={displayNative(customer.codice_fiscale)} />
-                <Row label="Codice SDI" value={displayNative(customer.codice_sdi)} />
-                <Row label="PEC" value={displayNative(customer.pec)} />
+                <Row label="P.IVA" value={displayNative(customer.vat_number)} />
+                <Row label="Codice fiscale" value={displayNative(customer.tax_code)} />
+                <Row label="Codice SDI" value={displayNative(customer.sdi_code)} />
+                <Row label="PEC" value={displayNative(customer.certified_email)} />
                 <Row
                   label="Indirizzo"
                   value={
-                    customer.indirizzo
-                      ? `${customer.indirizzo}, ${customer.cap ?? ''} ${customer.comune ?? ''} (${customer.provincia ?? ''})`
+                    customer.address
+                      ? `${customer.address}, ${customer.cap ?? ''} ${customer.city ?? ''} (${customer.province ?? ''})`
                       : EMPTY
                   }
                 />
-                <Row label="Nazione" value={displayNative(customer.nazione)} />
+                <Row label="Nazione" value={displayNative(customer.country)} />
                 <Row label="Termini di pagamento" value={paymentTerms(customer)} />
               </CardContent>
             </Card>
@@ -254,8 +254,8 @@ export function CustomerDetail() {
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Contatti</h2>
                 <Row label="Email" value={displayNative(customer.email)} />
-                <Row label="Telefono" value={displayNative(customer.telefono)} />
-                <Row label="Sito web" value={displayNative(customer.sito_web)} />
+                <Row label="Telefono" value={displayNative(customer.phone)} />
+                <Row label="Sito web" value={displayNative(customer.website)} />
                 <Row label="Responsabile" value={owners.nameOf(customer.owner_id) ?? EMPTY} />
               </CardContent>
             </Card>
@@ -291,7 +291,7 @@ export function CustomerDetail() {
                   renderItem={(person) => (
                     <Row
                       key={person.id}
-                      label={[person.nome, person.cognome].filter(Boolean).join(' ')}
+                      label={[person.nome, person.last_name].filter(Boolean).join(' ')}
                       value={displayNative(person.email)}
                     />
                   )}
@@ -305,7 +305,7 @@ export function CustomerDetail() {
                   query={deals}
                   emptyMessage="Nessun deal collegato."
                   renderItem={(deal) => (
-                    <Row key={deal.id} label={deal.nome} value={formatCurrency(deal.valore_previsto)} />
+                    <Row key={deal.id} label={deal.nome} value={formatCurrency(deal.expected_value)} />
                   )}
                 />
               </CardContent>

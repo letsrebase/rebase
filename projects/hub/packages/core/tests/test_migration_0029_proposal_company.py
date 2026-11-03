@@ -50,7 +50,7 @@ def _grant(connection: Connection, user_id: str, company_id: str, admin_id: str,
 
 
 def _proposal(
-    connection: Connection, user_id: str | None, origine: str, age: str, errore: str | None = None
+    connection: Connection, user_id: str | None, origin: str, age: str, error: str | None = None
 ) -> str:
     return str(
         connection.execute(
@@ -60,7 +60,7 @@ def _proposal(
                 "errore, created_at) VALUES (gen_random_uuid(), 'd', 'r', '{}', '[]', '{}', "
                 "'m', 0, 0, 0, :o, :u, :e, now() - CAST(:age AS interval)) RETURNING id"
             ),
-            {"o": origine, "u": user_id, "e": errore, "age": age},
+            {"o": origin, "u": user_id, "e": error, "age": age},
         ).scalar_one()
     )
 
@@ -88,7 +88,7 @@ def test_migration_0029_backfills_only_what_is_not_a_guess_and_runs_again() -> N
                 "before_grant": _proposal(connection, solo, "cloud", "3 days"),
                 "both": _proposal(connection, both, "cloud", "1 hour"),
                 "attempt": _proposal(connection, solo, "cloud", "1 hour", "llm_unavailable"),
-                "public": _proposal(connection, None, "pubblico", "1 hour"),
+                "public": _proposal(connection, None, "public", "1 hour"),
                 "admin": _proposal(connection, admin, "admin", "1 hour"),
             }
         for _ in range(2):  # a retried deploy runs the same revision again

@@ -40,12 +40,12 @@ export function CollectDialog({
   onOpenChange,
   onProblem,
 }: DialogProps & { payment: ReturnType<typeof useSetPaymentState> }) {
-  const [dataIncasso, setDataIncasso] = useState(() => toIsoDate(new Date()))
+  const [paymentDate, setPaymentDate] = useState(() => toIsoDate(new Date()))
 
   function onCollect() {
     onProblem(null)
     payment.mutate(
-      { stato_pagamento: 'incassato', data_incasso: dataIncasso },
+      { payment_status: 'paid', payment_date: paymentDate },
       {
         onSuccess: () => {
           toast.success('Incasso registrato')
@@ -75,15 +75,15 @@ export function CollectDialog({
             id="data-incasso"
             type="date"
             required
-            value={dataIncasso}
-            onChange={(event) => setDataIncasso(event.target.value)}
+            value={paymentDate}
+            onChange={(event) => setPaymentDate(event.target.value)}
           />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Chiudi
           </Button>
-          <Button onClick={onCollect} disabled={payment.isPending || dataIncasso === ''}>
+          <Button onClick={onCollect} disabled={payment.isPending || paymentDate === ''}>
             Registra incasso
           </Button>
         </DialogFooter>
@@ -98,11 +98,11 @@ export function TransmitDialog({
   onOpenChange,
   onProblem,
 }: DialogProps & { transmitted: ReturnType<typeof useMarkTransmitted> }) {
-  const [dataTrasmissione, setDataTrasmissione] = useState(() => toIsoDate(new Date()))
+  const [dateTransmission, setDateTransmission] = useState(() => toIsoDate(new Date()))
 
   function onTransmit() {
     onProblem(null)
-    transmitted.mutate(dataTrasmissione, {
+    transmitted.mutate(dateTransmission, {
       onSuccess: () => {
         toast.success('Trasmissione registrata')
         onOpenChange(false)
@@ -130,8 +130,8 @@ export function TransmitDialog({
             id="data-trasmissione"
             type="date"
             required
-            value={dataTrasmissione}
-            onChange={(event) => setDataTrasmissione(event.target.value)}
+            value={dateTransmission}
+            onChange={(event) => setDateTransmission(event.target.value)}
           />
         </div>
         <DialogFooter>
@@ -140,7 +140,7 @@ export function TransmitDialog({
           </Button>
           <Button
             onClick={onTransmit}
-            disabled={transmitted.isPending || dataTrasmissione === ''}
+            disabled={transmitted.isPending || dateTransmission === ''}
           >
             Segna trasmessa
           </Button>
@@ -156,12 +156,12 @@ export function AnnulDialog({
   onOpenChange,
   onProblem,
 }: DialogProps & { invoiceId: string }) {
-  const [motivo, setMotivo] = useState('')
+  const [reason, setReason] = useState('')
   const annul = useAnnulInvoice(invoiceId)
 
   function onAnnul() {
     onProblem(null)
-    annul.mutate(motivo, {
+    annul.mutate(reason, {
       onSuccess: () => {
         toast.success('Documento annullato. Il numero resta nel registro.')
         onOpenChange(false)
@@ -188,9 +188,9 @@ export function AnnulDialog({
           <Label htmlFor="motivo-annullamento">Motivo</Label>
           <Textarea
             id="motivo-annullamento"
-            value={motivo}
+            value={reason}
             rows={3}
-            onChange={(event) => setMotivo(event.target.value)}
+            onChange={(event) => setReason(event.target.value)}
           />
         </div>
         <DialogFooter>

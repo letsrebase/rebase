@@ -46,7 +46,7 @@ export interface CostFormProps {
   onSaved?: () => void
 }
 
-/** The picker's value for a shared expense: the body carries no `azienda_id`, or `null`
+/** The picker's value for a shared expense: the body carries no `legal_entity_id`, or `null`
  *  when clearing one, and a `Select` needs a non-empty string for the option. */
 const SHARED = 'condivisa'
 
@@ -150,11 +150,11 @@ export function CostForm({
   // «Azienda» only for a cost with no deal and from the second azienda on (REB-626, spec
   // §1.7): a cost on a deal is that deal's azienda's and the server would refuse another,
   // while a general expense is shared («Condivisa», `null`) unless one azienda owns it.
-  const azienda = useLegalEntity()
-  const aziendaId = (values.native.azienda_id as string | null | undefined) ?? SHARED
+  const legal_entity = useLegalEntity()
+  const legalEntityId = (values.native.legal_entity_id as string | null | undefined) ?? SHARED
   // Kept out of the flattened values, like the customer form does: a custom field a
-  // tenant named `azienda_id` would otherwise display the picker's id as its own value.
-  const { azienda_id: _pickedElsewhere, ...nativeForForm } = values.native
+  // tenant named `legal_entity_id` would otherwise display the picker's id as its own value.
+  const { legal_entity_id: _pickedElsewhere, ...nativeForForm } = values.native
   void _pickedElsewhere
 
   return (
@@ -188,17 +188,17 @@ export function CostForm({
           )}
         </div>
 
-        {dealId === undefined && azienda.several ? (
+        {dealId === undefined && legal_entity.several ? (
           <div className="space-y-2">
             <Label htmlFor="cost-azienda">Azienda</Label>
             <Select
-              value={aziendaId}
+              value={legalEntityId}
               // Straight into `native`, not through `change`, which would route a key a
               // tenant happened to define as a custom field into `custom`.
               onValueChange={(value) =>
                 setValues((previous) => ({
                   ...previous,
-                  native: { ...previous.native, azienda_id: value === SHARED ? null : value },
+                  native: { ...previous.native, legal_entity_id: value === SHARED ? null : value },
                 }))
               }
             >
@@ -207,14 +207,14 @@ export function CostForm({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={SHARED}>Condivisa</SelectItem>
-                {azienda.aziende.map((item) => (
+                {legal_entity.legal_entities.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
                     {item.nome}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {fieldError?.field === 'azienda_id' && (
+            {fieldError?.field === 'legal_entity_id' && (
               <p className="text-sm text-destructive">{fieldError.message}</p>
             )}
           </div>
@@ -231,7 +231,7 @@ export function CostForm({
           // inside `DynamicForm`, so it would render the message a second time as a
           // raw `category_id: ...` banner next to the line already shown above.
           problem={
-            fieldError?.field === 'category_id' || fieldError?.field === 'azienda_id'
+            fieldError?.field === 'category_id' || fieldError?.field === 'legal_entity_id'
               ? null
               : problem
           }

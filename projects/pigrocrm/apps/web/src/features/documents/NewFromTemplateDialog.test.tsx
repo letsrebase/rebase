@@ -10,10 +10,10 @@ import type { Template, TemplateDescription } from './queries'
 const TEMPLATE: Template = {
   id: 't-1',
   nome: 'Consulenza CTO',
-  tipo: 'offerta',
-  corpo_markdown: 'Oggetto: {{oggetto}}',
-  variabili_dichiarate: [],
-  attivo: true,
+  type: 'offer',
+  body_markdown: 'Oggetto: {{oggetto}}',
+  declared_variables: [],
+  active: true,
   created_at: '2026-08-10T09:00:00Z',
   updated_at: '2026-08-10T09:00:00Z',
 }
@@ -21,13 +21,13 @@ const TEMPLATE: Template = {
 const DESCRIPTION: TemplateDescription = {
   id: 't-1',
   nome: 'Consulenza CTO',
-  tipo: 'offerta',
-  variabili: [
-    { nome: 'oggetto', etichetta: 'Oggetto', tipo: 'text', obbligatoria: true, options: [] },
-    { nome: 'urgente', etichetta: 'Urgente', tipo: 'checkbox', obbligatoria: false, options: [] },
+  type: 'offer',
+  variables: [
+    { nome: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
+    { nome: 'urgent', label: 'Urgente', type: 'checkbox', required: false, options: [] },
   ],
-  percorsi_usati: [['oggetto'], ['cliente', 'ragione_sociale']],
-  variabili_non_usate: [],
+  used_journeys: [['subject'], ['customer', 'legal_name']],
+  variables_not_used: [],
 }
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -66,9 +66,9 @@ function routeGet(routes: Record<string, unknown>) {
 
 describe('variablesToFields', () => {
   it('maps a declared variable onto the FieldDefinition DynamicFieldRenderer expects', () => {
-    expect(variablesToFields(DESCRIPTION.variabili)).toEqual([
-      { key: 'oggetto', label: 'Oggetto', type: 'text', required: true, options: [] },
-      { key: 'urgente', label: 'Urgente', type: 'checkbox', required: false, options: [] },
+    expect(variablesToFields(DESCRIPTION.variables)).toEqual([
+      { key: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
+      { key: 'urgent', label: 'Urgente', type: 'checkbox', required: false, options: [] },
     ])
   })
 })
@@ -100,11 +100,11 @@ describe('NewFromTemplateDialog', () => {
       '/describe': DESCRIPTION,
       '/api/templates': { items: [TEMPLATE], next_cursor: null },
     })
-    let sentBody: { variabili: Record<string, unknown> } | undefined
+    let sentBody: { variables: Record<string, unknown> } | undefined
     mockPost.mockImplementation((path: unknown, options: unknown) => {
       if (String(path).includes('/preview')) return ok({ markdown: 'Oggetto: Advisory' })
       if (String(path).includes('/from-template')) {
-        sentBody = (options as { body: { variabili: Record<string, unknown> } }).body
+        sentBody = (options as { body: { variables: Record<string, unknown> } }).body
         return ok({ id: 'doc-1' })
       }
       return ok(undefined)
@@ -121,8 +121,8 @@ describe('NewFromTemplateDialog', () => {
       expect(sentBody).toBeDefined()
       // `false` is a value, never a blank: an unchecked box the user looked at is an
       // answer, and `mode="create"` is what makes DynamicForm seed it.
-      expect(sentBody?.variabili.urgente).toBe(false)
-      expect(sentBody?.variabili.oggetto).toBe('Advisory')
+      expect(sentBody?.variables.urgent).toBe(false)
+      expect(sentBody?.variables.subject).toBe('Advisory')
     })
   })
 
@@ -154,7 +154,7 @@ describe('NewFromTemplateDialog', () => {
             {
               code: 'validation_failed',
               detail: 'template.oggetto: variabile obbligatoria mancante',
-              field: 'oggetto',
+              field: 'subject',
               reason: 'variabile obbligatoria mancante: Oggetto',
             },
             422,

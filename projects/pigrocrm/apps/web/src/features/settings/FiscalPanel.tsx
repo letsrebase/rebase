@@ -2,8 +2,8 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { useFiscalProfile } from '@/features/invoices/queries'
 import { FiscalForm } from './FiscalForm'
 
-export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
-  const profile = useFiscalProfile(aziendaId)
+export function FiscalPanel({ legalEntityId }: { legalEntityId: string }) {
+  const profile = useFiscalProfile(legalEntityId)
   // `data` is `undefined` only before the first successful read: a 404 is `null`.
   const unreadable = profile.isError && profile.data === undefined
 
@@ -46,7 +46,7 @@ export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
         // row that arrived, which the form follows while untouched and adopts on
         // «Ricarica», never a remount that drops the draft. Two aziende without a
         // profile still get a form each.
-        <FiscalForm key={aziendaId} aziendaId={aziendaId} profile={profile.data ?? null} />
+        <FiscalForm key={legalEntityId} legalEntityId={legalEntityId} profile={profile.data ?? null} />
       )}
     </div>
   )

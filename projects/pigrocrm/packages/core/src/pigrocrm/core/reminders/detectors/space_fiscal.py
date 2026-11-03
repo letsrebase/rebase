@@ -3,7 +3,7 @@
 
 **«Applies when the fiscal profile is the forfettario»** is an azienda's own profile, so the
 detectors walk the active aziende whose `fiscal_profile` points at the Italian flat-rate
-pack (`PACK_IT_FLAT_RATE`) **and** carries the forfettario's regime code (`FORFETTARIO.codice`,
+pack (`PACK_IT_FLAT_RATE`) **and** carries the forfettario's regime code (`FLAT_RATE.code`,
 `RF19`). An azienda on an ordinary regime (`RF01`), on the foreign pack, or with no profile
 at all gets nothing, and a space none of whose aziende qualifies skips both types.
 
@@ -14,10 +14,10 @@ close to it, because that is the one that costs the regime this year.
 
 **Nothing is computed twice.** The year's revenue and its ceilings come from `evaluate_pack`
 (`fiscal/ceiling.py`, the function `AnalyticsService.ceiling_headroom` calls), and the
-projection of the year from `AnalyticsService.cash_overview`, whose `proiettato` is what
+projection of the year from `AnalyticsService.cash_overview`, whose `projected` is what
 the dashboard's projection column adds up: paid, issued and unpaid, and drafts, by the
-months the money is due (`base="incasso"`, the basis of the pack's own ceilings). The two
-are not the same base to the cent (the projection sums `totale`, the ceiling `imponibile`),
+months the money is due (`base="collection"`, the basis of the pack's own ceilings). The two
+are not the same base to the cent (the projection sums `total`, the ceiling `taxable_amount`),
 and under the forfettario they are the same number: no VAT, and the bollo is never charged
 to the customer.
 
@@ -37,11 +37,11 @@ from sqlalchemy import select
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.fiscal.ceiling import CeilingStatus, evaluate_pack
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, Ceiling, FiscalPack, resolve_pack
-from pigrocrm.core.fiscal.regime import FORFETTARIO
+from pigrocrm.core.fiscal.regime import FLAT_RATE
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.mail import euro
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
@@ -55,25 +55,25 @@ IMMEDIATE_CEILING = "soglia_fuoriuscita_immediata"
 
 _HUNDRED = Decimal(100)
 
-_Aziende = list[tuple[LegalEntity, FiscalPack]]
+_LegalEntities = list[tuple[LegalEntity, FiscalPack]]
 
 
-def _load_aziende(ctx: DetectorContext) -> _Aziende:
+def _load_legal_entities(ctx: DetectorContext) -> _LegalEntities:
     """The active aziende under the forfettario with the pack that governs them, the
     default azienda first. Asked for through `ctx.once`: the two types and their «applies
     when» read it once per evaluation."""
     rows = ctx.session.execute(
         select(LegalEntity, FiscalProfile)
-        .join(FiscalProfile, FiscalProfile.azienda_id == LegalEntity.id)
+        .join(FiscalProfile, FiscalProfile.legal_entity_id == LegalEntity.id)
         .where(
-            LegalEntity.attiva.is_(True),
+            LegalEntity.active.is_(True),
             FiscalProfile.pack_id == PACK_IT_FLAT_RATE,
-            FiscalProfile.codice_regime == FORFETTARIO.codice,
+            FiscalProfile.regime_code == FLAT_RATE.code,
         )
         .order_by(LegalEntity.predefinita.desc(), LegalEntity.nome, LegalEntity.id)
     )
     found: list[tuple[LegalEntity, FiscalPack]] = []
-    for azienda, profile in rows:
+    for legal_entity, profile in rows:
         try:
             pack = resolve_pack(profile.pack_id, profile.pack_version)
         except KeyError:
@@ -81,12 +81,12 @@ def _load_aziende(ctx: DetectorContext) -> _Aziende:
             # the other aziende must not die of it.
             continue
         if any(ceiling.id == REVENUE_CEILING for ceiling in pack.ceilings):
-            found.append((azienda, pack))
+            found.append((legal_entity, pack))
     return found
 
 
 def _applies(ctx: DetectorContext) -> bool:
-    return bool(ctx.once(_load_aziende))
+    return bool(ctx.once(_load_legal_entities))
 
 
 def _ceiling(pack: FiscalPack, ceiling_id: str) -> Ceiling | None:
@@ -101,83 +101,85 @@ def _percent(amount: Decimal, ceiling: Decimal) -> int:
 def _immediate_note(status: CeilingStatus | None) -> str:
     """The second ceiling, named when it is near or crossed: it ends the regime in the
     year itself, which is the thing the reader would otherwise find out too late."""
-    if status is None or status.livello_allerta is None:
+    if status is None or status.alert_level is None:
         return ""
-    if status.superata:
+    if status.exceeded:
         return (
-            f" · Hai superato anche {euro(status.ceiling.soglia)}: oltre quella cifra "
+            f" · Hai superato anche {euro(status.ceiling.threshold)}: oltre quella cifra "
             "il regime forfettario finisce subito, nell'anno stesso"
         )
     return (
-        f" · Oltre {euro(status.ceiling.soglia)} il regime forfettario finisce subito, "
-        f"nell'anno stesso: te ne separano {euro(status.residuo)}"
+        f" · Oltre {euro(status.ceiling.threshold)} il regime forfettario finisce subito, "
+        f"nell'anno stesso: te ne separano {euro(status.remaining)}"
     )
 
 
 def detect_approaching(ctx: DetectorContext) -> list[Detection]:
     """Aziende whose paid revenue of the year has reached `bound` percent of the revenue
     ceiling."""
-    anno = ctx.today.year
+    year = ctx.today.year
     found: list[Detection] = []
-    for azienda, pack in ctx.once(_load_aziende):
-        recipients = admins_seeing(ctx, azienda.id)
+    for legal_entity, pack in ctx.once(_load_legal_entities):
+        recipients = admins_seeing(ctx, legal_entity.id)
         if not recipients:
             continue
         statuses = {
             status.ceiling.id: status
-            for status in evaluate_pack(pack, ctx.session, anno, azienda.id)
+            for status in evaluate_pack(pack, ctx.session, year, legal_entity.id)
         }
         status = statuses[REVENUE_CEILING]
-        percent = _percent(status.ricavi, status.ceiling.soglia)
+        percent = _percent(status.revenue, status.ceiling.threshold)
         if percent < ctx.bound(APPROACHING):
             continue
-        if status.superata:
+        if status.exceeded:
             detail = (
-                f"Hai incassato {euro(status.ricavi)} nel {anno}, oltre la soglia di "
-                f"{euro(status.ceiling.soglia)}: dall'anno successivo il regime forfettario "
+                f"Hai incassato {euro(status.revenue)} nel {year}, oltre la soglia di "
+                f"{euro(status.ceiling.threshold)}: dall'anno successivo il regime forfettario "
                 "non vale più"
             )
         else:
             detail = (
-                f"Hai incassato {euro(status.ricavi)} nel {anno}, il {percent}% della soglia di "
-                f"{euro(status.ceiling.soglia)}: ne restano {euro(status.residuo)}"
+                f"Hai incassato {euro(status.revenue)} nel {year}, il {percent}% della soglia di "
+                f"{euro(status.ceiling.threshold)}: ne restano {euro(status.remaining)}"
             )
         found.append(
             Detection(
                 type="ceiling_approaching",
-                subject_id=azienda.id,
+                subject_id=legal_entity.id,
                 measure=float(percent),
                 recipients=recipients,
-                title=f"Soglia del forfettario al {percent}%: {azienda.nome}",
+                title=f"Soglia del forfettario al {percent}%: {legal_entity.nome}",
                 detail=detail + _immediate_note(statuses.get(IMMEDIATE_CEILING)),
                 entity="fiscal",
-                entity_id=azienda.id,
-                azienda_id=azienda.id,
+                entity_id=legal_entity.id,
+                legal_entity_id=legal_entity.id,
             )
         )
     return found
 
 
 def detect_overrun(ctx: DetectorContext) -> list[Detection]:
-    """Aziende whose projected year (`cash_overview.proiettato`) is `bound` percent of the
+    """Aziende whose projected year (`cash_overview.projected`) is `bound` percent of the
     revenue ceiling or more."""
-    anno = ctx.today.year
+    year = ctx.today.year
     analytics = AnalyticsService(ctx.session)
     found: list[Detection] = []
-    for azienda, pack in ctx.once(_load_aziende):
-        recipients = admins_seeing(ctx, azienda.id)
+    for legal_entity, pack in ctx.once(_load_legal_entities):
+        recipients = admins_seeing(ctx, legal_entity.id)
         ceiling = _ceiling(pack, REVENUE_CEILING)
         if not recipients or ceiling is None:
             continue
-        proiettato = analytics.cash_overview(anno, Actor.system(), "incasso", azienda.id).proiettato
-        percent = _percent(proiettato, ceiling.soglia)
+        projected = analytics.cash_overview(
+            year, Actor.system(), "collection", legal_entity.id
+        ).projected
+        percent = _percent(projected, ceiling.threshold)
         if percent < ctx.bound(OVERRUN):
             continue
         immediate = _ceiling(pack, IMMEDIATE_CEILING)
         note = ""
-        if immediate is not None and proiettato >= immediate.soglia:
+        if immediate is not None and projected >= immediate.threshold:
             note = (
-                f" · Supera anche {euro(immediate.soglia)}: in quel caso il regime forfettario "
+                f" · Supera anche {euro(immediate.threshold)}: in quel caso il regime forfettario "
                 "finisce subito, nell'anno stesso"
             )
         found.append(
@@ -185,17 +187,17 @@ def detect_overrun(ctx: DetectorContext) -> list[Detection]:
                 type="year_end_overrun_projected",
                 # One occurrence per azienda and year: next year's projection is a new
                 # one, and nothing acknowledged this year may silence it.
-                subject_id=uuid5(azienda.id, str(anno)),
+                subject_id=uuid5(legal_entity.id, str(year)),
                 measure=float(percent),
                 recipients=recipients,
-                title=f"A fine anno oltre la soglia del forfettario: {azienda.nome}",
+                title=f"A fine anno oltre la soglia del forfettario: {legal_entity.nome}",
                 detail=(
-                    f"Fra incassato, da incassare e bozze il {anno} arriva a {euro(proiettato)}, "
-                    f"il {percent}% della soglia di {euro(ceiling.soglia)}" + note
+                    f"Fra incassato, da incassare e bozze il {year} arriva a {euro(projected)}, "
+                    f"il {percent}% della soglia di {euro(ceiling.threshold)}" + note
                 ),
                 entity="fiscal",
-                entity_id=azienda.id,
-                azienda_id=azienda.id,
+                entity_id=legal_entity.id,
+                legal_entity_id=legal_entity.id,
             )
         )
     return found

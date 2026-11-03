@@ -27,7 +27,7 @@ export const RESERVED_SLUGS = new Set([
   'www',
   'admin',
   'static',
-  'registrati',
+  'register',
   'mcp',
 ])
 

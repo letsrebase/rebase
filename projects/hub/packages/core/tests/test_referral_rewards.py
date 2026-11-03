@@ -46,26 +46,26 @@ from rebase_core.referrals import ReferralService, reward_base
 
 
 @pytest.mark.parametrize(
-    ("modalita", "giorni", "expected"),
+    ("mode", "giorni", "expected"),
     [
         # A day rate, projected over the admin's own estimate.
-        ("a giornata", 20, Decimal("7000")),
+        ("to_work_unit", 20, Decimal("7000")),
         # No estimate: one day's margin, the conservative floor.
-        ("a giornata", None, Decimal("350")),
+        ("to_work_unit", None, Decimal("350")),
         # A lump sum compared against the client's own projected total.
-        ("a corpo", 20, Decimal("7000")),
+        ("to_body", 20, Decimal("7000")),
         # A lump sum with nothing to project against: no reliable base.
-        ("a corpo", None, None),
+        ("to_body", None, None),
         # A fee above the client's budget is rebase's own loss, never a negative reward.
-        ("a giornata", 1, Decimal("0")),
+        ("to_work_unit", 1, Decimal("0")),
     ],
 )
-def test_reward_base_formula(modalita: str, giorni: int | None, expected: Decimal | None) -> None:
+def test_reward_base_formula(mode: str, days: int | None, expected: Decimal | None) -> None:
     budget = Decimal("800")
-    compenso = Decimal("450") if modalita == "a giornata" or giorni is None else Decimal("9000")
-    if modalita == "a giornata" and giorni == 1:
-        compenso = Decimal("900")  # above the day's budget, on purpose
-    assert reward_base(budget, compenso, modalita, giorni) == expected
+    fee = Decimal("450") if mode == "to_work_unit" or days is None else Decimal("9000")
+    if mode == "to_work_unit" and days == 1:
+        fee = Decimal("900")  # above the day's budget, on purpose
+    assert reward_base(budget, fee, mode, days) == expected
 
 
 def test_reward_base_compares_the_two_modes_it_stores() -> None:
@@ -83,8 +83,8 @@ def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
     _log_in(clean_referrals, "wile@acme.it")
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
@@ -108,7 +108,7 @@ def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
     assert by_kind["company"].rate == Decimal("0.3000")
     assert by_kind["company"].base_amount == Decimal("7000.00")
     assert by_kind["company"].reward_amount == Decimal("2100.00")
-    assert by_kind["freelancer"].stato == "da_confermare"
+    assert by_kind["freelancer"].status == "to_confirm"
 
     # Re-running the confirmation (a repeated webhook, a sweep) never doubles the reward.
     ReferralService(clean_referrals).record_reward_if_signed(
@@ -127,20 +127,20 @@ def test_a_referral_is_pending_when_it_is_made_and_has_nothing_to_confirm(
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    card_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    card_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
 
     for entity_id in (card_id, company_id):
         referral = _referral_of(clean_referrals, entity_id)
-        assert (referral.stato, referral.verified_at, referral.verified_via) == (
-            "da_verificare",
+        assert (referral.status, referral.verified_at, referral.verified_via) == (
+            "to_verify",
             None,
             None,
         )
     items = ReferralLedgerService(clean_referrals).list_rewards().items
-    assert {(i.kind, i.referral_stato, i.reward_id, i.stato) for i in items} == {
-        ("freelancer", "da_verificare", None, None),
-        ("company", "da_verificare", None, None),
+    assert {(i.kind, i.referral_status, i.reward_id, i.status) for i in items} == {
+        ("freelancer", "to_verify", None, None),
+        ("company", "to_verify", None, None),
     }
 
 
@@ -148,17 +148,17 @@ def test_the_first_login_after_the_referral_verifies_it_and_only_the_loggers_own
     clean_referrals: Session,
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    ada = _card(clean_referrals, rif=code)
-    grace = _card(clean_referrals, email="grace@studio.it", rif=code)
-    wile = _request(clean_referrals, rif=code)
+    ada = _card(clean_referrals, ref=code)
+    grace = _card(clean_referrals, email="grace@studio.it", ref=code)
+    wile = _request(clean_referrals, ref=code)
 
     _log_in(clean_referrals, "ada@studio.it")
 
     verified = _referral_of(clean_referrals, ada)
-    assert (verified.stato, verified.verified_via) == ("verificato", "accesso")
+    assert (verified.status, verified.verified_via) == ("verified", "accesso")
     assert verified.verified_at is not None and verified.verified_at >= verified.created_at
-    assert _referral_of(clean_referrals, grace).stato == "da_verificare"
-    assert _referral_of(clean_referrals, wile).stato == "da_verificare"
+    assert _referral_of(clean_referrals, grace).status == "to_verify"
+    assert _referral_of(clean_referrals, wile).status == "to_verify"
 
     # A second login changes nothing: the proof is the first one.
     first = verified.verified_at
@@ -166,7 +166,7 @@ def test_the_first_login_after_the_referral_verifies_it_and_only_the_loggers_own
     assert _referral_of(clean_referrals, ada).verified_at == first
 
     _log_in(clean_referrals, "wile@acme.it")
-    assert _referral_of(clean_referrals, wile).stato == "verificato"
+    assert _referral_of(clean_referrals, wile).status == "verified"
 
 
 def test_a_login_from_before_the_referral_proves_nothing_about_it(clean_referrals: Session) -> None:
@@ -176,14 +176,14 @@ def test_a_login_from_before_the_referral_proves_nothing_about_it(clean_referral
     _log_in(clean_referrals, "ada@studio.it")
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
 
-    card_id = _card(clean_referrals, email="ada@studio.it", rif=code)
+    card_id = _card(clean_referrals, email="ada@studio.it", ref=code)
 
-    assert _referral_of(clean_referrals, card_id).stato == "da_verificare"
+    assert _referral_of(clean_referrals, card_id).status == "to_verify"
     _log_in(clean_referrals, "ada@studio.it")
-    assert _referral_of(clean_referrals, card_id).stato == "verificato"
+    assert _referral_of(clean_referrals, card_id).status == "verified"
 
 
-def test_a_squatted_company_earns_nothing_until_its_referente_logs_in_then_pays_the_squatter(
+def test_to_squatted_company_earns_nothing_until_its_contact_person_logs_in_then_pays_the_squatter(
     clean_referrals: Session,
 ) -> None:
     """The squatting case, end to end. Someone posts a prospect's address with an
@@ -199,18 +199,18 @@ def test_a_squatted_company_earns_nothing_until_its_referente_logs_in_then_pays_
     )
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals)
-    company_id = _request(clean_referrals, email="prospect@acme.it", rif=accomplice)
+    company_id = _request(clean_referrals, email="prospect@acme.it", ref=accomplice)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     match = _sent_with_body(clean_referrals, renderer, fake, freelancer_id, company_id, admin_id)
 
     listed = {r.kind: r for r in _match_list(clean_referrals)[0].referrals}
-    assert listed["company"].stato == "da_verificare"
+    assert listed["company"].status == "to_verify"
     assert (listed["company"].rate, listed["company"].amount) == (None, None)
     (ledger,) = ReferralLedgerService(clean_referrals).list_rewards().items
-    assert (ledger.referral_stato, ledger.match_id, ledger.projected_amount) == (
-        "da_verificare",
+    assert (ledger.referral_status, ledger.match_id, ledger.projected_amount) == (
+        "to_verify",
         None,
         None,
     )
@@ -219,16 +219,16 @@ def test_a_squatted_company_earns_nothing_until_its_referente_logs_in_then_pays_
     assert clean_referrals.scalar(select(ReferralReward)) is None
 
     # The real person comes back with the code of someone who did refer them: no change.
-    _request(clean_referrals, email="prospect@acme.it", rif=honest)
+    _request(clean_referrals, email="prospect@acme.it", ref=honest)
     assert clean_referrals.scalar(select(ReferralReward)) is None
 
     _log_in(clean_referrals, "prospect@acme.it")
 
     (item,) = ReferralLedgerService(clean_referrals).list_rewards().items
-    assert item.referral_stato == "verificato" and item.verified_via == "accesso"
+    assert item.referral_status == "verified" and item.verified_via == "accesso"
     assert item.referrer_email == "accomplice@community.it"
-    assert (item.stato, item.base_amount, item.reward_amount) == (
-        "da_confermare",
+    assert (item.status, item.base_amount, item.reward_amount) == (
+        "to_confirm",
         Decimal("7000.00"),
         Decimal("2100.00"),
     )
@@ -242,8 +242,8 @@ def test_a_referred_freelancers_own_signature_verifies_them_and_writes_the_rewar
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
@@ -257,9 +257,9 @@ def test_a_referred_freelancers_own_signature_verifies_them_and_writes_the_rewar
     _sign_the_letter(clean_referrals, renderer, fake, match)
 
     freelancer = _referral_of(clean_referrals, freelancer_id)
-    assert (freelancer.stato, freelancer.verified_via) == ("verificato", "lettera")
+    assert (freelancer.status, freelancer.verified_via) == ("verified", "letter")
     assert freelancer.verified_at == _letter_of(clean_referrals, match.id).signed_at
-    assert _referral_of(clean_referrals, company_id).stato == "da_verificare"
+    assert _referral_of(clean_referrals, company_id).status == "to_verify"
     (reward,) = clean_referrals.scalars(select(ReferralReward)).all()
     assert reward.referral_id == freelancer.id and reward.reward_amount == Decimal("700.00")
 
@@ -269,8 +269,8 @@ def test_a_login_after_the_signature_does_not_write_a_second_reward(
 ) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
-    company_id = _request(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
+    company_id = _request(clean_referrals, ref=code)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
@@ -281,13 +281,13 @@ def test_a_login_after_the_signature_does_not_write_a_second_reward(
     _log_in(clean_referrals, "wile@acme.it")
 
     assert len(clean_referrals.scalars(select(ReferralReward)).all()) == 2
-    assert _referral_of(clean_referrals, freelancer_id).verified_via == "lettera"
+    assert _referral_of(clean_referrals, freelancer_id).verified_via == "letter"
     assert _referral_of(clean_referrals, company_id).verified_via == "accesso"
 
 
 def test_the_database_refuses_a_referral_half_verified(clean_referrals: Session) -> None:
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
-    card_id = _card(clean_referrals, rif=code)
+    card_id = _card(clean_referrals, ref=code)
 
     for statement in (
         "UPDATE referrals SET stato = 'verificato'",
@@ -298,7 +298,7 @@ def test_the_database_refuses_a_referral_half_verified(clean_referrals: Session)
         with pytest.raises(IntegrityError):
             clean_referrals.execute(text(statement))
         clean_referrals.rollback()
-    assert _referral_of(clean_referrals, card_id).stato == "da_verificare"
+    assert _referral_of(clean_referrals, card_id).status == "to_verify"
 
 
 def test_an_unreferred_match_earns_no_reward(clean_referrals: Session) -> None:
@@ -318,13 +318,13 @@ def test_an_unreferred_match_earns_no_reward(clean_referrals: Session) -> None:
 def test_a_referred_freelancers_framework_agreement_names_the_referrer(
     clean_referrals: Session,
 ) -> None:
-    """`_quadro_data` prints the freelancer's own referrer, exercised through
+    """`_framework_date` prints the freelancer's own referrer, exercised through
     `write_framework`'s real path (no `_active_framework` shortcut here, unlike the
     reward tests above, so the framework agreement is actually generated)."""
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _log_in(clean_referrals, "ada@studio.it")
@@ -333,19 +333,19 @@ def test_a_referred_freelancers_framework_agreement_names_the_referrer(
         freelancer_id, _match_body(company_id), admin_id
     )
 
-    quadro = _documents(clean_referrals, freelancer_id, "quadro")[-1]
-    assert quadro.data["segnalato-da"] == "Mario Rossi"
+    framework = _documents(clean_referrals, freelancer_id, "framework")[-1]
+    assert framework.data["segnalato-da"] == "Mario Rossi"
 
 
 def test_a_pending_freelancer_referral_is_not_printed_on_the_framework_agreement(
     clean_referrals: Session,
 ) -> None:
-    """REB-664: a `da_verificare` referral may be squatted, so the agreement prints
+    """REB-664: a `to_verify` referral may be squatted, so the agreement prints
     `nessuno`. The framework agreement is written before the freelancer's first letter
     signature (which is what verifies them), so it stays `nessuno` unless they logged in."""
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
     admin_id = an_admin(clean_referrals)
-    freelancer_id = _card(clean_referrals, rif=code)
+    freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     renderer = FakeRenderer(draft=False)
@@ -353,9 +353,9 @@ def test_a_pending_freelancer_referral_is_not_printed_on_the_framework_agreement
         freelancer_id, _match_body(company_id), admin_id
     )
 
-    assert _referral_of(clean_referrals, freelancer_id).stato == "da_verificare"
-    quadro = _documents(clean_referrals, freelancer_id, "quadro")[-1]
-    assert quadro.data["segnalato-da"] == "nessuno"
+    assert _referral_of(clean_referrals, freelancer_id).status == "to_verify"
+    framework = _documents(clean_referrals, freelancer_id, "framework")[-1]
+    assert framework.data["segnalato-da"] == "nessuno"
 
 
 def test_a_pending_company_referral_is_not_printed_on_the_letter_until_verified(
@@ -364,7 +364,7 @@ def test_a_pending_company_referral_is_not_printed_on_the_letter_until_verified(
     code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals)
-    company_id = _request(clean_referrals, rif=code)
+    company_id = _request(clean_referrals, ref=code)
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer = FakeRenderer(draft=False)
@@ -380,12 +380,12 @@ def test_a_pending_company_referral_is_not_printed_on_the_letter_until_verified(
     assert _letter_of(clean_referrals, verified.id).data["azienda-segnalata-da"] == "Mario Rossi"
 
 
-def test_an_unreferred_freelancers_framework_agreement_prints_nessuno_not_a_blank(
+def test_an_unreferred_freelancers_framework_agreement_prints_none_not_to_blank(
     clean_referrals: Session,
 ) -> None:
     """A blank `{{segnalato-da}}` would print as a hand-fillable line on every
     framework agreement, since nobody referred the overwhelming majority of
-    freelancers: `nessuno` reads as a fact instead (the `PEC_MISSING` convention)."""
+    freelancers: `nessuno` reads as a fact instead (the `CERTIFIED_EMAIL_MISSING` convention)."""
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals)
     company_id = _request(clean_referrals)
@@ -395,21 +395,21 @@ def test_an_unreferred_freelancers_framework_agreement_prints_nessuno_not_a_blan
         freelancer_id, _match_body(company_id), admin_id
     )
 
-    quadro = _documents(clean_referrals, freelancer_id, "quadro")[-1]
-    assert quadro.data["segnalato-da"] == "nessuno"
+    framework = _documents(clean_referrals, freelancer_id, "framework")[-1]
+    assert framework.data["segnalato-da"] == "nessuno"
 
 
-def test_a_referred_companys_letter_names_the_referrer_and_an_unreferred_one_prints_nessuno(
+def test_to_referred_companys_letter_names_the_referrer_and_an_unreferred_one_prints_none(
     clean_referrals: Session,
 ) -> None:
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals)
-    referred_company_id = _request(clean_referrals, rif=code, email="wile@acme.it")
+    referred_company_id = _request(clean_referrals, ref=code, email="wile@acme.it")
     _log_in(clean_referrals, "wile@acme.it")
     unreferred_company_id = _request(
-        clean_referrals, email="other@beta.it", nome_azienda="Beta Srl"
+        clean_referrals, email="other@beta.it", company_name="Beta Srl"
     )
     _fiscal(clean_referrals, freelancer_id, admin_id)
     _active_framework(clean_referrals, freelancer_id, admin_id)

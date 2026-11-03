@@ -12,10 +12,10 @@ from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.naming import slugify_folder
 from pigrocrm.core.documents.schemas import (
     ALLOWED_CONTENT_TYPES,
-    DIMENSIONE_MAX,
+    SIZE_MAX,
     DocumentCreate,
     DocumentRead,
-    DocumentTipo,
+    DocumentType,
     DocumentVersionRead,
 )
 from pigrocrm.core.errors import Conflict, ValidationFailed
@@ -58,7 +58,7 @@ class DocumentUploads:
     def __init__(self, context: DocumentContext) -> None:
         self.ctx = context
 
-    def next_numero(self, document: Document) -> int:
+    def next_number(self, document: Document) -> int:
         """The candidate version number for a new upload on `document`.
 
         Split out to a single, tiny method so `add_version`'s own ordering guarantee
@@ -66,7 +66,7 @@ class DocumentUploads:
         force a collision deterministically without needing real threads against a
         single savepoint-backed test session.
         """
-        return document.versione_corrente + 1
+        return document.current_version + 1
 
     def add_version(
         self,
@@ -75,27 +75,27 @@ class DocumentUploads:
         content_type: str,
         actor: Actor,
         *,
-        sorgente_markdown: str | None = None,
+        markdown_source: str | None = None,
         template_id: UUID | None = None,
-        variabili: dict[str, Any] | None = None,
+        variables: dict[str, Any] | None = None,
         storage_prefix: str | None = None,
         commit: bool = True,
     ) -> DocumentVersionRead:
         """Every change makes a version; nothing is ever overwritten (spec 4.2).
 
         Ordering, deliberately: the `DocumentVersion` row is flushed -- which sends
-        the `INSERT` and lets Postgres enforce `uq_document_versions_document_numero`
+        the `INSERT` and lets Postgres enforce `uq_document_versions_document_number`
         -- *before* a single byte reaches `storage.put`. Two callers racing to add a
-        version to the same document both compute their candidate `numero` from
-        `document.versione_corrente` before either has committed; under Postgres, the
+        version to the same document both compute their candidate `number` from
+        `document.current_version` before either has committed; under Postgres, the
         loser's `INSERT` either blocks until the winner's transaction resolves (real
         concurrency) or raises `IntegrityError` immediately against an
         already-committed row (the two-callers-in-one-process shape this project's
-        own tests reproduce, see `next_numero`). Either way, the loser's exception is
+        own tests reproduce, see `next_number`). Either way, the loser's exception is
         caught and turned into `Conflict` *before* it has called `storage.put` at
         all -- so a losing racer can never overwrite the winning racer's bytes at the
-        storage key both computed from the same `numero`, and a failed flush never
-        burns a version number: nothing was committed, so the same `numero` is offered
+        storage key both computed from the same `number`, and a failed flush never
+        burns a version number: nothing was committed, so the same `number` is offered
         again on the next attempt.
 
         The reverse order (bytes first, row second) was rejected: on the race path it
@@ -119,9 +119,9 @@ class DocumentUploads:
             data,
             content_type,
             actor,
-            sorgente_markdown=sorgente_markdown,
+            markdown_source=markdown_source,
             template_id=template_id,
-            variabili=variabili,
+            variables=variables,
             storage_prefix=storage_prefix,
         )
         if commit:
@@ -147,12 +147,12 @@ class DocumentUploads:
             )
         if not data:
             raise ValidationFailed(ENTITY, "file", "il file e' vuoto", expected="almeno un byte")
-        if len(data) > DIMENSIONE_MAX:
+        if len(data) > SIZE_MAX:
             raise ValidationFailed(
                 ENTITY,
-                "dimensione",
-                f"il file supera {DIMENSIONE_MAX} byte",
-                expected=f"al massimo {DIMENSIONE_MAX} byte",
+                "size",
+                f"il file supera {SIZE_MAX} byte",
+                expected=f"al massimo {SIZE_MAX} byte",
             )
         if not _matches_declared_type(data, content_type):
             raise ValidationFailed(
@@ -175,7 +175,7 @@ class DocumentUploads:
         existing document goes through `add_version_row` (the REST upload, `regenerate`,
         `InvoiceService`'s own render), and a guard on one door would leave the next
         caller a way around it. Keyed on the invoice's own pointer rather than on
-        `documents.tipo`: a `fattura` document not yet linked to an invoice (an original
+        `documents.type`: a `invoice` document not yet linked to an invoice (an original
         PDF waiting for `import_issued`) keeps the common allowlist, and
         `_validate_original_pdf` already refuses to link one whose current version is not
         a PDF. A soft-deleted invoice still counts, because its document can be restored
@@ -192,12 +192,12 @@ class DocumentUploads:
         if content_type == "application/pdf":
             return
         self.ctx.repo.lock(document.id)
-        tipo = self.ctx.repo.invoice_tipo_of_pdf(document.id)
-        if tipo is not None:
+        type = self.ctx.repo.invoice_type_of_pdf(document.id)
+        if type is not None:
             raise ValidationFailed(
                 ENTITY,
                 "content_type",
-                f"questo documento e' il PDF di una {tipo}: una nuova versione deve essere "
+                f"questo documento e' il PDF di una {type}: una nuova versione deve essere "
                 f"un PDF, non {content_type}",
                 expected="application/pdf",
             )
@@ -209,9 +209,9 @@ class DocumentUploads:
         content_type: str,
         actor: Actor,
         *,
-        sorgente_markdown: str | None = None,
+        markdown_source: str | None = None,
         template_id: UUID | None = None,
-        variabili: dict[str, Any] | None = None,
+        variables: dict[str, Any] | None = None,
         storage_prefix: str | None = None,
     ) -> DocumentVersion:
         """`add_version` without the commit and on a `Document` already in hand -- see
@@ -225,20 +225,20 @@ class DocumentUploads:
         self.check_upload(data, content_type)
         self.check_invoice_pdf(document, content_type)
 
-        numero = self.next_numero(document)
+        number = self.next_number(document)
         version = DocumentVersion(
             document_id=document.id,
-            numero=numero,
-            sorgente_markdown=sorgente_markdown,
+            number=number,
+            markdown_source=markdown_source,
             template_id=template_id,
-            variabili=variabili,
+            variables=variables,
             storage_key=self.ctx.storage_key_for(
-                document, numero, content_type, prefix=storage_prefix
+                document, number, content_type, prefix=storage_prefix
             ),
             content_type=content_type,
-            dimensione=len(data),
+            size=len(data),
             hash_sha256=hashlib.sha256(data).hexdigest(),
-            creato_da=actor.id,
+            created_by=actor.id,
         )
         try:
             self.ctx.repo.add_version(version)
@@ -259,8 +259,8 @@ class DocumentUploads:
             self.ctx.session.rollback()
             raise
 
-        document.versione_corrente = numero
-        self.ctx.activities.record(ENTITY, document.id, "version_added", actor, {"numero": numero})
+        document.current_version = number
+        self.ctx.activities.record(ENTITY, document.id, "version_added", actor, {"number": number})
         return version
 
     def import_bytes(
@@ -269,14 +269,14 @@ class DocumentUploads:
         customer_id: UUID | None = None,
         deal_id: UUID | None = None,
         contract_id: UUID | None = None,
-        tipo: DocumentTipo,
-        titolo: str,
+        type: DocumentType,
+        title: str,
         data: bytes,
         content_type: str,
         actor: Actor,
-        origine: dict[str, Any],
+        origin: dict[str, Any],
         commit: bool = True,
-        azienda_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
     ) -> DocumentRead:
         """Bytes that arrived from somewhere else, filed as a document *and* its first
         version in one unit of work (slice 9 §3.5).
@@ -298,7 +298,7 @@ class DocumentUploads:
         in the caller's session for every later statement of that transaction to see --
         the exact failure `import_issued` orders its own checks to avoid.
 
-        `origine` is recorded, sanitized, on `document.importato`: a PDF nobody in this
+        `origin` is recorded, sanitized, on `document.importato`: a PDF nobody in this
         CRM produced has to be able to answer "where did this come from?" years later,
         and "a file was uploaded" is not that answer. Its shape is the caller's --
         `{"drive_file_id": ..., "mime": ...}` for the Drive path -- because the CRM will
@@ -337,13 +337,13 @@ class DocumentUploads:
                 customer_id=customer_id,
                 deal_id=deal_id,
                 contract_id=contract_id,
-                tipo=tipo,
-                titolo=titolo,
+                type=type,
+                title=title,
             ),
             actor,
             # The record's own azienda when the caller names it (an imported invoice's
             # original PDF is the invoice's, whatever azienda its customer is in now).
-            azienda_id=azienda_id,
+            legal_entity_id=legal_entity_id,
         )
         self.add_version_row(document, data, content_type, actor)
         self.ctx.activities.record(
@@ -351,7 +351,7 @@ class DocumentUploads:
             document.id,
             "document.importato",
             actor,
-            {"origine": origine, "titolo": document.titolo, "tipo": document.tipo},
+            {"origin": origin, "title": document.title, "type": document.type},
         )
         if commit:
             self.ctx.session.commit()
@@ -361,14 +361,14 @@ class DocumentUploads:
         self.ctx.require(document_id)
         return [DocumentVersionRead.model_validate(v) for v in self.ctx.repo.versions(document_id)]
 
-    def download(self, document_id: UUID, numero: int | None) -> tuple[bytes, str, str]:
+    def download(self, document_id: UUID, number: int | None) -> tuple[bytes, str, str]:
         """`(bytes, content_type, filename)`.
 
         The filename is built from the document's title, slugified: the title is user
         input and reaches a `Content-Disposition` header, where a quote or a newline
         would be header injection.
         """
-        document, version = self.ctx.resolve_version(document_id, numero)
+        document, version = self.ctx.resolve_version(document_id, number)
         extension = ALLOWED_CONTENT_TYPES[version.content_type]
-        filename = f"{slugify_folder(document.titolo)}-v{version.numero}{extension}"
+        filename = f"{slugify_folder(document.title)}-v{version.number}{extension}"
         return self.ctx.storage.get(version.storage_key), version.content_type, filename

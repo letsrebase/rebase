@@ -24,7 +24,7 @@ import { timeReportXlsxPath, useRenderTimeReportPdf } from './queries'
  */
 export function TimeReportButtons({ dealId }: { dealId: string }) {
   // `toIsoMonth`, never `toISOString().slice(0, 7)` -- see @/lib/dates for why.
-  const [mese, setMese] = useState(() => toIsoMonth(new Date()))
+  const [month, setMonth] = useState(() => toIsoMonth(new Date()))
   const render = useRenderTimeReportPdf()
 
   return (
@@ -35,8 +35,8 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           <Input
             id="time-report-mese"
             type="month"
-            value={mese}
-            onChange={(event) => setMese(event.target.value)}
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
             className="w-40"
           />
         </div>
@@ -45,7 +45,7 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           disabled={render.isPending}
           onClick={() =>
             render.mutate(
-              { dealId, mese },
+              { dealId, month },
               { onSuccess: () => toast.success('Rapporto ore archiviato e scaricato') },
             )
           }
@@ -57,7 +57,7 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           )}
           PDF
         </Button>
-        <DownloadButton variant="outline" path={timeReportXlsxPath(dealId, mese)}>
+        <DownloadButton variant="outline" path={timeReportXlsxPath(dealId, month)}>
           <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
           XLSX
         </DownloadButton>

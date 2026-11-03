@@ -11,7 +11,7 @@ import { TeamBuilder } from './TeamBuilder'
 const NBSP = '\u00a0'
 const DASH = '\u2013'
 
-const DESCRIZIONE =
+const DESCRIPTION =
   'Ci serve una web app per i clienti: pagamenti, dashboard dei conti, API di open banking.'
 
 /** A public read as the API answers it, plus what it must never show: the fixture
@@ -19,64 +19,64 @@ const DESCRIZIONE =
  *  fails here rather than in front of a visitor. */
 const PROPOSAL = {
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
-  riassunto: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-  luogo: { locale: false, dove: 'Brescia' },
+  summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
+  location: { locale: false, dove: 'Brescia' },
   team: [
     {
       posizione: 1,
       freelancer_id: '9d0c1a2b-1111-4111-8111-000000000001',
       nome: 'Ada',
-      cognome: 'Lovelace',
-      ruolo: 'Backend developer',
-      motivazione: 'Ha costruito le API di pagamento di due banche.',
-      giorni_settimana: 5,
-      scheda: {
-        ruolo: 'Sviluppatore backend',
+      last_name: 'Lovelace',
+      role: 'Backend developer',
+      reasoning: 'Ha costruito le API di pagamento di due banche.',
+      week_days: 5,
+      card: {
+        role: 'Sviluppatore backend',
         seniority: 'senior',
-        anni: 9,
-        competenze: ['Python', 'FastAPI', 'PostgreSQL'],
-        settori: ['fintech'],
-        lingue: ['italiano', 'inglese'],
-        luogo: null,
-        sintesi: 'Nove anni su sistemi di pagamento, dal disegno delle API al rilascio.',
+        experience_years: 9,
+        skills: ['Python', 'FastAPI', 'PostgreSQL'],
+        industries: ['fintech'],
+        languages: ['italiano', 'inglese'],
+        location: null,
+        profile_summary: 'Nove anni su sistemi di pagamento, dal disegno delle API al rilascio.',
       },
-      modalita: 'remoto',
-      fascia: { min: 400, max: 500 },
+      mode: 'remote',
+      band: { min: 400, max: 500 },
     },
     {
       posizione: 2,
       freelancer_id: '9d0c1a2b-2222-4222-8222-000000000002',
       nome: 'Grace',
-      cognome: 'Hopper',
-      ruolo: 'Frontend developer',
-      motivazione: 'Porta React e la cura dell’accessibilità.',
-      giorni_settimana: 3,
-      scheda: {
-        ruolo: 'Sviluppatrice frontend',
+      last_name: 'Hopper',
+      role: 'Frontend developer',
+      reasoning: 'Porta React e la cura dell’accessibilità.',
+      week_days: 3,
+      card: {
+        role: 'Sviluppatrice frontend',
         seniority: 'mid',
-        anni: 1,
-        competenze: ['React', 'TypeScript'],
-        settori: [],
-        lingue: ['italiano'],
-        luogo: null,
-        sintesi: 'Interfacce in React per prodotti rivolti ai clienti finali.',
+        experience_years: 1,
+        skills: ['React', 'TypeScript'],
+        industries: [],
+        languages: ['italiano'],
+        location: null,
+        profile_summary: 'Interfacce in React per prodotti rivolti ai clienti finali.',
       },
-      modalita: 'ibrido',
-      fascia: { min: 500, max: 650 },
+      mode: 'hybrid',
+      band: { min: 500, max: 650 },
     },
   ],
-  economia: { giorno: { min: 900, max: 1150 }, mese: { min: 19800, max: 25300 }, giorni_mese: 22 },
+  economics: { day: { min: 900, max: 1150 }, month: { min: 19800, max: 25300 }, days_month: 22 },
   previous_id: null,
-  origine: 'pubblico',
+  origin: 'public',
   created_at: '2026-09-26T08:00:00Z',
 }
 
 const REGENERATED = {
   ...PROPOSAL,
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000beef',
-  riassunto: 'La stessa web app, senza il frontend: basta chi fa il backend.',
+  summary: 'La stessa web app, senza il frontend: basta chi fa il backend.',
   team: [PROPOSAL.team[0]],
-  economia: { giorno: { min: 400, max: 500 }, mese: { min: 8800, max: 11000 }, giorni_mese: 22 },
+  economics: { day: { min: 400, max: 500 }, month: { min: 8800, max: 11000 }, days_month: 22 },
   previous_id: PROPOSAL.id,
 }
 
@@ -97,7 +97,7 @@ async function proposed(fetchSpy: MockInstance<typeof fetch>, proposal: unknown 
   const user = userEvent.setup()
   fetchSpy.mockResolvedValueOnce(answer(200, proposal))
   render(<TeamBuilder mode="public" />)
-  await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+  await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIPTION)
   await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
   await screen.findByRole('heading', { name: 'La nostra proposta' })
   return user
@@ -131,7 +131,7 @@ describe('TeamBuilder, the box', () => {
     // answer to whoever lives there (REB-598).
     await user.click(screen.getByRole('button', { name: 'Un FDE nel team di un cliente' }))
     expect(value()).toContain('forward deployed engineer')
-    expect(value()).toContain('cliente')
+    expect(value()).toContain('customer')
     expect(value()).not.toContain('Torino')
     expect(value()).not.toContain('designer')
     expect(value().length).toBeGreaterThanOrEqual(40)
@@ -146,10 +146,10 @@ describe('TeamBuilder, the box', () => {
 
     await user.click(selector)
     await user.click(await screen.findByRole('option', { name: '3 persone' }))
-    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIPTION)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
-    await screen.findByText(PROPOSAL.riassunto)
-    expect(sent(fetchSpy, 0).body).toEqual({ descrizione: DESCRIZIONE, persone: 3 })
+    await screen.findByText(PROPOSAL.summary)
+    expect(sent(fetchSpy, 0).body).toEqual({ description: DESCRIPTION, people: 3 })
 
     // An example sets the number its text implies, and «Rigenera» keeps the number the
     // proposal on screen was asked with, not the selector's.
@@ -158,8 +158,8 @@ describe('TeamBuilder, the box', () => {
     await user.click(screen.getByRole('button', { name: 'Rigenera' }))
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
     expect(sent(fetchSpy, 1).body).toEqual({
-      descrizione: DESCRIZIONE,
-      persone: 3,
+      description: DESCRIPTION,
+      people: 3,
       previous_id: PROPOSAL.id,
     })
   })
@@ -185,18 +185,18 @@ describe('TeamBuilder, the box', () => {
       .spyOn(globalThis, 'fetch')
       .mockReturnValueOnce(new Promise<Response>((done) => (resolve = done)))
     render(<TeamBuilder mode="public" />)
-    await user.type(screen.getByLabelText('Descrizione del progetto'), `  ${DESCRIZIONE}  `)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), `  ${DESCRIPTION}  `)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
 
     expect(await screen.findByRole('button', { name: 'Sto leggendo i profili…' })).toBeDisabled()
     expect(sent(fetchSpy, 0)).toEqual({
       url: '/api/hub/team/proposals',
       method: 'POST',
-      body: { descrizione: DESCRIZIONE, persone: 1 },
+      body: { description: DESCRIPTION, people: 1 },
     })
 
     resolve(answer(200, PROPOSAL))
-    expect(await screen.findByText(PROPOSAL.riassunto)).toBeInTheDocument()
+    expect(await screen.findByText(PROPOSAL.summary)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Proponi il team' })).toBeEnabled()
   })
 })
@@ -220,7 +220,7 @@ describe('TeamBuilder, the result', () => {
     expect(within(backend).getByRole('heading', { name: 'Backend developer' })).toBeInTheDocument()
     expect(backend).toHaveTextContent('Sviluppatore backend, Senior, 9 anni di esperienza')
     expect(backend).toHaveTextContent('Ha costruito le API di pagamento di due banche.')
-    expect(backend).toHaveTextContent(PROPOSAL.team[0]!.scheda.sintesi)
+    expect(backend).toHaveTextContent(PROPOSAL.team[0]!.card.profile_summary)
     for (const skill of ['Python', 'FastAPI', 'PostgreSQL']) {
       expect(within(backend).getByText(skill)).toHaveAttribute('data-slot', 'badge')
     }
@@ -256,9 +256,9 @@ describe('TeamBuilder, the result', () => {
       ...PROPOSAL,
       team: [
         PROPOSAL.team[0],
-        { ...PROPOSAL.team[1], fascia: null, modalita: null, giorni_settimana: null },
+        { ...PROPOSAL.team[1], band: null, mode: null, week_days: null },
       ],
-      economia: { giorno: null, mese: null, giorni_mese: 22 },
+      economics: { day: null, month: null, days_month: 22 },
     })
     const people = within(screen.getByRole('list', { name: 'Il team' })).getAllByRole('listitem')
     expect(people[1]).toHaveTextContent('Tariffa da definire')
@@ -274,9 +274,9 @@ describe('TeamBuilder, the result', () => {
     const summary = 'Al momento nessun profilo corrisponde alla richiesta.'
     await proposed(vi.spyOn(globalThis, 'fetch'), {
       ...PROPOSAL,
-      riassunto: summary,
+      summary: summary,
       team: [],
-      economia: { giorno: null, mese: null, giorni_mese: 22 },
+      economics: { day: null, month: null, days_month: 22 },
     })
     expect(screen.getByText(summary)).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Il team' })).toBeNull()
@@ -293,11 +293,11 @@ describe('TeamBuilder, the result', () => {
     await user.type(screen.getByLabelText('Cosa cambieresti?'), '  togli il frontend  ')
     await user.click(screen.getByRole('button', { name: 'Rigenera' }))
 
-    expect(await screen.findByText(REGENERATED.riassunto)).toBeInTheDocument()
+    expect(await screen.findByText(REGENERATED.summary)).toBeInTheDocument()
     expect(sent(fetchSpy, 1)).toEqual({
       url: '/api/hub/team/proposals',
       method: 'POST',
-      body: { descrizione: DESCRIZIONE, persone: 1, nota: 'togli il frontend', previous_id: PROPOSAL.id },
+      body: { description: DESCRIPTION, people: 1, note: 'togli il frontend', previous_id: PROPOSAL.id },
     })
     expect(within(screen.getByRole('list', { name: 'Il team' })).getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByRole('region', { name: 'Quanto costa il team' }).textContent).toContain(
@@ -339,9 +339,9 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
       method: 'POST',
       body: {
         proposal_id: PROPOSAL.id,
-        azienda: 'ACME Srl',
+        company: 'ACME Srl',
         email: 'ada@acme.it',
-        telefono: '+39 345 1234567',
+        phone: '+39 345 1234567',
       },
     })
 
@@ -364,11 +364,11 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     fetchSpy.mockResolvedValueOnce(answer(201, { id: 'a1b2c3d4-0000-4000-8000-000000000001' }))
     await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
     await screen.findByRole('status')
-    expect(sent(fetchSpy, 1).body).toMatchObject({ rif: 'ABCDEFGH23' })
+    expect(sent(fetchSpy, 1).body).toMatchObject({ ref: 'ABCDEFGH23' })
   })
 
   it('remembers the referral link when the page opens, for a visitor who comes back without it', async () => {
-    window.history.pushState({}, '', '/?rif=ABCDEFGH23')
+    window.history.pushState({}, '', '/?ref=ABCDEFGH23')
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     await proposed(fetchSpy)
     expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABCDEFGH23')
@@ -404,7 +404,7 @@ describe('TeamBuilder, what the API refuses', () => {
     const user = userEvent.setup()
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(answer(status, { detail }))
     render(<TeamBuilder mode="public" />)
-    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIPTION)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(detail)
     expect(screen.getByRole('alert').textContent).toBe(detail)
@@ -419,7 +419,7 @@ describe('TeamBuilder, what the API refuses', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Rigenera' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(reason)
-    expect(screen.getByText(PROPOSAL.riassunto)).toBeInTheDocument()
+    expect(screen.getByText(PROPOSAL.summary)).toBeInTheDocument()
   })
 
   it('shows the 409 of a proposal already requested', async () => {
@@ -463,7 +463,7 @@ describe('TeamBuilder, what the API refuses', () => {
     const user = userEvent.setup()
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
     render(<TeamBuilder mode="public" />)
-    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIPTION)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Non siamo riusciti a proporre un team. Riprova.',
@@ -478,10 +478,10 @@ describe('TeamBuilder in the cloud', () => {
     const propose = vi.fn().mockResolvedValue(PROPOSAL as unknown as CloudTeamProposal)
     const hire = vi.fn().mockResolvedValue({ id: 'a1b2c3d4-0000-4000-8000-000000000001' })
     render(<TeamBuilder mode="cloud" propose={propose} hire={hire} />)
-    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIPTION)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
-    await screen.findByText(PROPOSAL.riassunto)
-    expect(propose).toHaveBeenCalledWith({ descrizione: DESCRIZIONE, persone: 1 })
+    await screen.findByText(PROPOSAL.summary)
+    expect(propose).toHaveBeenCalledWith({ description: DESCRIPTION, people: 1 })
 
     await user.click(screen.getByRole('button', { name: 'Assumi team' }))
     await waitFor(() => expect(hire).toHaveBeenCalledWith(PROPOSAL.id))
@@ -494,11 +494,11 @@ describe('TeamBuilder in the cloud', () => {
 
   it('heads each person with their name, the role in this team under it', async () => {
     const user = userEvent.setup()
-    const propose = vi.fn().mockResolvedValue({ ...PROPOSAL, origine: 'cloud' })
+    const propose = vi.fn().mockResolvedValue({ ...PROPOSAL, origin: 'cloud' })
     render(<TeamBuilder mode="cloud" propose={propose} hire={vi.fn()} />)
-    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIPTION)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
-    await screen.findByText(PROPOSAL.riassunto)
+    await screen.findByText(PROPOSAL.summary)
 
     const team = screen.getByRole('list', { name: 'Il team' })
     expect(

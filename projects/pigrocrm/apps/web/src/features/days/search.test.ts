@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { defaultMese, monthWindow, validateDaysSearch, validateNewDaySearch } from './search'
+import { defaultMonth, monthWindow, validateDaysSearch, validateNewDaySearch } from './search'
 
 const ID = '5b2c70c2-0000-4000-8000-000000000001'
 
 describe('the days register’s URL', () => {
   it('keeps a contract and a month and drops anything malformed', () => {
-    expect(validateDaysSearch({ contract: ID, mese: '2026-03' })).toEqual({ contract: ID, mese: '2026-03' })
-    expect(validateDaysSearch({ contract: 'not-an-id', mese: '2026-13' })).toEqual({
+    expect(validateDaysSearch({ contract: ID, month: '2026-03' })).toEqual({ contract: ID, month: '2026-03' })
+    expect(validateDaysSearch({ contract: 'not-an-id', month: '2026-13' })).toEqual({
       contract: undefined,
-      mese: undefined,
+      month: undefined,
     })
-    expect(validateDaysSearch({ contract: 42, mese: null })).toEqual({ contract: undefined, mese: undefined })
+    expect(validateDaysSearch({ contract: 42, month: null })).toEqual({ contract: undefined, month: undefined })
   })
 
   it('keeps a contract and a date for the form and drops a date that is not one', () => {
@@ -28,6 +28,6 @@ describe('monthWindow', () => {
   })
 
   it('opens on the month it is given', () => {
-    expect(defaultMese(new Date(2026, 9, 26))).toBe('2026-10')
+    expect(defaultMonth(new Date(2026, 9, 26))).toBe('2026-10')
   })
 })

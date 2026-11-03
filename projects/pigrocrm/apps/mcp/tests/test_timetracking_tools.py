@@ -37,12 +37,12 @@ async def test_log_time_writes_and_is_attributable_to_the_agent(
                 # (`Decimal('3.0')`, not `Decimal('3.00')`) -- this asserts the exact
                 # wire value `TimeEntryRead` returns, so the input is written the same
                 # way a client's own numeric text field would send it.
-                "ore": "3.50",
-                "descrizione": "Analisi requisiti",
+                "hours": "3.50",
+                "description": "Analisi requisiti",
             },
         )
         entry = created.structured_content
-        assert entry["ore"] == "3.50"
+        assert entry["hours"] == "3.50"
 
         timeline = await client.call_tool(
             "get_timeline", {"entity_type": "time_entry", "entity_id": entry["id"]}
@@ -94,11 +94,11 @@ async def test_list_period_locks_shows_the_months_log_time_will_refuse(
     the operations `FULL_ACCESS_ACTIONS` refuses to any agent credential
     whatever its role, so an mcp actor here would be setting up the fixture by doing the
     very thing the test says an agent cannot do. It passed until that ban existed."""
-    PeriodLockService(mcp_session).close_period(PeriodLockCreate(anno=2026, mese=1), UMANO)
+    PeriodLockService(mcp_session).close_period(PeriodLockCreate(year=2026, month=1), UMANO)
 
     async with Client(server) as client:
         listed = (await client.call_tool("list_period_locks", {})).structured_content
-        assert [(lock["anno"], lock["mese"]) for lock in listed["locks"]] == [(2026, 1)]
+        assert [(lock["year"], lock["month"]) for lock in listed["locks"]] == [(2026, 1)]
 
         # The same month, from the writing end: the two answers have to agree, or the
         # list is decoration.
@@ -108,26 +108,26 @@ async def test_list_period_locks_shows_the_months_log_time_will_refuse(
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
                 "data": "2026-01-15",
-                "ore": "2.00",
-                "descrizione": "Voce arretrata",
+                "hours": "2.00",
+                "description": "Voce arretrata",
             },
         )
         assert blocked.is_error
-        assert "chiuso" in blocked.content[0].text
+        assert "closed" in blocked.content[0].text
 
         other_year = (
-            await client.call_tool("list_period_locks", {"anno": 2025})
+            await client.call_tool("list_period_locks", {"year": 2025})
         ).structured_content
         assert other_year["locks"] == []
 
 
 async def test_list_period_locks_rejects_a_wrong_typed_year_with_guidance(server) -> None:
-    """`list_locks` has no schema of its own -- `anno` goes straight into a `WHERE` --
-    so a non-numeric year would reach the query as a raw database error. `OptionalAnno`
+    """`list_locks` has no schema of its own -- `year` goes straight into a `WHERE` --
+    so a non-numeric year would reach the query as a raw database error. `OptionalYear`
     keeps the SDK from rejecting it ahead of `_guard`, and `_ANNO` validates it inside
     the guarded call so the answer is a diagnosis rather than a stack trace."""
     async with Client(server) as client:
-        result = await client.call_tool("list_period_locks", {"anno": "scorso"})
+        result = await client.call_tool("list_period_locks", {"year": "scorso"})
 
     assert result.is_error
     message = result.content[0].text
@@ -151,8 +151,8 @@ async def test_a_bad_argument_comes_back_as_guidance_not_a_pydantic_dump(
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
                 "data": "2026-03-10",
-                "ore": "molte",
-                "descrizione": "x",
+                "hours": "molte",
+                "description": "x",
             },
         )
     assert result.is_error
@@ -169,8 +169,8 @@ async def test_the_deal_resource_carries_the_hours_block(
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
                 "data": "2026-03-10",
-                "ore": "8.00",
-                "descrizione": "Sviluppo",
+                "hours": "8.00",
+                "description": "Sviluppo",
             },
         )
         rendered = (await client.read_resource(f"deal://{seeded_deal_id}")).contents[0].text
@@ -202,14 +202,14 @@ async def test_the_timer_is_the_agents_clock_too(
             {"result": None},
         )
         started = await client.call_tool(
-            "start_timer", {"deal_id": str(seeded_deal_id), "descrizione": "Riunione"}
+            "start_timer", {"deal_id": str(seeded_deal_id), "description": "Riunione"}
         )
         assert started.structured_content["deal_id"] == str(seeded_deal_id)
 
         stopped = await client.call_tool("stop_timer", {})
         entry = stopped.structured_content
-        assert entry["descrizione"] == "Riunione"
-        assert entry["ore"] == "0.01"
+        assert entry["description"] == "Riunione"
+        assert entry["hours"] == "0.01"
 
         timeline = await client.call_tool(
             "get_timeline", {"entity_type": "time_entry", "entity_id": entry["id"]}

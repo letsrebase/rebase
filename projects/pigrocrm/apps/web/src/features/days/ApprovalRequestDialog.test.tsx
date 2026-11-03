@@ -20,13 +20,13 @@ vi.mock('@/features/gmail/queries', async (importOriginal) => {
 })
 
 const MESSAGE = {
-  oggetto: 'Richiesta di approvazione delle giornate: Consulenza architetturale',
-  corpo: 'Buongiorno,\n\n- lunedì 2 novembre 2026: giornata intera, Workshop\n\nGrazie.',
+  subject: 'Richiesta di approvazione delle giornate: Consulenza architetturale',
+  body: 'Buongiorno,\n\n- lunedì 2 novembre 2026: giornata intera, Workshop\n\nGrazie.',
 }
 const DRAFT = {
   id: 'draft-1',
   updated_at: '2026-10-26T10:00:00.123456Z',
-  send_state: 'bozza',
+  send_state: 'draft',
   to_addresses: ['amministrazione@acme.example'],
   last_error: null,
 }
@@ -38,20 +38,20 @@ function serving() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/email-drafts/{draft_id}') return Promise.resolve(ok(draftNow))
     if (path === '/api/customers/{customer_id}') {
-      return Promise.resolve(ok({ id: CUSTOMER_ID, ragione_sociale: 'Acme', email: 'amministrazione@acme.example' }))
+      return Promise.resolve(ok({ id: CUSTOMER_ID, legal_name: 'Acme', email: 'amministrazione@acme.example' }))
     }
     return Promise.resolve(ok(undefined))
   }) as never)
 }
 
-function posts(sent: Record<string, unknown> | 'refused' = { ...DRAFT, send_state: 'inviato' }) {
+function posts(sent: Record<string, unknown> | 'refused' = { ...DRAFT, send_state: 'sent' }) {
   vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
     if (path === '/api/contracts/{contract_id}/approval-request/preview') return Promise.resolve(ok(MESSAGE))
     if (path === '/api/contracts/{contract_id}/approval-request') {
       // The draft holds what was prepared: its words are the person's, as reviewed.
-      const body = (init as { body: { oggetto: string; corpo: string; to_addresses: string[] } }).body
-      draftNow = { ...DRAFT, subject: body.oggetto, body_markdown: body.corpo, to_addresses: body.to_addresses }
-      return Promise.resolve(ok({ draft: draftNow, work_units: [row({ id: 'p1', stato: 'proposto' }), row({ id: 'p2', stato: 'proposto' })] }))
+      const body = (init as { body: { subject: string; body: string; to_addresses: string[] } }).body
+      draftNow = { ...DRAFT, subject: body.subject, body_markdown: body.body, to_addresses: body.to_addresses }
+      return Promise.resolve(ok({ draft: draftNow, work_units: [row({ id: 'p1', status: 'proposed' }), row({ id: 'p2', status: 'proposed' })] }))
     }
     if (path === '/api/email-drafts/{draft_id}/send') {
       if (sent === 'refused') {
@@ -98,8 +98,8 @@ describe('asking a client for approval', () => {
     open()
     await toTheText(user)
 
-    expect(screen.getByLabelText('Oggetto')).toHaveValue(MESSAGE.oggetto)
-    expect(screen.getByLabelText('Messaggio')).toHaveValue(MESSAGE.corpo)
+    expect(screen.getByLabelText('Oggetto')).toHaveValue(MESSAGE.subject)
+    expect(screen.getByLabelText('Messaggio')).toHaveValue(MESSAGE.body)
     await waitFor(() => expect(screen.getByLabelText('A')).toHaveValue('amministrazione@acme.example'))
     await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
 
@@ -113,9 +113,9 @@ describe('asking a client for approval', () => {
     expect(vi.mocked(api.POST).mock.calls[1]?.[1]).toMatchObject({
       body: {
         to_addresses: ['amministrazione@acme.example'],
-        oggetto: MESSAGE.oggetto,
-        corpo: MESSAGE.corpo,
-        days: [{ quantita: '1.00', descrizione: 'Workshop' }],
+        subject: MESSAGE.subject,
+        body: MESSAGE.body,
+        days: [{ quantity: '1.00', description: 'Workshop' }],
       },
     })
     // The send names the revision that was read, untouched.
@@ -135,13 +135,13 @@ describe('asking a client for approval', () => {
     await user.type(body, 'Testo mio')
     await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(3))
-    expect(vi.mocked(api.POST).mock.calls[1]?.[1]).toMatchObject({ body: { corpo: 'Testo mio' } })
+    expect(vi.mocked(api.POST).mock.calls[1]?.[1]).toMatchObject({ body: { body: 'Testo mio' } })
   })
 
   it('keeps the draft and the days when the send is refused, and sends it again on the revision it read', async () => {
     // The refusal moved the draft: its revision is not the one that was prepared.
     posts('refused')
-    const REFUSED_PATCH = { send_state: 'fallito', last_error: 'Gmail ha rifiutato la richiesta', updated_at: '2026-10-26T10:05:00.654321Z' }
+    const REFUSED_PATCH = { send_state: 'failed', last_error: 'Gmail ha rifiutato la richiesta', updated_at: '2026-10-26T10:05:00.654321Z' }
     const original = vi.mocked(api.POST).getMockImplementation()
     vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
       if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...draftNow, ...REFUSED_PATCH }
@@ -171,7 +171,7 @@ describe('asking a client for approval', () => {
     vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
       if (path === '/api/email-drafts/{draft_id}/send') {
         // Another tab edited the draft and the send was refused as `draft_changed`.
-        draftNow = { ...draftNow, send_state: 'bozza', body_markdown: 'Testo cambiato altrove', updated_at: '2026-10-26T11:00:00Z' }
+        draftNow = { ...draftNow, send_state: 'draft', body_markdown: 'Testo cambiato altrove', updated_at: '2026-10-26T11:00:00Z' }
       }
       return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
     }) as never)
@@ -187,7 +187,7 @@ describe('asking a client for approval', () => {
     posts('refused')
     const original = vi.mocked(api.POST).getMockImplementation()
     vi.mocked(api.POST).mockImplementation(((path: string, init: unknown) => {
-      if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...draftNow, send_state: 'incerto' }
+      if (path === '/api/email-drafts/{draft_id}/send') draftNow = { ...draftNow, send_state: 'uncertain' }
       return (original as (p: string, i: unknown) => Promise<unknown>)(path, init)
     }) as never)
     const user = userEvent.setup()

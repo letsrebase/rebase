@@ -19,12 +19,12 @@ tax record) stays where it was and is counted as `lasciati`.
 its anonymous card travel together, so if the absorbed card holds the newer one the two
 swap and the older file and card stay, reachable, on the soft-deleted card. A survivor
 left with a CV and no card, or only a failure for that CV, is flagged
-(`scheda_da_rigenerare`) and its failure is cleared, so the hourly `cards-refresh` writes
+(`card_from_regenerate`) and its failure is cleared, so the hourly `cards-refresh` writes
 it: the merge never calls Claude.
 
 **Profile fields** the survivor leaves empty are filled from the absorbed card; the first
 attribution (the UTM set and the page) stays, the older card's; the
-further `stato` wins over `nuovo`. Every changed value is kept in the entry, as it was.
+further `status` wins over `new`. Every changed value is kept in the entry, as it was.
 
 **What stops it**, each with a sentence: the same card, an admin as the absorbed side, two
 different tax codes, a live framework agreement of the same regime on both sides, or an
@@ -58,7 +58,7 @@ from rebase_core.merge_steps import (
     restore,
 )
 from rebase_core.models import (
-    AUTORE_MAX_LENGTH,
+    AUTHOR_MAX_LENGTH,
     AdminAction,
     CampaignOptout,
     ContractDocument,
@@ -76,8 +76,8 @@ from rebase_core.vocabulary import enum_of
 
 ENTITY = "freelancer"
 
-_LIVE_FRAMEWORK = ("inviato", "in_attesa", "firmato")
-_LIVE_MATCH = ("in_firma", "attivo")
+_LIVE_FRAMEWORK = ("sent", "pending", "signed")
+_LIVE_MATCH = ("awaiting_signature", "active")
 
 
 class MergeRead(ResponseModel):
@@ -87,9 +87,9 @@ class MergeRead(ResponseModel):
     absorbed_freelancer_id: UUID
     action_id: UUID
     moved: dict[str, int]
-    lasciati: dict[str, int]
+    left: dict[str, int]
     cv: Annotated[str, Field(json_schema_extra=enum_of(CV_OUTCOMES))]
-    scheda_da_rigenerare: bool
+    card_from_regenerate: bool
 
 
 class MergeRequest(BaseModel):
@@ -105,7 +105,7 @@ class MergeRefused(InvalidState):
 
 
 def _name(user: User) -> str:
-    return f"{user.nome} {user.cognome}".strip()
+    return f"{user.nome} {user.last_name}".strip()
 
 
 class PersonMergeService:
@@ -149,18 +149,18 @@ class PersonMergeService:
         self.session.flush()
         flagged = self.steps.needs_card(survivor)
 
-        author = _name(admin)[:AUTORE_MAX_LENGTH] or "admin"
+        author = _name(admin)[:AUTHOR_MAX_LENGTH] or "admin"
         self.session.add(
             Note(
                 entity_type="freelancer",
                 entity_id=survivor.id,
-                testo=(
+                text=(
                     f"Scheda unita con quella dell'indirizzo {a_user.email}: "
                     "una sola persona, il CV più recente resta qui."
                 ),
-                autore=author,
-                autore_id=admin_id,
-                fonte="sistema",
+                author=author,
+                author_id=admin_id,
+                source="system",
             )
         )
         payload = {
@@ -169,7 +169,7 @@ class PersonMergeService:
             "moved": {key: [str(i) for i in ids] for key, ids in moved.items()},
             "lasciati": left,
             "cv": cv,
-            "scheda_da_rigenerare": flagged,
+            "card_from_regenerate": flagged,
             **undo,
         }
         merged = AdminAction(
@@ -193,7 +193,7 @@ class PersonMergeService:
                         "moved": {key: len(ids) for key, ids in moved.items()},
                         "lasciati": left,
                         "cv": cv,
-                        "scheda_da_rigenerare": flagged,
+                        "card_from_regenerate": flagged,
                     }
                 ),
             )
@@ -204,9 +204,9 @@ class PersonMergeService:
             absorbed_freelancer_id=absorbed.id,
             action_id=merged.id,
             moved={key: len(ids) for key, ids in moved.items()},
-            lasciati=left,
+            left=left,
             cv=cv,
-            scheda_da_rigenerare=flagged,
+            card_from_regenerate=flagged,
         )
 
     def plan(self, into_id: UUID, absorbed_id: UUID) -> dict[str, int]:
@@ -286,10 +286,10 @@ class PersonMergeService:
             left["linkedin"] = 1
         a_user.linkedin_url = profile
         a_user.merged_into_id = None
-        if s_user.telefono == user_undo["survivor_telefono_after"]:
-            s_user.telefono = user_undo["survivor_telefono_before"]
-        elif s_user.telefono != user_undo["survivor_telefono_before"]:
-            left["telefono"] = 1
+        if s_user.phone == user_undo["survivor_telefono_after"]:
+            s_user.phone = user_undo["survivor_telefono_before"]
+        elif s_user.phone != user_undo["survivor_telefono_before"]:
+            left["phone"] = 1
         for alias in user_undo["aliases"]:
             self.session.execute(
                 update(User).where(User.id == UUID(alias)).values(merged_into_id=a_user.id)
@@ -315,7 +315,7 @@ class PersonMergeService:
             else:
                 changed_since += 1
         if changed_since:
-            left["campi"] = changed_since
+            left["fields"] = changed_since
         if payload["optout_copied"]:
             self.session.execute(
                 delete(CampaignOptout).where(
@@ -343,9 +343,9 @@ class PersonMergeService:
             absorbed_freelancer_id=absorbed.id,
             action_id=action.id,
             moved=put_back,
-            lasciati=left,
+            left=left,
             cv=CV_RESTORED if payload["cv_swapped"] else CV_KEPT,
-            scheda_da_rigenerare=False,
+            card_from_regenerate=False,
         )
 
     # ---- the checks -------------------------------------------------------------------
@@ -358,14 +358,10 @@ class PersonMergeService:
                 "La scheda da assorbire è di un amministratore: unisci l'altra nella sua.",
             )
         s_tax = self.session.scalar(
-            select(FreelancerFiscal.codice_fiscale).where(
-                FreelancerFiscal.freelancer_id == survivor.id
-            )
+            select(FreelancerFiscal.tax_code).where(FreelancerFiscal.freelancer_id == survivor.id)
         )
         a_tax = self.session.scalar(
-            select(FreelancerFiscal.codice_fiscale).where(
-                FreelancerFiscal.freelancer_id == absorbed.id
-            )
+            select(FreelancerFiscal.tax_code).where(FreelancerFiscal.freelancer_id == absorbed.id)
         )
         if s_tax and a_tax and s_tax.strip().upper() != a_tax.strip().upper():
             raise MergeRefused(
@@ -387,20 +383,20 @@ class PersonMergeService:
     def _framework_regimes(self, freelancer_id: UUID) -> set[str]:
         rows = self.session.execute(
             select(
-                ContractDocument.regime, ContractDocument.stato, ContractDocument.notice_at
+                ContractDocument.regime, ContractDocument.status, ContractDocument.notice_at
             ).where(
                 ContractDocument.freelancer_id == freelancer_id,
-                ContractDocument.kind == "quadro",
-                ContractDocument.stato.in_(_LIVE_FRAMEWORK),
+                ContractDocument.kind == "framework",
+                ContractDocument.status.in_(_LIVE_FRAMEWORK),
             )
         ).all()
-        return {regime for regime, stato, notice in rows if stato != "firmato" or notice is None}
+        return {regime for regime, status, notice in rows if status != "signed" or notice is None}
 
     def _active_companies(self, freelancer_id: UUID) -> set[UUID]:
         return set(
             self.session.scalars(
                 select(Match.company_id).where(
-                    Match.freelancer_id == freelancer_id, Match.stato.in_(_LIVE_MATCH)
+                    Match.freelancer_id == freelancer_id, Match.status.in_(_LIVE_MATCH)
                 )
             )
         )

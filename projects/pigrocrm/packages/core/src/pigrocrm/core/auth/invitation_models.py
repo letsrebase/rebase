@@ -29,7 +29,7 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
 
     email: Mapped[str] = mapped_column(String(320), index=True, nullable=False)
     nome: Mapped[str | None] = mapped_column(String(200), default=None)
-    ruolo: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     invited_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -40,7 +40,7 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     # table, because an invitation is spent once and its rows would be orphans the
     # moment it is accepted or revoked; it carries no foreign key, so accepting drops
     # any id that no longer names an active azienda.
-    aziende: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
+    legal_entities: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
     # What became of the mail that carries this invitation (REB-678). A provider's 2xx is
     # only «I took it»: the mail can still bounce, and the Team panel is the one place an
     # admin can learn the address was wrong. `mail_id` is the provider's handle for the

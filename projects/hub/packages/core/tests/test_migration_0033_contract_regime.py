@@ -1,4 +1,4 @@
-"""0033 (REB-687): every contract document says its regime, backfilled to `partita_iva`,
+"""0033 (REB-687): every contract document says its regime, backfilled to `vat_number`,
 and tax data may have no partita IVA. The downgrade refuses while either would be lost,
 and a retried deploy lands on the same schema."""
 
@@ -42,7 +42,7 @@ def _freelancer(connection: Connection, user_id: str) -> str:
     )
 
 
-def _quadro(connection: Connection, freelancer_id: str, user_id: str) -> str:
+def _framework(connection: Connection, freelancer_id: str, user_id: str) -> str:
     return str(
         connection.execute(
             text(
@@ -81,11 +81,11 @@ def _columns(connection: Connection) -> dict[str, str]:
     }
 
 
-AFTER = {"contract_documents.regime": "NO", "freelancer_fiscal.partita_iva": "YES"}
-BEFORE = {"freelancer_fiscal.partita_iva": "NO"}
+AFTER = {"contract_documents.regime": "NO", "freelancer_fiscal.vat_number": "YES"}
+BEFORE = {"freelancer_fiscal.vat_number": "NO"}
 
 
-def test_migration_0033_backfills_the_regime_frees_the_partita_iva_and_guards_the_downgrade(
+def test_migration_0033_backfills_the_regime_frees_the_vat_number_and_guards_the_downgrade(
     hub_postgres: Any,
 ) -> None:
     with hub_postgres.fresh_container() as container:
@@ -99,7 +99,7 @@ def test_migration_0033_backfills_the_regime_frees_the_partita_iva_and_guards_th
             assert _columns(connection) == BEFORE
             user = _user(connection)
             freelancer = _freelancer(connection, user)
-            quadro = _quadro(connection, freelancer, user)
+            framework = _framework(connection, freelancer, user)
             _fiscal(connection, freelancer, user)
         for _ in range(2):  # a retried deploy runs the same revision again
             command.upgrade(config, "head")
@@ -108,7 +108,7 @@ def test_migration_0033_backfills_the_regime_frees_the_partita_iva_and_guards_th
                 assert (
                     connection.execute(
                         text("SELECT regime FROM contract_documents WHERE id = :i"),
-                        {"i": quadro},
+                        {"i": framework},
                     ).scalar_one()
                     == "partita_iva"
                 )
@@ -117,7 +117,7 @@ def test_migration_0033_backfills_the_regime_frees_the_partita_iva_and_guards_th
                 connection.execute(text("UPDATE freelancer_fiscal SET partita_iva = NULL"))
                 connection.execute(text("UPDATE contract_documents SET regime = 'occasionale'"))
             # An occasional document would be typeset again with the ordinary text.
-            with pytest.raises(RuntimeError, match="occasionale"):
+            with pytest.raises(RuntimeError, match="occasional"):
                 command.downgrade(config, "0032")
             with engine.begin() as connection:
                 connection.execute(text("UPDATE contract_documents SET regime = 'partita_iva'"))

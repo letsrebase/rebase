@@ -34,7 +34,7 @@ async function send<T>(path: string, files: readonly File[], fields: Record<stri
 
 export async function reviewImportFiles(files: readonly File[]): Promise<ReviewRow[]> {
   const result = await send<ReviewResult>('/api/invoices/import/upload/review', files, {})
-  return result.righe
+  return result.lines
 }
 
 export async function confirmImportFiles(
@@ -42,9 +42,9 @@ export async function confirmImportFiles(
   decisions: ImportDecisions,
 ): Promise<ConfirmRow[]> {
   const result = await send<ConfirmResult>('/api/invoices/import/upload/confirm', files, {
-    decisioni: JSON.stringify(decisions),
+    decisions: JSON.stringify(decisions),
   })
-  return result.righe
+  return result.lines
 }
 
 /**

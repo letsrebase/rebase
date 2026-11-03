@@ -9,7 +9,7 @@ same wall for criterion 12 and answered it the same way; the precedent is follow
 rather than the rule fought.
 
 **What this file adds to a suite that already tests all four pieces.** `test_mcp_prompts.py`
-renders `revisione-pipeline`, `test_mcp_dashboard.py` calls `get_commercial_dashboard` and
+renders `pipeline-review`, `test_mcp_dashboard.py` calls `get_commercial_dashboard` and
 pins the absent `update_automation_config`, `test_mcp_search.py` searches a P.IVA fragment.
 Each of them proves its own piece against its own corpus. None of them proves that the
 pieces **join up** -- that the deal the briefing calls stalled is the deal the dashboard
@@ -65,25 +65,25 @@ from pigrocrm_mcp.server import build_server
 AGENTE = Actor(id=None, type="mcp", role="admin")
 
 _PREFIX = "MCPCICLO"
-STAGE_APERTO = f"{_PREFIX} stato aperto"
-STAGE_VINTO = f"{_PREFIX} stato vinto"
-CLIENTE = f"{_PREFIX} Ingegneria Srl"
-DEAL_FERMO = f"{_PREFIX} rifacimento impianti"
-OFFERTA_FERMA = f"{_PREFIX} offerta impianti"
-OFFERTA_ACCETTATA = f"{_PREFIX} offerta precedente"
+STAGE_OPEN = f"{_PREFIX} stato aperto"
+STAGE_WON = f"{_PREFIX} stato vinto"
+CUSTOMER = f"{_PREFIX} Ingegneria Srl"
+STALLED_DEAL = f"{_PREFIX} rifacimento impianti"
+OFFER_STALLED = f"{_PREFIX} offerta impianti"
+OFFER_ACCEPTED = f"{_PREFIX} offerta precedente"
 
 # The VAT number the customer is resolved from, and the fragment taken out of its middle.
 # An infix, never a prefix: a prefix would also be served by a plain `LIKE 'x%'`, and §8.1's
 # promise -- the one §17 names as 6A's reason to exist on its own -- is that an infix finds
 # it. Five digits, comfortably over the three-character floor, and distinctive enough that
 # the per-class result limit cannot push this row out of the group.
-PARTITA_IVA = "97531864200"
-FRAMMENTO = PARTITA_IVA[3:8]
+VAT_NUMBER = "97531864200"
+FRAMMENTO = VAT_NUMBER[3:8]
 
 # How long the stalled offer has been waiting. A literal number of days back from *today*,
 # never a literal date: a fixed date would make the age drift by one every morning and the
 # assertion below would be true only on the day it was written.
-GIORNI_FERMA = 21
+DAYS_STALLED = 21
 
 
 class Corpus(NamedTuple):
@@ -116,8 +116,8 @@ def _text_of(rendered: Any) -> str:
 
 @pytest.fixture
 def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
-    """One customer, one open deal, and two offers on it: one still `inviata` and stalled,
-    one already `accettata` while the deal was never moved.
+    """One customer, one open deal, and two offers on it: one still `sent` and stalled,
+    one already `accepted` while the deal was never moved.
 
     The second offer is the whole reason the signal has anything to count. "Offerta
     accettata, deal non vinto" is what automation A1 *not* firing looks like from the
@@ -128,25 +128,25 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
     with factory() as session:
         # `code=None`, so these are user-created stages as far as `seed_defaults` is
         # concerned and never collide with a seeded `lead`/`vinto` on the unique index.
-        # `posizione` well past the defaults, so nothing already there is reordered.
-        aperto = PipelineStage(
-            nome=STAGE_APERTO, posizione=920, probabilita_default=50, tipo="open", code=None
+        # `position` well past the defaults, so nothing already there is reordered.
+        open = PipelineStage(
+            nome=STAGE_OPEN, position=920, default_probability=50, type="open", code=None
         )
-        vinto = PipelineStage(
-            nome=STAGE_VINTO, posizione=921, probabilita_default=100, tipo="won", code=None
+        won = PipelineStage(
+            nome=STAGE_WON, position=921, default_probability=100, type="won", code=None
         )
         customer = Customer(
-            ragione_sociale=CLIENTE, partita_iva=PARTITA_IVA, nazione="IT", custom_fields={}
+            legal_name=CUSTOMER, vat_number=VAT_NUMBER, country="IT", custom_fields={}
         )
-        session.add_all([aperto, vinto, customer])
+        session.add_all([open, won, customer])
         session.flush()
 
         deal = Deal(
-            nome=DEAL_FERMO,
+            nome=STALLED_DEAL,
             customer_id=customer.id,
-            pipeline_stage_id=aperto.id,
-            valore_previsto=Decimal("18000.00"),
-            probabilita=60,
+            pipeline_stage_id=open.id,
+            expected_value=Decimal("18000.00"),
+            probability=60,
             custom_fields={},
         )
         session.add(deal)
@@ -156,11 +156,11 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
             [
                 Document(
                     deal_id=deal.id,
-                    tipo="offerta",
-                    titolo=OFFERTA_FERMA,
-                    stato="inviata",
-                    stato_dal=today_local() - timedelta(days=GIORNI_FERMA),
-                    versione_corrente=1,
+                    type="offer",
+                    title=OFFER_STALLED,
+                    status="sent",
+                    status_since=today_local() - timedelta(days=DAYS_STALLED),
+                    current_version=1,
                     custom_fields={},
                 ),
                 # Accepted, on a deal still in an `open` stage. Written straight to the
@@ -168,11 +168,11 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
                 # the deal -- the opposite of the state this row exists to represent.
                 Document(
                     deal_id=deal.id,
-                    tipo="offerta",
-                    titolo=OFFERTA_ACCETTATA,
-                    stato="accettata",
-                    stato_dal=today_local() - timedelta(days=GIORNI_FERMA + 7),
-                    versione_corrente=1,
+                    type="offer",
+                    title=OFFER_ACCEPTED,
+                    status="accepted",
+                    status_since=today_local() - timedelta(days=DAYS_STALLED + 7),
+                    current_version=1,
                     custom_fields={},
                 ),
             ]
@@ -193,9 +193,9 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
         with factory() as session:
             # Children before parents, and every clause scoped to this file's own prefix:
             # a wholesale delete would take another file's committed rows with it.
-            session.execute(delete(Document).where(Document.titolo.like(f"{_PREFIX} %")))
+            session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
+            session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone: `describe_automations` creates the
@@ -216,14 +216,14 @@ async def test_the_agent_runs_the_weekly_review_end_to_end(cycle_server: Corpus)
     async with Client(cycle_server.server) as client:
         # 1. Open the prompt. The context arrives *inside* it -- which is the whole reason
         #    these are prompts and not an instruction to go and fetch something.
-        briefing = _text_of(await client.get_prompt("revisione-pipeline"))
+        briefing = _text_of(await client.get_prompt("pipeline-review"))
         assert "## Pipeline per stato" in briefing
         assert "## Offerte inviate in attesa di risposta" in briefing
-        assert STAGE_APERTO in briefing, "the stage row is missing, so nothing was read"
+        assert STAGE_OPEN in briefing, "the stage row is missing, so nothing was read"
         # The age, not merely the title: an offer listed with no age is not a stalled offer,
         # it is a row. `— ferma da 0 giorni` would read as "sent today", which is a
         # different fact and the one `giorni is None` gets wrong.
-        assert f"- {OFFERTA_FERMA} — ferma da {GIORNI_FERMA} giorni" in briefing
+        assert f"- {OFFER_STALLED} — ferma da {DAYS_STALLED} giorni" in briefing
 
         # 2. Read the dashboard as data, which is what a tool is for. The briefing is prose
         #    for a model to reason over; the tool is the same figures in a shape it can
@@ -231,26 +231,26 @@ async def test_the_agent_runs_the_weekly_review_end_to_end(cycle_server: Corpus)
         board = await client.call_tool("get_commercial_dashboard", {})
         assert not board.is_error, str(board.content)
         payload = _payload(board)
-        assert payload["offerte_in_attesa_totale"] >= 1
+        assert payload["offers_pending_total"] >= 1
 
         # 3. The stalled deal is identifiable *as stalled*: the offer carries its age, and
         #    the age is the seeded one rather than any number at all.
-        ferma = next(
-            offer for offer in payload["offerte_in_attesa"] if offer["titolo"] == OFFERTA_FERMA
+        stalled = next(
+            offer for offer in payload["offers_pending"] if offer["title"] == OFFER_STALLED
         )
-        assert ferma["giorni"] == GIORNI_FERMA
+        assert stalled["days"] == DAYS_STALLED
 
         # 4. Resolve the customer from a fragment of its VAT number. The fragment appears in
         #    neither the briefing nor the dashboard payload, which is what makes this a
         #    *resolution* and not a lookup of something already in hand.
         assert FRAMMENTO not in briefing
-        found = await client.call_tool("search_everything", {"termine": FRAMMENTO})
+        found = await client.call_tool("search_everything", {"deadline": FRAMMENTO})
         assert not found.is_error, str(found.content)
-        clienti = next(
+        customers = next(
             group for group in _payload(found)["gruppi"] if group["entity"] == "customer"
         )
-        assert CLIENTE in [hit["etichetta"] for hit in clienti["hits"]]
-        assert str(cycle_server.customer_id) in [hit["id"] for hit in clienti["hits"]]
+        assert CUSTOMER in [hit["label"] for hit in customers["hits"]]
+        assert str(cycle_server.customer_id) in [hit["id"] for hit in customers["hits"]]
 
         # 5. And the review ends where §11.1 says it must: with no tool to change what the
         #    system will do next. Asserted as the **absence of a tool** rather than as a
@@ -279,8 +279,8 @@ async def test_the_economic_dashboard_the_agent_reads_passes_criterion_one(
     The month comes from the clock, not from a literal: a fixed month would make this test
     start failing on the first of the next one.
     """
-    oggi = today_local()
-    da, a = month_bounds(oggi.year, oggi.month)
+    today = today_local()
+    da, a = month_bounds(today.year, today.month)
 
     async with Client(cycle_server.server) as client:
         result = await client.call_tool(
@@ -312,17 +312,17 @@ async def test_the_agent_sees_the_signal_and_the_automation_that_explains_it(
         board = await client.call_tool("get_commercial_dashboard", {})
         described = await client.call_tool("describe_automations", {})
 
-    assert _payload(board)["offerte_accettate_deal_non_vinto"] >= 1
+    assert _payload(board)["accepted_offers_deal_not_won"] >= 1
 
     assert not described.is_error, str(described.content)
-    descrizione = _payload(described)
-    assert set(descrizione) == {"configurazione", "regole", "esecuzioni"}
+    description = _payload(described)
+    assert set(description) == {"configuration", "rules", "runs"}
     # A1 is named, in prose, in the same words the settings screen shows: the agent and the
     # human read one description, so the two surfaces cannot drift into two explanations of
     # the same rule.
-    a1 = next(regola for regola in descrizione["regole"] if regola["codice"] == "A1")
-    assert a1["titolo"] == "Offerta accettata → deal vinto"
+    a1 = next(rule for rule in description["rules"] if rule["code"] == "A1")
+    assert a1["title"] == "Offerta accettata → deal vinto"
     # The prose says *which* transition fires it, which is what turns the count above from a
     # number into something a reader can act on.
-    assert "«accettata»" in a1["descrizione"]
-    assert "«vinto»" in a1["descrizione"]
+    assert "«accettata»" in a1["description"]
+    assert "«vinto»" in a1["description"]

@@ -31,26 +31,26 @@ const TIMES = { created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:0
 const SOFTWARE = {
   id: 'cat-2',
   nome: 'Software e licenze',
-  posizione: 1,
+  position: 1,
   code: 'software_licenze',
-  archiviata: false,
+  archived: false,
   ...TIMES,
 }
-const CONSULENZA = {
+const CONSULTING = {
   id: 'cat-1',
   nome: 'Consulenza esterna',
-  posizione: 0,
-  code: 'consulenza_esterna',
-  archiviata: false,
+  position: 0,
+  code: 'consulting_esterna',
+  archived: false,
   ...TIMES,
 }
 /** No `code`: created by hand from this very panel, and archived later. */
 const VECCHIA = {
   id: 'cat-9',
   nome: 'Vecchia voce',
-  posizione: 7,
+  position: 7,
   code: null,
-  archiviata: true,
+  archived: true,
   ...TIMES,
 }
 
@@ -102,8 +102,8 @@ beforeEach(() => {
 
 describe('CostCategoriesPanel', () => {
   it('lists the categories by stored position, with the code beside each name', async () => {
-    // Deliberately handed back out of order: `posizione` is the order, not arrival.
-    respond([SOFTWARE, CONSULENZA])
+    // Deliberately handed back out of order: `position` is the order, not arrival.
+    respond([SOFTWARE, CONSULTING])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
@@ -146,7 +146,7 @@ describe('CostCategoriesPanel', () => {
    * into a permanent fixture of the toolbar.
    */
   it('offers the default taxonomy only while there is nothing configured', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
@@ -155,7 +155,7 @@ describe('CostCategoriesPanel', () => {
 
   it('seeds the default taxonomy from the empty state', async () => {
     respond([])
-    vi.mocked(api.POST).mockImplementation(() => ok([CONSULENZA, SOFTWARE], 201))
+    vi.mocked(api.POST).mockImplementation(() => ok([CONSULTING, SOFTWARE], 201))
     renderPanel()
 
     await userEvent.click(await screen.findByRole('button', { name: /categorie predefinite/i }))
@@ -171,7 +171,7 @@ describe('CostCategoriesPanel', () => {
   })
 
   it('creates a category at the position after the last one', async () => {
-    respond([CONSULENZA, SOFTWARE])
+    respond([CONSULTING, SOFTWARE])
     vi.mocked(api.POST).mockImplementation(() => ok({ ...SOFTWARE, id: 'cat-3' }, 201))
     renderPanel()
 
@@ -181,7 +181,7 @@ describe('CostCategoriesPanel', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/cost-categories', {
-        body: { nome: 'Formazione', posizione: 2 },
+        body: { nome: 'Formazione', position: 2 },
       }),
     )
   })
@@ -225,7 +225,7 @@ describe('CostCategoriesPanel', () => {
    * dialog must stay open with what was typed still in it.
    */
   it('reports a refused create inside the dialog, which stays open', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     vi.mocked(api.POST).mockImplementation(() =>
       failed(
         {
@@ -259,8 +259,8 @@ describe('CostCategoriesPanel', () => {
    * "simplifies" this button into a delete, this fails.
    */
   it('archives through the archive endpoint and never deletes', async () => {
-    respond([CONSULENZA])
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULENZA, archiviata: true }))
+    respond([CONSULTING])
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULTING, archived: true }))
     renderPanel()
 
     await openRowMenu('Consulenza esterna')
@@ -281,7 +281,7 @@ describe('CostCategoriesPanel', () => {
    * offers "Ripristina", never "Archivia" again.
    */
   it('keeps an archived category readable and restorable behind the checkbox', async () => {
-    respond([CONSULENZA], [VECCHIA])
+    respond([CONSULTING], [VECCHIA])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
@@ -305,7 +305,7 @@ describe('CostCategoriesPanel', () => {
 
   it('restores an archived category through the unarchive endpoint', async () => {
     respond([], [VECCHIA])
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...VECCHIA, archiviata: false }))
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...VECCHIA, archived: false }))
     renderPanel()
 
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Includi archiviate' }))
@@ -322,11 +322,11 @@ describe('CostCategoriesPanel', () => {
   /**
    * The rename sends the name and nothing else. Sending `code` back -- even unchanged
    * -- would make the one field a report keys on look editable from here, and sending
-   * `posizione` would let a rename silently reorder the list.
+   * `position` would let a rename silently reorder the list.
    */
   it('renames with the trimmed name alone, never the code or the position', async () => {
-    respond([CONSULENZA])
-    vi.mocked(api.PATCH).mockImplementation(() => ok({ ...CONSULENZA, nome: 'Consulenze' }))
+    respond([CONSULTING])
+    vi.mocked(api.PATCH).mockImplementation(() => ok({ ...CONSULTING, nome: 'Consulenze' }))
     renderPanel()
 
     const input = await screen.findByLabelText('Nome della categoria Consulenza esterna')
@@ -351,7 +351,7 @@ describe('CostCategoriesPanel', () => {
    * that there is nothing to save yet.
    */
   it('disables the save item on a row nobody has edited, and enables it once edited', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     renderPanel()
 
     await openRowMenu('Consulenza esterna')
@@ -373,7 +373,7 @@ describe('CostCategoriesPanel', () => {
    * contradictory statements about the same click.
    */
   it('clears the previous failure when the retry succeeds', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     vi.mocked(api.POST).mockImplementationOnce(() =>
       failed(
         {
@@ -392,7 +392,7 @@ describe('CostCategoriesPanel', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: 'Archivia' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/requires one of/)
 
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULENZA, archiviata: true }))
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULTING, archived: true }))
     await openRowMenu('Consulenza esterna')
     await userEvent.click(screen.getByRole('menuitem', { name: 'Archivia' }))
 

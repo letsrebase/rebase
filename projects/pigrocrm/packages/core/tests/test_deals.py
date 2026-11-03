@@ -17,9 +17,9 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import (
     DECIMAL_PLACES,
-    NOME_MAX_LENGTH,
-    ORE_MAX_DIGITS,
-    VALORE_MAX_DIGITS,
+    HOURS_MAX_DIGITS,
+    NAME_MAX_LENGTH,
+    VALUE_MAX_DIGITS,
     DealCreate,
     DealListQuery,
     DealUpdate,
@@ -31,13 +31,13 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLAB = Actor(id=None, type="user", role="collaboratore")
+COLLAB = Actor(id=None, type="user", role="collaborator")
 READONLY = Actor(id=None, type="user", role="readonly")
 
 
 @pytest.fixture
 def customer_id(db_session: Session):
-    return CustomerService(db_session).create(CustomerCreate(ragione_sociale="ACME"), ADMIN).id
+    return CustomerService(db_session).create(CustomerCreate(legal_name="ACME"), ADMIN).id
 
 
 @pytest.fixture
@@ -84,16 +84,16 @@ def test_a_new_deal_inherits_the_stage_default_probability(
     db_session: Session, customer_id, stages
 ) -> None:
     deal = DealService(db_session).create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
-    assert deal.probabilita == stages["Lead"].probabilita_default
+    assert deal.probability == stages["Lead"].default_probability
 
 
 def test_an_explicit_probability_wins_over_the_stage_default(
     db_session: Session, customer_id, stages
 ) -> None:
     deal = DealService(db_session).create(
-        DealCreate(nome="X", customer_id=customer_id, probabilita=42), ADMIN
+        DealCreate(nome="X", customer_id=customer_id, probability=42), ADMIN
     )
-    assert deal.probabilita == 42
+    assert deal.probability == 42
 
 
 def test_money_keeps_two_decimals_and_does_not_drift(
@@ -101,23 +101,23 @@ def test_money_keeps_two_decimals_and_does_not_drift(
 ) -> None:
     """Float would turn 1234.56 into 1234.5599999. On an invoice that is a bug."""
     deal = DealService(db_session).create(
-        DealCreate(nome="X", customer_id=customer_id, valore_previsto=Decimal("1234.56")), ADMIN
+        DealCreate(nome="X", customer_id=customer_id, expected_value=Decimal("1234.56")), ADMIN
     )
-    assert deal.valore_previsto == Decimal("1234.56")
+    assert deal.expected_value == Decimal("1234.56")
 
 
 def test_probability_outside_range_is_rejected(db_session: Session, customer_id, stages) -> None:
     with pytest.raises(ValidationFailed) as exc:
         DealService(db_session).create(
-            DealCreate(nome="X", customer_id=customer_id, probabilita=150), ADMIN
+            DealCreate(nome="X", customer_id=customer_id, probability=150), ADMIN
         )
-    assert exc.value.details["field"] == "probabilita"
+    assert exc.value.details["field"] == "probability"
 
 
 def test_negative_value_is_rejected(db_session: Session, customer_id, stages) -> None:
     with pytest.raises(ValidationFailed):
         DealService(db_session).create(
-            DealCreate(nome="X", customer_id=customer_id, valore_previsto=Decimal("-1")), ADMIN
+            DealCreate(nome="X", customer_id=customer_id, expected_value=Decimal("-1")), ADMIN
         )
 
 
@@ -149,7 +149,7 @@ def test_moving_to_a_won_stage_sets_probability_to_one_hundred(
 ) -> None:
     service = DealService(db_session)
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
-    assert service.move_stage(deal.id, stages["Vinto"].id, ADMIN).probabilita == 100
+    assert service.move_stage(deal.id, stages["Vinto"].id, ADMIN).probability == 100
 
 
 def test_moving_to_a_lost_stage_sets_probability_to_zero(
@@ -157,13 +157,13 @@ def test_moving_to_a_lost_stage_sets_probability_to_zero(
 ) -> None:
     service = DealService(db_session)
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
-    assert service.move_stage(deal.id, stages["Perso"].id, ADMIN).probabilita == 0
+    assert service.move_stage(deal.id, stages["Perso"].id, ADMIN).probability == 0
 
 
 def test_list_can_be_filtered_by_customer_and_by_stage(
     db_session: Session, customer_id, stages
 ) -> None:
-    other = CustomerService(db_session).create(CustomerCreate(ragione_sociale="Beta"), ADMIN).id
+    other = CustomerService(db_session).create(CustomerCreate(legal_name="Beta"), ADMIN).id
     service = DealService(db_session)
     service.create(DealCreate(nome="Mio", customer_id=customer_id), ADMIN)
     service.create(DealCreate(nome="Altro", customer_id=other), ADMIN)
@@ -181,13 +181,13 @@ def test_estimate_fields_exist_for_the_later_pnl_slice(
         DealCreate(
             nome="X",
             customer_id=customer_id,
-            ore_preventivate=Decimal("120.50"),
-            valore_preventivato=Decimal("15000.00"),
+            budgeted_hours=Decimal("120.50"),
+            budgeted_value=Decimal("15000.00"),
         ),
         ADMIN,
     )
-    assert deal.ore_preventivate == Decimal("120.50")
-    assert deal.valore_preventivato == Decimal("15000.00")
+    assert deal.budgeted_hours == Decimal("120.50")
+    assert deal.budgeted_value == Decimal("15000.00")
 
 
 def test_a_customer_with_active_deals_cannot_be_deleted(
@@ -242,12 +242,12 @@ def test_nome_over_the_column_width_is_rejected_on_create() -> None:
     (StringDataRightTruncation) -- not a subclass of IntegrityError, so nothing in
     this codebase catches it, and it poisons the session."""
     with pytest.raises(ValidationError):
-        DealCreate(nome="x" * (NOME_MAX_LENGTH + 1), customer_id=uuid4())
+        DealCreate(nome="x" * (NAME_MAX_LENGTH + 1), customer_id=uuid4())
 
 
 def test_nome_over_the_column_width_is_rejected_on_update() -> None:
     with pytest.raises(ValidationError):
-        DealUpdate(nome="x" * (NOME_MAX_LENGTH + 1))
+        DealUpdate(nome="x" * (NAME_MAX_LENGTH + 1))
 
 
 # --- Carried-over item 2: escape_like on search ---------------------------------
@@ -313,7 +313,7 @@ def test_custom_fields_are_validated_against_the_definitions(
     FieldDefinitionService(db_session).create(
         FieldDefinitionCreate(
             entity_type="deal",
-            key="fonte",
+            key="source",
             label="Fonte",
             field_type="select",
             options=["referral", "outbound"],
@@ -323,13 +323,13 @@ def test_custom_fields_are_validated_against_the_definitions(
     service = DealService(db_session)
 
     ok = service.create(
-        DealCreate(nome="X", customer_id=customer_id, custom_fields={"fonte": "referral"}), ADMIN
+        DealCreate(nome="X", customer_id=customer_id, custom_fields={"source": "referral"}), ADMIN
     )
-    assert ok.custom_fields == {"fonte": "referral"}
+    assert ok.custom_fields == {"source": "referral"}
 
     with pytest.raises(ValidationFailed):
         service.create(
-            DealCreate(nome="Y", customer_id=customer_id, custom_fields={"fonte": "boh"}), ADMIN
+            DealCreate(nome="Y", customer_id=customer_id, custom_fields={"source": "boh"}), ADMIN
         )
 
 
@@ -351,7 +351,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
     validate only the keys the caller actually supplies, never the union with what is
     already stored. Mirrors the identical fix on Customers and People exactly."""
     fields = FieldDefinitionService(db_session)
-    settore = fields.create(
+    industry = fields.create(
         FieldDefinitionCreate(
             entity_type="deal", key="settore", label="Settore", field_type="text"
         ),
@@ -367,7 +367,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
     deal = service.create(
         DealCreate(nome="X", customer_id=customer_id, custom_fields={"settore": "IT"}), ADMIN
     )
-    fields.archive(settore.id, ADMIN)
+    fields.archive(industry.id, ADMIN)
 
     updated = service.update(deal.id, DealUpdate(custom_fields={"priorita": "alta"}), ADMIN)
     assert updated.custom_fields == {"settore": "IT", "priorita": "alta"}
@@ -381,7 +381,7 @@ def test_archived_custom_field_value_survives_unrelated_updates_and_can_still_be
             key="stato_deal",
             label="Stato",
             field_type="select",
-            options=["aperto", "chiuso"],
+            options=["aperto", "closed"],
         ),
         ADMIN,
     )
@@ -447,7 +447,7 @@ def test_archived_custom_field_set_to_none_is_removed_even_if_it_was_required(
     clearing an archived field's stored value must stay possible even if the
     definition was required back when it was active."""
     fields = FieldDefinitionService(db_session)
-    settore = fields.create(
+    industry = fields.create(
         FieldDefinitionCreate(
             entity_type="deal",
             key="settore",
@@ -461,7 +461,7 @@ def test_archived_custom_field_set_to_none_is_removed_even_if_it_was_required(
     deal = service.create(
         DealCreate(nome="X", customer_id=customer_id, custom_fields={"settore": "IT"}), ADMIN
     )
-    fields.archive(settore.id, ADMIN)
+    fields.archive(industry.id, ADMIN)
 
     updated = service.update(deal.id, DealUpdate(custom_fields={"settore": None}), ADMIN)
     assert updated.custom_fields == {}
@@ -664,12 +664,12 @@ def test_update_records_only_the_changed_fields(db_session: Session, customer_id
 
     service = DealService(db_session)
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
-    service.update(deal.id, DealUpdate(probabilita=30), ADMIN)
+    service.update(deal.id, DealUpdate(probability=30), ADMIN)
 
     updates = [
         e for e in ActivityService(db_session).timeline("deal", deal.id) if e.kind == "updated"
     ]
-    assert updates[0].payload["changed"] == ["probabilita"]
+    assert updates[0].payload["changed"] == ["probability"]
 
 
 def test_a_new_deal_can_specify_an_explicit_stage(db_session: Session, customer_id, stages) -> None:
@@ -678,7 +678,7 @@ def test_a_new_deal_can_specify_an_explicit_stage(db_session: Session, customer_
         ADMIN,
     )
     assert deal.pipeline_stage_id == stages["Offerta"].id
-    assert deal.probabilita == stages["Offerta"].probabilita_default
+    assert deal.probability == stages["Offerta"].default_probability
 
 
 # --- Fix round 1 -----------------------------------------------------------------
@@ -687,17 +687,17 @@ def test_a_new_deal_can_specify_an_explicit_stage(db_session: Session, customer_
 # valore_previsto/valore_preventivato, Numeric(8, 2) for ore_preventivate. Derived
 # from the schema's own constants rather than hardcoded twice, so a future change to
 # a column's width changes these test values along with it.
-_MONEY_INTEGER_DIGITS = VALORE_MAX_DIGITS - DECIMAL_PLACES
-_HOURS_INTEGER_DIGITS = ORE_MAX_DIGITS - DECIMAL_PLACES
+_MONEY_INTEGER_DIGITS = VALUE_MAX_DIGITS - DECIMAL_PLACES
+_HOURS_INTEGER_DIGITS = HOURS_MAX_DIGITS - DECIMAL_PLACES
 _MONEY_AT_LIMIT = Decimal("9" * _MONEY_INTEGER_DIGITS + "." + "9" * DECIMAL_PLACES)
 _MONEY_OVER_LIMIT = Decimal("9" * (_MONEY_INTEGER_DIGITS + 1) + "." + "9" * DECIMAL_PLACES)
 _HOURS_AT_LIMIT = Decimal("9" * _HOURS_INTEGER_DIGITS + "." + "9" * DECIMAL_PLACES)
 _HOURS_OVER_LIMIT = Decimal("9" * (_HOURS_INTEGER_DIGITS + 1) + "." + "9" * DECIMAL_PLACES)
 
 NUMERIC_FIELD_LIMITS = [
-    ("valore_previsto", _MONEY_AT_LIMIT, _MONEY_OVER_LIMIT),
-    ("valore_preventivato", _MONEY_AT_LIMIT, _MONEY_OVER_LIMIT),
-    ("ore_preventivate", _HOURS_AT_LIMIT, _HOURS_OVER_LIMIT),
+    ("expected_value", _MONEY_AT_LIMIT, _MONEY_OVER_LIMIT),
+    ("budgeted_value", _MONEY_AT_LIMIT, _MONEY_OVER_LIMIT),
+    ("budgeted_hours", _HOURS_AT_LIMIT, _HOURS_OVER_LIMIT),
 ]
 
 
@@ -745,10 +745,10 @@ def test_value_at_the_numeric_column_limit_round_trips_through_the_database(
     bound and the column's real capacity: this proves the exact boundary value
     survives create() -> Postgres -> DealRead with no truncation or rejection."""
     deal = DealService(db_session).create(
-        DealCreate(nome="X", customer_id=customer_id, valore_previsto=_MONEY_AT_LIMIT),
+        DealCreate(nome="X", customer_id=customer_id, expected_value=_MONEY_AT_LIMIT),
         ADMIN,
     )
-    assert deal.valore_previsto == _MONEY_AT_LIMIT
+    assert deal.expected_value == _MONEY_AT_LIMIT
 
 
 # --- Item 3 (IMPORTANT): a sub-cent value is rejected, not silently rounded ------
@@ -764,7 +764,7 @@ def test_a_sub_cent_value_is_rejected_instead_of_silently_rounded() -> None:
     decimal_places=2 declaration as item 1 above -- no separate code path exists to
     round money, so closing item 1 already closes this."""
     with pytest.raises(ValidationError):
-        DealCreate(nome="X", customer_id=uuid4(), valore_previsto=Decimal("0.005"))
+        DealCreate(nome="X", customer_id=uuid4(), expected_value=Decimal("0.005"))
 
 
 # --- Item 2 (IMPORTANT): "won at 60%" must be unreachable through every gate -----
@@ -778,11 +778,11 @@ def test_creating_a_deal_directly_in_a_won_stage_ignores_an_explicit_low_probabi
     contradicting probability must still land at the stage's settled value."""
     deal = DealService(db_session).create(
         DealCreate(
-            nome="X", customer_id=customer_id, pipeline_stage_id=stages["Vinto"].id, probabilita=60
+            nome="X", customer_id=customer_id, pipeline_stage_id=stages["Vinto"].id, probability=60
         ),
         ADMIN,
     )
-    assert deal.probabilita == 100
+    assert deal.probability == 100
 
 
 def test_creating_a_deal_directly_in_a_lost_stage_ignores_an_explicit_nonzero_probability(
@@ -790,11 +790,11 @@ def test_creating_a_deal_directly_in_a_lost_stage_ignores_an_explicit_nonzero_pr
 ) -> None:
     deal = DealService(db_session).create(
         DealCreate(
-            nome="X", customer_id=customer_id, pipeline_stage_id=stages["Perso"].id, probabilita=60
+            nome="X", customer_id=customer_id, pipeline_stage_id=stages["Perso"].id, probability=60
         ),
         ADMIN,
     )
-    assert deal.probabilita == 0
+    assert deal.probability == 0
 
 
 def test_updating_probability_after_a_move_to_a_won_stage_cannot_reopen_it(
@@ -806,8 +806,8 @@ def test_updating_probability_after_a_move_to_a_won_stage_cannot_reopen_it(
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
     service.move_stage(deal.id, stages["Vinto"].id, ADMIN)
 
-    updated = service.update(deal.id, DealUpdate(probabilita=60), ADMIN)
-    assert updated.probabilita == 100
+    updated = service.update(deal.id, DealUpdate(probability=60), ADMIN)
+    assert updated.probability == 100
 
 
 def test_updating_probability_after_a_move_to_a_lost_stage_cannot_reopen_it(
@@ -817,8 +817,8 @@ def test_updating_probability_after_a_move_to_a_lost_stage_cannot_reopen_it(
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
     service.move_stage(deal.id, stages["Perso"].id, ADMIN)
 
-    updated = service.update(deal.id, DealUpdate(probabilita=60), ADMIN)
-    assert updated.probabilita == 0
+    updated = service.update(deal.id, DealUpdate(probability=60), ADMIN)
+    assert updated.probability == 0
 
 
 def test_updating_an_open_deals_probability_still_works_normally(
@@ -829,8 +829,8 @@ def test_updating_an_open_deals_probability_still_works_normally(
     service = DealService(db_session)
     deal = service.create(DealCreate(nome="X", customer_id=customer_id), ADMIN)
 
-    updated = service.update(deal.id, DealUpdate(probabilita=33), ADMIN)
-    assert updated.probabilita == 33
+    updated = service.update(deal.id, DealUpdate(probability=33), ADMIN)
+    assert updated.probability == 33
 
 
 # --- Item 4 (IMPORTANT): the real blocking case is a soft-deleted deal ----------
@@ -943,7 +943,7 @@ def test_restoring_a_deal_whose_customer_is_now_archived_is_refused(
     with pytest.raises(Conflict) as exc:
         service.restore(deal.id, ADMIN)
     assert exc.value.details["entity"] == "deal"
-    assert "cliente" in exc.value.message
+    assert "customer" in exc.value.message
 
 
 def test_restoring_the_customer_first_then_the_deal_works(
@@ -966,24 +966,24 @@ def test_every_read_path_names_the_deal_s_customer(
     """The deal list's first column is the deal; the line under it is who it is for.
 
     `customer_id` alone made that a second lookup per row that no screen did -- the same
-    gap `PersonRead.customer_ragione_sociale` closed for Persone. Asserted on all four
+    gap `PersonRead.customer_legal_name` closed for Persone. Asserted on all four
     read paths at once because they must agree: a deal's customer cannot depend on which
     endpoint asked for the deal.
     """
     service = DealService(db_session)
 
     created = service.create(DealCreate(nome="Progetto X", customer_id=customer_id), ADMIN)
-    assert created.customer_ragione_sociale == "ACME"
-    assert service.get(created.id, ADMIN).customer_ragione_sociale == "ACME"
+    assert created.customer_legal_name == "ACME"
+    assert service.get(created.id, ADMIN).customer_legal_name == "ACME"
 
-    updated = service.update(created.id, DealUpdate(probabilita=30), ADMIN)
-    assert updated.customer_ragione_sociale == "ACME"
+    updated = service.update(created.id, DealUpdate(probability=30), ADMIN)
+    assert updated.customer_legal_name == "ACME"
 
     moved = service.move_stage(created.id, stages["Vinto"].id, ADMIN)
-    assert moved.customer_ragione_sociale == "ACME"
+    assert moved.customer_legal_name == "ACME"
 
     page = service.list(DealListQuery(), ADMIN)
-    assert [deal.customer_ragione_sociale for deal in page.items] == ["ACME"]
+    assert [deal.customer_legal_name for deal in page.items] == ["ACME"]
 
 
 def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Session, stages) -> None:
@@ -994,7 +994,7 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Sessio
     customers = CustomerService(db_session)
     service = DealService(db_session)
     for index in range(3):
-        customer = customers.create(CustomerCreate(ragione_sociale=f"ACME {index}"), ADMIN)
+        customer = customers.create(CustomerCreate(legal_name=f"ACME {index}"), ADMIN)
         service.create(DealCreate(nome=f"Progetto {index}", customer_id=customer.id), ADMIN)
 
     statements: list[str] = []
@@ -1012,7 +1012,7 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Sessio
     assert len(page.items) == 3
     # The list itself, plus exactly one lookup for the three customer names.
     assert len(statements) == 2, statements
-    assert sorted(d.customer_ragione_sociale or "" for d in page.items) == [
+    assert sorted(d.customer_legal_name or "" for d in page.items) == [
         "ACME 0",
         "ACME 1",
         "ACME 2",
@@ -1041,7 +1041,7 @@ def test_find_by_rebase_ref_is_the_live_deal_carrying_it_under_any_customer(
     service.soft_delete(archived.id, ADMIN)
     assert repo.find_by_rebase_ref(marker) is None
 
-    other = CustomerService(db_session).create(CustomerCreate(ragione_sociale="Beta"), ADMIN)
+    other = CustomerService(db_session).create(CustomerCreate(legal_name="Beta"), ADMIN)
     ours = service.create(
         DealCreate(nome="Lettera n. 3/2026", customer_id=other.id, note="Creato da rebase."),
         ADMIN,
@@ -1076,7 +1076,7 @@ def test_a_deal_is_owned_by_its_creator_unless_the_request_names_somebody(
     db_session: Session, customer_id, stages, owner_id
 ) -> None:
     service = DealService(db_session)
-    mine = Actor(id=owner_id, type="user", role="collaboratore")
+    mine = Actor(id=owner_id, type="user", role="collaborator")
 
     own = service.create(DealCreate(nome="Mio", customer_id=customer_id), mine)
     assert own.owner_id == owner_id
@@ -1089,8 +1089,8 @@ def test_a_member_may_hand_a_deal_to_a_colleague_and_take_the_owner_away(
     db_session: Session, customer_id, stages, owner_id
 ) -> None:
     service = DealService(db_session)
-    mine = Actor(id=owner_id, type="user", role="collaboratore")
-    colleague = User(email="collega@example.test", password_hash="x", nome="C", ruolo="admin")
+    mine = Actor(id=owner_id, type="user", role="collaborator")
+    colleague = User(email="collega@example.test", password_hash="x", nome="C", role="admin")
     db_session.add(colleague)
     db_session.flush()
 
@@ -1107,7 +1107,7 @@ def test_a_deactivated_person_cannot_be_given_a_deal_but_may_keep_one(
 ) -> None:
     service = DealService(db_session)
     gone = User(
-        email="andata@example.test", password_hash="x", nome="A", ruolo="admin", attivo=False
+        email="andata@example.test", password_hash="x", nome="A", role="admin", active=False
     )
     db_session.add(gone)
     db_session.flush()

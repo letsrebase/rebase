@@ -29,9 +29,9 @@ ADMIN = Actor(id=None, type="mcp", role="admin")
 
 # Never a literal year: a window written as 2026 is a suite that starts failing on the
 # first of January (task 4B-8's own ruling).
-OGGI = today_local()
-DA = OGGI.replace(month=1, day=1).isoformat()
-A = OGGI.replace(month=12, day=31).isoformat()
+TODAY = today_local()
+DA = TODAY.replace(month=1, day=1).isoformat()
+A = TODAY.replace(month=12, day=31).isoformat()
 
 
 @pytest.fixture
@@ -42,11 +42,11 @@ def deal_with_hours(mcp_session: Session, seeded_deal_id, seeded_user_id):
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=OGGI,
-            ore=Decimal("4.00"),
-            descrizione="Analisi",
-            tariffa_applicata=Decimal("100.000000"),
-            costo_applicato=Decimal("25.000000"),
+            data=TODAY,
+            hours=Decimal("4.00"),
+            description="Analisi",
+            applied_rate=Decimal("100.000000"),
+            applied_cost=Decimal("25.000000"),
         ),
         ADMIN,
     )
@@ -68,22 +68,22 @@ async def test_get_deal_pnl_returns_the_service_figures_verbatim(server, deal_wi
     async with Client(server) as client:
         result = await client.call_tool("get_deal_pnl", {"deal_id": str(deal_with_hours)})
     pnl = result.structured_content
-    assert pnl["ricavi"] == "0.00"
-    assert pnl["margine_percentuale"] is None
-    assert pnl["costo_lavoro"] == "100.00"
-    assert pnl["valore_maturato"] == "400.00"
-    assert pnl["stato"] == "in corso"
+    assert pnl["revenue"] == "0.00"
+    assert pnl["percentage_margin"] is None
+    assert pnl["work_cost"] == "100.00"
+    assert pnl["accrued_value"] == "400.00"
+    assert pnl["status"] == "in_progress"
 
 
 async def test_get_period_pnl_answers_in_two_columns_and_no_total(server, deal_with_hours) -> None:
     async with Client(server) as client:
         result = await client.call_tool("get_period_pnl", {"da": DA, "a": A})
     body = result.structured_content
-    assert "totale" not in body
-    assert body["in_corso"]["deal"] == 1
-    assert body["in_corso"]["costo_lavoro"] == "100.00"
-    assert body["chiusi"]["deal"] == 0
-    assert body["spese_generali"] == "0.00"
+    assert "total" not in body
+    assert body["in_progress"]["deal"] == 1
+    assert body["in_progress"]["work_cost"] == "100.00"
+    assert body["closed"]["deal"] == 0
+    assert body["general_expenses"] == "0.00"
 
 
 async def test_get_budget_vs_actual_marks_the_unestimated_deal_rather_than_scoring_it(
@@ -95,10 +95,10 @@ async def test_get_budget_vs_actual_marks_the_unestimated_deal_rather_than_scori
         result = await client.call_tool("get_budget_vs_actual", {"da": DA, "a": A})
     page = result.structured_content
     assert [row["deal_id"] for row in page["items"]] == [str(deal_with_hours)]
-    assert page["items"][0]["ore_consuntivate"] == "4.00"
-    assert page["items"][0]["non_preventivato"] is True
-    assert page["deal_non_preventivati"] == 1
-    assert page["deal_preventivati"] == 0
+    assert page["items"][0]["actuals_hours"] == "4.00"
+    assert page["items"][0]["unbudgeted"] is True
+    assert page["unbudgeted_deals"] == 1
+    assert page["budgeted_deals"] == 0
 
 
 async def test_an_inverted_window_comes_back_as_guidance_not_a_pydantic_dump(server) -> None:
@@ -134,14 +134,16 @@ async def test_get_period_pnl_offers_the_accrual_reading_and_refuses_an_unknown_
     default, and renders an unknown base as guidance rather than a pydantic dump."""
     async with Client(server) as client:
         default = await client.call_tool("get_period_pnl", {"da": DA, "a": A})
-        accrual = await client.call_tool("get_period_pnl", {"da": DA, "a": A, "base": "competenza"})
-        unknown = await client.call_tool("get_period_pnl", {"da": DA, "a": A, "base": "cassa"})
+        accrual = await client.call_tool("get_period_pnl", {"da": DA, "a": A, "base": "accrual"})
+        unknown = await client.call_tool(
+            "get_period_pnl", {"da": DA, "a": A, "base": "pension_fund"}
+        )
     assert not default.is_error and not accrual.is_error
     # No invoice in the fixture, so the hours are the same under both readings: costs and
     # hours never move with the base.
-    assert accrual.structured_content["in_corso"] == default.structured_content["in_corso"]
-    assert default.structured_content["base"] == "emissione"
-    assert accrual.structured_content["base"] == "competenza"
+    assert accrual.structured_content["in_progress"] == default.structured_content["in_progress"]
+    assert default.structured_content["base"] == "issue"
+    assert accrual.structured_content["base"] == "accrual"
     assert unknown.is_error
     assert "errors.pydantic.dev" not in unknown.content[0].text
 
@@ -150,7 +152,7 @@ async def test_get_period_pnl_offers_the_accrual_reading_and_refuses_an_unknown_
 
 
 def _configure_profile(session: Session) -> None:
-    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
 
 
 async def test_get_ceiling_headroom_reports_the_configured_packs_thresholds(
@@ -158,12 +160,12 @@ async def test_get_ceiling_headroom_reports_the_configured_packs_thresholds(
 ) -> None:
     _configure_profile(mcp_session)
     async with Client(server) as client:
-        result = await client.call_tool("get_ceiling_headroom", {"anno": OGGI.year})
+        result = await client.call_tool("get_ceiling_headroom", {"year": TODAY.year})
     body = result.structured_content
     assert body["pack_id"] == "it-flat-rate"
-    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
-    assert ricavi_soglia["soglia"] == "85000.00"
-    assert ricavi_soglia["residuo"] == "85000.00"
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    assert revenue_threshold["threshold"] == "85000.00"
+    assert revenue_threshold["remaining"] == "85000.00"
 
 
 async def test_get_ceiling_headroom_without_a_fiscal_profile_is_guidance_not_a_dump(
@@ -171,7 +173,7 @@ async def test_get_ceiling_headroom_without_a_fiscal_profile_is_guidance_not_a_d
 ) -> None:
     """The same `NotFound` `get_fiscal_estimate` would raise, rendered as guidance."""
     async with Client(server) as client:
-        result = await client.call_tool("get_ceiling_headroom", {"anno": OGGI.year})
+        result = await client.call_tool("get_ceiling_headroom", {"year": TODAY.year})
     assert result.is_error
     assert "errors.pydantic.dev" not in result.content[0].text
 
@@ -180,12 +182,12 @@ async def test_simulate_ceiling_adds_the_typed_value(server, mcp_session: Sessio
     _configure_profile(mcp_session)
     async with Client(server) as client:
         result = await client.call_tool(
-            "simulate_ceiling", {"anno": OGGI.year, "valore_preventivato": "20000.00"}
+            "simulate_ceiling", {"year": TODAY.year, "budgeted_value": "20000.00"}
         )
     body = result.structured_content
-    assert body["aggiunta_sintetica"] == "20000.00"
-    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
-    assert ricavi_soglia["rientra"] is True
+    assert body["brief_addition"] == "20000.00"
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    assert revenue_threshold["rientra"] is True
 
 
 async def test_simulate_ceiling_derives_the_addition_from_hours_and_rate(
@@ -195,9 +197,9 @@ async def test_simulate_ceiling_derives_the_addition_from_hours_and_rate(
     async with Client(server) as client:
         result = await client.call_tool(
             "simulate_ceiling",
-            {"anno": OGGI.year, "ore_preventivate": "100.00", "tariffa_oraria": "250.000000"},
+            {"year": TODAY.year, "budgeted_hours": "100.00", "hourly_rate": "250.000000"},
         )
-    assert result.structured_content["aggiunta_sintetica"] == "25000.00"
+    assert result.structured_content["brief_addition"] == "25000.00"
 
 
 async def test_simulate_ceiling_without_any_estimate_is_guidance_not_a_dump(
@@ -205,7 +207,7 @@ async def test_simulate_ceiling_without_any_estimate_is_guidance_not_a_dump(
 ) -> None:
     _configure_profile(mcp_session)
     async with Client(server) as client:
-        result = await client.call_tool("simulate_ceiling", {"anno": OGGI.year})
+        result = await client.call_tool("simulate_ceiling", {"year": TODAY.year})
     assert result.is_error
     assert "errors.pydantic.dev" not in result.content[0].text
 
@@ -215,20 +217,20 @@ async def test_get_year_overview_reads_the_register_of_the_year(
 ) -> None:
     _configure_profile(mcp_session)
     async with Client(server) as client:
-        result = await client.call_tool("get_year_overview", {"anno": OGGI.year})
+        result = await client.call_tool("get_year_overview", {"year": TODAY.year})
     body = result.structured_content
-    assert body["anno"] == OGGI.year
-    assert body["registro"] == []
-    assert body["totali"]["imponibile"] == "0.00"
+    assert body["year"] == TODAY.year
+    assert body["register"] == []
+    assert body["totali"]["taxable_amount"] == "0.00"
 
 
 async def test_get_days_analysis_defaults_to_the_current_month(server) -> None:
     async with Client(server) as client:
         result = await client.call_tool("get_days_analysis", {})
     body = result.structured_content
-    assert [m["mese"] for m in body["mesi"]] == [OGGI.strftime("%Y-%m")]
-    assert body["giorni_nel_periodo"] == "0.00"
-    assert body["tariffa_reale"] is None
+    assert [m["month"] for m in body["months"]] == [TODAY.strftime("%Y-%m")]
+    assert body["days_in_period"] == "0.00"
+    assert body["actual_rate"] is None
 
 
 async def test_get_days_analysis_with_half_a_period_is_guidance_not_a_dump(server) -> None:

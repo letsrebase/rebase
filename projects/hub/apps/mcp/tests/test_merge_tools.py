@@ -39,18 +39,18 @@ def _wipe(factory: sessionmaker[Session]) -> None:
 def _seed(factory: sessionmaker[Session], *emails: str) -> list[UUID]:
     session = factory()
     try:
-        session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="", role="admin"))
+        session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, last_name="", role="admin"))
         session.commit()
         ids = []
         for email in emails:
             read, _ = FreelancerService(session).apply(
                 FreelancerCreate(
                     nome="Ada",
-                    cognome="Lovelace",
+                    last_name="Lovelace",
                     email=email,
-                    tariffa_giornaliera=Decimal("450"),
+                    daily_rate=Decimal("450"),
                     posizione="Backend developer",
-                    remoto="remoto",
+                    remote="remote",
                 ),
                 PDF,
                 "cv.pdf",
@@ -88,11 +88,11 @@ async def test_a_refused_merge_says_why(factory: sessionmaker[Session]) -> None:
     for card_id in (keep, other):
         session.add(
             ContractDocument(
-                kind="quadro",
+                kind="framework",
                 freelancer_id=card_id,
                 text_version="1",
                 pdf=PDF,
-                stato="firmato",
+                status="signed",
                 created_by=IVAN.id,
             )
         )
@@ -106,7 +106,7 @@ async def test_a_refused_merge_says_why(factory: sessionmaker[Session]) -> None:
     _wipe(factory)
 
 
-async def test_list_duplicati_answers_the_pairs_without_an_address(
+async def test_list_duplicates_answers_the_pairs_without_an_address(
     factory: sessionmaker[Session],
 ) -> None:
     older, newer = _seed(factory, "vecchia@studio.it", "nuova@studio.it")
@@ -117,14 +117,14 @@ async def test_list_duplicati_answers_the_pairs_without_an_address(
     session.commit()
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
-            listed: dict[str, Any] = _payload(await client.call_tool("list_duplicati", {}))
-        assert len(listed["unibili"]) == 1 and listed["da_rivedere"] == []
-        pair = listed["unibili"][0]
-        assert {pair["survivor"]["freelancer_id"], pair["assorbito"]["freelancer_id"]} == {
+            listed: dict[str, Any] = _payload(await client.call_tool("list_duplicates", {}))
+        assert len(listed["mergeable"]) == 1 and listed["from_review"] == []
+        pair = listed["mergeable"][0]
+        assert {pair["survivor"]["freelancer_id"], pair["absorbed"]["freelancer_id"]} == {
             str(older),
             str(newer),
         }
-        assert "email" not in pair["survivor"] and "user_id" not in pair["assorbito"]
+        assert "email" not in pair["survivor"] and "user_id" not in pair["absorbed"]
         assert "studio.it" not in str(listed)
     finally:
         session.close()

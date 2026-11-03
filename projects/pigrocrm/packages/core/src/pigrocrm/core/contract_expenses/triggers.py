@@ -1,7 +1,7 @@
 """The one trigger function spec §7 asks for, verified against mastro's own
 migration (`0025_expense_and_clause_note_constraints.sql::expense_set_reimbursable`):
-`rimborsabile` is never set by application code -- it is recomputed on every insert
-or update, from whatever the row and its owning contract's `politica_spese` say
+`reimbursable` is never set by application code -- it is recomputed on every insert
+or update, from whatever the row and its owning contract's `expense_policy` say
 right now, and the write itself is never rejected either way (spec §7, §14's own
 "Rebillable expenses" bullet).
 

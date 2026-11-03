@@ -42,7 +42,7 @@ function mergeSummary(action: AdminAction): string | null {
   )
   const parts = [moved === 1 ? '1 riga spostata' : `${moved} righe spostate`]
   if (action.payload.cv === 'assorbita') parts.push('CV più recente passato alla scheda tenuta')
-  if (action.payload.scheda_da_rigenerare) parts.push('scheda anonima da riscrivere')
+  if (action.payload.card_from_regenerate) parts.push('scheda anonima da riscrivere')
   return parts.join(' · ')
 }
 
@@ -52,10 +52,10 @@ function kindLabel(action: AdminAction): string {
   if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
     return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
   }
-  if (action.kind === 'card_regenerated' && action.payload.esito === 'non_scritta') {
+  if (action.kind === 'card_regenerated' && action.payload.outcome === 'non_scritta') {
     return `Scheda non rigenerata: ${regenerationReason(action.payload.reason)}`
   }
-  if (action.kind === 'anon_cv_downloaded' && action.payload.riusato) return 'CV anonimo scaricato (già pronto)'
+  if (action.kind === 'anon_cv_downloaded' && action.payload.reused) return 'CV anonimo scaricato (già pronto)'
   return KIND_LABELS[action.kind] ?? action.kind
 }
 
@@ -73,23 +73,23 @@ function regenerationDetail(action: AdminAction): string {
 
 const FIELD_LABELS: Record<string, string> = {
   nome: 'Nome',
-  cognome: 'Cognome',
+  last_name: 'Cognome',
   linkedin_url: 'LinkedIn',
-  tariffa_giornaliera: 'Tariffa a giornata',
+  daily_rate: 'Tariffa a giornata',
   posizione: 'Posizione',
-  remoto: 'Modalità',
+  remote: 'Modalità',
   links: 'Link',
   compilata_da: 'Compilata da',
   seniority_admin: 'Seniority (admin)',
-  anni_admin: 'Anni (admin)',
-  nome_azienda: 'Azienda',
-  figura_richiesta: 'Figura richiesta',
-  progetto: 'Progetto',
-  periodo_da: 'Periodo',
-  durata: 'Durata',
-  budget_giornaliero: 'Budget a giornata',
-  giorni_presenza: 'Giorni in sede',
-  numero_risorse: 'Persone richieste',
+  experience_years_admin: 'Anni (admin)',
+  company_name: 'Azienda',
+  requested_role: 'Figura richiesta',
+  project: 'Progetto',
+  period_from: 'Periodo',
+  duration: 'Durata',
+  daily_budget: 'Budget a giornata',
+  onsite_days: 'Giorni in sede',
+  headcount: 'Persone richieste',
   cv: 'CV',
 }
 
@@ -170,7 +170,7 @@ export function AuditTrail({
             // on their own line below; only a field diff is an object per field.
             const before = fieldsOf(action.payload.before)
             const after = fieldsOf(action.payload.after)
-            const source = noteSourceLabel(action.payload.fonte)
+            const source = noteSourceLabel(action.payload.source)
             // `changed` names the field REB-347's own service touched, but is not
             // always a key of `before`/`after`: `clear_cv`'s own payload sets
             // `changed: ["cv"]` while keying its diff by `cv_filename`/`cv_mime`/
@@ -183,14 +183,14 @@ export function AuditTrail({
               <li key={action.id} className="space-y-2 px-4 py-3">
                 <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
                   <Badge variant="pill">{kindLabel(action)}</Badge>
-                  <span className="font-medium text-foreground">{action.admin_nome}</span>
+                  <span className="font-medium text-foreground">{action.admin_name}</span>
                   <time dateTime={action.created_at}>{formatDateTime(action.created_at)}</time>
                   {source && <span>{source}</span>}
                 </p>
                 {mergeSummary(action) && <p>{mergeSummary(action)}</p>}
                 {action.kind === 'card_regenerated' && <p>{regenerationDetail(action)}</p>}
-                {(action.kind === 'note_added' || action.kind === 'note_deleted') && action.payload.testo && (
-                  <p className="whitespace-pre-wrap break-words">{action.payload.testo}</p>
+                {(action.kind === 'note_added' || action.kind === 'note_deleted') && action.payload.text && (
+                  <p className="whitespace-pre-wrap break-words">{action.payload.text}</p>
                 )}
                 {action.kind === 'note_edited' && (
                   <p className="break-words">

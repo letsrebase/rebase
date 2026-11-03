@@ -8,8 +8,8 @@ cannot disagree about a row or a total.
 
 **Which days.** Those on a line of an invoice, whatever state they have moved to since: a day
 billed and then disputed still names the approval that authorised it, and one a person moved
-back to `lavorato` is still on the invoice. Mastro decides by state (`invoiced`, `disputed`,
-`paid`); here the day graph lets a day enter `contestato` with no invoice and leave it with
+back to `worked` is still on the invoice. Mastro decides by state (`invoiced`, `disputed`,
+`paid`); here the day graph lets a day enter `disputed` with no invoice and leave it with
 its line still set, so the state alone would add an unbilled day and drop a billed one. The
 link is what an invoice's total is checked against. A day on no line is not on it.
 
@@ -18,7 +18,7 @@ the approval), because its register promises every row carries its approval refe
 holds there because a contract there always has approvals; here `requires_prior_approval`
 defaults to false, so a contract that never asked for one would print an empty register
 beside an invoice that bills its days. The day is listed with an empty approval cell, and
-`senza_approvazione` counts them, so the total matches the invoice and the gap is stated
+`without_approval` counts them, so the total matches the invoice and the gap is stated
 rather than hidden.
 """
 
@@ -50,17 +50,17 @@ from pigrocrm.core.work_units.models import Approval, WorkUnit
 
 ENTITY = "contract_register"
 
-REGISTER_TEMPLATE_NOME = "Registro giornate"
+REGISTER_TEMPLATE_NAME = "Registro giornate"
 
 REGISTER_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"nome": "periodo", "etichetta": "Periodo", "tipo": "text", "obbligatoria": True},
+    {"nome": "period", "label": "Periodo", "type": "text", "required": True},
     {
-        "nome": "totale_quantita",
-        "etichetta": "Totale quantità",
-        "tipo": "number",
-        "obbligatoria": True,
+        "nome": "quantity_total",
+        "label": "Totale quantità",
+        "type": "number",
+        "required": True,
     },
-    {"nome": "numero_voci", "etichetta": "Numero giornate", "tipo": "number", "obbligatoria": True},
+    {"nome": "numero_voci", "label": "Numero giornate", "type": "number", "required": True},
 )
 
 CSV_HEADER: tuple[str, ...] = ("Data", "Quantità", "Descrizione", "Fattura", "Approvazione")
@@ -69,31 +69,31 @@ CSV_CONTENT_TYPE = "text/csv; charset=utf-8"
 
 
 class RegisterApproval(BaseModel):
-    canale: str
-    mittente: str
-    ricevuto_il: datetime
+    channel: str
+    sender: str
+    received_at: datetime
     message_id: str | None
 
 
 class RegisterEntry(BaseModel):
     work_unit_id: UUID
     data: date
-    quantita: Decimal
-    descrizione: str
-    stato: str
-    numero_fattura: str | None = None
-    approvazione: RegisterApproval | None = None
+    quantity: Decimal
+    description: str
+    status: str
+    invoice_number: str | None = None
+    approval: RegisterApproval | None = None
 
 
 class ContractRegister(BaseModel):
     contract_id: UUID
-    titolo: str
-    cliente: str
+    title: str
+    customer: str
     da: date
     a: date
-    voci: list[RegisterEntry]
-    totale_quantita: Decimal
-    senza_approvazione: int
+    entries: list[RegisterEntry]
+    quantity_total: Decimal
+    without_approval: int
 
 
 def approval_reference(approval: RegisterApproval | None) -> str:
@@ -103,14 +103,14 @@ def approval_reference(approval: RegisterApproval | None) -> str:
     contractual figure stays unambiguous. Empty for a day with no approval."""
     if approval is None:
         return ""
-    parts = [approval.canale, approval.mittente, approval.ricevuto_il.date().isoformat()]
+    parts = [approval.channel, approval.sender, approval.received_at.date().isoformat()]
     if approval.message_id:
         parts.append(approval.message_id)
     return " · ".join(parts)
 
 
-def _invoice_label(anno: int | None, numero: int | None) -> str | None:
-    return None if anno is None or numero is None else f"{anno}/{numero}"
+def _invoice_label(year: int | None, number: int | None) -> str | None:
+    return None if year is None or number is None else f"{year}/{number}"
 
 
 # A spreadsheet runs a cell that opens with one of these as a formula. The description and
@@ -122,8 +122,8 @@ def _csv_text(value: str) -> str:
     return f"'{value}" if value.startswith(_FORMULA_LEADERS) else value
 
 
-def _italian_date(giorno: date) -> str:
-    return f"{giorno.day:02d}/{giorno.month:02d}/{giorno.year}"
+def _italian_date(day: date) -> str:
+    return f"{day.day:02d}/{day.month:02d}/{day.year}"
 
 
 class ContractRegisterService:
@@ -154,7 +154,7 @@ class ContractRegisterService:
         customer = self.session.get(Customer, contract.customer_id)
 
         query = (
-            select(WorkUnit, Approval, Invoice.anno, Invoice.numero)
+            select(WorkUnit, Approval, Invoice.year, Invoice.number)
             .outerjoin(Approval, Approval.id == WorkUnit.approval_id)
             # LEFT, unlike mastro's own approval join and for the reason in the module
             # docstring; and a day belongs on the register because it was billed, never
@@ -173,36 +173,36 @@ class ContractRegisterService:
             query = query.where(Invoice.id == invoice_id)
         rows = self.session.execute(query).all()
 
-        voci = [
+        entries = [
             RegisterEntry(
                 work_unit_id=day.id,
                 data=day.data,
-                quantita=day.quantita,
-                descrizione=day.descrizione,
-                stato=day.stato,
-                numero_fattura=_invoice_label(anno, numero),
-                approvazione=(
+                quantity=day.quantity,
+                description=day.description,
+                status=day.status,
+                invoice_number=_invoice_label(year, number),
+                approval=(
                     None
                     if approval is None
                     else RegisterApproval(
-                        canale=approval.canale,
-                        mittente=approval.mittente,
-                        ricevuto_il=approval.ricevuto_il,
+                        channel=approval.channel,
+                        sender=approval.sender,
+                        received_at=approval.received_at,
                         message_id=approval.message_id,
                     )
                 ),
             )
-            for day, approval, anno, numero in rows
+            for day, approval, year, number in rows
         ]
         return ContractRegister(
             contract_id=contract.id,
-            titolo=contract.titolo,
-            cliente=customer.ragione_sociale if customer is not None else "",
+            title=contract.title,
+            customer=customer.legal_name if customer is not None else "",
             da=da,
             a=a,
-            voci=voci,
-            totale_quantita=sum((v.quantita for v in voci), start=Decimal("0")),
-            senza_approvazione=sum(1 for v in voci if v.approvazione is None),
+            entries=entries,
+            quantity_total=sum((v.quantity for v in entries), start=Decimal("0")),
+            without_approval=sum(1 for v in entries if v.approval is None),
         )
 
     def variables_for(self, register: ContractRegister) -> dict[str, Any]:
@@ -210,19 +210,19 @@ class ContractRegisterService:
         return {
             "periodo": f"{_italian_date(register.da)} - {_italian_date(register.a)}",
             "oggi": _italian_date(today_local()),
-            "contratto": {"titolo": register.titolo},
+            "contratto": {"titolo": register.title},
             "voci": [
                 {
-                    "data": _italian_date(voce.data),
-                    "quantita": str(voce.quantita),
-                    "descrizione": voce.descrizione,
-                    "fattura": voce.numero_fattura or "",
-                    "approvazione": approval_reference(voce.approvazione),
+                    "data": _italian_date(entry.data),
+                    "quantita": str(entry.quantity),
+                    "descrizione": entry.description,
+                    "fattura": entry.invoice_number or "",
+                    "approvazione": approval_reference(entry.approval),
                 }
-                for voce in register.voci
+                for entry in register.entries
             ],
-            "totale_quantita": str(register.totale_quantita),
-            "numero_voci": str(len(register.voci)),
+            "totale_quantita": str(register.quantity_total),
+            "numero_voci": str(len(register.entries)),
         }
 
     def csv_filename(self, register: ContractRegister) -> str:
@@ -237,24 +237,24 @@ class ContractRegisterService:
         out = io.StringIO()
         writer = csv.writer(out, lineterminator="\r\n")
         writer.writerow(CSV_HEADER)
-        for voce in register.voci:
+        for entry in register.entries:
             writer.writerow(
                 (
-                    voce.data.isoformat(),
-                    str(voce.quantita),
-                    _csv_text(voce.descrizione),
-                    voce.numero_fattura or "",
-                    _csv_text(approval_reference(voce.approvazione)),
+                    entry.data.isoformat(),
+                    str(entry.quantity),
+                    _csv_text(entry.description),
+                    entry.invoice_number or "",
+                    _csv_text(approval_reference(entry.approval)),
                 )
             )
-        writer.writerow(("", str(register.totale_quantita), CSV_TOTAL_LABEL, "", ""))
+        writer.writerow(("", str(register.quantity_total), CSV_TOTAL_LABEL, "", ""))
         return b"\xef\xbb\xbf" + out.getvalue().encode("utf-8")
 
     def _template(self) -> Template:
         """The editable copy of the layout. A space born before this template existed has
         no row, and the PDF must not depend on somebody running `seed-templates` first, so
         the first render creates it, exactly as the seed would."""
-        template = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
+        template = self.templates.get_by_name(REGISTER_TEMPLATE_NAME)
         if template is not None:
             return template
         try:
@@ -263,13 +263,13 @@ class ContractRegisterService:
             with self.session.begin_nested():
                 template = self.templates.add(
                     Template(
-                        nome=REGISTER_TEMPLATE_NOME,
-                        tipo="rapporto_ore",
-                        corpo_markdown=(ASSETS_DIR / "template-day-register.md").read_text(
+                        nome=REGISTER_TEMPLATE_NAME,
+                        type="hours_report",
+                        body_markdown=(ASSETS_DIR / "template-day-register.md").read_text(
                             encoding="utf-8"
                         ),
-                        variabili_dichiarate=list(REGISTER_TEMPLATE_VARIABLES),
-                        attivo=True,
+                        declared_variables=list(REGISTER_TEMPLATE_VARIABLES),
+                        active=True,
                     )
                 )
             # Committed on purpose: `create_from_template` commits the session before it
@@ -277,7 +277,7 @@ class ContractRegisterService:
             self.session.commit()
             return template
         except IntegrityError:
-            existing = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
+            existing = self.templates.get_by_name(REGISTER_TEMPLATE_NAME)
             if existing is None:
                 raise
             return existing
@@ -310,13 +310,13 @@ class ContractRegisterService:
         return DocumentService(self.session, self.storage).create_from_template(
             DocumentFromTemplate(
                 template_id=template.id,
-                titolo=f"Registro giornate {register.titolo} {da.isoformat()} {a.isoformat()}",
+                title=f"Registro giornate {register.title} {da.isoformat()} {a.isoformat()}",
                 customer_id=contract.customer_id,
                 deal_id=None,
-                variabili=self.variables_for(register),
+                variables=self.variables_for(register),
                 # The contract's own azienda, not the customer's current one: a customer
                 # moved to another azienda keeps its contracts where they were.
-                azienda_id=contract.azienda_id,
+                legal_entity_id=contract.legal_entity_id,
             ),
             actor,
         )

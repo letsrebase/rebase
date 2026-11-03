@@ -28,12 +28,11 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_legal_entity
 from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
@@ -41,13 +40,14 @@ from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.digest.models import Digest
-from pigrocrm.core.digest.run import DigestOutcome, DigestRun, sezioni_con_righe
-from pigrocrm.core.digest.schemas import DigestAttivita, DigestAttivitaRiga, WeeklyDigest
+from pigrocrm.core.digest.run import DigestOutcome, DigestRun, sections_with_lines
+from pigrocrm.core.digest.schemas import DigestTask, DigestTaskLine, WeeklyDigest
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import Mail, RecordingSender
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.telemetry import DIGEST_SENT, Tracker
 from pigrocrm.core.timetracking.models import TimeEntry
 
@@ -56,7 +56,7 @@ PUBLIC_URL = "https://esempio.pigrocrm.test"
 SLUG = "studio-esempio"
 
 _PREFIX = "DIGESTRUN"
-_ENTITA = "digest"
+_ENTITY = "digest"
 _KIND = "digest.inviato"
 
 # The five sections this corpus fills: «da emettere» (six unbilled hours), «emesse» (the
@@ -64,21 +64,21 @@ _KIND = "digest.inviato"
 # sistemare» (the invoice hangs off an open deal, so «fatturato ma non vinto» fires).
 # «Da incassare» and «Incassate» stay empty -- the invoice is due far in the future and
 # nobody has paid it.
-SEZIONI_ATTESE = 5
+SECTIONS_ATTESE = 5
 
 
 class Corpus(NamedTuple):
     engine: Engine
-    settimana: tuple[date, date]
+    week: tuple[date, date]
     iso: str
-    titolare: str
+    owner: str
     collega: str
     # The two ids the tracker must be told about, in the order `list_all` answers.
-    destinatari: tuple[UUID, ...]
+    recipients: tuple[UUID, ...]
 
 
 @dataclass
-class CapturaRegistrata:
+class CapturaRecorded:
     """A real `Tracker` capture that appends instead of talking to PostHog."""
 
     chiamate: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
@@ -95,7 +95,7 @@ class CapturaRotta:
         raise RuntimeError("posthog irraggiungibile")
 
 
-class MittenteCheEsplode:
+class SenderCheEsplode:
     """The one thing an `EmailSender` promises never to do. `DigestRun` must survive it
     anyway: nothing of that week may be half-written."""
 
@@ -103,7 +103,7 @@ class MittenteCheEsplode:
         raise RuntimeError("il provider ha chiuso la connessione")
 
 
-class MittenteSelettivo:
+class SenderSelettivo:
     """What `ResendSender` actually does on a non-2xx: it answers `False` and does not
     raise. Keeps the mails it accepted, so the assertions are about real sends."""
 
@@ -118,11 +118,11 @@ class MittenteSelettivo:
         return True
 
 
-def _settimana_scorsa() -> tuple[date, date]:
+def _week_scorsa() -> tuple[date, date]:
     """The last complete week, computed here and not through `previous_week`: a fixture
     that derived its window from a function under test would move with that function."""
-    oggi = today_local(SETTINGS)
-    lunedi = oggi - timedelta(days=oggi.isoweekday() - 1 + 7)
+    today = today_local(SETTINGS)
+    lunedi = today - timedelta(days=today.isoweekday() - 1 + 7)
     return lunedi, lunedi + timedelta(days=6)
 
 
@@ -144,47 +144,47 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
     should hear it: the owner, a colleague who wants it, one who switched it off, and one
     who has been deactivated."""
     factory = session_factory(db_engine)
-    da, a = _settimana_scorsa()
+    da, a = _week_scorsa()
     with factory() as session:
         _require_empty(session)
-        azienda_id = committed_default_azienda(session)
-        aperto = PipelineStage(
-            nome=f"{_PREFIX} Aperto", posizione=0, probabilita_default=20, tipo="open"
+        legal_entity_id = committed_default_legal_entity(session)
+        open = PipelineStage(
+            nome=f"{_PREFIX} Aperto", position=0, default_probability=20, type="open"
         )
-        customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
-        session.add_all([aperto, customer])
+        customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
+        session.add_all([open, customer])
         session.flush()
 
         deal = Deal(
             nome=f"{_PREFIX} Deal",
             customer_id=customer.id,
-            pipeline_stage_id=aperto.id,
-            probabilita=aperto.probabilita_default,
-            valore_previsto=Decimal("5000.00"),
+            pipeline_stage_id=open.id,
+            probability=open.default_probability,
+            expected_value=Decimal("5000.00"),
             custom_fields={},
         )
         session.add(deal)
         session.flush()
 
-        def _utente(nome: str, *, attivo: bool = True, digest: bool = True) -> User:
+        def _user(nome: str, *, active: bool = True, digest: bool = True) -> User:
             user = User(
                 email=f"{_PREFIX.lower()}-{nome.lower()}-{uuid7()}@example.test",
                 password_hash="x",
                 nome=f"{_PREFIX} {nome}",
-                ruolo="admin" if nome == "Ada" else "collaboratore",
-                attivo=attivo,
-                digest_settimanale=digest,
+                role="admin" if nome == "Ada" else "collaborator",
+                active=active,
+                weekly_digest=digest,
             )
             session.add(user)
             session.flush()
             return user
 
         # `list_all` orders by `nome`, and the run keeps that order, so Ada comes before
-        # Bruno in `inviato_a` and in the tracker's calls.
-        titolare = _utente("Ada")
-        collega = _utente("Bruno")
-        _utente("Carla", digest=False)
-        _utente("Dario", attivo=False)
+        # Bruno in `sent_to` and in the tracker's calls.
+        owner = _user("Ada")
+        collega = _user("Bruno")
+        _user("Carla", digest=False)
+        _user("Dario", active=False)
 
         # Issued inside the week, on an *open* deal, so «fatturato ma non vinto» fires and
         # the report has a «da sistemare» section. Due far enough ahead that it is neither
@@ -193,49 +193,49 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             Invoice(
                 customer_id=customer.id,
                 deal_id=deal.id,
-                tipo="fattura",
-                stato="emessa",
-                stato_pagamento="da_incassare",
-                anno=2026,
-                numero=1,
-                imponibile=Decimal("1000.00"),
-                imposta=Decimal("0.00"),
-                bollo=Decimal("0.00"),
-                totale=Decimal("1000.00"),
-                data_emissione=da + timedelta(days=1),
-                data_scadenza=a + timedelta(days=120),
-                data_incasso=None,
-                tipo_documento="TD01",
-                divisa="EUR",
+                type="invoice",
+                status="issued",
+                payment_status="unpaid",
+                year=2026,
+                number=1,
+                taxable_amount=Decimal("1000.00"),
+                vat_amount=Decimal("0.00"),
+                stamp_duty=Decimal("0.00"),
+                total=Decimal("1000.00"),
+                issue_date=da + timedelta(days=1),
+                due_date=a + timedelta(days=120),
+                payment_date=None,
+                sdi_document_type="TD01",
+                currency="EUR",
                 custom_fields={},
             )
         )
         session.add(
             TimeEntry(
                 deal_id=deal.id,
-                user_id=titolare.id,
+                user_id=owner.id,
                 data=da + timedelta(days=1),
-                ore=Decimal("6.00"),
-                descrizione=f"{_PREFIX} lavorazione",
-                fatturabile=True,
-                tariffa_applicata=Decimal("50.000000"),
-                tariffa_origine="manuale",
-                costo_applicato=None,
-                costo_origine="assente",
+                hours=Decimal("6.00"),
+                description=f"{_PREFIX} lavorazione",
+                billable=True,
+                applied_rate=Decimal("50.000000"),
+                rate_source="manual",
+                applied_cost=None,
+                cost_source="absent",
                 invoice_line_id=None,
                 custom_fields={},
             )
         )
-        indirizzi = (titolare.email, collega.email)
-        ids = (titolare.id, collega.id)
+        indirizzi = (owner.email, collega.email)
+        ids = (owner.id, collega.id)
         session.commit()
     try:
         yield Corpus(db_engine, (da, a), iso_week(da), indirizzi[0], indirizzi[1], ids)
     finally:
-        _pulisci(factory, iso_week(da), azienda_id)
+        _pulisci(factory, iso_week(da), legal_entity_id)
 
 
-def _pulisci(factory: Any, iso: str, azienda_id: UUID | None = None) -> None:
+def _pulisci(factory: Any, iso: str, legal_entity_id: UUID | None = None) -> None:
     """The fixture's own rows *and* whatever the run committed on top of them.
 
     Scoped to what this file can have written: the prefix for the corpus, and the one ISO
@@ -244,32 +244,30 @@ def _pulisci(factory: Any, iso: str, azienda_id: UUID | None = None) -> None:
     of `_require_empty` is that nobody's leftovers are anybody else's business.
     """
     with factory() as session:
-        corpus_customers = select(Customer.id).where(Customer.ragione_sociale.like(f"{_PREFIX} %"))
+        corpus_customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
         corpus_deals = select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %"))
-        settimane = select(Digest.id).where(Digest.settimana == iso)
+        weeks = select(Digest.id).where(Digest.week == iso)
         session.execute(
-            delete(Activity).where(
-                Activity.entity_type == _ENTITA, Activity.entity_id.in_(settimane)
-            )
+            delete(Activity).where(Activity.entity_type == _ENTITY, Activity.entity_id.in_(weeks))
         )
         session.execute(delete(Activity).where(Activity.entity_id.in_(corpus_deals)))
-        session.execute(delete(Digest).where(Digest.settimana == iso))
+        session.execute(delete(Digest).where(Digest.week == iso))
         session.execute(delete(TimeEntry).where(TimeEntry.deal_id.in_(corpus_deals)))
         session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_customers)))
         session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-        session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
+        session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
         session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
-        session.execute(delete(Attivita).where(Attivita.titolo.like(f"{_PREFIX} %")))
+        session.execute(delete(Task).where(Task.title.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.nome.like(f"{_PREFIX} %")))
-        remove_azienda(session, azienda_id)
+        remove_legal_entity(session, legal_entity_id)
         session.commit()
 
 
-def _esegui(
+def _run(
     engine: Engine,
     *,
-    settimana: tuple[date, date],
-    titolare: str,
+    week: tuple[date, date],
+    owner: str,
     sender: Any = None,
     tracker: Tracker | None = None,
     forza: bool = False,
@@ -285,23 +283,23 @@ def _esegui(
     """
     with session_factory(engine)() as session:
         run = DigestRun(session, SETTINGS, sender=sender, tracker=tracker, public_url=PUBLIC_URL)
-        esito = run.send_for_space(SLUG, titolare, settimana, forza=forza, dry_run=dry_run)
+        outcome = run.send_for_space(SLUG, owner, week, forza=forza, dry_run=dry_run)
         assert not session.in_transaction(), (
-            f"«{esito.esito}» left a transaction open on the session it was handed"
+            f"«{outcome.outcome}» left a transaction open on the session it was handed"
         )
-        return esito
+        return outcome
 
 
 class Riga(NamedTuple):
     id: UUID
-    inviato_a: list[str]
+    sent_to: list[str]
     occurred_at: datetime
 
 
-def _riga(engine: Engine, iso: str) -> Riga | None:
+def _line(engine: Engine, iso: str) -> Riga | None:
     with session_factory(engine)() as session:
-        row = session.execute(select(Digest).where(Digest.settimana == iso)).scalar_one_or_none()
-        return None if row is None else Riga(row.id, list(row.inviato_a), row.occurred_at)
+        row = session.execute(select(Digest).where(Digest.week == iso)).scalar_one_or_none()
+        return None if row is None else Riga(row.id, list(row.sent_to), row.occurred_at)
 
 
 class Traccia(NamedTuple):
@@ -312,10 +310,10 @@ class Traccia(NamedTuple):
     payload: dict[str, Any]
 
 
-def _attivita(engine: Engine) -> list[Traccia]:
+def _task(engine: Engine) -> list[Traccia]:
     with session_factory(engine)() as session:
         rows = (
-            session.execute(select(Activity).where(Activity.entity_type == _ENTITA)).scalars().all()
+            session.execute(select(Activity).where(Activity.entity_type == _ENTITY)).scalars().all()
         )
         return [
             Traccia(r.kind, r.entity_id, r.actor_id, r.actor_type, dict(r.payload)) for r in rows
@@ -325,130 +323,130 @@ def _attivita(engine: Engine) -> list[Traccia]:
 # --- the count of sections that had something in them ---------------------------------
 
 
-def _digest_vuoto(**sovrascritture: Any) -> WeeklyDigest:
-    campi: dict[str, Any] = {
-        "settimana": "2026-W37",
+def _digest_empty(**sovrascritture: Any) -> WeeklyDigest:
+    fields: dict[str, Any] = {
+        "week": "2026-W37",
         "da": date(2026, 9, 7),
         "a": date(2026, 9, 13),
-        "scadute": [],
-        "in_scadenza": [],
-        "vinti_da_fatturare": 0,
-        "ore_non_fatturate": Decimal("0.00"),
-        "valore_maturato": Decimal("0.00"),
+        "overdue": [],
+        "in_due_date": [],
+        "won_to_invoice": 0,
+        "hours_uninvoiced": Decimal("0.00"),
+        "accrued_value": Decimal("0.00"),
         "emesse": [],
-        "totale_mese_corrente": Decimal("0.00"),
-        "totale_mese_precedente": Decimal("0.00"),
+        "total_month_current": Decimal("0.00"),
+        "total_month_previous": Decimal("0.00"),
         "incassate": [],
-        "ore": None,
+        "hours": None,
         "pipeline": [],
         "deal_mossi": [],
-        "offerte_in_attesa": [],
-        "segnali": [],
+        "offers_pending": [],
+        "signals": [],
     }
-    return WeeklyDigest(**(campi | sovrascritture))
+    return WeeklyDigest(**(fields | sovrascritture))
 
 
-def _fattura() -> dict[str, Any]:
+def _invoice() -> dict[str, Any]:
     return {
         "invoice_id": uuid7(),
-        "numero": "2026/1",
-        "cliente": "Cliente",
-        "importo": Decimal("100.00"),
+        "number": "2026/1",
+        "customer": "Cliente",
+        "amount": Decimal("100.00"),
         "data": date(2026, 9, 8),
-        "stato": "emessa",
-        "stato_pagamento": "da_incassare",
+        "status": "issued",
+        "payment_status": "unpaid",
     }
 
 
 def test_no_section_has_rows_in_an_empty_week() -> None:
-    assert sezioni_con_righe(_digest_vuoto()) == 0
+    assert sections_with_lines(_digest_empty()) == 0
 
 
 @pytest.mark.parametrize(
     "sovrascrittura",
     [
-        {"scadute": [_fattura()]},
-        {"in_scadenza": [_fattura()]},
-        {"vinti_da_fatturare": 1},
-        {"ore_non_fatturate": Decimal("0.25")},
+        {"overdue": [_invoice()]},
+        {"in_due_date": [_invoice()]},
+        {"won_to_invoice": 1},
+        {"hours_uninvoiced": Decimal("0.25")},
         # The third of «Da emettere»'s figures. `digest_mail` prints that section's second
         # line on `ore_non_fatturate or valore_maturato`, so accrued value with no unbilled
         # hours behind it is still a section the recipient saw.
-        {"valore_maturato": Decimal("1.00")},
-        {"emesse": [_fattura()]},
-        {"incassate": [_fattura()]},
-        {"pipeline": [{"stage_nome": "Aperto", "numero": 1, "valore_totale": Decimal("1.00")}]},
+        {"accrued_value": Decimal("1.00")},
+        {"emesse": [_invoice()]},
+        {"incassate": [_invoice()]},
+        {"pipeline": [{"stage_name": "Aperto", "number": 1, "total_value": Decimal("1.00")}]},
         {
             "deal_mossi": [
                 {
                     "deal_id": uuid7(),
-                    "titolo": "D",
-                    "stage_nome": "Vinto",
+                    "title": "D",
+                    "stage_name": "Vinto",
                     "quando": date(2026, 9, 8),
                 }
             ]
         },
-        {"offerte_in_attesa": [{"document_id": uuid7(), "titolo": "O", "giorni": 3}]},
-        {"segnali": [{"codice": "c", "etichetta": "e", "conteggio": 1, "collegamento": "/x"}]},
+        {"offers_pending": [{"document_id": uuid7(), "title": "O", "days": 3}]},
+        {"signals": [{"code": "c", "label": "e", "count": 1, "link": "/x"}]},
     ],
 )
 def test_one_filled_list_lights_exactly_one_section(sovrascrittura: dict[str, Any]) -> None:
     """Eleven ways to fill one of the seven sections. Each lights one and only one, which
     is what makes the count a count of *sections* rather than of lists."""
-    assert sezioni_con_righe(_digest_vuoto(**sovrascrittura)) == 1
+    assert sections_with_lines(_digest_empty(**sovrascrittura)) == 1
 
 
 def test_the_three_figures_of_da_emettere_are_one_section() -> None:
     """«Da emettere» is one heading over two lines and three figures. `digest_mail` prints
     it when any of the three is set, and this count has to agree or PostHog is told about
     a section the recipient never saw -- or not told about one they did."""
-    for campi in (
-        {"vinti_da_fatturare": 2},
-        {"ore_non_fatturate": Decimal("3.00")},
-        {"valore_maturato": Decimal("150.00")},
+    for fields in (
+        {"won_to_invoice": 2},
+        {"hours_uninvoiced": Decimal("3.00")},
+        {"accrued_value": Decimal("150.00")},
         {
-            "vinti_da_fatturare": 2,
-            "ore_non_fatturate": Decimal("3.00"),
-            "valore_maturato": Decimal("150.00"),
+            "won_to_invoice": 2,
+            "hours_uninvoiced": Decimal("3.00"),
+            "accrued_value": Decimal("150.00"),
         },
     ):
-        assert sezioni_con_righe(_digest_vuoto(**campi)) == 1, campi
+        assert sections_with_lines(_digest_empty(**fields)) == 1, fields
 
 
 def test_the_two_halves_of_a_section_still_count_once() -> None:
     """«Da incassare» is two lists and one section: a week with both must not be reported
     as having had more to say than a week with one."""
-    doppia = _digest_vuoto(scadute=[_fattura()], in_scadenza=[_fattura()])
-    assert sezioni_con_righe(doppia) == 1
+    doppia = _digest_empty(overdue=[_invoice()], in_due_date=[_invoice()])
+    assert sections_with_lines(doppia) == 1
 
 
-def test_the_attivita_of_the_week_count_as_one_section() -> None:
-    riga = DigestAttivitaRiga(attivita_id=uuid7(), titolo="Telefonare", scadenza=date(2026, 9, 9))
-    con = _digest_vuoto(
-        attivita=DigestAttivita(in_settimana=[riga], in_settimana_totale=1),
+def test_the_task_of_the_week_count_as_one_section() -> None:
+    riga = DigestTaskLine(task_id=uuid7(), title="Telefonare", due_date=date(2026, 9, 9))
+    con = _digest_empty(
+        attivita=DigestTask(in_week=[riga], in_week_total=1),
     )
 
-    assert sezioni_con_righe(con) == 1
-    assert con.vuoto is False
+    assert sections_with_lines(con) == 1
+    assert con.empty is False
 
 
 def test_a_week_with_everything_lights_all_seven() -> None:
-    pieno = _digest_vuoto(
-        scadute=[_fattura()],
-        vinti_da_fatturare=2,
-        emesse=[_fattura()],
-        incassate=[_fattura()],
-        ore={
+    pieno = _digest_empty(
+        overdue=[_invoice()],
+        won_to_invoice=2,
+        issued=[_invoice()],
+        paid=[_invoice()],
+        hours={
             "da": date(2026, 9, 7),
             "a": date(2026, 9, 13),
-            "giorni": [],
-            "giorni_senza_ore": [],
-            "ore_totali": Decimal("6.00"),
+            "days": [],
+            "days_without_hours": [],
+            "total_hours": Decimal("6.00"),
         },
-        pipeline=[{"stage_nome": "Aperto", "numero": 1, "valore_totale": Decimal("1.00")}],
-        segnali=[{"codice": "c", "etichetta": "e", "conteggio": 1, "collegamento": "/x"}],
+        pipeline=[{"stage_name": "Aperto", "number": 1, "total_value": Decimal("1.00")}],
+        signals=[{"code": "c", "label": "e", "count": 1, "link": "/x"}],
     )
-    assert sezioni_con_righe(pieno) == 7
+    assert sections_with_lines(pieno) == 7
 
 
 # --- the send -------------------------------------------------------------------------
@@ -461,78 +459,76 @@ def test_the_report_goes_to_everyone_who_asked_for_it_and_to_nobody_else(
     Carla asked not to receive it and Dario has been deactivated; neither is written to,
     and neither appears in the row that says who was."""
     sender = RecordingSender()
-    esito = _esegui(
-        corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender
-    )
+    outcome = _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
 
-    assert esito == DigestOutcome(slug=SLUG, esito="inviato", settimana=corpus.iso, destinatari=2)
-    assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+    assert outcome == DigestOutcome(slug=SLUG, outcome="sent", week=corpus.iso, recipients=2)
+    assert [mail.to for mail in sender.sent] == [corpus.owner, corpus.collega]
     assert all(mail.subject for mail in sender.sent)
     # The real mail, not a stub: the week's own invoice is in the body it carries.
     assert all("2026/1" in (mail.html or "") for mail in sender.sent)
 
-    riga = _riga(corpus.engine, corpus.iso)
+    riga = _line(corpus.engine, corpus.iso)
     assert riga is not None
-    assert riga.inviato_a == [corpus.titolare, corpus.collega]
+    assert riga.sent_to == [corpus.owner, corpus.collega]
 
 
-def test_each_recipient_gets_their_own_attivita_of_the_week(corpus: Corpus) -> None:
+def test_each_recipient_gets_their_own_task_of_the_week(corpus: Corpus) -> None:
     """REB-726: the digest lists an attività due this week that is assigned to the
     recipient, and not one assigned to somebody else. The overdue come first, a
     completed one is on neither list, and an undated one belongs to the Oggi page."""
-    oggi = today_local(SETTINGS)
-    ada, bruno = corpus.destinatari
+    today = today_local(SETTINGS)
+    ada, bruno = corpus.recipients
     factory = session_factory(corpus.engine)
     with factory() as session:
         session.add_all(
             [
-                Attivita(
-                    titolo=f"{_PREFIX} Telefonare a Rossi",
-                    scadenza=oggi + timedelta(days=2),
-                    stato="aperta",
-                    origine="manuale",
-                    assegnata_a=ada,
+                Task(
+                    title=f"{_PREFIX} Telefonare a Rossi",
+                    due_date=today + timedelta(days=2),
+                    status="open",
+                    origin="manual",
+                    assigned_to=ada,
                     custom_fields={},
                 ),
-                Attivita(
-                    titolo=f"{_PREFIX} Preventivo in ritardo",
-                    scadenza=oggi - timedelta(days=3),
-                    stato="aperta",
-                    origine="manuale",
-                    assegnata_a=ada,
+                Task(
+                    title=f"{_PREFIX} Preventivo in ritardo",
+                    due_date=today - timedelta(days=3),
+                    status="open",
+                    origin="manual",
+                    assigned_to=ada,
                     custom_fields={},
                 ),
-                Attivita(
-                    titolo=f"{_PREFIX} Inviare il contratto a Bianchi",
-                    scadenza=oggi + timedelta(days=2),
-                    stato="aperta",
-                    origine="manuale",
-                    assegnata_a=bruno,
+                Task(
+                    title=f"{_PREFIX} Inviare il contratto a Bianchi",
+                    due_date=today + timedelta(days=2),
+                    status="open",
+                    origin="manual",
+                    assigned_to=bruno,
                     custom_fields={},
                 ),
-                Attivita(
-                    titolo=f"{_PREFIX} Gia fatta",
-                    scadenza=oggi + timedelta(days=1),
-                    stato="completata",
-                    completata_il=oggi,
-                    origine="manuale",
-                    assegnata_a=ada,
+                Task(
+                    title=f"{_PREFIX} Gia fatta",
+                    due_date=today + timedelta(days=1),
+                    status="completed",
+                    completed_at=today,
+                    origin="manual",
+                    assigned_to=ada,
                     custom_fields={},
                 ),
-                Attivita(
-                    titolo=f"{_PREFIX} Senza data",
-                    scadenza=None,
-                    stato="aperta",
-                    origine="manuale",
-                    assegnata_a=ada,
+                Task(
+                    title=f"{_PREFIX} Senza data",
+                    due_date=None,
+                    status="open",
+                    origin="manual",
+                    assigned_to=ada,
                     custom_fields={},
                 ),
-                Attivita(
-                    titolo=f"{_PREFIX} Fra due settimane",
-                    scadenza=oggi + timedelta(days=14),
-                    stato="aperta",
-                    origine="manuale",
-                    assegnata_a=ada,
+                Task(
+                    title=f"{_PREFIX} Fra due settimane",
+                    due_date=today + timedelta(days=14),
+                    status="open",
+                    origin="manual",
+                    assigned_to=ada,
                     custom_fields={},
                 ),
             ]
@@ -540,7 +536,7 @@ def test_each_recipient_gets_their_own_attivita_of_the_week(corpus: Corpus) -> N
         session.commit()
 
     sender = RecordingSender()
-    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+    _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
     di_ada, di_bruno = sender.sent
 
     assert "Telefonare a Rossi" in di_ada.text
@@ -550,25 +546,25 @@ def test_each_recipient_gets_their_own_attivita_of_the_week(corpus: Corpus) -> N
     assert "Preventivo in ritardo — " in di_ada.text and "3 giorni di ritardo" in di_ada.text
     # Late before upcoming, and none of the three that do not belong in a week's view.
     assert di_ada.text.index("Preventivo in ritardo") < di_ada.text.index("Telefonare a Rossi")
-    for fuori in ("Gia fatta", "Senza data", "Fra due settimane"):
-        assert fuori not in di_ada.text
-    assert f"{PUBLIC_URL}/app/oggi?da=digest" in di_ada.text
+    for outside in ("Gia fatta", "Senza data", "Fra due settimane"):
+        assert outside not in di_ada.text
+    assert f"{PUBLIC_URL}/app/today?from=digest" in di_ada.text
     # A person with nothing assigned gets no section, not an empty heading.
     assert "Da fare" in di_ada.text and "Da fare" in di_bruno.text
 
 
-def test_a_long_list_of_late_attivita_is_cut_and_says_how_many_more(corpus: Corpus) -> None:
+def test_to_long_list_of_late_task_is_cut_and_says_how_many_more(corpus: Corpus) -> None:
     """The mail never grows with the backlog: ten lines, then a count, then the link."""
-    oggi = today_local(SETTINGS)
-    ada = corpus.destinatari[0]
+    today = today_local(SETTINGS)
+    ada = corpus.recipients[0]
     with session_factory(corpus.engine)() as session:
         session.add_all(
-            Attivita(
-                titolo=f"{_PREFIX} Arretrato {n:02d}",
-                scadenza=oggi - timedelta(days=1 + n),
-                stato="aperta",
-                origine="manuale",
-                assegnata_a=ada,
+            Task(
+                title=f"{_PREFIX} Arretrato {n:02d}",
+                due_date=today - timedelta(days=1 + n),
+                status="open",
+                origin="manual",
+                assigned_to=ada,
                 custom_fields={},
             )
             for n in range(13)
@@ -576,17 +572,17 @@ def test_a_long_list_of_late_attivita_is_cut_and_says_how_many_more(corpus: Corp
         session.commit()
 
     sender = RecordingSender()
-    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+    _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
     di_ada = sender.sent[0]
 
     assert di_ada.text.count("Arretrato") == 10
     assert "…e 3 altre in ritardo" in di_ada.text
-    assert f"{PUBLIC_URL}/app/oggi?da=digest" in di_ada.text
+    assert f"{PUBLIC_URL}/app/today?from=digest" in di_ada.text
 
 
 def test_a_recipient_with_nothing_assigned_has_no_da_fare_section(corpus: Corpus) -> None:
     sender = RecordingSender()
-    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender)
+    _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
 
     assert all("Da fare" not in mail.text for mail in sender.sent)
 
@@ -595,60 +591,60 @@ def test_the_timeline_entry_carries_counts_and_never_a_figure(corpus: Corpus) ->
     """The record of the week is a count of who and of how much there was to say. An
     amount, an invoice number or an address in the payload would put the space's money
     into a row read by anybody who can read the timeline."""
-    _esegui(
+    _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=RecordingSender(),
     )
 
-    righe = _attivita(corpus.engine)
-    assert len(righe) == 1
-    traccia = righe[0]
-    riga = _riga(corpus.engine, corpus.iso)
+    lines = _task(corpus.engine)
+    assert len(lines) == 1
+    traccia = lines[0]
+    riga = _line(corpus.engine, corpus.iso)
     assert riga is not None
     assert traccia.kind == _KIND
     assert traccia.entity_id == riga.id
     assert traccia.actor_type == "system"
     assert traccia.payload == {
-        "settimana": corpus.iso,
-        "destinatari": 2,
-        "sezioni": SEZIONI_ATTESE,
+        "week": corpus.iso,
+        "recipients": 2,
+        "sections": SECTIONS_ATTESE,
     }
 
 
 def test_posthog_hears_once_per_recipient_after_the_commit(corpus: Corpus) -> None:
     """One event per person, under that person's own id, with the same section count the
     timeline recorded."""
-    cattura = CapturaRegistrata()
-    _esegui(
+    cattura = CapturaRecorded()
+    _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=RecordingSender(),
         tracker=Tracker(cattura),
     )
 
     assert [nome for nome, _, _ in cattura.chiamate] == [DIGEST_SENT, DIGEST_SENT]
-    assert [ident for _, ident, _ in cattura.chiamate] == [str(i) for i in corpus.destinatari]
+    assert [ident for _, ident, _ in cattura.chiamate] == [str(i) for i in corpus.recipients]
     for _, _, properties in cattura.chiamate:
-        assert properties["settimana"] == corpus.iso
-        assert properties["sezioni"] == SEZIONI_ATTESE
+        assert properties["week"] == corpus.iso
+        assert properties["sections"] == SECTIONS_ATTESE
 
 
 def test_a_tracker_that_refuses_changes_nothing(corpus: Corpus) -> None:
     """The capture is called after the commit, so its failure cannot reach the row."""
     sender = RecordingSender()
-    esito = _esegui(
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=sender,
         tracker=Tracker(CapturaRotta()),
     )
-    assert esito.esito == "inviato"
+    assert outcome.outcome == "sent"
     assert len(sender.sent) == 2
-    assert _riga(corpus.engine, corpus.iso) is not None
+    assert _line(corpus.engine, corpus.iso) is not None
 
 
 def test_without_a_resend_key_nothing_is_sent_and_nothing_is_recorded(corpus: Corpus) -> None:
@@ -656,32 +652,30 @@ def test_without_a_resend_key_nothing_is_sent_and_nothing_is_recorded(corpus: Co
     transport, so no mail was attempted and no week happened.
 
     This used to record the row, the timeline entry and the PostHog events as though the
-    report had been delivered -- which made the week `gia_inviato` for ever and reported N
-    deliveries of a mail nobody was ever sent. It is the same nothing `invio_rifiutato`
+    report had been delivered -- which made the week `already_sent` for ever and reported N
+    deliveries of a mail nobody was ever sent. It is the same nothing `send_rejected`
     leaves, and for the same reason: the run after the key is configured has to send it.
     """
-    cattura = CapturaRegistrata()
-    esito = _esegui(
+    cattura = CapturaRecorded()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=None,
         tracker=Tracker(cattura),
     )
-    assert esito == DigestOutcome(
-        slug=SLUG, esito="saltato", settimana=corpus.iso, motivo="invio_non_configurato"
+    assert outcome == DigestOutcome(
+        slug=SLUG, outcome="skipped", week=corpus.iso, reason="send_not_configured"
     )
-    assert _riga(corpus.engine, corpus.iso) is None
-    assert _attivita(corpus.engine) == []
+    assert _line(corpus.engine, corpus.iso) is None
+    assert _task(corpus.engine) == []
     assert cattura.chiamate == []
 
     # And the run after the key is configured sends the week, to everybody.
-    configurato = RecordingSender()
-    ritentato = _esegui(
-        corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=configurato
-    )
-    assert ritentato.esito == "inviato"
-    assert [mail.to for mail in configurato.sent] == [corpus.titolare, corpus.collega]
+    configured = RecordingSender()
+    ritentato = _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=configured)
+    assert ritentato.outcome == "sent"
+    assert [mail.to for mail in configured.sent] == [corpus.owner, corpus.collega]
 
 
 # --- what the provider refused --------------------------------------------------------
@@ -689,56 +683,54 @@ def test_without_a_resend_key_nothing_is_sent_and_nothing_is_recorded(corpus: Co
 
 def test_only_the_addresses_the_provider_took_are_recorded(corpus: Corpus) -> None:
     """`EmailSender.send` answers `False` and does not raise, so a refusal is silent
-    unless it is read. A report that never left must not appear in `inviato_a`, must not
+    unless it is read. A report that never left must not appear in `sent_to`, must not
     be counted, and must not be reported to PostHog as delivered."""
-    sender = MittenteSelettivo(corpus.collega)
-    cattura = CapturaRegistrata()
-    esito = _esegui(
+    sender = SenderSelettivo(corpus.collega)
+    cattura = CapturaRecorded()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=sender,
         tracker=Tracker(cattura),
     )
 
-    assert esito == DigestOutcome(slug=SLUG, esito="inviato", settimana=corpus.iso, destinatari=1)
-    assert [mail.to for mail in sender.sent] == [corpus.titolare]
-    riga = _riga(corpus.engine, corpus.iso)
+    assert outcome == DigestOutcome(slug=SLUG, outcome="sent", week=corpus.iso, recipients=1)
+    assert [mail.to for mail in sender.sent] == [corpus.owner]
+    riga = _line(corpus.engine, corpus.iso)
     assert riga is not None
-    assert riga.inviato_a == [corpus.titolare]
-    assert [traccia.payload["destinatari"] for traccia in _attivita(corpus.engine)] == [1]
-    assert [ident for _, ident, _ in cattura.chiamate] == [str(corpus.destinatari[0])]
+    assert riga.sent_to == [corpus.owner]
+    assert [traccia.payload["recipients"] for traccia in _task(corpus.engine)] == [1]
+    assert [ident for _, ident, _ in cattura.chiamate] == [str(corpus.recipients[0])]
 
 
 def test_a_week_nobody_received_is_left_to_be_retried(corpus: Corpus) -> None:
-    """Every address refused. Writing the row anyway would make the week `gia_inviato`
+    """Every address refused. Writing the row anyway would make the week `already_sent`
     for ever on the strength of mails that never arrived, and Monday's outage would cost
     the space its report permanently. Nothing is written, so a rerun tries again."""
-    sender = MittenteSelettivo(corpus.titolare, corpus.collega)
-    cattura = CapturaRegistrata()
-    esito = _esegui(
+    sender = SenderSelettivo(corpus.owner, corpus.collega)
+    cattura = CapturaRecorded()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=sender,
         tracker=Tracker(cattura),
     )
 
-    assert esito == DigestOutcome(
-        slug=SLUG, esito="saltato", settimana=corpus.iso, motivo="invio_rifiutato"
+    assert outcome == DigestOutcome(
+        slug=SLUG, outcome="skipped", week=corpus.iso, reason="send_rejected"
     )
     assert sender.sent == []
     assert cattura.chiamate == []
-    assert _riga(corpus.engine, corpus.iso) is None
-    assert _attivita(corpus.engine) == []
+    assert _line(corpus.engine, corpus.iso) is None
+    assert _task(corpus.engine) == []
 
     # And the retry, against a provider that has come back, sends the whole week.
-    di_nuovo = RecordingSender()
-    ritentato = _esegui(
-        corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=di_nuovo
-    )
-    assert ritentato.esito == "inviato"
-    assert [mail.to for mail in di_nuovo.sent] == [corpus.titolare, corpus.collega]
+    of_new = RecordingSender()
+    ritentato = _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=of_new)
+    assert ritentato.outcome == "sent"
+    assert [mail.to for mail in of_new.sent] == [corpus.owner, corpus.collega]
 
 
 # --- once per week --------------------------------------------------------------------
@@ -746,116 +738,114 @@ def test_a_week_nobody_received_is_left_to_be_retried(corpus: Corpus) -> None:
 
 def test_the_second_run_of_the_same_week_sends_nothing(corpus: Corpus) -> None:
     """A cron that runs twice, or two hosts that both wake up, must send once."""
-    primo = RecordingSender()
-    _esegui(corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=primo)
-    secondo = RecordingSender()
-    cattura = CapturaRegistrata()
-    esito = _esegui(
+    first = RecordingSender()
+    _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=first)
+    second = RecordingSender()
+    cattura = CapturaRecorded()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
-        sender=secondo,
+        week=corpus.week,
+        owner=corpus.owner,
+        sender=second,
         tracker=Tracker(cattura),
     )
 
-    assert esito == DigestOutcome(slug=SLUG, esito="gia_inviato", settimana=corpus.iso)
-    assert secondo.sent == []
+    assert outcome == DigestOutcome(slug=SLUG, outcome="already_sent", week=corpus.iso)
+    assert second.sent == []
     assert cattura.chiamate == []
-    assert len(_attivita(corpus.engine)) == 1
+    assert len(_task(corpus.engine)) == 1
 
 
 def test_forza_sends_again_and_moves_the_row_instead_of_writing_a_second(
     corpus: Corpus,
 ) -> None:
-    """`settimana` is unique, so a resend has to be an update. The row keeps saying who
+    """`week` is unique, so a resend has to be an update. The row keeps saying who
     received it and when it last went out."""
-    _esegui(
+    _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=RecordingSender(),
     )
-    prima = _riga(corpus.engine, corpus.iso)
-    assert prima is not None
+    before = _line(corpus.engine, corpus.iso)
+    assert before is not None
 
-    di_nuovo = RecordingSender()
-    esito = _esegui(
+    of_new = RecordingSender()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
-        sender=di_nuovo,
+        week=corpus.week,
+        owner=corpus.owner,
+        sender=of_new,
         forza=True,
     )
 
-    assert esito.esito == "inviato"
-    assert [mail.to for mail in di_nuovo.sent] == [corpus.titolare, corpus.collega]
-    dopo = _riga(corpus.engine, corpus.iso)
-    assert dopo is not None
-    assert dopo.id == prima.id
-    assert dopo.inviato_a == [corpus.titolare, corpus.collega]
-    assert dopo.occurred_at >= prima.occurred_at
+    assert outcome.outcome == "sent"
+    assert [mail.to for mail in of_new.sent] == [corpus.owner, corpus.collega]
+    after = _line(corpus.engine, corpus.iso)
+    assert after is not None
+    assert after.id == before.id
+    assert after.sent_to == [corpus.owner, corpus.collega]
+    assert after.occurred_at >= before.occurred_at
     # Two runs, two timeline entries, one row: the record of *what happened* is the
     # timeline's business and the record of *this week* is the row's.
-    assert len(_attivita(corpus.engine)) == 2
+    assert len(_task(corpus.engine)) == 2
 
 
 # --- the runs that write nothing ------------------------------------------------------
 
 
-def test_a_space_with_only_an_open_attivita_still_gets_its_da_fare(db_engine: Engine) -> None:
+def test_to_space_with_only_an_open_task_still_gets_its_from_fare(db_engine: Engine) -> None:
     """An attivita needs no customer, deal, invoice or hour, so a space of nothing but
     to-dos is not empty: its owner is mailed the week's «Da fare», and a space whose
     only attivita is closed hears nothing (REB-726, Greptile on #635)."""
     factory = session_factory(db_engine)
-    oggi = today_local(SETTINGS)
+    today = today_local(SETTINGS)
     with factory() as session:
         _require_empty(session)
-        titolare = User(
+        owner = User(
             email=f"{_PREFIX.lower()}-solo-{uuid7()}@example.test",
             password_hash="x",
             nome=f"{_PREFIX} Solo",
-            ruolo="admin",
+            role="admin",
         )
-        session.add(titolare)
+        session.add(owner)
         session.flush()
-        indirizzo = titolare.email
+        address = owner.email
         session.add(
-            Attivita(
-                titolo=f"{_PREFIX} Chiamare Rossi",
-                scadenza=oggi - timedelta(days=1),
-                stato="aperta",
-                origine="manuale",
-                assegnata_a=titolare.id,
+            Task(
+                title=f"{_PREFIX} Chiamare Rossi",
+                due_date=today - timedelta(days=1),
+                status="open",
+                origin="manual",
+                assigned_to=owner.id,
                 custom_fields={},
             )
         )
         session.commit()
-    settimana = _settimana_scorsa()
+    week = _week_scorsa()
     sender = RecordingSender()
     try:
-        esito = _esegui(db_engine, settimana=settimana, titolare=indirizzo, sender=sender)
-        assert esito == DigestOutcome(
-            slug=SLUG, esito="inviato", settimana=iso_week(settimana[0]), destinatari=1
+        outcome = _run(db_engine, week=week, owner=address, sender=sender)
+        assert outcome == DigestOutcome(
+            slug=SLUG, outcome="sent", week=iso_week(week[0]), recipients=1
         )
         assert "Chiamare Rossi" in sender.sent[0].text
 
         with factory() as session:
             session.execute(
-                update(Attivita)
-                .where(Attivita.titolo == f"{_PREFIX} Chiamare Rossi")
-                .values(stato="completata", completata_il=oggi)
+                update(Task)
+                .where(Task.title == f"{_PREFIX} Chiamare Rossi")
+                .values(status="completed", completed_at=today)
             )
             # The first run's timeline entry goes with its row, before the row does:
             # `_pulisci` finds an entry through the week's `digests` id.
-            session.execute(delete(Activity).where(Activity.entity_type == _ENTITA))
-            session.execute(delete(Digest).where(Digest.settimana == iso_week(settimana[0])))
+            session.execute(delete(Activity).where(Activity.entity_type == _ENTITY))
+            session.execute(delete(Digest).where(Digest.week == iso_week(week[0])))
             session.commit()
-        chiuso = _esegui(
-            db_engine, settimana=settimana, titolare=indirizzo, sender=RecordingSender()
-        )
-        assert chiuso.esito == "vuoto"
+        closed = _run(db_engine, week=week, owner=address, sender=RecordingSender())
+        assert closed.outcome == "empty"
     finally:
-        _pulisci(factory, iso_week(settimana[0]))
+        _pulisci(factory, iso_week(week[0]))
 
 
 def test_an_empty_space_hears_nothing(db_engine: Engine) -> None:
@@ -864,34 +854,34 @@ def test_an_empty_space_hears_nothing(db_engine: Engine) -> None:
     factory = session_factory(db_engine)
     with factory() as session:
         _require_empty(session)
-        titolare = User(
+        owner = User(
             email=f"{_PREFIX.lower()}-solo-{uuid7()}@example.test",
             password_hash="x",
             nome=f"{_PREFIX} Solo",
-            ruolo="admin",
+            role="admin",
         )
-        session.add(titolare)
+        session.add(owner)
         session.flush()
-        indirizzo = titolare.email
+        address = owner.email
         session.commit()
-    settimana = _settimana_scorsa()
+    week = _week_scorsa()
     sender = RecordingSender()
-    cattura = CapturaRegistrata()
+    cattura = CapturaRecorded()
     try:
-        esito = _esegui(
+        outcome = _run(
             db_engine,
-            settimana=settimana,
-            titolare=indirizzo,
+            week=week,
+            owner=address,
             sender=sender,
             tracker=Tracker(cattura),
         )
-        assert esito == DigestOutcome(slug=SLUG, esito="vuoto", settimana=iso_week(settimana[0]))
+        assert outcome == DigestOutcome(slug=SLUG, outcome="empty", week=iso_week(week[0]))
         assert sender.sent == []
         assert cattura.chiamate == []
-        assert _riga(db_engine, iso_week(settimana[0])) is None
-        assert _attivita(db_engine) == []
+        assert _line(db_engine, iso_week(week[0])) is None
+        assert _task(db_engine) == []
     finally:
-        _pulisci(factory, iso_week(settimana[0]))
+        _pulisci(factory, iso_week(week[0]))
 
 
 def test_a_space_emptied_by_soft_deletion_hears_nothing(db_engine: Engine) -> None:
@@ -907,90 +897,90 @@ def test_a_space_emptied_by_soft_deletion_hears_nothing(db_engine: Engine) -> No
     definition -- which is the register being right, not this probe being wrong.
     """
     factory = session_factory(db_engine)
-    settimana = _settimana_scorsa()
+    week = _week_scorsa()
     with factory() as session:
         _require_empty(session)
-        quando = datetime.now(UTC)
+        when = datetime.now(UTC)
         stage = PipelineStage(
-            nome=f"{_PREFIX} Fase", posizione=0, probabilita_default=10, tipo="open"
+            nome=f"{_PREFIX} Fase", position=0, default_probability=10, type="open"
         )
         customer = Customer(
-            ragione_sociale=f"{_PREFIX} Cancellato",
-            nazione="IT",
+            legal_name=f"{_PREFIX} Cancellato",
+            country="IT",
             custom_fields={},
-            deleted_at=quando,
+            deleted_at=when,
         )
-        titolare = User(
+        owner = User(
             email=f"{_PREFIX.lower()}-resto-{uuid7()}@example.test",
             password_hash="x",
             nome=f"{_PREFIX} Resto",
-            ruolo="admin",
+            role="admin",
         )
-        session.add_all([stage, customer, titolare])
+        session.add_all([stage, customer, owner])
         session.flush()
         deal = Deal(
             nome=f"{_PREFIX} Deal cancellato",
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
-            probabilita=stage.probabilita_default,
-            valore_previsto=Decimal("100.00"),
+            probability=stage.default_probability,
+            expected_value=Decimal("100.00"),
             custom_fields={},
-            deleted_at=quando,
+            deleted_at=when,
         )
         session.add(deal)
         session.flush()
         session.add(
             TimeEntry(
                 deal_id=deal.id,
-                user_id=titolare.id,
-                data=settimana[0],
-                ore=Decimal("2.00"),
-                descrizione=f"{_PREFIX} ore cancellate",
-                fatturabile=True,
-                tariffa_applicata=Decimal("50.000000"),
-                tariffa_origine="manuale",
-                costo_applicato=None,
-                costo_origine="assente",
+                user_id=owner.id,
+                data=week[0],
+                hours=Decimal("2.00"),
+                description=f"{_PREFIX} ore cancellate",
+                billable=True,
+                applied_rate=Decimal("50.000000"),
+                rate_source="manual",
+                applied_cost=None,
+                cost_source="absent",
                 invoice_line_id=None,
                 custom_fields={},
-                deleted_at=quando,
+                deleted_at=when,
             )
         )
-        indirizzo = titolare.email
+        address = owner.email
         session.commit()
 
     sender = RecordingSender()
     try:
-        esito = _esegui(db_engine, settimana=settimana, titolare=indirizzo, sender=sender)
-        assert esito == DigestOutcome(slug=SLUG, esito="vuoto", settimana=iso_week(settimana[0]))
+        outcome = _run(db_engine, week=week, owner=address, sender=sender)
+        assert outcome == DigestOutcome(slug=SLUG, outcome="empty", week=iso_week(week[0]))
         assert sender.sent == []
-        assert _riga(db_engine, iso_week(settimana[0])) is None
+        assert _line(db_engine, iso_week(week[0])) is None
     finally:
-        _pulisci(factory, iso_week(settimana[0]))
+        _pulisci(factory, iso_week(week[0]))
 
 
 def test_a_rehearsal_builds_the_report_and_leaves_nothing_behind(corpus: Corpus) -> None:
     """`--dry-run` answers what *would* go out, with the count, so the operator can read
     it before letting it go. Nothing is sent, written, recorded or tracked.
 
-    `inviato` with the count, and not the `saltato` an installation with no key gets: a
+    `sent` with the count, and not the `skipped` an installation with no key gets: a
     rehearsal *chose* not to send, and the operator asking for one is reading the answer."""
     sender = RecordingSender()
-    cattura = CapturaRegistrata()
-    esito = _esegui(
+    cattura = CapturaRecorded()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=sender,
         tracker=Tracker(cattura),
         dry_run=True,
     )
 
-    assert esito == DigestOutcome(slug=SLUG, esito="inviato", settimana=corpus.iso, destinatari=2)
+    assert outcome == DigestOutcome(slug=SLUG, outcome="sent", week=corpus.iso, recipients=2)
     assert sender.sent == []
     assert cattura.chiamate == []
-    assert _riga(corpus.engine, corpus.iso) is None
-    assert _attivita(corpus.engine) == []
+    assert _line(corpus.engine, corpus.iso) is None
+    assert _task(corpus.engine) == []
 
 
 def test_the_report_is_built_with_no_transaction_in_progress(
@@ -1001,7 +991,7 @@ def test_the_report_is_built_with_no_transaction_in_progress(
     has one. So whatever `DigestRun` does between its reads and `DigestService.build`, the
     session has to be free of a transaction when `build` starts, for every scope it builds
     a report in. Asserted at that call rather than through the outcome, which an
-    over-broad `except` would turn into a quiet `saltato`."""
+    over-broad `except` would turn into a quiet `skipped`."""
     from pigrocrm.core.digest.service import DigestService
 
     in_transaction: list[bool] = []
@@ -1012,15 +1002,15 @@ def test_the_report_is_built_with_no_transaction_in_progress(
         return build(self, *args, **kwargs)
 
     monkeypatch.setattr(DigestService, "build", recording_build)
-    esito = _esegui(
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
+        week=corpus.week,
+        owner=corpus.owner,
         sender=RecordingSender(),
         dry_run=True,
     )
 
-    assert esito.esito == "inviato"
+    assert outcome.outcome == "sent"
     assert in_transaction != [] and not any(in_transaction)
 
 
@@ -1029,74 +1019,70 @@ def test_a_space_where_nobody_wants_it_is_left_alone(corpus: Corpus) -> None:
     which is a different answer from «this space is empty» and leaves no row either."""
     with session_factory(corpus.engine)() as session:
         for user in session.execute(select(User)).scalars():
-            user.digest_settimanale = False
+            user.weekly_digest = False
         session.commit()
 
     sender = RecordingSender()
-    esito = _esegui(
-        corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender
-    )
+    outcome = _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
 
-    assert esito == DigestOutcome(slug=SLUG, esito="nessun_destinatario", settimana=corpus.iso)
+    assert outcome == DigestOutcome(slug=SLUG, outcome="no_recipient", week=corpus.iso)
     assert sender.sent == []
-    assert _riga(corpus.engine, corpus.iso) is None
+    assert _line(corpus.engine, corpus.iso) is None
 
 
 def test_an_unknown_owner_is_skipped(corpus: Corpus) -> None:
     """The actor is the space's owner. Without one there is nobody to read as, and a
     `system` actor with an invented role would be an escalation."""
-    esito = _esegui(
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare="nessuno@example.test",
+        week=corpus.week,
+        owner="nessuno@example.test",
         sender=RecordingSender(),
     )
-    assert esito.esito == "saltato"
-    assert esito.motivo
-    assert _riga(corpus.engine, corpus.iso) is None
+    assert outcome.outcome == "skipped"
+    assert outcome.reason
+    assert _line(corpus.engine, corpus.iso) is None
 
 
 def test_a_deactivated_owner_is_skipped(corpus: Corpus) -> None:
     """Deactivating somebody is, everywhere else in this product, the moment the CRM stops
     acting on their behalf. A cron that kept reading their space would be the exception."""
     with session_factory(corpus.engine)() as session:
-        user = session.execute(select(User).where(User.email == corpus.titolare)).scalar_one()
-        user.attivo = False
+        user = session.execute(select(User).where(User.email == corpus.owner)).scalar_one()
+        user.active = False
         session.commit()
 
     sender = RecordingSender()
-    esito = _esegui(
-        corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender
-    )
-    assert esito.esito == "saltato"
+    outcome = _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
+    assert outcome.outcome == "skipped"
     assert sender.sent == []
-    assert _riga(corpus.engine, corpus.iso) is None
+    assert _line(corpus.engine, corpus.iso) is None
 
 
 def test_a_send_that_blows_up_names_the_type_and_writes_nothing(corpus: Corpus) -> None:
     """The motive is the exception's *type*: its message can carry the address the send
     failed on, and this string is printed in a log and returned to a command."""
-    cattura = CapturaRegistrata()
-    esito = _esegui(
+    cattura = CapturaRecorded()
+    outcome = _run(
         corpus.engine,
-        settimana=corpus.settimana,
-        titolare=corpus.titolare,
-        sender=MittenteCheEsplode(),
+        week=corpus.week,
+        owner=corpus.owner,
+        sender=SenderCheEsplode(),
         tracker=Tracker(cattura),
     )
 
-    assert esito.esito == "saltato"
-    assert esito.motivo == "RuntimeError"
-    assert "connessione" not in esito.motivo
+    assert outcome.outcome == "skipped"
+    assert outcome.reason == "RuntimeError"
+    assert "connessione" not in outcome.reason
     assert cattura.chiamate == []
-    assert _riga(corpus.engine, corpus.iso) is None
-    assert _attivita(corpus.engine) == []
+    assert _line(corpus.engine, corpus.iso) is None
+    assert _task(corpus.engine) == []
 
 
 # --- one report per distinct scope (REB-633, spec 2026-10-03 §4) ----------------------
 
 
-def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
+def test_to_scoped_owner_does_not_empty_the_week_for_everyone_else(
     corpus: Corpus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The space's emptiness is asked as the space, not as the titolare: Ada scoped to an
@@ -1107,27 +1093,25 @@ def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
     from pigrocrm.core.auth.models import UserLegalEntity
     from pigrocrm.core.db.scope import SCOPE_SETTING
     from pigrocrm.core.digest.service import DigestService
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     factory = session_factory(corpus.engine)
     with factory() as session:
-        empty = LegalEntity(
-            nome=f"{_PREFIX} vuota", ragione_sociale=f"{_PREFIX} Vuota", nazione="GB"
-        )
+        empty = LegalEntity(nome=f"{_PREFIX} vuota", legal_name=f"{_PREFIX} Vuota", country="GB")
         session.add(empty)
         session.flush()
-        ada = session.get(User, corpus.destinatari[0])
+        ada = session.get(User, corpus.recipients[0])
         assert ada is not None
-        ada.ambito_limitato = True
-        session.add(UserLegalEntity(user_id=ada.id, azienda_id=empty.id))
+        ada.limited_scope = True
+        session.add(UserLegalEntity(user_id=ada.id, legal_entity_id=empty.id))
         session.commit()
         empty_id = empty.id
 
     bound: list[str] = []
     original = DigestService.build
 
-    def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
-        digest = original(self, actor, settimana)
+    def _recording(self: DigestService, actor: Any, week: tuple[date, date]) -> WeeklyDigest:
+        digest = original(self, actor, week)
         bound.append(
             self.session.execute(
                 text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
@@ -1138,14 +1122,10 @@ def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
     monkeypatch.setattr(DigestService, "build", _recording)
     sender = RecordingSender()
     try:
-        esito = _esegui(
-            corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender
-        )
-        assert esito == DigestOutcome(
-            slug=SLUG, esito="inviato", settimana=corpus.iso, destinatari=2
-        )
+        outcome = _run(corpus.engine, week=corpus.week, owner=corpus.owner, sender=sender)
+        assert outcome == DigestOutcome(slug=SLUG, outcome="sent", week=corpus.iso, recipients=2)
         assert bound == [str(empty_id), "*"]
-        assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+        assert [mail.to for mail in sender.sent] == [corpus.owner, corpus.collega]
     finally:
         with factory() as session:
             session.execute(delete(LegalEntity).where(LegalEntity.id == empty_id))
@@ -1166,18 +1146,18 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
 
     factory = session_factory(corpus.engine)
     with factory() as session:
-        azienda_id = session.execute(select(Customer.azienda_id)).scalars().first()
-        assert azienda_id is not None
-        bruno = session.get(User, corpus.destinatari[1])
+        legal_entity_id = session.execute(select(Customer.legal_entity_id)).scalars().first()
+        assert legal_entity_id is not None
+        bruno = session.get(User, corpus.recipients[1])
         assert bruno is not None
-        bruno.ambito_limitato = True
-        session.add(UserLegalEntity(user_id=bruno.id, azienda_id=azienda_id))
+        bruno.limited_scope = True
+        session.add(UserLegalEntity(user_id=bruno.id, legal_entity_id=legal_entity_id))
         session.commit()
 
     bound: list[str] = []
     original = DigestService.build
     probed: list[str] = []
-    original_probe = DigestRun._spazio_vuoto
+    original_probe = DigestRun._space_empty
 
     def _recording_probe(self: DigestRun) -> bool:
         probed.append(
@@ -1187,10 +1167,10 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
         )
         return original_probe(self)
 
-    monkeypatch.setattr(DigestRun, "_spazio_vuoto", _recording_probe)
+    monkeypatch.setattr(DigestRun, "_space_empty", _recording_probe)
 
-    def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
-        digest = original(self, actor, settimana)
+    def _recording(self: DigestService, actor: Any, week: tuple[date, date]) -> WeeklyDigest:
+        digest = original(self, actor, week)
         bound.append(
             self.session.execute(
                 text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
@@ -1202,16 +1182,16 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
     sender = RecordingSender()
     with factory() as session:
         run = DigestRun(session, SETTINGS, sender=sender, tracker=None, public_url=PUBLIC_URL)
-        esito = run.send_for_space(SLUG, corpus.titolare, corpus.settimana)
+        outcome = run.send_for_space(SLUG, corpus.owner, corpus.week)
         assert not session.in_transaction()
         back = session.execute(
             text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
         ).scalar_one()
 
-    assert esito.esito == "inviato" and esito.destinatari == 2
+    assert outcome.outcome == "sent" and outcome.recipients == 2
     # The emptiness probe, the first read of a policied table, already ran as «tutte».
     assert probed == ["*"]
-    assert bound == ["*", str(azienda_id)]
-    assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+    assert bound == ["*", str(legal_entity_id)]
+    assert [mail.to for mail in sender.sent] == [corpus.owner, corpus.collega]
     # The titolare's scope is what the session carries once the groups are done.
     assert back == "*"

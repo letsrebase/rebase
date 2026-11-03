@@ -44,7 +44,7 @@ def test_a_match_needs_the_tax_data_saved_first(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
     with pytest.raises(ValidationFailed) as refused:
         _service(clean).create(freelancer_id, _body(company_id), admin_id)
-    assert refused.value.details["field"] == "fiscale"
+    assert refused.value.details["field"] == "tax"
 
 
 def test_a_deleted_card_or_request_is_not_found(clean: Session) -> None:
@@ -62,7 +62,7 @@ def test_a_document_is_not_found_once_its_freelancer_is_deleted(clean: Session) 
     «documento ... non trovato» for a document that is gone and for one whose freelancer
     is soft-deleted, never the freelancer's own message (REB-417)."""
     admin_id, freelancer_id, company_id = _setup(clean)
-    letter = _service(clean).create(freelancer_id, _body(company_id), admin_id).lettera
+    letter = _service(clean).create(freelancer_id, _body(company_id), admin_id).letter
     assert require_live_document(clean, letter.id).id == letter.id
     missing = uuid4()
     with pytest.raises(NotFound, match=f"documento {missing} non trovato"):
@@ -92,9 +92,9 @@ def test_cancelling_a_draft_cancels_its_letter_and_leaves_the_framework(clean: S
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
     cancelled = service.cancel(match.id, admin_id)
-    assert (cancelled.stato, cancelled.lettera.stato) == ("annullato", "annullato")
+    assert (cancelled.status, cancelled.letter.status) == ("cancelled", "cancelled")
     assert cancelled.cancelled_at is not None
-    assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == ["generato"]
+    assert [d.status for d in _documents(clean, freelancer_id, "framework")] == ["generated"]
     with pytest.raises(InvalidState):
         service.cancel(match.id, admin_id)
     kinds = [a.kind for a in AdminActionService(clean).timeline("match", match.id)]
@@ -109,9 +109,9 @@ def test_only_an_active_match_can_be_closed(clean: Session) -> None:
         service.close(match.id, admin_id)
     row = clean.get(Match, match.id)
     assert row is not None
-    row.stato = "attivo"  # only a signed letter gets a match here (phase 3)
+    row.status = "active"  # only a signed letter gets a match here (phase 3)
     clean.commit()
-    assert service.close(match.id, admin_id).stato == "concluso"
+    assert service.close(match.id, admin_id).status == "concluded"
 
 
 def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks(
@@ -134,12 +134,12 @@ def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_fr
     name -- is patched to pause the first session there, after everything upstream of it
     has already run once. The second session's `create()` is then started for real:
     without the fix it races ahead of the paused first one, reads "no active, no
-    pending" same as the first did, and writes its own `generato` framework -- so when
+    pending" same as the first did, and writes its own `generated` framework -- so when
     the first is released and finishes writing *its* framework from the same stale
     read, both commit and two open frameworks exist at once (RED). With the fix, the
     second cannot get past its own first statement (the same row lock, already held,
     uncommitted, by the first) until the first commits; only then does it see the
-    first's `generato` framework, cancel it, and write its own -- exactly one open
+    first's `generated` framework, cancel it, and write its own -- exactly one open
     framework survives (GREEN)."""
     admin_id, freelancer_id, company_id = _setup(clean)
     factory = session_factory(hub_engine)
@@ -186,9 +186,9 @@ def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_fr
         assert not second_worker.is_alive()
         assert not errors, errors
 
-        assert [q.stato for q in _documents(clean, freelancer_id, "quadro")] == [
-            "annullato",
-            "generato",
+        assert [q.status for q in _documents(clean, freelancer_id, "framework")] == [
+            "cancelled",
+            "generated",
         ]
     finally:
         first.close()
@@ -231,15 +231,15 @@ def test_a_create_waiting_for_the_freelancers_lock_reads_the_request_and_tax_dat
         # Each commits the holder's transaction, which releases the lock.
         if change == "request_closed":
             CompanyService(holder).set_status(
-                company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+                company_id, StatusChange(status="closed"), admin_id=admin_id, source="web"
             )
         else:
             FiscalService(holder).save(
                 freelancer_id,
                 FiscalData(
-                    codice_fiscale="LVLDAA85T50H501Z",
-                    partita_iva="09876543210",
-                    domicilio="Corso Buenos Aires 2, Milano",
+                    tax_code="LVLDAA85T50H501Z",
+                    vat_number="09876543210",
+                    domicile="Corso Buenos Aires 2, Milano",
                 ),
                 admin_id,
             )
@@ -253,10 +253,10 @@ def test_a_create_waiting_for_the_freelancers_lock_reads_the_request_and_tax_dat
             assert clean.scalar(select(func.count()).select_from(Match)) == 0
         else:
             assert not isinstance(result, BaseException), result
-            quadro, lettera = _documents(clean, freelancer_id)
-            assert quadro.data["professionista-piva"] == "09876543210"
-            assert quadro.data["professionista-domicilio"] == "Corso Buenos Aires 2, Milano"
-            assert lettera.data["professionista-piva"] == "09876543210"
+            framework, letter = _documents(clean, freelancer_id)
+            assert framework.data["professionista-piva"] == "09876543210"
+            assert framework.data["professionista-domicilio"] == "Corso Buenos Aires 2, Milano"
+            assert letter.data["professionista-piva"] == "09876543210"
     finally:
         holder.close()
         if worker.is_alive():
@@ -296,7 +296,7 @@ def test_closing_a_request_while_its_match_is_typeset_waits_for_the_match(
     def close() -> None:
         try:
             CompanyService(closer).set_status(
-                company_id, StatusChange(stato="chiuso"), admin_id=admin_id, fonte="web"
+                company_id, StatusChange(status="closed"), admin_id=admin_id, source="web"
             )
         except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
             errors.append(exc)

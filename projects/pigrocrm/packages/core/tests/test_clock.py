@@ -3,14 +3,14 @@
 `datetime.now(UTC).date()` is wrong for every figure in this slice, and wrong in a way
 that is invisible for twenty-three hours a day: at 00:30 on 1 April in Rome it is still
 31 March in UTC, so a deal won just after midnight lands in the previous month's
-conversion rate. `deals.chiuso_il`, `documents.stato_dal`, `invoices.data_emissione`,
-`costs.data` and `time_entries.data` are all calendar dates in the *emitter's* day, not
+conversion rate. `deals.closed_at`, `documents.status_since`, `invoices.issue_date`,
+`costs.date` and `time_entries.date` are all calendar dates in the *emitter's* day, not
 instants, and slice 3 §6.2 already fixed that rule -- this module is the mechanism.
 
 Two clocks in one product is a bug that shows up on 31 December, which is the worst
 possible day to find it. That sentence is why this file does more than the brief asked
 for. `pigrocrm.core.db.clock.today_local()` is the one function that answers "what day is
-it", and the former `pigrocrm.core.clock.oggi_in_italia()`, a second name for it, is gone
+it", and the former `pigrocrm.core.clock.today_in_italy()`, a second name for it, is gone
 (B-29): a second day function beside it would have been the very defect the module is named
 after, and commit 875a1f9 had already fixed three production sites that read the wrong day.
 
@@ -56,7 +56,7 @@ def test_an_unknown_timezone_is_refused_at_construction() -> None:
         Settings(timezone="Europe/Atlantis")
 
 
-def test_today_local_is_the_emitter_day_not_the_utc_day(
+def test_today_local_is_the_legal_entity_day_not_the_utc_day(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """00:30 on 1 April in Rome is 22:30 on 31 March in UTC. The clock must answer
@@ -134,13 +134,13 @@ def test_window_from_is_inclusive_at_both_ends() -> None:
     assert window_from(date(2026, 5, 4), 0) == (date(2026, 5, 4), date(2026, 5, 4))
 
 
-@pytest.mark.parametrize("mese", [0, 13, -1])
-def test_month_bounds_refuses_a_month_outside_one_to_twelve(mese: int) -> None:
+@pytest.mark.parametrize("month", [0, 13, -1])
+def test_month_bounds_refuses_a_month_outside_one_to_twelve(month: int) -> None:
     from pigrocrm.core.errors import ValidationFailed
 
     with pytest.raises(ValidationFailed) as caught:
-        month_bounds(2026, mese)
-    assert caught.value.details["field"] == "mese"
+        month_bounds(2026, month)
+    assert caught.value.details["field"] == "month"
 
 
 # --- The mechanical guard -------------------------------------------------------------

@@ -78,7 +78,7 @@ class CardSummary:
     the person's own words as we found them, so they can see what a company sees."""
 
     nome: str
-    cognome: str
+    last_name: str
     posizione: str | None
     linkedin_url: str | None
     links: tuple[str, ...]
@@ -87,11 +87,11 @@ class CardSummary:
 def welcome_mail(
     to: str,
     nome: str | None,
-    accedi_link: str,
+    login_link: str,
     *,
     kind: str,
     posizione: str | None = None,
-    completa: bool = True,
+    complete: bool = True,
     summary: CardSummary | None = None,
     wizard_link: str | None = None,
 ) -> Mail:
@@ -128,28 +128,28 @@ def welcome_mail(
         f"<p {paragraph}>Un'altra cosa: segui "
         f"{quiet_link(LINKEDIN_PAGE, 'la pagina LinkedIn di rebase')}.</p>"
     )
-    safe_accedi = e(accedi_link, quote=True)
+    safe_login = e(login_link, quote=True)
     enter_text = (
         "la tua area su rebase è aperta. Si entra con la tua email, senza password: ti "
         "mandiamo un link e sei dentro.\n"
         "\n"
-        f"{accedi_link}\n"
+        f"{login_link}\n"
     )
     enter_html = (
         '<p style="margin:0 0 24px 0;">la tua area su rebase è aperta. Si entra con la '
         "tua email, senza password: ti mandiamo un link e sei dentro.</p>"
-        + button(safe_accedi, "Entra nella tua area")
+        + button(safe_login, "Entra nella tua area")
         + f'<p {small}word-break:break-all;">'
         "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
-        f"{quiet_link(safe_accedi, safe_accedi)}</p>"
+        f"{quiet_link(safe_login, safe_login)}</p>"
     )
 
-    if kind == "persona":
+    if kind == "person":
         # «Completa» is a fact about the card, not about who wrote it: since the wizard
         # stopped demanding a CV a person can have filled the form themselves and still
         # be missing the file, and telling them the card is complete would be both
         # false and a reason never to come back and finish it.
-        if not completa:
+        if not complete:
             card_text = (
                 f"Sei {posizione}: manca solo il CV perché le aziende possano trovarti, "
                 "e lo carichi dalla tua area."
@@ -168,7 +168,7 @@ def welcome_mail(
     elif kind == "admin":
         if summary is None:
             raise ValueError("a welcome mail of kind 'admin' needs a card summary")
-        found: list[tuple[str, str]] = [("Nome", f"{summary.nome} {summary.cognome}")]
+        found: list[tuple[str, str]] = [("Nome", f"{summary.nome} {summary.last_name}")]
         if summary.posizione:
             found.append(("Posizione", summary.posizione))
         if summary.linkedin_url:
@@ -220,7 +220,7 @@ def welcome_mail(
             "prepararla noi: in pubblico non c'era abbastanza. Compilala tu, ci vogliono "
             "cinque minuti."
         )
-        after = f"Da quel momento entri con la tua email, senza password, da qui: {accedi_link}"
+        after = f"Da quel momento entri con la tua email, senza password, da qui: {login_link}"
         middle_text = intro + "\n\n" + wizard_link + "\n\n" + after + "\n"
         middle_html = (
             f'<p style="margin:0 0 24px 0;">{e(intro)}</p>'
@@ -229,7 +229,7 @@ def welcome_mail(
             "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
             f"{quiet_link(safe_wizard, safe_wizard)}</p>"
             + f"<p {paragraph}>Da quel momento entri con la tua email, senza password, da "
-            f"{quiet_link(safe_accedi, safe_accedi)}.</p>"
+            f"{quiet_link(safe_login, safe_login)}.</p>"
         )
     else:
         raise ValueError(f"kind sconosciuto: {kind}")

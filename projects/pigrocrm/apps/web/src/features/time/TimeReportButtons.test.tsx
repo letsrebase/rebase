@@ -23,7 +23,7 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) } as never)
 }
 
-const DOCUMENT = { id: 'doc-9', tipo: 'rapporto_ore', versione_corrente: 1 }
+const DOCUMENT = { id: 'doc-9', type: 'hours_report', current_version: 1 }
 
 function renderButtons() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -69,7 +69,7 @@ describe('TimeReportButtons', () => {
       { params: { query: Record<string, string> } },
     ]
     expect(path).toBe('/api/deals/{deal_id}/time-report/pdf')
-    expect(options.params.query.mese).toMatch(/^\d{4}-\d{2}$/)
+    expect(options.params.query.month).toMatch(/^\d{4}-\d{2}$/)
     await waitFor(() => expect(downloadDocument).toHaveBeenCalledWith('doc-9'))
   })
 
@@ -88,7 +88,7 @@ describe('TimeReportButtons', () => {
       string,
       { params: { query: Record<string, string> } },
     ]
-    expect(options.params.query.mese).toBe('2026-03')
+    expect(options.params.query.month).toBe('2026-03')
   })
 
   /**

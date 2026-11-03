@@ -1,4 +1,4 @@
-"""The digest's own event, sent by the server: `digest_inviato` (REB-221).
+"""The digest's own event, sent by the server: `digest_sent` (REB-221).
 
 A space's browser reports very little of the CRM back to PostHog -- most of a working
 day happens in Gmail, in a video call, in a PDF someone reads offline -- so the weekly
@@ -36,7 +36,7 @@ from pigrocrm.core.config import Settings
 if TYPE_CHECKING:
     from posthog import Posthog
 
-DIGEST_SENT = "digest_inviato"
+DIGEST_SENT = "digest_sent"
 
 # What the SDK's `capture` looks like, so a test can hand one that records.
 Capture = Callable[..., Any]
@@ -50,11 +50,11 @@ _lock = threading.Lock()
 class Tracker:
     capture: Capture
 
-    def digest_sent(self, user_id: UUID, *, settimana: str, sezioni: int) -> bool:
-        """One `digest_inviato`; answers whether the SDK took it."""
+    def digest_sent(self, user_id: UUID, *, week: str, sections: int) -> bool:
+        """One `digest_sent`; answers whether the SDK took it."""
         properties: dict[str, Any] = {
-            "settimana": settimana,
-            "sezioni": sezioni,
+            "week": week,
+            "sections": sections,
             "via": "server",
         }
         try:

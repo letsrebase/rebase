@@ -12,7 +12,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: 'u-1', nome: 'Giulia Demo', ruolo: 'admin' } }),
+  useAuth: () => ({ user: { id: 'u-1', nome: 'Giulia Demo', role: 'admin' } }),
 }))
 
 function ok(data: unknown) {

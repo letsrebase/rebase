@@ -29,14 +29,14 @@ const PAGE_SIZE = 100
  *  «Consuntivo» (spec § 3.5, REB-503), which links the deal itself; a match not active
  *  yet has no link to speak of. */
 function PigroState({ item }: { item: MatchListItem }) {
-  if (!item.pigro_stato) return <span className="text-muted-foreground">—</span>
-  const label = PIGRO_STATE_LABELS[item.pigro_stato] ?? item.pigro_stato
-  if (item.pigro_stato !== 'collegato') return <span>{label}</span>
+  if (!item.pigro_status) return <span className="text-muted-foreground">—</span>
+  const label = PIGRO_STATE_LABELS[item.pigro_status] ?? item.pigro_status
+  if (item.pigro_status !== 'linked') return <span>{label}</span>
   return (
     <Link
       to="/admin/matches/$id/report"
       params={{ id: item.id }}
-      aria-label={`${label}: consuntivo del match con ${item.nome_azienda} come ${item.figura_richiesta}`}
+      aria-label={`${label}: consuntivo del match con ${item.company_name} come ${item.requested_role}`}
       className="hover:underline"
     >
       {label}
@@ -64,7 +64,7 @@ function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
           <p>
             <span className="text-muted-foreground">{`Referral ${REFERRAL_KIND_LABELS[referral.kind]}: `}</span>
             <ReferrerName referral={referral} />
-            {referral.stato !== 'gia_maturato' && referral.stato !== 'da_verificare' && (
+            {referral.status !== 'already_accrued' && referral.status !== 'to_verify' && (
               // One unit, so a narrow cell breaks before the rate, never inside a figure.
               <span className="whitespace-nowrap">
                 {' · '}
@@ -75,11 +75,11 @@ function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
             )}
           </p>
           <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-            <Badge variant={referral.stato === 'previsto' || referral.stato === 'da_verificare' ? 'outline' : 'pill'}>
-              {REFERRAL_STATE_LABELS[referral.stato] ?? referral.stato}
+            <Badge variant={referral.status === 'expected' || referral.status === 'to_verify' ? 'outline' : 'pill'}>
+              {REFERRAL_STATE_LABELS[referral.status] ?? referral.status}
             </Badge>
-            {referral.stato === 'gia_maturato' && 'Ha già maturato su un altro match.'}
-            {referral.stato === 'da_verificare' && "Non conta finché il referente dell'azienda non fa il primo accesso."}
+            {referral.status === 'already_accrued' && 'Ha già maturato su un altro match.'}
+            {referral.status === 'to_verify' && "Non conta finché il referente dell'azienda non fa il primo accesso."}
           </p>
         </li>
       ))}
@@ -88,35 +88,35 @@ function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
 }
 
 /** The referrer, a link to his talent page when he has a card of his own. */
-function ReferrerName({ referral }: { referral: Pick<MatchReferral, 'referrer_nome' | 'referrer_freelancer_id'> }) {
-  if (referral.referrer_freelancer_id === null) return <span className="font-medium">{referral.referrer_nome}</span>
+function ReferrerName({ referral }: { referral: Pick<MatchReferral, 'referrer_name' | 'referrer_freelancer_id'> }) {
+  if (referral.referrer_freelancer_id === null) return <span className="font-medium">{referral.referrer_name}</span>
   return (
     <Link
       to="/admin/freelance/$id"
       params={{ id: referral.referrer_freelancer_id }}
       className="font-medium hover:underline"
     >
-      {referral.referrer_nome}
+      {referral.referrer_name}
     </Link>
   )
 }
 
 /** The letter's fee and what it is priced by, with the estimated days under it. */
-function Compenso({ item }: { item: MatchListItem }) {
-  if (item.lettera_compenso === null) return <span className="text-muted-foreground">—</span>
-  const detail = [item.lettera_unita, item.giorni_previsti !== null ? `${item.giorni_previsti} gg` : null]
+function Fee({ item }: { item: MatchListItem }) {
+  if (item.letter_fee === null) return <span className="text-muted-foreground">—</span>
+  const detail = [item.unit_letter, item.expected_days !== null ? `${item.expected_days} gg` : null]
     .filter(Boolean)
     .join(' · ')
   return (
     <>
-      <p className="font-medium tabular-nums">{formatMoney(item.lettera_compenso)}</p>
+      <p className="font-medium tabular-nums">{formatMoney(item.letter_fee)}</p>
       {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
     </>
   )
 }
 
 function MatchRow({ item }: { item: MatchListItem }) {
-  const name = `${item.freelancer_nome} ${item.freelancer_cognome}`.trim()
+  const name = `${item.freelancer_name} ${item.freelancer_last_name}`.trim()
   return (
     <TableRow>
       <TableCell className="align-top">
@@ -132,32 +132,32 @@ function MatchRow({ item }: { item: MatchListItem }) {
       <TableCell className="align-top">
         {/* A deleted request's page answers not found: its name stays, unlinked, and says so. */}
         {item.company_deleted ? (
-          <p className="font-medium">{item.nome_azienda}</p>
+          <p className="font-medium">{item.company_name}</p>
         ) : (
           <Link to="/admin/companies/$id" params={{ id: item.company_id }} className="font-medium hover:underline">
-            {item.nome_azienda}
+            {item.company_name}
           </Link>
         )}
         <p className="text-xs text-muted-foreground">
-          {item.figura_richiesta}
+          {item.requested_role}
           {item.company_deleted && ' · richiesta eliminata'}
         </p>
       </TableCell>
       <TableCell className="min-w-48 space-y-1 align-top whitespace-normal">
-        <Badge variant="pill">{MATCH_STATE_LABELS[item.stato] ?? item.stato}</Badge>
+        <Badge variant="pill">{MATCH_STATE_LABELS[item.status] ?? item.status}</Badge>
         {/* Where the match stands, in the words «Match e contratti» uses (REB-477): it
             names the letter's state too, so the «Lettera» column keeps just the number. */}
-        <p className="text-xs text-muted-foreground">{item.situazione}</p>
+        <p className="text-xs text-muted-foreground">{item.situation}</p>
       </TableCell>
       <TableCell className="align-top">
-        {item.lettera_numero && <p className="text-sm">{`n. ${item.lettera_numero}`}</p>}
+        {item.number_letter && <p className="text-sm">{`n. ${item.number_letter}`}</p>}
         <p className="text-xs text-muted-foreground">
-          {item.lettera_data_inizio}
-          {item.lettera_data_fine && ` · ${item.lettera_data_fine}`}
+          {item.letter_start_date}
+          {item.letter_end_date && ` · ${item.letter_end_date}`}
         </p>
       </TableCell>
       <TableCell className="text-right align-top">
-        <Compenso item={item} />
+        <Fee item={item} />
       </TableCell>
       <TableCell className="min-w-80 align-top whitespace-normal">
         <MatchReferrals referrals={item.referrals} />
@@ -167,7 +167,7 @@ function MatchRow({ item }: { item: MatchListItem }) {
       </TableCell>
       <TableCell className="text-right align-top text-muted-foreground">
         <p>{formatDate(item.created_at)}</p>
-        <p className="text-xs">{item.created_by_nome || item.created_by_email}</p>
+        <p className="text-xs">{item.created_by_name || item.created_by_email}</p>
       </TableCell>
       <TableCell className="text-right align-top">
         {/* No page of its own: a match lives on its freelancer's «Match e contratti», which
@@ -176,7 +176,7 @@ function MatchRow({ item }: { item: MatchListItem }) {
           to="/admin/freelance/$id/contracts"
           params={{ id: item.freelancer_id }}
           hash={matchHeadingId(item.id)}
-          aria-label={`Dettaglio del match con ${item.nome_azienda} come ${item.figura_richiesta}`}
+          aria-label={`Dettaglio del match con ${item.company_name} come ${item.requested_role}`}
           className="text-sm underline-offset-2 hover:underline"
         >
           Dettaglio
@@ -234,7 +234,7 @@ export function AdminMatches() {
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) => {
       const seen = pages.reduce((total, page) => total + page.items.length, 0)
-      return seen < lastPage.totale ? seen : undefined
+      return seen < lastPage.total ? seen : undefined
     },
   })
   const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
@@ -242,11 +242,11 @@ export function AdminMatches() {
 
   return (
     <>
-      <Header title="Match" count={list.data?.pages[0]?.totale}>
+      <Header title="Match" count={list.data?.pages[0]?.total}>
         <StateFilter
           states={MATCH_STATES}
-          value={search.stato}
-          onChange={(value) => setFilter('stato', value)}
+          value={search.status}
+          onChange={(value) => setFilter('status', value)}
           labels={MATCH_STATE_LABELS}
         />
       </Header>

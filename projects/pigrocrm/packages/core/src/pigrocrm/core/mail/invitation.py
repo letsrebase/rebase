@@ -7,7 +7,7 @@ from pigrocrm.core.mail.transport import Mail
 
 
 def invitation_mail(
-    to: str, spazio: str, invitato_da: str, url: str, *, nome: str | None = None, giorni: int
+    to: str, space: str, invited_from: str, url: str, *, nome: str | None = None, days: int
 ) -> Mail:
     """A space gains a person (spec 2026-09-17 §5): who invited them, the space, the
     link, and that no password is involved. `nome` is the person's own name when the
@@ -22,25 +22,25 @@ def invitation_mail(
     safe_url = e(url, quote=True)
     text = (
         f"{greeting}\n\n"
-        f"{invitato_da} ti ha invitato a entrare nello spazio PigroCRM di {spazio}. "
+        f"{invited_from} ti ha invitato a entrare nello spazio PigroCRM di {space}. "
         "Basta un click, senza scegliere una password:\n\n"
         f"{url}\n\n"
-        f"Il link vale {giorni} giorni e funziona una volta sola. Se non te lo aspettavi, "
+        f"Il link vale {days} giorni e funziona una volta sola. Se non te lo aspettavi, "
         "ignora questa mail: non succede niente.\n\n"
         "PigroCRM\n"
     )
     body = "\n".join(
         (
             f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
-            f'<p style="margin:0 0 24px 0;">{e(invitato_da)} ti ha invitato a entrare nello '
-            f"spazio PigroCRM di {e(spazio)}. Basta un click, senza scegliere una password.</p>",
+            f'<p style="margin:0 0 24px 0;">{e(invited_from)} ti ha invitato a entrare nello '
+            f"spazio PigroCRM di {e(space)}. Basta un click, senza scegliere una password.</p>",
             button(safe_url, "Entra nello spazio"),
             f'<p {small}word-break:break-all;">Se il bottone non si apre, copia questo '
             f"indirizzo nel browser:<br>{quiet_link(safe_url, e(url))}</p>",
-            f"<p {paragraph}>Il link vale {giorni} giorni e funziona una volta sola. "
+            f"<p {paragraph}>Il link vale {days} giorni e funziona una volta sola. "
             "Se non te lo aspettavi, ignora questa mail: non succede niente.</p>",
             f"<p {paragraph}>PigroCRM</p>",
         )
     )
-    subject = f"Sei stato invitato in {spazio} su PigroCRM"
+    subject = f"Sei stato invitato in {space} su PigroCRM"
     return Mail(to=to, subject=subject, text=text, html=frame(subject, body))

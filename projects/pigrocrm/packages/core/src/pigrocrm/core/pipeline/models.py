@@ -7,7 +7,7 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 class PipelineStage(Base, PrimaryKeyMixin, TimestampMixin):
     """`code` is the stable identity for the seeded default stages; `nome` is the
     visible label a user is free to rename. `seed_defaults` deduplicates on `code`,
-    never on `nome` -- the same reasoning that makes `tipo` exist: logic must not
+    never on `nome` -- the same reasoning that makes `type` exist: logic must not
     depend on a string the user can change.
 
     Stages a user creates through `create` have no `code` (`None`) and are never
@@ -20,7 +20,7 @@ class PipelineStage(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (Index("uq_pipeline_stage_code", "code", unique=True),)
 
     nome: Mapped[str] = mapped_column(String(60), nullable=False)
-    posizione: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    probabilita_default: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    tipo: Mapped[str] = mapped_column(String(10), nullable=False, default="open")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    default_probability: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    type: Mapped[str] = mapped_column(String(10), nullable=False, default="open")
     code: Mapped[str | None] = mapped_column(String(30), default=None)

@@ -4,12 +4,12 @@ import { useState } from 'react'
 import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
-import { useOverdueCount } from '@/features/attivita/queries'
+import { useOverdueCount } from '@/features/tasks/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useAuth } from '@/lib/auth'
-import { AziendaSelect } from './AziendaSelect'
+import { LegalEntitySelect } from './LegalEntitySelect'
 import {
-  AGENTI,
+  Agents,
   HOME,
   SECTIONS,
   SETTINGS,
@@ -59,7 +59,7 @@ export function Sidebar({
   // The «Impostazioni» sub-items this reader may see (REB-294): the same
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
   // page read one table and cannot drift. The group itself is shown to every role.
-  const settingsItems = user === null ? [] : settingsSubItems(user.ruolo, location.pathname)
+  const settingsItems = user === null ? [] : settingsSubItems(user.role, location.pathname)
   // «Impostazioni» is the one entry that opens onto sub-items. It follows the route: the
   // page holding the current route is open by itself, since the alternative is a page whose
   // own entry is not on screen, and the alternative to *that* -- nailing it open -- is a
@@ -152,7 +152,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <AziendaSelect rail={rail} />
+      <LegalEntitySelect rail={rail} />
 
       {/* Labelled because a page's own header may render a second <nav> landmark (a
           breadcrumb, a set of tabs), and two unlabelled ones are indistinguishable to a
@@ -183,7 +183,7 @@ export function Sidebar({
                   key={item.to}
                   {...item}
                   rail={rail}
-                  count={item.to === '/app/avvisi' ? unread : 0}
+                  count={item.to === '/app/reminders' ? unread : 0}
                   overdue={overdue}
                 />
               ))}
@@ -198,7 +198,7 @@ export function Sidebar({
             profile. «Impostazioni» is the one entry that still opens onto sub-items, and in
             the rail it is one link to the first of them. */}
         <div className="mt-auto space-y-1 border-t border-sidebar-border pt-3">
-          <NavLeaf {...AGENTI} rail={rail} />
+          <NavLeaf {...Agents} rail={rail} />
           {rail ? (
             // The first section, under the group's own name: in the rail the label is the
             // accessible name, and «Profilo» would say nothing about where it goes.

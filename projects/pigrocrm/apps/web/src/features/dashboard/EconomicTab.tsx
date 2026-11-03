@@ -18,33 +18,33 @@ import { FiscalPanel } from './FiscalPanel'
 import { money } from './format'
 import { Freshness } from './Freshness'
 import { MonthlyBars } from './MonthlyBars'
-import type { Periodo } from './periodo'
+import type { Period } from './period'
 import { useEconomicOverview, type EconomicOverview, type FiscalEstimate } from './queries'
 import { CASH_BASES, type CashBase } from './search'
 
 /** The year the picker's start date names: cash and taxes are told by the year. A date,
  *  not an amount, so reading it through `Date` is not the coercion criterion 14 bans. */
-function yearOf(periodo: Periodo): number {
-  return new Date(`${periodo.da}T00:00:00`).getFullYear()
+function yearOf(period: Period): number {
+  return new Date(`${period.da}T00:00:00`).getFullYear()
 }
 
-function dovuto(estimate: FiscalEstimate | null): string {
-  return estimate?.totale_dovuto ? money(estimate.totale_dovuto) : '—'
+function due(estimate: FiscalEstimate | null): string {
+  return estimate?.due_total ? money(estimate.due_total) : '—'
 }
 
-type ConcentrationRow = EconomicOverview['concentrazione_clienti'][number]
+type ConcentrationRow = EconomicOverview['customer_concentration'][number]
 
 /**
  * The rows grouped by the azienda whose revenue each share is of (REB-632, spec §1.9),
  * in the order the server sent them, which is the selector's: the default first. A
  * customer billed by two aziende appears in both groups, once per share.
  */
-function byLegalEntity(rows: ConcentrationRow[]): { aziendaId: string; rows: ConcentrationRow[] }[] {
-  const groups: { aziendaId: string; rows: ConcentrationRow[] }[] = []
+function byLegalEntity(rows: ConcentrationRow[]): { legalEntityId: string; rows: ConcentrationRow[] }[] {
+  const groups: { legalEntityId: string; rows: ConcentrationRow[] }[] = []
   for (const row of rows) {
     const last = groups[groups.length - 1]
-    if (last && last.aziendaId === row.azienda_id) last.rows.push(row)
-    else groups.push({ aziendaId: row.azienda_id, rows: [row] })
+    if (last && last.legalEntityId === row.legal_entity_id) last.rows.push(row)
+    else groups.push({ legalEntityId: row.legal_entity_id, rows: [row] })
   }
   return groups
 }
@@ -68,19 +68,19 @@ function ConcentrationTable({
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <TableRow key={`${row.azienda_id}:${row.customer_id}`}>
+          <TableRow key={`${row.legal_entity_id}:${row.customer_id}`}>
             <TableCell>
               <Link
                 to="/app/customers/$customerId"
                 params={{ customerId: row.customer_id }}
                 className="underline-offset-4 hover:underline"
               >
-                {row.ragione_sociale}
+                {row.legal_name}
               </Link>
             </TableCell>
-            <TableCell className="text-right">{row.fatture}</TableCell>
-            <TableCell className="text-right">{money(row.ricavi)}</TableCell>
-            <TableCell className="text-right">{shareFormatter.format(row.quota)}</TableCell>
+            <TableCell className="text-right">{row.invoices}</TableCell>
+            <TableCell className="text-right">{money(row.revenue)}</TableCell>
+            <TableCell className="text-right">{shareFormatter.format(row.share)}</TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -89,7 +89,7 @@ function ConcentrationTable({
 }
 
 /**
- * `quota` arrives as a plain ratio in [0, 1], the server's own share of the year's
+ * `share` arrives as a plain ratio in [0, 1], the server's own share of the year's
  * *whole* revenue (never of the largest customer, REB-370 §1.5) -- formatting it as a
  * percentage is not the coercion criterion 14 bans: the ratio is already a number when
  * it arrives, the same reasoning `charts.tsx`'s own `widthPercent` relies on to draw a
@@ -130,21 +130,21 @@ function BaseSwitch({ base, onChange }: { base: CashBase; onChange: (next: CashB
 }
 
 export function EconomicTab({
-  periodo,
+  period,
   base,
   onBaseChange,
 }: {
-  periodo: Periodo
+  period: Period
   base: CashBase
   onBaseChange: (next: CashBase) => void
 }) {
-  const anno = yearOf(periodo)
-  const query = useEconomicOverview(anno, base)
+  const year = yearOf(period)
+  const query = useEconomicOverview(year, base)
   // «Tutte» on a space with several aziende (REB-632, spec §1.9): the cash adds up on
   // the server, the taxes do not, so the tab draws the estimate once per azienda and
   // names which azienda each concentration share belongs to. With one azienda, or one
   // selected, the page reads as it always did.
-  const { aziende, selected, several, byId } = useLegalEntity()
+  const { legal_entities, selected, several, byId } = useLegalEntity()
   const perAzienda = several && selected === null
 
   if (query.isError) return <QueryErrorBanner error={query.error} />
@@ -158,16 +158,16 @@ export function EconomicTab({
   }
 
   const {
-    cassa,
-    fiscale,
-    fiscale_proiettato,
-    netto_effettivo,
-    netto_proiettato,
-    concentrazione_clienti,
+    pension_fund,
+    tax,
+    projected_tax,
+    actual_net,
+    projected_net,
+    customer_concentration,
   } = query.data
   // Named from the server's echo, not from the URL: the sentence describes what was
   // drawn. Through the label table, because the wire value is a contract and not copy.
-  const lettura = CASH_BASES.find((candidate) => candidate.id === cassa.base)?.phrase ?? ''
+  const reading = CASH_BASES.find((candidate) => candidate.id === pension_fund.base)?.phrase ?? ''
 
   return (
     <div className="space-y-6">
@@ -176,12 +176,12 @@ export function EconomicTab({
           {/* The reading is named in words as well as on the switch: the sentence is what
               a screenshot carries, and «per competenza» is the difference between a
               chart of what was earned and a chart of what arrived. */}
-          Vista economica {anno} {lettura}: ricavi, costi passivi e stima fiscale.
+          Vista economica {year} {reading}: ricavi, costi passivi e stima fiscale.
         </p>
         <div className="flex flex-wrap items-center gap-4">
           <BaseSwitch base={base} onChange={onBaseChange} />
           <Freshness
-            calcolatoAlle={query.data.calcolato_alle}
+            calculatedAt={query.data.calculated_at}
             onRefresh={() => void query.refetch()}
           />
         </div>
@@ -190,56 +190,56 @@ export function EconomicTab({
       {/* The two charts come before the figures (2026-09-09): the shape of the year is
           what the eye reads first, and the cards below give it its exact numbers. */}
       <MonthlyBars
-        title={`Andamento economico ${anno}`}
-        months={cassa.mesi}
-        series={['incassato', 'costi']}
-        shares="quote_andamento"
+        title={`Andamento economico ${year}`}
+        months={pension_fund.months}
+        series={['paid', 'costs']}
+        shares="trend_shares"
       />
       <MonthlyBars
-        title={`Proiezione economica ${anno}`}
-        months={cassa.mesi}
-        series={['incassato', 'da_incassare', 'bozze', 'costi']}
-        shares="quote_proiezione"
+        title={`Proiezione economica ${year}`}
+        months={pension_fund.months}
+        series={['paid', 'unpaid', 'drafts', 'costs']}
+        shares="projection_shares"
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <BigNumber label="Ricavi incassati" value={money(cassa.incassato)} tone="accent" />
+        <BigNumber label="Ricavi incassati" value={money(pension_fund.paid)} tone="accent" />
         <BigNumber
           label="Ricavi proiettati"
-          value={money(cassa.proiettato)}
-          hint={`Incassato ${money(cassa.incassato)} · da incassare ${money(cassa.da_incassare)} · bozze e proforma ${money(cassa.bozze)}`}
+          value={money(pension_fund.projected)}
+          hint={`Incassato ${money(pension_fund.paid)} · da incassare ${money(pension_fund.unpaid)} · bozze e proforma ${money(pension_fund.drafts)}`}
         />
-        <BigNumber label="Costi passivi" value={money(cassa.costi)} />
+        <BigNumber label="Costi passivi" value={money(pension_fund.costs)} />
         <BigNumber
           label="Totale lordo effettivo"
-          value={money(cassa.lordo_effettivo)}
+          value={money(pension_fund.actual_gross)}
           hint="incassato meno costi"
         />
-        {fiscale ? (
+        {tax ? (
           <>
             <BigNumber
               label="Imponibile forfettario stimato"
-              value={money(fiscale.imponibile ?? '0.00')}
+              value={money(tax.taxable_amount ?? '0.00')}
               hint={
-                fiscale_proiettato?.imponibile
-                  ? `con proiezione ${money(fiscale_proiettato.imponibile)}`
+                projected_tax?.taxable_amount
+                  ? `con proiezione ${money(projected_tax.taxable_amount)}`
                   : undefined
               }
             />
             <BigNumber
               label="Totale da saldare"
-              value={dovuto(fiscale)}
-              hint={`imposta sostitutiva ${money(fiscale.imposta_sostitutiva ?? '0.00')} · INPS ${money(fiscale.contributi ?? '0.00')}`}
+              value={due(tax)}
+              hint={`imposta sostitutiva ${money(tax.substitute_tax ?? '0.00')} · INPS ${money(tax.contributions ?? '0.00')}`}
             />
             {/* The revenue the estimate was actually computed on, from the estimate
                 itself: under the accrual reading `cassa.proiettato` can be a different
                 figure (a document whose period and payment fall in different years). */}
             <BigNumber
               label="Totale da saldare con proiezione"
-              value={dovuto(fiscale_proiettato)}
+              value={due(projected_tax)}
               hint={
-                fiscale_proiettato
-                  ? `su ricavi proiettati ${money(fiscale_proiettato.ricavi)}, su base incasso`
+                projected_tax
+                  ? `su ricavi proiettati ${money(projected_tax.revenue)}, su base incasso`
                   : undefined
               }
             />
@@ -249,12 +249,12 @@ export function EconomicTab({
                 accrual reading, may be a different figure. */}
             <BigNumber
               label="Totale netto ricavi"
-              value={netto_effettivo ? money(netto_effettivo) : '—'}
+              value={actual_net ? money(actual_net) : '—'}
               hint="incassato meno costi e tasse stimate, su base incasso"
             />
             <BigNumber
               label="Totale netto ricavi con proiezione"
-              value={netto_proiettato ? money(netto_proiettato) : '—'}
+              value={projected_net ? money(projected_net) : '—'}
               hint="proiettato meno costi e tasse stimate, su base incasso"
             />
           </>
@@ -288,16 +288,16 @@ export function EconomicTab({
           collected, this says how much more can be before the regime ends. It draws
           nothing for an azienda those ceilings do not apply to. */}
       {perAzienda ? (
-        aziende.map((azienda) => (
+        legal_entities.map((legal_entity) => (
           <CeilingPanel
-            key={azienda.id}
-            anno={anno}
-            aziendaId={azienda.id}
-            titolo={azienda.nome}
+            key={legal_entity.id}
+            year={year}
+            legalEntityId={legal_entity.id}
+            title={legal_entity.nome}
           />
         ))
       ) : (
-        <CeilingPanel anno={anno} />
+        <CeilingPanel year={year} />
       )}
 
       {/* Whole-practice, calendar-year concentration (§1.5, REB-370): each customer's
@@ -314,28 +314,28 @@ export function EconomicTab({
           l’esposizione residua di «Da incassare» nella scheda scadenze, che risponde a
           una domanda diversa (chi deve di più oggi).
         </p>
-        {concentrazione_clienti.length === 0 ? (
+        {customer_concentration.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura emessa nell’anno.</p>
         ) : perAzienda ? (
           // One table per azienda, each share of that azienda's own revenue: a
           // customer who is a third of one azienda reads as a third, never as a tenth
           // of the whole (spec §1.9). An azienda deactivated meanwhile still owns its
           // year's invoices and is named as such.
-          byLegalEntity(concentrazione_clienti).map((group) => (
-            <div key={group.aziendaId} className="space-y-1">
+          byLegalEntity(customer_concentration).map((group) => (
+            <div key={group.legalEntityId} className="space-y-1">
               <h3 className="text-sm font-medium text-muted-foreground">
-                {byId(group.aziendaId)?.nome ?? 'Azienda non più attiva'}
+                {byId(group.legalEntityId)?.nome ?? 'Azienda non più attiva'}
               </h3>
               <ConcentrationTable
                 rows={group.rows}
                 label={`Concentrazione dei ricavi per cliente, ${
-                  byId(group.aziendaId)?.nome ?? 'Azienda non più attiva'
+                  byId(group.legalEntityId)?.nome ?? 'Azienda non più attiva'
                 }`}
               />
             </div>
           ))
         ) : (
-          <ConcentrationTable rows={concentrazione_clienti} />
+          <ConcentrationTable rows={customer_concentration} />
         )}
       </section>
 
@@ -349,17 +349,17 @@ export function EconomicTab({
           `panoramica` already carries, because a card that renders half of itself while the
           other half loads is worse than a card that arrives whole. */}
       {perAzienda ? (
-        aziende.map((azienda) => (
+        legal_entities.map((legal_entity) => (
           <FiscalPanel
-            key={azienda.id}
-            anno={anno}
-            aziendaId={azienda.id}
-            titolo={azienda.nome}
+            key={legal_entity.id}
+            year={year}
+            legalEntityId={legal_entity.id}
+            title={legal_entity.nome}
             quiet
           />
         ))
       ) : (
-        <FiscalPanel anno={anno} />
+        <FiscalPanel year={year} />
       )}
     </div>
   )

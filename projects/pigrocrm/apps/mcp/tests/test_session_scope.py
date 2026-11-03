@@ -40,7 +40,7 @@ def test_twenty_concurrent_writes_all_succeed(
         with provider.scope():
             return str(
                 CustomerService(context.session)
-                .create(CustomerCreate(ragione_sociale=nome), context.actor)
+                .create(CustomerCreate(legal_name=nome), context.actor)
                 .id
             )
 

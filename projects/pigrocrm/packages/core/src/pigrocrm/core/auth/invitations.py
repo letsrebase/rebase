@@ -131,7 +131,7 @@ class InvitationService:
         race guard behind the read, the same shape `UserService.create` uses."""
         actor.require_unscoped_admin("invite_user")
         require_verified_identity(self.session, actor, "invite_user")
-        aziende = check_scope(self.session, ENTITY, data.aziende)
+        legal_entities = check_scope(self.session, ENTITY, data.legal_entities)
         email = data.email
         now = datetime.now(UTC)
         # `invited_by` is a real FK: a system actor has no id to leave as the trail,
@@ -139,7 +139,7 @@ class InvitationService:
         if actor.id is None:
             raise ValidationFailed("invitation", "invited_by", "serve una persona che inviti")
         existing_user = self.users.get_by_email(email)
-        if existing_user is not None and existing_user.attivo:
+        if existing_user is not None and existing_user.active:
             raise Conflict(
                 "invitation",
                 "esiste già una persona attiva con questo indirizzo nello spazio",
@@ -156,8 +156,8 @@ class InvitationService:
             # Expired: overwrite in place exactly as a resend does.
             open_row.email = email
             open_row.nome = data.nome
-            open_row.ruolo = data.ruolo
-            open_row.aziende = aziende
+            open_row.role = data.role
+            open_row.legal_entities = legal_entities
             open_row.token_hash = _hash(raw)
             open_row.invited_by = actor.id
             open_row.expires_at = expires_at
@@ -169,8 +169,8 @@ class InvitationService:
             row = Invitation(
                 email=email,
                 nome=data.nome,
-                ruolo=data.ruolo,
-                aziende=aziende,
+                role=data.role,
+                legal_entities=legal_entities,
                 token_hash=_hash(raw),
                 invited_by=actor.id,
                 expires_at=expires_at,
@@ -179,7 +179,7 @@ class InvitationService:
         try:
             self.session.flush()
             self.activities.record(
-                ENTITY, row.id, "created", actor, {"email": row.email, "ruolo": row.ruolo}
+                ENTITY, row.id, "created", actor, {"email": row.email, "role": row.role}
             )
             self.session.commit()
         except IntegrityError as exc:
@@ -302,22 +302,22 @@ class InvitationService:
 
     # ---- invitee surface (unauthenticated) --------------------------------------
 
-    def peek(self, raw: str, *, spazio: str) -> InvitationPeek:
+    def peek(self, raw: str, *, space: str) -> InvitationPeek:
         """What the acceptance page shows before spending: the space, who invited,
         the name the invitation carried (or `None`, and the page asks for one).
         Never touches `accepted_at` -- reading must not be able to kill the link.
-        `spazio` is the caller's: only the router knows the prefix it is serving."""
+        `space` is the caller's: only the router knows the prefix it is serving."""
         row = self._live_row(raw)
         inviter = self.users.get(row.invited_by)
         return InvitationPeek(
-            spazio=spazio,
-            invitato_da=inviter.nome if inviter is not None else "",
+            space=space,
+            invited_from=inviter.nome if inviter is not None else "",
             nome=row.nome,
         )
 
     def accept(self, raw: str, nome: str | None) -> UserRead:
         """Spends the token and opens the account: creates the active user with the
-        invitation's role, sets `email_verificata_il` (the click proved the address,
+        invitation's role, sets `email_verified_at` (the click proved the address,
         same as the magic link's first entry) and `last_login_at` (REB-297: the click
         is also this account's first session), and audits the whole thing.
 
@@ -326,7 +326,7 @@ class InvitationService:
         the last thing before a commit. So the writes are ordered around that commit --
         first the duplicate read, then `create` (its commit is the point of no return
         for the user row), then, in a second commit, the conditional `UPDATE` that
-        spends the token, `email_verificata_il`, the two activity rows. A `create` that
+        spends the token, `email_verified_at`, the two activity rows. A `create` that
         raises `Conflict` leaves `accepted_at` untouched, so the link still works once
         the admin sorts the duplicate out.
 
@@ -336,7 +336,7 @@ class InvitationService:
         invitation carried none; an empty effective name never reaches the column.
 
         Bound to the system actor's scope first (REB-634): this runs on a public route,
-        with no actor and nothing bound, and `active_only` reads `emitter_profile`, a
+        with no actor and nothing bound, and `active_only` reads `legal_entities`, a
         policied table. Unbound, the application role would read no azienda at all and
         every scoped invitation would open an account that sees nothing.
         """
@@ -347,16 +347,20 @@ class InvitationService:
             raise ValidationFailed(
                 "invitation", "nome", "obbligatorio quando l'invito non porta un nome"
             )
-        ruolo = as_role(row.ruolo)
+        role = as_role(row.role)
         # The scope the invitation carried, kept to the aziende still active at the
         # click (spec §1.11): an invitation whose every azienda was deactivated
         # meanwhile opens an account that sees nothing, and the Team panel says so.
         # Nothing turns an empty scope into «tutte». Written in the same transaction
         # as the row (CodeRabbit on PR #513): between a commit of the row and a commit
         # of its scope, a scoped admin would have counted as an unscoped one.
-        scope = active_only(self.session, list(row.aziende)) if row.aziende is not None else None
+        scope = (
+            active_only(self.session, list(row.legal_entities))
+            if row.legal_entities is not None
+            else None
+        )
         user = UserService(self.session).create_scoped(
-            UserCreate(email=row.email, password=None, nome=chosen, ruolo=ruolo),
+            UserCreate(email=row.email, password=None, nome=chosen, role=role),
             Actor.system(),
             scope,
         )
@@ -380,8 +384,8 @@ class InvitationService:
         # already answered was built before either write and would otherwise answer
         # `last_login_at: None` for the row this call is opening a session on.
         if fresh is not None:
-            if fresh.email_verificata_il is None:
-                fresh.email_verificata_il = now
+            if fresh.email_verified_at is None:
+                fresh.email_verified_at = now
             fresh.last_login_at = now
             user = UserRead.model_validate(fresh)
         self.activities.record(ENTITY, row.id, "accepted", Actor.system(), {"email": row.email})
@@ -402,10 +406,10 @@ class InvitationService:
         if row is None:
             return None
         inviter = self.users.get(row.invited_by)
-        ruolo = as_role(row.ruolo)
+        role = as_role(row.role)
         return InvitationOffer(
-            ruolo=ruolo,
-            invitato_da=inviter.nome if inviter is not None else "",
+            role=role,
+            invited_from=inviter.nome if inviter is not None else "",
             nome=row.nome,
         )
 

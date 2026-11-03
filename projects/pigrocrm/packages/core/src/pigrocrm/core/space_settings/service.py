@@ -39,12 +39,12 @@ VERSION_LOCK = 0xC0F6
 
 _BOOLS = {"google_app_unverified", "mcp_full_access"}
 _INTS = {
-    "solleciti_grace_days",
-    "solleciti_min_interval_days",
-    "solleciti_max_reminders",
+    "payment_reminders_grace_days",
+    "payment_reminders_min_interval_days",
+    "payment_reminders_max_reminders",
     "gmail_backfill_days",
 }
-_FLOATS = {"concentrazione_soglia_preferita"}
+_FLOATS = {"preferred_concentration_threshold"}
 # What `space_base_settings` lends a space from the root's Google, blanked again when the
 # space configures a client of its own (`apply_overrides`).
 _BORROWED_GOOGLE: dict[str, object] = {
@@ -159,12 +159,12 @@ class SpaceSettingsService:
         what the database holds now, not what this session loaded before the lock."""
         return self.session.scalar(select(func.max(SpaceSetting.updated_at)))
 
-    def read(self, actor: Actor, *, spazio: str | None) -> SpaceSettingsRead:
+    def read(self, actor: Actor, *, space: str | None) -> SpaceSettingsRead:
         actor.require_admin("read_space_settings")
-        return self._read(spazio=spazio)
+        return self._read(space=space)
 
     def update(
-        self, data: SpaceSettingsUpdate, actor: Actor, *, spazio: str | None
+        self, data: SpaceSettingsUpdate, actor: Actor, *, space: str | None
     ) -> SpaceSettingsRead:
         actor.require_unscoped_admin("update_space_settings")
         # Every write takes the advisory lock, a versionless one included, so a save
@@ -199,11 +199,11 @@ class SpaceSettingsService:
             # Keys only, never values: two of them are secrets, and the timeline is read
             # by more people, for longer, than this table.
             self.activities.record(
-                ENTITY, SETTINGS_ID, "updated", actor, {"chiavi": sorted(set(changed))}
+                ENTITY, SETTINGS_ID, "updated", actor, {"keys": sorted(set(changed))}
             )
             self._set(VERSION_KEY, datetime.now(UTC).isoformat())
         self.session.commit()
-        return self._read(spazio=spazio)
+        return self._read(space=space)
 
     def _set(self, key: str, value: str) -> None:
         if key in SECRET_KEYS:
@@ -221,20 +221,20 @@ class SpaceSettingsService:
         self.session.delete(row)
         return True
 
-    def _read(self, *, spazio: str | None) -> SpaceSettingsRead:
+    def _read(self, *, space: str | None) -> SpaceSettingsRead:
         rows = self._rows()
         overrides = self._overrides_of(rows)
         settings = apply_overrides(self.base, overrides)
         public_url = settings.public_url.rstrip("/")
         return SpaceSettingsRead(
-            spazio=spazio,
+            space=space,
             public_url=public_url,
             google_client_id=settings.google_client_id,
-            google_client_secret_impostato=bool(settings.google_client_secret),
-            google_token_key_impostata=bool(settings.google_token_key),
+            google_client_secret_set=bool(settings.google_client_secret),
+            google_token_key_set=bool(settings.google_token_key),
             google_app_unverified=settings.google_app_unverified,
-            gmail_configurato=gmail_configured(settings),
-            google_client_condiviso=bool(settings.google_oauth_state_prefix),
+            gmail_configured=gmail_configured(settings),
+            google_client_shared=bool(settings.google_oauth_state_prefix),
             # This space's own addresses, the ones a client of its own registers, even
             # while it borrows the root's client (REB-394), whose consent comes back
             # through the root's callback and needs nothing registered per space.
@@ -242,12 +242,12 @@ class SpaceSettingsService:
             redirect_uri_drive=f"{public_url}/api/drive/oauth/callback" if public_url else "",
             storage_backend=settings.storage_backend,
             mcp_full_access=settings.mcp_full_access,
-            solleciti_grace_days=settings.solleciti_grace_days,
-            solleciti_min_interval_days=settings.solleciti_min_interval_days,
-            solleciti_max_reminders=settings.solleciti_max_reminders,
+            payment_reminders_grace_days=settings.payment_reminders_grace_days,
+            payment_reminders_min_interval_days=settings.payment_reminders_min_interval_days,
+            payment_reminders_max_reminders=settings.payment_reminders_max_reminders,
             gmail_backfill_days=settings.gmail_backfill_days,
-            concentrazione_soglia_preferita=settings.concentrazione_soglia_preferita,
-            sovrascritte=sorted(key for key in overrides if key not in SECRET_KEYS)
+            preferred_concentration_threshold=settings.preferred_concentration_threshold,
+            overwritten=sorted(key for key in overrides if key not in SECRET_KEYS)
             + sorted(key for key in overrides if key in SECRET_KEYS),
             updated_at=self._version_of(rows),
         )

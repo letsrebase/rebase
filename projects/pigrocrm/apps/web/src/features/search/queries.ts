@@ -14,7 +14,7 @@ export type SearchEntity = SearchGroup['entity']
  * Below this the palette issues no request at all. Spec §8.3: a trigram index cannot
  * serve a pattern from which no trigram can be extracted, and a two-character term on
  * 50 000 customers returns thousands of rows, which is not an answer either. The API
- * enforces the same bound (`SearchQuery.termine` has `min_length=3`, and the router
+ * enforces the same bound (`SearchQuery.deadline` has `min_length=3`, and the router
  * repeats it so a direct HTTP client gets a 422); this is the half that stops the
  * request being made.
  */
@@ -52,7 +52,7 @@ export function useGlobalSearch(term: string) {
     queryFn: () =>
       unwrap(
         api.GET('/api/search', {
-          params: { query: { q: debounced, azienda_id: selected ?? undefined } },
+          params: { query: { q: debounced, legal_entity_id: selected ?? undefined } },
         }),
       ),
     enabled: debounced.length >= MIN_TERM_LENGTH,

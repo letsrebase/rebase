@@ -14,13 +14,13 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 # The list of reminders: where a reminder with no record of its own is read.
-AVVISI_PATH = "/app/avvisi"
+REMINDERS_PATH = "/app/reminders"
 # The person's own settings, where every channel is switched.
 NOTIFICATIONS_PATH = "/app/settings/notifications"
 
 _PATHS: dict[str, Callable[[UUID], str]] = {
     # An attività has no page of its own: the list opens it in a dialog.
-    "attivita": lambda id_: f"/app/activities?apri={id_}",
+    "attivita": lambda id_: f"/app/activities?open={id_}",
     "deal": lambda id_: f"/app/deal/{id_}",
     "customer": lambda id_: f"/app/customers/{id_}",
     "invoice": lambda id_: f"/app/invoices/{id_}",
@@ -41,7 +41,7 @@ def record_path(entity: str, entity_id: UUID) -> str:
     """The path inside the app that opens what a reminder is about, `/app/...`; the list of
     reminders for a kind with no page."""
     build = _PATHS.get(entity)
-    return build(entity_id) if build is not None else AVVISI_PATH
+    return build(entity_id) if build is not None else REMINDERS_PATH
 
 
 def known_entities() -> frozenset[str]:

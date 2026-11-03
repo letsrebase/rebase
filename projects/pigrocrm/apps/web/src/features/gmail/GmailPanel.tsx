@@ -20,7 +20,7 @@ import {
 
 /** The four statuses, in the words their owner would use. */
 const STATUS_LABEL: Record<string, string> = {
-  active: 'attiva',
+  active: 'active',
   expired: 'consenso scaduto',
   revoked: 'consenso revocato',
   disconnected: 'scollegata',
@@ -66,7 +66,7 @@ export function GmailPanel() {
   const sync = useSyncGmail()
   const disconnect = useDisconnectGmail()
   const storeBodies = useSetStoreBodies()
-  const [eliminaMessaggi, setEliminaMessaggi] = useState(false)
+  const [deleteMessages, setDeleteMessages] = useState(false)
 
   // The failure branch comes first, and it is not folded into the line below. On an
   // error `isPending` is false while `data` is still undefined, so a single
@@ -177,8 +177,8 @@ export function GmailPanel() {
           <Checkbox
             id="gmail-elimina-messaggi"
             className="mt-1"
-            checked={eliminaMessaggi}
-            onCheckedChange={(checked) => setEliminaMessaggi(checked === true)}
+            checked={deleteMessages}
+            onCheckedChange={(checked) => setDeleteMessages(checked === true)}
           />
           <Label htmlFor="gmail-elimina-messaggi" className="font-normal leading-snug">
             Elimina anche le email già archiviate nel CRM. È irreversibile.
@@ -187,7 +187,7 @@ export function GmailPanel() {
         <Button
           variant="destructive"
           disabled={disconnect.isPending}
-          onClick={() => disconnect.mutate({ eliminaMessaggi })}
+          onClick={() => disconnect.mutate({ deleteMessages })}
         >
           Scollega la casella
         </Button>

@@ -27,7 +27,7 @@ class ContractExpenseRepository:
             select(ContractExpense)
             .where(
                 ContractExpense.contract_id == contract_id,
-                ContractExpense.rimborsabile.is_(True),
+                ContractExpense.reimbursable.is_(True),
                 ContractExpense.invoice_line_id.is_(None),
             )
             .order_by(ContractExpense.data.asc(), ContractExpense.id.asc())

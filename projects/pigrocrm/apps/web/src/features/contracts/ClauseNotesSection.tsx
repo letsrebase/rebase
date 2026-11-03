@@ -27,16 +27,16 @@ import {
 } from './queries'
 
 interface NoteFormValues {
-  riferimento_clausola: string
-  testo_letterale: string
-  interpretazione_adottata: string
+  clause_reference: string
+  literal_text: string
+  adopted_interpretation: string
   note: string
 }
 
 const EMPTY_FORM: NoteFormValues = {
-  riferimento_clausola: '',
-  testo_letterale: '',
-  interpretazione_adottata: '',
+  clause_reference: '',
+  literal_text: '',
+  adopted_interpretation: '',
   note: '',
 }
 
@@ -45,9 +45,9 @@ const FORM_FIELDS = Object.keys(EMPTY_FORM)
 
 function toFormValues(note: ClauseNote): NoteFormValues {
   return {
-    riferimento_clausola: note.riferimento_clausola,
-    testo_letterale: note.testo_letterale,
-    interpretazione_adottata: note.interpretazione_adottata,
+    clause_reference: note.clause_reference,
+    literal_text: note.literal_text,
+    adopted_interpretation: note.adopted_interpretation,
     note: note.note ?? '',
   }
 }
@@ -59,9 +59,9 @@ function toNullable(text: string): string | null {
 
 function toCreateBody(values: NoteFormValues): ClauseNoteCreateBody {
   return {
-    riferimento_clausola: values.riferimento_clausola,
-    testo_letterale: values.testo_letterale,
-    interpretazione_adottata: values.interpretazione_adottata,
+    clause_reference: values.clause_reference,
+    literal_text: values.literal_text,
+    adopted_interpretation: values.adopted_interpretation,
     note: toNullable(values.note),
   }
 }
@@ -70,12 +70,12 @@ function toCreateBody(values: NoteFormValues): ClauseNoteCreateBody {
  *  The three required fields are sent as typed and the server refuses a blank one. */
 function toUpdateBody(values: NoteFormValues, note: ClauseNote): ClauseNoteUpdateBody {
   const body: ClauseNoteUpdateBody = {}
-  if (values.riferimento_clausola !== note.riferimento_clausola) {
-    body.riferimento_clausola = values.riferimento_clausola
+  if (values.clause_reference !== note.clause_reference) {
+    body.clause_reference = values.clause_reference
   }
-  if (values.testo_letterale !== note.testo_letterale) body.testo_letterale = values.testo_letterale
-  if (values.interpretazione_adottata !== note.interpretazione_adottata) {
-    body.interpretazione_adottata = values.interpretazione_adottata
+  if (values.literal_text !== note.literal_text) body.literal_text = values.literal_text
+  if (values.adopted_interpretation !== note.adopted_interpretation) {
+    body.adopted_interpretation = values.adopted_interpretation
   }
   if (toNullable(values.note) !== note.note) body.note = toNullable(values.note)
   return body
@@ -162,11 +162,11 @@ function ClauseNoteDialog({ open, onOpenChange, contractId, note }: DialogProps)
           <Input
             id="clause-riferimento"
             placeholder="Art. 8.3 Rinnovo"
-            value={values.riferimento_clausola}
-            onChange={(event) => set('riferimento_clausola', event.target.value)}
-            aria-invalid={fieldError?.field === 'riferimento_clausola'}
+            value={values.clause_reference}
+            onChange={(event) => set('clause_reference', event.target.value)}
+            aria-invalid={fieldError?.field === 'clause_reference'}
           />
-          {errorOn('riferimento_clausola')}
+          {errorOn('clause_reference')}
         </div>
 
         <div className="space-y-2">
@@ -174,12 +174,12 @@ function ClauseNoteDialog({ open, onOpenChange, contractId, note }: DialogProps)
           <Textarea
             id="clause-testo"
             rows={4}
-            value={values.testo_letterale}
-            onChange={(event) => set('testo_letterale', event.target.value)}
-            aria-invalid={fieldError?.field === 'testo_letterale'}
+            value={values.literal_text}
+            onChange={(event) => set('literal_text', event.target.value)}
+            aria-invalid={fieldError?.field === 'literal_text'}
           />
           <p className="text-xs text-muted-foreground">Le parole del contratto, copiate come sono.</p>
-          {errorOn('testo_letterale')}
+          {errorOn('literal_text')}
         </div>
 
         <div className="space-y-2">
@@ -187,12 +187,12 @@ function ClauseNoteDialog({ open, onOpenChange, contractId, note }: DialogProps)
           <Textarea
             id="clause-interpretazione"
             rows={4}
-            value={values.interpretazione_adottata}
-            onChange={(event) => set('interpretazione_adottata', event.target.value)}
-            aria-invalid={fieldError?.field === 'interpretazione_adottata'}
+            value={values.adopted_interpretation}
+            onChange={(event) => set('adopted_interpretation', event.target.value)}
+            aria-invalid={fieldError?.field === 'adopted_interpretation'}
           />
           <p className="text-xs text-muted-foreground">Come hai deciso di leggerla.</p>
-          {errorOn('interpretazione_adottata')}
+          {errorOn('adopted_interpretation')}
         </div>
 
         <div className="space-y-2">
@@ -260,12 +260,12 @@ export function ClauseNotesSection({ contractId }: { contractId: string }) {
             {(notes.data ?? []).map((note) => (
               <li key={note.id} className="space-y-3 py-4 first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-4">
-                  <h3 className="font-medium">{note.riferimento_clausola}</h3>
+                  <h3 className="font-medium">{note.clause_reference}</h3>
                   {canUpdate && (
                     <Button
                       size="sm"
                       variant="ghost"
-                      aria-label={`Modifica la nota ${note.riferimento_clausola}`}
+                      aria-label={`Modifica la nota ${note.clause_reference}`}
                       onClick={() => setDialog({ open: true, note })}
                     >
                       Modifica
@@ -277,14 +277,14 @@ export function ClauseNotesSection({ contractId }: { contractId: string }) {
                     Testo
                   </p>
                   <blockquote className="whitespace-pre-wrap rounded-md border-l-2 bg-muted px-3 py-2 text-sm text-muted-foreground">
-                    {note.testo_letterale}
+                    {note.literal_text}
                   </blockquote>
                 </div>
                 <div>
                   <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Interpretazione adottata
                   </p>
-                  <p className="whitespace-pre-wrap text-sm">{note.interpretazione_adottata}</p>
+                  <p className="whitespace-pre-wrap text-sm">{note.adopted_interpretation}</p>
                 </div>
                 {note.note !== null && note.note !== '' && (
                   <div>

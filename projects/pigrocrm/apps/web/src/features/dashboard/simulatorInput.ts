@@ -46,18 +46,18 @@ export const parseRate = (raw: string) => amount(raw, 6, 6, 'Tariffa oraria')
 
 export type SimulatorFields = {
   /** Where the estimate comes from: a deal that carries one, or what is typed. */
-  source: 'deal' | 'importo'
-  valore: string
-  ore: string
-  tariffa: string
+  source: 'deal' | 'amount'
+  value: string
+  hours: string
+  rate: string
   /** The chosen deal's own three estimate columns, as the API sent them. */
   deal: {
-    valore_preventivato: string | null
-    ore_preventivate: string | null
-    tariffa_oraria: string | null
+    budgeted_value: string | null
+    budgeted_hours: string | null
+    hourly_rate: string | null
   } | null
   /** The day the money arrives, `YYYY-MM-DD`. Sent whenever it is given: the server reads
-   *  the year of a contract's cap from it, and the ceilings' year from `anno`. */
+   *  the year of a contract's cap from it, and the ceilings' year from `year`. */
   data?: string
   /** A contract with a cap on the customer's share, to read the addition against too. */
   contractId?: string | null
@@ -67,14 +67,14 @@ export type SimulatorRequest =
   | {
       ok: true
       input: {
-        valore_preventivato?: string
-        ore_preventivate?: string
-        tariffa_oraria?: string
-        data_prevista?: string
+        budgeted_value?: string
+        budgeted_hours?: string
+        hourly_rate?: string
+        expected_date?: string
         contract_id?: string
       }
     }
-  | { ok: false; errors: Partial<Record<'valore' | 'ore' | 'tariffa' | 'deal' | 'form', string>> }
+  | { ok: false; errors: Partial<Record<'value' | 'hours' | 'rate' | 'deal' | 'form', string>> }
 
 /**
  * The request the typed fields make, or what keeps them from making one. The estimate is
@@ -85,13 +85,13 @@ function estimateRequest(fields: SimulatorFields): SimulatorRequest {
   if (fields.source === 'deal') {
     const deal = fields.deal
     if (deal === null) return { ok: false, errors: { deal: 'Scegli un deal.' } }
-    if (deal.valore_preventivato !== null) {
-      return { ok: true, input: { valore_preventivato: deal.valore_preventivato } }
+    if (deal.budgeted_value !== null) {
+      return { ok: true, input: { budgeted_value: deal.budgeted_value } }
     }
-    if (deal.ore_preventivate !== null && deal.tariffa_oraria !== null) {
+    if (deal.budgeted_hours !== null && deal.hourly_rate !== null) {
       return {
         ok: true,
-        input: { ore_preventivate: deal.ore_preventivate, tariffa_oraria: deal.tariffa_oraria },
+        input: { budgeted_hours: deal.budgeted_hours, hourly_rate: deal.hourly_rate },
       }
     }
     return {
@@ -99,17 +99,17 @@ function estimateRequest(fields: SimulatorFields): SimulatorRequest {
       errors: { deal: 'Questo deal non ha una stima: scegli «Un importo» e scrivila qui.' },
     }
   }
-  const valore = parseValue(fields.valore)
-  const ore = parseHours(fields.ore)
-  const tariffa = parseRate(fields.tariffa)
-  const errors: Partial<Record<'valore' | 'ore' | 'tariffa' | 'form', string>> = {}
-  if (valore && !valore.ok) errors.valore = valore.error
-  if (ore && !ore.ok) errors.ore = ore.error
-  if (tariffa && !tariffa.ok) errors.tariffa = tariffa.error
+  const value = parseValue(fields.value)
+  const hours = parseHours(fields.hours)
+  const rate = parseRate(fields.rate)
+  const errors: Partial<Record<'value' | 'hours' | 'rate' | 'form', string>> = {}
+  if (value && !value.ok) errors.value = value.error
+  if (hours && !hours.ok) errors.hours = hours.error
+  if (rate && !rate.ok) errors.rate = rate.error
   if (Object.keys(errors).length > 0) return { ok: false, errors }
-  if (valore?.ok) return { ok: true, input: { valore_preventivato: valore.value } }
-  if (ore?.ok && tariffa?.ok) {
-    return { ok: true, input: { ore_preventivate: ore.value, tariffa_oraria: tariffa.value } }
+  if (value?.ok) return { ok: true, input: { budgeted_value: value.value } }
+  if (hours?.ok && rate?.ok) {
+    return { ok: true, input: { budgeted_hours: hours.value, hourly_rate: rate.value } }
   }
   return {
     ok: false,
@@ -128,7 +128,7 @@ export function simulatorRequest(fields: SimulatorFields): SimulatorRequest {
     ok: true,
     input: {
       ...request.input,
-      ...(fields.data ? { data_prevista: fields.data } : {}),
+      ...(fields.data ? { expected_date: fields.data } : {}),
       ...(fields.contractId ? { contract_id: fields.contractId } : {}),
     },
   }

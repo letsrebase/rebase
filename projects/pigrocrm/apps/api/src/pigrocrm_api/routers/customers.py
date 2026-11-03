@@ -19,7 +19,7 @@ from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import (
-    AZIENDA_QUERY_DESCRIPTION,
+    LEGAL_ENTITY_QUERY_DESCRIPTION,
     CustomParams,
     SearchParams,
     SortedParams,
@@ -42,7 +42,7 @@ def create(data: CustomerCreate, session: SessionDep, actor: ActorDep) -> Custom
 
 # The customers a person ticked among the Gmail proposals (REB-223), created with their
 # people in one transaction. Its own path rather than a list body on `POST ""`: the
-# analytics table counts it as `clienti_importati`, not as one `cliente_creato`.
+# analytics table counts it as `customers_imported`, not as one `customer_created`.
 @router.post(
     "/from-suggestions", response_model=list[CustomerRead], status_code=status.HTTP_201_CREATED
 )
@@ -68,9 +68,9 @@ def add_person_from_mail(
 
 
 class CustomerListParams(SortedParams, SearchParams, CustomParams):
-    stato: SafeStr | None = None
-    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
-    sort: SafeStr | None = sort_field("created_at", "updated_at", "ragione_sociale")
+    status: SafeStr | None = None
+    legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "legal_name")
 
 
 @router.get("", response_model=CustomerPage)

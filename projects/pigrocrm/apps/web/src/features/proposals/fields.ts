@@ -4,10 +4,10 @@ import { formatIsoDateItalian } from '@/lib/dates'
 import type { components } from '@/lib/api-types'
 
 /**
- * What a proposal says, in words, read out of its `campi_proposti`.
+ * What a proposal says, in words, read out of its `proposed_fields`.
  *
- * `campi_proposti` is a plain JSON object on the wire: the core validates it against
- * `ContrattoProposalFields` or `GiornataProposalFields` when the agent files it, but the
+ * `proposed_fields` is a plain JSON object on the wire: the core validates it against
+ * `ContractProposalFields` or `WorkUnitProposalFields` when the agent files it, but the
  * generated schema can only say `{ [key: string]: unknown }`. Everything below therefore
  * reads it defensively and shows what is there rather than assuming a shape: a proposal
  * the screen cannot describe still lists its raw fields, and Accetta stays the server's
@@ -20,61 +20,61 @@ import type { components } from '@/lib/api-types'
  */
 
 export type Proposal = components['schemas']['ProposalRead']
-export type ProposalStato = 'in_attesa' | 'accettata' | 'rifiutata'
-export type ProposalTargetType = 'contratto' | 'giornata'
+export type ProposalStatus = 'pending' | 'accepted' | 'rejected'
+export type ProposalTargetType = 'contract' | 'work_unit'
 
-export const STATI: readonly { id: ProposalStato; label: string }[] = [
-  { id: 'in_attesa', label: 'In attesa' },
-  { id: 'accettata', label: 'Accettate' },
-  { id: 'rifiutata', label: 'Rifiutate' },
+export const Statuses: readonly { id: ProposalStatus; label: string }[] = [
+  { id: 'pending', label: 'In attesa' },
+  { id: 'accepted', label: 'Accettate' },
+  { id: 'rejected', label: 'Rifiutate' },
 ]
 
-export const STATO_LABELS: Record<string, string> = {
-  in_attesa: 'In attesa',
-  accettata: 'Accettata',
-  rifiutata: 'Rifiutata',
+export const StatusLabels: Record<string, string> = {
+  pending: 'In attesa',
+  accepted: 'Accettata',
+  rejected: 'Rifiutata',
 }
 
 export const TARGET_LABELS: Record<string, string> = {
-  contratto: 'Contratto',
-  giornata: 'Giornata',
+  contract: 'Contratto',
+  work_unit: 'Giornata',
 }
 
 const RENEWAL_LABELS: Record<string, string> = {
-  nessuno: 'Nessun rinnovo',
-  esplicito: 'Rinnovo esplicito',
-  opzione_controparte: 'Opzione della controparte',
-  tacito: 'Tacito rinnovo',
+  none: 'Nessun rinnovo',
+  explicit: 'Rinnovo esplicito',
+  counterparty_option: 'Opzione della controparte',
+  tacit: 'Tacito rinnovo',
 }
 
 const RATE_KIND_LABELS: Record<string, string> = {
-  ricorrente_fisso: 'Canone ricorrente',
-  giornaliero: 'A giornata',
-  orario: 'A ore',
-  una_tantum: 'Una tantum',
+  fixed_recurring: 'Canone ricorrente',
+  daily: 'A giornata',
+  hourly: 'A ore',
+  one_off: 'Una tantum',
 }
 
 const RATE_UNIT_LABELS: Record<string, string> = {
   ora: 'ora',
-  giorno: 'giorno',
-  mese: 'mese',
-  anno: 'anno',
-  forfait: 'forfait',
+  day: 'day',
+  month: 'month',
+  year: 'year',
+  flat: 'flat',
 }
 
 const PERIOD_LABELS: Record<string, string> = {
-  mensile: 'Mensile',
-  trimestrale: 'Trimestrale',
-  annuale: 'Annuale',
-  una_tantum: 'Una tantum',
+  monthly: 'Mensile',
+  quarterly: 'Trimestrale',
+  annual: 'Annuale',
+  one_off: 'Una tantum',
 }
 
 export const CHANNEL_LABELS: Record<string, string> = {
   email: 'Email',
-  posta_certificata: 'PEC',
-  raccomandata: 'Raccomandata',
-  corriere: 'Corriere',
-  altro: 'Altro',
+  certified_mail: 'PEC',
+  registered_mail: 'Raccomandata',
+  courier: 'Corriere',
+  other: 'Altro',
 }
 
 export interface FieldRow {
@@ -113,7 +113,7 @@ function isoDate(value: unknown): string | null {
 const quantityFormatter = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 4 })
 
 /**
- * A decimal as the text it was written in. `campi_proposti` is free JSON: the REST door
+ * A decimal as the text it was written in. `proposed_fields` is free JSON: the REST door
  * keeps a `Decimal` as the string the producer sent, while a tool call over MCP stores
  * `1` or `0.5` as a JSON number, and both are the same quantity. A number is turned back
  * into its own digits and never computed with.
@@ -129,7 +129,7 @@ export function formatQuantity(value: unknown): string | null {
   return raw === null ? null : quantityFormatter.format(raw)
 }
 
-/** `importo` in the contract's currency; an unknown currency code prints as «12,00 XYZ». */
+/** `amount` in the contract's currency; an unknown currency code prints as «12,00 XYZ». */
 export function formatAmount(value: unknown, currency: unknown): string | null {
   const raw = decimal(value)
   if (raw === null) return null
@@ -157,15 +157,15 @@ export function formatConfidence(value: string): string {
 }
 
 /** The three bands the queue reads a confidence in: a number alone says little. */
-export function confidenceBand(value: string): 'alta' | 'media' | 'bassa' {
+export function confidenceBand(value: string): 'alta' | 'media' | 'low' {
   // Compared as the decimal strings the API sends (`Numeric(3,2)`, always `0.xx` or
   // `1.00`), so no float is parsed: fixed width makes the string order the numeric one.
   if (value >= '0.80') return 'alta'
   if (value >= '0.50') return 'media'
-  return 'bassa'
+  return 'low'
 }
 
-export const BAND_LABELS = { alta: 'Confidenza alta', media: 'Confidenza media', bassa: 'Confidenza bassa' } as const
+export const BAND_LABELS = { alta: 'Confidenza alta', media: 'Confidenza media', low: 'Confidenza bassa' } as const
 
 function row(label: string, value: string | null): FieldRow | null {
   return value === null ? null : { label, value }
@@ -182,7 +182,7 @@ function yesNo(value: unknown): string | null {
 }
 
 /**
- * A whole number as the digits it was written in. The REST door validates `campi_proposti`
+ * A whole number as the digits it was written in. The REST door validates `proposed_fields`
  * when it is filed but stores the JSON it was sent, so `30` and `"30"` (and `true` and
  * `"true"`) are both real and mean the same thing; MCP sends the typed one.
  */
@@ -193,12 +193,12 @@ function wholeNumber(value: unknown): string | null {
 
 function days(value: unknown): string | null {
   const count = wholeNumber(value)
-  return count === null ? null : `${count} ${count === '1' ? 'giorno' : 'giorni'}`
+  return count === null ? null : `${count} ${count === '1' ? 'day' : 'days'}`
 }
 
 /** «1 giorno», «0,5 giorni»: the singular is the quantity written exactly «1». */
 function quantityInDays(quantity: string | null): string | null {
-  return quantity === null ? null : `${quantity} ${quantity === '1' ? 'giorno' : 'giorni'}`
+  return quantity === null ? null : `${quantity} ${quantity === '1' ? 'day' : 'days'}`
 }
 
 /** A value the screen has no word for, as the JSON it is. */
@@ -207,7 +207,7 @@ function raw(value: unknown): string {
 }
 
 /**
- * `politica_spese` is an open tagged union (`{"kind": ..., ...payload}`): the tag in words
+ * `expense_policy` is an open tagged union (`{"kind": ..., ...payload}`): the tag in words
  * and whatever else it carries as `chiave: valore`, so a reviewer sees the whole policy a
  * contract would be created with and not only its name.
  */
@@ -237,37 +237,37 @@ function fractions(value: unknown): string | null {
 function contractGroups(fields: Record<string, unknown>): { title: string; groups: FieldGroup[]; customerId: string | null } {
   const contract = isRecord(fields.contract) ? fields.contract : {}
   const rate = isRecord(fields.rate_card) ? fields.rate_card : {}
-  const currency = text(contract.divisa) ?? 'EUR'
-  // `giorni_pagamento` null is the contract inheriting the customer's own term, which is a
+  const currency = text(contract.currency) ?? 'EUR'
+  // `payment_days` null is the contract inheriting the customer's own term, which is a
   // fact worth saying and not a blank to hide.
-  const paymentDays = wholeNumber(contract.giorni_pagamento)
+  const paymentDays = wholeNumber(contract.payment_days)
   const payment =
     paymentDays === null
       ? 'Come da condizioni del cliente'
-      : `${paymentDays} giorni data fattura${contract.pagamento_fine_mese === true || contract.pagamento_fine_mese === 'true' ? ' fine mese' : ''}`
-  const period = [isoDate(contract.inizio), isoDate(contract.fine) ?? 'a tempo indeterminato']
-  const unit = text(rate.unita)
+      : `${paymentDays} giorni data fattura${contract.payment_end_of_month === true || contract.payment_end_of_month === 'true' ? ' fine mese' : ''}`
+  const period = [isoDate(contract.start), isoDate(contract.end) ?? 'a tempo indeterminato']
+  const unit = text(rate.unit)
   // A flat fee is not «per forfait»: the other units are, and read «/ mese».
-  const cadence = unit === null ? '' : unit === 'forfait' ? '(forfait)' : `/ ${RATE_UNIT_LABELS[unit] ?? unit}`
-  const rateAmount = formatAmount(rate.importo, currency)
+  const cadence = unit === null ? '' : unit === 'flat' ? '(forfait)' : `/ ${RATE_UNIT_LABELS[unit] ?? unit}`
+  const rateAmount = formatAmount(rate.amount, currency)
   return {
-    title: text(contract.titolo) ?? 'Nuovo contratto',
+    title: text(contract.title) ?? 'Nuovo contratto',
     customerId: text(contract.customer_id),
     groups: [
       {
         title: 'Contratto',
         rows: rows(
-          row('Titolo', text(contract.titolo)),
+          row('Titolo', text(contract.title)),
           row('Periodo', period[0] === null ? null : `${period[0]} – ${period[1]}`),
-          row('Rinnovo', RENEWAL_LABELS[String(contract.tipo_rinnovo)] ?? text(contract.tipo_rinnovo)),
-          row('Preavviso di rinnovo', days(contract.preavviso_rinnovo_giorni)),
-          row('Preavviso di disdetta', days(contract.preavviso_disdetta_giorni)),
+          row('Rinnovo', RENEWAL_LABELS[String(contract.renewal_type)] ?? text(contract.renewal_type)),
+          row('Preavviso di rinnovo', days(contract.renewal_notice_days)),
+          row('Preavviso di disdetta', days(contract.termination_notice_days)),
           row('Pagamento', payment),
-          row('Fatturazione', text(contract.cadenza_fatturazione)),
-          row('Divisa', text(contract.divisa)),
+          row('Fatturazione', text(contract.billing_cadence)),
+          row('Divisa', text(contract.currency)),
           row('Approvazione preventiva', yesNo(contract.requires_prior_approval)),
           row('Rivalsa INPS', yesNo(contract.applies_social_charge)),
-          row('Politica spese', expensePolicy(contract.politica_spese)),
+          row('Politica spese', expensePolicy(contract.expense_policy)),
           row('Campi personalizzati', customFields(contract.custom_fields)),
           row('Note', text(contract.note)),
         ),
@@ -275,17 +275,17 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
       {
         title: 'Prima scheda tariffaria',
         rows: rows(
-          row('Tipo', RATE_KIND_LABELS[String(rate.tipo)] ?? text(rate.tipo)),
+          row('Tipo', RATE_KIND_LABELS[String(rate.type)] ?? text(rate.type)),
           row('Importo', rateAmount === null ? null : `${rateAmount} ${cadence}`.trim()),
           row(
             'Validità',
-            isoDate(rate.valido_da) === null
+            isoDate(rate.valid_from) === null
               ? null
-              : `dal ${isoDate(rate.valido_da)}${isoDate(rate.valido_a) ? ` al ${isoDate(rate.valido_a)}` : ''}`,
+              : `dal ${isoDate(rate.valid_from)}${isoDate(rate.valid_to) ? ` al ${isoDate(rate.valid_to)}` : ''}`,
           ),
-          row('Frazioni ammesse', fractions(rate.frazioni_ammesse)),
-          row('Ore minime', formatQuantity(rate.ore_minime)),
-          row('Erogazione', PERIOD_LABELS[String(rate.periodo_erogazione)] ?? text(rate.periodo_erogazione)),
+          row('Frazioni ammesse', fractions(rate.allowed_fractions)),
+          row('Ore minime', formatQuantity(rate.minimum_hours)),
+          row('Erogazione', PERIOD_LABELS[String(rate.delivery_period)] ?? text(rate.delivery_period)),
         ),
       },
     ],
@@ -293,9 +293,9 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
 }
 
 function dayGroups(fields: Record<string, unknown>): { title: string; groups: FieldGroup[]; contractId: string | null } {
-  const approval = isRecord(fields.approvazione) ? fields.approvazione : {}
+  const approval = isRecord(fields.approval) ? fields.approval : {}
   const date = isoDate(fields.data)
-  const quantity = formatQuantity(fields.quantita)
+  const quantity = formatQuantity(fields.quantity)
   return {
     title: [date === null ? 'Giornata' : `Giornata del ${date}`, quantity === null ? null : `${quantity} gg`]
       .filter((part) => part !== null)
@@ -307,16 +307,16 @@ function dayGroups(fields: Record<string, unknown>): { title: string; groups: Fi
         rows: rows(
           row('Data', date),
           row('Quantità', quantityInDays(quantity)),
-          row('Descrizione', text(fields.descrizione)),
+          row('Descrizione', text(fields.description)),
         ),
       },
       {
         title: 'Approvazione del cliente',
         rows: rows(
-          row('Canale', CHANNEL_LABELS[String(approval.canale)] ?? text(approval.canale)),
-          row('Mittente', text(approval.mittente)),
-          // `ricevuto_il` is an instant; the day is its first ten characters.
-          row('Ricevuta il', isoDate(text(approval.ricevuto_il)?.slice(0, 10))),
+          row('Canale', CHANNEL_LABELS[String(approval.channel)] ?? text(approval.channel)),
+          row('Mittente', text(approval.sender)),
+          // `received_at` is an instant; the day is its first ten characters.
+          row('Ricevuta il', isoDate(text(approval.received_at)?.slice(0, 10))),
           row('Messaggio', text(approval.message_id)),
         ),
       },
@@ -327,15 +327,15 @@ function dayGroups(fields: Record<string, unknown>): { title: string; groups: Fi
 /**
  * The proposal's fields, grouped and worded for a reader: what was proposed while it
  * waits and when it was refused, and what was **accepted** once it was, since that is what
- * the contract or the day was built from (`campi_accettati` is the proposal as the
+ * the contract or the day was built from (`accepted_fields` is the proposal as the
  * reviewer left it, which an API or MCP caller may have corrected).
  */
 export function describeProposal(
-  proposal: Pick<Proposal, 'target_type' | 'campi_proposti' | 'campi_accettati' | 'stato'>,
+  proposal: Pick<Proposal, 'target_type' | 'proposed_fields' | 'accepted_fields' | 'status'>,
 ): ProposalDescription {
   const fields =
-    proposal.stato === 'accettata' && proposal.campi_accettati ? proposal.campi_accettati : proposal.campi_proposti
-  if (proposal.target_type === 'contratto') {
+    proposal.status === 'accepted' && proposal.accepted_fields ? proposal.accepted_fields : proposal.proposed_fields
+  if (proposal.target_type === 'contract') {
     const { title, groups, customerId } = contractGroups(fields)
     return { title, groups: groups.filter((group) => group.rows.length > 0), customerId, contractId: null }
   }
@@ -344,11 +344,11 @@ export function describeProposal(
 }
 
 /** «Accettata da Lorenzo Fiore · 26 ott 2026, 14:36»: who decided and when, as far as known. */
-export function decisionLine(proposal: Pick<Proposal, 'stato' | 'deciso_da' | 'deciso_il'>): string {
-  const verb = proposal.stato === 'accettata' ? 'Accettata' : 'Rifiutata'
+export function decisionLine(proposal: Pick<Proposal, 'status' | 'decided_by' | 'decided_at'>): string {
+  const verb = proposal.status === 'accepted' ? 'Accettata' : 'Rifiutata'
   return [
-    proposal.deciso_da ? `${verb} da ${proposal.deciso_da}` : verb,
-    proposal.deciso_il ? formatOccurredAt(proposal.deciso_il) : null,
+    proposal.decided_by ? `${verb} da ${proposal.decided_by}` : verb,
+    proposal.decided_at ? formatOccurredAt(proposal.decided_at) : null,
   ]
     .filter((part) => part !== null)
     .join(' · ')

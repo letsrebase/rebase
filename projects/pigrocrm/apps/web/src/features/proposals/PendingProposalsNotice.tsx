@@ -33,7 +33,7 @@ export function PendingProposalsNotice() {
       </CardHeader>
       <CardContent>
         <Button asChild variant="outline">
-          <Link to="/app/proposals" search={{ stato: 'in_attesa' }}>
+          <Link to="/app/proposals" search={{ status: 'pending' }}>
             Rivedi le proposte
             <ChevronRight className="ml-1 size-4" aria-hidden />
           </Link>

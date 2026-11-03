@@ -64,21 +64,21 @@ def clean(hub_session: Session) -> Session:
     hub_session.commit()
 
 
-def _request(session: Session, email: str = "wile@acme.it", azienda: str = "Acme S.r.l.") -> UUID:
+def _request(session: Session, email: str = "wile@acme.it", company: str = "Acme S.r.l.") -> UUID:
     read, _ = CompanyService(session).request(
         CompanyCreate(
-            nome_azienda=azienda,
-            referente_nome="Wile",
-            referente_cognome="Coyote",
+            company_name=company,
+            contact_first_name="Wile",
+            contact_last_name="Coyote",
             email=email,
-            telefono="+39 345 1234567",
-            figura_richiesta="Backend developer",
-            progetto="Serve un backend developer per tre mesi.",
-            periodo_da=date(2026, 10, 1),
-            durata="3 mesi",
-            budget_giornaliero=Decimal("500"),
-            remoto="remoto",
-            numero_risorse=1,
+            phone="+39 345 1234567",
+            requested_role="Backend developer",
+            project="Serve un backend developer per tre mesi.",
+            period_from=date(2026, 10, 1),
+            duration="3 mesi",
+            daily_budget=Decimal("500"),
+            remote="remote",
+            headcount=1,
         )
     )
     return read.id
@@ -92,9 +92,9 @@ def test_grant_is_one_live_per_user_and_company_and_mails(
     cloud = TalentCloudService(clean, settings)
 
     first, mail = cloud.grant(acme, admin_id)
-    assert first.company_id == acme and first.azienda == "Acme S.r.l."
-    assert (first.referente, first.email) == ("Wile Coyote", "wile@acme.it")
-    assert first.granted_by == admin_id and first.granted_by_nome == "Ivan"
+    assert first.company_id == acme and first.company == "Acme S.r.l."
+    assert (first.contact_person, first.email) == ("Wile Coyote", "wile@acme.it")
+    assert first.granted_by == admin_id and first.granted_by_name == "Ivan"
     assert first.revoked_at is None
     assert mail is not None
     assert mail.to == "wile@acme.it"
@@ -108,7 +108,7 @@ def test_grant_is_one_live_per_user_and_company_and_mails(
 
     # The same person behind a second request is a second company: a grant of its own,
     # and a mail naming that company.
-    bianchi = _request(clean, azienda="Bianchi Srl")
+    bianchi = _request(clean, company="Bianchi Srl")
     other, other_mail = cloud.grant(bianchi, admin_id)
     assert other.id != first.id and other.user_id == first.user_id
     assert other_mail is not None and "Bianchi Srl" in other_mail.subject
@@ -130,7 +130,7 @@ def test_grant_on_a_request_that_is_not_there_is_not_found(
 
 def test_revoke_closes_it(clean: Session, settings: Settings) -> None:
     admin_id = an_admin(clean)
-    acme, bianchi = _request(clean), _request(clean, azienda="Bianchi Srl")
+    acme, bianchi = _request(clean), _request(clean, company="Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     opened, _ = cloud.grant(acme, admin_id)
     kept, _ = cloud.grant(bianchi, admin_id)
@@ -138,7 +138,7 @@ def test_revoke_closes_it(clean: Session, settings: Settings) -> None:
     closed = cloud.revoke(acme, admin_id)
     assert closed.id == opened.id
     assert closed.revoked_at is not None
-    assert (closed.revoked_by, closed.revoked_by_nome) == (admin_id, "Ivan")
+    assert (closed.revoked_by, closed.revoked_by_name) == (admin_id, "Ivan")
     # That company's grant only: the other company's stays live, and so does the cloud.
     assert cloud.for_company(acme) is None
     live = cloud.for_company(bianchi)
@@ -159,7 +159,7 @@ def test_for_user_answers_the_newest_live_grant_across_companies(
     clean: Session, settings: Settings
 ) -> None:
     admin_id = an_admin(clean)
-    acme, bianchi = _request(clean), _request(clean, azienda="Bianchi Srl")
+    acme, bianchi = _request(clean), _request(clean, company="Bianchi Srl")
     cloud = TalentCloudService(clean, settings)
     older, _ = cloud.grant(acme, admin_id)
     assert cloud.for_user(older.user_id) is not None
@@ -220,9 +220,9 @@ def test_the_list_reads_every_grant_newest_first_with_the_names(
 
     grants = cloud.list()
     assert [grant.id for grant in grants] == [second.id, first.id]
-    assert [grant.azienda for grant in grants] == ["Bianchi Srl", "Acme S.r.l."]
+    assert [grant.company for grant in grants] == ["Bianchi Srl", "Acme S.r.l."]
     assert grants[0].email == "ada@studio.it" and grants[0].revoked_at is None
-    assert grants[1].revoked_at is not None and grants[1].revoked_by_nome == "Ivan"
+    assert grants[1].revoked_at is not None and grants[1].revoked_by_name == "Ivan"
 
 
 def test_the_list_leaves_out_a_deleted_requests_grant_until_it_is_restored(
@@ -289,7 +289,7 @@ def test_a_refused_insert_that_is_not_the_race_is_not_swallowed(
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 NOW = datetime.now(UTC)
-RIASSUNTO = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
+SUMMARY = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
 
 
 @pytest.fixture
@@ -321,13 +321,13 @@ class FakeCapture:
 
 def _talent(
     session: Session,
-    cognome: str,
+    last_name: str,
     *,
     nome: str = "Ada",
     card: dict[str, Any] | None = None,
-    remoto: str | None = "remoto",
-    tariffa: Decimal | None = Decimal("450.00"),
-    stato: str = "nuovo",
+    remote: str | None = "remote",
+    rate: Decimal | None = Decimal("450.00"),
+    status: str = "new",
     vetted: bool = False,
     deleted: bool = False,
     with_card: bool = True,
@@ -336,25 +336,25 @@ def _talent(
 ) -> UUID:
     """A freelancer with a CV and an anonymous card, the card `CARD` with `card` over it;
     the talent's own note, rate and state are there so a read that leaked them fails."""
-    slug = cognome.lower()
+    slug = last_name.lower()
     user = User(
         email=f"{slug}@studio.it",
         nome=nome,
-        cognome=cognome,
+        last_name=last_name,
         linkedin_url=f"https://www.linkedin.com/in/{slug}",
-        telefono="+39 333 1112233",
+        phone="+39 333 1112233",
     )
     session.add(user)
     session.flush()
     row = Freelancer(
         user_id=user.id,
-        remoto=remoto,
-        tariffa_giornaliera=tariffa,
-        stato=stato,
+        remote=remote,
+        daily_rate=rate,
+        status=status,
         posizione="Backend developer",
         links=[f"https://{slug}.dev"],
         cv_bytes=PDF if cv else None,
-        cv_filename=f"CV {cognome}.pdf" if cv else None,
+        cv_filename=f"CV {last_name}.pdf" if cv else None,
         cv_mime="application/pdf" if cv else None,
         cv_size=len(PDF) if cv else None,
         vetted_at=NOW if vetted else None,
@@ -364,7 +364,7 @@ def _talent(
     session.flush()
     if note:
         session.add(
-            Note(entity_type="freelancer", entity_id=row.id, testo=note, autore="Ivan", fonte="web")
+            Note(entity_type="freelancer", entity_id=row.id, text=note, author="Ivan", source="web")
         )
     if with_card:
         session.add(
@@ -386,30 +386,30 @@ def _cloud_proposal(
     session: Session,
     members: list[UUID],
     *,
-    origine: str = "cloud",
+    origin: str = "cloud",
     user_id: UUID | None = None,
     created_at: datetime | None = None,
 ) -> UUID:
     row = TeamProposal(
-        descrizione="Rifacciamo il gestionale degli ordini, sei mesi, da remoto, in Python.",
-        riassunto=RIASSUNTO,
-        luogo={"locale": False, "dove": None},
+        description="Rifacciamo il gestionale degli ordini, sei mesi, da remoto, in Python.",
+        summary=SUMMARY,
+        location={"locale": False, "dove": None},
         team=[
             {
                 "posizione": index,
                 "freelancer_id": str(freelancer_id),
-                "ruolo": "Backend developer",
-                "motivazione": "Nove anni di API in Python.",
-                "giorni_settimana": 5,
+                "role": "Backend developer",
+                "reasoning": "Nove anni di API in Python.",
+                "week_days": 5,
             }
             for index, freelancer_id in enumerate(members, start=1)
         ],
-        economia={"giorno": None, "mese": None, "giorni_mese": 22},
+        economics={"day": None, "month": None, "days_month": 22},
         model=MODEL,
         input_tokens=5200,
         output_tokens=640,
         cache_read_tokens=0,
-        origine=origine,
+        origin=origin,
         user_id=user_id,
         created_at=created_at or datetime.now(UTC) - timedelta(minutes=5),
     )
@@ -426,16 +426,16 @@ def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Sess
     rossi = _talent(talents, "Rossi", nome="Mario")
     bianchi = _talent(talents, "Bianchi", nome="Luca", vetted=True)
     verdi = _talent(talents, "Verdi", nome="Anna", vetted=True)
-    abate = _talent(talents, "Abate", nome="Carla", remoto=None, tariffa=None, cv=False)
+    abate = _talent(talents, "Abate", nome="Carla", remote=None, rate=None, cv=False)
     # Outside `cloud_visible`: turned down, deleted, no card, a card retired, and a stored
     # card that is an object but not a card any more.
-    _talent(talents, "Scartato", stato="scartato")
+    _talent(talents, "Scartato", status="discarded")
     _talent(talents, "Cancellato", deleted=True)
     _talent(talents, "Senzascheda", with_card=False)
     retired = _talent(talents, "Ritirata")
     talents.get_one(FreelancerCard, retired).card = None
     broken = _talent(talents, "Rotta")
-    talents.get_one(FreelancerCard, broken).card = {"ruolo": "Backend developer"}
+    talents.get_one(FreelancerCard, broken).card = {"role": "Backend developer"}
     talents.commit()
 
     listed = CloudTalentService(talents).list(CloudTalentQuery())
@@ -443,37 +443,37 @@ def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Sess
     assert [talent.freelancer_id for talent in listed.items] == [bianchi, verdi, abate, rossi]
     assert listed.capped is False
     first = listed.items[0]
-    assert (first.nome, first.cognome, first.vetted) == ("Luca", "Bianchi", True)
+    assert (first.nome, first.last_name, first.vetted) == ("Luca", "Bianchi", True)
     assert first.linkedin_url == "https://www.linkedin.com/in/bianchi"
     assert first.links == ["https://bianchi.dev"]
-    assert first.card.ruolo == CARD["ruolo"] and first.card.sintesi == CARD["sintesi"]
-    assert first.card.competenze == CARD["competenze"]
+    assert first.card.role == CARD["role"] and first.card.profile_summary == CARD["profile_summary"]
+    assert first.card.skills == CARD["skills"]
     # The card's place is the engine's: the cloud shows the CV itself, not Claude's
     # reading of it.
-    assert first.card.luogo is None
-    assert (first.modalita, first.fascia, first.ha_cv) == ("remoto", Band(min=500, max=650), True)
+    assert first.card.location is None
+    assert (first.mode, first.band, first.ha_cv) == ("remote", Band(min=500, max=650), True)
     carla = listed.items[2]
-    assert (carla.vetted, carla.modalita, carla.fascia, carla.ha_cv) == (False, None, None, False)
+    assert (carla.vetted, carla.mode, carla.band, carla.ha_cv) == (False, None, None, False)
 
 
 def test_the_read_carries_no_rate_state_or_note(talents: Session) -> None:
     _talent(
         talents,
         "Rossi",
-        tariffa=Decimal("463.21"),
-        stato="attivo",
+        rate=Decimal("463.21"),
+        status="active",
         note="Nota riservata: vuole 463,21 e non un euro meno.",
     )
 
     [read] = CloudTalentService(talents).list(CloudTalentQuery()).items
 
     assert set(CloudTalentRead.model_fields).isdisjoint(
-        {"tariffa_giornaliera", "stato", "note", "commenti", "email", "telefono", "cv_filename"}
+        {"daily_rate", "status", "note", "commenti", "email", "phone", "cv_filename"}
     )
     dumped = read.model_dump_json()
-    for secret in ("463.21", "463,21", "attivo", "Nota riservata", "@studio.it", "+39"):
+    for secret in ("463.21", "463,21", "active", "Nota riservata", "@studio.it", "+39"):
         assert secret not in dumped, secret
-    assert json.loads(dumped)["fascia"] == {"min": 500, "max": 650}  # 463.21 x 1.4 = 648.49
+    assert json.loads(dumped)["band"] == {"min": 500, "max": 650}  # 463.21 x 1.4 = 648.49
 
 
 def test_the_filters_narrow_the_cloud(talents: Session) -> None:
@@ -481,76 +481,76 @@ def test_the_filters_narrow_the_cloud(talents: Session) -> None:
         talents,
         "Rossi",
         card={
-            "ruolo": "Backend developer",
+            "role": "Backend developer",
             "seniority": "senior",
-            "competenze": ["Python", "FastAPI"],
+            "skills": ["Python", "FastAPI"],
         },
-        remoto="remoto",
-        tariffa=Decimal("450.00"),  # 630: 500–650
+        remote="remote",
+        rate=Decimal("450.00"),  # 630: 500–650
     )
     frontend = _talent(
         talents,
         "Bianchi",
         card={
-            "ruolo": "Frontend developer",
+            "role": "Frontend developer",
             "seniority": "mid",
-            "competenze": ["React", "TypeScript"],
+            "skills": ["React", "TypeScript"],
         },
-        remoto="ibrido",
-        tariffa=Decimal("250.00"),  # 350: 300–400
+        remote="hybrid",
+        rate=Decimal("250.00"),  # 350: 300–400
     )
     lead = _talent(
         talents,
         "Verdi",
         card={
-            "ruolo": "Tech lead",
+            "role": "Tech lead",
             "seniority": "lead",
-            "competenze": ["Go", "Kubernetes", "50%_off"],
+            "skills": ["Go", "Kubernetes", "50%_off"],
         },
-        remoto="in_sede",
-        tariffa=Decimal("700.00"),  # 980: oltre 800
+        remote="on_site",
+        rate=Decimal("700.00"),  # 980: oltre 800
     )
     unrated = _talent(
         talents,
         "Neri",
-        card={"ruolo": "Backend developer", "seniority": "junior", "competenze": ["python"]},
-        remoto=None,
-        tariffa=None,
+        card={"role": "Backend developer", "seniority": "junior", "skills": ["python"]},
+        remote=None,
+        rate=None,
     )
     service = CloudTalentService(talents)
     everyone = {backend, frontend, lead, unrated}
 
     assert _ids(service) == everyone
-    assert _ids(service, ruolo="", competenza="   ") == everyone  # blank narrows nothing
+    assert _ids(service, role="", skill="   ") == everyone  # blank narrows nothing
     # The role is one of the cards' own, matched whole.
-    assert _ids(service, ruolo="Backend developer") == {backend, unrated}
-    assert _ids(service, ruolo="Backend") == set()
+    assert _ids(service, role="Backend developer") == {backend, unrated}
+    assert _ids(service, role="Backend") == set()
     assert _ids(service, seniority="mid") == {frontend}
     # One skill, inside any of the card's skills, whatever the case; `%` and `_` are
     # the characters they are, not a pattern.
-    assert _ids(service, competenza="PYTH") == {backend, unrated}
-    assert _ids(service, competenza="script") == {frontend}
-    assert _ids(service, competenza="%") == {lead}
-    assert _ids(service, competenza="_") == {lead}
-    assert _ids(service, competenza="Go Kubernetes") == set()
-    assert _ids(service, modalita="ibrido") == {frontend}
-    # A band: its bottom at or above `fascia_min`, its top at or below `fascia_max`; a
+    assert _ids(service, skill="PYTH") == {backend, unrated}
+    assert _ids(service, skill="script") == {frontend}
+    assert _ids(service, skill="%") == {lead}
+    assert _ids(service, skill="_") == {lead}
+    assert _ids(service, skill="Go Kubernetes") == set()
+    assert _ids(service, mode="hybrid") == {frontend}
+    # A band: its bottom at or above `min_band`, its top at or below `max_band`; a
     # talent with no rate has no band, and no band filter finds them.
-    assert _ids(service, fascia_min=500, fascia_max=650) == {backend}
-    assert _ids(service, fascia_min=800) == {lead}
-    assert _ids(service, fascia_max=400) == {frontend}
-    assert _ids(service, fascia_min=450) == {backend, lead}
-    assert _ids(service, fascia_min=0) == {backend, frontend, lead}
-    assert _ids(service, fascia_min=900) == set()
-    assert _ids(service, fascia_max=200) == set()
+    assert _ids(service, min_band=500, max_band=650) == {backend}
+    assert _ids(service, min_band=800) == {lead}
+    assert _ids(service, max_band=400) == {frontend}
+    assert _ids(service, min_band=450) == {backend, lead}
+    assert _ids(service, min_band=0) == {backend, frontend, lead}
+    assert _ids(service, min_band=900) == set()
+    assert _ids(service, max_band=200) == set()
     assert _ids(
         service,
-        ruolo="Backend developer",
+        role="Backend developer",
         seniority="senior",
-        competenza="fast",
-        modalita="remoto",
-        fascia_min=500,
-        fascia_max=650,
+        skill="fast",
+        mode="remote",
+        min_band=500,
+        max_band=650,
     ) == {backend}
 
 
@@ -560,8 +560,8 @@ def test_the_admins_level_beats_the_cards_in_the_cloud_and_its_filter(talents: S
     uncertain, and the admin's seniority makes it certain again."""
     corrected = _talent(talents, "Rossi", card={"seniority": "lead"})
     talents.get_one(Freelancer, corrected).seniority_admin = "junior"
-    talents.get_one(Freelancer, corrected).anni_admin = 2
-    undated = _talent(talents, "Bianchi", card={"seniority": "mid", "anni": None})
+    talents.get_one(Freelancer, corrected).experience_years_admin = 2
+    undated = _talent(talents, "Bianchi", card={"seniority": "mid", "experience_years": None})
     talents.commit()
     service = CloudTalentService(talents)
 
@@ -569,10 +569,10 @@ def test_the_admins_level_beats_the_cards_in_the_cloud_and_its_filter(talents: S
     assert _ids(service, seniority="lead") == set()
     assert _ids(service, seniority="mid") == {undated}
     cards = {talent.freelancer_id: talent.card for talent in service.list(CloudTalentQuery()).items}
-    assert (cards[corrected].seniority, cards[corrected].anni) == ("junior", 2)
-    assert cards[corrected].seniority_incerta is False
-    assert (cards[undated].seniority, cards[undated].anni) == ("mid", None)
-    assert cards[undated].seniority_incerta is True
+    assert (cards[corrected].seniority, cards[corrected].experience_years) == ("junior", 2)
+    assert cards[corrected].seniority_uncertain is False
+    assert (cards[undated].seniority, cards[undated].experience_years) == ("mid", None)
+    assert cards[undated].seniority_uncertain is True
 
     talents.get_one(Freelancer, undated).seniority_admin = "senior"
     talents.commit()
@@ -581,10 +581,10 @@ def test_the_admins_level_beats_the_cards_in_the_cloud_and_its_filter(talents: S
         for talent in service.list(CloudTalentQuery()).items
         if talent.freelancer_id == undated
     ]
-    assert (after.seniority, after.seniority_incerta) == ("senior", False)
+    assert (after.seniority, after.seniority_uncertain) == ("senior", False)
 
 
-@pytest.mark.parametrize(("field", "value"), [("seniority", "guru"), ("modalita", "luna")])
+@pytest.mark.parametrize(("field", "value"), [("seniority", "guru"), ("mode", "luna")])
 def test_a_filter_word_the_cloud_does_not_know_is_refused(
     talents: Session, field: str, value: str
 ) -> None:
@@ -594,18 +594,18 @@ def test_a_filter_word_the_cloud_does_not_know_is_refused(
 
 
 def test_the_roles_are_every_card_role_once_sorted(talents: Session) -> None:
-    """The role filter's choices: each `ruolo` of the cloud's cards once, sorted the way
+    """The role filter's choices: each `role` of the cloud's cards once, sorted the way
     a person reads them, whatever the other filters narrowed the list to."""
-    _talent(talents, "Rossi", card={"ruolo": "Backend developer"})
-    _talent(talents, "Bianchi", card={"ruolo": "Backend developer"})
-    _talent(talents, "Verdi", card={"ruolo": "Designer"})
-    _talent(talents, "Gialli", card={"ruolo": "analista dati"})
-    _talent(talents, "Neri", card={"ruolo": "UX researcher"}, stato="scartato")
+    _talent(talents, "Rossi", card={"role": "Backend developer"})
+    _talent(talents, "Bianchi", card={"role": "Backend developer"})
+    _talent(talents, "Verdi", card={"role": "Designer"})
+    _talent(talents, "Gialli", card={"role": "analista dati"})
+    _talent(talents, "Neri", card={"role": "UX researcher"}, status="discarded")
 
-    listed = CloudTalentService(talents).list(CloudTalentQuery(ruolo="Designer"))
+    listed = CloudTalentService(talents).list(CloudTalentQuery(role="Designer"))
 
     assert len(listed.items) == 1
-    assert listed.ruoli == ["analista dati", "Backend developer", "Designer"]
+    assert listed.roles == ["analista dati", "Backend developer", "Designer"]
 
 
 def _insert_talents(
@@ -624,7 +624,7 @@ def _insert_talents(
             "id": uuid4(),
             "email": f"talento{n:03}@studio.it",
             "nome": "Ada",
-            "cognome": f"Cognome{n:03}",
+            "last_name": f"Cognome{n:03}",
         }
         for n in numbers
     ]
@@ -633,11 +633,11 @@ def _insert_talents(
         {
             "id": uuid4(),
             "user_id": user["id"],
-            "stato": "nuovo",
+            "status": "new",
             "links": [],
-            "compilata_da": "persona",
-            "remoto": "remoto",
-            "tariffa_giornaliera": Decimal("450.00"),
+            "compilata_da": "person",
+            "remote": "remote",
+            "daily_rate": Decimal("450.00"),
             "vetted_at": NOW if n == vetted else None,
         }
         for n, user in zip(numbers, users, strict=True)
@@ -675,8 +675,8 @@ def test_the_cloud_shows_at_most_200_and_says_so(talents: Session) -> None:
     listed = service.list(CloudTalentQuery())
 
     assert len(listed.items) == CLOUD_LIST_CAP and listed.capped is True
-    assert listed.items[0].cognome == f"Cognome{count - 1:03}"
-    assert [talent.cognome for talent in listed.items[1:3]] == ["Cognome000", "Cognome001"]
+    assert listed.items[0].last_name == f"Cognome{count - 1:03}"
+    assert [talent.last_name for talent in listed.items[1:3]] == ["Cognome000", "Cognome001"]
     narrowed = service.list(CloudTalentQuery(seniority="lead"))
     assert len(narrowed.items) == 3 and narrowed.capped is False
 
@@ -686,7 +686,7 @@ def test_a_card_that_is_not_a_card_takes_no_place_under_the_cap(talents: Session
     validates, first in the order, is left out and the 200 valid talents after it are
     all there; the list says it was cut only once a valid talent is left over."""
     ids = _insert_talents(talents, CLOUD_LIST_CAP + 1, vetted=0)
-    talents.get_one(FreelancerCard, ids[0]).card = {"ruolo": "Backend developer"}
+    talents.get_one(FreelancerCard, ids[0]).card = {"role": "Backend developer"}
     talents.commit()
     service = CloudTalentService(talents)
 
@@ -703,30 +703,30 @@ def test_a_card_that_is_not_a_card_takes_no_place_under_the_cap(talents: Session
 def test_a_card_whose_skills_are_not_a_list_leaves_the_skill_filter_working(
     talents: Session,
 ) -> None:
-    """A card written by hand with `competenze` a string or an object: the skill filter
+    """A card written by hand with `skills` a string or an object: the skill filter
     expands only an array, so it finds the others and leaves these out, and the list
     leaves them out too, since they are not cards."""
-    python = _talent(talents, "Rossi", card={"competenze": ["Python", "FastAPI"]})
-    for cognome, competenze in (("Rotta", "Python"), ("Storta", {"linguaggio": "Python"})):
-        broken = _talent(talents, cognome)
+    python = _talent(talents, "Rossi", card={"skills": ["Python", "FastAPI"]})
+    for last_name, skills in (("Rotta", "Python"), ("Storta", {"linguaggio": "Python"})):
+        broken = _talent(talents, last_name)
         talents.execute(
             text(
                 "UPDATE freelancer_cards SET card = jsonb_set(card, '{competenze}', "
                 "CAST(:competenze AS JSONB)) WHERE freelancer_id = :id"
             ),
-            {"competenze": json.dumps(competenze), "id": broken},
+            {"skills": json.dumps(skills), "id": broken},
         )
     talents.commit()
     service = CloudTalentService(talents)
 
-    assert _ids(service, competenza="pyth") == {python}
+    assert _ids(service, skill="pyth") == {python}
     assert _ids(service) == {python}
 
 
 def test_the_cv_is_open_only_inside_the_cloud(talents: Session) -> None:
     visible = _talent(talents, "Rossi")
     outside = [
-        _talent(talents, "Bianchi", stato="scartato"),
+        _talent(talents, "Bianchi", status="discarded"),
         _talent(talents, "Verdi", deleted=True),
         _talent(talents, "Neri", with_card=False),
         _talent(talents, "Gialli", cv=False),
@@ -754,21 +754,21 @@ def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
     assert service.caller(user_id) is None
 
     TalentCloudService(talents, settings).grant(acme, admin_id)
-    bianchi = _request(talents, azienda="Bianchi Srl")
+    bianchi = _request(talents, company="Bianchi Srl")
     newest, _ = TalentCloudService(talents, settings).grant(bianchi, admin_id)
     caller = service.caller(user_id)
 
     assert caller is not None
-    assert (caller.user_id, caller.email, caller.telefono) == (
+    assert (caller.user_id, caller.email, caller.phone) == (
         user_id,
         "wile@acme.it",
         "+39 345 1234567",
     )
-    assert (caller.company_id, caller.azienda) == (bianchi, "Bianchi Srl")
+    assert (caller.company_id, caller.company) == (bianchi, "Bianchi Srl")
     assert caller.granted_at == newest.granted_at
     TalentCloudService(talents, settings).revoke(bianchi, admin_id)
     again = service.caller(user_id)
-    assert again is not None and (again.company_id, again.azienda) == (acme, "Acme S.r.l.")
+    assert again is not None and (again.company_id, again.company) == (acme, "Acme S.r.l.")
 
 
 def _open_cloud(session: Session, settings: Settings) -> tuple[UUID, UUID, UUID]:
@@ -785,7 +785,7 @@ def _open_cloud(session: Session, settings: Settings) -> tuple[UUID, UUID, UUID]
 
 
 def test_a_card_files_a_request_for_that_talent_alone(talents: Session, settings: Settings) -> None:
-    ada = _talent(talents, "Lovelace", nome="Ada", card={"ruolo": "Data engineer"})
+    ada = _talent(talents, "Lovelace", nome="Ada", card={"role": "Data engineer"})
     _, user_id, acme = _open_cloud(talents, settings)
     caller = CloudTalentService(talents).caller(user_id)
     assert caller is not None
@@ -794,26 +794,26 @@ def test_a_card_files_a_request_for_that_talent_alone(talents: Session, settings
 
     read = service.create_for_talent(
         ada,
-        azienda=caller.azienda,
+        company=caller.company,
         email=caller.email,
-        telefono=caller.telefono,
+        phone=caller.phone,
         user_id=caller.user_id,
         company_id=caller.company_id,
     )
 
-    assert (read.origine, read.stato) == ("cloud", "nuova")
-    assert read.proposal is None and read.riassunto is None and read.descrizione is None
-    assert (read.azienda, read.email, read.telefono) == (
+    assert (read.origin, read.status) == ("cloud", "new")
+    assert read.proposal is None and read.summary is None and read.description is None
+    assert (read.company, read.email, read.phone) == (
         "Acme S.r.l.",
         "wile@acme.it",
         "+39 345 1234567",
     )
     assert (read.user_id, read.company_id) == (user_id, acme)
-    assert [(talent.freelancer_id, talent.ruolo) for talent in read.talenti] == [
+    assert [(talent.freelancer_id, talent.role) for talent in read.talents] == [
         (ada, "Data engineer")
     ]
     assert capture.calls == [
-        (TEAM_REQUEST_SENT, {"origine": "cloud", "$process_person_profile": False})
+        (TEAM_REQUEST_SENT, {"origin": "cloud", "$process_person_profile": False})
     ]
     mail = service.request_mail(read)
     assert mail.subject == "Nuova richiesta team da Acme S.r.l."
@@ -822,22 +822,22 @@ def test_a_card_files_a_request_for_that_talent_alone(talents: Session, settings
     # A referente with no phone on file files all the same, with none.
     no_phone = service.create_for_talent(
         ada,
-        azienda=caller.azienda,
+        company=caller.company,
         email=caller.email,
-        telefono=None,
+        phone=None,
         user_id=caller.user_id,
         company_id=caller.company_id,
     )
-    assert no_phone.telefono is None and no_phone.id != read.id
+    assert no_phone.phone is None and no_phone.id != read.id
 
     # Only a talent the cloud shows can be asked for, with the CV route's sentence.
-    for outside in (_talent(talents, "Scartata", stato="scartato"), uuid4()):
+    for outside in (_talent(talents, "Scartata", status="discarded"), uuid4()):
         with pytest.raises(NotFound) as refused:
             service.create_for_talent(
                 outside,
-                azienda=caller.azienda,
+                company=caller.company,
                 email=caller.email,
-                telefono=None,
+                phone=None,
                 user_id=caller.user_id,
                 company_id=caller.company_id,
             )
@@ -852,7 +852,7 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
     admin_id, user_id, acme = _open_cloud(talents, settings)
     own = _cloud_proposal(talents, [ada], user_id=user_id)
     someone_elses = _cloud_proposal(talents, [ada], user_id=admin_id)
-    public = _cloud_proposal(talents, [ada], origine="pubblico")
+    public = _cloud_proposal(talents, [ada], origin="public")
     old = _cloud_proposal(
         talents, [ada], user_id=user_id, created_at=datetime.now(UTC) - timedelta(days=1, minutes=1)
     )
@@ -865,18 +865,18 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
 
     read, mail = hire(own)
 
-    assert (read.origine, read.telefono, read.user_id, read.company_id) == (
+    assert (read.origin, read.phone, read.user_id, read.company_id) == (
         "cloud",
         "+39 345 1234567",
         user_id,
         acme,
     )
     assert read.proposal is not None and read.proposal.id == own
-    assert read.riassunto == RIASSUNTO
-    assert [talent.freelancer_id for talent in read.talenti] == [ada]
-    assert mail.subject == "Nuova richiesta team da Acme S.r.l." and RIASSUNTO in mail.text
+    assert read.summary == SUMMARY
+    assert [talent.freelancer_id for talent in read.talents] == [ada]
+    assert mail.subject == "Nuova richiesta team da Acme S.r.l." and SUMMARY in mail.text
     stored = talents.get_one(TeamRequest, read.id)
-    assert (stored.origine, stored.telefono) == ("cloud", "+39 345 1234567")
+    assert (stored.origin, stored.phone) == ("cloud", "+39 345 1234567")
 
     # Another person's cloud proposal, a public one, or one older than a day: the one
     # sentence of every refusal.

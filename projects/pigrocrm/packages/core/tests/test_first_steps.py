@@ -30,7 +30,7 @@ _NOW = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
 
 def _deleted_customer(session: Session) -> Customer:
     customer = Customer(
-        ragione_sociale="Cliente cancellato", nazione="IT", custom_fields={}, deleted_at=_NOW
+        legal_name="Cliente cancellato", country="IT", custom_fields={}, deleted_at=_NOW
     )
     session.add(customer)
     session.flush()
@@ -38,17 +38,15 @@ def _deleted_customer(session: Session) -> Customer:
 
 
 def _deal(session: Session, customer: Customer, *, deleted: bool = False) -> Deal:
-    stage = PipelineStage(
-        nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=20, tipo="open"
-    )
+    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=20, type="open")
     session.add(stage)
     session.flush()
     deal = Deal(
         nome="Un deal",
         customer_id=customer.id,
         pipeline_stage_id=stage.id,
-        probabilita=20,
-        valore_previsto=Decimal("1000.00"),
+        probability=20,
+        expected_value=Decimal("1000.00"),
         custom_fields={},
         deleted_at=_NOW if deleted else None,
     )
@@ -64,7 +62,7 @@ def test_a_deleted_customer_is_not_work(db_session: Session) -> None:
 
 
 def test_a_live_customer_is_work(db_session: Session) -> None:
-    db_session.add(Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={}))
+    db_session.add(Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
     db_session.flush()
     assert space_is_empty(db_session) is False
 
@@ -77,7 +75,7 @@ def test_a_live_deal_is_work(db_session: Session) -> None:
 def test_a_live_document_is_work(db_session: Session) -> None:
     customer = _deleted_customer(db_session)
     db_session.add(
-        Document(customer_id=customer.id, tipo="documento", titolo="Un PDF", custom_fields={})
+        Document(customer_id=customer.id, type="document", title="Un PDF", custom_fields={})
     )
     db_session.flush()
     assert space_is_empty(db_session) is False
@@ -86,7 +84,7 @@ def test_a_live_document_is_work(db_session: Session) -> None:
 def test_a_live_time_entry_is_work(db_session: Session) -> None:
     deal = _deal(db_session, _deleted_customer(db_session), deleted=True)
     user = User(
-        email=f"ore-{uuid4()}@example.test", password_hash="x", nome="Ore", ruolo="collaboratore"
+        email=f"ore-{uuid4()}@example.test", password_hash="x", nome="Ore", role="collaborator"
     )
     db_session.add(user)
     db_session.flush()
@@ -95,13 +93,13 @@ def test_a_live_time_entry_is_work(db_session: Session) -> None:
             deal_id=deal.id,
             user_id=user.id,
             data=date(2026, 9, 22),
-            ore=Decimal("2.00"),
-            descrizione="Lavoro",
-            fatturabile=True,
-            tariffa_applicata=Decimal("50.000000"),
-            tariffa_origine="manuale",
-            costo_applicato=None,
-            costo_origine="assente",
+            hours=Decimal("2.00"),
+            description="Lavoro",
+            billable=True,
+            applied_rate=Decimal("50.000000"),
+            rate_source="manual",
+            applied_cost=None,
+            cost_source="absent",
             invoice_line_id=None,
             custom_fields={},
         )

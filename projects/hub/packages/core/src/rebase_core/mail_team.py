@@ -17,7 +17,7 @@ from rebase_core.mail_layout import (
 
 
 def team_request_mail(
-    to: str, *, azienda: str, riassunto: str | None, talento: str | None, url: str
+    to: str, *, company: str, summary: str | None, talent: str | None, url: str
 ) -> Mail:
     """A team request arriving (spec § 3.5), to rebase's own address and never to the
     company: the subject names the company, the body carries the project's anonymous
@@ -26,13 +26,13 @@ def team_request_mail(
     and the summary were typed by a visitor, so both are escaped in the HTML, the way
     the magic link escapes its token."""
     e = html_escape.escape
-    subject = f"Nuova richiesta team da {azienda}"
-    if talento is not None:
-        what = f"{azienda} ha chiesto un talento del talent cloud: {talento}."
+    subject = f"Nuova richiesta team da {company}"
+    if talent is not None:
+        what = f"{company} ha chiesto un talento del talent cloud: {talent}."
         quoted = None
     else:
-        what = f"{azienda} ha chiesto il team che il team builder ha proposto per questo progetto:"
-        quoted = riassunto
+        what = f"{company} ha chiesto il team che il team builder ha proposto per questo progetto:"
+        quoted = summary
     where = "La richiesta, con i contatti e i talenti, è qui:"
     text_parts = ["Ciao,", what]
     if quoted:
@@ -74,9 +74,9 @@ def team_availability_mail(
     to: str,
     *,
     nome: str,
-    ruolo: str,
-    riassunto: str | None,
-    tariffa: Decimal | None,
+    role: str,
+    summary: str | None,
+    rate: Decimal | None,
     yes_url: str,
     no_url: str,
 ) -> Mail:
@@ -94,13 +94,13 @@ def team_availability_mail(
     subject = "Un progetto per te: sei disponibile?"
     greeting = f"Ciao {nome}," if nome else "Ciao,"
     intro = "abbiamo un progetto per cui il tuo profilo è adatto."
-    if riassunto:
+    if summary:
         intro += " Eccolo, in breve:"
-    role = f"Il ruolo che ti proponiamo: {ruolo}."
-    if tariffa is not None:
+    role = f"Il ruolo che ti proponiamo: {role}."
+    if rate is not None:
         fee = (
             "Il compenso sarebbe la tua tariffa giornaliera, quella del tuo profilo su "
-            f"rebase: {_euro(tariffa)} al giorno."
+            f"rebase: {_euro(rate)} al giorno."
         )
     else:
         fee = (
@@ -114,8 +114,8 @@ def team_availability_mail(
     )
     yes_label, no_label = "Sono disponibile", "Non sono disponibile"
     text_parts = [greeting, intro]
-    if riassunto:
-        text_parts.append(riassunto)
+    if summary:
+        text_parts.append(summary)
     text_parts.extend(
         (
             role,
@@ -137,10 +137,10 @@ def team_availability_mail(
         f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
         f'<p style="margin:0 0 20px 0;">{e(intro)}</p>',
     ]
-    if riassunto:
+    if summary:
         rows.append(
             f'<p style="margin:0 0 20px 0;padding:0 0 0 16px;border-left:2px solid {INK};">'
-            f"{e(riassunto)}</p>"
+            f"{e(summary)}</p>"
         )
     rows.extend(
         (
@@ -161,7 +161,7 @@ def team_availability_mail(
     return Mail(to=to, subject=subject, text=text, html=frame(subject, "\n".join(rows)))
 
 
-def talent_cloud_opened_mail(to: str, *, nome: str, azienda: str, url: str) -> Mail:
+def talent_cloud_opened_mail(to: str, *, nome: str, company: str, url: str) -> Mail:
     """The talent cloud open for a company (REB-518, spec § 4.1), to the referente of the
     request an admin opened it from: the subject names the company, the body says what
     the cloud is and that the way in is the one they already have, the magic link to
@@ -169,10 +169,10 @@ def talent_cloud_opened_mail(to: str, *, nome: str, azienda: str, url: str) -> M
     signed-out visitor to the login first. The name and the company's were typed in the
     company wizard, so both are escaped in the HTML, and so is the link."""
     e = html_escape.escape
-    subject = f"Il talent cloud di rebase è aperto per {azienda}"
+    subject = f"Il talent cloud di rebase è aperto per {company}"
     greeting = f"Ciao {nome}," if nome else "Ciao,"
     opened = (
-        f"il talent cloud di rebase è aperto per {azienda}: i profili dei talenti della "
+        f"il talent cloud di rebase è aperto per {company}: i profili dei talenti della "
         "community, per nome e con il CV, e il team builder per chiederci un team o una "
         "persona sola, senza moduli da compilare."
     )

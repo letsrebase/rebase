@@ -96,13 +96,13 @@ def test_the_space_group_is_the_root_slug_or_root() -> None:
 def test_the_identity_is_the_actor_and_the_space() -> None:
     user_id = uuid4()
     identify = analytics.identity_for(
-        lambda: Actor(id=user_id, type="user", role="collaboratore"), "studio"
+        lambda: Actor(id=user_id, type="user", role="collaborator"), "studio"
     )
     identity = identify(None, None)
     assert identity is not None
     assert identity.distinct_id == str(user_id)
-    assert identity.groups == {"spazio": "studio"}
-    assert identity.properties == {"ruolo": "collaboratore", "via": "user"}
+    assert identity.groups == {"space": "studio"}
+    assert identity.properties == {"role": "collaborator", "via": "user"}
     # An actor without an id (the fixtures' admin) stays anonymous rather than sharing
     # one made-up person across every installation.
     assert analytics.identity_for(lambda: NOBODY, "root")(None, None) is None
@@ -146,7 +146,7 @@ async def test_with_a_key_a_tool_call_reaches_posthog_with_the_actor(
     call = next(event for event in events if event.get("event") == "$mcp_tool_call")
     assert call["distinct_id"] == str(user_id)
     assert call["properties"]["$mcp_tool_name"] == "describe_schema"
-    assert call["properties"]["$groups"] == {"spazio": "studio"}
+    assert call["properties"]["$groups"] == {"space": "studio"}
     assert call["properties"]["$mcp_is_error"] is False
     # And the schema an agent learns is untouched: no injected `context` argument.
     describe = next(tool for tool in tools.tools if tool.name == "describe_schema")
@@ -263,7 +263,7 @@ async def test_no_event_carries_what_the_agent_sent_or_got_back(
 
     async with Client(server) as agent:
         created = await agent.call_tool(
-            "create_customer", {"ragione_sociale": name, "partita_iva": tax_id}
+            "create_customer", {"legal_name": name, "vat_number": tax_id}
         )
         customer_id = (created.structured_content or json.loads(created.content[0].text))["id"]
         await agent.call_tool("get_customer", {"customer_id": customer_id})
@@ -274,7 +274,7 @@ async def test_no_event_carries_what_the_agent_sent_or_got_back(
     assert len(calls) == 3
     for call in calls:
         properties = call["properties"]
-        assert properties["$groups"] == {"spazio": "studio"}
+        assert properties["$groups"] == {"space": "studio"}
         assert "$mcp_duration_ms" in properties and "$mcp_is_error" in properties
     assert [c["properties"]["$mcp_tool_name"] for c in calls] == [
         "create_customer",

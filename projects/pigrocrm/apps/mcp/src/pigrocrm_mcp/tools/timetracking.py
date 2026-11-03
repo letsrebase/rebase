@@ -31,8 +31,8 @@ from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import (
-    ANNO_MAX,
-    ANNO_MIN,
+    YEAR_MAX,
+    YEAR_MIN,
     CostCreate,
     CostListQuery,
     CostUpdate,
@@ -48,13 +48,13 @@ from pigrocrm.core.timetracking.timer import TimerService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import refuse_empty, refuse_nothing_given, report
 
-# `list_locks` takes no schema of its own -- `anno` goes straight into a `WHERE` -- so
+# `list_locks` takes no schema of its own -- `year` goes straight into a `WHERE` -- so
 # the year is validated here, inside the guarded call, against the same bounds
 # `PeriodLockCreate` declares. Through pydantic rather than a bare `int(...)` for the
 # reason `tools/documents.py::_NUMERO` states: `int("scorso")` would be rendered to the
 # agent as "non è un identificativo valido", and a non-numeric year reaching the query
 # would be a raw DataError instead of guidance.
-_ANNO: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=ANNO_MIN, le=ANNO_MAX)])
+_YEAR: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=YEAR_MIN, le=YEAR_MAX)])
 
 
 def log_time(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -76,7 +76,7 @@ def update_time_entry(context: McpContext, entry_id: str, data: dict[str, Any]) 
 
 def archive_time_entry(context: McpContext, entry_id: str) -> dict[str, str]:
     TimeEntryService(context.session).soft_delete(UUID(entry_id), context.actor)
-    return {"status": "archiviata", "entry_id": entry_id}
+    return {"status": "archived", "entry_id": entry_id}
 
 
 def restore_time_entry(context: McpContext, entry_id: str) -> dict[str, Any]:
@@ -192,13 +192,13 @@ def list_costs(context: McpContext, query: CostListQuery) -> dict[str, Any]:
     }
 
 
-def list_period_locks(context: McpContext, anno: int | str | None) -> dict[str, Any]:
+def list_period_locks(context: McpContext, year: int | str | None) -> dict[str, Any]:
     """The months already closed. A read, and the answer to the refusal `log_time`
     raises: that `Conflict` names the one month it hit, which leaves an agent that has a
     week of entries to write guessing at the rest. `close_period`/`reopen_period` stay
     absent from this module -- seeing which months are closed is not deciding it."""
     locks = PeriodLockService(context.session).list_locks(
-        anno=_ANNO.validate_python(anno) if anno is not None else None
+        year=_YEAR.validate_python(year) if year is not None else None
     )
     return {"locks": [lock.model_dump(mode="json") for lock in locks]}
 
@@ -252,43 +252,43 @@ def get_unbilled_backlog(context: McpContext) -> dict[str, Any]:
 
 
 def get_ceiling_headroom(
-    context: McpContext, anno: int | str, azienda_id: UUID | None = None
+    context: McpContext, year: int | str, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """The headroom under every active ceiling of the configured pack (REB-352 §1.4),
     on the year's real paid revenue. Of one azienda (REB-631): the only one when none
     is named, required by name otherwise."""
     return (
         AnalyticsService(context.session)
-        .ceiling_headroom(_ANNO.validate_python(anno), context.actor, azienda_id)
+        .ceiling_headroom(_YEAR.validate_python(year), context.actor, legal_entity_id)
         .model_dump(mode="json")
     )
 
 
 def simulate_ceiling(
     context: McpContext,
-    anno: int | str,
+    year: int | str,
     query: CeilingSimulationQuery,
-    azienda_id: UUID | None = None,
+    legal_entity_id: UUID | None = None,
 ) -> dict[str, Any]:
     """The "would this fit?" simulator (REB-352 §1.4): the synthetic addition `query`
     carries, re-evaluated against every active ceiling without saving anything. The
     azienda resolves as in `get_ceiling_headroom` (REB-631)."""
     return (
         AnalyticsService(context.session)
-        .simulate_ceiling(_ANNO.validate_python(anno), query, context.actor, azienda_id)
+        .simulate_ceiling(_YEAR.validate_python(year), query, context.actor, legal_entity_id)
         .model_dump(mode="json")
     )
 
 
 def get_year_overview(
-    context: McpContext, anno: int | str, azienda_id: UUID | None = None
+    context: McpContext, year: int | str, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """The year of one azienda as the accountant reads it (REB-757): revenue by regime
     and tax treatment, and the register of issued invoices with the stamp duty and the
     rivalsa apart. The file is the web app's: an MCP tool returns no bytes."""
     return (
         AnalyticsService(context.session)
-        .year_overview(_ANNO.validate_python(anno), context.actor, azienda_id)
+        .year_overview(_YEAR.validate_python(year), context.actor, legal_entity_id)
         .model_dump(mode="json")
     )
 
@@ -300,14 +300,14 @@ def get_days_analysis(
     context: McpContext,
     da: str | None = None,
     a: str | None = None,
-    azienda_id: UUID | None = None,
+    legal_entity_id: UUID | None = None,
 ) -> dict[str, Any]:
     """The days of a period by month and state, the realised day rate and the trend of
     days worked without approval (REB-756)."""
     return (
         AnalyticsService(context.session)
         .days_analysis(
-            context.actor, _DATE.validate_python(da), _DATE.validate_python(a), azienda_id
+            context.actor, _DATE.validate_python(da), _DATE.validate_python(a), legal_entity_id
         )
         .model_dump(mode="json")
     )

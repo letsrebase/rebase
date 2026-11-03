@@ -49,8 +49,8 @@ export function DashboardPage({
         // No picker on the scadenziario: it has no period (what is owed is owed today), and a
         // control that changed nothing on screen would be a promise the page does not keep.
         actions={
-          tab === 'scadenziario' ? undefined : (
-            <PeriodPicker periodo={{ da, a }} onChange={(next) => onSearchChange(next)} />
+          tab === 'receivables' ? undefined : (
+            <PeriodPicker period={{ da, a }} onChange={(next) => onSearchChange(next)} />
           )
         }
         // The late and due-today attività (REB-874): the first thing under the title, with
@@ -74,13 +74,13 @@ export function DashboardPage({
             pooled connections on the API side -- to draw one screen. §17's placeholders that
             stood here until 6C landed are gone: both dashboards exist now, so a paragraph
             explaining their absence would be the untrue thing on the page. */}
-        {tab === 'commerciale' && <CommercialTab periodo={{ da, a }} />}
-        {tab === 'scadenziario' && <ReceivablesTab />}
-        {tab === 'anno' && <YearTab periodo={{ da, a }} />}
-        {tab === 'giornate' && <DaysTab periodo={{ da, a }} />}
-        {tab === 'economica' && (
+        {tab === 'commercial' && <CommercialTab period={{ da, a }} />}
+        {tab === 'receivables' && <ReceivablesTab />}
+        {tab === 'year' && <YearTab period={{ da, a }} />}
+        {tab === 'work_units' && <DaysTab period={{ da, a }} />}
+        {tab === 'economic' && (
           <EconomicTab
-            periodo={{ da, a }}
+            period={{ da, a }}
             base={base}
             onBaseChange={(next) => onSearchChange({ base: next })}
           />

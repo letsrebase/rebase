@@ -3,9 +3,9 @@ that redoes what a lost background task or a restart left behind (REB-391, REB-4
 REB-499, REB-892).
 
 `finish` runs after `SigningService.apply`'s commit, in the webhook's background task or
-under «Aggiorna stato»: it first confirms a still-`inviato` document with Documenso itself,
-over the hub's own API token, and only moves it to `firmato` (or, for a rejection or a
-cancellation the webhook never delivered, `annullato`) once Documenso says so (REB-431, a
+under «Aggiorna stato»: it first confirms a still-`sent` document with Documenso itself,
+over the hub's own API token, and only moves it to `signed` (or, for a rejection or a
+cancellation the webhook never delivered, `cancelled`) once Documenso says so (REB-431, a
 forged completion then needs the token too); then the sealed copy is downloaded and stored,
 the two mails (the freelancer's and rebase's) sent, each recorded on its own once accepted
 (`signed_copy_to_freelancer_at`, `signed_copy_to_rebase_at`), then, for a framework
@@ -20,8 +20,8 @@ columns is unset, which the next `finish` reads as still to do for that recipien
 the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `finish`
 again, for every document a webhook or an admin's «Aggiorna stato» never reached.
 
-A signature that turns a match `attivo` also marks its link to Pigro due (`pigro_stato`
-`da_collegare`, REB-499), and the webhook's `finish` then asks `EngagementService.link` for
+A signature that turns a match `active` also marks its link to Pigro due (`pigro_status`
+`to_link`, REB-499), and the webhook's `finish` then asks `EngagementService.link` for
 it, with no row lock held, after the signature's own steps: a CRM that takes its 90 seconds
 to open a space delays no signed copy. Nothing a person waits on runs that provisioning:
 «Aggiorna stato» (`SigningAdmin.refresh`) applies the signature and leaves the link to the
@@ -57,14 +57,14 @@ from rebase_core.mail import Attachment
 from rebase_core.mail_contracts import signed_copy_mail
 from rebase_core.match_rows import (
     ENTITY,
-    LETTERA,
-    QUADRO,
+    FRAMEWORK,
+    LETTER,
     fiscal_row,
     lock_freelancer,
     lock_match,
     require_regime_fits,
 )
-from rebase_core.match_words import DA_COLLEGARE
+from rebase_core.match_words import TO_LINK
 from rebase_core.models import ContractDocument, Match
 from rebase_core.referrals import ReferralService
 from rebase_core.regimes import text_name
@@ -78,12 +78,12 @@ _log = logging.getLogger(__name__)
 
 class SweepResult(NamedTuple):
     """`SigningRecovery.sweep`'s own count (REB-431): `touched` is REB-433's, how many
-    documents actually moved; `unconfirmed` is how many stayed `inviato` because
+    documents actually moved; `unconfirmed` is how many stayed `sent` because
     Documenso itself could not be asked -- a refusal (an expired, revoked or wrong
     token, an envelope answering 404) or an unreachable instance, never a document
     merely not completed yet, and never a routine no-Documenso environment. `linked` and
     `link_failed` are the round after the documents (REB-499,
-    `EngagementService.link_pending`): how many active matches it took to `collegato`,
+    `EngagementService.link_pending`): how many active matches it took to `linked`,
     and how many it tried and left otherwise; both zero without the engagement service
     or its token."""
 
@@ -108,8 +108,8 @@ class SigningRecovery:
 
     def finish(self, document_id: UUID) -> bool:
         """What a signature leaves to do once it is committed, each step idempotent: the
-        outcome confirmed with Documenso itself and the document moved to `firmato`, or
-        to `annullato` for a rejection or a cancellation the webhook never delivered
+        outcome confirmed with Documenso itself and the document moved to `signed`, or
+        to `cancelled` for a rejection or a cancellation the webhook never delivered
         (REB-431); the sealed copy downloaded and stored; the signed-copy mails sent,
         once; for an active framework agreement, the letters that waited for it
         released; for a match the signature turned active, its link to Pigro
@@ -154,7 +154,7 @@ class SigningRecovery:
         """The document's match linked to its deal on Pigro, when a signature has just
         turned it active (REB-499). The match is read again rather than trusted from the
         confirmation, which answers `True` for a rejection as well: only a match
-        `attivo` and still `da_collegare` is handed to `link`, which takes its own locks
+        `active` and still `to_link` is handed to `link`, which takes its own locks
         and holds none across the call. Last of `finish`'s steps, so a CRM slow to open
         a space delays nothing of the signature's, and nothing after it depends on it: a
         link that fails, for any reason, a database error among them, is logged and left
@@ -162,15 +162,15 @@ class SigningRecovery:
         if self.service.engagements is None:
             return
         found = self.session.execute(
-            select(Match.id, Match.stato, Match.pigro_stato)
+            select(Match.id, Match.status, Match.pigro_status)
             .join(ContractDocument, ContractDocument.match_id == Match.id)
             .where(ContractDocument.id == document_id)
         ).first()
         self.session.rollback()
         if found is None:
             return
-        match_id, stato, pigro_stato = found
-        if stato != "attivo" or pigro_stato != DA_COLLEGARE:
+        match_id, status, pigro_status = found
+        if status != "active" or pigro_status != TO_LINK:
             return
         try:
             self.service.engagements.link(match_id)
@@ -188,18 +188,18 @@ class SigningRecovery:
     def _confirm_completion(self, document_id: UUID) -> bool | None:
         """Before a document counts as signed: Documenso's own word on the envelope,
         read with no row lock held (a network call), so a forged webhook alone can no
-        longer move a document to `firmato` -- a forged event now needs the hub's own
-        API token too (REB-431). Nothing to confirm for a document not `inviato`, or
+        longer move a document to `signed` -- a forged event now needs the hub's own
+        API token too (REB-431). Nothing to confirm for a document not `sent`, or
         with no envelope. The freelancer's row, the document's match (when it has one)
         and the document itself are then locked in that order, the global rule, and the
-        document re-read: only one still `inviato` moves. A `COMPLETED` envelope signs
+        document re-read: only one still `sent` moves. A `COMPLETED` envelope signs
         it, with the signer's own date (`outcome_from_envelope(envelope).signed_at`),
-        turning its match `attivo` as `apply` used to, with its link to Pigro marked
-        `da_collegare` in the same commit (REB-499); a `REJECTED` or `CANCELLED` one
+        turning its match `active` as `apply` used to, with its link to Pigro marked
+        `to_link` in the same commit (REB-499); a `REJECTED` or `CANCELLED` one
         is applied the same way `refresh` already applies one, from the same envelope
         this call already read, so a rejection or a cancellation a webhook never
         delivered is recovered by the next `finish` or `sweep` too, not just a missed
-        signature (REB-431). Still `PENDING` (or `DRAFT`) leaves the row `inviato`,
+        signature (REB-431). Still `PENDING` (or `DRAFT`) leaves the row `sent`,
         logged at info level, tried again next time. Documenso not configured on this
         environment at all (`SigningUnavailable`, `require_documenso`'s own refusal) is
         a routine, expected state (a preview with signing off, say) and is logged once
@@ -210,7 +210,7 @@ class SigningRecovery:
         `sweep` can tell a real failure apart from a benign one and count it. Returns
         `True` only when this call actually moved the document."""
         document = self.service.document(document_id)
-        if document.stato != "inviato" or document.documenso_id is None:
+        if document.status != "sent" or document.documenso_id is None:
             return False
         envelope_id = document.documenso_id
         try:
@@ -238,7 +238,7 @@ class SigningRecovery:
             lock_match(self.session, document.match_id) if document.match_id is not None else None
         )
         document = self.service.lock_document(document_id)
-        if document.stato != "inviato":
+        if document.status != "sent":
             self.session.rollback()
             return False
         if outcome is None:
@@ -246,20 +246,20 @@ class SigningRecovery:
             _log.info("envelope %s of document %s is not completed yet", envelope_id, document_id)
             return False
         if outcome.kind != COMPLETED:
-            document.stato = "annullato"
+            document.status = "cancelled"
             document.cancel_reason = cancel_reason(outcome)
             self.session.commit()
             return True
-        document.stato = "firmato"
+        document.status = "signed"
         # The signer's own date; the moment the hub heard of it only if Documenso said
         # nothing, which a completed envelope never does.
         document.signed_at = outcome.signed_at or self.service.now()
         if match is not None:
-            if match.stato == "in_firma":
-                match.stato = "attivo"
+            if match.status == "awaiting_signature":
+                match.status = "active"
                 # Its link to Pigro is due from this commit on (REB-499): `finish` asks
                 # for it next, and the sweep keeps asking until it holds.
-                match.pigro_stato = DA_COLLEGARE
+                match.pigro_status = TO_LINK
             # A letter is the only document with a match (`document.kind == LETTERA`,
             # the same fact `document.match_id is not None` already established): the
             # first signed letter of a referred freelancer's or a referred company's
@@ -276,7 +276,7 @@ class SigningRecovery:
         logged and the next document is still tried, counted in neither number.
         `touched` is how many `finish` actually moved (REB-433), not how many it merely
         looked at -- a document still waiting on Documenso, tried again next time, does
-        not count. `unconfirmed` is how many stayed `inviato` because Documenso itself
+        not count. `unconfirmed` is how many stayed `sent` because Documenso itself
         refused the confirmation or could not be reached (REB-431): failed silently
         before, now visible so a stuck token or a wrong URL is not read as "nothing to
         do" forever. Then, with the engagement service, its own round (REB-499): every
@@ -306,20 +306,20 @@ class SigningRecovery:
         )
 
     def _to_finish(self) -> list[UUID]:
-        """Every document a sweep must run `finish` on: a document `inviato` with an
+        """Every document a sweep must run `finish` on: a document `sent` with an
         envelope, whose outcome (a completion, a rejection or a cancellation) a lost
         webhook delivery never confirmed (REB-431); a signature or a notice whose sealed
         copy is missing or not yet mailed to either recipient; and every active
         framework agreement that still has a letter of its own regime (REB-687)
-        `in_attesa` on a match `in_firma` (a release `finish` itself missed, or never ran
+        `pending` on a match `awaiting_signature` (a release `finish` itself missed, or never ran
         for). `finish` is idempotent either way, so the three sets are simply run
         together. The first costs one GET to Documenso per waiting document per sweep --
         acceptable at the hub's volume."""
         awaiting_confirmation = select(ContractDocument.id).where(
-            ContractDocument.stato == "inviato", ContractDocument.documenso_id.is_not(None)
+            ContractDocument.status == "sent", ContractDocument.documenso_id.is_not(None)
         )
         unfinished_signatures = select(ContractDocument.id).where(
-            ContractDocument.stato.in_(("firmato", "disdetto")),
+            ContractDocument.status.in_(("signed", "notice_served")),
             or_(
                 ContractDocument.signed_pdf.is_(None),
                 ContractDocument.signed_copy_to_freelancer_at.is_(None),
@@ -328,19 +328,19 @@ class SigningRecovery:
         )
         waiting_letter = aliased(ContractDocument)
         frameworks_with_waiting_letters = select(ContractDocument.id).where(
-            ContractDocument.kind == QUADRO,
-            ContractDocument.stato == "firmato",
+            ContractDocument.kind == FRAMEWORK,
+            ContractDocument.status == "signed",
             ContractDocument.notice_at.is_(None),
             exists(
                 select(1)
                 .select_from(waiting_letter)
                 .join(Match, Match.id == waiting_letter.match_id)
                 .where(
-                    waiting_letter.kind == LETTERA,
-                    waiting_letter.stato == "in_attesa",
+                    waiting_letter.kind == LETTER,
+                    waiting_letter.status == "pending",
                     waiting_letter.freelancer_id == ContractDocument.freelancer_id,
                     waiting_letter.regime == ContractDocument.regime,
-                    Match.stato == "in_firma",
+                    Match.status == "awaiting_signature",
                 )
             ),
         )
@@ -357,7 +357,7 @@ class SigningRecovery:
         the freelancer's row would block «Crea match» for as long as Documenso takes."""
         document = self.service.lock_document(document_id)
         if (
-            document.stato not in ("firmato", "disdetto")
+            document.status not in ("signed", "notice_served")
             or document.signed_pdf is not None
             or document.documenso_item_id is None
         ):
@@ -410,10 +410,10 @@ class SigningRecovery:
         mail = signed_copy_mail(
             to,
             kind=document.kind,
-            numero=document.numero,
+            number=document.number,
             attachment=attachment,
             nome=user.nome,
-            cognome=user.cognome,
+            last_name=user.last_name,
             for_rebase=not to_freelancer,
             regime=document.regime,
         )
@@ -436,7 +436,7 @@ class SigningRecovery:
         """The letters of this framework agreement's regime that waited for it (spec § 1e,
         REB-687), each in a transaction of its own and mailed after its commit: a
         Documenso refusal leaves that letter waiting for the next `finish` and lets the
-        others go. Only matches an admin sent (`in_firma`); a draft's letter leaves when
+        others go. Only matches an admin sent (`awaiting_signature`); a draft's letter leaves when
         its match is sent.
 
         `send_match` refuses up front without a mail sender (`_sender`), so a release
@@ -458,11 +458,11 @@ class SigningRecovery:
                 select(ContractDocument.id, Match.id)
                 .join(Match, Match.id == ContractDocument.match_id)
                 .where(
-                    ContractDocument.kind == LETTERA,
+                    ContractDocument.kind == LETTER,
                     ContractDocument.freelancer_id == framework.freelancer_id,
                     ContractDocument.regime == framework.regime,
-                    ContractDocument.stato == "in_attesa",
-                    Match.stato == "in_firma",
+                    ContractDocument.status == "pending",
+                    Match.status == "awaiting_signature",
                 )
                 .order_by(ContractDocument.created_at, ContractDocument.id)
             )
@@ -501,7 +501,7 @@ class SigningRecovery:
                     match_id,
                     "documents_sent",
                     sent_by,
-                    {"documento": letter.id, "kind": LETTERA, "mail": mailed},
+                    {"document": letter.id, "kind": LETTER, "mail": mailed},
                 )
         return released
 
@@ -521,8 +521,8 @@ class SigningRecovery:
         letter = self.service.lock_document(letter_id)
         framework = self.session.get(ContractDocument, framework_id, populate_existing=True)
         if (
-            letter.stato != "in_attesa"
-            or match.stato != "in_firma"
+            letter.status != "pending"
+            or match.status != "awaiting_signature"
             or framework is None
             or not is_active(framework)
             or framework.regime != letter.regime
@@ -530,12 +530,12 @@ class SigningRecovery:
             self.session.rollback()
             return None
         if not self.service.allow_draft and self.service.require_renderer().is_draft(
-            text_name(LETTERA, letter.regime)
+            text_name(LETTER, letter.regime)
         ):
-            raise InvalidState(DRAFT_REFUSED[LETTERA])
+            raise InvalidState(DRAFT_REFUSED[LETTER])
         # The same rule `send_match` applies (REB-687): a partita IVA removed while the
         # letter waited refuses it in those words, not as a blank field.
-        require_regime_fits(fiscal_row(self.session, freelancer_id).partita_iva, letter.regime)
+        require_regime_fits(fiscal_row(self.session, freelancer_id).vat_number, letter.regime)
         self.service.dispatch(letter, framework, sent_by)
         self.session.commit()
         return letter

@@ -30,11 +30,9 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.people.models import Person
 
-_TEXT = SortSpec(
-    key="ragione_sociale", column=Customer.ragione_sociale, kind="text", nullable=False
-)
+_TEXT = SortSpec(key="legal_name", column=Customer.legal_name, kind="text", nullable=False)
 _STAMP = SortSpec(key="created_at", column=Customer.created_at, kind="datetime", nullable=False)
-_NULLABLE = SortSpec(key="cognome", column=Person.cognome, kind="text", nullable=True)
+_NULLABLE = SortSpec(key="last_name", column=Person.last_name, kind="text", nullable=True)
 
 
 def _forge(payload: object) -> str:
@@ -78,7 +76,7 @@ def test_the_longest_value_the_column_admits_still_fits_the_cursor_bound(
     character: str,
 ) -> None:
     """`CURSOR_MAX_LENGTH` is a rejection threshold as well as a documented size, so a
-    legitimate cursor must not be able to exceed it. `customers.ragione_sociale` is
+    legitimate cursor must not be able to exceed it. `customers.legal_name` is
     String(255) and is the longest whitelisted sort column in the slice; a bound that
     refused its own output would make the last page of an ordered scan unreachable, and
     only for customers whose names contain the expensive characters.
@@ -123,12 +121,12 @@ def test_a_malformed_cursor_is_a_domain_error_not_a_crash(raw: str) -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        {"k": "ragione_sociale", "v": "Rossi", "i": "not-a-uuid"},
-        {"k": "ragione_sociale", "v": "Rossi", "i": None},
-        {"k": "ragione_sociale", "v": "Rossi"},
-        {"k": "ragione_sociale", "v": "Rossi", "i": str(uuid7()), "extra": 1},
-        {"k": "ragione_sociale", "v": 17, "i": str(uuid7())},
-        ["ragione_sociale", "Rossi"],
+        {"k": "legal_name", "v": "Rossi", "i": "not-a-uuid"},
+        {"k": "legal_name", "v": "Rossi", "i": None},
+        {"k": "legal_name", "v": "Rossi"},
+        {"k": "legal_name", "v": "Rossi", "i": str(uuid7()), "extra": 1},
+        {"k": "legal_name", "v": 17, "i": str(uuid7())},
+        ["legal_name", "Rossi"],
         "just a string",
     ],
 )
@@ -168,9 +166,9 @@ def test_a_cursor_encoded_for_one_sort_key_is_refused_by_another() -> None:
 
 def test_the_whitelist_refuses_a_key_it_does_not_contain() -> None:
     whitelist = SortWhitelist(specs=(_TEXT, _STAMP), default_key="created_at")
-    assert whitelist.keys() == ("ragione_sociale", "created_at")
+    assert whitelist.keys() == ("legal_name", "created_at")
     assert whitelist.resolve(None).key == "created_at"
-    assert whitelist.resolve("ragione_sociale").key == "ragione_sociale"
+    assert whitelist.resolve("legal_name").key == "legal_name"
     with pytest.raises(ValidationFailed) as caught:
         whitelist.resolve("note; DROP TABLE customers")
     assert caught.value.details["field"] == "sort"
@@ -184,7 +182,7 @@ def test_the_whitelist_admits_the_key_and_nothing_around_it(key: str) -> None:
     """The house rule about `re.fullmatch` over `re.match` with `$`, in the place it
     would bite hardest. This whitelist is an exact string comparison rather than a
     pattern, which is stronger still -- and this test is what keeps it that way, because
-    the natural "improvement" here is a regex, and `^ragione_sociale$` accepts
+    the natural "improvement" here is a regex, and `^legal_name$` accepts
     "ragione_sociale\\n". A key that reaches `ORDER BY` with a newline welded to it is a
     whitelist that is not one.
     """
@@ -195,18 +193,18 @@ def test_the_whitelist_admits_the_key_and_nothing_around_it(key: str) -> None:
 
 
 def test_order_by_puts_nulls_last_in_both_directions(db_session: Session) -> None:
-    """`people.cognome` is nullable. Nulls last ascending is Postgres's default; nulls
+    """`people.last_name` is nullable. Nulls last ascending is Postgres's default; nulls
     last *descending* is not, and getting it by accident is how the null tail ends up at
     the top of page one with no cursor value to resume from."""
-    for cognome in ("Bianchi", None, "Rossi"):
-        db_session.add(Person(nome="Marco", cognome=cognome, custom_fields={}))
+    for last_name in ("Bianchi", None, "Rossi"):
+        db_session.add(Person(nome="Marco", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     ascending = db_session.scalars(
-        select(Person.cognome).order_by(*order_by(_NULLABLE, "asc"))
+        select(Person.last_name).order_by(*order_by(_NULLABLE, "asc"))
     ).all()
     descending = db_session.scalars(
-        select(Person.cognome).order_by(*order_by(_NULLABLE, "desc"))
+        select(Person.last_name).order_by(*order_by(_NULLABLE, "desc"))
     ).all()
 
     assert list(ascending) == ["Bianchi", "Rossi", None]
@@ -218,7 +216,7 @@ def test_order_by_breaks_ties_in_the_direction_of_travel(db_session: Session) ->
     the direction is exactly what lets a single ascending `(col, id)` index serve `desc`
     as a backward scan, and it is the reason the whitelist can be as short as it is.
     """
-    same_surname = [Person(nome="A", cognome="Rossi", custom_fields={}) for _ in range(3)]
+    same_surname = [Person(nome="A", last_name="Rossi", custom_fields={}) for _ in range(3)]
     for person in same_surname:
         db_session.add(person)
     db_session.flush()
@@ -232,7 +230,7 @@ def test_order_by_breaks_ties_in_the_direction_of_travel(db_session: Session) ->
 
 
 def test_the_keyset_predicate_resumes_exactly_after_the_cursor_row(db_session: Session) -> None:
-    rows = [Person(nome="A", cognome=c, custom_fields={}) for c in ("B", "C", None, None)]
+    rows = [Person(nome="A", last_name=c, custom_fields={}) for c in ("B", "C", None, None)]
     for row in rows:
         db_session.add(row)
     db_session.flush()
@@ -242,7 +240,7 @@ def test_the_keyset_predicate_resumes_exactly_after_the_cursor_row(db_session: S
 
     after = db_session.scalars(
         select(Person.id)
-        .where(keyset_predicate(_NULLABLE, "asc", third.cognome, third.id))
+        .where(keyset_predicate(_NULLABLE, "asc", third.last_name, third.id))
         .order_by(*order_by(_NULLABLE, "asc"))
     ).all()
 
@@ -254,15 +252,15 @@ def test_the_keyset_predicate_from_a_non_null_value_still_reaches_the_null_tail(
 ) -> None:
     """The clause people forget. Without `OR col IS NULL`, paging ascending stops at the
     last non-null row and the null tail is never returned at all."""
-    for cognome in ("B", None):
-        db_session.add(Person(nome="A", cognome=cognome, custom_fields={}))
+    for last_name in ("B", None):
+        db_session.add(Person(nome="A", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     first = db_session.scalars(select(Person).order_by(*order_by(_NULLABLE, "asc"))).all()[0]
 
     after = db_session.scalars(
-        select(Person.cognome)
-        .where(keyset_predicate(_NULLABLE, "asc", first.cognome, first.id))
+        select(Person.last_name)
+        .where(keyset_predicate(_NULLABLE, "asc", first.last_name, first.id))
         .order_by(*order_by(_NULLABLE, "asc"))
     ).all()
 
@@ -278,8 +276,8 @@ def test_the_keyset_predicate_never_repeats_and_never_skips_a_row(db_session: Se
     a skipped one (a missing `id` tie-break), and neither shows up in a single-page test.
     """
     surnames = ("Rossi", "Bianchi", "Rossi", None, "Verdi", None, "Bianchi")
-    for cognome in surnames:
-        db_session.add(Person(nome="A", cognome=cognome, custom_fields={}))
+    for last_name in surnames:
+        db_session.add(Person(nome="A", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     for direction in ("asc", "desc"):
@@ -297,6 +295,6 @@ def test_the_keyset_predicate_never_repeats_and_never_skips_a_row(db_session: Se
             if not page:
                 break
             walked.extend(person.id for person in page)
-            cursor = (page[-1].cognome, page[-1].id)
+            cursor = (page[-1].last_name, page[-1].id)
 
         assert walked == expected, direction

@@ -16,7 +16,7 @@
  *    transaction as the state change, and the deal comes back moved. `OfferStatePicker.
  *    test.tsx` asserts the button posts; only this asserts the automation ran;
  *  - the movement's timeline entry is written by `Actor.system()` with the human in
- *    `attivata_da`, so "the system did it, because you accepted that offer" is one row and
+ *    `triggered_by`, so "the system did it, because you accepted that offer" is one row and
  *    not two — and reading it requires the row to have survived a real commit;
  *  - the commercial signal counts a predicate over three tables. Watching it go **down by
  *    one** because a deal was repaired is the only way to see that the card and the
@@ -75,7 +75,7 @@ function currentMonth(): { da: string; a: string } {
  * visibility of a sentence the product had deliberately stopped printing, and timed out on
  * every run.
  *
- * The figure itself did not go anywhere: `CommercialDashboard.offerte_accettate_deal_non_vinto`
+ * The figure itself did not go anywhere: `CommercialDashboard.accepted_offers_deal_not_won`
  * is still computed, still the permanent cross-check on automation A1, and still what makes
  * the step below («the signal, after: down by one») worth asserting at all. Read where it
  * lives now. When a screen prints it again, this helper is the one place to point back at
@@ -85,8 +85,8 @@ async function readSignal(page: Page): Promise<number> {
   const { da, a } = currentMonth()
   const response = await page.request.get('/api/dashboard/sales', { params: { da, a } })
   expect(response.status(), await response.text()).toBe(200)
-  const body = (await response.json()) as { offerte_accettate_deal_non_vinto: number }
-  const value = body.offerte_accettate_deal_non_vinto
+  const body = (await response.json()) as { accepted_offers_deal_not_won: number }
+  const value = body.accepted_offers_deal_not_won
   // A `NaN` compared with `>=` is silently false, so a field that stopped being a number
   // would look like a product failure. Say so instead.
   expect(Number.isInteger(value), `il segnale non è un numero: ${String(value)}`).toBe(true)
@@ -118,7 +118,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await page.keyboard.press('ControlOrMeta+k')
     const palette = page.getByRole('combobox')
     await expect(palette).toBeFocused()
-    await palette.fill(cycle.partitaIva.slice(3, 9))
+    await palette.fill(cycle.vatNumber.slice(3, 9))
     await page.getByRole('option', { name: cycle.customerName }).click()
     await expect(page).toHaveURL(new RegExp(`/app/customers/${cycle.customerId}$`))
 
@@ -150,7 +150,7 @@ test.describe('il ciclo completo — metà umana', () => {
     //    from the server's own transition table, so this is the only button offered.
     await page.getByRole('button', { name: 'Segna come Accettata' }).click()
     await expect(page.getByText('Accettata')).toBeVisible()
-    // `accettata` is terminal (`OFFER_TRANSITIONS`), so the picker must now offer nothing.
+    // `accepted` is terminal (`OFFER_TRANSITIONS`), so the picker must now offer nothing.
     await expect(page.getByRole('button', { name: /^Segna come/ })).toHaveCount(0)
 
     // 5. Automation A1 ran inside that same transaction: the deal is won. Nothing in the
@@ -164,7 +164,7 @@ test.describe('il ciclo completo — metà umana', () => {
     //    you accepted that offer" are useless apart.
     await page.getByRole('tab', { name: 'Timeline' }).click()
     // Narrowed to A1, because A2 writes an entry of the *same* kind on this same deal: the
-    // first offer going `inviata` advanced it to «Offerta». Two automations, two rows, and
+    // first offer going `sent` advanced it to «Offerta». Two automations, two rows, and
     // an assertion that did not say which rule it meant would pass on either of them.
     const movimento = page
       .getByRole('listitem')
@@ -202,15 +202,15 @@ test.describe('il ciclo completo — metà umana', () => {
       id: string
       code: string | null
     }[]
-    const vinto = stages.find((stage) => stage.code === 'vinto')
-    if (!vinto) throw new Error('lo stato «vinto» non è fra gli stati seminati')
+    const won = stages.find((stage) => stage.code === 'won')
+    if (!won) throw new Error('lo stato «vinto» non è fra gli stati seminati')
 
     // A deal that satisfies the predicate: won, with a billable hour nobody has put on a
     // document. Seeded so the count is at least one — a card and a list that agree on zero
     // agree about nothing, and would go on agreeing with the filter deleted.
     const { dealId } = await seedDealWithRate(page.request, {
       nome: `Ciclo da fatturare ${stamp}`,
-      tariffa: '90.000000',
+      rate: '90.000000',
     })
     const entry = await page.request.post('/api/time-entries', {
       data: {
@@ -219,14 +219,14 @@ test.describe('il ciclo completo — metà umana', () => {
         data: isoToday(),
         // A string with two decimal places: a bare JSON number arrives as a float, and
         // `Decimal` then carries only as many places as the float itself.
-        ore: '4.00',
-        descrizione: 'Ciclo lavoro da fatturare',
-        fatturabile: true,
+        hours: '4.00',
+        description: 'Ciclo lavoro da fatturare',
+        billable: true,
       },
     })
     expect(entry.status(), await entry.text()).toBe(201)
     const moved = await page.request.patch(`/api/deals/${dealId}/stage`, {
-      data: { stage_id: vinto.id },
+      data: { stage_id: won.id },
     })
     expect(moved.status(), await moved.text()).toBe(200)
 
@@ -234,20 +234,20 @@ test.describe('il ciclo completo — metà umana', () => {
     // owns rather than one it inherits from whatever else the database happens to hold.
     await seedDealWithRate(page.request, {
       nome: `Ciclo non fatturabile ${stamp}`,
-      tariffa: '90.000000',
+      rate: '90.000000',
     })
 
     // The operational tab left the dashboard on 2026-09-08; the signal's count still comes
     // from the API, and the list behind it is what this test compares it with.
-    const segnali = (await (await page.request.get('/api/dashboard/operational')).json()) as {
-      segnali: { codice: string; conteggio: number }[]
+    const signals = (await (await page.request.get('/api/dashboard/operational')).json()) as {
+      signals: { code: string; count: number }[]
     }
-    const cartellino = segnali.segnali.find((s) => s.codice === 'vinto_da_fatturare')
+    const cartellino = signals.signals.find((s) => s.code === 'vinto_da_fatturare')
     if (!cartellino) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
-    const sulCartellino = cartellino.conteggio
+    const sulCartellino = cartellino.count
     expect(sulCartellino).toBeGreaterThanOrEqual(1)
 
-    await page.goto('/app/deal/list?da_fatturare=true')
+    await page.goto('/app/deal/list?to_invoice=true')
     await expect(page).toHaveURL(/\/app\/deal\/list\?da_fatturare=true/)
     // Filtered rather than bare: `DataTable`'s own loading indicator is also a `status`,
     // so `getByRole('status')` alone is two elements and a strict-mode violation.
@@ -266,9 +266,9 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })).toHaveCount(
       0,
     )
-    const tutte = page.getByRole('row')
+    const all = page.getByRole('row')
     await expect(async () => {
-      expect(await tutte.count()).toBeGreaterThan(sulCartellino + 1)
+      expect(await all.count()).toBeGreaterThan(sulCartellino + 1)
     }).toPass()
   })
 
@@ -277,7 +277,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
 
-    await page.goto(`/app/?tab=economica&da=${da}&a=${a}`)
+    await page.goto(`/app/?tab=economica&from=${da}&to=${a}`)
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
 
     // The period is still in the address bar, which is the entire point of §4: a screenshot
@@ -287,20 +287,20 @@ test.describe('il ciclo completo — metà umana', () => {
     // — so a reload of the normalised URL lands on the dev server's own "did you mean
     // /app/?" page, which is an artefact of the harness and not of the product.
     // `search.spec.ts` records the same trap from the other direction.
-    const condiviso = page.url()
+    const shared = page.url()
     // `&a=`, not `a=`: the closing bound's parameter name is a suffix of the opening one's,
     // so a bare `a=…` would also be found inside `da=…` and the assertion would hold for a
     // URL carrying only one of the two.
-    expect(condiviso).toContain(`da=${da}`)
-    expect(condiviso).toContain(`&a=${a}`)
-    await page.goto(condiviso.replace('/app?', '/app/?'))
+    expect(shared).toContain(`da=${da}`)
+    expect(shared).toContain(`&a=${a}`)
+    await page.goto(shared.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
     // Five tabs since the Giornate joined them (REB-756, after the Anno of REB-757 and the
     // Scadenziario of REB-329); the operational one left the page on 2026-09-08.
     await expect(page.getByRole('tab')).toHaveCount(5)
 
     // The days analysis opens from its own URL and reads the same period.
-    await page.goto(`/app/?tab=giornate&da=${da}&a=${a}`)
+    await page.goto(`/app/?tab=giornate&from=${da}&to=${a}`)
     await expect(page.getByRole('group', { name: 'Giornate nel periodo' })).toBeVisible()
     await expect(page.getByRole('group', { name: 'Tariffa reale al giorno' })).toBeVisible()
 

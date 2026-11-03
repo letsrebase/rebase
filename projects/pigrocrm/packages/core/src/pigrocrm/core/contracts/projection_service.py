@@ -19,7 +19,7 @@ from pigrocrm.core.errors import NotFound
 class ContractProjectionService:
     """The genuine "projected" figure a contract's own recurring-fee schedule and
     renewal assumption produce (REB-375) -- entirely apart from
-    `AnalyticsService.cash_overview`'s draft-based `proiettato`. Reads only: every
+    `AnalyticsService.cash_overview`'s draft-based `projected`. Reads only: every
     number here is derived, nothing is written."""
 
     def __init__(self, session: Session) -> None:
@@ -43,8 +43,8 @@ class ContractProjectionService:
             come_di=result.come_di,
             da=result.da,
             a=result.a,
-            finestra_irrevocabilita_fino_al=result.finestra_irrevocabilita_fino_al,
-            programmato=result.programmato,
-            da_rinnovo=result.da_rinnovo,
-            totale=result.totale,
+            irrevocability_window_until_to=result.irrevocability_window_until_to,
+            scheduled=result.scheduled,
+            from_renewal=result.from_renewal,
+            total=result.total,
         )

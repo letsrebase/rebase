@@ -12,7 +12,7 @@ import { VETTED_MARK_LABEL, VETTED_UNMARK_LABEL } from '@/lib/format'
 /** The row's own actions (REB-387), on a card only: a bare sign-up has no card to match
  *  and no contract to read. The name keeps linking to the card. REB-518 adds the vetted
  *  flag, on or off, last. */
-export function TalentoMenu({
+export function TalentMenu({
   id,
   label,
   vetted,

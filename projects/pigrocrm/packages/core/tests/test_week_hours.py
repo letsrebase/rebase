@@ -3,11 +3,11 @@
 The second one is the whole task. Slice 4 §13 refuses a stopwatch and names the real
 failure it leaves open -- *"non ho mai inserito martedì"* -- and this is the figure that
 attacks it. It is also the only figure in this slice with a direct agentic counterpart,
-the `ore-da-registrare` prompt of §10.
+the `hours-to-log` prompt of §10.
 
 **A series that silently omits its empty days is a chart that lies about its own shape.**
 A week with three worked days and four blank ones must not render as three consecutive
-bars, so `giorni` is asserted here as the *full dense range* -- seven entries, in order,
+bars, so `days` is asserted here as the *full dense range* -- seven entries, in order,
 zeros included -- and not as a set of the days that happen to have hours. Every test that
 touches the shape checks both ends of the window, because a fill loop is exactly the kind
 of code that is right in the middle and wrong on the last day.
@@ -39,13 +39,13 @@ ROMA = Settings(timezone="Europe/Rome")
 # tests that *do* want a boundary say so.
 _LUN = date(2026, 3, 16)
 _DOM = date(2026, 3, 22)
-_SETTIMANA = [date(2026, 3, day) for day in range(16, 23)]
+_WEEK = [date(2026, 3, day) for day in range(16, 23)]
 
 Factory = Callable[..., TimeEntry]
 
 
-def _frozen(monkeypatch: pytest.MonkeyPatch, giorno: date) -> None:
-    """Freeze the project's one clock at midday on `giorno`, UTC.
+def _frozen(monkeypatch: pytest.MonkeyPatch, day: date) -> None:
+    """Freeze the project's one clock at midday on `day`, UTC.
 
     Midday and not midnight: at 00:30 UTC it is already the next day in Rome, and a test
     that froze there would be measuring the zone conversion rather than the week
@@ -53,7 +53,7 @@ def _frozen(monkeypatch: pytest.MonkeyPatch, giorno: date) -> None:
     transition.
     """
     monkeypatch.setattr(
-        clock, "_now", lambda: datetime(giorno.year, giorno.month, giorno.day, 12, 0, tzinfo=UTC)
+        clock, "_now", lambda: datetime(day.year, day.month, day.day, 12, 0, tzinfo=UTC)
     )
 
 
@@ -100,7 +100,7 @@ def test_current_week_is_seven_days_across_the_dst_transition(
     assert (da, a) == (date(2026, 3, 23), date(2026, 3, 29))
 
 
-def test_current_week_uses_the_emitter_day_and_not_the_utc_day(
+def test_current_week_uses_the_legal_entity_day_and_not_the_utc_day(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """23:30 UTC on Sunday 22 March is already Monday 23 March in Rome, so the week is the
@@ -114,15 +114,15 @@ def test_current_week_uses_the_emitter_day_and_not_the_utc_day(
 
 
 def test_hours_by_day_sums_per_day(db_session: Session, time_entry_factory: Factory) -> None:
-    time_entry_factory(data=_LUN, ore="4.00")
-    time_entry_factory(data=_LUN, ore="3.50")
-    time_entry_factory(data=date(2026, 3, 18), ore="8.00")
+    time_entry_factory(data=_LUN, hours="4.00")
+    time_entry_factory(data=_LUN, hours="3.50")
+    time_entry_factory(data=date(2026, 3, 18), hours="8.00")
 
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    by_day = {row.giorno: row.ore for row in week.giorni}
+    by_day = {row.day: row.hours for row in week.days}
     assert by_day[_LUN] == Decimal("7.50")
     assert by_day[date(2026, 3, 18)] == Decimal("8.00")
-    assert week.ore_totali == Decimal("15.50")
+    assert week.total_hours == Decimal("15.50")
 
 
 def test_every_day_of_the_week_is_present_in_order_even_with_no_hours(
@@ -136,10 +136,10 @@ def test_every_day_of_the_week_is_present_in_order_even_with_no_hours(
     the x-axis, and a fill that appended the missing days after the present ones would pass
     every weaker form of this assertion.
     """
-    time_entry_factory(data=date(2026, 3, 18), ore="8.00")
+    time_entry_factory(data=date(2026, 3, 18), hours="8.00")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert [row.giorno for row in week.giorni] == _SETTIMANA
-    assert [row.ore for row in week.giorni] == [
+    assert [row.day for row in week.days] == _WEEK
+    assert [row.hours for row in week.days] == [
         Decimal("0.00"),
         Decimal("0.00"),
         Decimal("8.00"),
@@ -148,7 +148,7 @@ def test_every_day_of_the_week_is_present_in_order_even_with_no_hours(
         Decimal("0.00"),
         Decimal("0.00"),
     ]
-    assert all(isinstance(row.ore, Decimal) for row in week.giorni)
+    assert all(isinstance(row.hours, Decimal) for row in week.days)
 
 
 def test_an_empty_week_returns_seven_zero_days_and_not_an_empty_list(
@@ -158,9 +158,9 @@ def test_an_empty_week_returns_seven_zero_days_and_not_an_empty_list(
     catastrophically wrong: it returns nothing at all, and the page renders as though the
     week had not happened."""
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert [row.giorno for row in week.giorni] == _SETTIMANA
-    assert week.ore_totali == Decimal("0.00")
-    assert week.giorni_senza_ore == _SETTIMANA
+    assert [row.day for row in week.days] == _WEEK
+    assert week.total_hours == Decimal("0.00")
+    assert week.days_without_hours == _WEEK
 
 
 def test_both_ends_of_the_window_are_inside_it(
@@ -169,15 +169,15 @@ def test_both_ends_of_the_window_are_inside_it(
     """Hours on the first day and on the last day both count, and neither day is reported
     as unlogged. `>=`/`<=`, not `>`/`<`: an exclusive bound loses the Monday and the Sunday,
     which are the two days a week is most likely to be missing anyway."""
-    time_entry_factory(data=_LUN, ore="1.00")
-    time_entry_factory(data=_DOM, ore="2.00")
+    time_entry_factory(data=_LUN, hours="1.00")
+    time_entry_factory(data=_DOM, hours="2.00")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    by_day = {row.giorno: row.ore for row in week.giorni}
+    by_day = {row.day: row.hours for row in week.days}
     assert by_day[_LUN] == Decimal("1.00")
     assert by_day[_DOM] == Decimal("2.00")
-    assert _LUN not in week.giorni_senza_ore
-    assert _DOM not in week.giorni_senza_ore
-    assert week.ore_totali == Decimal("3.00")
+    assert _LUN not in week.days_without_hours
+    assert _DOM not in week.days_without_hours
+    assert week.total_hours == Decimal("3.00")
 
 
 def test_hours_outside_the_window_are_excluded(
@@ -186,12 +186,12 @@ def test_hours_outside_the_window_are_excluded(
     """One day either side, which is where an off-by-one lands. Neither day appears in the
     series at all -- the range is the window that was asked for, not the range of the data
     that came back."""
-    time_entry_factory(data=date(2026, 3, 15), ore="8.00")
-    time_entry_factory(data=date(2026, 3, 23), ore="8.00")
+    time_entry_factory(data=date(2026, 3, 15), hours="8.00")
+    time_entry_factory(data=date(2026, 3, 23), hours="8.00")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert [row.giorno for row in week.giorni] == _SETTIMANA
-    assert week.ore_totali == Decimal("0.00")
-    assert week.giorni_senza_ore == _SETTIMANA
+    assert [row.day for row in week.days] == _WEEK
+    assert week.total_hours == Decimal("0.00")
+    assert week.days_without_hours == _WEEK
 
 
 def test_the_window_is_echoed_back(db_session: Session) -> None:
@@ -206,9 +206,9 @@ def test_a_window_crossing_a_month_boundary_is_still_dense(
 ) -> None:
     """The week of 28 December 2026 runs into January. The fill is day arithmetic, not
     month arithmetic, and this is the window where the difference shows."""
-    time_entry_factory(data=date(2027, 1, 1), ore="5.00")
+    time_entry_factory(data=date(2027, 1, 1), hours="5.00")
     week = TimeEntryRepository(db_session).week_hours(date(2026, 12, 28), date(2027, 1, 3))
-    assert [row.giorno for row in week.giorni] == [
+    assert [row.day for row in week.days] == [
         date(2026, 12, 28),
         date(2026, 12, 29),
         date(2026, 12, 30),
@@ -217,7 +217,7 @@ def test_a_window_crossing_a_month_boundary_is_still_dense(
         date(2027, 1, 2),
         date(2027, 1, 3),
     ]
-    assert week.ore_totali == Decimal("5.00")
+    assert week.total_hours == Decimal("5.00")
 
 
 def test_a_single_day_window_is_one_point_and_not_zero(
@@ -225,11 +225,11 @@ def test_a_single_day_window_is_one_point_and_not_zero(
 ) -> None:
     """`da == a` is inclusive at both ends, like every other period in slices 4 and 6. A
     span computed as `(a - da).days` without the `+ 1` returns an empty series here."""
-    time_entry_factory(data=_LUN, ore="6.00")
+    time_entry_factory(data=_LUN, hours="6.00")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _LUN)
-    assert [row.giorno for row in week.giorni] == [_LUN]
-    assert week.ore_totali == Decimal("6.00")
-    assert week.giorni_senza_ore == []
+    assert [row.day for row in week.days] == [_LUN]
+    assert week.total_hours == Decimal("6.00")
+    assert week.days_without_hours == []
 
 
 # --- the days with none ---------------------------------------------------------------
@@ -242,10 +242,10 @@ def test_the_days_without_hours_are_listed_by_the_repository(
     `DashboardService` -- the only other place it could go -- may contain no arithmetic at
     all (§3). Listed in calendar order, and the two logged days are the first and the
     fifth, so a list built by slicing rather than by filtering is visible here."""
-    time_entry_factory(data=_LUN, ore="8.00")
-    time_entry_factory(data=date(2026, 3, 20), ore="8.00")
+    time_entry_factory(data=_LUN, hours="8.00")
+    time_entry_factory(data=date(2026, 3, 20), hours="8.00")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert week.giorni_senza_ore == [
+    assert week.days_without_hours == [
         date(2026, 3, 17),
         date(2026, 3, 18),
         date(2026, 3, 19),
@@ -257,7 +257,7 @@ def test_the_days_without_hours_are_listed_by_the_repository(
 def test_the_two_lists_agree_with_each_other(
     db_session: Session, time_entry_factory: Factory
 ) -> None:
-    """`giorni_senza_ore` is exactly the days of `giorni` showing zero, in the same order.
+    """`days_without_hours` is exactly the days of `days` showing zero, in the same order.
 
     Two fields describing one fact can disagree, and a card saying "hai saltato martedì"
     beside a bar showing Tuesday's hours is the shape of that defect. The invariant holds
@@ -265,11 +265,11 @@ def test_the_two_lists_agree_with_each_other(
     never total zero; if that constraint were ever relaxed the two lists would part company
     here, deliberately, and this assertion is where it would be noticed.
     """
-    time_entry_factory(data=date(2026, 3, 18), ore="8.00")
-    time_entry_factory(data=date(2026, 3, 19), ore="1.50")
+    time_entry_factory(data=date(2026, 3, 18), hours="8.00")
+    time_entry_factory(data=date(2026, 3, 19), hours="1.50")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    zero_days = [row.giorno for row in week.giorni if row.ore == Decimal("0.00")]
-    assert zero_days == week.giorni_senza_ore
+    zero_days = [row.day for row in week.days if row.hours == Decimal("0.00")]
+    assert zero_days == week.days_without_hours
     assert zero_days == [
         date(2026, 3, 16),
         date(2026, 3, 17),
@@ -287,7 +287,7 @@ def test_the_database_refuses_a_zero_hour_entry(
     `ck_time_entries_ore_range` is `ore > 0 AND ore <= 24`, so the scenario the frontend's
     "`0` is a value, never a blank" rule protects -- somebody entering a zero-hour day and
     being told they forgot -- cannot arise from the hours table. It is pinned here rather
-    than left implicit because `week_hours` decides membership of `giorni_senza_ore` by the
+    than left implicit because `week_hours` decides membership of `days_without_hours` by the
     *presence of a row* and not by the total being zero, and under this constraint the two
     readings are indistinguishable: no test can tell them apart, so the choice is recorded
     in the repository's docstring and its consequence is recorded here. Presence is the one
@@ -295,7 +295,7 @@ def test_the_database_refuses_a_zero_hour_entry(
     loosened.
     """
     with pytest.raises(IntegrityError) as caught:
-        time_entry_factory(data=date(2026, 3, 17), ore="0.00")
+        time_entry_factory(data=date(2026, 3, 17), hours="0.00")
     assert "ck_time_entries_ore_range" in str(caught.value)
 
 
@@ -303,42 +303,42 @@ def test_the_smallest_storable_day_still_counts_as_logged(
     db_session: Session, time_entry_factory: Factory
 ) -> None:
     """`0.01` hours -- half a minute, and the least a day can carry and still exist. It is a
-    day somebody made a statement about, so it is not in `giorni_senza_ore`, and it appears
+    day somebody made a statement about, so it is not in `days_without_hours`, and it appears
     in the series at its own value rather than rounded away to a zero that would read as
     "never entered"."""
-    time_entry_factory(data=date(2026, 3, 17), ore="0.01")
+    time_entry_factory(data=date(2026, 3, 17), hours="0.01")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert date(2026, 3, 17) not in week.giorni_senza_ore
-    by_day = {row.giorno: row.ore for row in week.giorni}
+    assert date(2026, 3, 17) not in week.days_without_hours
+    by_day = {row.day: row.hours for row in week.days}
     assert by_day[date(2026, 3, 17)] == Decimal("0.01")
-    assert week.ore_totali == Decimal("0.01")
+    assert week.total_hours == Decimal("0.01")
 
 
 def test_a_soft_deleted_entry_does_not_make_a_day_count_as_logged(
     db_session: Session, time_entry_factory: Factory
 ) -> None:
     """The soft-delete filter reaches both lists, not only the total: a deleted entry that
-    still kept its day out of `giorni_senza_ore` would leave the user with a day they
+    still kept its day out of `days_without_hours` would leave the user with a day they
     cannot see and are never told about."""
-    entry = time_entry_factory(data=date(2026, 3, 17), ore="8.00")
+    entry = time_entry_factory(data=date(2026, 3, 17), hours="8.00")
     entry.deleted_at = datetime.now(UTC)
     db_session.flush()
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert date(2026, 3, 17) in week.giorni_senza_ore
-    assert week.ore_totali == Decimal("0.00")
+    assert date(2026, 3, 17) in week.days_without_hours
+    assert week.total_hours == Decimal("0.00")
 
 
 def test_hours_are_counted_whoever_and_whatever_they_belong_to(
     db_session: Session, time_entry_factory: Factory
 ) -> None:
     """§6 is the operator's own week, and there is one operator: a non-billable hour and an
-    unpriced one are still hours worked. Filtering on `fatturabile` here would answer a
+    unpriced one are still hours worked. Filtering on `billable` here would answer a
     different question -- and one the economic dashboard already answers."""
-    time_entry_factory(data=_LUN, ore="3.00", fatturabile=False)
-    time_entry_factory(data=_LUN, ore="2.00", tariffa=None)
+    time_entry_factory(data=_LUN, hours="3.00", billable=False)
+    time_entry_factory(data=_LUN, hours="2.00", rate=None)
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert week.ore_totali == Decimal("5.00")
-    assert _LUN not in week.giorni_senza_ore
+    assert week.total_hours == Decimal("5.00")
+    assert _LUN not in week.days_without_hours
 
 
 def test_the_total_is_the_sum_of_the_visible_column(
@@ -347,10 +347,10 @@ def test_the_total_is_the_sum_of_the_visible_column(
     """Criterion 1 in miniature: the printed total must be the sum of the printed rows, at
     two decimal places, as a `Decimal`. Values chosen to be exact in decimal and not in
     binary -- `0.1 + 0.2` is where a float total stops matching its own column."""
-    time_entry_factory(data=_LUN, ore="0.10")
-    time_entry_factory(data=date(2026, 3, 17), ore="0.20")
-    time_entry_factory(data=date(2026, 3, 18), ore="7.05")
+    time_entry_factory(data=_LUN, hours="0.10")
+    time_entry_factory(data=date(2026, 3, 17), hours="0.20")
+    time_entry_factory(data=date(2026, 3, 18), hours="7.05")
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert week.ore_totali == Decimal("7.35")
-    assert str(week.ore_totali) == "7.35"
-    assert isinstance(week.ore_totali, Decimal)
+    assert week.total_hours == Decimal("7.35")
+    assert str(week.total_hours) == "7.35"
+    assert isinstance(week.total_hours, Decimal)

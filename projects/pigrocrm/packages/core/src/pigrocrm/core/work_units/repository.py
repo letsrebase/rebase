@@ -27,11 +27,11 @@ class WorkUnitRepository:
         self,
         contract_id: UUID,
         *,
-        stato: str = "lavorato",
+        status: str = "worked",
         da: date | None = None,
         a: date | None = None,
     ) -> list[WorkUnit]:
-        """Every day in `stato` with no invoice line yet, oldest first -- the same
+        """Every day in `status` with no invoice line yet, oldest first -- the same
         shape `won_with_unbilled_hours_predicate` (`timetracking/repository.py`)
         already gives `TimeEntry` for its own unbilled figure (spec §9's citation).
         `da` and `a`, both inclusive, narrow it to a period: «fattura ottobre»."""
@@ -39,7 +39,7 @@ class WorkUnitRepository:
             select(WorkUnit)
             .where(
                 WorkUnit.contract_id == contract_id,
-                WorkUnit.stato == stato,
+                WorkUnit.status == status,
                 WorkUnit.invoice_line_id.is_(None),
             )
             .order_by(WorkUnit.data.asc(), WorkUnit.id.asc())
@@ -69,7 +69,7 @@ class WorkUnitRepository:
             self.session.execute(
                 select(func.count(WorkUnit.id)).where(
                     WorkUnit.contract_id == contract_id,
-                    WorkUnit.stato == "lavorato_senza_approvazione",
+                    WorkUnit.status == "worked_without_approval",
                     WorkUnit.invoice_line_id.is_(None),
                 )
             ).scalar_one()
@@ -97,14 +97,14 @@ class WorkUnitRepository:
         )
         if query.contract_id is not None:
             stmt = stmt.where(WorkUnit.contract_id == query.contract_id)
-        if query.azienda_id is not None:
-            stmt = stmt.where(Contract.azienda_id == query.azienda_id)
+        if query.legal_entity_id is not None:
+            stmt = stmt.where(Contract.legal_entity_id == query.legal_entity_id)
         if query.da is not None:
             stmt = stmt.where(WorkUnit.data >= query.da)
         if query.a is not None:
             stmt = stmt.where(WorkUnit.data <= query.a)
-        if query.stato is not None:
-            stmt = stmt.where(WorkUnit.stato == query.stato)
+        if query.status is not None:
+            stmt = stmt.where(WorkUnit.status == query.status)
         stmt = stmt.order_by(WorkUnit.data.desc(), WorkUnit.id.desc()).limit(query.limit + 1)
         return [(row[0], row[1], row[2]) for row in self.session.execute(stmt).all()]
 
@@ -139,4 +139,4 @@ class ApprovalRepository:
 
     def document_title(self, document_id: UUID) -> str | None:
         document = self.session.get(Document, document_id)
-        return None if document is None else document.titolo
+        return None if document is None else document.title

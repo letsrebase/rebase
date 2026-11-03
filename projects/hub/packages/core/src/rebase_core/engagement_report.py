@@ -50,22 +50,22 @@ class _CrmInvoice(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: UUID | None = None
-    tipo: str
-    anno: int | None = None
-    numero: int | None = None
-    stato: str
-    stato_pagamento: str
+    kind: str
+    year: int | None = None
+    number: int | None = None
+    status: str
+    payment_status: str
     data: date | None = None
-    ore: Decimal | None = None
+    hours: Decimal | None = None
 
 
 class _CrmEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     data: date
-    ore: Decimal
-    descrizione: str | None = None
-    fattura: _CrmInvoice | None = None
+    hours: Decimal
+    description: str | None = None
+    invoice: _CrmInvoice | None = None
 
 
 class CrmReport(BaseModel):
@@ -75,10 +75,10 @@ class CrmReport(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     deal: dict[str, Any] | None = None
-    giorni: list[_CrmEntry]
-    ore_fatturate: Decimal
-    ore_non_fatturate: Decimal
-    fatture: list[_CrmInvoice] = Field(default_factory=list)
+    days: list[_CrmEntry]
+    invoiced_hours: Decimal
+    hours_uninvoiced: Decimal
+    invoices: list[_CrmInvoice] = Field(default_factory=list)
 
 
 def join_windows(windows: list[CrmReport]) -> CrmReport:
@@ -87,37 +87,37 @@ def join_windows(windows: list[CrmReport]) -> CrmReport:
     first as the CRM lists them, and the deal as the last window found it."""
     invoices: dict[UUID | int, _CrmInvoice] = {}
     for window in reversed(windows):
-        for invoice in window.fatture:
+        for invoice in window.invoices:
             key: UUID | int = invoice.id if invoice.id is not None else id(invoice)
             seen = invoices.get(key)
             if seen is None:
                 invoices[key] = invoice
             else:
-                total = (seen.ore or Decimal(0)) + (invoice.ore or Decimal(0))
-                invoices[key] = seen.model_copy(update={"ore": total})
+                total = (seen.hours or Decimal(0)) + (invoice.hours or Decimal(0))
+                invoices[key] = seen.model_copy(update={"hours": total})
     return CrmReport(
         deal=windows[-1].deal,
-        giorni=[entry for window in windows for entry in window.giorni],
-        ore_fatturate=sum((window.ore_fatturate for window in windows), Decimal(0)),
-        ore_non_fatturate=sum((window.ore_non_fatturate for window in windows), Decimal(0)),
-        fatture=list(invoices.values()),
+        days=[entry for window in windows for entry in window.days],
+        invoiced_hours=sum((window.invoiced_hours for window in windows), Decimal(0)),
+        hours_uninvoiced=sum((window.hours_uninvoiced for window in windows), Decimal(0)),
+        invoices=list(invoices.values()),
     )
 
 
 def _invoice_number(invoice: _CrmInvoice) -> str:
-    if invoice.numero is None:
+    if invoice.number is None:
         return "senza numero"
-    return f"{invoice.numero}/{invoice.anno}" if invoice.anno is not None else str(invoice.numero)
+    return f"{invoice.number}/{invoice.year}" if invoice.year is not None else str(invoice.number)
 
 
 def _invoice_label(invoice: _CrmInvoice) -> str:
     number = _invoice_number(invoice)
-    return number if invoice.tipo == "fattura" else f"{invoice.tipo} {number}"
+    return number if invoice.kind == "fattura" else f"{invoice.kind} {number}"
 
 
 def _labels(entries: Iterable[_CrmEntry]) -> list[str]:
     """The invoices a day's hours sit on, each named once, in the order they came."""
-    return list(dict.fromkeys(_invoice_label(e.fattura) for e in entries if e.fattura is not None))
+    return list(dict.fromkeys(_invoice_label(e.invoice) for e in entries if e.invoice is not None))
 
 
 def _hours_per_invoice(entries: Iterable[_CrmEntry]) -> list[ReportDayInvoice]:
@@ -126,39 +126,39 @@ def _hours_per_invoice(entries: Iterable[_CrmEntry]) -> list[ReportDayInvoice]:
     and an invoice with the same number stay apart (REB-505)."""
     hours: dict[tuple[str, str], Decimal] = {}
     for entry in entries:
-        if entry.fattura is not None:
-            key = (_invoice_number(entry.fattura), entry.fattura.tipo)
-            hours[key] = hours.get(key, Decimal(0)) + entry.ore
+        if entry.invoice is not None:
+            key = (_invoice_number(entry.invoice), entry.invoice.kind)
+            hours[key] = hours.get(key, Decimal(0)) + entry.hours
     return [
-        ReportDayInvoice(numero=numero, tipo=tipo, ore=_hours(ore))
-        for (numero, tipo), ore in hours.items()
+        ReportDayInvoice(number=number, kind=kind, hours=_hours(ore))
+        for (number, kind), ore in hours.items()
     ]
 
 
-def group_report(crm: dict[str, Any], giorni_previsti: int | None) -> dict[str, Any]:
+def group_report(crm: dict[str, Any], expected_days: int | None) -> dict[str, Any]:
     """The CRM's report (one row per time entry) as `MatchReport`'s figures: summed by
     day, by ISO week (Monday to Sunday, «2026-W53» running into January) and by month,
-    the total and its share of `giorni_previsti` times eight. The billed hours are the
+    the total and its share of `expected_days` times eight. The billed hours are the
     CRM's own figures, since only the CRM knows which invoices count. Pure: a body that
     is not the report raises `ValidationError`."""
-    return group(CrmReport.model_validate(crm), giorni_previsti)
+    return group(CrmReport.model_validate(crm), expected_days)
 
 
-def group(report: CrmReport, giorni_previsti: int | None) -> dict[str, Any]:
+def group(report: CrmReport, expected_days: int | None) -> dict[str, Any]:
     by_day: dict[date, list[_CrmEntry]] = {}
-    for entry in sorted(report.giorni, key=lambda row: row.data):
+    for entry in sorted(report.days, key=lambda row: row.data):
         by_day.setdefault(entry.data, []).append(entry)
     per_giorno = [
         ReportDay(
             data=day,
-            ore=_hours(sum((e.ore for e in entries), Decimal(0))),
-            descrizioni=[
-                e.descrizione.strip()
+            hours=_hours(sum((e.hours for e in entries), Decimal(0))),
+            descriptions=[
+                e.description.strip()
                 for e in entries
-                if e.descrizione is not None and e.descrizione.strip()
+                if e.description is not None and e.description.strip()
             ],
-            fatture=_labels(entries),
-            ore_per_fattura=_hours_per_invoice(entries),
+            invoices=_labels(entries),
+            hours_by_invoice=_hours_per_invoice(entries),
         )
         for day, entries in by_day.items()
     ]
@@ -166,42 +166,42 @@ def group(report: CrmReport, giorni_previsti: int | None) -> dict[str, Any]:
     months: dict[tuple[int, int], Decimal] = {}
     for day in per_giorno:
         iso = day.data.isocalendar()
-        weeks[(iso.year, iso.week)] = weeks.get((iso.year, iso.week), Decimal(0)) + day.ore
+        weeks[(iso.year, iso.week)] = weeks.get((iso.year, iso.week), Decimal(0)) + day.hours
         month = (day.data.year, day.data.month)
-        months[month] = months.get(month, Decimal(0)) + day.ore
-    totale = _hours(sum((day.ore for day in per_giorno), Decimal(0)))
-    ore_previste = _hours(giorni_previsti * HOURS_PER_DAY) if giorni_previsti else None
+        months[month] = months.get(month, Decimal(0)) + day.hours
+    total = _hours(sum((day.hours for day in per_giorno), Decimal(0)))
+    expected_hours = _hours(expected_days * HOURS_PER_DAY) if expected_days else None
     return {
-        "giorni_previsti": giorni_previsti,
-        "ore_previste": ore_previste,
-        "totale_ore": totale,
-        "giorni_equivalenti": _hours(totale / HOURS_PER_DAY),
-        "avanzamento": _hours(totale / ore_previste * 100) if ore_previste else None,
-        "ore_fatturate": _hours(report.ore_fatturate),
-        "ore_non_fatturate": _hours(report.ore_non_fatturate),
-        "per_giorno": per_giorno,
-        "per_settimana": [
+        "expected_days": expected_days,
+        "expected_hours": expected_hours,
+        "hours_total": total,
+        "equivalent_days": _hours(total / HOURS_PER_DAY),
+        "progress": _hours(total / expected_hours * 100) if expected_hours else None,
+        "invoiced_hours": _hours(report.invoiced_hours),
+        "hours_uninvoiced": _hours(report.hours_uninvoiced),
+        "by_day": per_giorno,
+        "by_week": [
             ReportWeek(
-                settimana=f"{year}-W{week:02d}",
+                week=f"{year}-W{week:02d}",
                 da=date.fromisocalendar(year, week, 1),
                 a=date.fromisocalendar(year, week, 7),
-                ore=_hours(hours),
+                hours=_hours(hours),
             )
             for (year, week), hours in sorted(weeks.items())
         ],
-        "per_mese": [
-            ReportMonth(mese=f"{year}-{month:02d}", ore=_hours(hours))
+        "by_month": [
+            ReportMonth(month=f"{year}-{month:02d}", hours=_hours(hours))
             for (year, month), hours in sorted(months.items())
         ],
-        "fatture": [
+        "invoices": [
             ReportInvoice(
-                numero=_invoice_number(invoice),
-                tipo=invoice.tipo,
+                number=_invoice_number(invoice),
+                kind=invoice.kind,
                 data=invoice.data,
-                stato=invoice.stato,
-                stato_pagamento=invoice.stato_pagamento,
-                ore=_hours(invoice.ore or Decimal(0)),
+                status=invoice.status,
+                payment_status=invoice.payment_status,
+                hours=_hours(invoice.hours or Decimal(0)),
             )
-            for invoice in report.fatture
+            for invoice in report.invoices
         ],
     }

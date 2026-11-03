@@ -71,7 +71,7 @@ def _invitation_mail(
     settings: Settings,
     origin: str,
     email: str,
-    invitato_da: str,
+    invited_from: str,
     nome: str | None,
     raw: str,
 ) -> Mail:
@@ -81,9 +81,9 @@ def _invitation_mail(
     it reads. `origin` is resolved by each route before its row is committed: an
     installation that cannot build a link must not half-create an invitation over it."""
     slug = tenant_slug(request)
-    spazio = slug or settings.root_slug or "PigroCRM"
+    space = slug or settings.root_slug or "PigroCRM"
     url = _invite_url(origin, f"/{slug}" if slug else "", raw)
-    return invitation_mail(email, spazio, invitato_da, url, nome=nome, giorni=INVITATION_TTL_DAYS)
+    return invitation_mail(email, space, invited_from, url, nome=nome, days=INVITATION_TTL_DAYS)
 
 
 @router.post("/invites", response_model=InvitationRead, status_code=status.HTTP_201_CREATED)

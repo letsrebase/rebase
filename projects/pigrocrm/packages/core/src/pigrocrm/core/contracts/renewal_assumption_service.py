@@ -57,8 +57,8 @@ class RenewalAssumptionService:
             "renewal_assumption_set",
             actor,
             {
-                "probabilita": assumption.probabilita,
-                "orizzonte_al": str(assumption.orizzonte_al),
+                "probability": assumption.probability,
+                "horizon_until": str(assumption.horizon_until),
             },
         )
         self.session.commit()

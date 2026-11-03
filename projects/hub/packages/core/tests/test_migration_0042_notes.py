@@ -18,12 +18,12 @@ from rebase_core.migrate import INI_PATH, upgrade_to_head
 
 REVISION = "0042"
 NEW_COLUMNS = {
-    "autore_id",
-    "fonte",
-    "modificata_at",
-    "modificata_da_id",
-    "eliminata_at",
-    "eliminata_da_id",
+    "author_id",
+    "source",
+    "edited_at",
+    "edited_by_id",
+    "deleted_at",
+    "deleted_by_id",
 }
 
 
@@ -116,8 +116,8 @@ def test_upgrade_moves_the_notes_into_the_thread(hub_postgres: Any) -> None:
             assert "note" not in _columns(connection, "freelancers")
             assert "note" not in _columns(connection, "companies")
             rows = {
-                (entity, testo): (autore, autore_id, fonte)
-                for entity, testo, autore, autore_id, fonte in connection.execute(
+                (entity, testo): (author, author_id, source)
+                for entity, testo, author, author_id, source in connection.execute(
                     text("SELECT entity_type, testo, autore, autore_id, fonte FROM notes")
                 )
             }
@@ -133,13 +133,13 @@ def test_upgrade_moves_the_notes_into_the_thread(hub_postgres: Any) -> None:
             assert rows[("freelancer", "CV caricato dalla persona")] == (
                 "N C",
                 ids["user"],
-                "persona",
+                "person",
             )
-            assert rows[("freelancer", "Profilo aggiornato dalla persona: Tariffa")][2] == "persona"
+            assert rows[("freelancer", "Profilo aggiornato dalla persona: Tariffa")][2] == "person"
             assert rows[("company", "Richiesta aggiornata dal referente: Durata")] == (
                 "N C",
                 ids["boss"],
-                "persona",
+                "person",
             )
             assert len(rows) == 6
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)

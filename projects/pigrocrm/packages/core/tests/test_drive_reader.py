@@ -47,7 +47,7 @@ from pigrocrm.core.drive.reader import (
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport, UserTokens
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.text import DOCX_MIME, PDF_MIME, PROVENIENZA, TEXT_TRUNCATION_MARKER
+from pigrocrm.core.text import DOCX_MIME, PDF_MIME, PROVENANCE, TEXT_TRUNCATION_MARKER
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
@@ -176,13 +176,13 @@ def test_lists_the_children_of_a_configured_root() -> None:
 
     by_name = {entry.nome: entry for entry in listing.items}
     assert set(by_name) == {"ACME", "Note"}
-    assert by_name["ACME"].cartella is True
+    assert by_name["ACME"].folder is True
     assert by_name["ACME"].mime == FOLDER_MIME
     # A folder and a Google Doc have no bytes on Drive, so they have no size -- and
     # `None` is not the same answer as `0`, which would say "an empty file".
-    assert by_name["ACME"].dimensione is None
-    assert by_name["Note"].dimensione is None
-    assert by_name["Note"].cartella is False
+    assert by_name["ACME"].size is None
+    assert by_name["Note"].size is None
+    assert by_name["Note"].folder is False
     assert by_name["Note"].id == DOC_FILE
     assert by_name["Note"].modificato_il == datetime(2026, 1, 1, tzinfo=UTC)
     assert listing.next_page_token is None
@@ -197,9 +197,9 @@ def test_lists_the_children_of_a_folder_inside_a_root() -> None:
 
     by_name = {entry.nome: entry for entry in listing.items}
     assert set(by_name) == {"Preventivo.pdf", "Appunti.txt", "Scansione.pdf"}
-    assert by_name["Preventivo.pdf"].dimensione == len(PDF_WITH_TEXT)
+    assert by_name["Preventivo.pdf"].size == len(PDF_WITH_TEXT)
     assert by_name["Preventivo.pdf"].mime == PDF_MIME
-    assert by_name["Preventivo.pdf"].cartella is False
+    assert by_name["Preventivo.pdf"].folder is False
 
 
 def test_a_folder_outside_the_roots_is_not_found_and_no_listing_is_ever_issued() -> None:
@@ -553,10 +553,10 @@ def test_read_text_of_a_pdf_with_a_text_layer() -> None:
 
     result = _reader(drive).read_text(PDF_FILE)
 
-    assert "Preventivo per ACME" in result.testo
+    assert "Preventivo per ACME" in result.text
     assert result.mime == PDF_MIME
-    assert result.troncato is False
-    assert result.provenienza == PROVENIENZA
+    assert result.truncated is False
+    assert result.provenance == PROVENANCE
 
 
 def test_read_text_of_a_scan_is_empty_and_not_truncated() -> None:
@@ -564,8 +564,8 @@ def test_read_text_of_a_scan_is_empty_and_not_truncated() -> None:
 
     result = _reader(drive).read_text(SCAN_FILE)
 
-    assert result.testo == ""
-    assert result.troncato is False
+    assert result.text == ""
+    assert result.truncated is False
 
 
 def test_read_text_of_a_google_doc_reports_the_exported_type() -> None:
@@ -573,7 +573,7 @@ def test_read_text_of_a_google_doc_reports_the_exported_type() -> None:
 
     result = _reader(drive).read_text(DOC_FILE)
 
-    assert result.testo == DOC_TEXT
+    assert result.text == DOC_TEXT
     assert result.mime == "text/plain"
 
 
@@ -587,7 +587,7 @@ def test_read_text_of_a_docx() -> None:
         file_id="1ContrattoDocx000",
     )
 
-    assert _reader(drive).read_text(docx).testo == "Contratto quadro\nDurata annuale"
+    assert _reader(drive).read_text(docx).text == "Contratto quadro\nDurata annuale"
 
 
 def test_read_text_truncates_at_the_configured_ceiling_with_a_marker() -> None:
@@ -595,21 +595,21 @@ def test_read_text_truncates_at_the_configured_ceiling_with_a_marker() -> None:
 
     result = _reader(drive, text_max_bytes=10).read_text(TXT_FILE)
 
-    assert result.troncato is True
-    assert result.testo == TXT_TEXT[:10] + TEXT_TRUNCATION_MARKER
+    assert result.truncated is True
+    assert result.text == TXT_TEXT[:10] + TEXT_TRUNCATION_MARKER
 
 
 def test_read_text_max_bytes_overrides_the_configured_ceiling() -> None:
     drive = _tree()
     reader = _reader(drive, text_max_bytes=10)
 
-    assert reader.read_text(TXT_FILE, max_bytes=1_000).troncato is False
+    assert reader.read_text(TXT_FILE, max_bytes=1_000).truncated is False
 
 
 def test_the_default_ceiling_is_the_settings_default() -> None:
     drive = _tree()
 
-    assert _reader(drive).read_text(TXT_FILE).testo == TXT_TEXT
+    assert _reader(drive).read_text(TXT_FILE).text == TXT_TEXT
     assert TEXT_MAX_BYTES_DEFAULT == 262_144
     assert Settings(_env_file=None).drive_text_max_bytes == TEXT_MAX_BYTES_DEFAULT  # type: ignore[call-arg]
 
@@ -771,8 +771,8 @@ def _account(
         email=f"drive-{uuid4().hex[:8]}@example.it",
         nome="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -929,10 +929,10 @@ def test_an_opted_in_installation_lets_a_named_action_through(
     account = _account(db_session)
     drive = _tree()
     _inject(monkeypatch, drive, [])
-    aperto = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
+    open = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
 
     reader = drive_reader_for(
-        db_session, aperto, gmail_settings(), feature="la lettura", action="read_drive_file"
+        db_session, open, gmail_settings(), feature="la lettura", action="read_drive_file"
     )
 
     assert reader.list_children(ROOT_FOLDER).items
@@ -993,7 +993,7 @@ def test_a_revocation_discovered_mid_read_marks_the_account_and_re_raises(
     kinds = db_session.execute(
         select(Activity.kind).where(Activity.entity_id == account.id)
     ).scalars()
-    assert "drive.credenziale_revocata" in list(kinds)
+    assert "drive.credential_revoked" in list(kinds)
 
 
 def test_drive_reader_for_uses_the_configured_text_ceiling(
@@ -1011,7 +1011,7 @@ def test_drive_reader_for_uses_the_configured_text_ceiling(
         action=ALREADY_AUTHORIZED,
     )
 
-    assert reader.read_text(TXT_FILE).troncato is True
+    assert reader.read_text(TXT_FILE).truncated is True
 
 
 # --- the guard over the whole module ---------------------------------------------------

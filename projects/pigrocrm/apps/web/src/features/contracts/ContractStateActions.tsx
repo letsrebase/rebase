@@ -13,7 +13,7 @@ import { nextStates, stateLabel } from './labels'
 import { useSetContractState, type Contract, type ContractState } from './queries'
 
 /**
- * Moves a contract between its states (REB-741). A `bozza` has one obvious next step and
+ * Moves a contract between its states (REB-741). A `draft` has one obvious next step and
  * gets it as a button, «Attiva»; every other move, from any state to any other, is in the
  * «Stato» menu. Each is one named act on the API (`POST /api/contracts/{id}/state`) and
  * one row in the contract's timeline, never a field an edit could flip by accident.
@@ -26,23 +26,23 @@ export function ContractStateActions({ contract }: { contract: Contract }) {
 
   if (!canChange) return null
 
-  function move(stato: ContractState) {
+  function move(status: ContractState) {
     if (
-      stato === 'terminato' &&
-      !window.confirm(`Terminare il contratto «${contract.titolo}»? Potrai riattivarlo in seguito.`)
+      status === 'terminated' &&
+      !window.confirm(`Terminare il contratto «${contract.title}»? Potrai riattivarlo in seguito.`)
     ) {
       return
     }
-    change.mutate(stato, {
-      onSuccess: () => toast.success(`Contratto: ${stateLabel(stato).toLowerCase()}`),
+    change.mutate(status, {
+      onSuccess: () => toast.success(`Contratto: ${stateLabel(status).toLowerCase()}`),
       onError: (error) => toast.error(toProblem(error).detail),
     })
   }
 
   return (
     <>
-      {contract.stato === 'bozza' && (
-        <Button onClick={() => move('attivo')} disabled={change.isPending}>
+      {contract.status === 'draft' && (
+        <Button onClick={() => move('active')} disabled={change.isPending}>
           Attiva
         </Button>
       )}
@@ -54,9 +54,9 @@ export function ContractStateActions({ contract }: { contract: Contract }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {nextStates(contract.stato).map((stato) => (
-            <DropdownMenuItem key={stato} onSelect={() => move(stato)}>
-              Segna come «{stateLabel(stato).toLowerCase()}»
+          {nextStates(contract.status).map((status) => (
+            <DropdownMenuItem key={status} onSelect={() => move(status)}>
+              Segna come «{stateLabel(status).toLowerCase()}»
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

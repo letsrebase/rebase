@@ -35,22 +35,22 @@ BODY: dict[str, Any] = {
     "sommario": "Backend developer con cinque anni di servizi di fatturazione.",
     "esperienze": [
         {
-            "ruolo": "Backend developer",
-            "azienda": "una società di telecomunicazioni",
-            "luogo": None,
+            "role": "Backend developer",
+            "company": "una società di telecomunicazioni",
+            "location": None,
             "periodo": "2019 – 2024",
-            "punti": [{"titolo": None, "testo": "Ha sviluppato i servizi di fatturazione."}],
+            "punti": [{"titolo": None, "text": "Ha sviluppato i servizi di fatturazione."}],
         }
     ],
-    "competenze": [{"area": "Competenze", "voci": ["Python", "PostgreSQL"]}],
+    "skills": [{"area": "Competenze", "voci": ["Python", "PostgreSQL"]}],
     "formazione": [],
     "certificazioni": [],
-    "lingue": [{"lingua": "Italiano", "livello": "Madrelingua"}],
-    "altre_sezioni": [],
+    "languages": [{"lingua": "Italiano", "livello": "Madrelingua"}],
+    "other_sections": [],
 }
-NO_IDENTITA: dict[str, Any] = {
+NO_IDENTITY: dict[str, Any] = {
     "nome": None,
-    "cognome": None,
+    "last_name": None,
     "email": None,
     "telefoni": [],
     "link": [],
@@ -58,7 +58,7 @@ NO_IDENTITA: dict[str, Any] = {
 
 
 def _answer(body: dict[str, Any] | None = None) -> LlmResponse:
-    text_ = json.dumps({"cv": body or BODY, "identita": NO_IDENTITA})
+    text_ = json.dumps({"cv": body or BODY, "identita": NO_IDENTITY})
     return LlmResponse(
         text=text_,
         parsed=AnonymousCvDraft.model_validate_json(text_),
@@ -81,7 +81,7 @@ def _naming_ada() -> LlmResponse:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -127,11 +127,11 @@ def _apply(
         "/api/hub/freelancers",
         data={
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "ibrido",
+            "remote": "hybrid",
         },
         files={"cv": ("Ada CV.pdf", CV, "application/pdf")},
     )
@@ -154,7 +154,7 @@ def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL
 
 
 def _url(freelancer_id: str) -> str:
-    return f"/api/hub/freelancers/{freelancer_id}/cv-anonimo"
+    return f"/api/hub/freelancers/{freelancer_id}/anonymous-cv"
 
 
 def _trail(session: Session, freelancer_id: str) -> list[AdminAction]:
@@ -239,7 +239,7 @@ def test_download_answers_the_pdf_and_records_it(
     _card(api_session, freelancer_id)
     row = api_session.get(Freelancer, UUID(freelancer_id))
     assert row is not None
-    row.anni_admin = 12
+    row.experience_years_admin = 12
     api_session.commit()
     _login(client, sender)
     call = RecordingCall([_answer()])
@@ -257,13 +257,15 @@ def test_download_answers_the_pdf_and_records_it(
         f'attachment; filename="rebase-cv-backend-developer-{ref}.pdf"'
     )
     [(cv, head)] = printer.calls
-    assert head == CvHead(seniority="senior", anni=12, luogo="Torino", modalita="ibrido", ref=ref)
+    assert head == CvHead(
+        seniority="senior", experience_years=12, location="Torino", mode="hybrid", ref=ref
+    )
     # No identity in the PDF: nothing the printer was handed carries the person.
     printed = " ".join(_every_string(cv.model_dump())).lower()
     for word in ("ada", "lovelace", "ada@studio.it"):
         assert word not in printed
     [entry] = _trail(api_session, freelancer_id)
-    assert entry.payload == {"riusato": False}
+    assert entry.payload == {"reused": False}
     # Read back from the column, not through the filter above: a kind cut to the column's
     # width must never pass silently.
     kinds = api_session.scalars(
@@ -288,7 +290,7 @@ def test_a_talent_with_no_card_prints_a_bare_head(
     assert client.post(_url(freelancer_id)).status_code == 200
     [(_, head)] = printer.calls
     assert head == CvHead(
-        seniority=None, anni=None, luogo=None, modalita="ibrido", ref=freelancer_id[-8:]
+        seniority=None, experience_years=None, location=None, mode="hybrid", ref=freelancer_id[-8:]
     )
 
 
@@ -319,7 +321,7 @@ def test_an_uncertain_seniority_is_left_out(
     the admin page marks uncertain: the PDF says nothing rather than a guess, until an
     admin says one."""
     freelancer_id = _apply(client, api_session)
-    _card(api_session, freelancer_id, {**CARD, "anni": None})
+    _card(api_session, freelancer_id, {**CARD, "experience_years": None})
     _login(client, sender)
     _model(client, RecordingCall([_answer()]))
 
@@ -332,8 +334,12 @@ def test_an_uncertain_seniority_is_left_out(
 
     [(_, guessed), (_, said)] = printer.calls
     ref = freelancer_id[-8:]
-    assert guessed == CvHead(seniority=None, anni=None, luogo="Torino", modalita="ibrido", ref=ref)
-    assert said == CvHead(seniority="mid", anni=None, luogo="Torino", modalita="ibrido", ref=ref)
+    assert guessed == CvHead(
+        seniority=None, experience_years=None, location="Torino", mode="hybrid", ref=ref
+    )
+    assert said == CvHead(
+        seniority="mid", experience_years=None, location="Torino", mode="hybrid", ref=ref
+    )
 
 
 def test_a_card_of_an_older_cv_lends_nothing_to_the_head(
@@ -354,7 +360,7 @@ def test_a_card_of_an_older_cv_lends_nothing_to_the_head(
 
     [(_, head)] = printer.calls
     assert head == CvHead(
-        seniority=None, anni=None, luogo=None, modalita="ibrido", ref=freelancer_id[-8:]
+        seniority=None, experience_years=None, location=None, mode="hybrid", ref=freelancer_id[-8:]
     )
 
 
@@ -375,7 +381,7 @@ def test_second_download_reuses(
     assert client.post(_url(freelancer_id)).status_code == 200
 
     assert len(call.requests) == 1
-    kinds = sorted(entry.payload["riusato"] for entry in _trail(api_session, freelancer_id))
+    kinds = sorted(entry.payload["reused"] for entry in _trail(api_session, freelancer_id))
     assert kinds == [False, True]
     assert len(printer.calls) == 2
 

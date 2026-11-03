@@ -21,7 +21,7 @@ function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
 }
 
-const FOUNDER = { id: 'u1', email: 'a@p.it', nome: 'rebase', ruolo: 'admin', attivo: true }
+const FOUNDER = { id: 'u1', email: 'a@p.it', nome: 'rebase', role: 'admin', active: true }
 
 /** Shows the name the shell would show, and renames the signed-in user through the hook. */
 function Probe() {
@@ -29,7 +29,7 @@ function Probe() {
   const update = useUpdateUser()
   return (
     <div>
-      <p>{user?.nome ?? 'nessuno'}</p>
+      <p>{user?.nome ?? 'none'}</p>
       <button onClick={() => update.mutate({ userId: FOUNDER.id, body: { nome: 'Ivan Sala' } })}>
         Rinomina
       </button>

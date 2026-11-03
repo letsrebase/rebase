@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GIORNATA, MEZZA, normaliseHours } from './hours'
+import { WorkUnit, HALF, normaliseHours } from './hours'
 
 describe('normaliseHours', () => {
   it('takes the ordinary shapes somebody types', () => {
@@ -32,13 +32,13 @@ describe('normaliseHours', () => {
   })
 
   it('refuses a third decimal, which the column cannot hold', () => {
-    // `time_entries.ore` is `Numeric(5, 2)`: a third decimal would be rounded by the
+    // `time_entries.hours` is `Numeric(5, 2)`: a third decimal would be rounded by the
     // database, so the figure stored would not be the figure typed.
     expect(normaliseHours('1.005')).toBeNull()
   })
 
   it('has presets that are themselves valid hours', () => {
-    expect(normaliseHours(GIORNATA)).toBe(GIORNATA)
-    expect(normaliseHours(MEZZA)).toBe(MEZZA)
+    expect(normaliseHours(WorkUnit)).toBe(WorkUnit)
+    expect(normaliseHours(HALF)).toBe(HALF)
   })
 })

@@ -11,7 +11,7 @@ What they share, and the reason each differs from `gmail-sync`:
 - **They migrate nothing.** `ensure-space-defaults` at boot is the only migrator
   (ORB-189): a cron that ran Alembic on every database at eight o'clock on a Monday
   would be the riskiest thing this product does, and would do it unattended. A space
-  whose schema is behind fails as one `saltato` line and is picked up by the next
+  whose schema is behind fails as one `skipped` line and is picked up by the next
   deploy's boot command.
 - **The space's clock** (REB-764). After each space a real run writes its row in
   `reminder_job_run` (`record_job`): a success moves `ran_at`, a failure records a short
@@ -50,7 +50,7 @@ from pigrocrm.core.telemetry import tracker_from_settings
 
 
 def _refuse_other_day(settings: Settings, data: date | None, dry_run: bool) -> bool:
-    """`--data` evaluates another day, and only as a rehearsal: a real pass of another
+    """`--date` evaluates another day, and only as a rehearsal: a real pass of another
     day would write against today's reminders and attivita."""
     if data is not None and data != today_local(settings) and not dry_run:
         print("--data cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
@@ -88,7 +88,7 @@ def digest(
             print(f"{slug}: non nel registro", file=sys.stderr)
         return 0
 
-    settimana = week_containing(data) if data is not None else previous_week(settings)
+    week = week_containing(data) if data is not None else previous_week(settings)
     try:
         # Both clients are built *inside* this `try`, so that the `finally` below reaches
         # them: PostHog's constructor can fail here -- a malformed key, a host it
@@ -106,7 +106,7 @@ def digest(
                     # A session of its own per space, with no transaction open:
                     # `DigestRun` opens the dashboard's snapshot itself.
                     with session_factory(engine)() as space:
-                        esito = DigestRun(
+                        outcome = DigestRun(
                             space,
                             settings,
                             sender=sender,
@@ -115,7 +115,7 @@ def digest(
                         ).send_for_space(
                             target.label,
                             target.owner_email,
-                            settimana,
+                            week,
                             forza=forza,
                             dry_run=dry_run,
                         )
@@ -124,39 +124,39 @@ def digest(
                             engine,
                             DIGEST_JOB,
                             target.label,
-                            esito.motivo if esito.esito == "saltato" else None,
+                            outcome.reason if outcome.outcome == "skipped" else None,
                         )
                 except Exception as exc:  # noqa: BLE001 - one space must not stop the others
-                    # `send_for_space` answers `saltato` for everything that fails once
+                    # `send_for_space` answers `skipped` for everything that fails once
                     # it has started; what is left for here is what fails before that
                     # -- a database that cannot be reached, a schema behind the image's.
                     print(f"{target.label}: saltato ({type(exc).__name__})", file=sys.stderr)
                     if not dry_run:
                         record_job(engine, DIGEST_JOB, target.label, type(exc).__name__, quiet=True)
                     continue
-            _print_digest_outcome(esito, dry_run=dry_run)
+            _print_digest_outcome(outcome, dry_run=dry_run)
     finally:
         telemetry.shutdown()
     return 0
 
 
-def _print_digest_outcome(esito: DigestOutcome, *, dry_run: bool) -> None:
-    """One space, one line. `saltato` goes to stderr, so `2>&1` in the cron line keeps
+def _print_digest_outcome(outcome: DigestOutcome, *, dry_run: bool) -> None:
+    """One space, one line. `skipped` goes to stderr, so `2>&1` in the cron line keeps
     the order and a log split by stream keeps the failures on their own.
 
-    `(prova)` on a rehearsal: `--dry-run` answers `inviato` with the people it *would*
+    `(prova)` on a rehearsal: `--dry-run` answers `sent` with the people it *would*
     have written to, and a log where the rehearsal and the real Monday read identically is
     a log that cannot answer whether last week went out."""
-    if esito.esito == "inviato":
-        print(f"{esito.slug}: inviato a {esito.destinatari}{' (prova)' if dry_run else ''}")
-    elif esito.esito == "vuoto":
-        print(f"{esito.slug}: vuoto")
-    elif esito.esito == "gia_inviato":
-        print(f"{esito.slug}: già inviato per {esito.settimana}")
-    elif esito.esito == "nessun_destinatario":
-        print(f"{esito.slug}: nessun destinatario")
+    if outcome.outcome == "sent":
+        print(f"{outcome.slug}: inviato a {outcome.recipients}{' (prova)' if dry_run else ''}")
+    elif outcome.outcome == "empty":
+        print(f"{outcome.slug}: vuoto")
+    elif outcome.outcome == "already_sent":
+        print(f"{outcome.slug}: già inviato per {outcome.week}")
+    elif outcome.outcome == "no_recipient":
+        print(f"{outcome.slug}: nessun destinatario")
     else:
-        print(f"{esito.slug}: saltato ({esito.motivo})", file=sys.stderr)
+        print(f"{outcome.slug}: saltato ({outcome.reason})", file=sys.stderr)
 
 
 def reminders(settings: Settings, *, slug: str | None, data: date | None, dry_run: bool) -> int:
@@ -169,7 +169,7 @@ def reminders(settings: Settings, *, slug: str | None, data: date | None, dry_ru
     the ping.
 
     `ReminderRun.run_for_space` decides; `--dry-run` asks it what would be put in people's
-    lists and writes nothing, and `--data` evaluates another day only with `--dry-run`.
+    lists and writes nothing, and `--date` evaluates another day only with `--dry-run`.
     The pass writes its own success in the transaction that ends it, so only a failure is
     written from here."""
     if _refuse_other_day(settings, data, dry_run):
@@ -227,7 +227,7 @@ def _print_reminder_outcome(outcome: ReminderOutcome, *, dry_run: bool) -> None:
     in the log for the system working as designed teaches the operator to ignore the log.
 
     `(prova)` on a rehearsal, for the reason the digest's has it."""
-    if outcome.esito == "in_corso":
+    if outcome.outcome == "in_progress":
         print(f"{outcome.slug}: saltato (in_corso)")
         return
     # What the other channels sent is told only when there is something to tell, so the
@@ -258,7 +258,7 @@ def automations(settings: Settings, *, slug: str | None, data: date | None, dry_
     database refuses a write.
 
     `AutomationPass.run` decides; `--dry-run` runs it and rolls back, so the counters of a
-    rehearsal are the real ones, and `--data` evaluates another day only with `--dry-run`:
+    rehearsal are the real ones, and `--date` evaluates another day only with `--dry-run`:
     a real pass for another day would open attivita due on days that are not today."""
     if _refuse_other_day(settings, data, dry_run):
         return 2
@@ -294,9 +294,7 @@ def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) ->
     printing zeros, which would read as «looked, found nothing»."""
     suffix = " (prova)" if dry_run else ""
     for rule in report.rules:
-        if rule.disattivata:
-            print(f"{slug}: {rule.regola} disattivata")
+        if rule.disabled:
+            print(f"{slug}: {rule.rule} disattivata")
         else:
-            print(
-                f"{slug}: {rule.regola} aperte {rule.aperte}, già aperte {rule.gia_aperte}{suffix}"
-            )
+            print(f"{slug}: {rule.rule} aperte {rule.open}, già aperte {rule.already_open}{suffix}")

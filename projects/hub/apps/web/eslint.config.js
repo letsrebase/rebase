@@ -22,8 +22,8 @@ export default defineConfig([
     // it mounts; `wizard/Wizard.tsx` exports the engine's component beside the step
     // type it takes; the two wizard pages export their step lists beside the page, so
     // the tests can validate a step without mounting the page, and so does
-    // `pages/member/Modifica.tsx` with `editSteps`, `pages/member/ModificaAzienda.tsx`
-    // with `editCompanyFields` (REB-314) and `pages/member/NuovaRichiestaAzienda.tsx`
+    // `pages/member/Edit.tsx` with `editSteps`, `pages/member/EditCompany.tsx`
+    // with `editCompanyFields` (REB-314) and `pages/member/NewRequestCompany.tsx`
     // with `newCompanyFields` (REB-381); `lib/me.tsx` (REB-279, replacing
     // `lib/member.tsx`) is a hook.
     files: [

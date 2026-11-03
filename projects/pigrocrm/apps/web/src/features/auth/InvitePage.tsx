@@ -9,7 +9,7 @@ import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
 import { homeAfterEntry } from '@/lib/entry-home'
-import { takeEntraToken } from '@rebase/analytics/entra-token'
+import { takeVerifyToken } from '@rebase/analytics/verify-token'
 import { tenantPrefix } from '@/lib/tenant'
 
 type InvitationPeek = components['schemas']['InvitationPeek']
@@ -90,7 +90,7 @@ function DeadInviteCard({ detail, used }: { detail: string; used: boolean }) {
  * spending. The peek never spends (spec §3), so a reload is safe, and the retry button
  * re-peeks rather than blindly spending.
  *
- * The token comes from `takeEntraToken`, the same shared scrubber as `verify.tsx`:
+ * The token comes from `takeVerifyToken`, the same shared scrubber as `verify.tsx`:
  * `main.tsx` took it out of the URL before `initAnalytics` ran, so PostHog's first
  * pageview carries no `?t=` (REB-229 extended to this path by REB-291). The search
  * param is only the fallback for a render that never went through `main.tsx` (a unit
@@ -110,7 +110,7 @@ export function InvitePage({
 }) {
   const { enterWithInvite } = useAuth()
   const [state, setState] = useState<State>({ kind: 'loading' })
-  const [nome, setNome] = useState('')
+  const [nome, setName] = useState('')
   const [entering, setEntering] = useState(false)
   // The peek effect re-runs only when this counter moves: «Riprova» is a re-peek, the
   // one right answer for a network failure or a 429 (both leave the token unspent),
@@ -141,8 +141,8 @@ export function InvitePage({
     try {
       // The name field only exists when the peek carried none, and then it is what the
       // accept needs; otherwise the invitation's stored name is the server's to read.
-      const askedForNome = state.kind === 'peek' && state.peek.nome === null
-      await enterWithInvite(token, askedForNome ? nome : undefined)
+      const askedForName = state.kind === 'peek' && state.peek.nome === null
+      await enterWithInvite(token, askedForName ? nome : undefined)
       go(await homeAfterEntry())
     } catch (caught) {
       const problem = toProblem(caught)
@@ -167,12 +167,12 @@ export function InvitePage({
         <CardHeader>
           <CardTitle className="inline-flex items-center text-2xl">
             <BrandMark className="mr-2.5 size-3.5" />
-            {state.kind === 'peek' ? `Entra in ${state.peek.spazio}` : 'Un momento…'}
+            {state.kind === 'peek' ? `Entra in ${state.peek.space}` : 'Un momento…'}
           </CardTitle>
           {state.kind === 'peek' && (
             <CardDescription>
-              {state.peek.invitato_da
-                ? `${state.peek.invitato_da} ti ha invitato in questo spazio.`
+              {state.peek.invited_from
+                ? `${state.peek.invited_from} ti ha invitato in questo spazio.`
                 : 'Sei stato invitato in questo spazio.'}
             </CardDescription>
           )}
@@ -187,7 +187,7 @@ export function InvitePage({
                   <Input
                     id="invite-nome"
                     value={nome}
-                    onChange={(event) => setNome(event.target.value)}
+                    onChange={(event) => setName(event.target.value)}
                     autoComplete="name"
                   />
                 </div>
@@ -233,7 +233,7 @@ const NO_TOKEN = 'questo invito non esiste: chiedi a chi amministra lo spazio di
 export function InviteEntry({ t }: { t: string }) {
   // Lazy initialiser, as `EnterRoute`: computed once per mount, so the one-shot read of
   // the stripped token is not repeated by a re-render (or Strict Mode's double call).
-  const [token] = useState(() => takeEntraToken() ?? t)
+  const [token] = useState(() => takeVerifyToken() ?? t)
   if (!token) {
     return (
       <PageShell>

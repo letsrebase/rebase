@@ -7,7 +7,7 @@ describe('the space prefix', () => {
     expect(tenantPrefixFrom('/studio/app')).toBe('/studio')
     expect(tenantPrefixFrom('/app/customers')).toBe('')
     expect(tenantPrefixFrom('/')).toBe('')
-    expect(tenantPrefixFrom('/studio/clienti')).toBe('')
+    expect(tenantPrefixFrom('/studio/customers')).toBe('')
   })
 
   it('never mistakes a reserved word or a malformed segment for a space', () => {
@@ -49,7 +49,7 @@ describe('safeAppRedirect', () => {
 
   it('refuses anything not resolving under /app, undefined, a scheme or a protocol-relative address', () => {
     expect(safeAppRedirect(undefined)).toBeUndefined()
-    expect(safeAppRedirect('/clienti')).toBeUndefined()
+    expect(safeAppRedirect('/customers')).toBeUndefined()
     expect(safeAppRedirect('https://evil.example/steal')).toBeUndefined()
     expect(safeAppRedirect('//evil.example/app/steal')).toBeUndefined()
   })

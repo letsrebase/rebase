@@ -9,7 +9,7 @@ of it), the client's budget, the match's notes or the thread of admin notes.
 
 Only an engagement that started counts as work: a draft, one in signature and a cancelled
 one never did, and one with no start date cannot be placed in time, so it is left out
-rather than guessed. `completed_months` is what `anni` may add from the hub: the months
+rather than guessed. `completed_months` is what `experience_years` may add from the hub: the months
 covered by completed engagements, overlapping ones counted once.
 """
 
@@ -28,7 +28,7 @@ from rebase_core.card_guard import STOPLIST
 from rebase_core.errors import NotFound
 from rebase_core.models import AdminAction, Company, Freelancer, Match
 
-Esito = Literal["completato", "in corso", "chiuso prima"]
+Outcome = Literal["completed", "in_progress", "closed_before"]
 
 HEADER = "FONTE: dati della hub"
 _DAYS_PER_MONTH = 30.4375
@@ -42,18 +42,18 @@ _LEGAL = re.compile(
 @dataclass(frozen=True)
 class MatchFact:
     """One engagement: the role as the client's request names it, whole months worked
-    (up to today for one `in corso`), how it ended, and the month it started."""
+    (up to today for one `in_progress`), how it ended, and the month it started."""
 
-    ruolo: str
-    mesi: int
-    esito: Esito
+    role: str
+    months: int
+    outcome: Outcome
     dal: str  # "YYYY-MM"
 
 
 @dataclass(frozen=True)
 class HubFacts:
     seniority_admin: str | None
-    anni_admin: int | None
+    experience_years_admin: int | None
     matches: list[MatchFact] = field(default_factory=list)
     completed_months: int = 0
     # The names of the clients the engagements were for: given to the anonymity guard and
@@ -64,7 +64,7 @@ class HubFacts:
     @property
     def empty(self) -> bool:
         """Nothing to tell the model: no override and no engagement that started."""
-        return not self.seniority_admin and self.anni_admin is None and not self.matches
+        return not self.seniority_admin and self.experience_years_admin is None and not self.matches
 
     def text(self) -> str:
         """The source as the model reads it: the admin's override first, as a fact that
@@ -72,14 +72,14 @@ class HubFacts:
         lines = [HEADER]
         if self.seniority_admin is not None:
             lines.append(f"Seniority stabilita da un admin: {self.seniority_admin} (dato certo)")
-        if self.anni_admin is not None:
+        if self.experience_years_admin is not None:
             lines.append(
-                f"Anni di esperienza stabiliti da un admin: {self.anni_admin} (dato certo)"
+                f"Anni di esperienza stabiliti da un admin: {self.experience_years_admin} (dato certo)"
             )
         if self.matches:
             lines.append("Incarichi svolti tramite la hub (ruolo, inizio, durata, esito):")
             lines.extend(
-                f"- {m.ruolo}, dal {m.dal}, {_months(m.mesi)}, {m.esito}" for m in self.matches
+                f"- {m.role}, dal {m.dal}, {_months(m.months)}, {m.outcome}" for m in self.matches
             )
         if self.completed_months:
             lines.append(f"Mesi di incarichi completati: {self.completed_months}")
@@ -89,15 +89,15 @@ class HubFacts:
 
     def hash_material(self) -> str:
         """`text()` without what moves by itself: the months of an engagement still
-        `in corso` grow every month and would mark the card stale each time."""
+        `in_progress` grow every month and would mark the card stale each time."""
         if self.empty:
             return ""
         return "\n".join(
             [
                 f"seniority={self.seniority_admin}",
-                f"anni={self.anni_admin}",
+                f"anni={self.experience_years_admin}",
                 *(
-                    f"{m.dal}|{m.ruolo}|{m.esito}|{'' if m.esito == 'in corso' else m.mesi}"
+                    f"{m.dal}|{m.role}|{m.outcome}|{'' if m.outcome == 'in_progress' else m.months}"
                     for m in self.matches
                 ),
                 f"completati={self.completed_months}",
@@ -105,15 +105,15 @@ class HubFacts:
         )
 
 
-def _months(mesi: int) -> str:
-    return "meno di un mese" if mesi == 0 else f"{mesi} mes{'e' if mesi == 1 else 'i'}"
+def _months(months: int) -> str:
+    return "meno di un mese" if months == 0 else f"{months} mes{'e' if months == 1 else 'i'}"
 
 
 def _span_months(days: int) -> int:
     return max(0, round(days / _DAYS_PER_MONTH))
 
 
-def _role(figura: str, clients: list[str]) -> str:
+def _role(profile: str, clients: list[str]) -> str:
     """The role with the client's name out of it: whole, without its legal form, and each
     of its words but the ordinary ones, since a role names «Initech» for «Initech Italia
     srl». «Backend per Initech Italia srl» and «Backend per Initech» both say «Backend per
@@ -128,8 +128,8 @@ def _role(figura: str, clients: list[str]) -> str:
                 word for word in re.findall(r"[^\W_]{3,}", bare) if word.lower() not in STOPLIST
             )
     for variant in sorted((v for v in variants if v), key=len, reverse=True):
-        figura = re.sub(rf"(?<!\w){re.escape(variant)}(?!\w)", _CLIENT, figura, flags=re.I)
-    return re.sub(r"\s+", " ", figura).strip()
+        profile = re.sub(rf"(?<!\w){re.escape(variant)}(?!\w)", _CLIENT, profile, flags=re.I)
+    return re.sub(r"\s+", " ", profile).strip()
 
 
 def _union_days(spans: list[tuple[date, date]]) -> int:
@@ -146,7 +146,7 @@ def _union_days(spans: list[tuple[date, date]]) -> int:
 
 def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) -> HubFacts:
     """The hub's facts about the freelancer, read now. `today` is the day an engagement
-    `in corso` is measured to."""
+    `in_progress` is measured to."""
     found = hub_facts_many(session, [freelancer_id], today)
     if freelancer_id not in found:
         raise NotFound("Freelancer", freelancer_id)
@@ -164,11 +164,11 @@ def hub_facts_many(
     if not wanted:
         return {}
     people = {
-        row.id: (row.seniority_admin, row.anni_admin)
+        row.id: (row.seniority_admin, row.experience_years_admin)
         for row in session.execute(
-            select(Freelancer.id, Freelancer.seniority_admin, Freelancer.anni_admin).where(
-                Freelancer.id.in_(wanted)
-            )
+            select(
+                Freelancer.id, Freelancer.seniority_admin, Freelancer.experience_years_admin
+            ).where(Freelancer.id.in_(wanted))
         )
     }
     rows = session.execute(
@@ -176,10 +176,10 @@ def hub_facts_many(
         .join(Company, Company.id == Match.company_id)
         .where(
             Match.freelancer_id.in_(list(people)),
-            Match.stato.in_(("attivo", "concluso")),
-            Match.lettera_data_inizio.is_not(None),
+            Match.status.in_(("active", "concluded")),
+            Match.letter_start_date.is_not(None),
         )
-        .order_by(Match.lettera_data_inizio, Match.created_at)
+        .order_by(Match.letter_start_date, Match.created_at)
     ).all()
 
     # The day an admin closed each engagement is in the trail, and does not move when the
@@ -216,40 +216,40 @@ def _facts_of(
     completed: list[tuple[date, date]] = []
     clients: set[str] = set()
     for match, company in rows:
-        start = match.lettera_data_inizio
+        start = match.letter_start_date
         if start is None:  # the query asks for a start: this is the type's word, not a case
             continue
-        planned = match.lettera_data_fine
-        if match.stato == "attivo":
-            esito: Esito = "in corso"
+        planned = match.letter_end_date
+        if match.status == "active":
+            outcome: Outcome = "in_progress"
             end = min(today, planned) if planned is not None else today
         else:
             closed = closed_on.get(match.id) or match.updated_at.date()
             if planned is not None and closed < planned:
-                esito, end = "chiuso prima", closed
+                outcome, end = "closed_before", closed
             else:
-                esito, end = "completato", planned if planned is not None else closed
+                outcome, end = "completed", planned if planned is not None else closed
         end = max(end, start)
         clients.update(
             name.strip()
-            for name in (company.nome_azienda, match.cliente_ragione_sociale)
+            for name in (company.company_name, match.customer_legal_name)
             if name and name.strip()
         )
         facts.append(
             MatchFact(
-                ruolo=_role(
-                    company.figura_richiesta, [company.nome_azienda, match.cliente_ragione_sociale]
+                role=_role(
+                    company.requested_role, [company.company_name, match.customer_legal_name]
                 ),
-                mesi=_span_months((end - start).days + 1),
-                esito=esito,
+                months=_span_months((end - start).days + 1),
+                outcome=outcome,
                 dal=f"{start:%Y-%m}",
             )
         )
-        if esito == "completato":
+        if outcome == "completed":
             completed.append((start, end))
     return HubFacts(
         seniority_admin=person[0],
-        anni_admin=person[1],
+        experience_years_admin=person[1],
         matches=facts,
         completed_months=_span_months(_union_days(completed)),
         clients=sorted(clients),

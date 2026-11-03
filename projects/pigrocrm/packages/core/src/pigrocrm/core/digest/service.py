@@ -2,10 +2,10 @@
 
 Spec 2026-09-16 §3.2: `build` calls services and repositories that already own their
 numbers and copies the answers into `WeeklyDigest`. The only sums in the whole report are
-`InvoiceRepository`'s own -- `sum_emesse_in_periodo` twice with two windows for the two
+`InvoiceRepository`'s own -- `sum_issued_in_period` twice with two windows for the two
 months -- and they are that repository's, not this module's. The one arithmetic left here
-is `giorni_di_ritardo`, `(today - scadenza).days`, which is not a figure but the same
-subtraction `SollecitiService` prints on the same invoices. The discipline is the one
+is `days_of_delay`, `(today - scadenza).days`, which is not a figure but the same
+subtraction `PaymentRemindersService` prints on the same invoices. The discipline is the one
 `core/dashboard/` is held to by an AST scan, and it matters more here than there: a mail
 is read once, quickly, by somebody who will not go and check, so a figure that disagrees
 with the screen is a figure that costs trust and is never noticed again.
@@ -33,27 +33,27 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.models import Attivita
-from pigrocrm.core.attivita.repository import AttivitaRepository
-from pigrocrm.core.attivita.schemas import GIORNI_PROSSIMI
 from pigrocrm.core.config import Settings
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import current_week, month_bounds, today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.digest.schemas import (
-    DigestAttivita,
-    DigestAttivitaRiga,
     DigestDealMove,
     DigestInvoice,
     DigestOffer,
     DigestSignal,
     DigestStage,
+    DigestTask,
+    DigestTaskLine,
     WeeklyDigest,
 )
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.naming import numero_completo
+from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.tasks.models import Task
+from pigrocrm.core.tasks.repository import TaskRepository
+from pigrocrm.core.tasks.schemas import DAYS_NEXT
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
 
 logger = logging.getLogger(__name__)
@@ -61,40 +61,40 @@ logger = logging.getLogger(__name__)
 # §3.1: «quelle in scadenza nei prossimi sette giorni», counted from the day *after* the
 # closed week -- this constant is only the width of that window.
 #
-# It does not, on its own, keep the two halves of «Da incassare» apart. `scadute` is
+# It does not, on its own, keep the two halves of «Da incassare» apart. `overdue` is
 # «due on or before today» and this window opens on `a + 1`, which for the Monday the
 # cron runs *is* today: an invoice due that day belongs to both, and for a week
-# recomputed with `--data` the whole window has since gone by and every invoice in it is
-# overdue. So `build` subtracts the `scadute` by id below, and the overdue half wins --
+# recomputed with `--date` the whole window has since gone by and every invoice in it is
+# overdue. So `build` subtracts the `overdue` by id below, and the overdue half wins --
 # it carries the days of delay, which is the fact somebody acts on.
-IN_SCADENZA_GIORNI = 7
+IN_DUE_DATE_DAYS = 7
 
 # How many commitment lines each list of «Da fare» carries; the rest is a count.
-_ATTIVITA_MOSTRATE = 10
+_TASK_SHOWN = 10
 
 # How many stage changes are read *inside* the week's window. Two hundred is far more than
 # a freelancer's week and still one bounded query; a space that moved more than that in a
 # week has a report whose «deal mossi» list is truncated, which is better than a mail that
 # takes a table scan to build. Since the window is in the query, the rows dropped by this
 # limit are the week's own oldest ones, never a newer week's.
-_MOVIMENTI_LETTI = 200
+_MOVEMENTS_READ = 200
 
 # The same ceiling the commercial dashboard puts on the same list.
-_OFFERTE_MOSTRATE = 20
+_OFFERS_SHOWN = 20
 
 # `activities.stage_changed` writes `{"from": <nome>, "to": <nome>}` -- the stage *names*,
 # not their ids (`deals/service.py::move_stage`). So the destination needs no second query
 # to resolve, and a stage renamed after the fact keeps the name it had when the deal moved,
 # which is the honest thing for a record of what happened.
 _STAGE_CHANGED = "stage_changed"
-_DESTINAZIONE = "to"
-_ENTITA_DEAL = "deal"
+_DESTINATION = "to"
+_ENTITY_DEAL = "deal"
 
 
 def iso_week(day: date) -> str:
     """`2026-W38`: the ISO week the day belongs to.
 
-    The report's identity (§3.3): `digests.settimana` is unique on this string, so it is
+    The report's identity (§3.3): `digests.week` is unique on this string, so it is
     what makes a cron that runs twice send once.
 
     The year comes from `isocalendar()` and never from `day.year`. 31 December 2026 is in
@@ -143,10 +143,10 @@ class DigestService:
         self.session = session
         self.settings = settings
 
-    def build(self, actor: Actor, settimana: tuple[date, date]) -> WeeklyDigest:
+    def build(self, actor: Actor, week: tuple[date, date]) -> WeeklyDigest:
         """The week as one object (§3.2).
 
-        `settimana` is passed in and never computed here, so the command, a resend and a
+        `week` is passed in and never computed here, so the command, a resend and a
         test all build the same report for the same seven days. `actor` is the space's
         owner, resolved by the caller (§3.3), and the operational dashboard is the one read
         that asks for it; nothing below needs more than a read right.
@@ -154,209 +154,207 @@ class DigestService:
         The dashboard call is first because it opens the snapshot the rest of the method
         reads inside -- see the module docstring. Everything after it is a copy.
         """
-        da, a = settimana
+        da, a = week
 
         # 1. The snapshot, and with it the backlog and the signals (§3.1 sections 2, 7).
-        operativa = DashboardService(self.session).get_operational_dashboard(actor)
+        operational = DashboardService(self.session).get_operational_dashboard(actor)
 
         # 2. The register: the four lists and the two month totals.
         #
-        #    `scadute` is «every unpaid, issued invoice due on or before today», read from
-        #    the register itself. It was `SollecitiService.candidates` until the branch
+        #    `overdue` is «every unpaid, issued invoice due on or before today», read from
+        #    the register itself. It was `PaymentRemindersService.candidates` until the branch
         #    review: that list answers «which invoices may I legitimately chase», so it
         #    drops anything inside the seven-day grace period, anything chased in the last
         #    few days and anything already at the reminder ceiling -- and the invoices it
         #    dropped are the ones that fell due *inside the reported week*, which is the
         #    money the report exists to name.
-        oggi = today_local(self.settings)
+        today = today_local(self.settings)
         invoices = InvoiceRepository(self.session)
-        scadute_rows = invoices.list_scadute(oggi)
-        emesse_rows = invoices.list_emesse_in_periodo(da, a)
-        incassate_rows = invoices.list_incassate_in_periodo(da, a)
-        in_scadenza_rows = invoices.list_in_scadenza(
-            a + timedelta(days=1), a + timedelta(days=IN_SCADENZA_GIORNI)
+        overdue_rows = invoices.list_overdue(today)
+        issued_rows = invoices.list_issued_in_period(da, a)
+        paid_rows = invoices.list_paid_in_period(da, a)
+        in_due_date_rows = invoices.list_in_due_date(
+            a + timedelta(days=1), a + timedelta(days=IN_DUE_DATE_DAYS)
         )
         # One invoice, one line. The two windows meet on the day the cron runs -- `a + 1`
-        # is today -- and overlap entirely for a week recomputed with `--data`, whose
+        # is today -- and overlap entirely for a week recomputed with `--date`, whose
         # «in scadenza» window has since gone by. The overdue half wins: it is the same
         # row, and it carries the days of delay instead of «in scadenza».
-        scadute_ids = {row.id for row in scadute_rows}
-        in_scadenza_rows = [row for row in in_scadenza_rows if row.id not in scadute_ids]
+        overdue_ids = {row.id for row in overdue_rows}
+        in_due_date_rows = [row for row in in_due_date_rows if row.id not in overdue_ids]
         # One lookup for all four lists, after the rows are chosen: a label query per row
         # is the N+1 `customer_names` exists to prevent.
         nomi = invoices.customer_names(
             {
                 row.customer_id
-                for row in (*scadute_rows, *emesse_rows, *incassate_rows, *in_scadenza_rows)
+                for row in (*overdue_rows, *issued_rows, *paid_rows, *in_due_date_rows)
             }
         )
-        # The lateness expression is `SollecitiService.candidates`' own, copied rather than
+        # The lateness expression is `PaymentRemindersService.candidates`' own, copied rather than
         # imported so that a list of debts and a list of chaseable invoices stay free to
         # diverge: `(today - scadenza).days`, over the clock's day in the emitter's zone.
-        # The `is not None` guard is `list_scadute`'s own `WHERE` restated -- the column is
+        # The `is not None` guard is `list_overdue`'s own `WHERE` restated -- the column is
         # nullable and `mypy` reads it as such.
-        scadute = [
+        overdue = [
             riga
-            for row in scadute_rows
-            if (scadenza := row.data_scadenza) is not None
-            and (riga := self._riga(row, nomi, scadenza, giorni_di_ritardo=(oggi - scadenza).days))
+            for row in overdue_rows
+            if (due_date := row.due_date) is not None
+            and (riga := self._line(row, nomi, due_date, days_of_delay=(today - due_date).days))
             is not None
         ]
-        mese_da, mese_a = month_bounds(a.year, a.month)
+        month_from, month_to = month_bounds(a.year, a.month)
         # The last day of the previous month is the day before this one's first, which is
         # the only way to name it without a calendar branch on January.
-        precedente = mese_da - timedelta(days=1)
-        precedente_da, precedente_a = month_bounds(precedente.year, precedente.month)
+        previous = month_from - timedelta(days=1)
+        previous_from, previous_to = month_bounds(previous.year, previous.month)
 
-        # 4. Le ore, for the closed week -- not the dashboard's `settimana`, which is the
+        # 4. Le ore, for the closed week -- not the dashboard's `week`, which is the
         #    *current* one and would report the days since the report's own subject ended.
         entries = TimeEntryRepository(self.session)
-        settimana_ore = entries.week_hours(da, a)
+        week_hours = entries.week_hours(da, a)
         # Absent, not zero: §3.1 drops the section entirely rather than printing a flat
         # line, because "no hours" and "seven days of nothing" read differently.
-        ore = settimana_ore if settimana_ore.ore_totali > 0 else None
+        hours = week_hours if week_hours.total_hours > 0 else None
 
         # 5. «Da emettere»: the count of won deals with unbilled hours, and the backlog.
         #    The same `COUNT` the dashboard's `vinto_da_fatturare` signal ran above, asked
-        #    again rather than fished out of `operativa.segnali` by its code: the report
+        #    again rather than fished out of `operational.signals` by its code: the report
         #    would then depend on a *label* staying spelled that way, and the two cannot
         #    disagree anyway -- both statements read the same `REPEATABLE READ` snapshot.
-        vinti_da_fatturare = entries.count_won_deals_to_invoice()
+        won_to_invoice = entries.count_won_deals_to_invoice()
 
         # 6. In pipeline: the stages, the movements, the offers.
         deals = DealRepository(self.session)
         pipeline = [
-            DigestStage(
-                stage_nome=row.stage_nome, numero=row.numero, valore_totale=row.valore_totale
-            )
+            DigestStage(stage_name=row.stage_name, number=row.number, total_value=row.total_value)
             for row in deals.pipeline_summary()
-            if row.numero > 0
+            if row.number > 0
         ]
-        deal_mossi = self._movimenti(deals, da, a)
-        offerte = DocumentRepository(self.session).pending_offers(_OFFERTE_MOSTRATE)
+        deal_mossi = self._movements(deals, da, a)
+        offers = DocumentRepository(self.session).pending_offers(_OFFERS_SHOWN)
 
-        arretrato = operativa.arretrato
+        backlog = operational.backlog
         return WeeklyDigest(
-            settimana=iso_week(da),
+            week=iso_week(da),
             da=da,
             a=a,
-            scadute=scadute,
-            in_scadenza=self._righe(in_scadenza_rows, nomi, lambda row: row.data_scadenza),
-            vinti_da_fatturare=vinti_da_fatturare,
-            ore_non_fatturate=arretrato.ore_fatturabili_non_fatturate,
-            valore_maturato=arretrato.valore_maturato,
-            emesse=self._righe(emesse_rows, nomi, lambda row: row.data_emissione),
-            totale_mese_corrente=invoices.sum_emesse_in_periodo(mese_da, mese_a),
-            totale_mese_precedente=invoices.sum_emesse_in_periodo(precedente_da, precedente_a),
-            incassate=self._righe(incassate_rows, nomi, lambda row: row.data_incasso),
-            ore=ore,
+            overdue=overdue,
+            in_due_date=self._lines(in_due_date_rows, nomi, lambda row: row.due_date),
+            won_to_invoice=won_to_invoice,
+            hours_uninvoiced=backlog.billable_uninvoiced_hours,
+            accrued_value=backlog.accrued_value,
+            issued=self._lines(issued_rows, nomi, lambda row: row.issue_date),
+            total_month_current=invoices.sum_issued_in_period(month_from, month_to),
+            total_month_previous=invoices.sum_issued_in_period(previous_from, previous_to),
+            paid=self._lines(paid_rows, nomi, lambda row: row.payment_date),
+            hours=hours,
             pipeline=pipeline,
             deal_mossi=deal_mossi,
-            offerte_in_attesa=[
+            offers_pending=[
                 DigestOffer(
                     # `PendingOffer` carries its ids as strings, because the commercial
                     # dashboard serialises straight to JSON; this model keeps the `UUID`
                     # every other id in the report is, so the mail's link is built the
                     # same way for an offer as for an invoice.
                     document_id=UUID(offer.document_id),
-                    titolo=offer.titolo,
-                    # `PendingOffer.giorni` is `None` when the offer has no `stato_dal`,
+                    title=offer.title,
+                    # `PendingOffer.days` is `None` when the offer has no `status_since`,
                     # which for a *sent* offer only happens on a row migrated before that
                     # column existed. The mail has one column for the age, so it reads 0
                     # there; the honest `None` stays on the dashboard, which has room to
                     # render it as a dash.
-                    giorni=offer.giorni if offer.giorni is not None else 0,
+                    days=offer.days if offer.days is not None else 0,
                 )
-                for offer in offerte
+                for offer in offers
             ],
-            segnali=[
+            signals=[
                 DigestSignal(
-                    codice=signal.codice,
-                    etichetta=signal.etichetta,
-                    conteggio=signal.conteggio,
+                    code=signal.code,
+                    label=signal.label,
+                    count=signal.count,
                     # Every signal has a drill-through today and
                     # `test_dashboard_operational.py` is what keeps it that way; a mail
                     # cannot print a link it does not have, so an absent one is an empty
                     # string the renderer skips rather than a crash on Monday morning.
-                    collegamento=signal.collegamento or "",
+                    link=signal.link or "",
                 )
-                for signal in operativa.segnali
+                for signal in operational.signals
                 # §3.1 section 7: the section exists only when at least one fired. A mail
                 # that reports three zeroes every week is a mail nobody opens.
-                if signal.conteggio > 0
+                if signal.count > 0
             ],
         )
 
-    def attivita_di(self, user_id: UUID) -> DigestAttivita:
+    def task_of(self, user_id: UUID) -> DigestTask:
         """One person's week of commitments: their overdue ones and those due from today to
         seven days on (REB-726).
 
         Read from the same repository the Oggi panel reads, with the same windows, so the
-        mail and the page cannot disagree about what is late. `oggi` is the emitter's
-        day, like `scadute`'s, and the window closes at `oggi + 7` as the page's «prossimi
+        mail and the page cannot disagree about what is late. `today` is the emitter's
+        day, like `overdue`'s, and the window closes at `oggi + 7` as the page's «prossimi
         sette giorni» does. Assigned to `user_id` only: a commitment nobody has taken is
         nobody's mail.
         """
-        oggi = today_local(self.settings)
-        repo = AttivitaRepository(self.session)
+        today = today_local(self.settings)
+        repo = TaskRepository(self.session)
 
-        def righe(rows: list[Attivita], *, ritardo: bool) -> list[DigestAttivitaRiga]:
-            # `scadenza` is never `None` here: both windows are date predicates.
+        def lines(rows: list[Task], *, delay: bool) -> list[DigestTaskLine]:
+            # `due_date` is never `None` here: both windows are date predicates.
             return [
-                DigestAttivitaRiga(
-                    attivita_id=row.id,
-                    titolo=row.titolo,
-                    scadenza=row.scadenza,
-                    giorni_di_ritardo=(oggi - row.scadenza).days if ritardo else None,
+                DigestTaskLine(
+                    task_id=row.id,
+                    title=row.title,
+                    due_date=row.due_date,
+                    days_of_delay=(today - row.due_date).days if delay else None,
                 )
                 for row in rows
-                if row.scadenza is not None
+                if row.due_date is not None
             ]
 
-        totale_ritardo, in_ritardo = repo.aperte_nella_finestra(
-            assegnata_a=user_id, limit=_ATTIVITA_MOSTRATE, prima_del=oggi
+        total_delay, overdue = repo.open_in_the_window(
+            assigned_to=user_id, limit=_TASK_SHOWN, before_of=today
         )
-        totale_settimana, in_settimana = repo.aperte_nella_finestra(
-            assegnata_a=user_id,
-            limit=_ATTIVITA_MOSTRATE,
-            dal=oggi,
-            al=oggi + timedelta(days=GIORNI_PROSSIMI),
+        total_week, in_week = repo.open_in_the_window(
+            assigned_to=user_id,
+            limit=_TASK_SHOWN,
+            dal=today,
+            al=today + timedelta(days=DAYS_NEXT),
         )
-        return DigestAttivita(
-            in_ritardo=righe(in_ritardo, ritardo=True),
-            in_ritardo_totale=totale_ritardo,
-            in_settimana=righe(in_settimana, ritardo=False),
-            in_settimana_totale=totale_settimana,
+        return DigestTask(
+            overdue=lines(overdue, delay=True),
+            overdue_total=total_delay,
+            in_week=lines(in_week, delay=False),
+            in_week_total=total_week,
         )
 
-    def _righe(
+    def _lines(
         self,
         rows: Sequence[Invoice],
         nomi: dict[UUID, str],
         date_of: Callable[[Invoice], date | None],
     ) -> list[DigestInvoice]:
-        """`_riga` over a list, leaving out the rows it declines to print."""
-        return [riga for row in rows if (riga := self._riga(row, nomi, date_of(row))) is not None]
+        """`_line` over a list, leaving out the rows it declines to print."""
+        return [riga for row in rows if (riga := self._line(row, nomi, date_of(row))) is not None]
 
-    def _riga(
+    def _line(
         self,
         invoice: Invoice,
         nomi: dict[UUID, str],
         data: date | None,
         *,
-        giorni_di_ritardo: int | None = None,
+        days_of_delay: int | None = None,
     ) -> DigestInvoice | None:
         """One register row as a mail line.
 
         `data` is passed in rather than picked here: which of three dates a section is
         about is the section's business, and a method that decided for itself would need to
         know which list it was building -- exactly the branch `DigestInvoice`'s single
-        shape exists to avoid. `giorni_di_ritardo` is passed the same way and for the same
+        shape exists to avoid. `days_of_delay` is passed the same way and for the same
         reason, and only «Da incassare» passes it: zero days late is a thing an invoice can
         be, so `None` and `0` are two different statements about a row.
 
         The fallbacks are the columns' own nullability and not defensive padding:
-        `anno`/`numero` are `NULL` on a draft and `data_emissione` on anything unissued,
+        `year`/`number` are `NULL` on a draft and `issue_date` on anything unissued,
         and none of the three predicates above can return such a row. They are here because
         the model's types are not `| None` and a `mypy` cast would hide the same fact
         without stating it.
@@ -367,27 +365,27 @@ class DigestService:
         something this report has no honest line for. That one row is left out and its id
         logged: one odd invoice must not cost the whole space its week. `None` says so.
         """
-        giorno = data or invoice.data_emissione or invoice.data_scadenza
-        if giorno is None:
+        day = data or invoice.issue_date or invoice.due_date
+        if day is None:
             logger.warning("digest: invoice %s has no date to print, row skipped", invoice.id)
             return None
         return DigestInvoice(
             invoice_id=invoice.id,
-            numero=numero_completo(invoice.anno or 0, invoice.numero or 0),
-            cliente=nomi.get(invoice.customer_id, ""),
-            importo=invoice.totale,
-            data=giorno,
-            stato=invoice.stato,
-            stato_pagamento=invoice.stato_pagamento,
-            # `trasmessa_esternamente_il` is the day the document was deposited with the
+            number=number_complete(invoice.year or 0, invoice.number or 0),
+            customer=nomi.get(invoice.customer_id, ""),
+            amount=invoice.total,
+            data=day,
+            status=invoice.status,
+            payment_status=invoice.payment_status,
+            # `transmitted_externally_at` is the day the document was deposited with the
             # user's own intermediary: the register's whole notion of «trasmessa», and a
-            # date rather than a state because `stato` already carries two state machines.
+            # date rather than a state because `status` already carries two state machines.
             # The mail prints the word, so it needs the fact and not the day.
-            trasmessa=invoice.trasmessa_esternamente_il is not None,
-            giorni_di_ritardo=giorni_di_ritardo,
+            transmitted=invoice.transmitted_externally_at is not None,
+            days_of_delay=days_of_delay,
         )
 
-    def _movimenti(self, deals: DealRepository, da: date, a: date) -> list[DigestDealMove]:
+    def _movements(self, deals: DealRepository, da: date, a: date) -> list[DigestDealMove]:
         """The deals that changed stage inside the week (§3.1, section 6).
 
         Read by kind **and by window**, never by kind alone: `by_kind` answers the newest
@@ -412,24 +410,24 @@ class DigestService:
             [_STAGE_CHANGED],
             datetime.combine(da, time.min, tzinfo=zona),
             datetime.combine(a + timedelta(days=1), time.min, tzinfo=zona),
-            limit=_MOVIMENTI_LETTI,
+            limit=_MOVEMENTS_READ,
         )
-        righe = [
+        lines = [
             (row, row.occurred_at.astimezone(zona).date())
             for row in rows
-            if row.entity_type == _ENTITA_DEAL
+            if row.entity_type == _ENTITY_DEAL
         ]
-        titoli = deals.names({row.entity_id for row, _ in righe})
+        titles = deals.names({row.entity_id for row, _ in lines})
         return [
             DigestDealMove(
                 deal_id=row.entity_id,
-                titolo=titoli[row.entity_id],
-                stage_nome=str(row.payload[_DESTINAZIONE]),
-                quando=giorno,
+                title=titles[row.entity_id],
+                stage_name=str(row.payload[_DESTINATION]),
+                when=day,
             )
-            for row, giorno in righe
+            for row, day in lines
             # A deal that no longer exists at all: the activity outlived its row, so there
             # is no title to print and the line would say nothing. Soft-deleted deals are
             # still found by `names` and still appear -- an archived deal did move.
-            if row.entity_id in titoli and row.payload.get(_DESTINAZIONE)
+            if row.entity_id in titles and row.payload.get(_DESTINATION)
         ]

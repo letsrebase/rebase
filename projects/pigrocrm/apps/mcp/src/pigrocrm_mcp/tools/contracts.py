@@ -51,22 +51,22 @@ def update(context: McpContext, contract_id: str, data: dict[str, Any]) -> dict[
     return report(before, service.update(identifier, changes, context.actor))
 
 
-def set_state(context: McpContext, contract_id: str, stato: str) -> dict[str, Any]:
+def set_state(context: McpContext, contract_id: str, status: str) -> dict[str, Any]:
     return (
         ContractService(context.session)
         .set_state(
-            UUID(contract_id), ContractStateChange.model_validate({"stato": stato}), context.actor
+            UUID(contract_id), ContractStateChange.model_validate({"status": status}), context.actor
         )
         .model_dump(mode="json")
     )
 
 
 def concentration_cap(
-    context: McpContext, contract_id: str, as_of: date | None, soglia: float | None
+    context: McpContext, contract_id: str, as_of: date | None, threshold: float | None
 ) -> dict[str, Any]:
     return (
         ContractService(context.session)
-        .concentration_cap(UUID(contract_id), context.actor, as_of, soglia)
+        .concentration_cap(UUID(contract_id), context.actor, as_of, threshold)
         .model_dump(mode="json")
     )
 

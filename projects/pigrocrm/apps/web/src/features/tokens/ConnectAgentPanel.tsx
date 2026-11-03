@@ -41,7 +41,7 @@ export function ConnectAgentPanel({
    *  still only effective where the space offers it. */
   fullAccessByDefault?: boolean
 }) {
-  const [nome, setNome] = useState('Claude Code')
+  const [nome, setName] = useState('Claude Code')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const create = useCreateToken()
   // The invoice, rate and period-lock tools are chosen per token (REB-810) and closed
@@ -129,7 +129,7 @@ export function ConnectAgentPanel({
               id={id('token-nome')}
               aria-invalid={fieldError?.field === 'nome'}
               value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              onChange={(event) => setName(event.target.value)}
             />
             <Button onClick={mint} disabled={create.isPending}>
               Crea il token

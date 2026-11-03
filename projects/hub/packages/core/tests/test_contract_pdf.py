@@ -42,11 +42,11 @@ from rebase_core.contracts.fields import (
 from rebase_core.contracts.render import COMPANY_DEFAULTS, DOCUMENTS, RECEIPT_TEXTS, TEXTS
 from rebase_core.regimes import TEXT_NAMES
 
-EXAMPLE = CONTRACTS / "incarico.esempio.json"
+EXAMPLE = CONTRACTS / "engagement.example.json"
 # Signed on the signing site or on paper, never typed into a data file ahead of time.
 SIGNATURES = {"firma-rebase", "firma-professionista"}
-LETTERS = ("lettera-di-incarico", "lettera-di-incarico-occasionale")
-OCCASIONAL_TEXTS = ("contratto-quadro-occasionale", "lettera-di-incarico-occasionale")
+LETTERS = ("engagement-letter", "engagement-letter-occasional")
+OCCASIONAL_TEXTS = ("framework-agreement-occasional", "engagement-letter-occasional")
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_a_fee_the_page_could_not_print_as_given_stops_the_build(
     fee: Value, complaint: str
 ) -> None:
     with pytest.raises(ContractFailed, match=complaint):
-        checked({"compenso": fee})
+        checked({"fee": fee})
 
 
 def test_the_payment_term_is_written_from_the_days_and_the_month_end() -> None:
@@ -104,13 +104,13 @@ def test_a_data_file_with_no_printable_number_is_refused(tmp_path: Path, raw: st
 
 
 def test_the_fee_is_written_the_italian_way_and_identifiers_as_given() -> None:
-    assert checked({"compenso": 450})["compenso"] == 450
-    assert rendered("compenso", 450) == "450,00 €"
+    assert checked({"fee": 450})["fee"] == 450
+    assert rendered("fee", 450) == "450,00 €"
     assert italian(Decimal("1234.5"), 2) == "1.234,50"
-    assert rendered("compenso", 12000) == "12.000,00 €"
-    assert rendered("numero", 2026001) == "2026001"
+    assert rendered("fee", 12000) == "12.000,00 €"
+    assert rendered("number", 2026001) == "2026001"
     assert rendered("giorni-preavviso", 30) == "30"
-    assert rendered("risultati", "l'Incarico") == "l’Incarico"
+    assert rendered("results", "l'Incarico") == "l’Incarico"
 
 
 def test_a_date_is_written_the_way_a_contract_writes_it() -> None:
@@ -218,7 +218,7 @@ def test_the_example_is_fiction() -> None:
 
 def test_the_payment_term_of_an_occasional_letter_counts_from_the_receipt() -> None:
     """REB-687: a prestazione occasionale is paid on a ricevuta, not an invoice."""
-    assert {"lettera-di-incarico-occasionale"} == RECEIPT_TEXTS
+    assert {"engagement-letter-occasional"} == RECEIPT_TEXTS
     assert checked({"giorni-pagamento": 30, "fine-mese": True}, receipt=True)[
         "termine-pagamento"
     ] == ("30 giorni data ricevuta fine mese")
@@ -228,7 +228,7 @@ def test_the_payment_term_of_an_occasional_letter_counts_from_the_receipt() -> N
 
 
 @pytest.mark.parametrize("document", OCCASIONAL_TEXTS)
-def test_an_occasional_text_prints_no_partita_iva_no_vat_excluded_and_no_invoice(
+def test_an_occasional_text_prints_no_vat_number_no_vat_excluded_and_no_invoice(
     document: str,
 ) -> None:
     """Spec § 5: the occasional texts never print the collaborator's partita IVA, never
@@ -247,12 +247,12 @@ def test_an_occasional_text_prints_no_partita_iva_no_vat_excluded_and_no_invoice
     )
 
 
-def test_the_occasional_quadro_keeps_the_ordinary_articles_and_adds_only_5_7() -> None:
+def test_the_occasional_framework_keeps_the_ordinary_articles_and_adds_only_5_7() -> None:
     """Spec § 5.1: a copy of the ordinary text with the listed changes and no others, so
     the letter cites the same article numbers; the one new clause is 5.7, and rebase's
     paragraph loses the codice destinatario."""
-    ordinary = (TEXTS / "contratto-quadro.md").read_text(encoding="utf-8")
-    occasional = (TEXTS / "contratto-quadro-occasionale.md").read_text(encoding="utf-8")
+    ordinary = (TEXTS / "framework-agreement.md").read_text(encoding="utf-8")
+    occasional = (TEXTS / "framework-agreement-occasional.md").read_text(encoding="utf-8")
 
     def headings(markdown: str) -> list[str]:
         return [line for line in markdown.splitlines() if line.startswith("## ")]

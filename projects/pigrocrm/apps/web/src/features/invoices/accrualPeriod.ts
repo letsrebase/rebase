@@ -7,12 +7,12 @@
  * a plain function, the same reason `lineDraft.ts` sits beside `InvoiceLinesEditor`.
  */
 export interface AccrualPeriodDraft {
-  competenza_da: string
-  competenza_a: string
+  accrual_from: string
+  accrual_to: string
 }
 
 export function emptyAccrualPeriod(): AccrualPeriodDraft {
-  return { competenza_da: '', competenza_a: '' }
+  return { accrual_from: '', accrual_to: '' }
 }
 
 /**
@@ -26,8 +26,8 @@ export function emptyAccrualPeriod(): AccrualPeriodDraft {
  * the UTC-midnight trap `lib/dates.ts` documents.
  */
 export function validateAccrualPeriod(draft: AccrualPeriodDraft): string | undefined {
-  const da = draft.competenza_da.trim()
-  const a = draft.competenza_a.trim()
+  const da = draft.accrual_from.trim()
+  const a = draft.accrual_to.trim()
   if (da === '' && a === '') return undefined
   if (da === '' || a === '') return 'Il periodo di competenza richiede sia l’inizio sia la fine.'
   if (da > a) return 'La fine del periodo di competenza non può precedere l’inizio.'
@@ -40,10 +40,10 @@ export function validateAccrualPeriod(draft: AccrualPeriodDraft): string | undef
  * which is the same distinction `InvoiceLinesEditor` draws for an emptied discount.
  */
 export function accrualPeriodBody(draft: AccrualPeriodDraft): {
-  competenza_da: string | null
-  competenza_a: string | null
+  accrual_from: string | null
+  accrual_to: string | null
 } {
-  const da = draft.competenza_da.trim()
-  const a = draft.competenza_a.trim()
-  return { competenza_da: da === '' ? null : da, competenza_a: a === '' ? null : a }
+  const da = draft.accrual_from.trim()
+  const a = draft.accrual_to.trim()
+  return { accrual_from: da === '' ? null : da, accrual_to: a === '' ? null : a }
 }

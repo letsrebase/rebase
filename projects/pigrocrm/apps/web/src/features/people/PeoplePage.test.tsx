@@ -26,7 +26,7 @@ vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
 
 const mockGet = vi.spyOn(api, 'GET')
 
-function customerPage(items: { id: string; ragione_sociale: string }[]) {
+function customerPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -39,13 +39,13 @@ beforeEach(() => {
   mockGet.mockImplementation(((path: string) => {
     if (path === '/api/customers') {
       return customerPage([
-        { id: 'cust-zeta', ragione_sociale: 'Zeta Srl' },
-        { id: 'cust-acme', ragione_sociale: 'ACME Srl' },
+        { id: 'cust-zeta', legal_name: 'Zeta Srl' },
+        { id: 'cust-acme', legal_name: 'ACME Srl' },
       ])
     }
     if (path === '/api/customers/{customer_id}') {
       return Promise.resolve({
-        data: { id: 'cust-acme', ragione_sociale: 'ACME Srl' },
+        data: { id: 'cust-acme', legal_name: 'ACME Srl' },
         response: new Response(null, { status: 200 }),
       }) as never
     }

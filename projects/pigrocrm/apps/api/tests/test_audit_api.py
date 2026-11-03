@@ -15,7 +15,7 @@ COLLABORATOR = {"email": "collab@pigro.it", "password": "supersegreta1"}
 def _create_collaborator(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
         "/api/users",
-        json={**COLLABORATOR, "nome": "Collaboratrice", "ruolo": "collaboratore"},
+        json={**COLLABORATOR, "nome": "Collaboratrice", "role": "collaborator"},
     )
     assert response.status_code == 201, response.text
     body: dict[str, Any] = response.json()
@@ -143,7 +143,7 @@ def test_a_deleted_stages_timeline_is_the_only_record_that_it_existed(
     stage itself proves it, so the timeline entry has to stand on its own."""
     stage = logged_in.post(
         "/api/pipeline-stages",
-        json={"nome": "Da eliminare", "posizione": 8, "code": "da_eliminare"},
+        json={"nome": "Da eliminare", "position": 8, "code": "da_eliminare"},
     ).json()
 
     assert logged_in.delete(f"/api/pipeline-stages/{stage['id']}").status_code == 204
@@ -151,7 +151,7 @@ def test_a_deleted_stages_timeline_is_the_only_record_that_it_existed(
     assert logged_in.get(f"/api/pipeline-stages/{stage['id']}/timeline").status_code == 200
     entries = logged_in.get(f"/api/pipeline-stages/{stage['id']}/timeline").json()
     assert [e["kind"] for e in entries] == ["deleted", "created"]
-    assert entries[0]["payload"] == {"nome": "Da eliminare", "code": "da_eliminare", "tipo": "open"}
+    assert entries[0]["payload"] == {"nome": "Da eliminare", "code": "da_eliminare", "type": "open"}
 
 
 def test_a_timeline_still_refuses_an_out_of_range_limit(

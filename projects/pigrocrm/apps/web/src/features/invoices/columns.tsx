@@ -10,20 +10,20 @@ import {
   PAYMENT_STATE_LABELS,
   PAYMENT_STATE_TONE,
   type Invoice,
-  type StatoPagamento,
+  type PaymentStatus,
 } from './queries'
 
 const EMPTY = '—'
 
 /**
- * `cliente` adds the «Cliente» column (ORB-98). Opt-in rather than always there because
+ * `customer` adds the «Cliente» column (ORB-98). Opt-in rather than always there because
  * the same columns draw two screens: the list page, which mixes every customer's
  * invoices and is where a row has to say whose it is, and the Fatture tab inside a
  * customer's or a deal's page, where every row belongs to the customer already named in
  * the title and the column would only repeat it on each line.
  */
 export interface InvoiceColumnOptions {
-  cliente?: boolean
+  customer?: boolean
   /**
    * The aziende to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
    * only under «Tutte le aziende» from the second azienda on (`useLegalEntitiesToName`): with one
@@ -31,20 +31,20 @@ export interface InvoiceColumnOptions {
    * the sidebar on each line. The accessor stays the bare number, so sorting and the
    * export see one value; the name is drawn by the cell, muted, after a middle dot.
    */
-  aziende?: LegalEntityRecord[]
+  legal_entities?: LegalEntityRecord[]
 }
 
 /**
- * The name the API resolved for the row, or the dash. `customer_ragione_sociale` is
+ * The name the API resolved for the row, or the dash. `customer_legal_name` is
  * `str | None` on the server: the association always exists (`customer_id` is NOT NULL),
  * the name may fail to resolve, and that reads as the same em dash every other empty
  * cell shows rather than as an empty string a reader could take for a nameless customer.
- * `''` gets the same dash: `ragione_sociale` is a `SafeStr` with no minimum length, so an
+ * `''` gets the same dash: `legal_name` is a `SafeStr` with no minimum length, so an
  * empty name is a value the column can legitimately hold, and a blank cell would read as
  * a rendering fault rather than as what it is.
  */
 function customerName(row: Invoice): string {
-  return textOrDash(row.customer_ragione_sociale)
+  return textOrDash(row.customer_legal_name)
 }
 
 /** `null`, `undefined` and `''` are all "nothing here", as everywhere else in this table. */
@@ -56,25 +56,25 @@ function textOrDash(value: string | null | undefined): string {
  * The accrual period the document declares (ORB-61), as the detail page states it, or
  * the dash. One helper for the accessor and the cell, as `customerName` above: the two
  * halves of a column disagreeing about what nothing looks like is a defect this file
- * has already shipped once (see the `data_emissione` column).
+ * has already shipped once (see the `issue_date` column).
  */
 function accrualPeriod(row: Invoice): string {
-  return formatPeriod(row.competenza_da, row.competenza_a)
+  return formatPeriod(row.accrual_from, row.accrual_to)
 }
 
 /** The causale, or the dash. */
 function description(row: Invoice): string {
-  return textOrDash(row.causale)
+  return textOrDash(row.memo)
 }
 
 export function buildInvoiceColumns(
   options: InvoiceColumnOptions = {},
 ): ColumnDef<DataTableFeatures, Invoice>[] {
-  const cliente: ColumnDef<DataTableFeatures, Invoice>[] = options.cliente
+  const customer: ColumnDef<DataTableFeatures, Invoice>[] = options.customer
     ? [
         {
           header: 'Cliente',
-          id: 'cliente',
+          id: 'customer',
           accessorFn: (row) => customerName(row),
           // Plain text, like «Tipo»: the table is auto-layout and `TableCell` already
           // says `whitespace-nowrap`, so a long name widens its column and the table
@@ -89,32 +89,32 @@ export function buildInvoiceColumns(
       ]
     : []
 
-  const aziendaName = new Map((options.aziende ?? []).map((a) => [a.id, a.nome]))
+  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.nome]))
 
   return [
     {
       header: 'Numero',
-      id: 'numero',
+      id: 'number',
       // A fiscal number for an invoice, a reference for a proforma. The two are
       // different kinds of identity, not two spellings of one -- which is why
       // `formatInvoiceNumber` cannot derive a reference from a number.
       accessorFn: (row) => formatInvoiceNumber(row),
       cell: ({ row }) => {
-        const numero = formatInvoiceNumber(row.original)
-        const nome = aziendaName.get(row.original.azienda_id)
-        if (nome === undefined) return numero
+        const number = formatInvoiceNumber(row.original)
+        const nome = legalEntityName.get(row.original.legal_entity_id)
+        if (nome === undefined) return number
         return (
           <>
-            {numero}
+            {number}
             <span className="text-muted-foreground"> · {nome}</span>
           </>
         )
       },
     },
-    ...cliente,
+    ...customer,
     {
       header: 'Descrizione',
-      id: 'descrizione',
+      id: 'description',
       accessorFn: (row) => description(row),
       // The one flexible column in this table (ORB-130). A causale runs to 200
       // characters, and a column sized to its content, or even to a fixed maximum,
@@ -134,45 +134,45 @@ export function buildInvoiceColumns(
       // stays reachable as the cell's title.
       meta: { width: '100%' },
       cell: ({ row }) => {
-        const causale = description(row.original)
-        if (causale === EMPTY) return <span className="text-muted-foreground">{EMPTY}</span>
+        const memo = description(row.original)
+        if (memo === EMPTY) return <span className="text-muted-foreground">{EMPTY}</span>
         return (
-          <span className="block w-0 min-w-[max(100%,12rem)] truncate" title={causale}>
-            {causale}
+          <span className="block w-0 min-w-[max(100%,12rem)] truncate" title={memo}>
+            {memo}
           </span>
         )
       },
     },
     {
       header: 'Tipo',
-      id: 'tipo',
-      accessorFn: (row) => INVOICE_TYPE_LABELS[row.tipo as keyof typeof INVOICE_TYPE_LABELS],
+      id: 'type',
+      accessorFn: (row) => INVOICE_TYPE_LABELS[row.type as keyof typeof INVOICE_TYPE_LABELS],
     },
     {
       header: 'Stato',
-      id: 'stato',
+      id: 'status',
       // `importata={false}` suppresses only the uninformative «importata» pill an
       // "esterno" row would otherwise get (ORB-130: in a register where most rows came
       // from the previous system the word explains nothing a reader of the list can act
       // on -- the detail page keeps it, as the reason its XML actions are missing). A
       // "fatturapa" row's own badge ignores the flag and still shows here: it names a
       // fact the list can act on (design 2026-09-23 §5 item 4/§7 item 6).
-      cell: ({ row }) => <InvoiceStateBadge invoice={row.original} importata={false} />,
+      cell: ({ row }) => <InvoiceStateBadge invoice={row.original} imported={false} />,
     },
     {
       header: 'Data',
-      id: 'data_emissione',
+      id: 'issue_date',
       // The accessor keeps the formatted string -- it is what a future sort or export
       // reads, and it is what this column's own tests assert -- while `cell` adds the
       // calendar icon the reference puts before every date (design spec §4). `DateCell`
       // formats the raw ISO value itself, through `lib/dates.ts`, which renders the
       // identical string this accessor does.
-      accessorFn: (row) => formatDate(row.data_emissione),
-      cell: ({ row }) => <DateCell value={row.original.data_emissione} />,
+      accessorFn: (row) => formatDate(row.issue_date),
+      cell: ({ row }) => <DateCell value={row.original.issue_date} />,
     },
     {
       header: 'Competenza',
-      id: 'competenza',
+      id: 'accrual',
       // Beside the date the document was issued on (ORB-126): invoicing runs late here,
       // so the two often name different months, and a list showing only the second does
       // not say what a row is about. Plain text: the emission date is the one column with
@@ -186,33 +186,33 @@ export function buildInvoiceColumns(
     },
     {
       header: 'Totale',
-      id: 'totale',
+      id: 'total',
       // `formatMoney` parses the decimal string into integer cents; nothing here ever
       // sees a float. `meta.align` right-aligns the header over the digits as well --
       // `MoneyCell` alone could only align what is inside the cell.
-      accessorFn: (row) => formatMoney(row.totale),
+      accessorFn: (row) => formatMoney(row.total),
       meta: { align: 'right' },
-      cell: ({ row }) => <MoneyCell>{formatMoney(row.original.totale)}</MoneyCell>,
+      cell: ({ row }) => <MoneyCell>{formatMoney(row.original.total)}</MoneyCell>,
     },
     {
       header: 'Pagamento',
-      id: 'stato_pagamento',
+      id: 'payment_status',
       // A proforma is never collected. Showing "Da incassare" beside something nobody
       // owes is the kind of small lie a fiscal list should not tell, so it reads as
       // absent rather than as unpaid -- and as the plain dash, never as a pill: a pill
       // is a claim about a state, and there is no state here to claim.
       accessorFn: (row) =>
-        row.tipo === 'proforma'
+        row.type === 'proforma'
           ? EMPTY
-          : PAYMENT_STATE_LABELS[row.stato_pagamento as keyof typeof PAYMENT_STATE_LABELS],
+          : PAYMENT_STATE_LABELS[row.payment_status as keyof typeof PAYMENT_STATE_LABELS],
       cell: ({ row }) => {
-        if (row.original.tipo === 'proforma') {
+        if (row.original.type === 'proforma') {
           return <span className="text-muted-foreground">{EMPTY}</span>
         }
-        // Both maps are total over `StatoPagamento`, so neither read takes a fallback:
+        // Both maps are total over `PaymentStatus`, so neither read takes a fallback:
         // one would be a branch the types make unreachable.
-        const stato = row.original.stato_pagamento as StatoPagamento
-        return <StatusPill tone={PAYMENT_STATE_TONE[stato]}>{PAYMENT_STATE_LABELS[stato]}</StatusPill>
+        const status = row.original.payment_status as PaymentStatus
+        return <StatusPill tone={PAYMENT_STATE_TONE[status]}>{PAYMENT_STATE_LABELS[status]}</StatusPill>
       },
     },
   ]

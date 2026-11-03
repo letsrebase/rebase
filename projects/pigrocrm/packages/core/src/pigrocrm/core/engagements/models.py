@@ -19,7 +19,7 @@ class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`.
     `space_created` says the space was opened for this match (or its missing admin
     created for it): the call that completes the row sends the welcome and answers
-    `spazio_creato` from it, so a call that stopped on the way loses neither."""
+    `space_created` from it, so a call that stopped on the way loses neither."""
 
     __tablename__ = "rebase_engagements"
 

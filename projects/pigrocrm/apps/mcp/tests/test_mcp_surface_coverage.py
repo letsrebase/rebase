@@ -168,7 +168,7 @@ _VIETATE: dict[Method, str] = {
 #     of its own regardless -- it is the guard `list_children` and the two `read_*` apply
 #     internally, and reaching it would require the very `DriveReader` that
 #     `test_no_unconditional_module_can_even_obtain_a_drive_reader` denies.
-_FUORI_DAL_SETACCIO: dict[Method, str] = {
+_OUTSIDE_FROM_SETACCIO: dict[Method, str] = {
     ("TimeBilling", "bind_to_invoice"): "precede l'emissione (slice 4 §11); not a `*Service` class",
     ("DriveReader", "list_children"): (
         "elenca una cartella del Drive personale del titolare (slice 9 §4.2)"
@@ -270,16 +270,16 @@ _INTERNE: dict[Method, str] = {
         "non e' un'azione a se'"
     ),
     ("LegalEntityService", "resolve"): (
-        "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
-        "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"
+        "lettura interna: la riga che un `legal_entity_id` nomina, o la predefinita quando e' "
+        "`None`; e' cio' che ogni servizio chiama per se', e `describe_legal_entity` la espone"
     ),
     ("LegalEntityService", "single"): (
         "lettura interna (REB-630): l'unica azienda attiva, o `None` quando lo spazio ne "
         "ha piu' di una e il chiamante non l'ha indicata; la chiamano la stima fiscale e "
-        "le soglie per risolvere il proprio `azienda_id`, non e' un'azione a se'"
+        "le soglie per risolvere il proprio `legal_entity_id`, non e' un'azione a se'"
     ),
     ("LegalEntityService", "require_single"): (
-        "lettura interna (REB-630): `single`, o il rifiuto che nomina `azienda_id`; la "
+        "lettura interna (REB-630): `single`, o il rifiuto che nomina `legal_entity_id`; la "
         "chiamano `get_fiscal_estimate`, `ceiling_headroom` e `simulate_ceiling`, i cui "
         "tool espongono gia' il parametro"
     ),
@@ -296,7 +296,7 @@ _INTERNE: dict[Method, str] = {
         "(slice 9 §3.2 regola 4). Gli altri due chiamanti sono adapter, non "
         "`packages/core`, ma nessuno dei due e' un tool o una resource di questa "
         "scansione: `import_issued_invoice` la usa per comporre "
-        "`buchi_non_dichiarati`, e vive in `privileged.py`, esente da questa scansione "
+        "`undeclared_gaps`, e vive in `privileged.py`, esente da questa scansione "
         "come il resto degli atti fiscali; `POST /api/invoices/import` la usa per lo "
         "stesso campo nella sua risposta REST, un adapter che questa scansione non "
         "copre affatto"
@@ -315,8 +315,8 @@ _INTERNE: dict[Method, str] = {
     ("UserService", "count"): "conta gli utenti per il bootstrap del primo admin",
     # REB-362: none of these three takes an actor -- the mechanical signature this
     # category is named for. `ProposalService` is the real MCP-facing read (spec §10,
-    # "agents propose, humans confirm"): a proposal already carries `campi_proposti`/
-    # `estratto` for review, and once accepted, `id_risultato` names the row it
+    # "agents propose, humans confirm"): a proposal already carries `proposed_fields`/
+    # `excerpt` for review, and once accepted, `result_id` names the row it
     # produced -- so `get_proposal` is what an agent actually calls, never a direct
     # read of the `work_unit`/`approval` row underneath.
     ("WorkUnitService", "get"): "nessun actor: lettura interna dietro get_proposal",
@@ -584,7 +584,7 @@ _CREDENZIALI: dict[Method, str] = {
 #    rates: an agent records and reads within a configuration, and a person decides what
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
-_CONFIGURAZIONE: dict[Method, str] = {
+_CONFIGURATION: dict[Method, str] = {
     ("SlackService", "rematch"): (
         "Impostazioni > Slack (REB-739): asks Slack, with the space's bot token, who each user "
         "is. Who receives a message in a third party's workspace is a person's decision made "
@@ -746,11 +746,11 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "current text through the `get_*` tools, and the replaced one has no use for it"
     ),
     ("DealService", "get_many"): (
-        "read by the `ore_da_registrare` prompt to name the deals of the recent feed; a prompt "
+        "read by the `hours_to_log` prompt to name the deals of the recent feed; a prompt "
         "is not a tool, and an agent already reads a deal through `get_deal` and `search_deals`"
     ),
     ("InvoiceService", "unpaid_for_customer"): (
-        "read by the `stato_cliente` prompt for the receivables of one customer; an agent "
+        "read by the `status_customer` prompt for the receivables of one customer; an agent "
         "already reads them through `list_invoices` and `get_receivables_dashboard`"
     ),
     ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
@@ -777,10 +777,10 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "cruscotti, le fatture, le ore, la pipeline), e un agente che vuole la settimana "
         "la legge da li' invece di ricevere una pagina di prosa"
     ),
-    ("DigestService", "attivita_di"): (
+    ("DigestService", "task_of"): (
         "the Monday digest's «Da fare» section (REB-726): one person's overdue "
         "activities and those due this week. An agent reads the same date windows "
-        "through `get_attivita_oggi` and `list_attivita`, without using email"
+        "through `get_tasks_today` and `list_tasks`, without using email"
     ),
     ("AnalyticsService", "economic_overview"): (
         "la scheda economica della dashboard porta con se' la stima fiscale calcolata su "
@@ -882,7 +882,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ),
     # Le cinque righe qui sotto sono cio' che resta di 5B-2 dopo che **B2-10 ha deciso
     # la superficie MCP di questa fetta**, come B1-14 aveva deciso quella di 5B-1.
-    # `EmailDraftService.create` e `SollecitiService.candidates` erano qui e non ci sono
+    # `EmailDraftService.create` e `PaymentRemindersService.candidates` erano qui e non ci sono
     # piu': sono `draft_email` e `list_payment_reminder_candidates`. La riga di
     # separazione non e' lettura contro scrittura, ed e' bene dirla per intero perche' e'
     # l'unica cosa che tiene insieme le esclusioni rimaste:
@@ -914,7 +914,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "partita di tutti -- inclusi i solleciti, che hanno l'IBAN del titolare dentro. Un "
     "agente non ne ha bisogno per preparare una bozza, che e' l'unica scrittura che gli "
     "e' concessa qui",
-    ("SollecitiService", "create_reminder"): "**preparare un sollecito non e' preparare "
+    ("PaymentRemindersService", "create_reminder"): "**preparare un sollecito non e' preparare "
     "un'email**, ed e' qui che passa la riga fra questa esclusione e `draft_email`. Il "
     "testo non e' neutro: e' una richiesta di denaro a nome del titolare, con il suo IBAN "
     "dentro. E prepararlo *consuma* una delle tre posizioni che il registro concede per "
@@ -1017,7 +1017,7 @@ ESCLUSIONI: dict[Method, str] = {
     **_VIETATE,
     **_INTERNE,
     **_CREDENZIALI,
-    **_CONFIGURAZIONE,
+    **_CONFIGURATION,
     **_BYTE,
     **_COPERTE_O_UMANE,
 }
@@ -1231,20 +1231,20 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
     `LegalEntityService.upsert` standing in for `FiscalProfileService.upsert`, which
     is the exact confusion the qualified list exists to prevent.
 
-    `_FUORI_DAL_SETACCIO` counts on the same side of the equality as `_VIETATE`, which
+    `_OUTSIDE_FROM_SETACCIO` counts on the same side of the equality as `_VIETATE`, which
     is what keeps it from becoming a place to hide a ban: a name moved there to avoid
     writing a category still has to appear in `FORBIDDEN_SERVICE_CALLS`, and
     `test_nothing_hides_in_the_out_of_sweep_block` checks its receivers really are
     outside the sweep rather than merely declared to be."""
-    dichiarate = {method for _, method in _VIETATE} | {method for _, method in _FUORI_DAL_SETACCIO}
-    assert dichiarate == set(FORBIDDEN_SERVICE_CALLS) | {
+    declared = {method for _, method in _VIETATE} | {method for _, method in _OUTSIDE_FROM_SETACCIO}
+    assert declared == set(FORBIDDEN_SERVICE_CALLS) | {
         method for _, method in FORBIDDEN_QUALIFIED_CALLS
     }
     assert set(FORBIDDEN_QUALIFIED_CALLS) <= set(_VIETATE)
 
 
 def test_nothing_hides_in_the_out_of_sweep_block() -> None:
-    """`_FUORI_DAL_SETACCIO` is an escape hatch, so it needs a lock.
+    """`_OUTSIDE_FROM_SETACCIO` is an escape hatch, so it needs a lock.
 
     Its whole justification is that the receiver is not a class this file's inventory
     can enumerate. A `*Service` method listed there would be excluded from the
@@ -1253,7 +1253,7 @@ def test_nothing_hides_in_the_out_of_sweep_block() -> None:
     still exists -- a reason with nothing holding it to reality, which is precisely what
     the six categories above were built to avoid.
     """
-    for service, method in _FUORI_DAL_SETACCIO:
+    for service, method in _OUTSIDE_FROM_SETACCIO:
         assert service not in SERVICES, (
             f"'{service}' e' un servizio di packages/core: la sua esclusione va in una "
             "delle sei categorie sopra, dove il metodo viene verificato ancora esistente"
@@ -1264,7 +1264,7 @@ def test_nothing_hides_in_the_out_of_sweep_block() -> None:
     # `test_the_privileged_module_is_the_only_place_they_appear` requires every one of
     # them to be *called* from a privileged module, which a deleted or renamed method
     # cannot be. This file stays a pure AST walk with no import from `packages/core`.
-    assert ("DriveReader", "read_text") in _FUORI_DAL_SETACCIO
+    assert ("DriveReader", "read_text") in _OUTSIDE_FROM_SETACCIO
 
 
 def test_no_qualified_ban_is_reachable_from_a_resource_either() -> None:

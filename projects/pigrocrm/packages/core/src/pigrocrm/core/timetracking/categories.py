@@ -20,15 +20,15 @@ ENTITY = "cost_category"
 # (code, nome, posizione). `code` is the stable identity a rename cannot touch; the
 # five names come straight from spec §4.2.
 SEED_CATEGORIES: tuple[tuple[str, str, int], ...] = (
-    ("consulenza_esterna", "Consulenza esterna", 0),
+    ("consulting_esterna", "Consulenza esterna", 0),
     ("software_licenze", "Software e licenze", 1),
-    ("viaggi_trasferte", "Viaggi e trasferte", 2),
+    ("travel_trips", "Viaggi e trasferte", 2),
     ("materiali", "Materiali", 3),
     ("altro", "Altro", 4),
 )
 
 
-def _conflicting_nome(nome: str) -> Conflict:
+def _conflicting_name(nome: str) -> Conflict:
     return Conflict(ENTITY, "esiste già una categoria con questo nome", nome=nome)
 
 
@@ -44,7 +44,7 @@ class CostCategoryRepository:
             select(CostCategory).where(CostCategory.code == code)
         ).scalar_one_or_none()
 
-    def get_by_nome(self, nome: str) -> CostCategory | None:
+    def get_by_name(self, nome: str) -> CostCategory | None:
         """Case-insensitive, matching `uq_cost_categories_nome`'s functional index.
         A pre-check on the raw column would pass for `"trasferte"` against a stored
         `"Trasferte"` and then be refused by the database with a raw
@@ -71,9 +71,9 @@ class CostCategoryRepository:
     def list(self, *, include_archived: bool = False) -> list[CostCategory]:
         stmt = select(CostCategory)
         if not include_archived:
-            stmt = stmt.where(CostCategory.archiviata.is_(False))
+            stmt = stmt.where(CostCategory.archived.is_(False))
         return list(
-            self.session.execute(stmt.order_by(CostCategory.posizione, CostCategory.nome)).scalars()
+            self.session.execute(stmt.order_by(CostCategory.position, CostCategory.nome)).scalars()
         )
 
 
@@ -98,14 +98,14 @@ class CostCategoryService:
         nome = data.nome.strip()
         if not nome:
             raise ValidationFailed(ENTITY, "nome", "nome vuoto", expected="un nome non vuoto")
-        if self.repo.get_by_nome(nome):
-            raise _conflicting_nome(nome)
+        if self.repo.get_by_name(nome):
+            raise _conflicting_name(nome)
 
-        category = CostCategory(nome=nome, posizione=data.posizione, code=None, archiviata=False)
+        category = CostCategory(nome=nome, position=data.position, code=None, archived=False)
         # The pre-check above cannot cover a race between two concurrent requests: there the
         # functional unique index is the only authority, and the savepoint keeps its failure
         # from touching the rest of the caller's session.
-        with savepoint(self.session, lambda exc: _conflicting_nome(nome)):
+        with savepoint(self.session, lambda exc: _conflicting_name(nome)):
             self.repo.add(category)
         self.activities.record(ENTITY, category.id, "created", actor, {"nome": nome})
         self.session.commit()
@@ -122,14 +122,14 @@ class CostCategoryService:
             nome = changes["nome"].strip()
             if not nome:
                 raise ValidationFailed(ENTITY, "nome", "nome vuoto", expected="un nome non vuoto")
-            existing = self.repo.get_by_nome(nome)
+            existing = self.repo.get_by_name(nome)
             if existing is not None and existing.id != category.id:
-                raise _conflicting_nome(nome)
+                raise _conflicting_name(nome)
             changes["nome"] = nome
         # The savepoint holds the write that can lose the race on the unique name, so only
         # it is rolled back and the caller's session stays usable.
         shown = str(changes.get("nome", category.nome))
-        with savepoint(self.session, lambda exc: _conflicting_nome(shown)):
+        with savepoint(self.session, lambda exc: _conflicting_name(shown)):
             for key, value in changes.items():
                 setattr(category, key, value)
         self.activities.record(ENTITY, category.id, "updated", actor, {"changed": sorted(changes)})
@@ -143,9 +143,9 @@ class CostCategoryService:
         last year still names its categories."""
         actor.require_unscoped_admin("archive_cost_category")
         category = self._require(category_id)
-        category.archiviata = True
+        category.archived = True
         self.activities.record(
-            ENTITY, category.id, "archived", actor, {"costi": self.repo.count_costs(category.id)}
+            ENTITY, category.id, "archived", actor, {"costs": self.repo.count_costs(category.id)}
         )
         self.session.commit()
         return CostCategoryRead.model_validate(category)
@@ -153,7 +153,7 @@ class CostCategoryService:
     def unarchive_cost_category(self, category_id: UUID, actor: Actor) -> CostCategoryRead:
         actor.require_unscoped_admin("unarchive_cost_category")
         category = self._require(category_id)
-        category.archiviata = False
+        category.archived = False
         self.activities.record(ENTITY, category.id, "unarchived", actor)
         self.session.commit()
         return CostCategoryRead.model_validate(category)
@@ -168,11 +168,11 @@ class CostCategoryService:
         """
         actor.require_unscoped_admin("seed_cost_categories")
         created: list[CostCategoryRead] = []
-        for code, nome, posizione in SEED_CATEGORIES:
+        for code, nome, position in SEED_CATEGORIES:
             if self.repo.get_by_code(code) is not None:
                 continue
             category = self.repo.add(
-                CostCategory(nome=nome, posizione=posizione, code=code, archiviata=False)
+                CostCategory(nome=nome, position=position, code=code, archived=False)
             )
             self.activities.record(
                 ENTITY, category.id, "created", actor, {"nome": nome, "code": code}
@@ -189,7 +189,7 @@ class CostCategoryService:
         category = self.repo.get(category_id)
         if category is None:
             raise NotFound(ENTITY, category_id)
-        if category.archiviata:
+        if category.archived:
             raise ValidationFailed(
                 ENTITY,
                 "category_id",

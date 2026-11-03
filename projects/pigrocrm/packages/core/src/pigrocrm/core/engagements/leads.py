@@ -120,7 +120,7 @@ class LeadService:
             raise LeadsSpaceNotConfigured()
         # The answer carries the deal's link, built from `PIGROCRM_PUBLIC_URL`.
         self.door._require_public_url()
-        email = str(data.referente.email).strip().lower()
+        email = str(data.contact_person.email).strip().lower()
         key = f"{LOCK_PREFIX}{email}"
         with self.registry_engine.connect() as lock:
             try:
@@ -162,7 +162,7 @@ class LeadService:
                     recorded.customer_id,
                     self._person_id(space, email, recorded.customer_id),
                     recorded.id,
-                    creato=False,
+                    created=False,
                 )
             return self._create(space, tenant.slug, request_id, data, email)
 
@@ -184,7 +184,7 @@ class LeadService:
         marker = lead_marker(request_id)
         person_id = self._person_id(space, email, deal.customer_id)
         if marker in deal.rebase_refs:
-            return self._answer(slug, deal.customer_id, person_id, deal.id, creato=False)
+            return self._answer(slug, deal.customer_id, person_id, deal.id, created=False)
         # Recorded first and left to the reference's commit: the entries survive only with
         # the reference they are about (`ActivityService.record` joins the caller's
         # transaction). The prospect's sentence goes to the deal's thread, where it can be
@@ -194,11 +194,11 @@ class LeadService:
             deal.id,
             KIND_LINKED,
             Actor.rebase(),
-            {"richiesta": str(request_id), "azienda": data.azienda},
+            {"request": str(request_id), "legal_entity": data.legal_entity},
         )
         append_first_note(space, "deal", deal.id, data.deal.note, Actor.rebase())
         DealService(space).attach_rebase_ref(deal.id, marker, Actor.rebase())
-        return self._answer(slug, deal.customer_id, person_id, deal.id, creato=False)
+        return self._answer(slug, deal.customer_id, person_id, deal.id, created=False)
 
     def _create(
         self, space: Session, slug: str, request_id: UUID, data: LeadUpsert, email: str
@@ -225,13 +225,13 @@ class LeadService:
             customer_id = reused.customer_id
             person_id: UUID = reused.id
             customer = customers.get(customer_id)
-            known_name = customer.ragione_sociale if customer is not None else None
+            known_name = customer.legal_name if customer is not None else None
         else:
             customer_id = (
                 CustomerService(space)
                 ._insert(
                     CustomerCreate(
-                        ragione_sociale=data.azienda,
+                        legal_name=data.legal_entity,
                         note=(
                             "Creato da rebase dalla richiesta di un'azienda sull'hub il "
                             f"{today_local(self.settings):%d/%m/%Y}."
@@ -255,11 +255,11 @@ class LeadService:
                     PersonService(space)
                     ._insert(
                         PersonCreate(
-                            nome=data.referente.nome,
-                            cognome=data.referente.cognome,
+                            nome=data.contact_person.nome,
+                            last_name=data.contact_person.last_name,
                             email=email,
-                            telefono=data.referente.telefono,
-                            linkedin=data.referente.linkedin_url,
+                            phone=data.contact_person.phone,
+                            linkedin=data.contact_person.linkedin_url,
                             customer_id=customer_id,
                         ),
                         actor,
@@ -268,27 +268,27 @@ class LeadService:
                 )
 
         notes = [data.deal.note] if data.deal.note else []
-        if known_name is not None and not _same_name(data.azienda, known_name):
+        if known_name is not None and not _same_name(data.legal_entity, known_name):
             notes.append(
-                f"Nome indicato nella richiesta: {data.azienda}. "
+                f"Nome indicato nella richiesta: {data.legal_entity}. "
                 f"Cliente già presente nel CRM: {known_name}."
             )
         deal = DealService(space).create(
             DealCreate(
                 nome=data.deal.nome,
                 customer_id=customer_id,
-                valore_previsto=data.deal.valore_previsto,
-                data_chiusura_prevista=data.deal.data_chiusura_prevista,
+                expected_value=data.deal.expected_value,
+                expected_close_date=data.deal.expected_close_date,
                 note="\n".join(notes),
             ),
             actor,
             rebase_ref=lead_marker(request_id),
         )
         ActivityService(space).record(
-            "deal", deal.id, KIND_FILED, actor, {"richiesta": str(request_id)}
+            "deal", deal.id, KIND_FILED, actor, {"request": str(request_id)}
         )
         space.commit()
-        return self._answer(slug, customer_id, person_id, deal.id, creato=True)
+        return self._answer(slug, customer_id, person_id, deal.id, created=True)
 
     @staticmethod
     def _people_with_email(space: Session, email: str) -> list[Person]:
@@ -311,12 +311,12 @@ class LeadService:
         return found.id if found is not None else None
 
     def _answer(
-        self, slug: str, customer_id: UUID, person_id: UUID | None, deal_id: UUID, *, creato: bool
+        self, slug: str, customer_id: UUID, person_id: UUID | None, deal_id: UUID, *, created: bool
     ) -> LeadRead:
         return LeadRead(
             customer_id=customer_id,
             person_id=person_id,
             deal_id=deal_id,
             deal_url=deal_url(self.settings, slug, deal_id),
-            creato=creato,
+            created=created,
         )

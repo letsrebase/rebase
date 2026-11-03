@@ -20,7 +20,7 @@
  *
  * Connecting is `require_write` in the service, and a mailbox is its owner's own
  * (`account_for_user`), so a readonly person reads why there is no button rather than
- * who could press it for them. `esito` is the callback's outcome, looked up in the
+ * who could press it for them. `outcome` is the callback's outcome, looked up in the
  * settings page's own table and never rendered as given.
  */
 import { Link } from '@tanstack/react-router'
@@ -32,7 +32,7 @@ import { consentOutcome } from '@/features/consent/outcome'
 import { GMAIL_OAUTH_START, useGmailHealth } from '@/features/gmail/queries'
 import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
 
-export function GmailDoor({ esito }: { esito?: string }) {
+export function GmailDoor({ outcome }: { outcome?: string }) {
   return (
     <section aria-labelledby="porta-gmail" className="space-y-3 border p-4">
       <header className="flex items-start gap-3">
@@ -47,7 +47,7 @@ export function GmailDoor({ esito }: { esito?: string }) {
           </p>
         </div>
       </header>
-      <ConsentOutcome {...consentOutcome('gmail', esito)} />
+      <ConsentOutcome {...consentOutcome('gmail', outcome)} />
       <DoorState />
     </section>
   )
@@ -57,7 +57,7 @@ function DoorState() {
   const health = useGmailHealth()
   const { user } = useAuth()
   const canWrite = useCanWrite()
-  const isAdmin = user?.ruolo === 'admin'
+  const isAdmin = user?.role === 'admin'
 
   if (health.isError) {
     return (

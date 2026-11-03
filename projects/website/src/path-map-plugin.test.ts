@@ -66,7 +66,7 @@ describe('route', () => {
     expect(route('/pitch')).toEqual({ kind: 'page', file: '/pitch.html' })
     expect(route('/privacy')).toEqual({ kind: 'page', file: '/privacy.html' })
     expect(route('/terms')).toEqual({ kind: 'page', file: '/terms.html' })
-    expect(route('/termini')).toEqual({ kind: 'redirect', to: '/terms' })
+    expect(route('/terms')).toEqual({ kind: 'redirect', to: '/terms' })
   })
 
   it('serves PigroCRM its own page at /pigrocrm again (ORB-159), and keeps no redirect of its own', () => {

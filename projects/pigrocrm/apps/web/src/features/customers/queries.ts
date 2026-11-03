@@ -25,7 +25,7 @@ type CustomerUpdateBody = components['schemas']['CustomerUpdate']
 interface CustomersListParams {
   search?: string
   limit?: number
-  azienda_id?: string
+  legal_entity_id?: string
 }
 
 /**
@@ -41,7 +41,7 @@ function fetchCustomersPage(params: CustomersListParams, cursor?: string) {
         query: {
           search: params.search,
           limit: params.limit,
-          azienda_id: params.azienda_id,
+          legal_entity_id: params.legal_entity_id,
           cursor,
         },
       },
@@ -61,7 +61,7 @@ export function useCustomers(
   // the space's customers, which under azienda A are A's. An azienda the caller names is
   // its own scope and wins over the sidebar's.
   const sidebarScoped = useLegalEntityScope(params)
-  const scoped = params.azienda_id === undefined ? sidebarScoped : params
+  const scoped = params.legal_entity_id === undefined ? sidebarScoped : params
   return useQuery({
     queryKey: queryKeys.customers(scoped),
     enabled: options.enabled ?? true,
@@ -140,7 +140,7 @@ export function useUpdateCustomer(customerId: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('customer', customerId) })
       // The addresses the mailbox found are for the domain read from these two fields
       // (REB-766): a corrected website or email makes that answer the old domain's.
-      if ('sito_web' in body || 'email' in body) {
+      if ('website' in body || 'email' in body) {
         queryClient.removeQueries({ queryKey: correspondentKeys.customer(customerId) })
       }
     },

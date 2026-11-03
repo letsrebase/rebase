@@ -2,7 +2,7 @@
 
 Residual A14: every service used `data.model_dump(exclude_none=True)`, which collapses
 "the caller supplied `null`" into "the caller omitted the key" -- so no `Update` schema
-could clear a numeric or date column. On `deals.ore_preventivate` that is a correctness
+could clear a numeric or date column. On `deals.budgeted_hours` that is a correctness
 defect and not a convenience: `NULL` means "nobody estimated" and `0` means "estimated
 zero hours", the budget report of slice 4 §9.2 treats them as opposite, and only `0` was
 writable.
@@ -44,11 +44,11 @@ def reject_cleared_columns(entity: str, model: type[Any], changes: dict[str, Any
     The consequence `exclude_none` was accidentally covering up. Every `Update` schema
     in this project spells *every* field `T | None = None`, because that is what makes a
     field optional in a partial update -- including the fields that back a `NOT NULL`
-    column, such as `deals.nome` or `costs.importo`. While `exclude_none` was the
+    column, such as `deals.name` or `costs.amount`. While `exclude_none` was the
     contract those nulls were silently dropped; under `exclude_unset` they reach
     `setattr` and then `flush()`, and a `NOT NULL` violation does not merely fail the
     call -- it poisons the caller's `Session` for every statement after it, which is the
-    failure mode this codebase already paid for on `customers.partita_iva` and guards
+    failure mode this codebase already paid for on `customers.vat_number` and guards
     against by hand in `LegalEntityService._check_fiscal`.
 
     Nullability is read from the mapper rather than from a hand-written list per

@@ -24,11 +24,11 @@ PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 def _form(**overrides: str) -> dict[str, str]:
     form = {
         "nome": "Ada",
-        "cognome": "Lovelace",
+        "last_name": "Lovelace",
         "email": "ada@studio.it",
-        "tariffa_giornaliera": "450,00",
+        "daily_rate": "450,00",
         "posizione": "Backend developer",
-        "remoto": "remoto",
+        "remote": "remote",
         "utm_source": "linkedin",
     }
     form.update(overrides)
@@ -62,7 +62,7 @@ def test_an_application_with_a_cv_is_accepted_and_stored(
     ).one()
     assert row.email == "ada@studio.it"
     # The Italian comma is accepted and the value is the number, to the cent.
-    assert str(row.tariffa_giornaliera) == "450.00"
+    assert str(row.daily_rate) == "450.00"
     assert (row.cv_filename, row.cv_size) == ("Ada CV.pdf", len(PDF))
     assert row.links == ["https://github.com/ada", "https://ada.dev/"]
     assert row.utm_source == "linkedin"
@@ -76,7 +76,7 @@ def test_a_rate_typed_with_italian_thousands_is_stored_as_that_number(
     _clean(api_session)
     response = client.post(
         "/api/hub/freelancers",
-        data=_form(tariffa_giornaliera=typed),
+        data=_form(daily_rate=typed),
         files={"cv": ("cv.pdf", PDF, "application/pdf")},
     )
     assert response.status_code == 201, response.text
@@ -89,11 +89,11 @@ def test_a_rate_that_is_not_an_amount_is_a_422_naming_it(client: TestClient, typ
     """REB-485: English notation is refused, never saved as 1.00."""
     response = client.post(
         "/api/hub/freelancers",
-        data=_form(tariffa_giornaliera=typed),
+        data=_form(daily_rate=typed),
         files={"cv": ("cv.pdf", PDF, "application/pdf")},
     )
     assert response.status_code == 422
-    assert [error["loc"][-1] for error in response.json()["detail"]] == ["tariffa_giornaliera"]
+    assert [error["loc"][-1] for error in response.json()["detail"]] == ["daily_rate"]
 
 
 def test_a_linkedin_address_pasted_from_a_phone_is_stored_as_the_profile(
@@ -124,43 +124,43 @@ def test_a_linkedin_address_pasted_from_a_phone_is_stored_as_the_profile(
 def test_the_page_the_person_started_from_is_stored_beside_the_campaign(
     client: TestClient, api_session: Session
 ) -> None:
-    """ORB-167: `origine` is the page of the site the door was on, `home` or `pigrocrm`,
+    """ORB-167: `origin` is the page of the site the door was on, `home` or `pigrocrm`,
     as the landing's script put it on the link. A slug, or nothing: a value that is not
     one is refused with the field's name, the same as any other field."""
     _clean(api_session)
     accepted = client.post(
         "/api/hub/freelancers",
-        data={**_form(), "origine": "pigrocrm"},
+        data={**_form(), "origin": "pigrocrm"},
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
     assert accepted.status_code == 201, accepted.text
     row = api_session.execute(text("SELECT origine, utm_source FROM freelancers")).one()
-    assert (row.origine, row.utm_source) == ("pigrocrm", "linkedin")
+    assert (row.origin, row.utm_source) == ("pigrocrm", "linkedin")
 
     refused = client.post(
         "/api/hub/freelancers",
-        data={**_form(email="bob@studio.it"), "origine": "<script>"},
+        data={**_form(email="bob@studio.it"), "origin": "<script>"},
         files={"cv": ("CV.pdf", PDF, "application/pdf")},
     )
     assert refused.status_code == 422
-    assert "origine" in [error["loc"][-1] for error in refused.json()["detail"]]
+    assert "origin" in [error["loc"][-1] for error in refused.json()["detail"]]
 
     company = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": "XYZ",
-            "referente_nome": "Grace",
-            "referente_cognome": "Hopper",
+            "company_name": "XYZ",
+            "contact_first_name": "Grace",
+            "contact_last_name": "Hopper",
             "email": "grace@xyz.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend da rifare.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "utm": {"utm_source": "linkedin", "origine": "home"},
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Un backend da rifare.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
+            "utm": {"utm_source": "linkedin", "origin": "home"},
         },
     )
     assert company.status_code == 201, company.text
@@ -250,7 +250,7 @@ def test_a_repeated_application_leaves_the_existing_card_unchanged(
     before = _card_and_identity(api_session)
     again = client.post(
         "/api/hub/freelancers",
-        data=_form(posizione="Tech lead", tariffa_giornaliera="900,00"),
+        data=_form(posizione="Tech lead", daily_rate="900,00"),
         files={"cv": ("evil.pdf", PDF + b"v2", "application/pdf")},
     )
     assert again.status_code == 201, again.text
@@ -279,7 +279,7 @@ def test_a_repeated_application_sends_the_existing_card_a_magic_link_mail(
     mail = sender.sent[0]
     assert mail.to == "ada@studio.it"
     assert "Risulta già una scheda" in mail.text
-    assert "/entra?t=" in mail.text
+    assert "/verify?t=" in mail.text
 
 
 def test_a_field_the_form_refuses_is_a_422_in_the_same_shape_as_a_json_body(
@@ -287,13 +287,13 @@ def test_a_field_the_form_refuses_is_a_422_in_the_same_shape_as_a_json_body(
 ) -> None:
     response = client.post(
         "/api/hub/freelancers",
-        data=_form(remoto="quando capita", tariffa_giornaliera="tanto"),
+        data=_form(remote="quando capita", daily_rate="tanto"),
         files={"cv": ("cv.pdf", PDF, "application/pdf")},
     )
     assert response.status_code == 422
     fields = {error["loc"][-1] for error in response.json()["detail"]}
     # The number is checked first, on its own, because it is parsed by hand.
-    assert fields == {"tariffa_giornaliera"}
+    assert fields == {"daily_rate"}
 
 
 def test_a_company_request_is_accepted_and_the_answer_says_nothing_else(
@@ -303,18 +303,18 @@ def test_a_company_request_is_accepted_and_the_answer_says_nothing_else(
     response = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": "ACME Srl",
-            "referente_nome": "Wile",
-            "referente_cognome": "E.",
+            "company_name": "ACME Srl",
+            "contact_first_name": "Wile",
+            "contact_last_name": "E.",
             "email": "wile@acme.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Serve un backend developer per tre mesi.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Serve un backend developer per tre mesi.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
             "utm": {"utm_source": "google"},
         },
     )
@@ -323,7 +323,7 @@ def test_a_company_request_is_accepted_and_the_answer_says_nothing_else(
     row = api_session.execute(
         text("SELECT nome_azienda, periodo_da, utm_source FROM companies")
     ).one()
-    assert (row.nome_azienda, str(row.periodo_da), row.utm_source) == (
+    assert (row.company_name, str(row.period_from), row.utm_source) == (
         "ACME Srl",
         "2026-10-01",
         "google",
@@ -337,24 +337,25 @@ def test_the_three_public_writes_share_one_budget_per_client(
 ) -> None:
     _clean(api_session)
     body = {
-        "nome_azienda": "ACME Srl",
-        "referente_nome": "Wile",
-        "referente_cognome": "E.",
+        "company_name": "ACME Srl",
+        "contact_first_name": "Wile",
+        "contact_last_name": "E.",
         "email": "wile@acme.it",
-        "telefono": "+39 345 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Un progetto",
-        "periodo_da": "2026-10-01",
-        "durata": "3 mesi",
-        "budget_giornaliero": "500",
-        "remoto": "remoto",
-        "numero_risorse": 1,
+        "phone": "+39 345 1234567",
+        "requested_role": "Backend developer",
+        "project": "Un progetto",
+        "period_from": "2026-10-01",
+        "duration": "3 mesi",
+        "daily_budget": "500",
+        "remote": "remote",
+        "headcount": 1,
     }
     for _ in range(SIGNUPS_PER_MINUTE - 1):
         assert client.post("/api/hub/companies", json=body).status_code == 201
     assert (
         client.post(
-            "/api/community/signups", json={"email": "ada@studio.it", "nome": "Ada", "cognome": "L"}
+            "/api/community/signups",
+            json={"email": "ada@studio.it", "nome": "Ada", "last_name": "L"},
         ).status_code
         == 201
     )
@@ -371,7 +372,7 @@ def test_one_ipv6_range_shares_one_budget_however_many_addresses_it_owns(
     """A /64 is one subscriber's whole allocation: keyed on the full address it would hand a
     script a fresh budget per request."""
     _clean(api_session)
-    body = {"email": "ada@studio.it", "nome": "Ada", "cognome": "L"}
+    body = {"email": "ada@studio.it", "nome": "Ada", "last_name": "L"}
     for index in range(SIGNUPS_PER_MINUTE):
         sent = client.post(
             "/api/community/signups",
@@ -454,19 +455,19 @@ def tracked(client: TestClient) -> Iterator[RecordingCapture]:
 
 def _company() -> dict[str, object]:
     return {
-        "nome_azienda": "ACME Srl",
-        "referente_nome": "Ada",
-        "referente_cognome": "Lovelace",
+        "company_name": "ACME Srl",
+        "contact_first_name": "Ada",
+        "contact_last_name": "Lovelace",
         "email": "ada@acme.it",
-        "telefono": "+39 345 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Dobbiamo rifare il backend del portale clienti.",
-        "periodo_da": "2026-10-01",
-        "durata": "3 mesi",
-        "budget_giornaliero": "500",
-        "remoto": "remoto",
-        "numero_risorse": 1,
-        "utm": {"utm_source": "linkedin", "origine": "home"},
+        "phone": "+39 345 1234567",
+        "requested_role": "Backend developer",
+        "project": "Dobbiamo rifare il backend del portale clienti.",
+        "period_from": "2026-10-01",
+        "duration": "3 mesi",
+        "daily_budget": "500",
+        "remote": "remote",
+        "headcount": 1,
+        "utm": {"utm_source": "linkedin", "origin": "home"},
     }
 
 
@@ -487,7 +488,7 @@ def test_an_application_is_one_completion_event_on_the_browsers_person(
             APPLICATION_COMPLETED,
             "anon-1",
             {
-                "tipo": "freelance",
+                "kind": "freelance",
                 "via": "server",
                 "cv": True,
                 "utm_source": "linkedin",
@@ -521,10 +522,10 @@ def test_a_company_request_is_one_completion_event_too(
             APPLICATION_COMPLETED,
             "anon-2",
             {
-                "tipo": "azienda",
+                "kind": "company",
                 "via": "server",
                 "utm_source": "linkedin",
-                "origine": "home",
+                "origin": "home",
                 "$process_person_profile": False,
             },
         )

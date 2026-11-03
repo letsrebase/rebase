@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from orologio import OGGI_IN_ITALIA, congela
+from orologio import TODAY_IN_ITALY, congela
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -28,7 +28,7 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 READER = Actor(id=None, type="user", role="readonly")
 
 
@@ -37,8 +37,8 @@ def _create(service, deal_id, user_id, **overrides):
         "deal_id": deal_id,
         "user_id": user_id,
         "data": date(2026, 3, 10),
-        "ore": Decimal("3.00"),
-        "descrizione": "Sviluppo",
+        "hours": Decimal("3.00"),
+        "description": "Sviluppo",
     }
     payload.update(overrides)
     return service.create(TimeEntryCreate(**payload), WRITER)
@@ -47,15 +47,15 @@ def _create(service, deal_id, user_id, **overrides):
 def test_a_created_entry_carries_its_frozen_rate_and_its_row_value(
     db_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
 ) -> None:
-    db_session.get(Deal, seeded_deal_id).tariffa_oraria = Decimal("80.000000")
+    db_session.get(Deal, seeded_deal_id).hourly_rate = Decimal("80.000000")
     db_session.flush()
     entry = _create(TimeEntryService(db_session), seeded_deal_id, seeded_user_id)
-    assert entry.tariffa_applicata == Decimal("80.000000")
-    assert entry.tariffa_origine == "deal"
+    assert entry.applied_rate == Decimal("80.000000")
+    assert entry.rate_source == "deal"
     # Returned already computed: the browser does no economic arithmetic (§6).
-    assert entry.valore_riga == Decimal("240.00")
-    assert entry.costo_riga is None
-    assert entry.costo_origine == "assente"
+    assert entry.line_value == Decimal("240.00")
+    assert entry.line_cost is None
+    assert entry.cost_source == "absent"
 
 
 def test_a_multi_line_description_keeps_its_newlines_unescaped(
@@ -69,9 +69,9 @@ def test_a_multi_line_description_keeps_its_newlines_unescaped(
     in."""
     hostile = 'Call con @mario su [fase 1] & #2 — "urgente"\nseconda riga\\backslash'
     entry = _create(
-        TimeEntryService(db_session), seeded_deal_id, seeded_user_id, descrizione=hostile
+        TimeEntryService(db_session), seeded_deal_id, seeded_user_id, description=hostile
     )
-    assert entry.descrizione == hostile
+    assert entry.description == hostile
     stored = db_session.execute(
         text("SELECT descrizione FROM time_entries WHERE id = :id"), {"id": entry.id}
     ).scalar_one()
@@ -84,7 +84,7 @@ def test_a_future_date_is_refused_but_back_dating_is_not(
     seeded_user_id: UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§6.3. Back-dating with **no year floor**, unlike slice 3's `data_emissione`: here
+    """§6.3. Back-dating with **no year floor**, unlike slice 3's `issue_date`: here
     you declare when work was done, and a consultant logs Monday on Friday and closes
     December at the end of January. A future hour is not data, it is a forecast, and
     this slice makes no forecasts.
@@ -100,7 +100,7 @@ def test_a_future_date_is_refused_but_back_dating_is_not(
     service = TimeEntryService(db_session)
     _create(service, seeded_deal_id, seeded_user_id, data=date(2019, 7, 1))
     with pytest.raises(ValidationFailed) as excinfo:
-        _create(service, seeded_deal_id, seeded_user_id, data=OGGI_IN_ITALIA + timedelta(days=1))
+        _create(service, seeded_deal_id, seeded_user_id, data=TODAY_IN_ITALY + timedelta(days=1))
     assert excinfo.value.details["field"] == "data"
 
 
@@ -110,11 +110,11 @@ def test_a_write_into_a_closed_period_is_refused(
     """The lock, reached through the service rather than only through
     `assert_writable` -- criterion 2's second half."""
     admin = Actor(id=seeded_user_id, type="user", role="admin")
-    PeriodLockService(db_session).close_period(PeriodLockCreate(anno=2026, mese=3), admin)
+    PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=3), admin)
     service = TimeEntryService(db_session)
     with pytest.raises(Conflict) as excinfo:
         _create(service, seeded_deal_id, seeded_user_id, data=date(2026, 3, 10))
-    assert excinfo.value.details["mese"] == 3
+    assert excinfo.value.details["month"] == 3
     assert "marzo 2026" in excinfo.value.message
 
     # An entry already in an open month cannot be moved into the closed one, nor
@@ -122,7 +122,7 @@ def test_a_write_into_a_closed_period_is_refused(
     entry = _create(service, seeded_deal_id, seeded_user_id, data=date(2026, 4, 10))
     with pytest.raises(Conflict):
         service.update(entry.id, TimeEntryUpdate(data=date(2026, 3, 20)), WRITER)
-    PeriodLockService(db_session).close_period(PeriodLockCreate(anno=2026, mese=4), admin)
+    PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=4), admin)
     with pytest.raises(Conflict):
         service.soft_delete(entry.id, WRITER)
 
@@ -134,8 +134,8 @@ def test_a_deactivated_user_cannot_receive_new_hours_but_keeps_the_old_ones(
     `get` on read: the money really was spent, so the hours stay in the P&L, in the
     aggregates and in the PDF with their owner's name."""
     service = TimeEntryService(db_session)
-    existing = _create(service, seeded_deal_id, seeded_user_id, ore=Decimal("12.00"))
-    db_session.get(User, seeded_user_id).attivo = False
+    existing = _create(service, seeded_deal_id, seeded_user_id, hours=Decimal("12.00"))
+    db_session.get(User, seeded_user_id).active = False
     db_session.flush()
 
     with pytest.raises(ValidationFailed) as excinfo:
@@ -150,8 +150,8 @@ def test_a_deactivated_user_cannot_receive_new_hours_but_keeps_the_old_ones(
             deal_id=seeded_deal_id,
             user_id=other.id,
             data=date(2026, 3, 11),
-            ore=Decimal("1.00"),
-            descrizione="x",
+            hours=Decimal("1.00"),
+            description="x",
         ),
         WRITER,
     )
@@ -159,8 +159,8 @@ def test_a_deactivated_user_cannot_receive_new_hours_but_keeps_the_old_ones(
         service.update(fresh.id, TimeEntryUpdate(user_id=seeded_user_id), WRITER)
 
     # And the read path still resolves it.
-    assert service.get(existing.id, READER).ore == Decimal("12.00")
-    assert service.deal_summary(seeded_deal_id, READER).ore_totali == Decimal("13.00")
+    assert service.get(existing.id, READER).hours == Decimal("12.00")
+    assert service.deal_summary(seeded_deal_id, READER).total_hours == Decimal("13.00")
 
 
 def test_logging_on_a_closed_deal_is_allowed_and_leaves_a_trace(
@@ -184,12 +184,12 @@ def test_an_entry_on_an_issued_invoice_freezes_the_named_fields(
     issued_invoice_line_id: UUID,
 ) -> None:
     """§4.3's table. `note_interne` and `custom_fields` stay mutable because they appear
-    on no artefact; `descrizione` is frozen and that is not obvious -- it is the column
+    on no artefact; `description` is frozen and that is not obvious -- it is the column
     the client reads in the timesheet attached to the invoice, so changing it after
     issue would make the delivered document and the database say two different things.
 
     A real issued line, not the random UUID this test used to bind: since 4B-3 the
-    column is a foreign key and the rule reads the invoice's `stato`, so a stand-in
+    column is a foreign key and the rule reads the invoice's `status`, so a stand-in
     would neither insert nor freeze. Which state freezes is `test_billed_immutability`;
     what it freezes is here."""
     service = TimeEntryService(db_session)
@@ -201,13 +201,13 @@ def test_an_entry_on_an_issued_invoice_freezes_the_named_fields(
     db_session.flush()
 
     for field, value in [
-        ("ore", Decimal("4.00")),
+        ("hours", Decimal("4.00")),
         ("data", date(2026, 3, 12)),
-        ("tariffa_applicata", Decimal("90.000000")),
-        ("costo_applicato", Decimal("10.000000")),
-        ("descrizione", "Altro"),
+        ("applied_rate", Decimal("90.000000")),
+        ("applied_cost", Decimal("10.000000")),
+        ("description", "Altro"),
         ("deal_id", seeded_deal_id),
-        ("fatturabile", False),
+        ("billable", False),
         ("user_id", seeded_user_id),
     ]:
         with pytest.raises(ImmutableField) as excinfo:
@@ -229,33 +229,33 @@ def test_the_summary_states_the_three_facts_a_report_needs(
         service,
         seeded_deal_id,
         seeded_user_id,
-        ore=Decimal("2.00"),
-        tariffa_applicata=Decimal("100.000000"),
-        costo_applicato=Decimal("30.000000"),
+        hours=Decimal("2.00"),
+        applied_rate=Decimal("100.000000"),
+        applied_cost=Decimal("30.000000"),
     )
-    _create(service, seeded_deal_id, seeded_user_id, ore=Decimal("1.50"))  # no rate at all
+    _create(service, seeded_deal_id, seeded_user_id, hours=Decimal("1.50"))  # no rate at all
     _create(
         service,
         seeded_deal_id,
         seeded_user_id,
-        ore=Decimal("1.00"),
-        fatturabile=False,
-        tariffa_applicata=Decimal("100.000000"),
-        costo_applicato=Decimal("30.000000"),
+        hours=Decimal("1.00"),
+        billable=False,
+        applied_rate=Decimal("100.000000"),
+        applied_cost=Decimal("30.000000"),
     )
 
     summary = service.deal_summary(seeded_deal_id, READER)
-    assert summary.ore_totali == Decimal("4.50")
-    assert summary.ore_fatturabili_non_fatturate == Decimal("3.50")
+    assert summary.total_hours == Decimal("4.50")
+    assert summary.billable_uninvoiced_hours == Decimal("3.50")
     # Only the priced, billable, unbilled hours contribute the accrued value; the
     # unpriced 1.50 h is counted separately and never valued at zero.
-    assert summary.valore_ore_non_fatturate == Decimal("200.00")
-    assert summary.ore_senza_tariffa == 1
+    assert summary.unbilled_hours_value == Decimal("200.00")
+    assert summary.hours_without_rate == 1
     # Labour cost includes the NON-billable hour: an internal meeting costs exactly
     # what it would cost if it were billed, and excluding it would make the deal that
     # demanded more of them look more profitable (§7.1).
-    assert summary.costo_lavoro == Decimal("90.00")
-    assert summary.stato == "in corso"
+    assert summary.work_cost == Decimal("90.00")
+    assert summary.status == "in_progress"
 
 
 def test_the_state_is_derived_never_stored(
@@ -268,12 +268,12 @@ def test_the_state_is_derived_never_stored(
     """§7.3's three states, and they come from the data -- a stage type plus whether
     billable unbilled hours exist -- never from a column."""
     service = TimeEntryService(db_session)
-    _create(service, seeded_deal_id, seeded_user_id, tariffa_applicata=Decimal("100.000000"))
-    assert service.deal_summary(seeded_deal_id, READER).stato == "in corso"
+    _create(service, seeded_deal_id, seeded_user_id, applied_rate=Decimal("100.000000"))
+    assert service.deal_summary(seeded_deal_id, READER).status == "in_progress"
 
     db_session.get(Deal, seeded_deal_id).pipeline_stage_id = seeded_won_stage_id
     db_session.flush()
-    assert service.deal_summary(seeded_deal_id, READER).stato == "da fatturare"
+    assert service.deal_summary(seeded_deal_id, READER).status == "to_invoice"
 
     # "chiuso" is "no billable hour left unbilled", and since 4B-3 only an *issued*
     # invoice bills one: on a draft the deal would still read "da fatturare", which is
@@ -283,7 +283,7 @@ def test_the_state_is_derived_never_stored(
         {"line": issued_invoice_line_id, "deal": seeded_deal_id},
     )
     db_session.flush()
-    assert service.deal_summary(seeded_deal_id, READER).stato == "chiuso"
+    assert service.deal_summary(seeded_deal_id, READER).status == "closed"
 
 
 def test_soft_delete_is_reversible_and_a_reader_cannot_write(
@@ -313,8 +313,8 @@ def test_a_dangling_foreign_key_is_not_found_not_an_integrity_error(
                 deal_id=uuid4(),
                 user_id=seeded_user_id,
                 data=date(2026, 3, 1),
-                ore=Decimal("1.00"),
-                descrizione="x",
+                hours=Decimal("1.00"),
+                description="x",
             ),
             WRITER,
         )
@@ -332,7 +332,7 @@ def test_the_list_is_ordered_by_date_descending(
     assert [e.data.day for e in page.items] == [20, 12, 5]
 
 
-def test_the_fatturato_filter_answers_how_much_is_left_to_invoice(
+def test_the_invoiced_filter_answers_how_much_is_left_to_invoice(
     db_session: Session,
     seeded_deal_id: UUID,
     seeded_user_id: UUID,
@@ -350,7 +350,7 @@ def test_the_fatturato_filter_answers_how_much_is_left_to_invoice(
         {"line": issued_invoice_line_id, "id": billed.id},
     )
     db_session.flush()
-    unbilled = service.list(TimeEntryListQuery(deal_id=seeded_deal_id, fatturato=False), READER)
+    unbilled = service.list(TimeEntryListQuery(deal_id=seeded_deal_id, invoiced=False), READER)
     assert [e.id for e in unbilled.items] == [
         e.id for e in unbilled.items if e.invoice_line_id is None
     ]
@@ -377,11 +377,11 @@ def test_the_future_limit_is_italys_own_day_not_the_processs(
     congela(monkeypatch, timetracking_service_module)
     service = TimeEntryService(db_session)
 
-    entry = _create(service, seeded_deal_id, seeded_user_id, data=OGGI_IN_ITALIA)
-    assert entry.data == OGGI_IN_ITALIA
+    entry = _create(service, seeded_deal_id, seeded_user_id, data=TODAY_IN_ITALY)
+    assert entry.data == TODAY_IN_ITALY
 
     with pytest.raises(ValidationFailed) as excinfo:
-        _create(service, seeded_deal_id, seeded_user_id, data=OGGI_IN_ITALIA + timedelta(days=1))
+        _create(service, seeded_deal_id, seeded_user_id, data=TODAY_IN_ITALY + timedelta(days=1))
     assert excinfo.value.details["field"] == "data"
 
 

@@ -99,7 +99,7 @@ def test_invalid_grant_is_terminal_and_is_never_retried() -> None:
     with pytest.raises(CredentialRevoked) as caught:
         client.access_token(account_id=ACCOUNT, email_address="ada@acme.it", refresh_token=REFRESH)
     assert "ada@acme.it" in caught.value.message
-    assert "revocato" in caught.value.message
+    assert "revoked" in caught.value.message
     # Exactly one attempt. Retrying an invalid_grant is a bug: it will never succeed,
     # and retrying only delays telling the user something they must act on.
     assert fake.token_requests == 1

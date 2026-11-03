@@ -8,8 +8,8 @@ from uuid import uuid4
 import pytest
 from fakes_contracts import FakeRenderer
 from match_fixtures import (
-    CLIENTE_REST,
-    REFUSED_WITHOUT_PARTITA_IVA,
+    CUSTOMER_REST,
+    REFUSED_WITHOUT_VAT_NUMBER,
     _admin,
     _body,
     _card,
@@ -43,20 +43,20 @@ def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Sessio
     """REB-687: `contratto-quadro-occasionale-v1.0.pdf`, never a second
     `contratto-quadro-v1.0.pdf`."""
     admin_id, freelancer_id, _company_id = _setup(clean)
-    quadro = ContractDocument(
-        kind="quadro",
-        regime="occasionale",
+    framework = ContractDocument(
+        kind="framework",
+        regime="occasional",
         freelancer_id=freelancer_id,
         text_version="1.0",
-        testo_bozza=False,
+        draft_text=False,
         data={},
         pdf=b"%PDF-quadro",
-        stato="generato",
+        status="generated",
         created_by=admin_id,
     )
-    clean.add(quadro)
+    clean.add(framework)
     clean.commit()
-    assert _service(clean).reads.document_pdf(quadro.id).filename == (
+    assert _service(clean).reads.document_pdf(framework.id).filename == (
         "contratto-quadro-occasionale-v1.0.pdf"
     )
 
@@ -67,22 +67,22 @@ def test_framework_lookups_and_states_are_per_regime(clean: Session) -> None:
     admin_id, freelancer_id, _company_id = _setup(clean)
     ordinary = _framework(clean, freelancer_id, admin_id)
     occasional = _framework(
-        clean, freelancer_id, admin_id, stato="inviato", signed_at=None, regime="occasionale"
+        clean, freelancer_id, admin_id, status="sent", signed_at=None, regime="occasional"
     )
     active = active_framework(clean, freelancer_id, "partita_iva")
     assert active is not None and active.id == ordinary.id
-    assert active_framework(clean, freelancer_id, "occasionale") is None
-    pending = pending_framework(clean, freelancer_id, "occasionale")
+    assert active_framework(clean, freelancer_id, "occasional") is None
+    pending = pending_framework(clean, freelancer_id, "occasional")
     assert pending is not None and pending.id == occasional.id
     assert pending_framework(clean, freelancer_id, "partita_iva") is None
     assert framework_states(clean, {freelancer_id}) == {
-        (freelancer_id, "partita_iva"): "firmato",
-        (freelancer_id, "occasionale"): "inviato",
+        (freelancer_id, "partita_iva"): "signed",
+        (freelancer_id, "occasional"): "sent",
     }
-    both = _documents(clean, freelancer_id, "quadro")
-    assert (framework_state(both, "partita_iva"), framework_state(both, "occasionale")) == (
-        "firmato",
-        "inviato",
+    both = _documents(clean, freelancer_id, "framework")
+    assert (framework_state(both, "partita_iva"), framework_state(both, "occasional")) == (
+        "signed",
+        "sent",
     )
 
 
@@ -93,13 +93,13 @@ def test_a_new_version_is_announced_against_the_quadros_own_text(
     framework agreement says «Nuova versione disponibile»."""
     admin_id, freelancer_id, _company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id, text_version="1.0")
-    _framework(clean, freelancer_id, admin_id, text_version="1.0", regime="occasionale")
-    versions = {"partita_iva": "1.1", "occasionale": "1.0"}
-    monkeypatch.setattr(match_reads_module, "current_quadro_version", versions.__getitem__)
-    quadri = _service(clean).reads.for_freelancer(freelancer_id).quadri
-    assert {(quadro.regime, quadro.nuova_versione) for quadro in quadri} == {
+    _framework(clean, freelancer_id, admin_id, text_version="1.0", regime="occasional")
+    versions = {"partita_iva": "1.1", "occasional": "1.0"}
+    monkeypatch.setattr(match_reads_module, "current_framework_version", versions.__getitem__)
+    frameworks = _service(clean).reads.for_freelancer(freelancer_id).frameworks
+    assert {(framework.regime, framework.new_version) for framework in frameworks} == {
         ("partita_iva", True),
-        ("occasionale", False),
+        ("occasional", False),
     }
 
 
@@ -107,11 +107,11 @@ def test_the_documents_of_an_ordinary_match_say_their_regime_and_type(clean: Ses
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
-    assert (match.lettera.regime, match.lettera.tipo) == ("partita_iva", "Lettera di incarico")
+    assert (match.letter.regime, match.letter.kind) == ("partita_iva", "Lettera di incarico")
     assert {document.regime for document in _documents(clean, freelancer_id)} == {"partita_iva"}
     page = service.reads.for_freelancer(freelancer_id)
-    assert page.quadro is not None
-    assert (page.quadro.regime, page.quadro.tipo) == ("partita_iva", "Contratto quadro")
+    assert page.framework is not None
+    assert (page.framework.regime, page.framework.kind) == ("partita_iva", "Contratto quadro")
 
 
 def test_the_prefill_proposes_the_letter_type_from_the_tax_data(clean: Session) -> None:
@@ -120,19 +120,19 @@ def test_the_prefill_proposes_the_letter_type_from_the_tax_data(clean: Session) 
     assert service.drafts.prefill(freelancer_id, company_id).regime == "partita_iva"  # none saved
     _fiscal(clean, freelancer_id, admin_id)
     assert service.drafts.prefill(freelancer_id, company_id).regime == "partita_iva"
-    _fiscal(clean, freelancer_id, admin_id, partita_iva=None)
+    _fiscal(clean, freelancer_id, admin_id, vat_number=None)
     prefill = service.drafts.prefill(freelancer_id, company_id)
-    assert (prefill.regime, prefill.quadro_necessario) == ("occasionale", True)
-    proposed = service.drafts.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
-    assert proposed.regime == "occasionale"
+    assert (prefill.regime, prefill.required_framework) == ("occasional", True)
+    proposed = service.drafts.proposal(freelancer_id, company_id, customer=CUSTOMER_REST)
+    assert proposed.regime == "occasional"
     chosen = service.drafts.proposal(
-        freelancer_id, company_id, cliente=CLIENTE_REST, regime="partita_iva"
+        freelancer_id, company_id, customer=CUSTOMER_REST, regime="partita_iva"
     )
     assert chosen.regime == "partita_iva"
 
 
 @pytest.mark.parametrize("action", ["create", "check", "preview"])
-def test_an_ordinary_letter_without_a_partita_iva_is_refused_with_the_sentence(
+def test_an_ordinary_letter_without_to_vat_number_is_refused_with_the_sentence(
     clean: Session, action: str
 ) -> None:
     admin_id, freelancer_id, company_id = _setup_occasional(clean)
@@ -140,56 +140,56 @@ def test_an_ordinary_letter_without_a_partita_iva_is_refused_with_the_sentence(
     attempts = {
         "create": lambda: service.create(freelancer_id, _body(company_id), admin_id),
         "check": lambda: service.drafts.check(freelancer_id, _body(company_id)),
-        "preview": lambda: service.drafts.preview(freelancer_id, _body(company_id), "lettera"),
+        "preview": lambda: service.drafts.preview(freelancer_id, _body(company_id), "letter"),
     }
     with pytest.raises(ValidationFailed) as refused:
         attempts[action]()
     assert refused.value.details == {
         "entity": "match",
         "field": "regime",
-        "reason": REFUSED_WITHOUT_PARTITA_IVA,
+        "reason": REFUSED_WITHOUT_VAT_NUMBER,
     }
     assert clean.scalar(select(func.count()).select_from(Match)) == 0
 
 
-def test_an_occasional_letter_for_a_partita_iva_holder_is_allowed_and_warned(
+def test_an_occasional_letter_for_to_vat_number_holder_is_allowed_and_warned(
     clean: Session,
 ) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    checked = service.drafts.check(freelancer_id, _body(company_id, regime="occasionale"))
-    assert checked.regime == "occasionale"
-    assert checked.riepilogo[-2:] == [
+    checked = service.drafts.check(freelancer_id, _body(company_id, regime="occasional"))
+    assert checked.regime == "occasional"
+    assert checked.recap[-2:] == [
         "Compenso: 450,00 € a giornata, lordi, senza IVA, pagato a 30 giorni fine mese.",
         "Ha la partita IVA: la prestazione occasionale vale solo per un lavoro fuori dalla "
         "sua attività professionale.",
     ]
-    assert checked.cosa_succede == (
+    assert checked.what_happens == (
         "Prima parte il contratto quadro per prestazioni occasionali; la lettera di incarico "
         "occasionale parte da sola dopo la sua firma."
     )
-    match = service.create(freelancer_id, _body(company_id, regime="occasionale"), admin_id)
-    assert match.lettera.tipo == "Lettera di incarico occasionale"
+    match = service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
+    assert match.letter.kind == "Lettera di incarico occasionale"
 
 
-def test_an_occasional_match_writes_the_occasional_texts_and_prints_the_codice_fiscale(
+def test_an_occasional_match_writes_the_occasional_texts_and_prints_the_tax_code(
     clean: Session,
 ) -> None:
     admin_id, freelancer_id, company_id = _setup_occasional(clean)
     renderer = FakeRenderer()
     match = _service(clean, renderer).create(
-        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+        freelancer_id, _body(company_id, regime="occasional"), admin_id
     )
     assert [document for document, _ in renderer.calls] == [
-        "contratto-quadro-occasionale",
-        "lettera-di-incarico-occasionale",
+        "framework-agreement-occasional",
+        "engagement-letter-occasional",
     ]
-    quadro, lettera = _documents(clean, freelancer_id)
-    assert (quadro.regime, quadro.stato, lettera.regime, lettera.stato) == (
-        "occasionale",
-        "generato",
-        "occasionale",
-        "in_attesa",
+    framework, letter = _documents(clean, freelancer_id)
+    assert (framework.regime, framework.status, letter.regime, letter.status) == (
+        "occasional",
+        "generated",
+        "occasional",
+        "pending",
     )
     (_, quadro_data), (_, letter_data) = renderer.calls
     assert "professionista-piva" not in quadro_data
@@ -200,8 +200,8 @@ def test_an_occasional_match_writes_the_occasional_texts_and_prints_the_codice_f
     for document, data in renderer.calls:
         asked = set(FIELD.findall(text_path(document).read_text(encoding="utf-8")))
         assert asked - {TERM} <= set(data), document
-    assert (match.lettera.regime, match.lettera.tipo) == (
-        "occasionale",
+    assert (match.letter.regime, match.letter.kind) == (
+        "occasional",
         "Lettera di incarico occasionale",
     )
 
@@ -214,37 +214,37 @@ def test_an_occasional_match_reuses_an_active_occasional_framework(clean: Sessio
         freelancer_id,
         admin_id,
         signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC),
-        regime="occasionale",
+        regime="occasional",
     )
     renderer = FakeRenderer()
     match = _service(clean, renderer).create(
-        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+        freelancer_id, _body(company_id, regime="occasional"), admin_id
     )
-    assert [document for document, _ in renderer.calls] == ["lettera-di-incarico-occasionale"]
-    assert match.lettera.stato == "generato"
+    assert [document for document, _ in renderer.calls] == ["engagement-letter-occasional"]
+    assert match.letter.status == "generated"
     assert renderer.calls[0][1]["data-contratto-quadro"] == "1° ottobre 2026"
 
 
 @pytest.mark.parametrize(
-    ("stato", "signed_at"),
-    [("firmato", datetime(2026, 10, 1, 9, 0, tzinfo=UTC)), ("inviato", None)],
+    ("status", "signed_at"),
+    [("signed", datetime(2026, 10, 1, 9, 0, tzinfo=UTC)), ("sent", None)],
 )
 def test_an_occasional_match_ignores_an_ordinary_framework_active_or_out_for_signature(
-    clean: Session, stato: str, signed_at: datetime | None
+    clean: Session, status: str, signed_at: datetime | None
 ) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
-    ordinary = _framework(clean, freelancer_id, admin_id, stato=stato, signed_at=signed_at)
+    ordinary = _framework(clean, freelancer_id, admin_id, status=status, signed_at=signed_at)
     renderer = FakeRenderer()
     match = _service(clean, renderer).create(
-        freelancer_id, _body(company_id, regime="occasionale"), admin_id
+        freelancer_id, _body(company_id, regime="occasional"), admin_id
     )
     assert [document for document, _ in renderer.calls] == [
-        "contratto-quadro-occasionale",
-        "lettera-di-incarico-occasionale",
+        "framework-agreement-occasional",
+        "engagement-letter-occasional",
     ]
-    assert match.lettera.stato == "in_attesa"
+    assert match.letter.status == "pending"
     clean.refresh(ordinary)
-    assert ordinary.stato == stato
+    assert ordinary.status == status
 
 
 def test_the_stale_framework_cleanup_leaves_the_other_regimes_frameworks_alone(
@@ -253,29 +253,29 @@ def test_the_stale_framework_cleanup_leaves_the_other_regimes_frameworks_alone(
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     service.create(freelancer_id, _body(company_id), admin_id)
-    service.create(freelancer_id, _body(company_id, regime="occasionale"), admin_id)
-    service.create(freelancer_id, _body(company_id, regime="occasionale"), admin_id)
-    assert [(d.regime, d.stato) for d in _documents(clean, freelancer_id, "quadro")] == [
-        ("partita_iva", "generato"),
-        ("occasionale", "annullato"),
-        ("occasionale", "generato"),
+    service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
+    service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
+    assert [(d.regime, d.status) for d in _documents(clean, freelancer_id, "framework")] == [
+        ("partita_iva", "generated"),
+        ("occasional", "cancelled"),
+        ("occasional", "generated"),
     ]
 
 
 def test_the_contracts_page_shows_one_framework_per_regime(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
-    assert service.reads.for_freelancer(freelancer_id).quadro_occasionale is None
+    assert service.reads.for_freelancer(freelancer_id).occasional_framework is None
     service.create(freelancer_id, _body(company_id), admin_id)
-    service.create(freelancer_id, _body(company_id, regime="occasionale"), admin_id)
+    service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
     page = service.reads.for_freelancer(freelancer_id)
-    assert page.quadro is not None and page.quadro_occasionale is not None
-    assert (page.quadro.regime, page.quadro.tipo) == ("partita_iva", "Contratto quadro")
-    assert (page.quadro_occasionale.regime, page.quadro_occasionale.tipo) == (
-        "occasionale",
+    assert page.framework is not None and page.occasional_framework is not None
+    assert (page.framework.regime, page.framework.kind) == ("partita_iva", "Contratto quadro")
+    assert (page.occasional_framework.regime, page.occasional_framework.kind) == (
+        "occasional",
         "Contratto quadro per prestazioni occasionali",
     )
-    assert len(page.quadri) == 2
+    assert len(page.frameworks) == 2
 
 
 def test_an_occasional_matchs_sentence_reads_its_own_framework_not_the_ordinary_one(
@@ -287,18 +287,18 @@ def test_an_occasional_matchs_sentence_reads_its_own_framework_not_the_ordinary_
     admin_id, freelancer_id, company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id)  # the ordinary one, active
     service = _service(clean)
-    match = service.create(freelancer_id, _body(company_id, regime="occasionale"), admin_id)
-    clean.execute(update(Match).where(Match.id == match.id).values(stato="in_firma"))
+    match = service.create(freelancer_id, _body(company_id, regime="occasional"), admin_id)
+    clean.execute(update(Match).where(Match.id == match.id).values(status="awaiting_signature"))
     clean.commit()
     expected = (
-        f"La lettera n. {match.lettera.numero} parte dopo il contratto quadro: «Invia per la "
+        f"La lettera n. {match.letter.number} parte dopo il contratto quadro: «Invia per la "
         "firma» lo manda al freelance."
     )
-    assert service.reads.get(match.id).situazione == expected
-    [row] = service.reads.list_all(stato=None, q=None).items
-    assert row.situazione == expected
+    assert service.reads.get(match.id).situation == expected
+    [row] = service.reads.list_all(status=None, q=None).items
+    assert row.situation == expected
     [card] = service.reads.for_freelancer(freelancer_id).matches
-    assert card.situazione == expected
+    assert card.situation == expected
 
 
 def test_a_repeated_id_with_the_regime_changed_is_refused(clean: Session) -> None:
@@ -309,7 +309,7 @@ def test_a_repeated_id_with_the_regime_changed_is_refused(clean: Session) -> Non
     body = _body(company_id).model_copy(update={"id": uuid4()})
     service.create(freelancer_id, body, admin_id)
     with pytest.raises(InvalidState, match="dati diversi"):
-        service.create(freelancer_id, body.model_copy(update={"regime": "occasionale"}), admin_id)
+        service.create(freelancer_id, body.model_copy(update={"regime": "occasional"}), admin_id)
     assert clean.scalar(select(func.count()).select_from(Match)) == 1
 
 
@@ -317,45 +317,43 @@ def test_an_occasional_preview_renders_the_occasional_texts(clean: Session) -> N
     admin_id, freelancer_id, company_id = _setup_occasional(clean)
     renderer = FakeRenderer()
     service = _service(clean, renderer)
-    letter = service.drafts.preview(
-        freelancer_id, _body(company_id, regime="occasionale"), "lettera"
+    letter = service.drafts.preview(freelancer_id, _body(company_id, regime="occasional"), "letter")
+    framework = service.drafts.preview(
+        freelancer_id, _body(company_id, regime="occasional"), "framework"
     )
-    quadro = service.drafts.preview(
-        freelancer_id, _body(company_id, regime="occasionale"), "quadro"
-    )
-    assert (letter.filename, quadro.filename) == (
+    assert (letter.filename, framework.filename) == (
         "anteprima-lettera-di-incarico-occasionale.pdf",
         "anteprima-contratto-quadro-occasionale.pdf",
     )
     assert [document for document, _ in renderer.calls] == [
-        "lettera-di-incarico-occasionale",
-        "contratto-quadro-occasionale",
+        "engagement-letter-occasional",
+        "framework-agreement-occasional",
     ]
 
 
 @pytest.mark.parametrize(
     ("framework_regime", "partita_iva", "letter_regime"),
-    [("partita_iva", None, "occasionale"), ("occasionale", "01234567890", "partita_iva")],
+    [("partita_iva", None, "occasional"), ("occasional", "01234567890", "partita_iva")],
 )
 def test_prefill_check_and_letter_preview_read_only_their_own_regimes_framework(
-    clean: Session, framework_regime: Regime, partita_iva: str | None, letter_regime: Regime
+    clean: Session, framework_regime: Regime, vat_number: str | None, letter_regime: Regime
 ) -> None:
     """An active framework agreement of the other regime is not this letter's: the
     prefill, the check and the letter's preview all see none, and say one must leave."""
     admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
-    _fiscal(clean, freelancer_id, admin_id, partita_iva=partita_iva)
+    _fiscal(clean, freelancer_id, admin_id, vat_number=vat_number)
     _framework(clean, freelancer_id, admin_id, regime=framework_regime)
     renderer = FakeRenderer()
     service = _service(clean, renderer)
 
     prefill = service.drafts.prefill(freelancer_id, company_id)
-    assert (prefill.regime, prefill.quadro_attivo, prefill.quadro_necessario) == (
+    assert (prefill.regime, prefill.active_framework, prefill.required_framework) == (
         letter_regime,
         None,
         True,
     )
     body = _body(company_id, regime=letter_regime)
-    assert service.drafts.check(freelancer_id, body).quadro_necessario is True
-    service.drafts.preview(freelancer_id, body, "lettera")
+    assert service.drafts.check(freelancer_id, body).required_framework is True
+    service.drafts.preview(freelancer_id, body, "letter")
     [(_text, fields)] = renderer.calls
     assert fields["data-contratto-quadro"] is None

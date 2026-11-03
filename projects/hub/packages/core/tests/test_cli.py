@@ -144,7 +144,7 @@ def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_i
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """REB-431: a refusal or an unreachable Documenso during the confirmation step
-    leaves a document `inviato` -- not silently, any more. Left off the line entirely
+    leaves a document `sent` -- not silently, any more. Left off the line entirely
     when it is zero, so the ordinary run reads exactly as it always has."""
     monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
@@ -230,7 +230,7 @@ def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
     monkeypatch.setattr(
         tick_module,
         "run_tick",
-        lambda *_a, **_k: TickResult(campagne=1, inviate=2, saltate=1, fallite=0, stampate=3),
+        lambda *_a, **_k: TickResult(campaigns=1, sent=2, skipped=1, failed=0, stampate=3),
     )
     assert main(["campaigns-tick"]) == 0
     assert (
@@ -337,8 +337,8 @@ class _FakeRegeneratingWriter(_FakeCardWriter):
     def regeneration_running(self) -> bool:
         return self.running
 
-    def regenerate_stale(self, admin_id: object, limit: int, *, fonte: str) -> CardsRefreshed:
-        self.started.append((admin_id, limit, fonte))
+    def regenerate_stale(self, admin_id: object, limit: int, *, source: str) -> CardsRefreshed:
+        self.started.append((admin_id, limit, source))
         return self.result
 
 
@@ -346,8 +346,8 @@ class _FakeRegeneratingWriter(_FakeCardWriter):
 def regen_admin(eval_db: Session) -> UUID:
     """The settings point at the test database, where an administrator and a member exist:
     the command resolves `--admin` against it. Cleaned by `eval_db`."""
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
-    member = User(email="ada@example.org", nome="Ada", cognome="Lovelace", role="member")
+    admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+    member = User(email="ada@example.org", nome="Ada", last_name="Lovelace", role="member")
     eval_db.add_all([admin, member])
     eval_db.commit()
     return admin.id
@@ -365,7 +365,7 @@ def test_cards_regenerate_goes_through_the_batch_api_above_the_threshold(
 ) -> None:
     """REB-853: `--batch` always, otherwise from `REBASE_CARDS_BATCH_THRESHOLD` cards up;
     the workers are `REBASE_CARDS_WORKERS`. REB-861: signed by `--admin`, whose address is
-    matched without regard to case, with `fonte` `cli`."""
+    matched without regard to case, with `source` `cli`."""
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
     monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
@@ -499,7 +499,7 @@ def test_cards_batch_poll_says_where_the_batch_stands(
     assert capsys.readouterr().out.strip() == line
 
 
-def test_cards_refresh_names_modelli_ai_when_no_task_configured(
+def test_cards_refresh_names_models_ai_when_no_task_configured(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no model configured for the card task a run would print «0 schede scritte» for
@@ -715,7 +715,7 @@ def test_ai_verify_prints_the_report_and_never_the_key(
 ) -> None:
     key = "AIza-test-key-not-real-9876"
     with Session(hub_engine) as session:
-        admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+        admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
         session.add(admin)
         session.commit()
         AiConfigService(session, cli_ai.get_settings()).save_key(admin.id, "google", key)
@@ -804,16 +804,16 @@ def eval_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Ses
 
 
 def _person(
-    session: Session, email: str, cognome: str = "Lovelace", label: str | None = None
+    session: Session, email: str, last_name: str = "Lovelace", label: str | None = None
 ) -> UUID:
     read, _ = FreelancerService(session).apply(
         FreelancerCreate(
             nome="Ada",
-            cognome=cognome,
+            last_name=last_name,
             email=email,
-            tariffa_giornaliera=Decimal("450.00"),
+            daily_rate=Decimal("450.00"),
             posizione="Backend developer",
-            remoto="remoto",
+            remote="remote",
         ),
         _CV,
         "cv.pdf",
@@ -1070,7 +1070,7 @@ def token_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Se
         lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
     )
     session = session_factory(hub_engine)()
-    session.add(User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin"))
+    session.add(User(email="ivan@rebase.it", nome="Ivan", last_name="", role="admin"))
     session.commit()
     yield session
     session.rollback()

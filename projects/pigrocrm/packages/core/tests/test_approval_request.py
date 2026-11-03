@@ -29,22 +29,22 @@ from pigrocrm.core.work_units.approval_request import (
 from pigrocrm.core.work_units.models import WorkUnit
 from pigrocrm.core.work_units.service import WorkUnitService
 
-WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
+WRITER = Actor(id=uuid4(), type="user", role="collaborator")
 AGENT = Actor(id=uuid4(), type="mcp", role="admin")
 
 
 def _contract(session: Session) -> Contract:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}", email="amministrazione@acme.example")
+    customer = Customer(legal_name=f"ACME {uuid4()}", email="amministrazione@acme.example")
     session.add(customer)
     session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza architetturale",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza architetturale",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
         requires_prior_approval=True,
     )
     session.add(contract)
@@ -52,16 +52,16 @@ def _contract(session: Session) -> Contract:
     return contract
 
 
-def _day(giorno: date, quantita: str = "1", descrizione: str = "Workshop") -> ApprovalRequestDay:
-    return ApprovalRequestDay(data=giorno, quantita=Decimal(quantita), descrizione=descrizione)
+def _day(day: date, quantity: str = "1", description: str = "Workshop") -> ApprovalRequestDay:
+    return ApprovalRequestDay(data=day, quantity=Decimal(quantity), description=description)
 
 
 def _prepare(*days: ApprovalRequestDay) -> ApprovalRequestPrepare:
     return ApprovalRequestPrepare(
         days=list(days),
         to_addresses=["amministrazione@acme.example"],
-        oggetto="Richiesta di approvazione",
-        corpo="Corpo della richiesta",
+        subject="Richiesta di approvazione",
+        body="Corpo della richiesta",
     )
 
 
@@ -80,14 +80,14 @@ def test_the_request_lists_the_dates_oldest_first_and_asks_for_a_reply_before_th
         [_day(date(2026, 11, 4), "0.5", "Review"), _day(date(2026, 11, 2), "1", "Workshop")],
     )
 
-    assert message.oggetto == "Richiesta di approvazione delle giornate: Consulenza architetturale"
-    assert message.corpo.index("lunedì 2 novembre 2026") < message.corpo.index(
+    assert message.subject == "Richiesta di approvazione delle giornate: Consulenza architetturale"
+    assert message.body.index("lunedì 2 novembre 2026") < message.body.index(
         "mercoledì 4 novembre 2026"
     )
-    assert "- lunedì 2 novembre 2026: giornata intera, Workshop" in message.corpo
-    assert "- mercoledì 4 novembre 2026: mezza giornata, Review" in message.corpo
-    assert "entro lunedì 2 novembre 2026" in message.corpo
-    assert "«Consulenza architetturale»" in message.corpo
+    assert "- lunedì 2 novembre 2026: giornata intera, Workshop" in message.body
+    assert "- mercoledì 4 novembre 2026: mezza giornata, Review" in message.body
+    assert "entro lunedì 2 novembre 2026" in message.body
+    assert "«Consulenza architetturale»" in message.body
 
 
 def test_a_date_asked_for_twice_is_refused_by_the_model() -> None:
@@ -100,15 +100,15 @@ def test_the_body_and_the_recipient_lists_are_bounded() -> None:
         ApprovalRequestPrepare(
             days=[_day(date(2026, 11, 2))],
             to_addresses=["a@b.example"],
-            oggetto="x",
-            corpo="y" * 100_001,
+            subject="x",
+            body="y" * 100_001,
         )
     with pytest.raises(ValueError):
         ApprovalRequestPrepare(
             days=[_day(date(2026, 11, 2))],
             to_addresses=[f"a{n}@b.example" for n in range(21)],
-            oggetto="x",
-            corpo="y",
+            subject="x",
+            body="y",
         )
 
 
@@ -143,18 +143,18 @@ def test_preparing_records_the_days_as_proposed_and_files_the_draft_in_one_go(
         WRITER,
     )
 
-    assert [(d.data, d.stato) for d in prepared.work_units] == [
-        (date(2026, 11, 2), "proposto"),
-        (date(2026, 11, 3), "proposto"),
-        (date(2026, 11, 4), "proposto"),
+    assert [(d.data, d.status) for d in prepared.work_units] == [
+        (date(2026, 11, 2), "proposed"),
+        (date(2026, 11, 3), "proposed"),
+        (date(2026, 11, 4), "proposed"),
     ]
-    assert prepared.draft.send_state == "bozza"
+    assert prepared.draft.send_state == "draft"
     assert prepared.draft.to_addresses == ["amministrazione@acme.example"]
     assert prepared.draft.entity_type == "customer"
     assert db_session.scalar(select(EmailDraft).where(EmailDraft.id == prepared.draft.id))
     steps = WorkUnitService(db_session).transitions_for(prepared.work_units[0].id)
     # A fixed reason: the recipient is on the draft, and the log is immutable.
-    assert steps[0].motivo == "Richiesta di approvazione preparata"
+    assert steps[0].reason == "Richiesta di approvazione preparata"
 
 
 def test_a_date_the_contract_already_holds_a_day_for_refuses_the_whole_request(
@@ -176,11 +176,11 @@ def test_a_date_the_contract_already_holds_a_day_for_refuses_the_whole_request(
 def test_a_withdrawn_day_frees_its_date_for_a_new_request(db_session: Session) -> None:
     contract = _contract(db_session)
     first = _service(db_session).prepare(contract.id, _prepare(_day(date(2026, 11, 3))), WRITER)
-    WorkUnitService(db_session).transition(first.work_units[0].id, "revocato", WRITER, "ritirata")
+    WorkUnitService(db_session).transition(first.work_units[0].id, "revoked", WRITER, "ritirata")
 
     again = _service(db_session).prepare(contract.id, _prepare(_day(date(2026, 11, 3))), WRITER)
 
-    assert again.work_units[0].stato == "proposto"
+    assert again.work_units[0].status == "proposed"
 
 
 def test_an_unknown_contract_is_not_found_and_an_agent_is_refused(db_session: Session) -> None:
@@ -197,7 +197,7 @@ def test_a_draft_that_cannot_be_filed_takes_its_proposed_days_with_it(
     contract = _contract(db_session)
     with pytest.raises(ValueError):
         ApprovalRequestPrepare(
-            days=[_day(date(2026, 11, 2))], to_addresses=[], oggetto="x", corpo="y"
+            days=[_day(date(2026, 11, 2))], to_addresses=[], subject="x", body="y"
         )
     with pytest.raises(ValidationFailed):
         # `model_construct` skips the model's own bound; the draft service refuses the empty
@@ -208,8 +208,8 @@ def test_a_draft_that_cannot_be_filed_takes_its_proposed_days_with_it(
                 days=[_day(date(2026, 11, 2))],
                 to_addresses=[],
                 cc_addresses=[],
-                oggetto="x",
-                corpo="y",
+                subject="x",
+                body="y",
             ),
             WRITER,
         )
@@ -243,7 +243,7 @@ def test_the_prepared_request_leaves_from_the_owners_mailbox_and_the_days_stay_p
         prepared.draft.id, owner, expected_updated_at=prepared.draft.updated_at
     )
 
-    assert sent.send_state == "inviato"
+    assert sent.send_state == "sent"
     outgoing = [r for r in fake.requests if r.is_messages_send]
     assert len(outgoing) == 1
     import base64
@@ -254,6 +254,6 @@ def test_the_prepared_request_leaves_from_the_owners_mailbox_and_the_days_stay_p
     assert message["To"] == "amministrazione@acme.example"
     assert "io@example.it" in str(message["From"])
     assert message["Subject"] == "Richiesta di approvazione"
-    assert [d.stato for d in db_session.scalars(select(WorkUnit).order_by(WorkUnit.data))] == [
-        "proposto"
+    assert [d.status for d in db_session.scalars(select(WorkUnit).order_by(WorkUnit.data))] == [
+        "proposed"
     ] * 3

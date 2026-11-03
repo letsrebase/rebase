@@ -13,12 +13,12 @@ class FiscalProfileRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get(self, azienda_id: UUID) -> FiscalProfile | None:
+    def get(self, legal_entity_id: UUID) -> FiscalProfile | None:
         """The profile of one azienda: at most one, by the unique key on
-        `azienda_id`, and none until the person saves it once (spec §1.2)."""
+        `legal_entity_id`, and none until the person saves it once (spec §1.2)."""
         return (
             self.session.execute(
-                select(FiscalProfile).where(FiscalProfile.azienda_id == azienda_id)
+                select(FiscalProfile).where(FiscalProfile.legal_entity_id == legal_entity_id)
             )
             .scalars()
             .first()

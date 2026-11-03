@@ -24,17 +24,17 @@ function failed(error: unknown, status: number) {
 const TEMPLATE = {
   id: 't-1',
   nome: 'Consulenza CTO',
-  tipo: 'offerta',
-  corpo_markdown: 'Oggetto: {{oggetto}}',
-  variabili_dichiarate: [
-    { nome: 'oggetto', etichetta: 'Oggetto', tipo: 'text', obbligatoria: true, options: [] },
+  type: 'offer',
+  body_markdown: 'Oggetto: {{oggetto}}',
+  declared_variables: [
+    { nome: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
   ],
-  attivo: true,
+  active: true,
   created_at: '2026-08-20T09:00:00Z',
   updated_at: '2026-08-20T09:00:00Z',
 }
 
-const BARE = { ...TEMPLATE, id: 't-2', nome: 'Verbale vuoto', variabili_dichiarate: [] }
+const BARE = { ...TEMPLATE, id: 't-2', nome: 'Verbale vuoto', declared_variables: [] }
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -93,15 +93,15 @@ describe('TemplatesPanel', () => {
     await userEvent.type(screen.getByLabelText('Nome'), 'Consulenza CTO')
     await userEvent.type(screen.getByLabelText('Corpo Markdown'), 'Oggetto: X')
     await userEvent.click(screen.getByRole('button', { name: 'Aggiungi variabile' }))
-    await userEvent.type(screen.getByLabelText('Nome', { selector: '#variabile-nome-0' }), 'oggetto')
+    await userEvent.type(screen.getByLabelText('Nome', { selector: '#variabile-nome-0' }), 'subject')
     await userEvent.click(screen.getByRole('button', { name: 'Crea' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [string, { body: Record<string, unknown> }]
     expect(options.body.nome).toBe('Consulenza CTO')
-    expect(options.body.tipo).toBe('offerta')
-    expect(options.body.variabili_dichiarate).toEqual([
-      { nome: 'oggetto', etichetta: '', tipo: 'text', obbligatoria: false, options: [] },
+    expect(options.body.type).toBe('offer')
+    expect(options.body.declared_variables).toEqual([
+      { nome: 'subject', label: '', type: 'text', required: false, options: [] },
     ])
   })
 
@@ -169,7 +169,7 @@ describe('TemplatesPanel', () => {
 
   it('reports the state as a pill, on the one component every state in the product uses', async () => {
     vi.mocked(api.GET).mockResolvedValue(
-      ok({ items: [TEMPLATE, { ...TEMPLATE, id: 't2', nome: 'Spenta', attivo: false }], next_cursor: null }),
+      ok({ items: [TEMPLATE, { ...TEMPLATE, id: 't2', nome: 'Spenta', active: false }], next_cursor: null }),
     )
     renderPanel()
     expect(await screen.findByText('Attivo')).toHaveAttribute('data-tone', 'ink')
@@ -178,7 +178,7 @@ describe('TemplatesPanel', () => {
 
   it('deactivates through DELETE and offers the way back', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok({ items: [TEMPLATE], next_cursor: null }))
-    vi.mocked(api.DELETE).mockResolvedValue(ok({ ...TEMPLATE, attivo: false }))
+    vi.mocked(api.DELETE).mockResolvedValue(ok({ ...TEMPLATE, active: false }))
     renderPanel()
 
     await openRowMenu('Consulenza CTO')
@@ -188,7 +188,7 @@ describe('TemplatesPanel', () => {
 
   it('reactivates a deactivated template', async () => {
     vi.mocked(api.GET).mockResolvedValue(
-      ok({ items: [{ ...TEMPLATE, attivo: false }], next_cursor: null }),
+      ok({ items: [{ ...TEMPLATE, active: false }], next_cursor: null }),
     )
     vi.mocked(api.POST).mockResolvedValue(ok(TEMPLATE))
     renderPanel()

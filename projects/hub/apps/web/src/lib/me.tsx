@@ -86,7 +86,7 @@ export function useReplaceCv() {
   })
 }
 
-/** The one logout for anyone signed in, admin or not: always back to `/accedi`, since
+/** The one logout for anyone signed in, admin or not: always back to `/login`, since
  *  an admin's own way in is the same magic link now and there is no separate admin
  *  door to send them to. */
 export function useLogout() {
@@ -104,17 +104,17 @@ export function useLogout() {
 /** The profile in the wizard's own shape, so its steps can render and validate it.
  *  `cv` is `null`: the file we hold is not a `File` in the browser. The answers an
  *  incomplete card lacks (ORB-155) become `''`, which is what the wizard's fields
- *  show as empty and its rules refuse. Only meaningful when `ha_scheda` is true; the
- *  caller checks that first (`Area.tsx`, `Modifica.tsx`). */
+ *  show as empty and its rules refuse. Only meaningful when `has_card` is true; the
+ *  caller checks that first (`Area.tsx`, `Edit.tsx`). */
 export function toApplication(me: Me): FreelancerApplication {
   return {
     nome: me.nome,
-    cognome: me.cognome,
+    last_name: me.last_name,
     email: me.email,
     linkedin_url: linkedinFieldValue(me.linkedin_url ?? ''),
-    tariffa_giornaliera: me.tariffa_giornaliera ?? '',
+    daily_rate: me.daily_rate ?? '',
     posizione: me.posizione ?? '',
-    remoto: me.remoto ?? '',
+    remote: me.remote ?? '',
     links: me.links,
     cv: null,
   }
@@ -124,53 +124,53 @@ export function toApplication(me: Me): FreelancerApplication {
 export function toUpdate(value: FreelancerApplication): MemberUpdate {
   return {
     nome: value.nome.trim(),
-    cognome: value.cognome.trim(),
+    last_name: value.last_name.trim(),
     linkedin_url: linkedinProfile(value.linkedin_url) || null,
-    tariffa_giornaliera: sentAmount(value.tariffa_giornaliera),
+    daily_rate: sentAmount(value.daily_rate),
     posizione: value.posizione.trim(),
-    remoto: value.remoto as MemberUpdate['remoto'],
+    remote: value.remote as MemberUpdate['remote'],
     links: value.links.map((link) => link.trim()).filter(Boolean),
   }
 }
 
 /** One request in the wizard's own shape, so `COMPANY_FIELDS`' editable entries can
  *  render, validate and summarise it exactly as they do in `CompanyWizard` (REB-314;
- *  REB-380 adds `remoto`/`giorni_presenza`/`numero_risorse`/`figura_richiesta`). The
- *  company's own identity (`nome_azienda`, the referente, `telefono`) is never part of
+ *  REB-380 adds `remote`/`onsite_days`/`headcount`/`requested_role`). The
+ *  company's own identity (`company_name`, the referente, `phone`) is never part of
  *  self-edit and is left blank here -- those fields never read it. */
 export function toCompanyApplication(request: MemberRequest): CompanyRequest {
   return {
-    nome_azienda: '',
-    figura_richiesta: request.figura_richiesta,
-    referente_nome: '',
-    referente_cognome: '',
+    company_name: '',
+    requested_role: request.requested_role,
+    contact_first_name: '',
+    contact_last_name: '',
     email: '',
-    telefono: '',
-    progetto: request.progetto,
-    periodo_da: request.periodo_da,
-    durata: request.durata,
-    budget_giornaliero: request.budget_giornaliero,
-    remoto: request.remoto,
-    giorni_presenza: request.giorni_presenza != null ? String(request.giorni_presenza) : '',
-    numero_risorse: String(request.numero_risorse),
+    phone: '',
+    project: request.project,
+    period_from: request.period_from,
+    duration: request.duration,
+    daily_budget: request.daily_budget,
+    remote: request.remote,
+    onsite_days: request.onsite_days != null ? String(request.onsite_days) : '',
+    headcount: String(request.headcount),
   }
 }
 
 /** What `PATCH /me/company` and, since REB-381, `POST /me/company` both take: the
  *  eight project answers, trimmed the way the wizard trims before posting;
- *  `giorni_presenza` blank means "not ibrido", the same null-when-empty conversion
- *  `requestPeople` makes on the public wizard's side. `ModificaAzienda.tsx` sends it
- *  to the `PATCH`, `NuovaRichiestaAzienda.tsx` to the `POST` -- the payload shape is
+ *  `onsite_days` blank means "not ibrido", the same null-when-empty conversion
+ *  `requestPeople` makes on the public wizard's side. `EditCompany.tsx` sends it
+ *  to the `PATCH`, `NewRequestCompany.tsx` to the `POST` -- the payload shape is
  *  identical, only the route differs. */
 export function toCompanyUpdate(value: CompanyRequest): CompanyUpdate {
   return {
-    progetto: value.progetto.trim(),
-    periodo_da: value.periodo_da,
-    durata: value.durata.trim(),
-    budget_giornaliero: sentAmount(value.budget_giornaliero),
-    remoto: value.remoto as CompanyUpdate['remoto'],
-    giorni_presenza: value.giorni_presenza ? Number(value.giorni_presenza) : null,
-    numero_risorse: Number(value.numero_risorse),
-    figura_richiesta: value.figura_richiesta.trim(),
+    project: value.project.trim(),
+    period_from: value.period_from,
+    duration: value.duration.trim(),
+    daily_budget: sentAmount(value.daily_budget),
+    remote: value.remote as CompanyUpdate['remote'],
+    onsite_days: value.onsite_days ? Number(value.onsite_days) : null,
+    headcount: Number(value.headcount),
+    requested_role: value.requested_role.trim(),
   }
 }

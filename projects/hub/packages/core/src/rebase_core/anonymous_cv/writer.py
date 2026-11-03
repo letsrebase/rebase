@@ -2,7 +2,7 @@
 talent's CV without the person, the guard checks it, and it is kept once per CV file and served
 again until the CV or the prompt changes, so a second download is instant, free and identical.
 
-A call of its own, the `cv_anonimo` task, never part of the card's: the card's prompt, version
+A call of its own, the `anonymous_cv` task, never part of the card's: the card's prompt, version
 and guard stay as they are. Only an admin's press writes one, so nothing is spent unasked. The
 input is the CV's text alone: not the sources, the links or the hub's data, since the CV is what
 is reproduced and nothing else may add to it.
@@ -34,9 +34,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from rebase_core.anonymous_cv.guard import Who, identifying_fields, who_of
-from rebase_core.anonymous_cv.schema import AnonymousCv, AnonymousCvDraft, Identita
+from rebase_core.anonymous_cv.schema import AnonymousCv, AnonymousCvDraft, Identity
 from rebase_core.audit import utcnow
-from rebase_core.cards import NO_TEXT, _block, stored_persona
+from rebase_core.cards import NO_TEXT, _block, stored_person
 from rebase_core.cv_text import CvText
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, NoCv, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService, cv_of
@@ -142,15 +142,15 @@ IDENTIFYING_AGAIN = (
 def cv_request(cv: CvText) -> LlmRequest:
     """System: what an anonymous CV is and what never goes in it; user: the CV's text, as an
     inert data block, and nothing else (not its filename, which often is the person's name).
-    The answer: `AnonymousCvDraft`. The output ceiling is the `cv_anonimo` task's
+    The answer: `AnonymousCvDraft`. The output ceiling is the `anonymous_cv` task's
     (`ai_tasks`, «Modelli AI»)."""
-    cut = " (troncato: il file è più lungo del testo che segue)" if cv.troncato else ""
+    cut = " (troncato: il file è più lungo del testo che segue)" if cv.truncated else ""
     return LlmRequest(
         system=_SYSTEM,
         messages=[
             LlmMessage(
                 role="user",
-                text=f"Il CV da riscrivere{cut}:\n\n{_block(_CV_KEY, 'FONTE: CV', cv.testo)}",
+                text=f"Il CV da riscrivere{cut}:\n\n{_block(_CV_KEY, 'FONTE: CV', cv.text)}",
             )
         ],
         output_model=AnonymousCvDraft,
@@ -188,14 +188,14 @@ def _draft_from(response: LlmResponse) -> AnonymousCvDraft | Failure:
     return response.parsed
 
 
-def _who_of(identita: Identita) -> Who:
+def _who_of(identity: Identity) -> Who:
     """What the answer says the CV says of the person."""
     return who_of(
-        nome=identita.nome,
-        cognome=identita.cognome,
-        emails=[identita.email],
-        phones=identita.telefoni,
-        links=identita.link,
+        nome=identity.nome,
+        last_name=identity.last_name,
+        emails=[identity.email],
+        phones=identity.telefoni,
+        links=identity.link,
     )
 
 
@@ -242,7 +242,7 @@ class _Spent:
 
 
 class AnonymousCvWriter:
-    """`llm` is `None` when no model is configured for the `cv_anonimo` task
+    """`llm` is `None` when no model is configured for the `anonymous_cv` task
     (`call_for_task`): a body already written for the CV on file is still served, and only a
     write is refused. The seam records each call's usage against the talent the request
     names (`LlmRequest.freelancer_id`)."""
@@ -273,7 +273,7 @@ class AnonymousCvWriter:
         if kept is not None:
             return Written(kept, reused=True, cv_sha256=digest)
         cv = FreelancerService(self.session).cv_text(freelancer_id)
-        if not cv.testo.strip():
+        if not cv.text.strip():
             raise self._failed(freelancer_id, "no_text")
         if self.llm is None:
             raise LlmNotConfigured(NOT_CONFIGURED)
@@ -332,7 +332,7 @@ class AnonymousCvWriter:
         (`users`' name, email, phone and LinkedIn, `freelancers.links`, and the tax data an
         admin saved for the contracts: codice fiscale, partita IVA, the PEC as an email) and
         the anonymous card's stored persona when there is one for this CV
-        (`cards.stored_persona`). The answer's own `identita` is the third, added when it
+        (`cards.stored_person`). The answer's own `identita` is the third, added when it
         arrives."""
         user = self.session.get(User, row.user_id)
         assert user is not None
@@ -343,22 +343,22 @@ class AnonymousCvWriter:
         )
         known = who_of(
             nome=user.nome,
-            cognome=user.cognome,
-            emails=[user.email, fiscal.pec if fiscal else None],
-            phones=[user.telefono],
+            last_name=user.last_name,
+            emails=[user.email, fiscal.certified_email if fiscal else None],
+            phones=[user.phone],
             links=[*row.links, user.linkedin_url],
-            tax_ids=[fiscal.codice_fiscale, fiscal.partita_iva] if fiscal else [],
+            tax_ids=[fiscal.tax_code, fiscal.vat_number] if fiscal else [],
         )
-        persona = stored_persona(self.session, row.id)
-        if persona is None:
+        person = stored_person(self.session, row.id)
+        if person is None:
             return known
         return known.merged(
             who_of(
-                nome=persona.nome,
-                cognome=persona.cognome,
-                emails=[persona.email],
-                phones=[persona.telefono],
-                links=[persona.linkedin_url, *persona.altri_link],
+                nome=person.nome,
+                last_name=person.last_name,
+                emails=[person.email],
+                phones=[person.phone],
+                links=[person.linkedin_url, *person.other_links],
             )
         )
 
@@ -374,7 +374,7 @@ class AnonymousCvWriter:
         first = _draft_from(response)
         if isinstance(first, str):
             raise self._failed(freelancer_id, first)
-        who = known.merged(_who_of(first.identita))
+        who = known.merged(_who_of(first.identity))
         leaks = identifying_fields(first.cv, who)
         if not leaks:
             return first.cv, spent
@@ -387,7 +387,7 @@ class AnonymousCvWriter:
         second = _draft_from(again)
         if isinstance(second, str):
             raise self._failed(freelancer_id, second)
-        if identifying_fields(second.cv, who.merged(_who_of(second.identita))):
+        if identifying_fields(second.cv, who.merged(_who_of(second.identity))):
             raise self._failed(freelancer_id, "identifying")
         return second.cv, spent
 

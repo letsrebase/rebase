@@ -12,10 +12,10 @@ import pytest
 from contract_api_helpers import (
     ADMIN_EMAIL,
     BUDGET,
-    CLIENTE,
-    DAY_RATE_LETTERA,
+    CUSTOMER,
+    DAY_RATE_LETTER,
     FISCAL,
-    LETTERA,
+    LETTER,
     MISSING,
     PDF,
     TABLES,
@@ -58,7 +58,7 @@ def renderer(client: TestClient) -> Iterator[FakeRenderer]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -101,39 +101,40 @@ def test_an_admin_matches_a_card_with_a_request_and_downloads_both_pdfs(
         f"/api/hub/freelancers/{freelancer_id}/matches/prefill", params={"company_id": company_id}
     )
     assert prefill.status_code == 200, prefill.text
-    assert prefill.json()["lettera"]["compenso"] == "450.00"
-    assert prefill.json()["quadro_necessario"] is True
+    assert prefill.json()["letter"]["fee"] == "450.00"
+    assert prefill.json()["required_framework"] is True
     assert BUDGET not in prefill.text
 
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 201, created.text
     match = created.json()
-    letter = match["lettera"]
-    assert match["stato"] == "bozza"
-    assert re.fullmatch(r"\d{4}-001", letter["numero"])
-    assert letter["stato"] == "in_attesa"
+    letter = match["letter"]
+    assert match["status"] == "draft"
+    assert re.fullmatch(r"\d{4}-001", letter["number"])
+    assert letter["status"] == "pending"
     assert BUDGET not in created.text
 
     page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
-    assert page["quadro"]["stato"] == "generato"
+    assert page["framework"]["status"] == "generated"
     assert [item["id"] for item in page["matches"]] == [match["id"]]
-    assert page["fiscale"]["codice_fiscale"] == "LVLDAA85T50H501Z"
+    assert page["tax"]["tax_code"] == "LVLDAA85T50H501Z"
     assert (
-        client.get(f"/api/hub/matches/{match['id']}").json()["lettera"]["numero"]
-        == letter["numero"]
+        client.get(f"/api/hub/matches/{match['id']}").json()["letter"]["number"] == letter["number"]
     )
 
     pdf = client.get(f"/api/hub/contract-documents/{letter['id']}/pdf")
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF-")
     assert pdf.headers["content-type"].startswith("application/pdf")
-    assert f"lettera-di-incarico-{letter['numero']}.pdf" in pdf.headers["content-disposition"]
-    assert client.get(f"/api/hub/contract-documents/{page['quadro']['id']}/pdf").status_code == 200
+    assert f"lettera-di-incarico-{letter['number']}.pdf" in pdf.headers["content-disposition"]
+    assert (
+        client.get(f"/api/hub/contract-documents/{page['framework']['id']}/pdf").status_code == 200
+    )
     signed = client.get(
-        f"/api/hub/contract-documents/{letter['id']}/pdf", params={"firmato": "true"}
+        f"/api/hub/contract-documents/{letter['id']}/pdf", params={"signed": "true"}
     )
     assert signed.status_code == 404
 
@@ -147,7 +148,7 @@ def test_a_repeated_create_with_the_same_id_writes_the_match_once(
     number."""
     freelancer_id, company_id = ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
-    body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+    body = {"id": given_id, "company_id": company_id, "customer": CUSTOMER, "letter": LETTER}
 
     first = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
     second = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
@@ -155,7 +156,7 @@ def test_a_repeated_create_with_the_same_id_writes_the_match_once(
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
     assert first.json()["id"] == second.json()["id"] == given_id
-    assert first.json()["lettera"]["numero"] == second.json()["lettera"]["numero"]
+    assert first.json()["letter"]["number"] == second.json()["letter"]["number"]
     page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
     assert len(page["matches"]) == 1
 
@@ -167,7 +168,7 @@ def test_the_same_id_used_by_another_freelancers_match_is_a_409(
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"id": given_id, "company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 201, created.text
 
@@ -180,7 +181,7 @@ def test_the_same_id_used_by_another_freelancers_match_is_a_409(
 
     refused = client.post(
         f"/api/hub/freelancers/{other_freelancer_id}/matches",
-        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"id": given_id, "company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
 
     assert refused.status_code == 409, refused.text
@@ -208,7 +209,7 @@ def test_a_real_id_collision_at_the_flush_is_a_409_not_a_500(
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     committed = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"id": given_id, "company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert committed.status_code == 201, committed.text
 
@@ -234,7 +235,7 @@ def test_a_real_id_collision_at_the_flush_is_a_409_not_a_500(
 
     refused = client.post(
         f"/api/hub/freelancers/{other_freelancer_id}/matches",
-        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"id": given_id, "company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
 
     assert refused.status_code == 409, refused.text
@@ -249,12 +250,12 @@ def test_a_repeated_create_with_the_same_id_and_changed_data_is_a_409(
     request no longer matches what was saved, so this is a 409, not a 201."""
     freelancer_id, company_id = ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
-    body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+    body = {"id": given_id, "company_id": company_id, "customer": CUSTOMER, "letter": LETTER}
 
     first = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
     assert first.status_code == 201, first.text
 
-    changed = {**body, "lettera": {**LETTERA, "ruolo": "Un altro ruolo"}}
+    changed = {**body, "letter": {**LETTER, "role": "Un altro ruolo"}}
     refused = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=changed)
 
     assert refused.status_code == 409, refused.text
@@ -268,23 +269,23 @@ def test_the_preview_renders_a_document_without_saving_or_numbering_it(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    body = {"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+    body = {"company_id": company_id, "customer": CUSTOMER, "letter": LETTER}
     preview = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/preview",
-        params={"documento": "lettera"},
+        params={"document": "letter"},
         json=body,
     )
     assert preview.status_code == 200, preview.text
     assert preview.content.startswith(b"%PDF-")
-    assert renderer.calls[-1][0] == "lettera-di-incarico"
-    assert renderer.calls[-1][1]["numero"] is None
-    quadro = client.post(
+    assert renderer.calls[-1][0] == "engagement-letter"
+    assert renderer.calls[-1][1]["number"] is None
+    framework = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/preview",
-        params={"documento": "quadro"},
+        params={"document": "framework"},
         json=body,
     )
-    assert quadro.status_code == 200
-    assert renderer.calls[-1][0] == "contratto-quadro"
+    assert framework.status_code == 200
+    assert renderer.calls[-1][0] == "framework-agreement"
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["matches"] == []
 
 
@@ -295,29 +296,29 @@ def test_a_match_without_tax_data_names_the_step_that_is_missing(
     freelancer_id, company_id = apply_freelancer(client), request_company(client)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 422
-    assert created.json()["detail"][0]["loc"] == ["body", "fiscale"]
+    assert created.json()["detail"][0]["loc"] == ["body", "tax"]
 
 
 def test_a_closed_request_and_a_fee_the_law_refuses_are_422s_on_their_field(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    over = {**LETTERA, "giorni_pagamento": 45}
+    over = {**LETTER, "payment_days": 45}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": over},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": over},
     )
     assert refused.status_code == 422
     assert (
-        client.patch(f"/api/hub/companies/{company_id}", json={"stato": "chiuso"}).status_code
+        client.patch(f"/api/hub/companies/{company_id}", json={"status": "closed"}).status_code
         == 200
     )
     closed = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert closed.status_code == 422
     assert closed.json()["detail"][0]["loc"] == ["body", "company_id"]
@@ -327,10 +328,10 @@ def test_an_end_date_before_the_start_names_data_fine(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    backwards = {**LETTERA, "data_fine": "2026-09-01"}
+    backwards = {**LETTER, "data_fine": "2026-09-01"}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": backwards},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": backwards},
     )
     assert refused.status_code == 422
     detail = refused.json()["detail"][0]
@@ -347,13 +348,13 @@ def test_a_payment_mode_outside_the_two_choices_is_refused(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={
             "company_id": company_id,
-            "cliente": CLIENTE,
-            "lettera": {**LETTERA, "modalita": mode},
+            "customer": CUSTOMER,
+            "letter": {**LETTER, "mode": mode},
         },
     )
     assert refused.status_code == 422
     detail = refused.json()["detail"][0]
-    assert detail["loc"][-1] == "modalita"
+    assert detail["loc"][-1] == "mode"
     assert detail["msg"] == "la modalità di pagamento è «a giornata» oppure «a corpo»"
 
 
@@ -361,27 +362,27 @@ def test_a_letter_without_a_payment_mode_is_refused(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    letter = {key: value for key, value in LETTERA.items() if key != "modalita"}
+    letter = {key: value for key, value in LETTER.items() if key != "mode"}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": letter},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": letter},
     )
     assert refused.status_code == 422
-    assert refused.json()["detail"][0]["loc"][-1] == "modalita"
+    assert refused.json()["detail"][0]["loc"][-1] == "mode"
 
 
-def test_a_payment_term_past_thirty_days_from_month_end_names_giorni_pagamento(
+def test_to_payment_term_past_thirty_days_from_month_end_names_payment_days(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
+    over = {**LETTER, "payment_days": 45, "month_end": True}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": over},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": over},
     )
     assert refused.status_code == 422
     detail = refused.json()["detail"][0]
-    assert detail["loc"][-1] == "giorni_pagamento"
+    assert detail["loc"][-1] == "payment_days"
     assert (
         detail["msg"]
         == "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)"
@@ -394,18 +395,18 @@ def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(
     freelancer_id, company_id = ready(client, sender)
     match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     ).json()
     assert client.post(f"/api/hub/matches/{match['id']}/close").status_code == 409
     cancelled = client.post(f"/api/hub/matches/{match['id']}/cancel")
     assert cancelled.status_code == 200
-    assert (cancelled.json()["stato"], cancelled.json()["lettera"]["stato"]) == (
-        "annullato",
-        "annullato",
+    assert (cancelled.json()["status"], cancelled.json()["letter"]["status"]) == (
+        "cancelled",
+        "cancelled",
     )
     again = client.post(f"/api/hub/matches/{match['id']}/cancel")
     assert again.status_code == 409
-    assert "bozza" in again.json()["detail"]
+    assert "draft" in again.json()["detail"]
 
 
 def test_a_soft_deleted_freelancer_hides_all_four_match_routes(
@@ -414,9 +415,9 @@ def test_a_soft_deleted_freelancer_hides_all_four_match_routes(
     freelancer_id, company_id = ready(client, sender)
     match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     ).json()
-    letter_id = match["lettera"]["id"]
+    letter_id = match["letter"]["id"]
     assert client.delete(f"/api/hub/freelancers/{freelancer_id}").status_code == 200
 
     assert client.get(f"/api/hub/matches/{match['id']}").status_code == 404
@@ -432,7 +433,7 @@ def test_a_render_that_fails_is_a_503_with_a_sentence(
     client.app.dependency_overrides[get_renderer] = lambda: FailingRenderer()  # type: ignore[attr-defined]
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 503
     assert created.json()["detail"].startswith("La generazione del contratto non è riuscita")
@@ -459,10 +460,10 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     renderer: FakeRenderer,
 ) -> None:
     """The projection is the first code on this list that reads the client's budget
-    (`company_budget_giornaliero`, through `reward_base`): the figure it yields may
+    (`company_daily_budget`, through `reward_base`): the figure it yields may
     travel, the budget and the base it is a share of may not."""
     freelancer_id, company_id = ready(client, sender)
-    referrer = User(email="mario@community.it", nome="Mario", cognome="Rossi", role="member")
+    referrer = User(email="mario@community.it", nome="Mario", last_name="Rossi", role="member")
     api_session.add(referrer)
     api_session.commit()
     service = ReferralService(api_session)
@@ -476,7 +477,7 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     api_session.commit()
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": DAY_RATE_LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": DAY_RATE_LETTER},
     )
     assert created.status_code == 201, created.text
 
@@ -488,15 +489,15 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     # (777.77 - 450) * 1 day at 30%: with no estimate of days a day-rate letter earns one.
     assert side == {
         "kind": "company",
-        "referrer_nome": "Mario Rossi",
+        "referrer_name": "Mario Rossi",
         "referrer_freelancer_id": None,
         "rate": "0.3000",
         "amount": "98.33",
-        "stato": "previsto",
+        "status": "previsto",
         "reward_id": None,
     }
     assert row["company_id"] == company_id
-    assert (row["lettera_compenso"], row["lettera_unita"]) == ("450.00", "a giornata")
+    assert (row["letter_fee"], row["unit_letter"]) == ("450.00", "to_work_unit")
     assert BUDGET not in listed.text
     assert "327.77" not in listed.text
     assert not any("budget" in key or "base" in key for key in row)
@@ -508,7 +509,7 @@ def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_fi
     freelancer_id, company_id = ready(client, sender)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 201, created.text
     match = created.json()
@@ -516,19 +517,19 @@ def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_fi
     listed = client.get("/api/hub/matches")
     assert listed.status_code == 200, listed.text
     body = listed.json()
-    assert body["totale"] == 1
+    assert body["total"] == 1
     assert [item["id"] for item in body["items"]] == [match["id"]]
     row = body["items"][0]
-    assert row["nome_azienda"] == "ACME Srl"
-    assert row["lettera_numero"] == match["lettera"]["numero"]
+    assert row["company_name"] == "ACME Srl"
+    assert row["number_letter"] == match["letter"]["number"]
     assert BUDGET not in listed.text
-    assert not any(key in row for key in ("codice_fiscale", "partita_iva", "domicilio", "pec"))
+    assert not any(key in row for key in ("tax_code", "partita_iva", "domicile", "certified_email"))
 
-    by_state = client.get("/api/hub/matches", params={"stato": "bozza"})
+    by_state = client.get("/api/hub/matches", params={"status": "draft"})
     assert by_state.status_code == 200
-    assert by_state.json()["totale"] == 1
-    by_wrong_state = client.get("/api/hub/matches", params={"stato": "attivo"})
-    assert by_wrong_state.json()["totale"] == 0
+    assert by_state.json()["total"] == 1
+    by_wrong_state = client.get("/api/hub/matches", params={"status": "active"})
+    assert by_wrong_state.json()["total"] == 0
 
     by_search = client.get("/api/hub/matches", params={"q": "ACME"})
     assert [item["id"] for item in by_search.json()["items"]] == [match["id"]]
@@ -540,7 +541,7 @@ def test_the_match_list_422s_on_an_unknown_state(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     login(client, sender)
-    refused = client.get("/api/hub/matches", params={"stato": "chissà"})
+    refused = client.get("/api/hub/matches", params={"status": "chissà"})
     assert refused.status_code == 422
 
 
@@ -554,7 +555,7 @@ def test_a_malformed_signer_setting_is_a_503_not_a_crash(
     )
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 503
     assert "REBASE_SIGNER_JSON" in created.json()["detail"]
@@ -569,21 +570,21 @@ def test_a_match_and_its_documents_say_what_they_are_doing_and_what_comes_next(
     freelancer_id, company_id = ready(client, sender)
     match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     ).json()
-    numero = match["lettera"]["numero"]
-    draft = f"La lettera n. {numero} è pronta: il freelance non ha ancora ricevuto nulla."
-    assert (match["situazione"], match["prossima_azione"], match["altre_azioni"]) == (
+    number = match["letter"]["number"]
+    draft = f"La lettera n. {number} è pronta: il freelance non ha ancora ricevuto nulla."
+    assert (match["situation"], match["next_action"], match["other_actions"]) == (
         draft,
-        "invia",
-        ["annulla"],
+        "send",
+        ["cancel"],
     )
-    assert match["lettera"]["situazione"] == "Parte da sola dopo la firma del contratto quadro."
-    quadro = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["quadro"]
-    assert (quadro["prossima_azione"], quadro["altre_azioni"]) == (None, ["annulla"])
-    assert quadro["situazione"].startswith("Parte con «Invia per la firma» sul suo match.")
+    assert match["letter"]["situation"] == "Parte da sola dopo la firma del contratto quadro."
+    framework = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["framework"]
+    assert (framework["next_action"], framework["other_actions"]) == (None, ["cancel"])
+    assert framework["situation"].startswith("Parte con «Invia per la firma» sul suo match.")
     (row,) = client.get("/api/hub/matches").json()["items"]
-    assert row["situazione"] == draft
+    assert row["situation"] == draft
 
 
 def test_the_check_says_what_saving_would_do_and_writes_nothing(
@@ -592,26 +593,26 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
     freelancer_id, company_id = ready(client, sender)
     checked = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert checked.status_code == 200, checked.text
     assert checked.json() == {
-        "riepilogo": [
+        "recap": [
             "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
             "Compenso: 450,00 € a corpo, IVA esclusa, pagato a 30 giorni fine mese.",
         ],
-        "cosa_succede": (
+        "what_happens": (
             "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "
             "firma."
         ),
-        "quadro_necessario": True,
-        "dati_fiscali_mancanti": False,
+        "required_framework": True,
+        "missing_tax_data": False,
         "regime": "partita_iva",
     }
     assert BUDGET not in checked.text
     assert renderer.calls == []
     page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
-    assert (page["quadro"], page["matches"]) == (None, [])
+    assert (page["framework"], page["matches"]) == (None, [])
 
 
 def test_the_check_reports_missing_tax_data_instead_of_refusing(
@@ -621,11 +622,11 @@ def test_the_check_reports_missing_tax_data_instead_of_refusing(
     freelancer_id, company_id = apply_freelancer(client), request_company(client)
     checked = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert checked.status_code == 200, checked.text
-    assert checked.json()["dati_fiscali_mancanti"] is True
-    assert checked.json()["riepilogo"][-1] == (
+    assert checked.json()["missing_tax_data"] is True
+    assert checked.json()["recap"][-1] == (
         "Mancano i dati fiscali del freelance: servono prima di salvare."
     )
 
@@ -634,20 +635,20 @@ def test_the_check_is_a_422_naming_the_field_as_create_is(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     freelancer_id, company_id = ready(client, sender)
-    over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
+    over = {**LETTER, "payment_days": 45, "month_end": True}
     refused = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": over},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": over},
     )
     assert refused.status_code == 422
-    assert refused.json()["detail"][0]["loc"][-1] == "giorni_pagamento"
+    assert refused.json()["detail"][0]["loc"][-1] == "payment_days"
     assert (
-        client.patch(f"/api/hub/companies/{company_id}", json={"stato": "chiuso"}).status_code
+        client.patch(f"/api/hub/companies/{company_id}", json={"status": "closed"}).status_code
         == 200
     )
     closed = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/check",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert closed.status_code == 422
     assert closed.json()["detail"][0]["loc"] == ["body", "company_id"]
@@ -656,35 +657,35 @@ def test_the_check_is_a_422_naming_the_field_as_create_is(
 def test_without_the_cookie_the_check_is_a_401(client: TestClient, admin: None) -> None:
     answered = client.post(
         f"/api/hub/freelancers/{MISSING}/matches/check",
-        json={"company_id": MISSING, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": MISSING, "customer": CUSTOMER, "letter": LETTER},
     )
     assert answered.status_code == 401
 
 
 # ---- the link to Pigro and the report (REB-499) ------------------------------------------
 
-FATTURA = {
+INVOICE = {
     "id": "0192e0a0-0000-7000-8000-0000000f0012",
-    "tipo": "fattura",
-    "anno": 2026,
-    "numero": 12,
-    "stato": "emessa",
-    "stato_pagamento": "da_incassare",
+    "kind": "fattura",
+    "year": 2026,
+    "number": 12,
+    "status": "emessa",
+    "payment_status": "from_unpaid",
     "data": "2026-10-31",
 }
 # The CRM's report of the deal (its door's `GET .../report`): one row per time entry.
 CRM_REPORT = {
     "slug": "ada-lovelace",
     "deal_url": DEAL_URL,
-    "deal": {"id": str(DEAL), "nome": "Lettera n. 2026-001", "stato": "in corso"},
+    "deal": {"id": str(DEAL), "nome": "Lettera n. 2026-001", "status": "in_progress"},
     "giorni": [
-        {"data": "2026-10-01", "ore": "8.00", "descrizione": "Setup", "fattura": FATTURA},
-        {"data": "2026-10-02", "ore": "4.00", "descrizione": "API", "fattura": None},
+        {"data": "2026-10-01", "hours": "8.00", "description": "Setup", "fattura": INVOICE},
+        {"data": "2026-10-02", "hours": "4.00", "description": "API", "fattura": None},
     ],
-    "totale_ore": "12.00",
-    "ore_fatturate": "8.00",
-    "ore_non_fatturate": "4.00",
-    "fatture": [{**FATTURA, "ore": "8.00"}],
+    "hours_total": "12.00",
+    "invoiced_hours": "8.00",
+    "hours_uninvoiced": "4.00",
+    "invoices": [{**INVOICE, "hours": "8.00"}],
 }
 
 
@@ -705,7 +706,7 @@ def _signed_match(
     client: TestClient,
     sender: RecordingSender,
     session: Session,
-    pigro_stato: str | None = "da_collegare",
+    pigro_status: str | None = "to_link",
     **columns: Any,
 ) -> str:
     """A match as a signature leaves it: made over HTTP with 40 expected days, then its
@@ -716,9 +717,9 @@ def _signed_match(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={
             "company_id": company_id,
-            "cliente": CLIENTE,
-            "lettera": LETTERA,
-            "giorni_previsti": 40,
+            "customer": CUSTOMER,
+            "letter": LETTER,
+            "expected_days": 40,
         },
     )
     assert created.status_code == 201, created.text
@@ -726,12 +727,12 @@ def _signed_match(
     session.execute(
         update(ContractDocument)
         .where(ContractDocument.match_id == match_id)
-        .values(stato="firmato", signed_at=datetime(2026, 9, 30, 10, 0, tzinfo=UTC))
+        .values(status="signed", signed_at=datetime(2026, 9, 30, 10, 0, tzinfo=UTC))
     )
     session.execute(
         update(Match)
         .where(Match.id == match_id)
-        .values(stato="attivo", pigro_stato=pigro_stato, **columns)
+        .values(status="active", pigro_status=pigro_status, **columns)
     )
     session.commit()
     return str(match_id)
@@ -764,13 +765,13 @@ def test_post_pigro_link_answers_the_match(
 
     assert linked.status_code == 200, linked.text
     body = linked.json()
-    assert (body["id"], body["stato"], body["pigro_stato"]) == (match_id, "attivo", "collegato")
+    assert (body["id"], body["status"], body["pigro_status"]) == (match_id, "active", "linked")
     assert (body["pigro_slug"], body["pigro_deal_id"], body["pigro_url"]) == (
         "ada-lovelace",
         str(DEAL),
         DEAL_URL,
     )
-    assert body["pigro_errore"] is None
+    assert body["pigro_error"] is None
     [(method, url, headers, _sent)] = pigro.calls
     assert (method, url) == ("PUT", f"{PIGRO}/api/rebase/engagements/{match_id}")
     assert headers["Authorization"] == f"Bearer {TOKEN}"
@@ -781,7 +782,7 @@ def test_post_pigro_link_answers_the_match(
         .where(AdminAction.entity_id == UUID(match_id))
         .where(AdminAction.kind == "pigro_link")
     ).one()
-    assert action.payload == {"esito": "collegato", "errore": None}
+    assert action.payload == {"outcome": "linked", "error": None}
 
 
 def test_post_pigro_link_of_a_draft_is_409(
@@ -794,7 +795,7 @@ def test_post_pigro_link_of_a_draft_is_409(
     freelancer_id, company_id = ready(client, sender)
     draft = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     ).json()
 
     refused = client.post(f"/api/hub/matches/{draft['id']}/pigro/link")
@@ -802,7 +803,7 @@ def test_post_pigro_link_of_a_draft_is_409(
     assert refused.status_code == 409
     assert refused.json()["detail"] == "Si collega a Pigro solo un match attivo."
     assert pigro.calls == []
-    assert client.get(f"/api/hub/matches/{draft['id']}").json()["pigro_stato"] is None
+    assert client.get(f"/api/hub/matches/{draft['id']}").json()["pigro_status"] is None
 
 
 def test_get_report_answers_the_grouped_report(
@@ -816,7 +817,7 @@ def test_get_report_answers_the_grouped_report(
     """«Consuntivo»: the CRM's rows for the period asked, summed by day, ISO week and
     month, against the 40 days expected; every figure a string with two places."""
     match_id = _signed_match(
-        client, sender, api_session, "collegato", pigro_url=DEAL_URL, pigro_deal_id=DEAL
+        client, sender, api_session, "linked", pigro_url=DEAL_URL, pigro_deal_id=DEAL
     )
     pigro.answers = [(200, json.dumps(CRM_REPORT).encode())]
 
@@ -828,49 +829,47 @@ def test_get_report_answers_the_grouped_report(
     assert answered.json() == {
         "match_id": match_id,
         "pigro_url": DEAL_URL,
-        "pigro_stato": "collegato",
-        "giorni_previsti": 40,
-        "ore_previste": "320.00",
-        "totale_ore": "12.00",
-        "giorni_equivalenti": "1.50",
-        "avanzamento": "3.75",
-        "ore_fatturate": "8.00",
-        "ore_non_fatturate": "4.00",
-        "per_giorno": [
+        "pigro_status": "linked",
+        "expected_days": 40,
+        "expected_hours": "320.00",
+        "hours_total": "12.00",
+        "equivalent_days": "1.50",
+        "progress": "3.75",
+        "invoiced_hours": "8.00",
+        "hours_uninvoiced": "4.00",
+        "by_day": [
             {
                 "data": "2026-10-01",
-                "ore": "8.00",
-                "descrizioni": ["Setup"],
-                "fatture": ["12/2026"],
-                "ore_per_fattura": [{"numero": "12/2026", "tipo": "fattura", "ore": "8.00"}],
+                "hours": "8.00",
+                "descriptions": ["Setup"],
+                "invoices": ["12/2026"],
+                "hours_by_invoice": [{"number": "12/2026", "kind": "fattura", "hours": "8.00"}],
             },
             {
                 "data": "2026-10-02",
-                "ore": "4.00",
-                "descrizioni": ["API"],
-                "fatture": [],
-                "ore_per_fattura": [],
+                "hours": "4.00",
+                "descriptions": ["API"],
+                "invoices": [],
+                "hours_by_invoice": [],
             },
         ],
-        "per_settimana": [
-            {"settimana": "2026-W40", "da": "2026-09-28", "a": "2026-10-04", "ore": "12.00"}
-        ],
-        "per_mese": [{"mese": "2026-10", "ore": "12.00"}],
-        "fatture": [
+        "by_week": [{"week": "2026-W40", "da": "2026-09-28", "a": "2026-10-04", "hours": "12.00"}],
+        "by_month": [{"month": "2026-10", "hours": "12.00"}],
+        "invoices": [
             {
-                "numero": "12/2026",
-                "tipo": "fattura",
+                "number": "12/2026",
+                "kind": "fattura",
                 "data": "2026-10-31",
-                "stato": "emessa",
-                "stato_pagamento": "da_incassare",
-                "ore": "8.00",
+                "status": "emessa",
+                "payment_status": "from_unpaid",
+                "hours": "8.00",
             }
         ],
     }
     [(method, url, _headers, _sent)] = pigro.calls
     assert (method, url) == (
         "GET",
-        f"{PIGRO}/api/rebase/engagements/{match_id}/report?da=2026-10-01&a=2026-10-31",
+        f"{PIGRO}/api/rebase/engagements/{match_id}/report?from=2026-10-01&a=2026-10-31",
     )
 
 
@@ -899,7 +898,7 @@ def test_get_report_when_pigro_is_down_is_502(
     pigro: RecordedPigro,
     api_session: Session,
 ) -> None:
-    match_id = _signed_match(client, sender, api_session, "collegato", pigro_url=DEAL_URL)
+    match_id = _signed_match(client, sender, api_session, "linked", pigro_url=DEAL_URL)
     pigro.answers = [ConnectionRefusedError("refused")]
 
     answered = client.get(f"/api/hub/matches/{match_id}/report")
@@ -933,16 +932,16 @@ def test_routes_answer_503_without_the_token(
 
     assert fake.calls == []
     read = client.get(f"/api/hub/matches/{waiting}").json()
-    assert (read["pigro_stato"], read["pigro_attempted_at"]) == ("da_collegare", None)
-    assert read["situazione"].endswith(f". {PIGRO_NOT_CONFIGURED}")
-    assert read["altre_azioni"] == ["chiudi"]
+    assert (read["pigro_status"], read["pigro_attempted_at"]) == ("to_link", None)
+    assert read["situation"].endswith(f". {PIGRO_NOT_CONFIGURED}")
+    assert read["other_actions"] == ["close"]
     [card] = client.get(f"/api/hub/freelancers/{read['freelancer_id']}/matches").json()["matches"]
-    assert (card["situazione"], card["altre_azioni"]) == (read["situazione"], ["chiudi"])
+    assert (card["situation"], card["other_actions"]) == (read["situation"], ["close"])
     [row] = client.get("/api/hub/matches").json()["items"]
-    assert row["situazione"] == read["situazione"]
+    assert row["situation"] == read["situation"]
 
 
-def test_with_the_token_the_card_offers_riprova(
+def test_with_the_token_the_card_offers_retry(
     client: TestClient,
     admin: None,
     sender: RecordingSender,
@@ -955,8 +954,8 @@ def test_with_the_token_the_card_offers_riprova(
 
     read = client.get(f"/api/hub/matches/{waiting}").json()
 
-    assert read["situazione"].endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
-    assert read["altre_azioni"] == ["chiudi", "riprova_pigro"]
+    assert read["situation"].endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
+    assert read["other_actions"] == ["close", "retry_pigro"]
 
 
 def test_the_link_reads_through_the_long_seam_in_production(api_session: Session) -> None:
@@ -979,13 +978,13 @@ def test_the_link_reads_through_the_long_seam_in_production(api_session: Session
 
 @pytest.mark.parametrize("partita_iva", [None, "", "   "])
 def test_tax_data_may_be_saved_without_a_partita_iva(
-    client: TestClient, admin: None, sender: RecordingSender, partita_iva: str | None
+    client: TestClient, admin: None, sender: RecordingSender, vat_number: str | None
 ) -> None:
     """REB-687: omitted, null or blank is no partita IVA; given, it still has 11 digits."""
     login(client, sender)
     freelancer_id = apply_freelancer(client)
     url = f"/api/hub/freelancers/{freelancer_id}/fiscal"
-    saved = client.put(url, json={**FISCAL, "partita_iva": partita_iva})
+    saved = client.put(url, json={**FISCAL, "partita_iva": vat_number})
     assert saved.status_code == 200, saved.text
     assert saved.json()["partita_iva"] is None
     omitted = client.put(url, json={k: v for k, v in FISCAL.items() if k != "partita_iva"})
@@ -996,7 +995,7 @@ def test_tax_data_may_be_saved_without_a_partita_iva(
     assert short.json()["detail"][0]["loc"][-1] == "partita_iva"
 
 
-def test_a_match_for_a_member_without_a_partita_iva_is_occasional_end_to_end(
+def test_to_match_for_to_member_without_to_vat_number_is_occasional_end_to_end(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     """REB-687 over HTTP: the prefill proposes the occasional letter, the ordinary one is a
@@ -1010,8 +1009,8 @@ def test_a_match_for_a_member_without_a_partita_iva_is_occasional_end_to_end(
     prefill = client.get(
         f"/api/hub/freelancers/{freelancer_id}/matches/prefill", params={"company_id": company_id}
     )
-    assert prefill.json()["regime"] == "occasionale"
-    body = {"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+    assert prefill.json()["regime"] == "occasional"
+    body = {"company_id": company_id, "customer": CUSTOMER, "letter": LETTER}
     refused = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
     assert refused.status_code == 422
     assert refused.json()["detail"] == [
@@ -1022,23 +1021,23 @@ def test_a_match_for_a_member_without_a_partita_iva_is_occasional_end_to_end(
             "type": "value_error",
         }
     ]
-    occasional = {**body, "regime": "occasionale"}
+    occasional = {**body, "regime": "occasional"}
     preview = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches/preview",
-        params={"documento": "lettera"},
+        params={"document": "letter"},
         json=occasional,
     )
     assert preview.status_code == 200, preview.text
     assert "anteprima-lettera-di-incarico-occasionale.pdf" in preview.headers["content-disposition"]
     created = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=occasional)
     assert created.status_code == 201, created.text
-    letter = created.json()["lettera"]
-    assert (letter["regime"], letter["tipo"]) == ("occasionale", "Lettera di incarico occasionale")
+    letter = created.json()["letter"]
+    assert (letter["regime"], letter["kind"]) == ("occasional", "Lettera di incarico occasionale")
     page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
-    assert page["quadro"] is None
-    assert page["quadro_occasionale"]["tipo"] == "Contratto quadro per prestazioni occasionali"
+    assert page["framework"] is None
+    assert page["occasional_framework"]["kind"] == "Contratto quadro per prestazioni occasionali"
     pdf = client.get(f"/api/hub/contract-documents/{letter['id']}/pdf")
     assert (
-        f"lettera-di-incarico-occasionale-{letter['numero']}.pdf"
+        f"lettera-di-incarico-occasionale-{letter['number']}.pdf"
         in (pdf.headers["content-disposition"])
     )

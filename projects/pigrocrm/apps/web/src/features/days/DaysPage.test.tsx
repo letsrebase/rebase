@@ -15,10 +15,10 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
 
-function serving(items: unknown[], troncato = false) {
+function serving(items: unknown[], truncated = false) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/contracts') return Promise.resolve(ok({ items: [contract()], next_cursor: null }))
-    if (path === '/api/work-units') return Promise.resolve(ok({ items, troncato }))
+    if (path === '/api/work-units') return Promise.resolve(ok({ items, truncated }))
     return Promise.resolve(ok(undefined))
   }) as never)
 }
@@ -36,8 +36,8 @@ function listQuery(): Record<string, string | undefined> {
 describe('the days register', () => {
   it('lists a contract’s days with their state, each a link to its page', async () => {
     serving([
-      row({ id: 'd1', data: '2026-03-03', stato: 'lavorato_senza_approvazione', descrizione: 'Workshop' }),
-      row({ id: 'd2', data: '2026-03-02', stato: 'contestato', quantita: '1.00', descrizione: 'Revisione' }),
+      row({ id: 'd1', data: '2026-03-03', status: 'worked_without_approval', description: 'Workshop' }),
+      row({ id: 'd2', data: '2026-03-02', status: 'disputed', quantity: '1.00', description: 'Revisione' }),
     ])
     renderWithQuery(<DaysPage search={{ contract: CONTRACT_ID }} onSearchChange={vi.fn()} />)
 

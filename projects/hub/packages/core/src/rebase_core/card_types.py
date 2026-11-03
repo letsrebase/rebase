@@ -13,7 +13,7 @@ from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.hub_facts import HubFacts
 from rebase_core.llm import LlmRequest
 from rebase_core.sources import SourceSet
-from rebase_core.team_schemas import Card, CardPersonaRead
+from rebase_core.team_schemas import Card, CardPersonRead
 
 NO_TEXT = "Il CV non ha testo leggibile."
 
@@ -37,7 +37,7 @@ Outcome = Literal[
 ]
 
 # Who started a write (REB-861): the door the person used. `cli` is `rebase cards-regenerate`.
-Fonte = Literal["web", "mcp", "cli"]
+Source = Literal["web", "mcp", "cli"]
 
 # What the admin reads beside the card: ours, short, and never what the model said.
 FAILURES: dict[Failure, str] = {
@@ -68,12 +68,12 @@ class Composed:
     """What `CardWriter.compose` made of one person's inputs: the `card`, or the kind of
     `failure` when there is none (`no_text` has no model), and the tokens every call of
     it billed. `output_tokens` is without the thinking tokens, which are `thinking_tokens`.
-    `fonti`, `conflicts` and `input_hashes` are what the card row stores beside the card
+    `sources`, `conflicts` and `input_hashes` are what the card row stores beside the card
     (REB-839): the sources the model says supported each field, checked; the
     disagreements the code found; and the hash of every input the prompt was built from.
-    `persona` (REB-855) is the named card the same answer held: kept with the card, and also
+    `person` (REB-855) is the named card the same answer held: kept with the card, and also
     when the guard refused the card, since the contacts are not the card's. The employers
-    the model reported are in it, as `aziende`, and nowhere else."""
+    the model reported are in it, as `companies`, and nowhere else."""
 
     card: Card | None
     failure: Failure | None
@@ -82,10 +82,10 @@ class Composed:
     input_tokens: int
     output_tokens: int
     thinking_tokens: int
-    fonti: dict[str, list[str]] = field(default_factory=dict)
+    sources: dict[str, list[str]] = field(default_factory=dict)
     conflicts: list[Conflict] = field(default_factory=list)
     input_hashes: dict[str, str] = field(default_factory=dict)
-    persona: CardPersonaRead | None = None
+    person: CardPersonRead | None = None
 
 
 @dataclass(frozen=True)
@@ -127,7 +127,7 @@ class Regeneration:
     batch's apply)."""
 
     admin_id: UUID
-    fonte: Fonte
+    source: Source
     bulk: bool = False
     start_action_id: UUID | None = None
     batch_since: datetime | None = None

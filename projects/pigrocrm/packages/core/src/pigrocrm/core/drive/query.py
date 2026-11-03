@@ -129,7 +129,7 @@ def escape_query_value(value: str) -> str:
 
 # La regola di `checked_outside_id` scritta come `pattern` di JSON Schema, per l'unico
 # tipo di chiamante che deve *pubblicarla* invece di limitarsi ad applicarla: i tool
-# Drive di `apps/mcp` la dichiarano sui parametri `cartella_id`/`file_id`, cosi' che
+# Drive di `apps/mcp` la dichiarano sui parametri `folder_id`/`file_id`, cosi' che
 # un'espressione di ricerca passata da un agente venga rifiutata dallo schema dello
 # strumento prima che un corpo giri, e il rifiuto nomini il parametro che ha scritto lui
 # invece di risalire da tre livelli piu' sotto.

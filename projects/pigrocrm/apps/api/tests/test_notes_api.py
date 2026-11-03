@@ -21,7 +21,7 @@ def _stages(api_session: Session) -> None:
 
 
 def _records(client: TestClient) -> dict[str, str]:
-    customer = client.post("/api/customers", json={"ragione_sociale": "ACME Srl"})
+    customer = client.post("/api/customers", json={"legal_name": "ACME Srl"})
     deal = client.post("/api/deals", json={"nome": "Sito", "customer_id": customer.json()["id"]})
     person = client.post("/api/people", json={"nome": "Anna"})
     for response in (customer, deal, person):
@@ -38,45 +38,43 @@ def test_a_note_is_added_listed_edited_and_deleted(logged_in: TestClient, collec
     record = _records(logged_in)[collection]
     me = logged_in.get("/api/auth/me").json()
 
-    added = logged_in.post(f"/api/{collection}/{record}/notes", json={"testo": "  Prima nota  "})
+    added = logged_in.post(f"/api/{collection}/{record}/notes", json={"text": "  Prima nota  "})
     assert added.status_code == 201, added.text
     note = added.json()
-    assert note["testo"] == "Prima nota"
-    assert (note["autore"], note["autore_id"], note["fonte"]) == (me["nome"], me["id"], "web")
-    assert note["modificabile"] is True and note["modificata_at"] is None
+    assert note["text"] == "Prima nota"
+    assert (note["author"], note["author_id"], note["source"]) == (me["nome"], me["id"], "web")
+    assert note["editable"] is True and note["edited_at"] is None
 
-    second = logged_in.post(f"/api/{collection}/{record}/notes", json={"testo": "Seconda"}).json()
+    second = logged_in.post(f"/api/{collection}/{record}/notes", json={"text": "Seconda"}).json()
     listed = logged_in.get(f"/api/{collection}/{record}/notes")
-    assert [n["testo"] for n in listed.json()] == ["Seconda", "Prima nota"]
+    assert [n["text"] for n in listed.json()] == ["Seconda", "Prima nota"]
 
-    edited = logged_in.patch(f"/api/notes/{note['id']}", json={"testo": "Corretta"})
+    edited = logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Corretta"})
     assert edited.status_code == 200, edited.text
-    assert edited.json()["testo"] == "Corretta"
-    assert edited.json()["modificata_da"] == me["nome"] and edited.json()["modificata_at"]
+    assert edited.json()["text"] == "Corretta"
+    assert edited.json()["edited_by"] == me["nome"] and edited.json()["edited_at"]
 
     deleted = logged_in.delete(f"/api/notes/{second['id']}")
     assert deleted.status_code == 204
-    assert [n["testo"] for n in logged_in.get(f"/api/{collection}/{record}/notes").json()] == [
+    assert [n["text"] for n in logged_in.get(f"/api/{collection}/{record}/notes").json()] == [
         "Corretta"
     ]
-    assert logged_in.patch(f"/api/notes/{second['id']}", json={"testo": "x"}).status_code == 404
+    assert logged_in.patch(f"/api/notes/{second['id']}", json={"text": "x"}).status_code == 404
 
 
 def test_the_body_carries_the_text_only(logged_in: TestClient) -> None:
     record = _records(logged_in)["deals"]
-    for extra in ({"autore": "Marco"}, {"fonte": "mcp"}, {"created_at": "2020-01-01T00:00:00Z"}):
-        response = logged_in.post(f"/api/deals/{record}/notes", json={"testo": "x", **extra})
+    for extra in ({"author": "Marco"}, {"source": "mcp"}, {"created_at": "2020-01-01T00:00:00Z"}):
+        response = logged_in.post(f"/api/deals/{record}/notes", json={"text": "x", **extra})
         assert response.status_code == 422, extra
     for blank in ("", "   "):
-        assert (
-            logged_in.post(f"/api/deals/{record}/notes", json={"testo": blank}).status_code == 422
-        )
+        assert logged_in.post(f"/api/deals/{record}/notes", json={"text": blank}).status_code == 422
 
 
 def test_a_note_on_a_record_that_is_not_there_is_a_404(logged_in: TestClient) -> None:
     ghost = "00000000-0000-0000-0000-000000000000"
     assert logged_in.get(f"/api/deals/{ghost}/notes").status_code == 404
-    assert logged_in.post(f"/api/people/{ghost}/notes", json={"testo": "x"}).status_code == 404
+    assert logged_in.post(f"/api/people/{ghost}/notes", json={"text": "x"}).status_code == 404
     assert logged_in.delete(f"/api/notes/{ghost}").status_code == 404
     assert logged_in.get(f"/api/contracts/{ghost}/notes").status_code == 422
 
@@ -85,10 +83,10 @@ def test_a_collaborator_reads_the_admins_note_and_cannot_change_it(
     logged_in: TestClient, api_session: Session
 ) -> None:
     record = _records(logged_in)["customers"]
-    note = logged_in.post(f"/api/customers/{record}/notes", json={"testo": "Dell'admin"}).json()
+    note = logged_in.post(f"/api/customers/{record}/notes", json={"text": "Dell'admin"}).json()
     UserService(api_session).create(
         UserCreate(
-            email="collega@pigro.it", password=PASSWORD, nome="Collega", ruolo="collaboratore"
+            email="collega@pigro.it", password=PASSWORD, nome="Collega", role="collaborator"
         ),
         Actor.system(),
     )
@@ -98,20 +96,20 @@ def test_a_collaborator_reads_the_admins_note_and_cannot_change_it(
     assert logged.status_code == 200, logged.text
 
     seen = logged_in.get(f"/api/customers/{record}/notes").json()
-    assert [(n["testo"], n["modificabile"]) for n in seen] == [("Dell'admin", False)]
-    refused = logged_in.patch(f"/api/notes/{note['id']}", json={"testo": "Mia"})
+    assert [(n["text"], n["editable"]) for n in seen] == [("Dell'admin", False)]
+    refused = logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Mia"})
     assert refused.status_code == 403 and refused.json()["code"] == "permission_denied"
     assert logged_in.delete(f"/api/notes/{note['id']}").status_code == 403
-    own = logged_in.post(f"/api/customers/{record}/notes", json={"testo": "Del collega"}).json()
-    assert own["modificabile"] is True and own["autore"] == "Collega"
-    assert logged_in.patch(f"/api/notes/{own['id']}", json={"testo": "Cambiata"}).status_code == 200
+    own = logged_in.post(f"/api/customers/{record}/notes", json={"text": "Del collega"}).json()
+    assert own["editable"] is True and own["author"] == "Collega"
+    assert logged_in.patch(f"/api/notes/{own['id']}", json={"text": "Cambiata"}).status_code == 200
 
 
 def test_create_takes_a_note_as_the_first_note_and_the_records_no_longer_carry_one(
     logged_in: TestClient,
 ) -> None:
     customer = logged_in.post(
-        "/api/customers", json={"ragione_sociale": "Beta", "note": "Cliente da una mail"}
+        "/api/customers", json={"legal_name": "Beta", "note": "Cliente da una mail"}
     )
     deal = logged_in.post(
         "/api/deals",
@@ -122,7 +120,7 @@ def test_create_takes_a_note_as_the_first_note_and_the_records_no_longer_carry_o
         assert response.status_code == 201, response.text
         assert "note" not in response.json()
         [note] = logged_in.get(f"/api/{collection}/{response.json()['id']}/notes").json()
-        assert note["fonte"] == "web" and note["autore"] == "Admin"
+        assert note["source"] == "web" and note["author"] == "Admin"
         assert "note" not in logged_in.get(f"/api/{collection}/{response.json()['id']}").json()
 
 
@@ -138,8 +136,8 @@ def test_the_timeline_of_the_record_says_who_wrote_edited_and_deleted_a_note(
     logged_in: TestClient, collection: str
 ) -> None:
     record = _records(logged_in)[collection]
-    note = logged_in.post(f"/api/{collection}/{record}/notes", json={"testo": "Prima"}).json()
-    logged_in.patch(f"/api/notes/{note['id']}", json={"testo": "Dopo"})
+    note = logged_in.post(f"/api/{collection}/{record}/notes", json={"text": "Prima"}).json()
+    logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Dopo"})
     logged_in.delete(f"/api/notes/{note['id']}")
 
     timeline = logged_in.get(f"/api/{collection}/{record}/timeline").json()
@@ -152,19 +150,19 @@ def test_the_timeline_of_the_record_says_who_wrote_edited_and_deleted_a_note(
 def test_the_revisions_of_a_note_keep_each_text_it_had_whole(logged_in: TestClient) -> None:
     record = _records(logged_in)["deals"]
     long_text = "Appunti lunghi sulla trattativa. " * 150  # past the timeline's 2000-char cut
-    note = logged_in.post(f"/api/deals/{record}/notes", json={"testo": long_text}).json()
-    logged_in.patch(f"/api/notes/{note['id']}", json={"testo": "Breve."})
-    logged_in.patch(f"/api/notes/{note['id']}", json={"testo": "Breve, rivista."})
+    note = logged_in.post(f"/api/deals/{record}/notes", json={"text": long_text}).json()
+    logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Breve."})
+    logged_in.patch(f"/api/notes/{note['id']}", json={"text": "Breve, rivista."})
 
     response = logged_in.get(f"/api/notes/{note['id']}/revisions")
 
     assert response.status_code == 200, response.text
     revisions = response.json()
-    assert [r["testo"] for r in revisions] == ["Breve.", long_text.strip()]
-    assert all(r["edited_by"] == "Admin" and r["fonte"] == "web" for r in revisions)
+    assert [r["text"] for r in revisions] == ["Breve.", long_text.strip()]
+    assert all(r["edited_by"] == "Admin" and r["source"] == "web" for r in revisions)
     timeline = logged_in.get(f"/api/deals/{record}/timeline").json()
     edited = [e for e in timeline if e["kind"] == "note_edited"]
-    assert edited and all("prima" not in e["payload"] for e in edited)
+    assert edited and all("before" not in e["payload"] for e in edited)
     ghost = "00000000-0000-0000-0000-000000000000"
     assert logged_in.get(f"/api/notes/{ghost}/revisions").status_code == 404
 

@@ -88,8 +88,8 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
     try {
       for (const file of files) {
         const created = (await createDocument.mutateAsync({
-          tipo: 'documento',
-          titolo: file.name,
+          type: 'document',
+          title: file.name,
         })) as Document
         await upload.mutateAsync({ documentId: created.id, file })
       }
@@ -140,22 +140,22 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
                   params={{ documentId: document.id }}
                   className="block truncate font-medium underline-offset-2 hover:underline"
                 >
-                  {document.titolo}
+                  {document.title}
                 </Link>
                 <p className="text-sm text-muted-foreground">{formatDate(document.created_at)}</p>
               </div>
               <Badge variant="secondary">
-                {DOCUMENT_TYPE_LABELS[document.tipo] ?? document.tipo}
+                {DOCUMENT_TYPE_LABELS[document.type] ?? document.type}
               </Badge>
-              {document.stato && (
+              {document.status && (
                 /* The document *type* stays a plain badge -- it is a category, not a
                    state -- while the offer's state reads as the same dotted pill every
                    other state in the product does (design spec §4). */
-                <StatusPill tone={OFFER_STATE_TONE[document.stato as OfferState]}>
-                  {OFFER_STATE_LABELS[document.stato as OfferState] ?? document.stato}
+                <StatusPill tone={OFFER_STATE_TONE[document.status as OfferState]}>
+                  {OFFER_STATE_LABELS[document.status as OfferState] ?? document.status}
                 </StatusPill>
               )}
-              <span className="text-sm text-muted-foreground">v{document.versione_corrente}</span>
+              <span className="text-sm text-muted-foreground">v{document.current_version}</span>
               {/* Behind the «⋯» like every other row action (§4). These were the two lone
                   icons at the end of the row -- exactly the pattern the revision moved
                   into the menu -- and the words they carried only as `aria-label` are
@@ -163,17 +163,17 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
                   a document with no version yet: that is a state of this row, not an
                   action it can never take. */}
               <RowActions
-                label={`Azioni per ${document.titolo}`}
+                label={`Azioni per ${document.title}`}
                 items={[
                   {
                     label: 'Scarica',
-                    disabled: document.versione_corrente === 0,
+                    disabled: document.current_version === 0,
                     onSelect: () => {
                       setProblem(null)
                       void downloadDocument(document.id).catch((error: unknown) =>
                         setProblem({
                           ...toProblem(error),
-                          detail: documentDownloadErrorMessage(error, document.titolo),
+                          detail: documentDownloadErrorMessage(error, document.title),
                         }),
                       )
                     },

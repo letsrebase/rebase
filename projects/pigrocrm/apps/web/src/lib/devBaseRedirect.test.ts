@@ -5,8 +5,8 @@ import { redirectToBase } from './devBaseRedirect'
 describe('redirectToBase', () => {
   it('sends the bare base (no trailing slash) to the base, keeping the query', () => {
     expect(redirectToBase('/app', '/app/')).toBe('/app/')
-    expect(redirectToBase('/app?tab=commerciale&da=2026-09-01', '/app/')).toBe(
-      '/app/?tab=commerciale&da=2026-09-01',
+    expect(redirectToBase('/app?tab=commerciale&from=2026-09-01', '/app/')).toBe(
+      '/app/?tab=commerciale&from=2026-09-01',
     )
   })
 

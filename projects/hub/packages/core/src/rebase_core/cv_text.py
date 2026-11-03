@@ -61,15 +61,15 @@ class CvText(BaseModel):
     ceiling or the character one."""
 
     filename: str
-    pagine: int
-    testo: str
-    troncato: bool
+    pages: int
+    text: str
+    truncated: bool
 
 
 def extract_text(
     content: bytes, filename: str, *, timeout: float = PARSE_TIMEOUT_SECONDS
 ) -> CvText:
-    unreadable = CvText(filename=filename, pagine=0, testo="", troncato=False)
+    unreadable = CvText(filename=filename, pages=0, text="", truncated=False)
     try:
         done = subprocess.run(
             [sys.executable, "-m", "rebase_core.cv_text_worker"],
@@ -93,9 +93,9 @@ def extract_text(
         read = json.loads(done.stdout)
         return CvText(
             filename=filename,
-            pagine=read["pagine"],
-            testo=read["testo"],
-            troncato=read["troncato"],
+            pages=read["pagine"],
+            text=read["text"],
+            truncated=read["troncato"],
         )
     except (ValueError, KeyError, TypeError):
         logger.warning("CV text not read: the parser's answer was not the shape")

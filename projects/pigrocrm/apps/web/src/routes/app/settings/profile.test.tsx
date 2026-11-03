@@ -1,5 +1,5 @@
 /**
- * The weekly digest's opt-out link (`/app/settings/profile?da=digest`, spec 2026-09-16
+ * The weekly digest's opt-out link (`/app/settings/profile?from=digest`, spec 2026-09-16
  * §3.6) used to land on the digest switch. The switch moved to Notifiche (REB-735, rule R4 of
  * REB-771), so the link is sent there with its whole query string, and a plain visit to
  * Profilo is left where it is.
@@ -39,7 +39,7 @@ describe('the Profilo route', () => {
 
   it('leaves a plain visit, and any other origin, on Profilo', () => {
     expect(redirected({})).toBeNull()
-    expect(redirected({ da: 'altro' })).toBeNull()
+    expect(redirected({ da: 'other' })).toBeNull()
   })
 
   it('reads da as a string and drops what is not one', () => {

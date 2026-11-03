@@ -117,7 +117,7 @@ export function SpacePanel() {
       <fieldset disabled={save.isPending} className="min-w-0 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>{settings.spazio ? `Spazio ${settings.spazio}` : 'Installazione radice'}</CardTitle>
+          <CardTitle>{settings.space ? `Spazio ${settings.space}` : 'Installazione radice'}</CardTitle>
           <CardDescription>
             {settings.public_url
               ? `Risponde su ${settings.public_url}. `
@@ -132,7 +132,7 @@ export function SpacePanel() {
         <CardHeader>
           <CardTitle>Google: Gmail e Drive</CardTitle>
           <CardDescription>
-            {settings.google_client_condiviso ? (
+            {settings.google_client_shared ? (
               // REB-394: the root lends its client, so there is nothing to register and
               // the redirect addresses are the platform's, not this space's.
               <>
@@ -145,7 +145,7 @@ export function SpacePanel() {
               <>
                 Un client OAuth tuo, dalla console Google Cloud. Registra lì i due redirect qui
                 sotto. La chiave che cifra i token viene generata da sola al primo salvataggio.
-                {settings.gmail_configurato
+                {settings.gmail_configured
                   ? ' Gmail e Drive sono attivi per questo spazio.'
                   : ' Finché manca qualcosa, Gmail e Drive non compaiono.'}
               </>
@@ -156,7 +156,7 @@ export function SpacePanel() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="google_client_id">Client ID</Label>
-              <Origin name="google_client_id" overridden={settings.sovrascritte} />
+              <Origin name="google_client_id" overridden={settings.overwritten} />
             </div>
             <Input
               id="google_client_id"
@@ -169,14 +169,14 @@ export function SpacePanel() {
             <div className="flex items-center justify-between">
               <Label htmlFor="google_client_secret">Client secret</Label>
               <span className="text-muted-foreground text-xs">
-                {settings.google_client_secret_impostato ? 'impostato, non mostrato' : 'non impostato'}
+                {settings.google_client_secret_set ? 'impostato, non mostrato' : 'non impostato'}
               </span>
             </div>
             <Input
               id="google_client_secret"
               type="password"
               autoComplete="off"
-              placeholder={settings.google_client_secret_impostato ? '••••••••' : ''}
+              placeholder={settings.google_client_secret_set ? '••••••••' : ''}
               value={draft.google_client_secret}
               onChange={(event) => set('google_client_secret', event.target.value)}
             />
@@ -185,7 +185,7 @@ export function SpacePanel() {
               ignored while the space borrows it (`apply_overrides`). Typing a client id
               of the space's own brings the switch back, so the new client is declared in
               the same save that brings it. */}
-          {(!settings.google_client_condiviso || switchingFromShared(settings, draft)) && (
+          {(!settings.google_client_shared || switchingFromShared(settings, draft)) && (
             <div className="flex items-center gap-2">
               <Checkbox
                 id="google_app_unverified"
@@ -200,7 +200,7 @@ export function SpacePanel() {
           {settings.redirect_uri_gmail && (
             <dl className="text-sm">
               <dt className="text-muted-foreground">
-                {settings.google_client_condiviso
+                {settings.google_client_shared
                   ? 'Solo per un client tuo: i redirect URI da registrare su Google'
                   : 'Redirect URI da registrare su Google'}
               </dt>
@@ -214,7 +214,7 @@ export function SpacePanel() {
           )}
           <p className="text-muted-foreground text-xs">
             Chiave dei token:{' '}
-            {settings.google_token_key_impostata ? 'presente' : 'sarà generata al salvataggio del client'}
+            {settings.google_token_key_set ? 'presente' : 'sarà generata al salvataggio del client'}
           </p>
         </CardContent>
       </Card>
@@ -230,7 +230,7 @@ export function SpacePanel() {
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="storage_backend">Archivio</Label>
-            <Origin name="storage_backend" overridden={settings.sovrascritte} />
+            <Origin name="storage_backend" overridden={settings.overwritten} />
           </div>
           <select
             id="storage_backend"
@@ -261,7 +261,7 @@ export function SpacePanel() {
               onCheckedChange={(checked) => set('mcp_full_access', checked === true)}
             />
             <Label htmlFor="mcp_full_access">Accesso completo per i token dell'agente</Label>
-            <Origin name="mcp_full_access" overridden={settings.sovrascritte} />
+            <Origin name="mcp_full_access" overridden={settings.overwritten} />
           </div>
         </CardContent>
       </Card>
@@ -282,7 +282,7 @@ export function SpacePanel() {
             <div key={key} className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor={key}>{label}</Label>
-                <Origin name={key} overridden={settings.sovrascritte} />
+                <Origin name={key} overridden={settings.overwritten} />
               </div>
               <Input
                 id={key}

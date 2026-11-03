@@ -15,15 +15,15 @@ afterEach(() => {
 
 describe('stripAnswerLink', () => {
   it('takes the token and the answer out of the URL', () => {
-    setLocation('/hub/team/risposta?t=abc_-1&r=no')
+    setLocation('/hub/team/answer?t=abc_-1&r=no')
     stripAnswerLink()
-    expect(window.location.pathname).toBe('/hub/team/risposta')
+    expect(window.location.pathname).toBe('/hub/team/answer')
     expect(window.location.search).toBe('')
     expect(readAnswerLink()).toEqual({ t: 'abc_-1', r: 'no' })
   })
 
   it('keeps any other param', () => {
-    setLocation('/hub/team/risposta?t=abc&r=si&x=1')
+    setLocation('/hub/team/answer?t=abc&r=si&x=1')
     stripAnswerLink()
     expect(window.location.search).toBe('?x=1')
     expect(readAnswerLink()).toEqual({ t: 'abc', r: 'si' })
@@ -35,16 +35,16 @@ describe('stripAnswerLink', () => {
     expect(window.location.search).toBe('?t=abc&r=si')
     expect(readAnswerLink()).toBeNull()
 
-    setLocation('/hub/team/risposta?r=si')
+    setLocation('/hub/team/answer?r=si')
     stripAnswerLink()
     expect(window.location.search).toBe('?r=si')
     expect(readAnswerLink()).toBeNull()
   })
 
   it('replaces the pair of an earlier link opened in the same tab', () => {
-    setLocation('/hub/team/risposta?t=first&r=si')
+    setLocation('/hub/team/answer?t=first&r=si')
     stripAnswerLink()
-    setLocation('/hub/team/risposta?t=second&r=no')
+    setLocation('/hub/team/answer?t=second&r=no')
     stripAnswerLink()
     expect(readAnswerLink()).toEqual({ t: 'second', r: 'no' })
   })
@@ -52,7 +52,7 @@ describe('stripAnswerLink', () => {
 
 describe('the pair, held until the answer is posted', () => {
   it('is read as often as asked, and after a reload from the tab’s session storage', async () => {
-    setLocation('/hub/team/risposta?t=abc&r=si')
+    setLocation('/hub/team/answer?t=abc&r=si')
     stripAnswerLink()
     expect(readAnswerLink()).toEqual({ t: 'abc', r: 'si' })
     expect(readAnswerLink()).toEqual({ t: 'abc', r: 'si' })
@@ -67,7 +67,7 @@ describe('the pair, held until the answer is posted', () => {
   })
 
   it('is gone once forgotten, from memory and from the tab', () => {
-    setLocation('/hub/team/risposta?t=abc&r=si')
+    setLocation('/hub/team/answer?t=abc&r=si')
     stripAnswerLink()
     forgetAnswerLink()
     expect(readAnswerLink()).toBeNull()
@@ -89,7 +89,7 @@ describe('the pair, held until the answer is posted', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(refuse)
     vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(refuse)
 
-    setLocation('/hub/team/risposta?t=abc&r=no')
+    setLocation('/hub/team/answer?t=abc&r=no')
     stripAnswerLink()
     expect(window.location.search).toBe('')
     expect(readAnswerLink()).toEqual({ t: 'abc', r: 'no' })

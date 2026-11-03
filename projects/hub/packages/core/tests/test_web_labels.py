@@ -82,7 +82,7 @@ def test_the_web_labels_every_action_the_core_names_and_no_other(name: str) -> N
     )
 
 
-def test_the_web_says_in_attesa_as_the_core_does() -> None:
+def test_the_web_says_pending_as_the_core_does() -> None:
     """REB-517: the word for a talent mailed and silent is one string, not a map."""
     source = FORMAT_TS.read_text(encoding="utf-8")
     found = re.search(r"^export const TALENT_WAITING_LABEL = '([^'\\]*)'$", source, re.MULTILINE)
@@ -138,7 +138,7 @@ def test_the_web_offers_the_bands_the_core_places_a_price_in() -> None:
 
 
 def test_a_drifted_label_is_named_with_both_words() -> None:
-    web = {**MATCH_STATE_LABELS, "bozza": "Bozza"}
+    web = {**MATCH_STATE_LABELS, "draft": "Bozza"}
     assert _drift("MATCH_STATE_LABELS", web, MATCH_STATE_LABELS) == [
         "MATCH_STATE_LABELS.bozza: web 'Bozza', core 'Da inviare'"
     ]

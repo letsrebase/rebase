@@ -14,7 +14,7 @@
   model means `can_call` refuses, and a usage row written anyway is `priced = false` with a
   `NULL` cost, counted as unpriced.
 * **The daily cap** is the task's `daily_cap_eur`, summed over every purpose (`run`,
-  `prova`, `eval`) of that task since midnight in Rome, where the day of the people running
+  `test`, `eval`) of that task since midnight in Rome, where the day of the people running
   rebase begins (`team_caps.py` counts the same day; it is not imported here because it
   reaches the seam this module feeds). What counts is what was answered plus the **holds**
   of the calls in flight: `reserve` places one before the network call under a lock on the
@@ -299,7 +299,7 @@ class AiConfigService:
             AI_CONFIG_ENTITY_ID,
             "ai_key",
             admin_id,
-            {"provider": provider, "azione": KEY_REPLACED, "key_hint": key_hint(row.key_last4)},
+            {"provider": provider, "action": KEY_REPLACED, "key_hint": key_hint(row.key_last4)},
         )
         return self._provider_read(row)
 
@@ -599,7 +599,7 @@ class AiConfigService:
                 AI_CONFIG_ENTITY_ID,
                 "ai_key",
                 admin_id,
-                {"provider": "anthropic", "azione": "seed", "model": model},
+                {"provider": "anthropic", "action": "seed", "model": model},
             )
         return SeedResult(key_hint=key_hint(row.key_last4), model=model, prices=priced)
 
@@ -681,7 +681,7 @@ class AiConfigService:
         if row.saved_by is not None:
             user = self.session.get(User, row.saved_by)
             if user is not None:
-                saved_by_name = f"{user.nome} {user.cognome}".strip()
+                saved_by_name = f"{user.nome} {user.last_name}".strip()
         configured = row.key_ciphertext is not None
         return ProviderRead(
             provider=row.provider,
@@ -697,7 +697,7 @@ class AiConfigService:
         on (`SourceService.set_enabled`, which owns the writes and their audit)."""
         rows = self.session.scalars(select(AiSource).order_by(AiSource.kind)).all()
         names = {
-            row.updated_by: f"{user.nome} {user.cognome}".strip()
+            row.updated_by: f"{user.nome} {user.last_name}".strip()
             for row in rows
             if row.updated_by is not None and (user := self.session.get(User, row.updated_by))
         }

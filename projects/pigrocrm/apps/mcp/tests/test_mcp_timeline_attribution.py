@@ -45,7 +45,7 @@ def _payload(result: Any) -> dict:
 
 
 def _member(session: Session, nome: str, key: str) -> User:
-    user = User(email=f"{key}@example.test", password_hash="x", nome=nome, ruolo="admin")
+    user = User(email=f"{key}@example.test", password_hash="x", nome=nome, role="admin")
     session.add(user)
     session.flush()
     return user
@@ -75,20 +75,20 @@ async def test_every_row_an_agent_writes_carries_the_token_owner_and_the_mcp_cha
     stages = None
     async with Client(owner_server) as client:
         stages = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"]
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
-        await client.call_tool("add_note", {"customer_id": customer["id"], "testo": "una nota"})
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        await client.call_tool("add_note", {"customer_id": customer["id"], "text": "una nota"})
         person = _payload(
             await client.call_tool("create_person", {"nome": "Anna", "customer_id": customer["id"]})
         )
-        await client.call_tool("add_note", {"person_id": person["id"], "testo": "una nota"})
+        await client.call_tool("add_note", {"person_id": person["id"], "text": "una nota"})
         deal = _payload(
             await client.call_tool(
                 "create_deal", {"nome": "Progetto", "customer_id": customer["id"]}
             )
         )
         await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": stages[-1]["id"]})
-        task = _payload(await client.call_tool("create_attivita", {"titolo": "Chiamare"}))
-        await client.call_tool("complete_attivita", {"attivita_id": task["id"]})
+        task = _payload(await client.call_tool("create_task", {"title": "Chiamare"}))
+        await client.call_tool("complete_task", {"task_id": task["id"]})
         await client.call_tool("archive_person", {"person_id": person["id"]})
         await client.call_tool("restore_person", {"person_id": person["id"]})
 
@@ -106,11 +106,12 @@ async def test_get_timeline_serves_the_name_and_the_channel_of_a_web_and_an_mcp_
 ) -> None:
     web_member = _member(mcp_session, "Giulia Bianchi", "giulia")
     web = Actor(id=web_member.id, type="user", role="admin")
-    created = CustomerService(mcp_session).create(CustomerCreate(ragione_sociale="ACME"), web)
+    created = CustomerService(mcp_session).create(CustomerCreate(legal_name="ACME"), web)
 
     async with Client(owner_server) as client:
         await client.call_tool(
-            "update_customer", {"customer_id": str(created.id), "changes": {"pec": "a@pec.test"}}
+            "update_customer",
+            {"customer_id": str(created.id), "changes": {"certified_email": "a@pec.test"}},
         )
         entries = _payload(
             await client.call_tool(
@@ -137,7 +138,7 @@ async def test_get_timeline_serves_the_name_and_the_channel_of_a_web_and_an_mcp_
 _SESSION_WRITES = {"add", "add_all", "delete", "commit", "flush", "merge", "execute"}
 
 # Reviewed exceptions, each a file and the reason. `tenants.py` signs a space up: it
-# settles the new space's first admin (`email_verificata_il`) before any member, and so
+# settles the new space's first admin (`email_verified_at`) before any member, and so
 # any actor, exists in it.
 _ALLOWED = {"routers/tenants.py": "provisioning a space: no member exists in it yet"}
 

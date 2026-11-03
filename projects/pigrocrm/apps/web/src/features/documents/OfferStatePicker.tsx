@@ -21,9 +21,9 @@ export function OfferStatePicker({ document }: { document: Document }) {
   const setState = useSetOfferState(document.id)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
-  if (document.tipo !== 'offerta' || document.stato === null) return null
+  if (document.type !== 'offer' || document.status === null) return null
 
-  const current = document.stato as OfferState
+  const current = document.status as OfferState
   const allowed = OFFER_TRANSITIONS[current] ?? []
 
   return (

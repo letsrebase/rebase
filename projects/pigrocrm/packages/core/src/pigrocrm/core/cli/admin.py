@@ -13,9 +13,9 @@ from pigrocrm.core.cli.spaces_walk import disposed
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.scope import bind_scope
-from pigrocrm.core.emitter.models import LegalEntity
-from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import DomainError
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 
 
 def _read_password(prompt: str) -> str:
@@ -60,7 +60,7 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
         bind_scope(session, Actor.system())
         try:
             user = UserService(session).create(
-                UserCreate(email=email, password=password, nome=nome, ruolo="admin"),
+                UserCreate(email=email, password=password, nome=nome, role="admin"),
                 Actor.system(),
             )
         except DomainError as exc:
@@ -68,14 +68,14 @@ def createadmin(settings: Settings, email: str | None, nome: str | None) -> int:
             # will make with this tool; a raw traceback here is a bad first impression.
             print(exc.message, file=sys.stderr)
             return 1
-        azienda_created = _bootstrap_root_azienda(session, nome)
+        legal_entity_created = _bootstrap_root_legal_entity(session, nome)
     print(f"Creato amministratore {user.email}")
-    if azienda_created:
+    if legal_entity_created:
         print(f"Creata l'azienda predefinita «{nome}»: si rinomina da Impostazioni → Aziende")
     return 0
 
 
-def _bootstrap_root_azienda(session: Session, nome: str) -> bool:
+def _bootstrap_root_legal_entity(session: Session, nome: str) -> bool:
     """The root installation's first azienda, written with its first admin.
 
     The root is not in the registry, so `ensure_defaults` never reaches it, and the API
@@ -95,7 +95,7 @@ def _bootstrap_root_azienda(session: Session, nome: str) -> bool:
         return False
     try:
         with session.begin_nested():
-            repo.add(LegalEntity(ragione_sociale=nome, predefinita=True, attiva=True))
+            repo.add(LegalEntity(legal_name=nome, predefinita=True, active=True))
     except IntegrityError:
         session.rollback()
         return False

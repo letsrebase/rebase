@@ -7,15 +7,15 @@ import { CrmLink } from './CrmLink'
 
 const DEAL = '0192e0a0-0000-7000-8000-00000000d3a1'
 
-type State = 'da_collegare' | 'collegato' | 'errore' | 'rifiutato' | null
+type State = 'to_link' | 'linked' | 'error' | 'rejected' | null
 
-function mount(crm_stato: State, extra: Partial<Parameters<typeof CrmLink>[0]['company']> = {}) {
+function mount(crm_status: State, extra: Partial<Parameters<typeof CrmLink>[0]['company']> = {}) {
   const onLink = vi.fn()
   render(
     <CrmLink
       company={{
-        crm_stato,
-        crm_situazione: null,
+        crm_status,
+        crm_situation: null,
         crm_deal_url: null,
         crm_attempted_at: null,
         ...extra,
@@ -36,8 +36,8 @@ describe('CrmLink', () => {
   })
 
   it('shows the CRM’s sentence for a request in error and «Riprova» files it', async () => {
-    const onLink = mount('errore', {
-      crm_situazione: 'Il CRM non ha risposto: Spazio dei lead non configurato.',
+    const onLink = mount('error', {
+      crm_situation: 'Il CRM non ha risposto: Spazio dei lead non configurato.',
     })
     expect(screen.getByText('Non ancora registrata nel CRM.')).toBeInTheDocument()
     expect(screen.getByText('Il CRM non ha risposto: Spazio dei lead non configurato.')).toBeInTheDocument()
@@ -46,7 +46,7 @@ describe('CrmLink', () => {
   })
 
   it('links to the deal once linked and offers no «Riprova»', () => {
-    mount('collegato', { crm_deal_url: `https://pigro.test/rebase/app/deal/${DEAL}` })
+    mount('linked', { crm_deal_url: `https://pigro.test/rebase/app/deal/${DEAL}` })
     expect(screen.getByText('Registrata nel CRM.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Apri il deal nel CRM' })).toHaveAttribute(
       'href',
@@ -63,7 +63,7 @@ describe('CrmLink', () => {
   })
 
   it('«Collega a un altro deal» sends the deal’s id and refuses text with none', async () => {
-    const onLink = mount('collegato')
+    const onLink = mount('linked')
     const field = screen.getByLabelText('Collega a un altro deal')
     await userEvent.type(field, 'un deal')
     await userEvent.click(screen.getByRole('button', { name: 'Collega al deal' }))
@@ -79,7 +79,7 @@ describe('CrmLink', () => {
   it('says why a refused link failed', () => {
     render(
       <CrmLink
-        company={{ crm_stato: 'collegato', crm_situazione: null, crm_deal_url: null, crm_attempted_at: null }}
+        company={{ crm_status: 'linked', crm_situation: null, crm_deal_url: null, crm_attempted_at: null }}
         pending={false}
         onLink={vi.fn()}
         error={new ApiError(409, 'Il CRM ha rifiutato la richiesta: deal_id: non valido.')}
@@ -89,7 +89,7 @@ describe('CrmLink', () => {
   })
 
   it('offers no link to a deal whose address is not a web address', () => {
-    mount('collegato', { crm_deal_url: 'javascript:alert(1)' })
+    mount('linked', { crm_deal_url: 'javascript:alert(1)' })
     expect(screen.queryByRole('link', { name: 'Apri il deal nel CRM' })).toBeNull()
   })
 })

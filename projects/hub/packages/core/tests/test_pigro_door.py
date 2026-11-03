@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from rebase_core.http import MAX_BODY_BYTES, HttpCall
-from rebase_core.match_words import COLLEGATO, ERRORE, HTTPS_ONLY, RIFIUTATO
+from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 from rebase_core.pigro_door import (
     ANSWERED_STATUS,
     CAUSE_NOT_THE_SHAPE,
@@ -75,7 +75,7 @@ def _put(
 def test_a_put_sends_the_bearer_and_the_json_body_to_the_door() -> None:
     door, seen = _door(201, b'{"slug": "ada"}')
     outcome = _put(door)
-    assert outcome == Outcome(COLLEGATO, answer=Answer(slug="ada"))
+    assert outcome == Outcome(LINKED, answer=Answer(slug="ada"))
     (method, target, headers, payload) = seen[0]
     assert (method, target, json.loads(payload)) == ("PUT", f"{URL}/x/1", {"a": 1})
     assert headers["Authorization"] == f"Bearer {TOKEN}"
@@ -85,16 +85,16 @@ def test_a_put_sends_the_bearer_and_the_json_body_to_the_door() -> None:
 @pytest.mark.parametrize(
     ("status", "body", "expected"),
     [
-        (422, b'{"detail": "ruolo: troppo lungo"}', Outcome(RIFIUTATO, "ruolo: troppo lungo")),
-        (422, b"", Outcome(RIFIUTATO, "HTTP 422")),
+        (422, b'{"detail": "ruolo: troppo lungo"}', Outcome(REJECTED, "ruolo: troppo lungo")),
+        (422, b"", Outcome(REJECTED, "HTTP 422")),
         (
             409,
             json.dumps({"code": "conflict", "reason": "Deal eliminato."}).encode(),
-            Outcome(RIFIUTATO, "Deal eliminato.", gone=True),
+            Outcome(REJECTED, "Deal eliminato.", gone=True),
         ),
-        (503, b'{"detail": "Riprova tra poco."}', Outcome(ERRORE, "Riprova tra poco.")),
-        (500, b'{"detail": "boom"}', Outcome(ERRORE, "HTTP 500")),
-        (404, b"", Outcome(ERRORE, "HTTP 404")),
+        (503, b'{"detail": "Riprova tra poco."}', Outcome(ERROR, "Riprova tra poco.")),
+        (500, b'{"detail": "boom"}', Outcome(ERROR, "HTTP 500")),
+        (404, b"", Outcome(ERROR, "HTTP 404")),
     ],
 )
 def test_the_status_says_which_state_the_row_is_left_in(
@@ -106,14 +106,14 @@ def test_the_status_says_which_state_the_row_is_left_in(
 
 def test_a_status_the_caller_did_not_name_as_refused_is_an_error_to_retry() -> None:
     door, _ = _door(409, b'{"detail": "x"}')
-    assert _put(door) == Outcome(ERRORE, "HTTP 409")
+    assert _put(door) == Outcome(ERROR, "HTTP 409")
 
 
 def test_an_answer_past_the_cap_or_not_the_shape_is_an_error_not_a_link() -> None:
     long_body = b'{"slug": "' + b"a" * MAX_BODY_BYTES + b'"}'
-    assert _put(_door(200, long_body)[0]) == Outcome(ERRORE, CAUSE_TOO_LONG)
-    assert _put(_door(201, b'{"nope": 1}')[0]) == Outcome(ERRORE, CAUSE_NOT_THE_SHAPE)
-    assert _put(_door(200, b"<html>")[0]) == Outcome(ERRORE, CAUSE_NOT_THE_SHAPE)
+    assert _put(_door(200, long_body)[0]) == Outcome(ERROR, CAUSE_TOO_LONG)
+    assert _put(_door(201, b'{"nope": 1}')[0]) == Outcome(ERROR, CAUSE_NOT_THE_SHAPE)
+    assert _put(_door(200, b"<html>")[0]) == Outcome(ERROR, CAUSE_NOT_THE_SHAPE)
 
 
 @pytest.mark.parametrize(
@@ -131,13 +131,13 @@ def test_a_put_never_raises_and_names_the_cause(
 ) -> None:
     with caplog.at_level(logging.WARNING, logger="rebase_core.pigro_door"):
         outcome = _put(_raising(error))
-    assert outcome == Outcome(ERRORE, cause)
+    assert outcome == Outcome(ERROR, cause)
     assert TOKEN not in caplog.text
 
 
 def test_the_bearer_never_travels_over_plain_http_to_another_host() -> None:
     door, seen = _door(201, b'{"slug": "ada"}', url="http://crm.test")
-    assert _put(door) == Outcome(ERRORE, HTTPS_ONLY)
+    assert _put(door) == Outcome(ERROR, HTTPS_ONLY)
     assert seen == []
     assert speaks_https("http://localhost:8000") and speaks_https("https://crm.test")
     assert not speaks_https("http://crm.test") and not speaks_https("https://")
@@ -145,8 +145,8 @@ def test_the_bearer_never_travels_over_plain_http_to_another_host() -> None:
 
 def test_a_get_returns_what_parse_reads() -> None:
     door, seen = _door(200, b'{"slug": "ada"}')
-    assert door.get("/x?da=1", Answer.model_validate_json) == Answer(slug="ada")
-    assert seen[0][:2] == ("GET", f"{URL}/x?da=1")
+    assert door.get("/x?from=1", Answer.model_validate_json) == Answer(slug="ada")
+    assert seen[0][:2] == ("GET", f"{URL}/x?from=1")
 
 
 def test_a_get_that_is_not_answered_as_asked_says_why_in_the_admins_words() -> None:
@@ -177,18 +177,18 @@ def test_write_sets_the_named_columns_and_copies_a_link_over_a_cleared_error() -
     def copy(target: SimpleNamespace, answer: Answer) -> None:
         target.slug = answer.slug
 
-    write(row, Outcome(ERRORE, "HTTP 500"), state="state", error="error", copy=copy)
-    assert (row.state, row.error, row.slug) == (ERRORE, "HTTP 500", None)
+    write(row, Outcome(ERROR, "HTTP 500"), state="state", error="error", copy=copy)
+    assert (row.state, row.error, row.slug) == (ERROR, "HTTP 500", None)
     write(
         row,
-        Outcome(COLLEGATO, answer=Answer(slug="ada")),
+        Outcome(LINKED, answer=Answer(slug="ada")),
         state="state",
         error="error",
         copy=copy,
     )
-    assert (row.state, row.error, row.slug) == (COLLEGATO, None, "ada")
-    write(row, Outcome(ERRORE, "HTTP 503"), state="state", error="error", copy=copy)
-    assert (row.state, row.error, row.slug) == (ERRORE, "HTTP 503", "ada")
+    assert (row.state, row.error, row.slug) == (LINKED, None, "ada")
+    write(row, Outcome(ERROR, "HTTP 503"), state="state", error="error", copy=copy)
+    assert (row.state, row.error, row.slug) == (ERROR, "HTTP 503", "ada")
 
 
 def test_committed_commits_a_clean_block_and_rolls_back_a_failed_one() -> None:

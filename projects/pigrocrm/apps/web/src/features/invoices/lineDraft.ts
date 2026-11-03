@@ -9,21 +9,21 @@
  *  whatever the user had typed into the rows. A second file costs nothing.
  */
 export interface DraftLine {
-  descrizione: string
-  quantita: string
-  unita_misura: string
-  prezzo_unitario: string
-  sconto_percentuale: string
-  sconto_importo: string
+  description: string
+  quantity: string
+  unit_of_measure: string
+  unit_price: string
+  discount_percentage: string
+  discount_amount: string
 }
 
 export function emptyLine(): DraftLine {
   return {
-    descrizione: '',
-    quantita: '1',
-    unita_misura: '',
-    prezzo_unitario: '',
-    sconto_percentuale: '',
-    sconto_importo: '',
+    description: '',
+    quantity: '1',
+    unit_of_measure: '',
+    unit_price: '',
+    discount_percentage: '',
+    discount_amount: '',
   }
 }

@@ -123,11 +123,11 @@ def apply(
     llm: CardLlmDep,
     open_session: SessionOpenerDep,
     nome: Annotated[str, Form()],
-    cognome: Annotated[str, Form()],
+    last_name: Annotated[str, Form()],
     email: Annotated[str, Form()],
-    tariffa_giornaliera: Annotated[str, Form()],
+    daily_rate: Annotated[str, Form()],
     posizione: Annotated[str, Form()],
-    remoto: Annotated[str, Form()],
+    remote: Annotated[str, Form()],
     # Optional: the wizard leaves the part out of the body when nobody attached a file,
     # and FastAPI hands `None` here for a part with no filename and for `cv` sent as an
     # empty string field, which is what other clients do for "nothing chosen". A part
@@ -141,9 +141,9 @@ def apply(
     utm_content: Annotated[str | None, Form()] = None,
     utm_term: Annotated[str | None, Form()] = None,
     utm_id: Annotated[str | None, Form()] = None,
-    origine: Annotated[str | None, Form()] = None,
+    origin: Annotated[str | None, Form()] = None,
     distinct_id: Annotated[str | None, Form(max_length=DISTINCT_ID_MAX_LENGTH)] = None,
-    rif: Annotated[str | None, Form()] = None,
+    ref: Annotated[str | None, Form()] = None,
 ) -> Ack:
     spend_one(request)
     if cv is not None:
@@ -151,12 +151,12 @@ def apply(
     try:
         data = FreelancerCreate(
             nome=nome,
-            cognome=cognome,
+            last_name=last_name,
             email=email,
             linkedin_url=linkedin_url or None,
-            tariffa_giornaliera=_decimal(tariffa_giornaliera, "tariffa_giornaliera"),
+            daily_rate=_decimal(daily_rate, "daily_rate"),
             posizione=posizione,
-            remoto=remoto,  # type: ignore[arg-type]
+            remote=remote,  # type: ignore[arg-type]
             links=links or [],
             utm=SignupUtm(
                 utm_source=utm_source,
@@ -165,13 +165,13 @@ def apply(
                 utm_content=utm_content,
                 utm_term=utm_term,
                 utm_id=utm_id,
-                origine=origine or None,
+                origin=origin or None,
             ),
-            rif=rif or None,
+            ref=ref or None,
         )
     except ValidationError as exc:
         raise _validation_422(exc) from exc
-    # No CV at all is not a refusal: the card is stored without one and `completa` says
+    # No CV at all is not a refusal: the card is stored without one and `complete` says
     # so. An attached file is checked, and an attached file of zero bytes is checked
     # too, which is the whole reason these two cases are told apart rather than folded
     # into one falsy test: a truncated or empty upload would otherwise be read as "this

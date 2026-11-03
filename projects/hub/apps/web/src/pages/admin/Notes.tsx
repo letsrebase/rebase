@@ -28,7 +28,7 @@ function NoteItem({
 }) {
   const [editing, setEditing] = useState(false)
   const [asking, setAsking] = useState(false)
-  const [draft, setDraft] = useState(note.testo)
+  const [draft, setDraft] = useState(note.text)
   const edit = useMutation({
     mutationFn: (testo: string) => admin.editNote(note.id, testo),
     onSuccess: (edited) => {
@@ -40,7 +40,7 @@ function NoteItem({
     mutationFn: () => admin.deleteNote(note.id),
     onSuccess: () => onDeleted(note.id),
   })
-  const source = noteSourceLabel(note.fonte)
+  const source = noteSourceLabel(note.source)
   const text = draft.trim()
   const failure =
     failureOf(edit.error, 'Non riesco a salvare la nota.') ??
@@ -49,13 +49,13 @@ function NoteItem({
   return (
     <li className="space-y-1 py-3 first:pt-0 last:pb-0">
       <p className="flex flex-wrap items-baseline gap-x-2 wrap-anywhere text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">{note.autore}</span>
+        <span className="font-medium text-foreground">{note.author}</span>
         <time dateTime={note.created_at}>{formatDateTime(note.created_at)}</time>
         {source && <Badge variant="pill">{source}</Badge>}
-        {note.modificata_at && (
+        {note.edited_at && (
           <span>
-            modificata{note.modificata_da ? ` da ${note.modificata_da}` : ''} il{' '}
-            <time dateTime={note.modificata_at}>{formatDateTime(note.modificata_at)}</time>
+            modificata{note.edited_by ? ` da ${note.edited_by}` : ''} il{' '}
+            <time dateTime={note.edited_at}>{formatDateTime(note.edited_at)}</time>
           </span>
         )}
       </p>
@@ -86,7 +86,7 @@ function NoteItem({
               disabled={edit.isPending}
               onClick={() => {
                 setEditing(false)
-                setDraft(note.testo)
+                setDraft(note.text)
                 edit.reset()
               }}
             >
@@ -95,9 +95,9 @@ function NoteItem({
           </div>
         </form>
       ) : (
-        <p className="whitespace-pre-wrap break-words">{note.testo}</p>
+        <p className="whitespace-pre-wrap break-words">{note.text}</p>
       )}
-      {note.modificabile && !editing && (
+      {note.editable && !editing && (
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {asking ? (
             <>
@@ -128,7 +128,7 @@ function NoteItem({
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  setDraft(note.testo)
+                  setDraft(note.text)
                   setEditing(true)
                 }}
               >

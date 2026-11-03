@@ -47,7 +47,7 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
   // `useMemo` whose dependency array would just repeat the same query result.
   // «Azienda» only under «Tutte le aziende» from the second azienda on (REB-625).
   const columns = buildCustomerColumns(schema.data?.custom_fields ?? [], {
-    aziende: useLegalEntitiesToName(),
+    legal_entities: useLegalEntitiesToName(),
   })
 
   return (

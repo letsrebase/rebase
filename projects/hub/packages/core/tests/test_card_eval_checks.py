@@ -97,7 +97,7 @@ def test_a_study_beside_the_dates_marks_the_period() -> None:
 
 
 def _check(card_years: int | None, text: str, **hub: Any) -> YearsCheck:
-    return check_years(_card(anni=card_years), text, today=TODAY, **hub)
+    return check_years(_card(experience_years=card_years), text, today=TODAY, **hub)
 
 
 def test_a_reliable_parse_recomputes_the_years() -> None:
@@ -165,10 +165,10 @@ def test_a_card_without_years_where_the_cv_dates_a_career_is_a_mismatch() -> Non
 def test_an_admins_years_are_a_fact() -> None:
     cv = "Sviluppatore, Acme, 2015 - 2025"
 
-    assert _check(5, cv, anni_admin=5) == YearsCheck("admin", True)
-    assert _check(6, cv, anni_admin=5).ok is True
-    assert _check(9, cv, anni_admin=5).ok is False
-    assert _check(None, cv, anni_admin=5).ok is False
+    assert _check(5, cv, experience_years_admin=5) == YearsCheck("admin", True)
+    assert _check(6, cv, experience_years_admin=5).ok is True
+    assert _check(9, cv, experience_years_admin=5).ok is False
+    assert _check(None, cv, experience_years_admin=5).ok is False
 
 
 def test_the_hub_adds_its_completed_years_to_what_the_cv_allows() -> None:
@@ -180,7 +180,7 @@ def test_the_hub_adds_its_completed_years_to_what_the_cv_allows() -> None:
 
 def test_anonymity_is_read_against_everything_the_person_holds() -> None:
     known = KnownIdentifiers(
-        cognome="Lovelace",
+        last_name="Lovelace",
         nome="Ada",
         github_login="adal",
         repo_names=["analytical-engine"],
@@ -189,9 +189,9 @@ def test_anonymity_is_read_against_everything_the_person_holds() -> None:
 
     assert anonymity_leaks(_card(), known) == []
     assert anonymity_leaks(
-        _card(sintesi="Ha scritto analytical-engine, una libreria per i calcoli."), known
-    ) == ["sintesi"]
-    assert anonymity_leaks(_card(ruolo="Lovelace backend developer"), known) == ["ruolo"]
+        _card(profile_summary="Ha scritto analytical-engine, una libreria per i calcoli."), known
+    ) == ["profile_summary"]
+    assert anonymity_leaks(_card(role="Lovelace backend developer"), known) == ["role"]
 
 
 def test_a_two_digit_number_that_wraps_the_century_is_no_period() -> None:

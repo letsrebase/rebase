@@ -11,33 +11,33 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn() } }
 })
 
-const STATI = [
-  'proposto',
-  'approvato',
-  'lavorato',
-  'fatturato',
-  'pagato',
-  'lavorato_senza_approvazione',
-  'contestato',
-  'non_fatturabile',
+const Statuses = [
+  'proposed',
+  'approved',
+  'worked',
+  'invoiced',
+  'paid',
+  'worked_without_approval',
+  'disputed',
+  'non_billable',
 ]
 
 function month(mese: string, over: Record<string, unknown> = {}, given: Record<string, string> = {}) {
   return {
-    mese,
-    completo: true,
-    per_stato: STATI.map((stato) => ({
-      stato,
-      giorni: given[stato] ?? '0.00',
-      quota: given[stato] ? 0.5 : 0,
+    month: mese,
+    complete: true,
+    by_status: Statuses.map((status) => ({
+      status,
+      days: given[status] ?? '0.00',
+      share: given[status] ? 0.5 : 0,
     })),
-    totale: Object.values(given).length ? '12.50' : '0.00',
-    quota_totale: 1,
-    registrati: '12.00',
-    quota_registrati: 1,
-    media_precedente: '10.00',
-    senza_approvazione: '2.50',
-    quota_senza_approvazione: 1,
+    total: Object.values(given).length ? '12.50' : '0.00',
+    total_share: 1,
+    register: '12.00',
+    register_share: 1,
+    media_previous: '10.00',
+    without_approval: '2.50',
+    share_without_approval: 1,
     ...over,
   }
 }
@@ -45,40 +45,40 @@ function month(mese: string, over: Record<string, unknown> = {}, given: Record<s
 const analysis = (over: Record<string, unknown> = {}) => ({
   da: '2026-08-01',
   a: '2026-09-30',
-  azienda_id: null,
-  oggi: '2026-10-26',
-  mesi: [
-    month('2026-08', {}, { lavorato: '10.00', proposto: '2.50' }),
-    month('2026-09', { registrati: '14.00', media_precedente: '11.50' }, { fatturato: '12.50' }),
+  legal_entity_id: null,
+  today: '2026-10-26',
+  months: [
+    month('2026-08', {}, { worked: '10.00', proposed: '2.50' }),
+    month('2026-09', { register: '14.00', media_previous: '11.50' }, { invoiced: '12.50' }),
   ],
-  ultimo_mese_completo: '2026-09',
-  giorni_nel_periodo: '25.00',
-  giorni_fatturati: '12.50',
-  tariffa_reale: '481.62',
-  per_cliente: [
+  last_complete_month: '2026-09',
+  days_in_period: '25.00',
+  invoiced_days: '12.50',
+  actual_rate: '481.62',
+  by_customer: [
     {
       id: 'c1',
-      etichetta: 'Acme S.r.l.',
-      giorni_fatturati: '12.50',
-      importo_fatturato: '6020.25',
-      tariffa_reale: '481.62',
-      giorni_senza_listino: '0.00',
-      tariffa_nominale: '500.00',
+      label: 'Acme S.r.l.',
+      invoiced_days: '12.50',
+      invoiced_amount: '6020.25',
+      actual_rate: '481.62',
+      days_without_list_price: '0.00',
+      nominal_rate: '500.00',
     },
   ],
-  per_contratto: [
+  by_contract: [
     {
       id: 'k1',
-      etichetta: 'Consulenza Acme',
-      giorni_fatturati: '12.50',
-      importo_fatturato: '6020.25',
-      tariffa_reale: '481.62',
-      giorni_senza_listino: '1.00',
-      tariffa_nominale: null,
+      label: 'Consulenza Acme',
+      invoiced_days: '12.50',
+      invoiced_amount: '6020.25',
+      actual_rate: '481.62',
+      days_without_list_price: '1.00',
+      nominal_rate: null,
     },
   ],
-  senza_approvazione_nel_periodo: '4.50',
-  senza_approvazione_sempre: '9.50',
+  without_approval_in_period: '4.50',
+  without_approval_always: '9.50',
   ...over,
 })
 
@@ -87,7 +87,7 @@ function ok(data: unknown) {
 }
 
 const ONE: LegalEntityValue = {
-  aziende: [],
+  legal_entities: [],
   selected: null,
   select: () => {},
   several: false,
@@ -101,7 +101,7 @@ function renderTab() {
   return render(
     <QueryClientProvider client={client}>
       <LegalEntityContext value={ONE}>
-        <DaysTab periodo={{ da: '2026-08-01', a: '2026-09-30' }} />
+        <DaysTab period={{ da: '2026-08-01', a: '2026-09-30' }} />
       </LegalEntityContext>
     </QueryClientProvider>,
   )
@@ -141,8 +141,8 @@ describe('DaysTab', () => {
     renderTab()
 
     const stack = await screen.findByTestId('stack-2026-08')
-    const segments = [...stack.querySelectorAll('[data-stato]')]
-    expect(segments.map((s) => s.getAttribute('data-stato'))).toEqual(['proposto', 'lavorato'])
+    const segments = [...stack.querySelectorAll('[data-status]')]
+    expect(segments.map((s) => s.getAttribute('data-status'))).toEqual(['proposed', 'worked'])
     expect((segments[0] as HTMLElement).style.width).toBe('50%')
     const legend = screen.getByRole('list', { name: 'Legenda' })
     expect(within(legend).getByText('Lavorata senza approvazione')).toBeInTheDocument()
@@ -174,7 +174,7 @@ describe('DaysTab', () => {
   })
 
   it('says nothing about a trend while no month has ended', async () => {
-    vi.mocked(api.GET).mockImplementation(() => ok(analysis({ ultimo_mese_completo: null })))
+    vi.mocked(api.GET).mockImplementation(() => ok(analysis({ last_complete_month: null })))
     renderTab()
 
     await screen.findByText('Giornate registrate e media dei tre mesi prima')
@@ -195,14 +195,14 @@ describe('DaysTab', () => {
     vi.mocked(api.GET).mockImplementation(() =>
       ok(
         analysis({
-          mesi: [month('2026-08'), month('2026-09')].map((m) => ({ ...m, totale: '0.00' })),
-          giorni_nel_periodo: '0.00',
-          giorni_fatturati: '0.00',
-          tariffa_reale: null,
-          per_cliente: [],
-          per_contratto: [],
-          senza_approvazione_nel_periodo: '0.00',
-          senza_approvazione_sempre: '0.00',
+          months: [month('2026-08'), month('2026-09')].map((m) => ({ ...m, total: '0.00' })),
+          days_in_period: '0.00',
+          invoiced_days: '0.00',
+          actual_rate: null,
+          by_customer: [],
+          by_contract: [],
+          without_approval_in_period: '0.00',
+          without_approval_always: '0.00',
         }),
       ),
     )

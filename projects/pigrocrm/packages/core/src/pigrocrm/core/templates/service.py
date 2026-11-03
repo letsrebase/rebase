@@ -14,15 +14,15 @@ day-to-day record like a customer or a deal, so it follows the same rule here.
 `describe` and `preview` are the two methods this task exists for:
 
 - `describe` reports what a template needs from a caller *before* asking the user
-  to supply anything -- the compilation-form variables (`variabili_dichiarate`,
+  to supply anything -- the compilation-form variables (`declared_variables`,
   declared, not deduced) plus every other path the template body actually
   references (`templates.parser.declared_paths`), split exactly as that function
   already splits them (root vs. loop-relative). This is what makes an MCP
   `describe_template` tool worth calling at all: without the paths half, an agent
   would learn only about the handful of variables a human is meant to fill in and
-  have no way to know the template also needs, say, `cliente.ragione_sociale` or
-  `emittente.partita_iva` supplied by whatever calls `preview`/renders the document.
-- `preview` compiles a template's `corpo_markdown` against caller-supplied values
+  have no way to know the template also needs, say, `customer.legal_name` or
+  `emittente.vat_number` supplied by whatever calls `preview`/renders the document.
+- `preview` compiles a template's `body_markdown` against caller-supplied values
   and returns the compiled Markdown itself, as a plain `str` (not a PDF -- PDF
   rendering is `pigrocrm.core.render.pdf`, not built yet -- and not wrapped in a
   schema, since there is nothing else to carry alongside it: the "fail precisely
@@ -60,30 +60,30 @@ from pigrocrm.core.templates.schemas import (
 ENTITY = "template"
 
 
-def _conflicting_nome(nome: str) -> Conflict:
+def _conflicting_name(nome: str) -> Conflict:
     return Conflict(ENTITY, "esiste già un template con questo nome", nome=nome)
 
 
 # The default offer a space is born with (spec 2026-09-12 §6.5). Flat variables on
 # purpose: a declared variable is one field of the compilation form, so the body cannot
-# iterate a list the way `render/assets/template-offer.md` does with `offerta.righe`.
-# `cliente.*`, `emittente.*` and `oggi` come from `DocumentTemplating.template_scope`.
-OFFERTA_TEMPLATE_NOME = "Offerta"
-OFFERTA_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"nome": "oggetto", "etichetta": "Oggetto", "tipo": "text", "obbligatoria": True},
-    {"nome": "ambito", "etichetta": "Ambito e obiettivi", "tipo": "textarea", "obbligatoria": True},
-    {"nome": "attivita", "etichetta": "Attività", "tipo": "textarea", "obbligatoria": True},
+# iterate a list the way `render/assets/template-offer.md` does with `offer.lines`.
+# `customer.*`, `emittente.*` and `today` come from `DocumentTemplating.template_scope`.
+OFFER_TEMPLATE_NAME = "Offerta"
+OFFER_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
+    {"nome": "subject", "label": "Oggetto", "type": "text", "required": True},
+    {"nome": "ambito", "label": "Ambito e obiettivi", "type": "textarea", "required": True},
+    {"nome": "attivita", "label": "Attività", "type": "textarea", "required": True},
     {
-        "nome": "compenso",
-        "etichetta": "Condizioni economiche",
-        "tipo": "textarea",
-        "obbligatoria": True,
+        "nome": "fee",
+        "label": "Condizioni economiche",
+        "type": "textarea",
+        "required": True,
     },
     {
         "nome": "pagamento",
-        "etichetta": "Fatturazione e pagamento",
-        "tipo": "textarea",
-        "obbligatoria": True,
+        "label": "Fatturazione e pagamento",
+        "type": "textarea",
+        "required": True,
     },
 )
 
@@ -102,9 +102,9 @@ class TemplateService:
         # `ValidationFailed(entity="template", field="corpo_markdown", ...)` itself
         # (parser.py's own ENTITY/FIELD constants), so there is nothing to catch or
         # re-wrap here.
-        parse_template(data.corpo_markdown)
-        if self.repo.get_by_nome(data.nome) is not None:
-            raise _conflicting_nome(data.nome)
+        parse_template(data.body_markdown)
+        if self.repo.get_by_name(data.nome) is not None:
+            raise _conflicting_name(data.nome)
 
         template = Template(**data.model_dump())
         try:
@@ -119,7 +119,7 @@ class TemplateService:
             # Conflict rather than a raw IntegrityError. The rollback is mandatory:
             # without it the caller's session is unusable on its next statement.
             self.session.rollback()
-            raise _conflicting_nome(data.nome) from exc
+            raise _conflicting_name(data.nome) from exc
         return TemplateRead.model_validate(template)
 
     def update(self, template_id: UUID, data: TemplateUpdate, actor: Actor) -> TemplateRead:
@@ -133,10 +133,10 @@ class TemplateService:
         # `null` is refused by name instead of being silently discarded.
         changes = supplied_changes(data)
         reject_cleared_columns(ENTITY, Template, changes)
-        if "corpo_markdown" in changes:
-            parse_template(changes["corpo_markdown"])
+        if "body_markdown" in changes:
+            parse_template(changes["body_markdown"])
         if "nome" in changes:
-            existing = self.repo.get_by_nome(changes["nome"])
+            existing = self.repo.get_by_name(changes["nome"])
             # `existing is not template`, not merely `is not None`: renaming a
             # template to a case-only variant of its own current name (e.g.
             # "Offerta" -> "OFFERTA") must not conflict with itself. Both `existing`
@@ -144,7 +144,7 @@ class TemplateService:
             # lookup that resolves to this same row returns the identical Python
             # object, not merely an equal one.
             if existing is not None and existing is not template:
-                raise _conflicting_nome(changes["nome"])
+                raise _conflicting_name(changes["nome"])
         for key, value in changes.items():
             setattr(template, key, value)
 
@@ -155,7 +155,7 @@ class TemplateService:
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
-            raise _conflicting_nome(changes.get("nome", template.nome)) from exc
+            raise _conflicting_name(changes.get("nome", template.nome)) from exc
         return TemplateRead.model_validate(template)
 
     def get(self, template_id: UUID, actor: Actor) -> TemplateRead:
@@ -174,8 +174,8 @@ class TemplateService:
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
-        was_active = template.attivo
-        template.attivo = False
+        was_active = template.active
+        template.active = False
         if was_active:
             self.activities.record(ENTITY, template.id, "deactivated", actor)
         self.session.commit()
@@ -186,40 +186,40 @@ class TemplateService:
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
-        was_active = template.attivo
-        template.attivo = True
+        was_active = template.active
+        template.active = True
         if not was_active:
             self.activities.record(ENTITY, template.id, "activated", actor)
         self.session.commit()
         return TemplateRead.model_validate(template)
 
     def describe(self, template_id: UUID, actor: Actor) -> TemplateDescription:
-        """Root paths only in `percorsi_usati`: `describe` answers "what must the
+        """Root paths only in `used_journeys`: `describe` answers "what must the
         caller supply", and a caller supplies root-level values, never a
         loop-relative one -- see `TemplateDescription`'s own docstring. A declared
         variable is "used" when its own name is the first segment of some root path
         the body reads (`{{oggetto}}` and `{{oggetto.riga}}` both count); anything
         declared but never referenced that way is a compilation-form field nobody's
-        document will ever show, worth flagging as `variabili_non_usate` -- an
+        document will ever show, worth flagging as `variables_not_used` -- an
         authoring mistake, not merely a naming curiosity.
         """
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
-        declared = [TemplateVariable(**v) for v in template.variabili_dichiarate]
-        root_paths = declared_paths(parse_template(template.corpo_markdown)).root
+        declared = [TemplateVariable(**v) for v in template.declared_variables]
+        root_paths = declared_paths(parse_template(template.body_markdown)).root
         used_names = {path[0] for path in root_paths}
         return TemplateDescription(
             id=template.id,
             nome=template.nome,
-            tipo=template.tipo,
-            variabili=declared,
-            percorsi_usati=[list(path) for path in root_paths],
-            variabili_non_usate=[v.nome for v in declared if v.nome not in used_names],
+            type=template.type,
+            variables=declared,
+            used_journeys=[list(path) for path in root_paths],
+            variables_not_used=[v.nome for v in declared if v.nome not in used_names],
         )
 
     def declared_variables(self, template: Template) -> tuple[DeclaredVariable, ...]:
-        """`template.variabili_dichiarate` is JSONB -- plain `dict`s, one per declared
+        """`template.declared_variables` is JSONB -- plain `dict`s, one per declared
         variable, validated on the way in by `TemplateVariable` (schemas.py) but stored
         with no Python type of their own. `render_template` (renderer.py) wants the
         dataclass it already defines for exactly this shape; only the four fields it
@@ -239,11 +239,11 @@ class TemplateService:
         return tuple(
             DeclaredVariable(
                 nome=v["nome"],
-                etichetta=v["etichetta"],
-                tipo=v["tipo"],
-                obbligatoria=v["obbligatoria"],
+                label=v["etichetta"],
+                type=v["tipo"],
+                required=v["obbligatoria"],
             )
-            for v in template.variabili_dichiarate
+            for v in template.declared_variables
         )
 
     def preview(self, template_id: UUID, values: dict[str, Any], actor: Actor) -> str:
@@ -255,7 +255,7 @@ class TemplateService:
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
-        return render_template(template.corpo_markdown, values, self.declared_variables(template))
+        return render_template(template.body_markdown, values, self.declared_variables(template))
 
     def seed_defaults(self, actor: Actor) -> list[TemplateRead]:
         """Admin-only, like every other write method on this class (`create`,
@@ -279,20 +279,20 @@ class TemplateService:
         "already there".
         """
         actor.require_unscoped_admin("seed_templates")
-        from pigrocrm.core.gmail.solleciti_template import (  # local: avoids a package cycle
-            SOLLECITO_TEMPLATE_NOME,
-            SOLLECITO_TEMPLATE_SOURCE,
-            SOLLECITO_TEMPLATE_VARIABLES,
+        from pigrocrm.core.gmail.payment_reminders_template import (  # local: avoids a package cycle
+            PAYMENT_REMINDER_TEMPLATE_NAME,
+            PAYMENT_REMINDER_TEMPLATE_SOURCE,
+            PAYMENT_REMINDER_TEMPLATE_VARIABLES,
         )
         from pigrocrm.core.timetracking.report import (  # local: avoids a package cycle
-            TIME_REPORT_TEMPLATE_NOME,
+            TIME_REPORT_TEMPLATE_NAME,
             TIME_REPORT_TEMPLATE_VARIABLES,
         )
 
         seeds = (
             (
-                TIME_REPORT_TEMPLATE_NOME,
-                "rapporto_ore",
+                TIME_REPORT_TEMPLATE_NAME,
+                "hours_report",
                 (ASSETS_DIR / "template-time-report.md").read_text(encoding="utf-8"),
                 TIME_REPORT_TEMPLATE_VARIABLES,
             ),
@@ -303,32 +303,32 @@ class TemplateService:
             # even on an install where nobody ran `seed_defaults`, and the row here is
             # the editable copy, not the only copy.
             (
-                SOLLECITO_TEMPLATE_NOME,
-                "sollecito",
-                SOLLECITO_TEMPLATE_SOURCE,
-                SOLLECITO_TEMPLATE_VARIABLES,
+                PAYMENT_REMINDER_TEMPLATE_NAME,
+                "payment_reminder",
+                PAYMENT_REMINDER_TEMPLATE_SOURCE,
+                PAYMENT_REMINDER_TEMPLATE_VARIABLES,
             ),
             # The offer every space starts from (spec 2026-09-12 §6.5): the one
             # document the landing promises, editable in Impostazioni → Template like
             # the other two. `template-offer.md` stays the renderer's own asset.
             (
-                OFFERTA_TEMPLATE_NOME,
-                "offerta",
-                (ASSETS_DIR / "template-offerta-default.md").read_text(encoding="utf-8"),
-                OFFERTA_TEMPLATE_VARIABLES,
+                OFFER_TEMPLATE_NAME,
+                "offer",
+                (ASSETS_DIR / "template-offer-default.md").read_text(encoding="utf-8"),
+                OFFER_TEMPLATE_VARIABLES,
             ),
         )
         created: list[TemplateRead] = []
-        for nome, tipo, corpo, variabili in seeds:
-            if self.repo.get_by_nome(nome) is not None:
+        for nome, type, body, variables in seeds:
+            if self.repo.get_by_name(nome) is not None:
                 continue
             template = self.repo.add(
                 Template(
                     nome=nome,
-                    tipo=tipo,
-                    corpo_markdown=corpo,
-                    variabili_dichiarate=list(variabili),
-                    attivo=True,
+                    type=type,
+                    body_markdown=body,
+                    declared_variables=list(variables),
+                    active=True,
                 )
             )
             self.activities.record(

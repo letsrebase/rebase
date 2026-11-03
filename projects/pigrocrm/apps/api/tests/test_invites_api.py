@@ -69,7 +69,7 @@ def test_an_invitation_is_created_mailed_and_listed(
 ) -> None:
     invite = _invite(logged_in)
     assert invite["email"] == INVITED
-    assert invite["ruolo"] == "collaboratore" and invite["nome"] == "Luca"
+    assert invite["role"] == "collaborator" and invite["nome"] == "Luca"
     # The raw token is never in the response: the only copy of it leaves by mail.
     assert "token" not in str(invite).lower()
     assert len(sender.sent) == 1
@@ -95,7 +95,7 @@ def test_without_a_sender_the_endpoint_refuses_without_writing(logged_in: TestCl
     assert logged_in.get("/api/users/invites").json() == []
 
 
-def test_a_collaboratore_cannot_invite(
+def test_to_collaborator_cannot_invite(
     collaborator_client: TestClient, sender: RecordingSender
 ) -> None:
     """403 through the problem document, on every one of the four admin routes. The
@@ -129,7 +129,7 @@ def test_a_pending_duplicate_and_an_active_user_are_both_409(
     assert len(sender.sent) == 1  # the refusal sent nothing
 
     UserService(api_session).create(
-        UserCreate(email="gia@pigro.it", password="lunghissima1", nome="Già", ruolo="readonly"),
+        UserCreate(email="gia@pigro.it", password="lunghissima1", nome="Già", role="readonly"),
         Actor.system(),
     )
     member = logged_in.post("/api/users/invites", json={"email": "gia@pigro.it", "nome": None})
@@ -189,7 +189,7 @@ def test_the_peek_shows_the_invitation_and_does_not_spend_it(
     raw = _token_from(sender.sent[0].text)
     peek = logged_in.get("/api/auth/invite", params={"t": raw})
     assert peek.status_code == 200, peek.text
-    assert peek.json() == {"spazio": "PigroCRM", "invitato_da": "Admin", "nome": "Luca"}
+    assert peek.json() == {"space": "PigroCRM", "invited_from": "Admin", "nome": "Luca"}
     # Reading is not spending: two peeks and the accept still work.
     assert logged_in.get("/api/auth/invite", params={"t": raw}).status_code == 200
     assert logged_in.post("/api/auth/invite", json={"t": raw}).status_code == 200
@@ -210,8 +210,8 @@ def test_accept_creates_the_user_and_opens_the_session(
     accepted = logged_in.post("/api/auth/invite", json={"t": raw})
     assert accepted.status_code == 200, accepted.text
     body = accepted.json()
-    assert body["email"] == INVITED and body["ruolo"] == "collaboratore"
-    assert body["attivo"] is True
+    assert body["email"] == INVITED and body["role"] == "collaborator"
+    assert body["active"] is True
     # Same cookie pair `login` sets.
     cookies = accepted.headers.get_list("set-cookie")
     assert any("pigrocrm_access=" in c for c in cookies)
@@ -249,7 +249,7 @@ def test_an_expired_invitation_answers_410(
     peek = logged_in.get("/api/auth/invite", params={"t": raw})
     assert peek.status_code == 410
     assert peek.json()["code"] == "invitation_expired"
-    assert "scaduto" in peek.json()["detail"]
+    assert "expired" in peek.json()["detail"]
     accept = logged_in.post("/api/auth/invite", json={"t": raw})
     assert accept.status_code == 410 and accept.json()["code"] == "invitation_expired"
 
@@ -443,7 +443,7 @@ def test_a_provider_that_cannot_be_asked_costs_one_question_and_leaves_the_rows_
     assert first["id"] in {row["id"] for row in rows}
 
 
-def test_a_collaboratore_listing_asks_the_provider_nothing(
+def test_to_collaborator_listing_asks_the_provider_nothing(
     collaborator_client: TestClient, client: TestClient
 ) -> None:
     counting = CountingSender()

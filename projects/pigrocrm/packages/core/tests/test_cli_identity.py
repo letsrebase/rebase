@@ -88,7 +88,7 @@ def test_the_cli_indexes_every_users_row_not_only_the_owner_and_is_idempotent(
         try:
             with session_factory(space)() as space_session:
                 UserService(space_session).create(
-                    UserCreate(email=invited, password=None, nome="Bea", ruolo="collaboratore"),
+                    UserCreate(email=invited, password=None, nome="Bea", role="collaborator"),
                     Actor.system(),
                 )
         finally:

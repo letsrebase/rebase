@@ -49,7 +49,7 @@ def attachment_filename(document: Document, version: DocumentVersion) -> str | N
     extension = ALLOWED_CONTENT_TYPES.get(version.content_type)
     if extension is None:
         return None
-    return f"{slugify_folder(document.titolo)}-v{version.numero}{extension}"
+    return f"{slugify_folder(document.title)}-v{version.number}{extension}"
 
 
 def describe_attachments(
@@ -76,14 +76,14 @@ def describe_attachments(
         version.id: EmailDraftAttachment(
             version_id=version.id,
             filename=attachment_filename(document, version),
-            dimensione=version.dimensione,
+            size=version.size,
         )
         for version, document in rows
     }
     return {
         version_id: named.get(
             version_id,
-            EmailDraftAttachment(version_id=version_id, filename=None, dimensione=None),
+            EmailDraftAttachment(version_id=version_id, filename=None, size=None),
         )
         for version_id in wanted
     }
@@ -115,7 +115,7 @@ def resolve_attachments(
        nothing composed;
     3. read the bytes, and weigh them again.
 
-    Step 3's second weighing is not redundant. `dimensione` is metadata: no constraint
+    Step 3's second weighing is not redundant. `size` is metadata: no constraint
     ties it to what the storage backend actually holds, so a stale or simply wrong row
     would walk an oversized payload straight past the only guard there is. Step 2 is the
     cheap check and step 3 is the true one; dropping either loses something real.
@@ -136,7 +136,7 @@ def resolve_attachments(
             raise NotFound("document_version", version_id)
         rows.append((row[0], row[1]))
 
-    declared = sum(version.dimensione for version, _ in rows)
+    declared = sum(version.size for version, _ in rows)
     if declared > max_bytes:
         _refuse_total(declared, max_bytes)
 

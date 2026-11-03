@@ -56,13 +56,13 @@ def read_pdf(content: bytes) -> dict[str, object]:
                 truncated = True
                 break
     except Exception:  # noqa: BLE001 - see the docstring
-        return {"pagine": total, "testo": "", "troncato": False}
+        return {"pagine": total, "text": "", "troncato": False}
     joined = "\n".join(pages)
     if len(joined) > MAX_CHARS:
         joined = joined[:MAX_CHARS] + TRUNCATION_MARKER
     elif truncated:
         joined = joined + TRUNCATION_MARKER
-    return {"pagine": total, "testo": joined, "troncato": truncated}
+    return {"pagine": total, "text": joined, "troncato": truncated}
 
 
 def _limit_memory() -> None:

@@ -38,7 +38,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 def _make_user(db_session: Session, email: str = "tok@test.it"):
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Tok", ruolo="admin"), ADMIN
+        UserCreate(email=email, password="supersegreta1", nome="Tok", role="admin"), ADMIN
     )
 
 
@@ -261,14 +261,14 @@ def test_a_token_reaches_the_privileged_surface_only_where_it_and_the_space_both
     actor = Actor(id=user.id, type="user", role="admin")
 
     chiusa = Settings(_env_file=None)  # type: ignore[call-arg]
-    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
 
-    _, closed = PatService(db_session, aperta).create("Chiacchiere", actor)
-    _, open_ = PatService(db_session, aperta).create("Fatturazione", actor, full_access=True)
+    _, closed = PatService(db_session, open).create("Chiacchiere", actor)
+    _, open_ = PatService(db_session, open).create("Fatturazione", actor, full_access=True)
 
     # The same user, the same role, the same space: only the token differs.
-    assert PatService(db_session, aperta).resolve(closed).full_access is False
-    assert PatService(db_session, aperta).resolve(open_).full_access is True
+    assert PatService(db_session, open).resolve(closed).full_access is False
+    assert PatService(db_session, open).resolve(open_).full_access is True
     # And the ceiling wins over a token that asks for more than the space offers.
     assert PatService(db_session, chiusa).resolve(open_).full_access is False
 
@@ -278,13 +278,13 @@ def test_a_token_cannot_be_made_with_what_the_space_does_not_offer(db_session: S
     and the day an administrator opens the switch every such token would open with it."""
     user = _make_user(db_session, "pat-ceiling@test.it")
     actor = Actor(id=user.id, type="user", role="admin")
-    chiusa = Settings(_env_file=None)  # type: ignore[call-arg]
+    closed = Settings(_env_file=None)  # type: ignore[call-arg]
 
     with pytest.raises(ValidationFailed) as exc:
-        PatService(db_session, chiusa).create("Fatturazione", actor, full_access=True)
+        PatService(db_session, closed).create("Fatturazione", actor, full_access=True)
 
     assert exc.value.details["field"] == "full_access"
-    assert PatService(db_session, chiusa).list_own(actor) == []
+    assert PatService(db_session, closed).list_own(actor) == []
 
 
 def test_an_agent_credential_cannot_mint_a_token_that_opens_the_privileged_surface(
@@ -293,8 +293,8 @@ def test_an_agent_credential_cannot_mint_a_token_that_opens_the_privileged_surfa
     """A token is accepted on every REST route and `POST /api/tokens` is one of them: the
     token a person kept closed would otherwise mint an open one for itself."""
     user = _make_user(db_session, "pat-mint@test.it")
-    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
-    service = PatService(db_session, aperta)
+    open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, open)
     agent = Actor(id=user.id, type="mcp", role="admin")
 
     with pytest.raises(AgentForbidden):
@@ -304,9 +304,9 @@ def test_an_agent_credential_cannot_mint_a_token_that_opens_the_privileged_surfa
     assert raw.startswith(PAT_PREFIX)
 
 
-def _collaboratore(db_session: Session, email: str):
+def _collaborator(db_session: Session, email: str):
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Colla", ruolo="collaboratore"),
+        UserCreate(email=email, password="supersegreta1", nome="Colla", role="collaborator"),
         ADMIN,
     )
 
@@ -324,8 +324,8 @@ def _full_access_entries(db_session: Session, owner_id) -> list[Activity]:
 def test_the_owner_changes_the_flag_and_every_change_is_recorded(db_session: Session) -> None:
     user = _make_user(db_session, "pat-flag@test.it")
     actor = Actor(id=user.id, type="user", role="admin")
-    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
-    service = PatService(db_session, aperta)
+    open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, open)
     record, raw = service.create("Claude", actor)
 
     opened = service.set_full_access(record.id, True, actor)
@@ -336,8 +336,8 @@ def test_the_owner_changes_the_flag_and_every_change_is_recorded(db_session: Ses
     assert service.resolve(raw).full_access is False
 
     first, second = _full_access_entries(db_session, user.id)
-    assert (first.payload["full_access"], first.payload["full_access_prima"]) == (True, False)
-    assert (second.payload["full_access"], second.payload["full_access_prima"]) == (False, True)
+    assert (first.payload["full_access"], first.payload["full_access_before"]) == (True, False)
+    assert (second.payload["full_access"], second.payload["full_access_before"]) == (False, True)
     assert first.payload["token_id"] == str(record.id)
     assert (first.actor_id, first.actor_type) == (user.id, "user")
     assert raw not in str([first.payload, second.payload])
@@ -358,15 +358,15 @@ def test_an_administrator_changes_a_colleagues_token_and_the_entry_names_who(
     db_session: Session,
 ) -> None:
     admin = _make_user(db_session, "pat-admin@test.it")
-    colleague = _collaboratore(db_session, "pat-colla@test.it")
-    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
-    service = PatService(db_session, aperta)
+    colleague = _collaborator(db_session, "pat-colla@test.it")
+    open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, open)
     record, raw = service.create(
-        "Colla", Actor(id=colleague.id, type="user", role="collaboratore"), full_access=True
+        "Colla", Actor(id=colleague.id, type="user", role="collaborator"), full_access=True
     )
     admin_actor = Actor(id=admin.id, type="user", role="admin")
 
-    assert [token.owner_nome for token in service.list_team(admin_actor)] == ["Colla"]
+    assert [token.owner_name for token in service.list_team(admin_actor)] == ["Colla"]
     service.set_full_access(record.id, False, admin_actor)
 
     assert service.resolve(raw).full_access is False
@@ -376,12 +376,12 @@ def test_an_administrator_changes_a_colleagues_token_and_the_entry_names_who(
 
 
 def test_a_member_cannot_change_or_list_a_colleagues_tokens(db_session: Session) -> None:
-    owner = _collaboratore(db_session, "pat-own@test.it")
-    other = _collaboratore(db_session, "pat-other@test.it")
-    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
-    service = PatService(db_session, aperta)
-    record, _ = service.create("Mio", Actor(id=owner.id, type="user", role="collaboratore"))
-    stranger = Actor(id=other.id, type="user", role="collaboratore")
+    owner = _collaborator(db_session, "pat-own@test.it")
+    other = _collaborator(db_session, "pat-other@test.it")
+    open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, open)
+    record, _ = service.create("Mio", Actor(id=owner.id, type="user", role="collaborator"))
+    stranger = Actor(id=other.id, type="user", role="collaborator")
 
     with pytest.raises(PermissionDenied):
         service.set_full_access(record.id, True, stranger)
@@ -391,15 +391,15 @@ def test_a_member_cannot_change_or_list_a_colleagues_tokens(db_session: Session)
     assert _full_access_entries(db_session, owner.id) == []
 
 
-def test_an_administrator_scoped_to_some_aziende_does_not_administer_tokens(
+def test_an_administrator_scoped_to_some_legal_entities_does_not_administer_tokens(
     db_session: Session,
 ) -> None:
     """Another member's token is account administration, like changing the member: the
     role is not enough, the whole space has to be in view (spec 2026-10-03 §1.11)."""
-    owner = _collaboratore(db_session, "pat-scope-own@test.it")
+    owner = _collaborator(db_session, "pat-scope-own@test.it")
     service = PatService(db_session, Settings(_env_file=None, mcp_full_access=True))  # type: ignore[call-arg]
-    record, _ = service.create("Mio", Actor(id=owner.id, type="user", role="collaboratore"))
-    scoped_admin = Actor(id=uuid4(), type="user", role="admin", aziende=())
+    record, _ = service.create("Mio", Actor(id=owner.id, type="user", role="collaborator"))
+    scoped_admin = Actor(id=uuid4(), type="user", role="admin", legal_entities=())
 
     with pytest.raises(ScopedAdmin):
         service.set_full_access(record.id, True, scoped_admin)
@@ -411,8 +411,8 @@ def test_a_token_cannot_open_itself_nor_a_sibling(db_session: Session) -> None:
     """The person's decision is not the agent's, whatever the agent's role: this is the
     REST route an open `PATCH` would be reachable by with the token alone."""
     user = _make_user(db_session, "pat-self@test.it")
-    aperta = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
-    service = PatService(db_session, aperta)
+    open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
+    service = PatService(db_session, open)
     record, raw = service.create("Chiuso", Actor(id=user.id, type="user", role="admin"))
     agent = service.resolve(raw)
 
@@ -432,13 +432,13 @@ def test_the_flag_cannot_be_opened_above_the_ceiling_but_can_always_be_closed(
         db_session,
         Settings(_env_file=None, mcp_full_access=True),  # type: ignore[call-arg]
     ).create("Claude", actor, full_access=True)
-    chiusa = PatService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
+    closed = PatService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
 
     # The administrator closed the switch afterwards: the flag keeps what it was, and the
     # owner can still close it.
-    assert chiusa.set_full_access(record.id, False, actor).full_access is False
+    assert closed.set_full_access(record.id, False, actor).full_access is False
     with pytest.raises(ValidationFailed):
-        chiusa.set_full_access(record.id, True, actor)
+        closed.set_full_access(record.id, True, actor)
 
 
 def test_a_revoked_token_has_nothing_left_to_decide(db_session: Session) -> None:
@@ -491,7 +491,7 @@ def test_pat_for_deactivated_user_stops_working(db_session: Session) -> None:
     _make_user(db_session, "pat4-superstite@test.it")
     actor = Actor(id=user.id, type="user", role="admin")
     _, raw = PatService(db_session).create("Token", actor)
-    UserService(db_session).update(user.id, UserUpdate(attivo=False), ADMIN)
+    UserService(db_session).update(user.id, UserUpdate(active=False), ADMIN)
 
     with pytest.raises(ValidationFailed):
         PatService(db_session).resolve(raw)
@@ -518,7 +518,7 @@ def test_unknown_revoked_and_deactivated_user_tokens_are_indistinguishable(
     deactivated_owner = _make_user(db_session, "deactivated-owner@test.it")
     deactivated_actor = Actor(id=deactivated_owner.id, type="user", role="admin")
     _, deactivated_raw = service.create("Utente disattivato", deactivated_actor)
-    UserService(db_session).update(deactivated_owner.id, UserUpdate(attivo=False), ADMIN)
+    UserService(db_session).update(deactivated_owner.id, UserUpdate(active=False), ADMIN)
 
     unknown_raw = "pgc_this-token-was-never-issued-by-anyone"
 
@@ -595,7 +595,7 @@ def test_a_second_resolve_on_the_same_session_sees_the_current_role(
     )
     db_session.commit()
 
-    assert service.resolve(raw).role == "collaboratore", (
+    assert service.resolve(raw).role == "collaborator", (
         "the Actor must carry the owner's CURRENT role, not the one cached by the "
         "first resolve on this session"
     )
@@ -604,7 +604,7 @@ def test_a_second_resolve_on_the_same_session_sees_the_current_role(
 def test_a_second_resolve_on_the_same_session_refuses_a_deactivation(
     db_session: Session,
 ) -> None:
-    """The other state the identity map could freeze: `attivo`. Same setup as the role
+    """The other state the identity map could freeze: `active`. Same setup as the role
     test, raw UPDATE so the deactivation bypasses the ORM and only the cache can make
     it invisible; the second resolve must raise even though this session still holds a
     snapshot of the owner while active."""
@@ -646,7 +646,7 @@ def test_deactivating_a_user_revokes_their_tokens_in_the_same_transaction(
     tokens.revoke(third.id, owner_actor)
     dead_date = db_session.get(PersonalAccessToken, third.id).revoked_at
 
-    UserService(db_session).update(user.id, UserUpdate(attivo=False), ADMIN)
+    UserService(db_session).update(user.id, UserUpdate(active=False), ADMIN)
 
     rows = db_session.scalars(
         select(PersonalAccessToken).where(PersonalAccessToken.user_id == user.id)
@@ -687,7 +687,7 @@ def test_a_deactivation_that_changed_nothing_revokes_nothing(
     db_session.execute(text("UPDATE users SET attivo = false WHERE id = :id"), {"id": str(user.id)})
     db_session.commit()
 
-    UserService(db_session).update(user.id, UserUpdate(attivo=False), ADMIN)
+    UserService(db_session).update(user.id, UserUpdate(active=False), ADMIN)
 
     assert (
         db_session.scalar(
@@ -707,14 +707,14 @@ def test_a_demotion_leaves_the_tokens_live_at_the_new_role(
     """A demotion is not a deactivation. The card REB-278 drew the line for hub's admin
     tokens is "stop resolving"; here the answer is "keep resolving, as less", because a
     PigroCRM token is scoped to its owner's account, not to the admin role. The
-    cascade deliberately fires on `attivo` only."""
+    cascade deliberately fires on `active` only."""
     user = _make_user(db_session, "demote@test.it")
     _make_user(db_session, "demote-superstite@test.it")
     owner_actor = Actor(id=user.id, type="user", role="admin")
     tokens = PatService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
     _, raw = tokens.create("Claude locale", owner_actor)
 
-    UserService(db_session).update(user.id, UserUpdate(ruolo="collaboratore"), ADMIN)
+    UserService(db_session).update(user.id, UserUpdate(role="collaborator"), ADMIN)
 
     assert (
         db_session.scalar(
@@ -723,7 +723,7 @@ def test_a_demotion_leaves_the_tokens_live_at_the_new_role(
         is None
     )
     resolved = tokens.resolve(raw)
-    assert resolved.role == "collaboratore"
+    assert resolved.role == "collaborator"
 
 
 def test_a_revoked_invitation_that_never_became_a_user_has_no_token_to_revoke(

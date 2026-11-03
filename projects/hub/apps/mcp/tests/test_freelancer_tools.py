@@ -3,7 +3,7 @@
 import json
 from decimal import Decimal
 
-from fakes_cards import PERSONA, card_response
+from fakes_cards import PERSON, card_response
 from mcp import Client
 from mcp_tool_support import (
     IVAN,
@@ -36,11 +36,11 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         row, _ = FreelancerService(session).apply(
             FreelancerCreate(
                 nome="Ada",
-                cognome="Lovelace",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
+                daily_rate=Decimal("450"),
                 posizione="Backend developer",
-                remoto="remoto",
+                remote="remote",
             ),
             PDF,
             "cv.pdf",
@@ -51,29 +51,29 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
     _seed_admin(factory)
 
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        listed = _payload(await client.call_tool("list_talenti", {"campi": ["email"]}))
-        assert listed["totale"] == 1
+        listed = _payload(await client.call_tool("list_talents", {"fields": ["email"]}))
+        assert listed["total"] == 1
         assert listed["items"][0]["email"] == "ada@studio.it"
         assert "cv_bytes" not in listed["items"][0]
 
         moved = _payload(
             await client.call_tool(
                 "set_freelancer_status",
-                {"freelancer_id": str(row.id), "stato": "contattato"},
+                {"freelancer_id": str(row.id), "status": "contacted"},
             )
         )
-        assert moved["stato"] == "contattato"
+        assert moved["status"] == "contacted"
         audit = await client.call_tool("get_freelancer_audit", {"freelancer_id": str(row.id)})
         assert audit.structured_content is not None
         [entry] = audit.structured_content["result"]
         assert entry["kind"] == "status_changed"
-        assert entry["payload"] == {"before": "nuovo", "after": "contattato", "fonte": "mcp"}
+        assert entry["payload"] == {"before": "new", "after": "contacted", "source": "mcp"}
 
         refused = await client.call_tool(
-            "set_freelancer_status", {"freelancer_id": str(row.id), "stato": "forse"}
+            "set_freelancer_status", {"freelancer_id": str(row.id), "status": "forse"}
         )
         assert refused.is_error
-        assert "stato" in refused.content[0].text
+        assert "status" in refused.content[0].text
 
         missing = await client.call_tool("get_company", {"company_id": str(row.id)})
         assert missing.is_error
@@ -85,8 +85,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         names = {tool.name for tool in tools}
         assert names == {
             "create_freelancer_from_signup",
-            "list_talenti",
-            "get_talento",
+            "list_talents",
+            "get_talent",
             "get_freelancer",
             "read_freelancer_cv",
             "list_pigro_spaces",
@@ -100,12 +100,12 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "regenerate_freelancer_card",
             "get_freelancer_audit",
             "revert_freelancer_action",
-            "list_duplicati",
+            "list_duplicates",
             "merge_freelancers",
             "add_freelancer_note",
             "update_note",
             "delete_note",
-            "list_aziende",
+            "list_companies",
             "get_company",
             "set_company_status",
             "override_company",
@@ -126,8 +126,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "list_talent_cloud_grants",
             "guide_stats",
             "login_stats",
-            "list_campagne",
-            "get_campagna",
+            "list_campaigns",
+            "get_campaign",
             "list_matches",
             "get_match",
             "preview_match",
@@ -154,7 +154,7 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
     _seed(factory, ["ada@studio.it"])
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        lead_rows = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
+        lead_rows = _payload(await client.call_tool("list_talents", {"status": "lead"}))
         signup_id = lead_rows["items"][0]["id"]
         created = _payload(
             await client.call_tool(
@@ -162,30 +162,30 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
                 {
                     "signup_id": signup_id,
                     "nome": "Ada",
-                    "cognome": "Lovelace",
+                    "last_name": "Lovelace",
                     "posizione": "Backend developer",
-                    "fonti": ["https://www.linkedin.com/in/ada"],
+                    "sources": ["https://www.linkedin.com/in/ada"],
                 },
             )
         )
         assert created["email"] == "ada@studio.it"
-        assert created["compilata_da"] == "admin" and created["completa"] is False
-        assert created["cv_filename"] is None and created["tariffa_giornaliera"] is None
-        assert (created["note"][0]["autore"], created["note"][0]["fonte"]) == (
+        assert created["compilata_da"] == "admin" and created["complete"] is False
+        assert created["cv_filename"] is None and created["daily_rate"] is None
+        assert (created["note"][0]["author"], created["note"][0]["source"]) == (
             "Ivan Sala",
             "mcp",
         )
-        assert "https://www.linkedin.com/in/ada" in created["note"][0]["testo"]
+        assert "https://www.linkedin.com/in/ada" in created["note"][0]["text"]
         # The card replaces the lead in the merged list, and the lead's own id now
         # answers the card: what «Talenti» shows for that person.
-        listed = _payload(await client.call_tool("list_talenti", {}))
+        listed = _payload(await client.call_tool("list_talents", {}))
         assert [item["id"] for item in listed["items"]] == [created["id"]]
-        answered = _payload(await client.call_tool("get_talento", {"talento_id": signup_id}))
+        answered = _payload(await client.call_tool("get_talent", {"talent_id": signup_id}))
         assert answered["id"] == created["id"] and answered["email"] == "ada@studio.it"
 
         refused = await client.call_tool(
             "create_freelancer_from_signup",
-            {"signup_id": signup_id, "nome": "Ada", "cognome": "Lovelace", "fonti": []},
+            {"signup_id": signup_id, "nome": "Ada", "last_name": "Lovelace", "sources": []},
         )
         assert refused.is_error
     _wipe(factory)
@@ -199,25 +199,25 @@ async def test_a_card_from_a_signup_reads_its_rate_with_italian_thousands(
     _seed(factory, ["ada@studio.it"])
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        lead_rows = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
+        lead_rows = _payload(await client.call_tool("list_talents", {"status": "lead"}))
         signup_id = lead_rows["items"][0]["id"]
         draft = {
             "signup_id": signup_id,
             "nome": "Ada",
-            "cognome": "Lovelace",
-            "fonti": ["https://www.linkedin.com/in/ada"],
+            "last_name": "Lovelace",
+            "sources": ["https://www.linkedin.com/in/ada"],
         }
         refused = await client.call_tool(
-            "create_freelancer_from_signup", {**draft, "tariffa_giornaliera": "tanto"}
+            "create_freelancer_from_signup", {**draft, "daily_rate": "tanto"}
         )
-        assert refused.is_error and "tariffa_giornaliera" in refused.content[0].text
+        assert refused.is_error and "daily_rate" in refused.content[0].text
         created = _payload(
             await client.call_tool(
-                "create_freelancer_from_signup", {**draft, "tariffa_giornaliera": "1.500"}
+                "create_freelancer_from_signup", {**draft, "daily_rate": "1.500"}
             )
         )
         # The draft answers the value it wrote, before the column's two decimals.
-        assert Decimal(created["tariffa_giornaliera"]) == Decimal("1500")
+        assert Decimal(created["daily_rate"]) == Decimal("1500")
     _wipe(factory)
 
 
@@ -238,25 +238,25 @@ async def test_get_freelancer_carries_the_cvs_contacts_and_no_other_tool_does(
     finally:
         session.close()
     _seed_admin(factory)
-    llm = RecordingCall([card_response(persona=PERSONA, employers=["Initech Labs"])])
+    llm = RecordingCall([card_response(person=PERSON, employers=["Initech Labs"])])
     async with Client(build_server(factory, lambda: IVAN, card_llm=lambda: llm)) as client:
         before = _payload(
             await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id})
         )
         assert before["contatti_cv"] is None and before["differenze_cv"] == []
-        assert before["telefono"] == "02 5550199"
+        assert before["phone"] == "02 5550199"
 
         await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         read = _payload(await client.call_tool("get_freelancer", {"freelancer_id": freelancer_id}))
         assert read["contatti_cv"]["email"] == "ada.lovelace@example.org"
-        assert read["contatti_cv"]["telefono"] == "+39 333 123 4567"
-        assert read["contatti_cv"]["aziende"] == ["Initech Labs"]
-        assert [d["campo"] for d in read["differenze_cv"]] == ["email", "telefono"]
+        assert read["contatti_cv"]["phone"] == "+39 333 123 4567"
+        assert read["contatti_cv"]["companies"] == ["Initech Labs"]
+        assert [d["field"] for d in read["differenze_cv"]] == ["email", "phone"]
 
         others = [
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id}),
-            await client.call_tool("list_talenti", {"campi": ["tutti"]}),
-            await client.call_tool("get_talento", {"talento_id": freelancer_id}),
+            await client.call_tool("list_talents", {"fields": ["tutti"]}),
+            await client.call_tool("get_talent", {"talent_id": freelancer_id}),
         ]
         for other in others:
             body = json.dumps(_payload(other))
@@ -271,10 +271,10 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
     freelancer_id = _seed_freelancer(factory)
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        before = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))["items"][0]
-        assert before["vetted_at"] is None and before["ha_scheda_anonima"] is False
-        card = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
-        assert card["vetted_at"] is None and card["ha_scheda_anonima"] is False
+        before = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))["items"][0]
+        assert before["vetted_at"] is None and before["has_anonymous_card"] is False
+        card = _payload(await client.call_tool("get_talent", {"talent_id": freelancer_id}))
+        assert card["vetted_at"] is None and card["has_anonymous_card"] is False
 
         vetted = _payload(
             await client.call_tool(
@@ -291,7 +291,7 @@ async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
         )
         assert again["vetted_at"] == first
 
-        listed = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))
+        listed = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))
         assert listed["items"][0]["vetted_at"] == first
 
         off = _payload(

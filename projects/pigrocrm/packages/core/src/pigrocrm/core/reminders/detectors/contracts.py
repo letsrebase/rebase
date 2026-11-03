@@ -1,8 +1,8 @@
 """`contract_expiring` and `renewal_window_open` (spec 2026-10-26 §3.4, REB-768).
 
-A contract counts while it is not archived, is not `terminato` or `scaduto`
-(`ContractService.set_state`; `bozza` and `attivo` both count, a draft with a date still
-ends) and has not ended (`fine` not before today): a contract somebody closed, or let lapse,
+A contract counts while it is not archived, is not `terminated` or `expired`
+(`ContractService.set_state`; `draft` and `active` both count, a draft with a date still
+ends) and has not ended (`end` not before today): a contract somebody closed, or let lapse,
 is not «expiring» and its renewal is not a decision any more. The billing types read the
 same contracts differently and keep counting the terminated ones.
 
@@ -12,7 +12,7 @@ switches, so each is raised on its own measure and a person who wants one calm t
 one off.
 
 **`renewal_window_open`'s window closes on `renewal_deadline`** (`contracts/dates.py`: the
-last day the renewal clause can still be exercised, `preavviso_rinnovo_giorni` before the
+last day the renewal clause can still be exercised, `renewal_notice_days` before the
 end) and the measure is the days left before it, an `until` ladder like `contract_expiring`.
 The data does not say when the window *opens*, so it is not derived: the ladder's `warning`
 rung is a lead time, the days before the deadline from which the reminder starts (30 by
@@ -33,18 +33,18 @@ from sqlalchemy.orm import aliased
 
 from pigrocrm.core.contracts.dates import renewal_deadline
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.mail import giorno_breve
+from pigrocrm.core.mail import day_short
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver
-from pigrocrm.core.reminders.detectors.text import giorni
+from pigrocrm.core.reminders.detectors.text import days
 
 EXPIRING = REMINDER_TYPES["contract_expiring"]
 RENEWAL = REMINDER_TYPES["renewal_window_open"]
 
 
 # A contract closed by hand or lapsed: nothing is left to expire or renew.
-_OVER = ("terminato", "scaduto")
+_OVER = ("terminated", "expired")
 
 
 def _live() -> Select[Contract]:
@@ -53,10 +53,10 @@ def _live() -> Select[Contract]:
     a thing to remind anybody of."""
     successor = aliased(Contract)
     renewed = exists().where(
-        successor.contratto_precedente_id == Contract.id, successor.deleted_at.is_(None)
+        successor.previous_contract_id == Contract.id, successor.deleted_at.is_(None)
     )
     return select(Contract).where(
-        Contract.deleted_at.is_(None), Contract.stato.not_in(_OVER), ~renewed
+        Contract.deleted_at.is_(None), Contract.status.not_in(_OVER), ~renewed
     )
 
 
@@ -66,8 +66,8 @@ def _has_end_date(ctx: DetectorContext) -> bool:
             select(
                 exists().where(
                     Contract.deleted_at.is_(None),
-                    Contract.stato.not_in(_OVER),
-                    Contract.fine.is_not(None),
+                    Contract.status.not_in(_OVER),
+                    Contract.end.is_not(None),
                 )
             )
         )
@@ -80,9 +80,9 @@ def _has_renewal_clause(ctx: DetectorContext) -> bool:
             select(
                 exists().where(
                     Contract.deleted_at.is_(None),
-                    Contract.stato.not_in(_OVER),
-                    Contract.fine.is_not(None),
-                    Contract.tipo_rinnovo != "nessuno",
+                    Contract.status.not_in(_OVER),
+                    Contract.end.is_not(None),
+                    Contract.renewal_type != "none",
                 )
             )
         )
@@ -105,12 +105,12 @@ def _detection(
         type=type_key,
         subject_id=contract.id,
         measure=float(measure),
-        recipients=ctx.directory.recipients((links.customer_owner_id,), contract.azienda_id),
+        recipients=ctx.directory.recipients((links.customer_owner_id,), contract.legal_entity_id),
         title=title,
         detail=f"{detail}{customer}",
         entity="contract",
         entity_id=contract.id,
-        azienda_id=contract.azienda_id,
+        legal_entity_id=contract.legal_entity_id,
         customer_id=contract.customer_id,
     )
 
@@ -127,16 +127,16 @@ def detect_expiring(ctx: DetectorContext) -> list[Detection]:
     contracts = list(
         ctx.session.scalars(
             _live()
-            .where(Contract.fine.is_not(None), Contract.fine >= ctx.today, Contract.fine <= horizon)
-            .order_by(Contract.fine, Contract.id)
+            .where(Contract.end.is_not(None), Contract.end >= ctx.today, Contract.end <= horizon)
+            .order_by(Contract.end, Contract.id)
         )
     )
     resolver = _resolver(ctx, contracts)
     found: list[Detection] = []
     for contract in contracts:
-        assert contract.fine is not None
-        left = (contract.fine - ctx.today).days
-        when = "oggi" if left == 0 else f"fra {giorni(left)}"
+        assert contract.end is not None
+        left = (contract.end - ctx.today).days
+        when = "today" if left == 0 else f"fra {days(left)}"
         found.append(
             _detection(
                 ctx,
@@ -144,8 +144,8 @@ def detect_expiring(ctx: DetectorContext) -> list[Detection]:
                 contract,
                 type_key="contract_expiring",
                 measure=left,
-                title=f"Contratto in scadenza: {contract.titolo}",
-                detail=f"Finisce {giorno_breve(contract.fine)}, {when}",
+                title=f"Contratto in scadenza: {contract.title}",
+                detail=f"Finisce {day_short(contract.end)}, {when}",
             )
         )
     return found
@@ -172,9 +172,9 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
     contracts = list(
         ctx.session.scalars(
             _live().where(
-                Contract.fine.is_not(None),
-                Contract.fine >= ctx.today,
-                Contract.tipo_rinnovo != "nessuno",
+                Contract.end.is_not(None),
+                Contract.end >= ctx.today,
+                Contract.renewal_type != "none",
             )
         )
     )
@@ -182,9 +182,9 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
     resolver = _resolver(ctx, [contract for contract, _ in pairs])
     found: list[Detection] = []
     for contract, deadline in pairs:
-        assert contract.fine is not None
+        assert contract.end is not None
         left = (deadline - ctx.today).days
-        when = "oggi" if left == 0 else f"fra {giorni(left)}"
+        when = "today" if left == 0 else f"fra {days(left)}"
         found.append(
             _detection(
                 ctx,
@@ -192,10 +192,10 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
                 contract,
                 type_key="renewal_window_open",
                 measure=left,
-                title=f"Termine di rinnovo: {contract.titolo}",
+                title=f"Termine di rinnovo: {contract.title}",
                 detail=(
-                    f"Il termine per il rinnovo è {giorno_breve(deadline)}, {when} "
-                    f"(il contratto finisce {giorno_breve(contract.fine)})"
+                    f"Il termine per il rinnovo è {day_short(deadline)}, {when} "
+                    f"(il contratto finisce {day_short(contract.end)})"
                 ),
             )
         )

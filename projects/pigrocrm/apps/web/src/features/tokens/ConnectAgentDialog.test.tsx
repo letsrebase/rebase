@@ -62,13 +62,13 @@ beforeEach(() => {
       id: 'u1',
       email: 'admin@pigro.it',
       nome: 'Admin',
-      ruolo: 'admin',
-      attivo: true,
-      tariffa_oraria_default: null,
-      costo_orario_default: null,
+      role: 'admin',
+      active: true,
+      default_hourly_rate: null,
+      default_hourly_cost: null,
       created_at: '2026-09-12T10:00:00Z',
       last_login_at: null,
-      digest_settimanale: true,
+      weekly_digest: true,
     },
     isLoading: false,
     login: vi.fn(),
@@ -153,7 +153,7 @@ describe('ConnectAgentDialog', () => {
 
   it('says so when the clipboard refuses', async () => {
     Object.assign(navigator, {
-      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('negato')) },
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     })
     renderDialog()
     await userEvent.click(screen.getByRole('button', { name: "Copia l'endpoint" }))

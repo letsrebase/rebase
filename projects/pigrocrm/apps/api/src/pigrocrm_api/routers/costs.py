@@ -32,11 +32,11 @@ def create(data: CostCreate, session: SessionDep, actor: ActorDep) -> CostRead:
 
 class CostListParams(KeysetParams, CustomParams):
     deal_id: UUID | None = None
-    azienda_id: UUID | None = Field(
+    legal_entity_id: UUID | None = Field(
         default=None,
         description="Solo i costi di questa azienda; omesso, tutti, i generali compresi",
     )
-    solo_generali: bool = Field(
+    only_general: bool = Field(
         default=False, description="Solo spese generali, cioè senza deal (§7.4)"
     )
     category_id: UUID | None = None

@@ -15,11 +15,11 @@ const OVERRIDE: AdminAction = {
   entity_id: 'f1',
   kind: 'overridden',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {
-    changed: ['tariffa_giornaliera'],
-    before: { tariffa_giornaliera: null },
-    after: { tariffa_giornaliera: '500.00' },
+    changed: ['daily_rate'],
+    before: { daily_rate: null },
+    after: { daily_rate: '500.00' },
   },
   created_at: '2026-09-22T15:30:00Z',
 }
@@ -30,7 +30,7 @@ const DELETE: AdminAction = {
   entity_id: 'f1',
   kind: 'deleted',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {},
   created_at: '2026-09-20T09:00:00Z',
 }
@@ -45,7 +45,7 @@ const CLEARED: AdminAction = {
   entity_id: 'f1',
   kind: 'cleared',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {
     changed: ['cv'],
     before: { cv_filename: 'cv.pdf', cv_mime: 'application/pdf', cv_size: 2048 },
@@ -62,7 +62,7 @@ const NOTICE_RECORDED: AdminAction = {
   entity_id: 'f1',
   kind: 'notice_recorded',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {},
   created_at: '2026-09-24T09:00:00Z',
 }
@@ -75,7 +75,7 @@ const VETTED: AdminAction = {
   entity_id: 'f1',
   kind: 'vetted',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: { vetted: true },
   created_at: '2026-09-25T09:00:00Z',
 }
@@ -88,8 +88,8 @@ const PIGRO_LINK: AdminAction = {
   entity_id: 'm1',
   kind: 'pigro_link',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
-  payload: { esito: 'errore', errore: 'timeout' },
+  admin_name: 'Ivan Bianchi',
+  payload: { outcome: 'error', error: 'timeout' },
   created_at: '2026-10-01T09:05:00Z',
 }
 
@@ -102,12 +102,12 @@ const MERGED: AdminAction = {
   entity_id: 'f1',
   kind: 'merged',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {
     into_freelancer_id: 'f2',
     moved: { logins: ['l1', 'l2'], notes: ['c1'] },
     cv: 'assorbita',
-    scheda_da_rigenerare: true,
+    card_from_regenerate: true,
   },
   created_at: '2026-10-02T09:00:00Z',
 }
@@ -116,7 +116,7 @@ const ABSORBED: AdminAction = {
   id: 'a9',
   entity_id: 'f2',
   kind: 'absorbed',
-  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', scheda_da_rigenerare: false },
+  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'invariato', card_from_regenerate: false },
 }
 const UNMERGED: AdminAction = { ...MERGED, id: 'a10', kind: 'unmerged', payload: {} }
 
@@ -128,22 +128,22 @@ const NOTE_ADDED: AdminAction = {
   entity_id: 'f1',
   kind: 'note_added',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
-  payload: { nota_id: 'n1', fonte: 'mcp', testo: 'Sentito al telefono.' },
+  admin_name: 'Ivan Bianchi',
+  payload: { note_id: 'n1', source: 'mcp', text: 'Sentito al telefono.' },
   created_at: '2026-10-29T09:00:00Z',
 }
 const NOTE_EDITED: AdminAction = {
   ...NOTE_ADDED,
   id: 'a12',
   kind: 'note_edited',
-  payload: { nota_id: 'n1', fonte: 'web', before: 'Sentito al telefono.', after: 'Sentito lunedì.' },
+  payload: { note_id: 'n1', source: 'web', before: 'Sentito al telefono.', after: 'Sentito lunedì.' },
 }
-const NOTE_DELETED: AdminAction = { ...NOTE_ADDED, id: 'a13', kind: 'note_deleted', payload: { nota_id: 'n1', fonte: 'web', testo: 'Sentito lunedì.' } }
+const NOTE_DELETED: AdminAction = { ...NOTE_ADDED, id: 'a13', kind: 'note_deleted', payload: { note_id: 'n1', source: 'web', text: 'Sentito lunedì.' } }
 const STATUS_CHANGED: AdminAction = {
   ...NOTE_ADDED,
   id: 'a14',
   kind: 'status_changed',
-  payload: { before: 'nuovo', after: 'contattato', fonte: 'mcp' },
+  payload: { before: 'new', after: 'contacted', source: 'mcp' },
 }
 
 // A regeneration of the card (REB-861): written or not, in bulk or on its own, by which door, with
@@ -154,14 +154,14 @@ const CARD_REGENERATED: AdminAction = {
   entity_id: 'f1',
   kind: 'card_regenerated',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {
-    fonte: 'cli',
+    source: 'cli',
     bulk: true,
     start_action_id: 's1',
     prompt_version: 3,
     model: 'claude-opus-5',
-    esito: 'scritta',
+    outcome: 'scritta',
     cost_eur: '0.012300',
   },
   created_at: '2026-10-30T09:00:00Z',
@@ -170,11 +170,11 @@ const CARD_NOT_REGENERATED: AdminAction = {
   ...CARD_REGENERATED,
   id: 'a16',
   payload: {
-    fonte: 'web',
+    source: 'web',
     bulk: false,
     prompt_version: 3,
     model: 'claude-opus-5',
-    esito: 'non_scritta',
+    outcome: 'non_scritta',
     reason: 'source_identifying',
     cost_eur: '0.020000',
   },
@@ -183,10 +183,10 @@ const ANON_CV: AdminAction = {
   ...DELETE,
   id: 'a20',
   kind: 'anon_cv_downloaded',
-  payload: { riusato: false },
+  payload: { reused: false },
   created_at: '2026-10-30T09:00:00Z',
 }
-const ANON_CV_REUSED: AdminAction = { ...ANON_CV, id: 'a21', payload: { riusato: true }, created_at: '2026-10-30T10:00:00Z' }
+const ANON_CV_REUSED: AdminAction = { ...ANON_CV, id: 'a21', payload: { reused: true }, created_at: '2026-10-30T10:00:00Z' }
 
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })

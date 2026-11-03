@@ -77,13 +77,13 @@ CATALOGUE = "<catalogo>\nt1: backend, senior\n</catalogo>"
 USER_TEXT = "Il CV e la tariffa sono qui sotto."
 
 
-class Scheda(BaseModel):
+class Card(BaseModel):
     """A docstring written for whoever maintains the model: it never reaches the provider."""
 
     model_config = ConfigDict(extra="forbid")
 
-    riassunto: str = Field(min_length=1, max_length=40)
-    anni: int | None = Field(ge=0, le=60)
+    summary: str = Field(min_length=1, max_length=40)
+    experience_years: int | None = Field(ge=0, le=60)
 
 
 ANSWER = '{"riassunto": "Sviluppatore backend", "anni": 7}'
@@ -93,7 +93,7 @@ def _request(**changes: Any) -> LlmRequest:
     fields: dict[str, Any] = {
         "system": RULES,
         "messages": [LlmMessage(role="user", text=USER_TEXT)],
-        "output_model": Scheda,
+        "output_model": Card,
     }
     return LlmRequest(**{**fields, **changes})
 
@@ -115,7 +115,7 @@ def opener(hub_engine: Engine) -> Iterator[SessionOpener]:
         return closing(Session(hub_engine))
 
     with open_session() as session:
-        admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+        admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
         session.add(admin)
         session.commit()
         service = AiConfigService(session, _settings(), now=lambda: NOON)
@@ -191,7 +191,7 @@ def test_complete_returns_parsed_and_usage_and_records_row(opener: SessionOpener
     stub = Stub(Stub.reply(input_tokens=1500, output_tokens=180, cache_read_tokens=1000))
     response = _call(opener, stub, freelancer_id=None).complete(_request())
 
-    assert response.parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+    assert response.parsed == Card(summary="Sviluppatore backend", experience_years=7)
     assert response.text == ANSWER
     assert (response.stop_reason, response.refusal_category) == ("end_turn", None)
     assert response.provider == "anthropic"
@@ -219,13 +219,13 @@ def test_thinking_tokens_are_counted_apart_from_output(opener: SessionOpener) ->
 
 def test_purpose_and_freelancer_are_recorded(opener: SessionOpener) -> None:
     stub = Stub()
-    _call(opener, stub, purpose="prova").complete(_request())
+    _call(opener, stub, purpose="test").complete(_request())
 
     [row] = _usage_rows(opener)
-    assert (row.task, row.purpose, row.freelancer_id) == ("card", "prova", None)
+    assert (row.task, row.purpose, row.freelancer_id) == ("card", "test", None)
 
 
-def test_a_prova_consumes_the_tasks_daily_cap(opener: SessionOpener) -> None:
+def test_to_test_consumes_the_tasks_daily_postal_code(opener: SessionOpener) -> None:
     with opener() as session:
         task = session.get(AiTask, "card")
         assert task is not None
@@ -235,7 +235,7 @@ def test_a_prova_consumes_the_tasks_daily_cap(opener: SessionOpener) -> None:
         session.commit()
     stub = Stub(Stub.reply(input_tokens=1500, output_tokens=180), Stub.reply())
 
-    _call(opener, stub, purpose="prova").complete(_request())
+    _call(opener, stub, purpose="test").complete(_request())
     with pytest.raises(LlmCapReached) as error:
         _call(opener, stub).complete(_request())
 
@@ -306,7 +306,7 @@ def test_a_call_for_a_person_records_their_id(opener: SessionOpener) -> None:
     """A request that names the talent it is about (`LlmRequest.freelancer_id`, REB-861) puts
     them on its usage row, for the anonymous CV's task as for the card's (REB-862)."""
     with opener() as session:
-        person = User(email="mario@studio.it", nome="Mario", cognome="Messina")
+        person = User(email="mario@studio.it", nome="Mario", last_name="Messina")
         session.add(person)
         session.flush()
         freelancer = Freelancer(user_id=person.id)
@@ -315,12 +315,12 @@ def test_a_call_for_a_person_records_their_id(opener: SessionOpener) -> None:
         freelancer_id = freelancer.id
     stub = Stub()
 
-    call = call_for_task(opener, _settings(), "cv_anonimo", model_factory=stub.factory)
+    call = call_for_task(opener, _settings(), "anonymous_cv", model_factory=stub.factory)
     assert call is not None
     call.complete(_request().model_copy(update={"freelancer_id": freelancer_id}))
 
     [row] = _usage_rows(opener)
-    assert (row.task, row.purpose, row.freelancer_id) == ("cv_anonimo", "run", freelancer_id)
+    assert (row.task, row.purpose, row.freelancer_id) == ("anonymous_cv", "run", freelancer_id)
 
 
 def test_cap_reached_raises_before_provider_is_built(opener: SessionOpener) -> None:
@@ -485,7 +485,7 @@ def test_max_tokens_is_the_callers_word(opener: SessionOpener) -> None:
 def test_an_answer_that_is_not_the_shape_keeps_its_text_and_has_no_parsed(
     opener: SessionOpener,
 ) -> None:
-    too_long = json.dumps({"riassunto": "x" * 41, "anni": 3})
+    too_long = json.dumps({"summary": "x" * 41, "experience_years": 3})
 
     response = _call(opener, Stub(Stub.reply(too_long))).complete(_request())
 
@@ -582,7 +582,7 @@ def test_a_caller_inside_a_running_loop_still_gets_its_answer(opener: SessionOpe
     async def tool() -> LlmResponse:
         return _call(opener, stub).complete(_request())
 
-    assert asyncio.run(tool()).parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+    assert asyncio.run(tool()).parsed == Card(summary="Sviluppatore backend", experience_years=7)
 
 
 # ---- build_model ------------------------------------------------------------------------
@@ -716,7 +716,7 @@ def _wire_call(opener: SessionOpener, **options: Any) -> AiCall:
 
 
 def _expected_schema() -> dict[str, Any]:
-    raw = {k: v for k, v in Scheda.model_json_schema().items() if k != "description"}
+    raw = {k: v for k, v in Card.model_json_schema().items() if k != "description"}
     return _without_titles(anthropic.transform_schema(raw))
 
 
@@ -756,7 +756,7 @@ def test_wire_carries_every_anthropic_feature_the_call_always_had(
     assert body["system"] == [{"type": "text", "text": RULES}]
     assert body["messages"] == [{"role": "user", "content": [{"type": "text", "text": USER_TEXT}]}]
 
-    assert response.parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+    assert response.parsed == Card(summary="Sviluppatore backend", experience_years=7)
     assert (response.input_tokens, response.cache_read_tokens) == (500, 1000)
 
 
@@ -896,7 +896,7 @@ def test_wire_fallback_block_is_read_as_the_model_that_answered(
 
     response = _wire_call(opener).complete(_request())
 
-    assert response.parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+    assert response.parsed == Card(summary="Sviluppatore backend", experience_years=7)
     assert response.model == "claude-opus-5-5"
     [row] = _usage_rows(opener)
     assert row.model == "claude-opus-5-5"
@@ -950,7 +950,7 @@ def test_the_anonymous_cv_waits_longer_than_a_card(opener: SessionOpener, wire: 
     """A two-page CV is one answer of 3-5k tokens, not streamed: a minute or two on a large
     model (REB-862). Its task waits 150 seconds a call; the card keeps its 40."""
     _wire_call(opener).complete(_request())
-    AiCall(opener, _settings(), "cv_anonimo").complete(_request())
+    AiCall(opener, _settings(), "anonymous_cv").complete(_request())
 
     card, cv = (request.extensions["timeout"]["read"] for request in wire.requests)
     assert (card, cv) == (40.0, 150.0)
@@ -964,7 +964,7 @@ def test_the_anonymous_cv_is_never_retried(opener: SessionOpener, wire: Wire) ->
     )
 
     with pytest.raises(LlmUnavailable):
-        AiCall(opener, _settings(), "cv_anonimo").complete(_request())
+        AiCall(opener, _settings(), "anonymous_cv").complete(_request())
 
     assert len(wire.requests) == 1
 
@@ -1187,13 +1187,13 @@ def test_batch_is_asked_whether_it_ended_and_its_answers_are_read(
     ]
     assert batch.ended(handle) is True
 
-    outcomes = batch.collect(handle, Scheda)
+    outcomes = batch.collect(handle, Card)
 
     assert outcomes["id-1"] == BatchOutcome("errored")
     assert outcomes["id-2"] == BatchOutcome("expired")
     answered = outcomes["id-0"].response
     assert answered is not None
-    assert answered.parsed == Scheda(riassunto="Sviluppatore backend", anni=7)
+    assert answered.parsed == Card(summary="Sviluppatore backend", experience_years=7)
     assert (answered.input_tokens, answered.cache_read_tokens) == (500, 1000)
     assert answered.provider == "anthropic" and answered.stop_reason == "end_turn"
 
@@ -1216,7 +1216,7 @@ def test_batch_refusal_comes_back_as_a_refusal_not_an_error(
         }
     ]
 
-    outcome = _batch(opener).collect(handle, Scheda)["id-0"]
+    outcome = _batch(opener).collect(handle, Card)["id-0"]
 
     assert outcome.status == "succeeded" and outcome.response is not None
     assert (outcome.response.text, outcome.response.stop_reason) == (None, "refusal")
@@ -1230,7 +1230,7 @@ def test_batch_usage_is_recorded_at_half_the_price(
         {"custom_id": "id-0", "result": {"type": "succeeded", "message": _beta_message()}}
     ]
     batch = _batch(opener)
-    answered = batch.collect(handle, Scheda)["id-0"].response
+    answered = batch.collect(handle, Card)["id-0"].response
     assert answered is not None
 
     # Not committed by the call: the caller commits it with its own mark that it was recorded.
@@ -1427,7 +1427,7 @@ def test_the_first_recorded_answer_replaces_the_batch_hold_in_its_own_transactio
     batch_wire.lines = [
         {"custom_id": "id-0", "result": {"type": "succeeded", "message": _beta_message()}}
     ]
-    answered = batch.collect(handle, Scheda)["id-0"].response
+    answered = batch.collect(handle, Card)["id-0"].response
     assert answered is not None
     assert len(_usage_rows(opener)) == 1  # collecting an answer is not recording it
 
@@ -1451,7 +1451,7 @@ def test_a_batch_that_ends_with_nothing_to_record_releases_its_hold(
     handle = batch.submit({"id-0": _request()}, Decimal("0.06"))
     batch_wire.lines = [{"custom_id": "id-0", "result": {"type": "expired"}}]
 
-    assert batch.collect(handle, Scheda)["id-0"] == BatchOutcome("expired")
+    assert batch.collect(handle, Card)["id-0"] == BatchOutcome("expired")
 
     assert _usage_rows(opener) == []
 

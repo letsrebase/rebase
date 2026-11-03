@@ -1,0 +1,75 @@
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.legal_entities.models import LegalEntity
+
+
+class LegalEntityRepository:
+    """A repository never commits (project rule): every method here reads or flushes,
+    and the surrounding service method is the one transaction."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def active_italian(self) -> list[LegalEntity]:
+        """The aziende a FatturaPA file can name as its `CedentePrestatore` (REB-619,
+        spec §1.5): active, established in Italy. The import classifier matches the
+        file's supplier against these and no other; a foreign azienda never issued a
+        file the SdI carried."""
+        return [a for a in self.list(only_active=True) if (a.country or "").upper() == "IT"]
+
+    def list(self, *, only_active: bool = True) -> list[LegalEntity]:
+        """The default first, then by short name, so every list and every selector
+        shows the same order without sorting again."""
+        query = select(LegalEntity)
+        if only_active:
+            query = query.where(LegalEntity.active.is_(True))
+        query = query.order_by(
+            LegalEntity.predefinita.desc(), LegalEntity.nome, LegalEntity.created_at
+        )
+        return list(self.session.execute(query).scalars().all())
+
+    def get(self, legal_entity_id: UUID) -> LegalEntity | None:
+        return self.session.get(LegalEntity, legal_entity_id)
+
+    def default(self) -> LegalEntity | None:
+        """The one row with `predefinita`, or `None` on a space that has no azienda
+        yet (between signup and `ensure_defaults`). With one azienda this is the row
+        every consumer that used to ask for «the» emitter now gets."""
+        return (
+            self.session.execute(select(LegalEntity).where(LegalEntity.predefinita.is_(True)))
+            .scalars()
+            .first()
+        )
+
+    def count(self) -> int:
+        return self.session.scalar(select(func.count()).select_from(LegalEntity)) or 0
+
+    def count_customers(self, legal_entity_id: UUID) -> int:
+        """The live customers billed by `legal_entity_id`: what a deactivation answers with
+        (spec §3), since each of them refuses a new deal, document or proforma until it
+        is moved. Imported lazily for the reason `LegalEntityService._normalise_ids` gives:
+        the customer's model already imports this package for its column default."""
+        from pigrocrm.core.customers.models import Customer
+
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Customer)
+                .where(Customer.legal_entity_id == legal_entity_id, Customer.deleted_at.is_(None))
+            )
+            or 0
+        )
+
+    def add(self, legal_entity: LegalEntity) -> LegalEntity:
+        # Flushes: this is what actually sends the `INSERT` to Postgres, where the
+        # partial unique indexes (one default, one P.IVA, one codice fiscale) are the
+        # only things that can refuse it, and what populates `legal_entity.id` (a flush-time
+        # column default, see `PrimaryKeyMixin`) before the service needs it for
+        # `ActivityService.record`. Callers invoke this from inside their own
+        # `try/except IntegrityError`: see `LegalEntityService.upsert_default`.
+        self.session.add(legal_entity)
+        self.session.flush()
+        return legal_entity

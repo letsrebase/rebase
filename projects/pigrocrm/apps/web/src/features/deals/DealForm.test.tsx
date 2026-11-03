@@ -14,7 +14,7 @@ import type { FieldDefinition } from '@/lib/schema'
 // handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 
-function customerPage(items: { id: string; ragione_sociale: string }[]) {
+function customerPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -33,36 +33,36 @@ function renderWithClient(ui: ReactElement) {
 
 const BASE_DEAL: Deal = {
   id: 'd1',
-  azienda_id: 'a-1',
+  legal_entity_id: 'a-1',
   nome: 'Sito vetrina',
   customer_id: 'cust-1',
   pipeline_stage_id: 's1',
-  valore_previsto: null,
-  probabilita: 10,
-  data_chiusura_prevista: null,
+  expected_value: null,
+  probability: 10,
+  expected_close_date: null,
   owner_id: null,
-  ore_preventivate: null,
-  valore_preventivato: null,
-  // See `columns.test.ts`: `DealRead.tariffa_oraria` arrived with slice 4A and is
+  budgeted_hours: null,
+  budgeted_value: null,
+  // See `columns.test.ts`: `DealRead.hourly_rate` arrived with slice 4A and is
   // `null` for a deal that never overrode the user's default rate, and
-  // `DealRead.chiuso_il` with slice 6 -- `null` while the deal is open.
-  tariffa_oraria: null,
-  chiuso_il: null,
+  // `DealRead.closed_at` with slice 6 -- `null` while the deal is open.
+  hourly_rate: null,
+  closed_at: null,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',
 }
 
-const FONTE: FieldDefinition = {
-  key: 'fonte',
+const SOURCE: FieldDefinition = {
+  key: 'source',
   label: 'Fonte',
   type: 'select',
   required: false,
   options: ['referral', 'outbound'],
 }
 
-const URGENTE: FieldDefinition = {
-  key: 'urgente',
+const URGENT: FieldDefinition = {
+  key: 'urgent',
   label: 'Urgente',
   type: 'checkbox',
   required: false,
@@ -83,22 +83,22 @@ describe('DealForm', () => {
         title="Modifica deal"
         open
         onOpenChange={vi.fn()}
-        customFields={[FONTE]}
-        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { fonte: 'referral' } })}
+        customFields={[SOURCE]}
+        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { source: 'referral' } })}
         onSubmit={onSubmit}
       />,
     )
 
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
-    // `probabilita: 10` round-trips too: `BASE_DEAL.probabilita` is a real,
+    // `probabilita: 10` round-trips too: `BASE_DEAL.probability` is a real,
     // non-blank value the user never touched, and an untouched native field is
     // resent unchanged, not stripped out -- the same "idempotent resend" this
     // form gives every other already-set field (see `submit`'s own comment).
     expect(submitted(onSubmit)).toEqual({
       nome: 'Sito vetrina',
-      probabilita: 10,
-      custom_fields: { fonte: 'referral' },
+      probability: 10,
+      custom_fields: { source: 'referral' },
     })
   })
 
@@ -118,7 +118,7 @@ describe('DealForm', () => {
         open
         onOpenChange={vi.fn()}
         customFields={[]}
-        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { fonte: 'referral' } })}
+        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { source: 'referral' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -126,15 +126,15 @@ describe('DealForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     const payload = submitted(onSubmit)
-    expect(payload).not.toHaveProperty('fonte')
+    expect(payload).not.toHaveProperty('source')
     expect(payload.custom_fields).toEqual({})
-    expect(payload).toEqual({ nome: 'Sito vetrina', probabilita: 10, custom_fields: {} })
+    expect(payload).toEqual({ nome: 'Sito vetrina', probability: 10, custom_fields: {} })
   })
 
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
-      <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[URGENTE]} onSubmit={onSubmit} />,
+      <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[URGENT]} onSubmit={onSubmit} />,
     )
 
     await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto nuovo')
@@ -142,7 +142,7 @@ describe('DealForm', () => {
 
     expect(submitted(onSubmit)).toEqual({
       nome: 'Progetto nuovo',
-      custom_fields: { urgente: false },
+      custom_fields: { urgent: false },
     })
   })
 
@@ -194,7 +194,7 @@ describe('DealForm', () => {
         title="Modifica deal"
         open
         onOpenChange={vi.fn()}
-        customFields={[URGENTE]}
+        customFields={[URGENT]}
         initial={dealToFormValues(BASE_DEAL)}
         onSubmit={onSubmit}
       />,
@@ -207,7 +207,7 @@ describe('DealForm', () => {
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({
       nome: 'Sito vetrina 2',
-      probabilita: 10,
+      probability: 10,
       custom_fields: {},
     })
   })
@@ -216,14 +216,14 @@ describe('DealForm', () => {
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,
-      custom_fields: { fonte: 'referral' },
+      custom_fields: { source: 'referral' },
     })
     renderWithClient(
       <DealForm
         title="Modifica deal"
         open
         onOpenChange={vi.fn()}
-        customFields={[FONTE]}
+        customFields={[SOURCE]}
         initial={initial}
         onSubmit={onSubmit}
       />,
@@ -236,8 +236,8 @@ describe('DealForm', () => {
 
     expect(submitted(onSubmit)).toEqual({
       nome: '',
-      probabilita: 10,
-      custom_fields: { fonte: null },
+      probability: 10,
+      custom_fields: { source: null },
     })
   })
 
@@ -250,9 +250,9 @@ describe('DealForm', () => {
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,
-      ore_preventivate: '40.00',
-      valore_preventivato: '10000.00',
-      data_chiusura_prevista: '2026-12-31',
+      budgeted_hours: '40.00',
+      budgeted_value: '10000.00',
+      expected_close_date: '2026-12-31',
     })
     renderWithClient(
       <DealForm
@@ -273,10 +273,10 @@ describe('DealForm', () => {
 
     expect(submitted(onSubmit)).toEqual({
       nome: '',
-      probabilita: 10,
-      ore_preventivate: null,
-      valore_preventivato: null,
-      data_chiusura_prevista: null,
+      probability: 10,
+      budgeted_hours: null,
+      budgeted_value: null,
+      expected_close_date: null,
       custom_fields: {},
     })
   })
@@ -354,7 +354,7 @@ describe('DealForm', () => {
     })
 
     it('sends the chosen customer_id on create', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,

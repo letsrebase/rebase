@@ -27,13 +27,13 @@ def test_the_four_tables_exist_with_the_expected_columns(db_engine: Engine) -> N
         "deal_id",
         "user_id",
         "data",
-        "ore",
-        "descrizione",
-        "fatturabile",
-        "tariffa_applicata",
-        "costo_applicato",
-        "tariffa_origine",
-        "costo_origine",
+        "hours",
+        "description",
+        "billable",
+        "applied_rate",
+        "applied_cost",
+        "rate_source",
+        "cost_source",
         "invoice_line_id",
         "note_interne",
         "custom_fields",
@@ -55,13 +55,13 @@ def test_numeric_precision_is_the_three_scales_and_never_float(db_engine: Engine
                 )
             ).all()
         )
-    assert rows["time_entries.ore"] == "8,2"
-    assert rows["time_entries.tariffa_applicata"] == "12,6"
-    assert rows["time_entries.costo_applicato"] == "12,6"
-    assert rows["costs.importo"] == "12,2"
-    assert rows["deals.tariffa_oraria"] == "12,6"
-    assert rows["users.tariffa_oraria_default"] == "12,6"
-    assert rows["users.costo_orario_default"] == "12,6"
+    assert rows["time_entries.hours"] == "8,2"
+    assert rows["time_entries.applied_rate"] == "12,6"
+    assert rows["time_entries.applied_cost"] == "12,6"
+    assert rows["costs.amount"] == "12,2"
+    assert rows["deals.hourly_rate"] == "12,6"
+    assert rows["users.default_hourly_rate"] == "12,6"
+    assert rows["users.default_hourly_cost"] == "12,6"
     # And nothing in these tables is a float.
     with db_engine.connect() as conn:
         floats = conn.execute(
@@ -126,9 +126,9 @@ def test_a_billed_entry_cannot_be_soft_deleted_even_in_raw_sql(
 
 
 def test_period_locks_primary_key_is_the_month(db_session: Session) -> None:
-    db_session.add(PeriodLock(anno=2026, mese=3, chiuso_il=datetime.now(UTC), chiuso_da=None))
+    db_session.add(PeriodLock(year=2026, month=3, closed_at=datetime.now(UTC), closed_by=None))
     db_session.flush()
-    db_session.add(PeriodLock(anno=2026, mese=3, chiuso_il=datetime.now(UTC), chiuso_da=None))
+    db_session.add(PeriodLock(year=2026, month=3, closed_at=datetime.now(UTC), closed_by=None))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
@@ -158,15 +158,15 @@ def test_cost_amount_may_be_negative_but_never_zero(
 ) -> None:
     """§4.4: a negative amount is a refund or a credit note received -- the same choice
     slice 3 §6.1 rule 6 makes for a discount ("a discount is a line"), instead of a
-    `tipo` column that multiplies the cases in every sum. Zero is refused, because it
+    `type` column that multiplies the cases in every sum. Zero is refused, because it
     is neither a cost nor a correction."""
     db_session.add(
         Cost(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             data=date(2026, 3, 1),
-            importo=Decimal("-120.00"),
-            descrizione="Rimborso hotel",
+            amount=Decimal("-120.00"),
+            description="Rimborso hotel",
         )
     )
     db_session.flush()
@@ -175,13 +175,13 @@ def test_cost_amount_may_be_negative_but_never_zero(
             deal_id=None,
             category_id=seeded_category_id,
             data=date(2026, 3, 1),
-            importo=Decimal("0.00"),
-            descrizione="Niente",
+            amount=Decimal("0.00"),
+            description="Niente",
         )
     )
     with pytest.raises(IntegrityError) as excinfo:
         db_session.flush()
-    assert "ck_costs_importo_non_zero" in str(excinfo.value)
+    assert "ck_costs_amount_not_zero" in str(excinfo.value)
     db_session.rollback()
 
 
@@ -198,8 +198,8 @@ def test_hours_are_bounded_by_the_database_too(
                 deal_id=seeded_deal_id,
                 user_id=seeded_user_id,
                 data=date(2026, 3, 1),
-                ore=bad,
-                descrizione="x",
+                hours=bad,
+                description="x",
             )
         )
         with pytest.raises(IntegrityError):

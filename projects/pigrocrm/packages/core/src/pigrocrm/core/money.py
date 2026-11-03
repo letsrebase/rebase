@@ -2,7 +2,7 @@
 
 Three scales, not two (slice 4 §6.1). Money and every P&L row are 2 places; hours
 are 2 places; **rates and internal hourly costs are 6**, because slice 3 makes
-`invoice_lines.prezzo_unitario` `Numeric(12,6)` and a rate at two places would
+`invoice_lines.unit_price` `Numeric(12,6)` and a rate at two places would
 change value the moment hours became an invoice line -- the reconciliation of slice
 4B would then fail by cents for a reason nobody could reconstruct.
 
@@ -46,7 +46,7 @@ def round_hours(value: Decimal) -> Decimal:
     return value.quantize(HOURS_QUANT, rounding=ROUND_HALF_UP)
 
 
-def line_value(ore: Decimal, fattore: Decimal | None) -> Decimal | None:
+def line_value(hours: Decimal, fattore: Decimal | None) -> Decimal | None:
     """`ROUND(ore x fattore, 2)`, or `None` when there is no factor.
 
     `None`, never `0.00`: an hour with no rate is an hour nobody has priced, and a
@@ -56,7 +56,7 @@ def line_value(ore: Decimal, fattore: Decimal | None) -> Decimal | None:
     """
     if fattore is None:
         return None
-    return round_money(ore * fattore)
+    return round_money(hours * fattore)
 
 
 def sum_money(values: Iterable[Decimal | None]) -> Decimal:
@@ -96,12 +96,12 @@ def percentage_of(part: Decimal, whole: Decimal) -> Decimal | None:
 
 
 def share(part: Decimal, whole: Decimal) -> float:
-    """`part / whole` as the float a `quota` field carries, `0.0` when there is nothing to
+    """`part / whole` as the float a `share` field carries, `0.0` when there is nothing to
     scale against (a zero or negative `whole`). The one zero-guarded ratio of this
     project: a share is presentation, so the float is made here and nowhere else."""
     return float(part / whole) if whole > 0 else 0.0
 
 
 def percent_to_share(percent: Decimal) -> float:
-    """A percentage stored as `50.00` as the share in [0, 1] every `quota` is."""
+    """A percentage stored as `50.00` as the share in [0, 1] every `share` is."""
     return float(percent / 100)

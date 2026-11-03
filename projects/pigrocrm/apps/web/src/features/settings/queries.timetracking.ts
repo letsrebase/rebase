@@ -91,13 +91,13 @@ export function useSeedCostCategories() {
   })
 }
 
-export function usePeriodLocks(anno?: number) {
+export function usePeriodLocks(year?: number) {
   return useQuery({
-    queryKey: queryKeys.periodLocks(anno),
+    queryKey: queryKeys.periodLocks(year),
     queryFn: () =>
       unwrap(
         api.GET('/api/period-locks', {
-          params: { query: anno === undefined ? {} : { anno } },
+          params: { query: year === undefined ? {} : { year } },
         }),
       ),
   })
@@ -115,7 +115,7 @@ function invalidateAfterLockChange(queryClient: QueryClient) {
 export function useClosePeriod() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { anno: number; mese: number }) =>
+    mutationFn: (body: { year: number; month: number }) =>
       unwrap(api.POST('/api/period-locks', { body })),
     onSuccess: () => invalidateAfterLockChange(queryClient),
   })
@@ -124,9 +124,9 @@ export function useClosePeriod() {
 export function useReopenPeriod() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ anno, mese }: { anno: number; mese: number }) =>
+    mutationFn: ({ year, month }: { year: number; month: number }) =>
       unwrap(
-        api.DELETE('/api/period-locks/{anno}/{mese}', { params: { path: { anno, mese } } }),
+        api.DELETE('/api/period-locks/{year}/{month}', { params: { path: { year, month } } }),
       ),
     onSuccess: () => invalidateAfterLockChange(queryClient),
   })

@@ -39,18 +39,20 @@ def detect_long_running(ctx: DetectorContext) -> list[Detection]:
         hours = int((ctx.now - row.started_at).total_seconds() // 3600)
         owner = ctx.directory.people.get(row.user_id)
         who = f"{owner.nome}: " if owner is not None else ""
-        what = f" ({row.descrizione})" if row.descrizione else ""
+        what = f" ({row.description})" if row.description else ""
         found.append(
             Detection(
                 type="timer_running_long",
                 subject_id=row.id,
                 measure=float(hours),
-                recipients=ctx.directory.recipients((row.user_id, *links.owners), links.azienda_id),
+                recipients=ctx.directory.recipients(
+                    (row.user_id, *links.owners), links.legal_entity_id
+                ),
                 title=f"Timer acceso da {hours} ore",
                 detail=f"{who}il timer{what} è in corso da {hours} ore: fermalo se hai finito",
                 entity="timer",
                 entity_id=row.id,
-                azienda_id=links.azienda_id,
+                legal_entity_id=links.legal_entity_id,
                 customer_id=links.customer_id,
             )
         )

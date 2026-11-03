@@ -63,7 +63,7 @@ function Figure({
 
 interface AssumptionFormProps {
   contractId: string
-  divisa: string
+  currency: string
   assumption: RenewalAssumption | null
   canWrite: boolean
 }
@@ -71,10 +71,10 @@ interface AssumptionFormProps {
 /** The renewal assumption as the three facts it records. The fields are seeded from the
  *  stored row once per version of it (`key` on `updated_at` in the caller), so a save
  *  from another tab does not leave stale text in the boxes. */
-function AssumptionForm({ contractId, divisa, assumption, canWrite }: AssumptionFormProps) {
-  const [probabilita, setProbabilita] = useState(assumption?.probabilita.toString() ?? '')
-  const [volume, setVolume] = useState(assumption === null ? '' : String(assumption.volume_atteso))
-  const [orizzonte, setOrizzonte] = useState(assumption?.orizzonte_al ?? '')
+function AssumptionForm({ contractId, currency, assumption, canWrite }: AssumptionFormProps) {
+  const [probability, setProbability] = useState(assumption?.probability.toString() ?? '')
+  const [volume, setVolume] = useState(assumption === null ? '' : String(assumption.expected_volume))
+  const [horizon, setHorizon] = useState(assumption?.horizon_until ?? '')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const save = useSetRenewalAssumption(contractId)
 
@@ -83,11 +83,11 @@ function AssumptionForm({ contractId, divisa, assumption, canWrite }: Assumption
     save.mutate(
       {
         // Left as typed when it is not a whole number: the server's own 422 names it.
-        probabilita: /^\d+$/.test(probabilita.trim())
-          ? Number(probabilita.trim())
-          : (probabilita.trim() as unknown as number),
-        volume_atteso: volume.trim().replace(',', '.'),
-        orizzonte_al: orizzonte,
+        probability: /^\d+$/.test(probability.trim())
+          ? Number(probability.trim())
+          : (probability.trim() as unknown as number),
+        expected_volume: volume.trim().replace(',', '.'),
+        horizon_until: horizon,
       },
       {
         onSuccess: () => toast.success('Assunzione di rinnovo salvata'),
@@ -112,15 +112,15 @@ function AssumptionForm({ contractId, divisa, assumption, canWrite }: Assumption
           type="number"
           min={0}
           max={100}
-          value={probabilita}
+          value={probability}
           disabled={!canWrite}
-          onChange={(event) => setProbabilita(event.target.value)}
-          aria-invalid={fieldError?.field === 'probabilita'}
+          onChange={(event) => setProbability(event.target.value)}
+          aria-invalid={fieldError?.field === 'probability'}
         />
-        {errorOn('probabilita')}
+        {errorOn('probability')}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="renewal-volume">Volume atteso ({currencySign(divisa)})</Label>
+        <Label htmlFor="renewal-volume">Volume atteso ({currencySign(currency)})</Label>
         <Input
           id="renewal-volume"
           inputMode="decimal"
@@ -128,24 +128,24 @@ function AssumptionForm({ contractId, divisa, assumption, canWrite }: Assumption
           value={volume}
           disabled={!canWrite}
           onChange={(event) => setVolume(event.target.value)}
-          aria-invalid={fieldError?.field === 'volume_atteso'}
+          aria-invalid={fieldError?.field === 'expected_volume'}
         />
-        {errorOn('volume_atteso')}
+        {errorOn('expected_volume')}
       </div>
       <div className="space-y-2">
         <Label htmlFor="renewal-orizzonte">Orizzonte</Label>
         <Input
           id="renewal-orizzonte"
           type="date"
-          value={orizzonte}
+          value={horizon}
           disabled={!canWrite}
-          onChange={(event) => setOrizzonte(event.target.value)}
-          aria-invalid={fieldError?.field === 'orizzonte_al'}
+          onChange={(event) => setHorizon(event.target.value)}
+          aria-invalid={fieldError?.field === 'horizon_until'}
         />
         <p className="text-xs text-muted-foreground">
           Fino a quando vale il volume atteso dopo la fine del termine noto.
         </p>
-        {errorOn('orizzonte_al')}
+        {errorOn('horizon_until')}
       </div>
       {elsewhere !== null && <p className="text-sm text-destructive">{elsewhere}</p>}
       {canWrite && (
@@ -177,15 +177,15 @@ export function RenewalSection({ contract }: { contract: Contract }) {
 
   const defaultEnd =
     assumption.data != null
-      ? addDays(assumption.data.orizzonte_al, 1)
-      : contract.fine !== null
-        ? addDays(contract.fine, 1)
+      ? addDays(assumption.data.horizon_until, 1)
+      : contract.end !== null
+        ? addDays(contract.end, 1)
         : addMonths(today, 12)
   const end = chosenEnd ?? defaultEnd
   const validWindow = end > today
 
   const projection = useContractProjection(contract.id, { da: today, a: end }, validWindow)
-  const started = contract.inizio <= today
+  const started = contract.start <= today
   const concentration = useContractConcentration(contract.id, started)
 
   return (
@@ -210,7 +210,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
               <AssumptionForm
                 key={assumption.data?.updated_at ?? 'none'}
                 contractId={contract.id}
-                divisa={contract.divisa}
+                currency={contract.currency}
                 assumption={assumption.data ?? null}
                 canWrite={canWrite}
               />
@@ -238,15 +238,15 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                   <dl className="grid grid-cols-3 gap-4">
                     <Figure
                       label="Programmato"
-                      value={formatAmount(projection.data.programmato, contract.divisa)}
+                      value={formatAmount(projection.data.scheduled, contract.currency)}
                       hint={
-                        projection.data.finestra_irrevocabilita_fino_al === null
+                        projection.data.irrevocability_window_until_to === null
                           ? 'Contratto già concluso'
-                          : `Oltre il ${formatDate(projection.data.finestra_irrevocabilita_fino_al)}`
+                          : `Oltre il ${formatDate(projection.data.irrevocability_window_until_to)}`
                       }
                     />
-                    <Figure label="Da rinnovo" value={formatAmount(projection.data.da_rinnovo, contract.divisa)} />
-                    <Figure label="Totale" value={formatAmount(projection.data.totale, contract.divisa)} />
+                    <Figure label="Da rinnovo" value={formatAmount(projection.data.from_renewal, contract.currency)} />
+                    <Figure label="Totale" value={formatAmount(projection.data.total, contract.currency)} />
                   </dl>
                 ) : null}
               </div>
@@ -255,7 +255,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                 <h3 className="mb-3 text-sm font-medium">Quota del cliente</h3>
                 {!started ? (
                   <p className="text-sm text-muted-foreground">
-                    Il contratto inizia il {formatDate(contract.inizio)}: l’anno di riferimento non
+                    Il contratto inizia il {formatDate(contract.start)}: l’anno di riferimento non
                     è ancora cominciato.
                   </p>
                 ) : concentration.isLoading ? (
@@ -264,21 +264,21 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                   <QueryErrorBanner error={concentration.error} />
                 ) : concentration.data !== undefined ? (
                   <dl className="space-y-3">
-                    {concentration.data.valute.map((row) => (
+                    {concentration.data.currencies.map((row) => (
                       <Figure
-                        key={row.divisa}
-                        label={`Anno dal ${formatDate(concentration.data.periodo_da)} al ${formatDate(concentration.data.periodo_a)}${concentration.data.valute.length > 1 ? ` (${row.divisa})` : ''}`}
-                        value={share.format(row.quota)}
-                        hint={`${formatAmount(row.ricavi_cliente, row.divisa)} su ${formatAmount(row.ricavi_totali, row.divisa)} fatturati`}
+                        key={row.currency}
+                        label={`Anno dal ${formatDate(concentration.data.period_from)} al ${formatDate(concentration.data.period_to)}${concentration.data.currencies.length > 1 ? ` (${row.currency})` : ''}`}
+                        value={share.format(row.share)}
+                        hint={`${formatAmount(row.customer_revenue, row.currency)} su ${formatAmount(row.total_revenue, row.currency)} fatturati`}
                         aside={
-                          concentration.data.soglia_da_contratto &&
-                          concentration.data.soglia != null ? (
+                          concentration.data.threshold_from_contract &&
+                          concentration.data.threshold != null ? (
                             <>
                               <span className="text-sm text-muted-foreground">
-                                Tetto {share.format(concentration.data.soglia)}
+                                Tetto {share.format(concentration.data.threshold)}
                               </span>
-                              <StatusPill tone={row.superata ? 'danger' : 'ink'}>
-                                {row.superata ? 'Tetto raggiunto' : 'Sotto il tetto'}
+                              <StatusPill tone={row.exceeded ? 'danger' : 'ink'}>
+                                {row.exceeded ? 'Tetto raggiunto' : 'Sotto il tetto'}
                               </StatusPill>
                             </>
                           ) : undefined

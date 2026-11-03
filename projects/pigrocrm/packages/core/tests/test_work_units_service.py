@@ -35,26 +35,26 @@ from pigrocrm.core.work_units.service import (
     set_transition_context,
 )
 
-WRITER = Actor(id=uuid4(), type="user", role="collaboratore")
-AGENT = Actor(id=uuid4(), type="mcp", role="collaboratore")
+WRITER = Actor(id=uuid4(), type="user", role="collaborator")
+AGENT = Actor(id=uuid4(), type="mcp", role="collaborator")
 # The same credential on an installation that opened `mcp_full_access`: the day ledger's
 # writes are closed to an agent otherwise (`FULL_ACCESS_ACTIONS`, REB-745).
-TRUSTED_AGENT = Actor(id=uuid4(), type="mcp", role="collaboratore", full_access=True)
+TRUSTED_AGENT = Actor(id=uuid4(), type="mcp", role="collaborator", full_access=True)
 READER = Actor(id=None, type="user", role="readonly")
 
 
 def _contract(db_session: Session, *, requires_prior_approval: bool = False) -> Contract:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}")
+    customer = Customer(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
         requires_prior_approval=requires_prior_approval,
     )
     db_session.add(contract)
@@ -63,7 +63,7 @@ def _contract(db_session: Session, *, requires_prior_approval: bool = False) -> 
 
 
 def _document(db_session: Session, contract: Contract) -> Document:
-    document = Document(contract_id=contract.id, tipo="contratto", titolo="Contratto firmato")
+    document = Document(contract_id=contract.id, type="contract", title="Contratto firmato")
     db_session.add(document)
     db_session.flush()
     return document
@@ -73,11 +73,11 @@ def _approval(db_session: Session, contract: Contract) -> Approval:
     return ApprovalService(db_session).create(
         ApprovalCreate(
             contract_id=contract.id,
-            canale="email",
-            mittente="cliente@example.test",
-            ricevuto_il=datetime(2026, 3, 1, 9, 0),
+            channel="email",
+            sender="cliente@example.test",
+            received_at=datetime(2026, 3, 1, 9, 0),
             document_id=_document(db_session, contract).id,
-            estratto="Confermiamo le giornate.",
+            excerpt="Confermiamo le giornate.",
         ),
         WRITER,
     )
@@ -120,7 +120,7 @@ def test_a_rebase_actor_is_its_own_kind_and_never_an_agent() -> None:
 # ---- WorkUnitService.create ----------------------------------------------------------
 
 
-def test_create_refuses_a_non_entry_stato_before_touching_the_database(
+def test_create_refuses_to_not_entry_status_before_touching_the_database(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
@@ -129,9 +129,9 @@ def test_create_refuses_a_non_entry_stato_before_touching_the_database(
             WorkUnitCreate(
                 contract_id=contract.id,
                 data=date(2026, 3, 1),
-                quantita=Decimal("1.00"),
-                descrizione="Giornata",
-                stato="fatturato",
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status="invoiced",
             ),
             WRITER,
         )
@@ -143,13 +143,13 @@ def test_create_a_legal_entry_state_succeeds(db_session: Session) -> None:
         WorkUnitCreate(
             contract_id=contract.id,
             data=date(2026, 3, 1),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="proposto",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="proposed",
         ),
         WRITER,
     )
-    assert work_unit.stato == "proposto"
+    assert work_unit.status == "proposed"
 
 
 def test_create_reports_the_redirect_not_the_naive_request(db_session: Session) -> None:
@@ -161,13 +161,13 @@ def test_create_reports_the_redirect_not_the_naive_request(db_session: Session) 
         WorkUnitCreate(
             contract_id=contract.id,
             data=date(2026, 3, 1),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="lavorato",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="worked",
         ),
         WRITER,
     )
-    assert work_unit.stato == "lavorato_senza_approvazione"
+    assert work_unit.status == "worked_without_approval"
 
 
 def test_a_reader_cannot_create_a_work_unit(db_session: Session) -> None:
@@ -177,9 +177,9 @@ def test_a_reader_cannot_create_a_work_unit(db_session: Session) -> None:
             WorkUnitCreate(
                 contract_id=contract.id,
                 data=date(2026, 3, 1),
-                quantita=Decimal("1.00"),
-                descrizione="Giornata",
-                stato="proposto",
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status="proposed",
             ),
             READER,
         )
@@ -188,7 +188,7 @@ def test_a_reader_cannot_create_a_work_unit(db_session: Session) -> None:
 # ---- WorkUnitService.transition / transitions_for -----------------------------------
 
 
-def test_transition_moves_a_day_and_logs_the_supplied_actor_and_motivo(
+def test_transition_moves_to_day_and_logs_the_supplied_actor_and_reason(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
@@ -197,21 +197,21 @@ def test_transition_moves_a_day_and_logs_the_supplied_actor_and_motivo(
         WorkUnitCreate(
             contract_id=contract.id,
             data=date(2026, 3, 1),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="proposto",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="proposed",
         ),
         WRITER,
     )
     updated = service.transition(
-        work_unit.id, "approvato", TRUSTED_AGENT, "il cliente ha confermato via email"
+        work_unit.id, "approved", TRUSTED_AGENT, "il cliente ha confermato via email"
     )
-    assert updated.stato == "approvato"
+    assert updated.status == "approved"
 
     transitions = service.transitions_for(work_unit.id)
-    assert [t.stato_nuovo for t in transitions] == ["proposto", "approvato"]
-    assert transitions[-1].attore == {"kind": "agent", "id": str(TRUSTED_AGENT.id)}
-    assert transitions[-1].motivo == "il cliente ha confermato via email"
+    assert [t.new_status for t in transitions] == ["proposed", "approved"]
+    assert transitions[-1].actor == {"kind": "agent", "id": str(TRUSTED_AGENT.id)}
+    assert transitions[-1].reason == "il cliente ha confermato via email"
 
 
 def test_transition_to_an_illegal_target_is_refused(db_session: Session) -> None:
@@ -221,14 +221,14 @@ def test_transition_to_an_illegal_target_is_refused(db_session: Session) -> None
         WorkUnitCreate(
             contract_id=contract.id,
             data=date(2026, 3, 1),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="proposto",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="proposed",
         ),
         WRITER,
     )
     with pytest.raises(Conflict):
-        service.transition(work_unit.id, "pagato", WRITER, "tentativo illegale")
+        service.transition(work_unit.id, "paid", WRITER, "tentativo illegale")
 
 
 def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
@@ -243,14 +243,14 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
         WorkUnitCreate(
             contract_id=contract.id,
             data=date(2026, 3, 1),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="lavorato",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="worked",
         ),
         WRITER,
     )
     _approval(db_session, contract)
-    service.transition(day.id, "contestato", TRUSTED_AGENT, "contestata dal cliente")
+    service.transition(day.id, "disputed", TRUSTED_AGENT, "contestata dal cliente")
 
     entries = {e.kind: e for e in ActivityService(db_session).timeline("contract", contract.id)}
 
@@ -259,15 +259,15 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
         "user",
     )
     assert entries["day_created"].payload == {
-        "giornata": "2026-03-01",
-        "stato": "lavorato_senza_approvazione",
+        "work_unit": "2026-03-01",
+        "status": "worked_without_approval",
     }
     assert entries["approval_added"].actor_type == "user"
     assert entries["day_state_changed"].actor_type == "mcp"
     assert entries["day_state_changed"].payload == {
-        "giornata": "2026-03-01",
-        "da": "lavorato_senza_approvazione",
-        "a": "contestato",
+        "work_unit": "2026-03-01",
+        "da": "worked_without_approval",
+        "a": "disputed",
     }
 
 
@@ -285,8 +285,8 @@ def test_approval_create_and_get_round_trip(db_session: Session) -> None:
     approval = _approval(db_session, contract)
     fetched = ApprovalService(db_session).get(approval.id)
     assert fetched.id == approval.id
-    assert fetched.canale == "email"
-    assert fetched.origine == {"kind": "manuale"}
+    assert fetched.channel == "email"
+    assert fetched.origin == {"kind": "manual"}
 
 
 # ---- the day ledger's writes are closed to an agent credential --------------------------
@@ -300,25 +300,25 @@ def test_an_agent_credential_cannot_record_or_move_a_day(db_session: Session) ->
     body = WorkUnitCreate(
         contract_id=contract.id,
         data=date(2026, 3, 1),
-        quantita=Decimal("1.00"),
-        descrizione="Giornata",
-        stato="proposto",
+        quantity=Decimal("1.00"),
+        description="Giornata",
+        status="proposed",
     )
     with pytest.raises(AgentForbidden):
         service.create(body, AGENT)
     day = service.create(body, WRITER)
     with pytest.raises(AgentForbidden):
-        service.transition(day.id, "approvato", AGENT, "ok")
+        service.transition(day.id, "approved", AGENT, "ok")
     approval = _approval(db_session, contract)
     with pytest.raises(AgentForbidden):
         ApprovalService(db_session).create(
             ApprovalCreate(
                 contract_id=contract.id,
-                canale="email",
-                mittente="cliente@example.com",
-                ricevuto_il=datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
+                channel="email",
+                sender="cliente@example.com",
+                received_at=datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
                 document_id=approval.document_id,
-                estratto="ok",
+                excerpt="ok",
             ),
             AGENT,
         )
@@ -327,13 +327,13 @@ def test_an_agent_credential_cannot_record_or_move_a_day(db_session: Session) ->
 # ---- WorkUnitService.create: the two refusals a screen can hit -------------------------
 
 
-def _day(contract: Contract, giorno: date, stato: str = "lavorato") -> WorkUnitCreate:
+def _day(contract: Contract, day: date, status: str = "worked") -> WorkUnitCreate:
     return WorkUnitCreate(
         contract_id=contract.id,
-        data=giorno,
-        quantita=Decimal("0.50"),
-        descrizione="Revisione",
-        stato=stato,  # type: ignore[arg-type]
+        data=day,
+        quantity=Decimal("0.50"),
+        description="Revisione",
+        status=status,  # type: ignore[arg-type]
     )
 
 
@@ -351,7 +351,7 @@ def test_a_revoked_day_frees_its_date(db_session: Session) -> None:
     contract = _contract(db_session)
     service = WorkUnitService(db_session)
     first = service.create(_day(contract, date(2026, 3, 2)), WRITER)
-    service.transition(first.id, "revocato", WRITER, "registrata per errore")
+    service.transition(first.id, "revoked", WRITER, "registrata per errore")
 
     second = service.create(_day(contract, date(2026, 3, 2)), WRITER)
 
@@ -377,16 +377,16 @@ def test_detail_carries_the_log_the_contract_and_the_moves_a_person_may_make(
 
     detail = service.detail(day.id, WRITER)
 
-    assert detail.stato == "lavorato_senza_approvazione"
-    assert detail.contract_titolo == "Consulenza"
-    assert detail.customer_nome.startswith("ACME")
+    assert detail.status == "worked_without_approval"
+    assert detail.contract_title == "Consulenza"
+    assert detail.customer_name.startswith("ACME")
     assert detail.requires_prior_approval is True
     assert detail.approval is None
-    assert [t.stato_nuovo for t in detail.transizioni] == ["lavorato_senza_approvazione"]
-    # The edge back to `lavorato` is the recovery: a person gets it by linking an approval
-    # (the trigger would rewrite a plain move straight back), and `fatturato` is what an
+    assert [t.new_status for t in detail.transitions] == ["worked_without_approval"]
+    # The edge back to `worked` is the recovery: a person gets it by linking an approval
+    # (the trigger would rewrite a plain move straight back), and `invoiced` is what an
     # invoice does, so neither is a plain button.
-    assert detail.azioni == ["contestato", "revocato", "non_fatturabile"]
+    assert detail.actions == ["disputed", "revoked", "non_billable"]
 
 
 def test_detail_names_the_approval_and_its_document(db_session: Session) -> None:
@@ -398,13 +398,13 @@ def test_detail_names_the_approval_and_its_document(db_session: Session) -> None
 
     detail = service.detail(day.id, WRITER)
 
-    assert detail.stato == "lavorato"
+    assert detail.status == "worked"
     assert detail.approval is not None
     assert detail.approval.id == approval.id
-    assert detail.approval.documento_titolo == "Contratto firmato"
-    assert [t.stato_nuovo for t in detail.transizioni] == [
-        "lavorato_senza_approvazione",
-        "lavorato",
+    assert detail.approval.title_document == "Contratto firmato"
+    assert [t.new_status for t in detail.transitions] == [
+        "worked_without_approval",
+        "worked",
     ]
 
 
@@ -414,17 +414,17 @@ def test_detail_says_when_a_day_falls_outside_the_contracts_term(db_session: Ses
     early = service.create(_day(contract, date(2025, 12, 31)), WRITER)
     ok = service.create(_day(contract, date(2026, 3, 2)), WRITER)
 
-    assert service.detail(early.id, WRITER).fuori_termine == "prima_dell_inizio"
-    assert service.detail(ok.id, WRITER).fuori_termine is None
+    assert service.detail(early.id, WRITER).out_of_term == "before_start"
+    assert service.detail(ok.id, WRITER).out_of_term is None
 
 
 def test_a_terminal_day_offers_no_move(db_session: Session) -> None:
     contract = _contract(db_session)
     service = WorkUnitService(db_session)
-    day = service.create(_day(contract, date(2026, 3, 2), "proposto"), WRITER)
-    service.transition(day.id, "rifiutato", WRITER, "il cliente non ha confermato")
+    day = service.create(_day(contract, date(2026, 3, 2), "proposed"), WRITER)
+    service.transition(day.id, "rejected", WRITER, "il cliente non ha confermato")
 
-    assert service.detail(day.id, WRITER).azioni == []
+    assert service.detail(day.id, WRITER).actions == []
 
 
 def test_detail_of_an_unknown_day_is_not_found(db_session: Session) -> None:
@@ -436,8 +436,8 @@ def test_list_is_newest_first_filtered_and_says_when_it_cut(db_session: Session)
     contract = _contract(db_session)
     other = _contract(db_session)
     service = WorkUnitService(db_session)
-    for giorno in (date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4)):
-        service.create(_day(contract, giorno), WRITER)
+    for day in (date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4)):
+        service.create(_day(contract, day), WRITER)
     service.create(_day(other, date(2026, 3, 3)), WRITER)
 
     everything = service.list(WorkUnitListQuery(contract_id=contract.id), WRITER)
@@ -446,17 +446,17 @@ def test_list_is_newest_first_filtered_and_says_when_it_cut(db_session: Session)
         date(2026, 3, 3),
         date(2026, 3, 2),
     ]
-    assert everything.troncato is False
-    assert {row.contract_titolo for row in everything.items} == {"Consulenza"}
+    assert everything.truncated is False
+    assert {row.contract_title for row in everything.items} == {"Consulenza"}
 
     window = service.list(WorkUnitListQuery(da=date(2026, 3, 3), a=date(2026, 3, 3)), WRITER)
     assert {row.contract_id for row in window.items} == {contract.id, other.id}
 
     cut = service.list(WorkUnitListQuery(contract_id=contract.id, limit=2), WRITER)
     assert len(cut.items) == 2
-    assert cut.troncato is True
+    assert cut.truncated is True
 
-    flagged = service.list(WorkUnitListQuery(contract_id=contract.id, stato="revocato"), WRITER)
+    flagged = service.list(WorkUnitListQuery(contract_id=contract.id, status="revoked"), WRITER)
     assert flagged.items == []
 
 
@@ -475,23 +475,23 @@ def test_move_refuses_what_the_days_page_would_not_offer(db_session: Session) ->
     contract = _contract(db_session, requires_prior_approval=True)
     service = WorkUnitService(db_session)
     flagged = service.create(_day(contract, date(2026, 3, 2)), WRITER)
-    proposed = service.create(_day(contract, date(2026, 3, 3), "proposto"), WRITER)
+    proposed = service.create(_day(contract, date(2026, 3, 3), "proposed"), WRITER)
 
     for work_unit, target, reason in (
-        (proposed, "approvato", "senza prova"),
-        (flagged, "lavorato", "il trigger lo riscriverebbe"),
-        (flagged, "fatturato", "lo fa una fattura"),
+        (proposed, "approved", "senza prova"),
+        (flagged, "worked", "il trigger lo riscriverebbe"),
+        (flagged, "invoiced", "lo fa una fattura"),
     ):
         with pytest.raises(Conflict) as refused:
             service.move(work_unit.id, target, WRITER, reason)
         # The graph allows these edges (`transition` does them); `move` refuses them.
         assert (refused.value.details["da"], refused.value.details["a"]) == (
-            work_unit.stato,
+            work_unit.status,
             target,
         )
 
-    assert service.get(flagged.id).stato == "lavorato_senza_approvazione"
-    assert service.get(proposed.id).stato == "proposto"
+    assert service.get(flagged.id).status == "worked_without_approval"
+    assert service.get(proposed.id).status == "proposed"
 
 
 def test_move_makes_the_moves_a_person_may_make_and_not_for_an_agent(db_session: Session) -> None:
@@ -500,9 +500,9 @@ def test_move_makes_the_moves_a_person_may_make_and_not_for_an_agent(db_session:
     day = service.create(_day(contract, date(2026, 3, 2)), WRITER)
 
     with pytest.raises(AgentForbidden):
-        service.move(day.id, "contestato", AGENT, "contesto")
-    moved = service.move(day.id, "contestato", WRITER, "il cliente contesta")
+        service.move(day.id, "disputed", AGENT, "contesto")
+    moved = service.move(day.id, "disputed", WRITER, "il cliente contesta")
 
-    assert moved.stato == "contestato"
+    assert moved.status == "disputed"
     with pytest.raises(NotFound):
-        service.move(uuid4(), "contestato", WRITER, "x")
+        service.move(uuid4(), "disputed", WRITER, "x")

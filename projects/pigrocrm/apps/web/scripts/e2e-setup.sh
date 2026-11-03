@@ -67,8 +67,8 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.scope import bind_scope
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.pipeline.service import PipelineService
@@ -127,7 +127,7 @@ with session_factory(engine)() as session:
     # Both are honest failures at exactly the wrong time, and configuring the regime is
     # a step a real installation performs on «Impostazioni → Fiscale» before it issues
     # anything. The three rates are the forfettario's own published numbers, which is
-    # also `FiscalProfileUpsert`'s own default for each of them; `codice_regime` has no
+    # also `FiscalProfileUpsert`'s own default for each of them; `regime_code` has no
     # default and is the whole point of the row.
     FiscalProfileService(session).upsert(
         FiscalProfileUpsert(codice_regime="RF19"),

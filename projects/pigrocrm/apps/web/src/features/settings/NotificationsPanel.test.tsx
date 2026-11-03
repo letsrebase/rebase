@@ -15,7 +15,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', nome: 'Cora', email: 'c@pigro.it', ruolo: 'readonly', digest_settimanale: true },
+    user: { id: 'u1', nome: 'Cora', email: 'c@pigro.it', role: 'readonly', weekly_digest: true },
   }),
 }))
 

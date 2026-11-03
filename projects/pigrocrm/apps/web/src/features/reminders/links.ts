@@ -18,8 +18,8 @@ import type { Reminder } from './fields'
  * rather than with a guessed one.
  */
 const RECORD_LINKS: Record<string, (id: string) => LinkProps> = {
-  // An attività has no page of its own: the list opens it in a dialog (`?apri=`).
-  attivita: (id: string) => linkOptions({ to: '/app/activities', search: { apri: id } }),
+  // An attività has no page of its own: the list opens it in a dialog (`?open=`).
+  attivita: (id: string) => linkOptions({ to: '/app/activities', search: { open: id } }),
   deal: (id: string) => linkOptions({ to: '/app/deal/$dealId', params: { dealId: id } }),
   customer: (id: string) =>
     linkOptions({ to: '/app/customers/$customerId', params: { customerId: id } }),
@@ -31,7 +31,7 @@ const RECORD_LINKS: Record<string, (id: string) => LinkProps> = {
   contract: (id: string) =>
     linkOptions({ to: '/app/contracts/$contractId', params: { contractId: id } }),
   fiscal: () =>
-    linkOptions({ to: '/app', search: { ...defaultDashboardSearch(), tab: 'anno' } }),
+    linkOptions({ to: '/app', search: { ...defaultDashboardSearch(), tab: 'year' } }),
   proposal: (id: string) =>
     linkOptions({ to: '/app/proposals/$proposalId', params: { proposalId: id } }),
   // The timer is the caller's own and lives in the hours page, which has no id to open.

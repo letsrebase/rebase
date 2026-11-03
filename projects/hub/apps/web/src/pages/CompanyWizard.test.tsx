@@ -27,7 +27,7 @@ function mount(path = '/companies') {
   const thanks = createRoute({
     getParentRoute: () => root,
     path: '/thanks',
-    validateSearch: (s: Record<string, unknown>) => ({ chi: String(s.chi ?? '') }),
+    validateSearch: (s: Record<string, unknown>) => ({ who: String(s.who ?? '') }),
     component: () => <h1>Grazie</h1>,
   })
   const router = createRouter({
@@ -68,7 +68,7 @@ describe('CompanyWizard', () => {
     const router = mount()
 
     await user.type(await screen.findByLabelText('Azienda'), 'ACME Srl{Enter}')
-    expect(captured('wizard_iniziato')).toEqual([{ tipo: 'azienda' }])
+    expect(captured('wizard_started')).toEqual([{ kind: 'company' }])
     await user.type(screen.getByLabelText('Figura richiesta'), 'Backend developer{Enter}')
     await user.type(screen.getByLabelText('Nome'), 'Ada')
     await user.type(screen.getByLabelText('Cognome'), 'Lovelace')
@@ -84,41 +84,41 @@ describe('CompanyWizard', () => {
     await user.click(screen.getByRole('button', { name: /Avanti/ }))
     await user.type(screen.getByLabelText('Numero di persone'), '2{Enter}')
     expect(screen.getByRole('heading', { name: 'Tutto giusto?' })).toBeInTheDocument()
-    expect(captured('wizard_passo').map((p) => p?.passo)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
-    expect(captured('wizard_passo').map((p) => p?.schermata)).toEqual([
-      'nome_azienda',
-      'figura_richiesta',
-      'referente',
-      'progetto',
-      'periodo_da',
-      'budget_giornaliero',
-      'remoto',
-      'numero_risorse',
-      'riepilogo',
+    expect(captured('wizard_step').map((p) => p?.step)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
+    expect(captured('wizard_step').map((p) => p?.screen)).toEqual([
+      'company_name',
+      'requested_role',
+      'contact_person',
+      'project',
+      'period_from',
+      'daily_budget',
+      'remote',
+      'headcount',
+      'recap',
     ])
-    expect(captured('wizard_passo')[0]).toEqual({
-      tipo: 'azienda',
-      passo: 0,
-      passi: 8,
-      schermata: 'nome_azienda',
+    expect(captured('wizard_step')[0]).toEqual({
+      kind: 'company',
+      step: 0,
+      steps: 8,
+      screen: 'company_name',
     })
-    expect(captured('wizard_completato')).toEqual([])
+    expect(captured('wizard_completed')).toEqual([])
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
-    expect(router.state.location.search).toEqual({ chi: 'azienda' })
-    expect(captured('wizard_completato')).toEqual([{ tipo: 'azienda' }])
+    expect(router.state.location.search).toEqual({ who: 'company' })
+    expect(captured('wizard_completed')).toEqual([{ kind: 'company' }])
 
     const [url, init] = fetchSpy.mock.calls[0]!
     expect(url).toBe('/api/hub/companies')
     expect(JSON.parse(init?.body as string)).toMatchObject({
-      nome_azienda: 'ACME Srl',
-      figura_richiesta: 'Backend developer',
-      telefono: '+39 345 1234567',
-      budget_giornaliero: '500.00',
-      remoto: 'ibrido',
-      giorni_presenza: 3,
-      numero_risorse: '2',
+      company_name: 'ACME Srl',
+      requested_role: 'Backend developer',
+      phone: '+39 345 1234567',
+      daily_budget: '500.00',
+      remote: 'hybrid',
+      onsite_days: 3,
+      headcount: '2',
     })
   })
 })
@@ -153,7 +153,7 @@ describe('CompanyWizard, the budget typed the Italian way (REB-485)', () => {
     await user.click(screen.getByRole('button', { name: /Invia/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
 
-    expect(JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string).budget_giornaliero).toBe('1500.00')
+    expect(JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string).daily_budget).toBe('1500.00')
   })
 })
 
@@ -169,7 +169,7 @@ describe('CompanyWizard, the draft and the intro (REB-215)', () => {
     const user = userEvent.setup()
     mount()
     await user.type(await screen.findByLabelText('Azienda'), 'ACME Srl{Enter}')
-    expect(loadDraft(COMPANY_DRAFT_KEY)).toMatchObject({ index: 1, value: { nome_azienda: 'ACME Srl' } })
+    expect(loadDraft(COMPANY_DRAFT_KEY)).toMatchObject({ index: 1, value: { company_name: 'ACME Srl' } })
 
     cleanup()
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -194,21 +194,21 @@ describe('CompanyWizard, the draft and the intro (REB-215)', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     expect(loadDraft(COMPANY_DRAFT_KEY)).toBeNull()
     const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string)
-    expect(body.nome_azienda).toBe('ACME Srl')
+    expect(body.company_name).toBe('ACME Srl')
     expect(body.distinct_id).toBe('anon-1')
   })
 })
 
 describe('CompanyWizard, opened from the team builder (REB-518)', () => {
   it('says above the form that the request is for the talent cloud', async () => {
-    mount('/companies?da=team-builder')
+    mount('/companies?from=team-builder')
     const note = await screen.findByRole('note', { name: 'Talent cloud' })
     expect(note).toHaveTextContent('Stai chiedendo l’accesso al talent cloud.')
     expect(note).toHaveTextContent('Compila la richiesta e ti ricontattiamo noi per aprirtelo.')
   })
 
   it('says nothing of the kind from any other page', async () => {
-    mount('/companies?da=home')
+    mount('/companies?from=home')
     await screen.findByRole('complementary', { name: 'Cos’è rebase' })
     expect(screen.queryByRole('note', { name: 'Talent cloud' })).toBeNull()
   })

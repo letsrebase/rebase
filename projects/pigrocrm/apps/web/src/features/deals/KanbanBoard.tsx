@@ -2,7 +2,7 @@ import { DndContext, PointerSensor, useDroppable, useSensor, useSensors } from '
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Badge } from '@rebase/ui/badge'
 import { KanbanCard } from './KanbanCard'
-import { sumValorePrevisto } from './columns'
+import { sumExpectedValue } from './columns'
 import type { Deal, Stage } from './queries'
 
 function Column({
@@ -27,7 +27,7 @@ function Column({
           <h2 className="font-semibold">{stage.nome}</h2>
           <Badge variant="secondary">{deals.length}</Badge>
         </div>
-        <span className="text-xs text-muted-foreground">{sumValorePrevisto(deals)}</span>
+        <span className="text-xs text-muted-foreground">{sumExpectedValue(deals)}</span>
       </div>
 
       <div
@@ -123,7 +123,7 @@ export function KanbanBoard({
           ones read as one giant mostly-blank box. */}
       <div className="flex items-start gap-4 overflow-x-auto pb-4">
         {[...stages]
-          .sort((a, b) => a.posizione - b.posizione)
+          .sort((a, b) => a.position - b.position)
           .map((stage) => (
             <Column
               key={stage.id}

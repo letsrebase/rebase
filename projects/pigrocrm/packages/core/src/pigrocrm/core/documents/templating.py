@@ -16,21 +16,21 @@ from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import (
     DocumentFromTemplate,
     DocumentRead,
-    DocumentTipo,
+    DocumentType,
     DocumentVersionRead,
 )
 from pigrocrm.core.documents.uploads import DocumentUploads
-from pigrocrm.core.emitter.assets import logo_file_in
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.legal_entities.assets import logo_file_in
 from pigrocrm.core.render.pdf import build_header, render_pdf
 from pigrocrm.core.templates.models import Template
 from pigrocrm.core.templates.renderer import render_template
 
 # The template types a `documents` row can legitimately be created from. Derived from
-# `DocumentTipo` itself, never retyped, so a value added there is covered here by
+# `DocumentType` itself, never retyped, so a value added there is covered here by
 # construction -- see `require_template` for why the two vocabularies stopped being
 # the same Literal.
-DOCUMENT_TIPI: frozenset[str] = frozenset(get_args(DocumentTipo))
+DOCUMENT_TIPI: frozenset[str] = frozenset(get_args(DocumentType))
 
 
 class DocumentTemplating:
@@ -40,10 +40,10 @@ class DocumentTemplating:
 
     def require_template(self, template_id: UUID) -> Template:
         """`TemplateService` exposes no `_require` of its own -- only `get`, which
-        returns a `TemplateRead` (a detached copy with `variabili_dichiarate` already
+        returns a `TemplateRead` (a detached copy with `declared_variables` already
         turned into `TemplateVariable` objects). This needs the live ORM row instead:
-        `declared_variables` reads `template.variabili_dichiarate` as the raw list of
-        dicts JSONB actually stores, and `template.corpo_markdown`/`template.tipo`/
+        `declared_variables` reads `template.declared_variables` as the raw list of
+        dicts JSONB actually stores, and `template.body_markdown`/`template.type`/
         `template.nome` feed straight into rendering. Going through
         `templates.repo.get` directly is what `TemplateService.declared_variables`
         itself documents as the expected call shape for a `Template` already in hand.
@@ -51,17 +51,17 @@ class DocumentTemplating:
         template = self.ctx.templates.repo.get(template_id)
         if template is None:
             raise NotFound("template", template_id)
-        if template.tipo not in DOCUMENT_TIPI:
-            # `TemplateTipo` and `DocumentTipo` used to be the same Literal. Slice 5
-            # widened the template side with `email` and `sollecito` -- neither of which
-            # is a thing a `documents` row can be -- and `DocumentRead.tipo` is a plain
+        if template.type not in DOCUMENT_TIPI:
+            # `TemplateType` and `DocumentType` used to be the same Literal. Slice 5
+            # widened the template side with `email` and `payment_reminder` -- neither of which
+            # is a thing a `documents` row can be -- and `DocumentRead.type` is a plain
             # `str`, so without this check a document of type "sollecito" would land in
             # the customer's document list. The conversion between the two vocabularies
             # is explicit here rather than implicit in the overlap.
             raise ValidationFailed(
                 ENTITY,
                 "template_id",
-                f"il template '{template.nome}' è di tipo '{template.tipo}', "
+                f"il template '{template.nome}' è di tipo '{template.type}', "
                 "che non è un tipo di documento",
                 expected=f"un template fra: {', '.join(sorted(DOCUMENT_TIPI))}",
             )
@@ -70,23 +70,25 @@ class DocumentTemplating:
     def template_scope(
         self,
         customer: Customer | None,
-        azienda_id: UUID,
-        variabili: dict[str, Any],
+        legal_entity_id: UUID,
+        variables: dict[str, Any],
         actor: Actor,
     ) -> dict[str, Any]:
-        """What a template can read: the caller's variables, plus `cliente` and
+        """What a template can read: the caller's variables, plus `customer` and
         `emittente` from the record itself.
 
         The caller's own keys go in first and the record's go in second, so a caller
-        cannot shadow `cliente` or `emittente` with values of their own -- an offer
+        cannot shadow `customer` or `emittente` with values of their own -- an offer
         must state the customer the document is filed under, not the one whoever
         pressed the button typed.
         """
-        scope: dict[str, Any] = dict(variabili)
+        scope: dict[str, Any] = dict(variables)
         # The document's own azienda (REB-627, spec §1.8), read live: `regenerate` re-reads
         # it the way it re-read the one emitter before, so a corrected address reaches
         # the next version and a customer moved since does not.
-        scope["emittente"] = self.ctx.emitter.as_template_values(actor, azienda_id)["emittente"]
+        scope["emittente"] = self.ctx.legal_entity.as_template_values(actor, legal_entity_id)[
+            "emittente"
+        ]
         scope["cliente"] = (
             CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
         )
@@ -101,7 +103,7 @@ class DocumentTemplating:
         return scope
 
     def render_to_pdf(
-        self, template: Template, scope: dict[str, Any], *, azienda_id: UUID
+        self, template: Template, scope: dict[str, Any], *, legal_entity_id: UUID
     ) -> tuple[str, bytes]:
         """Everything the render reads from the database is read here, then the read
         transaction is ended, and only then are Pandoc and Typst run: a compile takes
@@ -115,9 +117,9 @@ class DocumentTemplating:
         the template it seeds).
         """
         markdown = render_template(
-            template.corpo_markdown, scope, self.ctx.templates.declared_variables(template)
+            template.body_markdown, scope, self.ctx.templates.declared_variables(template)
         )
-        media = self.ctx.assets.media_for(azienda_id)
+        media = self.ctx.assets.media_for(legal_entity_id)
         header = build_header(scope["emittente"], logo=logo_file_in(media))
         self.ctx.session.commit()
         return markdown, render_pdf(
@@ -134,46 +136,46 @@ class DocumentTemplating:
         actor.require_write("create_document_from_template")
         template = self.require_template(data.template_id)
         owner = self.ctx.check_owner(data.customer_id, data.deal_id)
-        azienda_id = (
-            self.ctx.emitter.inherited(data.azienda_id, ENTITY)
-            if data.azienda_id is not None
-            else self.ctx.azienda_of(owner)
+        legal_entity_id = (
+            self.ctx.legal_entity.inherited(data.legal_entity_id, ENTITY)
+            if data.legal_entity_id is not None
+            else self.ctx.legal_entity_of(owner)
         )
         custom_fields = self.ctx.validated_custom(data.custom_fields or {})
         scope = self.template_scope(
             self.ctx.customer_for(data.customer_id, data.deal_id, None),
-            azienda_id,
-            data.variabili,
+            legal_entity_id,
+            data.variables,
             actor,
         )
-        markdown, pdf = self.render_to_pdf(template, scope, azienda_id=azienda_id)
+        markdown, pdf = self.render_to_pdf(template, scope, legal_entity_id=legal_entity_id)
 
         document = self.ctx.repo.add(
             Document(
                 customer_id=data.customer_id,
                 deal_id=data.deal_id,
-                azienda_id=azienda_id,
-                tipo=template.tipo,
-                titolo=data.titolo,
-                stato="bozza" if template.tipo == "offerta" else None,
+                legal_entity_id=legal_entity_id,
+                type=template.type,
+                title=data.title,
+                status="draft" if template.type == "offer" else None,
                 custom_fields=custom_fields,
             )
         )
         key = self.ctx.storage_key_for(document, 1, "application/pdf")
         version = DocumentVersion(
             document_id=document.id,
-            numero=1,
-            sorgente_markdown=markdown,
+            number=1,
+            markdown_source=markdown,
             template_id=template.id,
-            variabili=data.variabili,
+            variables=data.variables,
             storage_key=key,
             content_type="application/pdf",
-            dimensione=len(pdf),
+            size=len(pdf),
             hash_sha256=hashlib.sha256(pdf).hexdigest(),
-            creato_da=actor.id,
+            created_by=actor.id,
         )
         # Same ordering `add_version` establishes and the same reason: the version
-        # row is flushed -- and Postgres's own `uq_document_versions_document_numero`
+        # row is flushed -- and Postgres's own `uq_document_versions_document_number`
         # given a chance to reject it -- *before* a byte reaches `storage.put`, so a
         # losing racer's bytes can never physically overwrite a winner's.
         try:
@@ -195,43 +197,45 @@ class DocumentTemplating:
             self.ctx.session.rollback()
             raise
 
-        document.versione_corrente = 1
+        document.current_version = 1
         self.ctx.activities.record(
             ENTITY, document.id, "created_from_template", actor, {"template": template.nome}
         )
         self.ctx.session.commit()
         return DocumentRead.model_validate(document)
 
-    def regenerate(self, document_id: UUID, numero: int, actor: Actor) -> DocumentVersionRead:
+    def regenerate(self, document_id: UUID, number: int, actor: Actor) -> DocumentVersionRead:
         """Rebuild an old version as a new one.
 
-        Reads the version's own `template_id` and `variabili` -- which is exactly why
+        Reads the version's own `template_id` and `variables` -- which is exactly why
         both are stored (spec 4.2) -- so a six-month-old offer regenerates identically
         without the person who wrote it being in the room.
         """
         actor.require_write("regenerate_document")
         document = self.ctx.require(document_id)
-        source = self.ctx.repo.version(document_id, numero)
+        source = self.ctx.repo.version(document_id, number)
         if source is None:
-            raise NotFound("document_version", f"{document_id}#{numero}")
-        if source.template_id is None or source.variabili is None:
+            raise NotFound("document_version", f"{document_id}#{number}")
+        if source.template_id is None or source.variables is None:
             raise ValidationFailed(
                 ENTITY,
-                "numero",
+                "number",
                 "questa versione non e' stata generata da un template e non si rigenera",
                 expected="una versione creata da un template",
             )
         template = self.require_template(source.template_id)
         scope = self.template_scope(
-            self.ctx.customer_of(document), document.azienda_id, source.variabili, actor
+            self.ctx.customer_of(document), document.legal_entity_id, source.variables, actor
         )
-        markdown, pdf = self.render_to_pdf(template, scope, azienda_id=document.azienda_id)
+        markdown, pdf = self.render_to_pdf(
+            template, scope, legal_entity_id=document.legal_entity_id
+        )
         return self.uploads.add_version(
             document_id,
             pdf,
             "application/pdf",
             actor,
-            sorgente_markdown=markdown,
+            markdown_source=markdown,
             template_id=template.id,
-            variabili=source.variabili,
+            variables=source.variables,
         )

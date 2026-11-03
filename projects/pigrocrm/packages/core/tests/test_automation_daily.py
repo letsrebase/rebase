@@ -24,21 +24,19 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.models import Attivita
-from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.automations.config_service import AutomationConfigService
 from pigrocrm.core.automations.daily import (
-    OFFERTA_ATTESA_GIORNI,
-    OFFERTA_FINESTRA_GIORNI,
+    OFFER_PENDING_DAYS,
+    OFFER_WINDOW_DAYS,
     AutomationPass,
     PassReport,
 )
 from pigrocrm.core.automations.models import AutomationConfig
 from pigrocrm.core.automations.schemas import (
-    KIND_ATTIVITA_OPENED,
-    AttivitaRule,
+    KIND_TASK_OPENED,
     AutomationConfigUpdate,
+    TaskRule,
 )
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.customers.models import Customer
@@ -47,6 +45,8 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.tasks.models import Task
+from pigrocrm.core.tasks.service import TaskService
 
 ADMIN = Actor(id=None, type="user", role="admin")
 
@@ -62,31 +62,31 @@ def _local_noon(days_ago: int) -> datetime:
 
 
 def _customer(session: Session, nome: str = "Acme S.r.l.") -> Customer:
-    customer = Customer(ragione_sociale=nome, nazione="IT", custom_fields={})
+    customer = Customer(legal_name=nome, country="IT", custom_fields={})
     session.add(customer)
     session.flush()
     return customer
 
 
-def _stage(session: Session, tipo: str = "open") -> PipelineStage:
+def _stage(session: Session, type: str = "open") -> PipelineStage:
     stage = PipelineStage(
-        nome=f"Fase {tipo} {datetime.now(UTC).timestamp()}",
-        posizione=0,
-        probabilita_default=10,
-        tipo=tipo,
+        nome=f"Fase {type} {datetime.now(UTC).timestamp()}",
+        position=0,
+        default_probability=10,
+        type=type,
     )
     session.add(stage)
     session.flush()
     return stage
 
 
-def _owner(session: Session, *, attivo: bool = True) -> User:
+def _owner(session: Session, *, active: bool = True) -> User:
     user = User(
         email=f"titolare-{datetime.now(UTC).timestamp()}@example.test",
         password_hash="x",
         nome="Maria Rossi",
-        ruolo="collaboratore",
-        attivo=attivo,
+        role="collaborator",
+        active=active,
     )
     session.add(user)
     session.flush()
@@ -106,7 +106,7 @@ def _deal(
         nome=nome,
         customer_id=customer.id,
         pipeline_stage_id=stage.id,
-        probabilita=10,
+        probability=10,
         owner_id=owner.id if owner else None,
         custom_fields={},
     )
@@ -124,17 +124,17 @@ def _offer(
     deal: Deal | None = None,
     customer: Customer | None = None,
     sent_days_ago: int,
-    titolo: str = "Offerta sito",
-    stato: str = "inviata",
+    title: str = "Offerta sito",
+    status: str = "sent",
 ) -> Document:
     document = Document(
         deal_id=deal.id if deal else None,
         customer_id=customer.id if customer else None,
-        tipo="offerta",
-        titolo=titolo,
-        stato=stato,
-        stato_dal=today_local() - timedelta(days=sent_days_ago),
-        versione_corrente=1,
+        type="offer",
+        title=title,
+        status=status,
+        status_since=today_local() - timedelta(days=sent_days_ago),
+        current_version=1,
         custom_fields={},
     )
     session.add(document)
@@ -148,24 +148,24 @@ def _invoice(
     *,
     deal: Deal | None = None,
     overdue_days: int = 3,
-    pagamento: str = "da_incassare",
-    numero: int | None = 12,
-    stato: str = "emessa",
+    payment: str = "unpaid",
+    number: int | None = 12,
+    status: str = "issued",
 ) -> Invoice:
     invoice = Invoice(
         customer_id=customer.id,
         deal_id=deal.id if deal else None,
-        tipo="fattura",
-        stato=stato,
-        stato_pagamento=pagamento,
-        anno=2026 if numero is not None else None,
-        numero=numero,
-        imponibile=Decimal("100.00"),
-        imposta=Decimal("22.00"),
-        bollo=Decimal("0.00"),
-        totale=Decimal("122.00"),
-        data_emissione=today_local() - timedelta(days=overdue_days + 30),
-        data_scadenza=today_local() - timedelta(days=overdue_days),
+        type="invoice",
+        status=status,
+        payment_status=payment,
+        year=2026 if number is not None else None,
+        number=number,
+        taxable_amount=Decimal("100.00"),
+        vat_amount=Decimal("22.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal("122.00"),
+        issue_date=today_local() - timedelta(days=overdue_days + 30),
+        due_date=today_local() - timedelta(days=overdue_days),
     )
     session.add(invoice)
     session.flush()
@@ -176,29 +176,25 @@ def _run(session: Session, **kwargs: object) -> PassReport:
     return AutomationPass(session).run(**kwargs)  # type: ignore[arg-type]
 
 
-def _report(report: PassReport, rule: AttivitaRule) -> tuple[bool, int, int]:
-    (one,) = [r for r in report.rules if r.regola == rule]
-    return one.disattivata, one.aperte, one.gia_aperte
+def _report(report: PassReport, rule: TaskRule) -> tuple[bool, int, int]:
+    (one,) = [r for r in report.rules if r.rule == rule]
+    return one.disabled, one.open, one.already_open
 
 
-def _rows(session: Session, rule: AttivitaRule) -> list[Attivita]:
-    return list(
-        session.scalars(
-            select(Attivita).where(Attivita.regola == rule).order_by(Attivita.created_at)
-        )
-    )
+def _rows(session: Session, rule: TaskRule) -> list[Task]:
+    return list(session.scalars(select(Task).where(Task.rule == rule).order_by(Task.created_at)))
 
 
 @pytest.fixture(autouse=True)
 def _clean_slate(db_session: Session) -> None:
     """The shared engine may hold rows another module committed; these tests count."""
-    db_session.execute(delete(Attivita))
+    db_session.execute(delete(Task))
 
 
 # -- offerta_inviata_richiama ----------------------------------------------------------
 
 
-def test_an_offer_waiting_seven_days_opens_one_attivita_for_the_deals_owner(
+def test_an_offer_waiting_seven_days_opens_one_task_for_the_deals_owner(
     db_session: Session,
 ) -> None:
     customer = _customer(db_session)
@@ -209,24 +205,24 @@ def test_an_offer_waiting_seven_days_opens_one_attivita_for_the_deals_owner(
     first = _run(db_session)
     second = _run(db_session)
 
-    assert _report(first, "offerta_inviata_richiama") == (False, 1, 0)
+    assert _report(first, "sent_offer_follow_up") == (False, 1, 0)
     # The second run names why it opened nothing: the subject already has its attivita.
-    assert _report(second, "offerta_inviata_richiama") == (False, 0, 1)
-    (row,) = _rows(db_session, "offerta_inviata_richiama")
-    assert row.titolo == "Richiamare Acme S.r.l. sull'offerta Offerta sito"
-    assert row.stato == "aperta"
-    assert row.origine == "automazione"
+    assert _report(second, "sent_offer_follow_up") == (False, 0, 1)
+    (row,) = _rows(db_session, "sent_offer_follow_up")
+    assert row.title == "Richiamare Acme S.r.l. sull'offerta Offerta sito"
+    assert row.status == "open"
+    assert row.origin == "automation"
     assert row.deal_id == deal.id
-    assert row.assegnata_a == owner.id
+    assert row.assigned_to == owner.id
     # Due seven days after the sending, which is today when the pass runs on day seven.
-    assert row.scadenza == today_local()
+    assert row.due_date == today_local()
 
 
 def test_an_offer_sent_six_days_ago_is_not_yet_called_back(db_session: Session) -> None:
     deal = _deal(db_session, _customer(db_session), _stage(db_session))
-    _offer(db_session, deal=deal, sent_days_ago=OFFERTA_ATTESA_GIORNI - 1)
+    _offer(db_session, deal=deal, sent_days_ago=OFFER_PENDING_DAYS - 1)
 
-    assert _report(_run(db_session), "offerta_inviata_richiama") == (False, 0, 0)
+    assert _report(_run(db_session), "sent_offer_follow_up") == (False, 0, 0)
 
 
 def test_an_offer_older_than_the_window_is_not_the_follow_up_of_its_sending(
@@ -234,35 +230,35 @@ def test_an_offer_older_than_the_window_is_not_the_follow_up_of_its_sending(
 ) -> None:
     customer = _customer(db_session)
     deal = _deal(db_session, customer, _stage(db_session))
-    _offer(db_session, deal=deal, sent_days_ago=OFFERTA_ATTESA_GIORNI + OFFERTA_FINESTRA_GIORNI + 1)
+    _offer(db_session, deal=deal, sent_days_ago=OFFER_PENDING_DAYS + OFFER_WINDOW_DAYS + 1)
     _offer(
         db_session,
         customer=customer,
-        sent_days_ago=OFFERTA_ATTESA_GIORNI + OFFERTA_FINESTRA_GIORNI,
-        titolo="Offerta limite",
+        sent_days_ago=OFFER_PENDING_DAYS + OFFER_WINDOW_DAYS,
+        title="Offerta limite",
     )
 
-    assert _report(_run(db_session), "offerta_inviata_richiama") == (False, 1, 0)
-    (row,) = _rows(db_session, "offerta_inviata_richiama")
+    assert _report(_run(db_session), "sent_offer_follow_up") == (False, 1, 0)
+    (row,) = _rows(db_session, "sent_offer_follow_up")
     # Born late when the pass is late: due seven days after the sending, in the past.
-    assert row.scadenza == today_local() - timedelta(days=OFFERTA_FINESTRA_GIORNI)
+    assert row.due_date == today_local() - timedelta(days=OFFER_WINDOW_DAYS)
     assert row.customer_id == customer.id
     assert row.deal_id is None
 
 
 def test_an_answered_or_draft_offer_is_left_alone(db_session: Session) -> None:
     deal = _deal(db_session, _customer(db_session), _stage(db_session))
-    _offer(db_session, deal=deal, sent_days_ago=10, stato="accettata")
-    _offer(db_session, deal=deal, sent_days_ago=10, stato="rifiutata", titolo="Altra")
-    _offer(db_session, deal=deal, sent_days_ago=10, stato="bozza", titolo="Bozza")
+    _offer(db_session, deal=deal, sent_days_ago=10, status="accepted")
+    _offer(db_session, deal=deal, sent_days_ago=10, status="rejected", title="Altra")
+    _offer(db_session, deal=deal, sent_days_ago=10, status="draft", title="Bozza")
 
-    assert _report(_run(db_session), "offerta_inviata_richiama") == (False, 0, 0)
+    assert _report(_run(db_session), "sent_offer_follow_up") == (False, 0, 0)
 
 
 # -- deal_fermo ------------------------------------------------------------------------
 
 
-def test_a_deal_in_the_same_stage_past_the_threshold_opens_one_attivita_due_today(
+def test_to_deal_in_the_same_stage_past_the_threshold_opens_one_task_due_today(
     db_session: Session,
 ) -> None:
     owner = _owner(db_session)
@@ -273,14 +269,14 @@ def test_a_deal_in_the_same_stage_past_the_threshold_opens_one_attivita_due_toda
     first = _run(db_session)
     second = _run(db_session)
 
-    assert _report(first, "deal_fermo") == (False, 1, 0)
-    assert _report(second, "deal_fermo") == (False, 0, 1)
-    (row,) = _rows(db_session, "deal_fermo")
-    assert row.titolo == "Il deal Sito Acme è fermo da 31 giorni"
+    assert _report(first, "stalled_deal") == (False, 1, 0)
+    assert _report(second, "stalled_deal") == (False, 0, 1)
+    (row,) = _rows(db_session, "stalled_deal")
+    assert row.title == "Il deal Sito Acme è fermo da 31 giorni"
     assert row.deal_id == deal.id
-    assert row.assegnata_a == owner.id
-    assert row.scadenza == today_local()
-    assert row.origine == "automazione"
+    assert row.assigned_to == owner.id
+    assert row.due_date == today_local()
+    assert row.origin == "automation"
 
 
 def test_a_recent_stage_change_resets_the_clock_and_a_closed_deal_is_never_stalled(
@@ -302,18 +298,18 @@ def test_a_recent_stage_change_resets_the_clock_and_a_closed_deal_is_never_stall
     _deal(db_session, customer, _stage(db_session, "lost"), nome="Perso", created_days_ago=90)
     db_session.flush()
 
-    assert _report(_run(db_session), "deal_fermo") == (False, 0, 0)
+    assert _report(_run(db_session), "stalled_deal") == (False, 0, 0)
 
 
 def test_the_threshold_is_the_configured_one(db_session: Session) -> None:
     _deal(db_session, _customer(db_session), _stage(db_session), created_days_ago=10)
-    assert _report(_run(db_session), "deal_fermo") == (False, 0, 0)
+    assert _report(_run(db_session), "stalled_deal") == (False, 0, 0)
 
     AutomationConfigService(db_session).update_automation_config(
-        AutomationConfigUpdate(a4_deal_fermo_giorni=10), ADMIN
+        AutomationConfigUpdate(a4_stalled_deal_days=10), ADMIN
     )
 
-    assert _report(_run(db_session), "deal_fermo") == (False, 1, 0)
+    assert _report(_run(db_session), "stalled_deal") == (False, 1, 0)
 
 
 def test_the_day_a_deal_stalled_since_is_the_installations_not_utcs(db_session: Session) -> None:
@@ -340,15 +336,15 @@ def test_the_day_a_deal_stalled_since_is_the_installations_not_utcs(db_session: 
         )
     db_session.flush()
 
-    assert _report(_run(db_session), "deal_fermo") == (False, 1, 0)
-    (row,) = _rows(db_session, "deal_fermo")
+    assert _report(_run(db_session), "stalled_deal") == (False, 1, 0)
+    (row,) = _rows(db_session, "stalled_deal")
     assert row.deal_id == just_after_midnight["on"].id
 
 
 # -- fattura_scaduta -------------------------------------------------------------------
 
 
-def test_an_overdue_unpaid_invoice_opens_one_attivita_for_its_deals_owner(
+def test_an_overdue_unpaid_invoice_opens_one_task_for_its_deals_owner(
     db_session: Session,
 ) -> None:
     customer = _customer(db_session)
@@ -359,45 +355,45 @@ def test_an_overdue_unpaid_invoice_opens_one_attivita_for_its_deals_owner(
     first = _run(db_session)
     second = _run(db_session)
 
-    assert _report(first, "fattura_scaduta") == (False, 1, 0)
-    assert _report(second, "fattura_scaduta") == (False, 0, 1)
-    (row,) = _rows(db_session, "fattura_scaduta")
-    assert row.titolo == "Sollecitare Acme S.r.l. per 2026/12"
+    assert _report(first, "overdue_invoice") == (False, 1, 0)
+    assert _report(second, "overdue_invoice") == (False, 0, 1)
+    (row,) = _rows(db_session, "overdue_invoice")
+    assert row.title == "Sollecitare Acme S.r.l. per 2026/12"
     assert row.invoice_id == invoice.id
-    assert row.assegnata_a == owner.id
-    assert row.scadenza == today_local()
+    assert row.assigned_to == owner.id
+    assert row.due_date == today_local()
 
 
 def test_due_today_paid_draft_and_annulled_invoices_are_not_overdue(db_session: Session) -> None:
     customer = _customer(db_session)
-    _invoice(db_session, customer, overdue_days=0, numero=1)  # due today is not late
-    _invoice(db_session, customer, pagamento="incassata", numero=2)
-    _invoice(db_session, customer, numero=None, stato="bozza")
-    annullata = _invoice(db_session, customer, numero=4)
-    annullata.stato = "annullata"
-    annullata.annullata_il = today_local()
-    annullata.motivo_annullamento = "emessa per errore"
+    _invoice(db_session, customer, overdue_days=0, number=1)  # due today is not late
+    _invoice(db_session, customer, payment="incassata", number=2)
+    _invoice(db_session, customer, number=None, status="draft")
+    cancelled = _invoice(db_session, customer, number=4)
+    cancelled.status = "cancelled"
+    cancelled.cancelled_at = today_local()
+    cancelled.cancellation_reason = "emessa per errore"
     db_session.flush()
 
-    assert _report(_run(db_session), "fattura_scaduta") == (False, 0, 0)
+    assert _report(_run(db_session), "overdue_invoice") == (False, 0, 0)
 
 
-def test_closing_the_attivita_lets_the_next_pass_open_a_new_one(db_session: Session) -> None:
+def test_closing_the_task_lets_the_next_pass_open_to_new_one(db_session: Session) -> None:
     """Slice 7 §10.5. «Chase Rossi» closed without Rossi paying means «I spoke to him»: the
     next pass opens the next one, and a cancelled one frees the subject the same way."""
     customer = _customer(db_session)
     _invoice(db_session, customer)
     _run(db_session)
-    (first,) = _rows(db_session, "fattura_scaduta")
+    (first,) = _rows(db_session, "overdue_invoice")
 
-    AttivitaService(db_session).complete(first.id, ADMIN)
-    assert _report(_run(db_session), "fattura_scaduta") == (False, 1, 0)
-    second = [r for r in _rows(db_session, "fattura_scaduta") if r.stato == "aperta"]
+    TaskService(db_session).complete(first.id, ADMIN)
+    assert _report(_run(db_session), "overdue_invoice") == (False, 1, 0)
+    second = [r for r in _rows(db_session, "overdue_invoice") if r.status == "open"]
     assert len(second) == 1 and second[0].id != first.id
 
-    AttivitaService(db_session).cancel(second[0].id, ADMIN)
-    assert _report(_run(db_session), "fattura_scaduta") == (False, 1, 0)
-    assert len(_rows(db_session, "fattura_scaduta")) == 3
+    TaskService(db_session).cancel(second[0].id, ADMIN)
+    assert _report(_run(db_session), "overdue_invoice") == (False, 1, 0)
+    assert len(_rows(db_session, "overdue_invoice")) == 3
 
 
 def test_a_deal_without_an_owner_falls_back_to_the_customers_owner(db_session: Session) -> None:
@@ -405,27 +401,27 @@ def test_a_deal_without_an_owner_falls_back_to_the_customers_owner(db_session: S
     customer = _customer(db_session)
     customer.owner_id = owner.id
     deal = _deal(db_session, customer, _stage(db_session))
-    _invoice(db_session, customer, deal=deal, numero=5)
-    _invoice(db_session, customer, numero=6)  # no deal at all
+    _invoice(db_session, customer, deal=deal, number=5)
+    _invoice(db_session, customer, number=6)  # no deal at all
 
     _run(db_session)
 
-    rows = _rows(db_session, "fattura_scaduta")
-    assert [row.assegnata_a for row in rows] == [owner.id, owner.id]
+    rows = _rows(db_session, "overdue_invoice")
+    assert [row.assigned_to for row in rows] == [owner.id, owner.id]
 
 
-def test_an_inactive_owner_leaves_the_attivita_for_whoever_opens_the_list(
+def test_an_inactive_owner_leaves_the_task_for_whoever_opens_the_list(
     db_session: Session,
 ) -> None:
     customer = _customer(db_session)
-    gone = _owner(db_session, attivo=False)
+    gone = _owner(db_session, active=False)
     deal = _deal(db_session, customer, _stage(db_session), owner=gone)
     _invoice(db_session, customer, deal=deal)
 
     _run(db_session)
 
-    (row,) = _rows(db_session, "fattura_scaduta")
-    assert row.assegnata_a is None
+    (row,) = _rows(db_session, "overdue_invoice")
+    assert row.assigned_to is None
 
 
 # -- switches, rehearsal, timeline -----------------------------------------------------
@@ -434,13 +430,13 @@ def test_an_inactive_owner_leaves_the_attivita_for_whoever_opens_the_list(
 @pytest.mark.parametrize(
     ("rule", "field"),
     [
-        ("offerta_inviata_richiama", "a3_offerta_inviata_richiama"),
-        ("deal_fermo", "a4_deal_fermo"),
-        ("fattura_scaduta", "a5_fattura_scaduta"),
+        ("sent_offer_follow_up", "a3_sent_offer_follow_up"),
+        ("stalled_deal", "a4_stalled_deal"),
+        ("overdue_invoice", "a5_overdue_invoice"),
     ],
 )
 def test_switching_a_rule_off_stops_it_and_the_report_says_so(
-    db_session: Session, rule: AttivitaRule, field: str
+    db_session: Session, rule: TaskRule, field: str
 ) -> None:
     customer = _customer(db_session)
     deal = _deal(db_session, customer, _stage(db_session), created_days_ago=40)
@@ -455,11 +451,11 @@ def test_switching_a_rule_off_stops_it_and_the_report_says_so(
     assert _report(report, rule) == (True, 0, 0)
     assert _rows(db_session, rule) == []
     # The other two are untouched by one rule's switch.
-    others = [r for r in report.rules if r.regola != rule]
-    assert [(r.disattivata, r.aperte) for r in others] == [(False, 1), (False, 1)]
+    others = [r for r in report.rules if r.rule != rule]
+    assert [(r.disabled, r.open) for r in others] == [(False, 1), (False, 1)]
 
 
-def test_every_opened_attivita_leaves_a_system_entry_on_its_own_timeline(
+def test_every_opened_task_leaves_to_system_entry_on_its_own_timeline(
     db_session: Session,
 ) -> None:
     customer = _customer(db_session)
@@ -467,13 +463,13 @@ def test_every_opened_attivita_leaves_a_system_entry_on_its_own_timeline(
 
     _run(db_session)
 
-    (row,) = _rows(db_session, "fattura_scaduta")
+    (row,) = _rows(db_session, "overdue_invoice")
     (entry,) = db_session.scalars(
         select(Activity).where(Activity.entity_type == "attivita", Activity.entity_id == row.id)
     )
-    assert entry.kind == KIND_ATTIVITA_OPENED
+    assert entry.kind == KIND_TASK_OPENED
     assert entry.actor_type == "system" and entry.actor_id is None
-    assert entry.payload["regola"] == "fattura_scaduta"
+    assert entry.payload["rule"] == "overdue_invoice"
     assert entry.payload["invoice_id"] == str(row.invoice_id)
 
 
@@ -482,13 +478,13 @@ def test_a_rehearsal_reports_what_would_open_and_writes_nothing(db_session: Sess
     _invoice(db_session, customer)
 
     rehearsal = _run(db_session, dry_run=True)
-    assert _report(rehearsal, "fattura_scaduta") == (False, 1, 0)
-    assert _rows(db_session, "fattura_scaduta") == []
+    assert _report(rehearsal, "overdue_invoice") == (False, 1, 0)
+    assert _rows(db_session, "overdue_invoice") == []
 
-    assert _report(_run(db_session), "fattura_scaduta") == (False, 1, 0)
+    assert _report(_run(db_session), "overdue_invoice") == (False, 1, 0)
 
 
-def test_the_index_refuses_a_second_open_attivita_of_one_rule_and_subject(
+def test_the_index_refuses_to_second_open_task_of_one_rule_and_subject(
     db_session: Session,
 ) -> None:
     """The constraint itself, below the pass: a writer that skipped the read still cannot
@@ -496,28 +492,28 @@ def test_the_index_refuses_a_second_open_attivita_of_one_rule_and_subject(
     customer = _customer(db_session)
     invoice = _invoice(db_session, customer)
 
-    def add(regola: str, stato: str = "aperta") -> None:
+    def add(rule: str, status: str = "open") -> None:
         with db_session.begin_nested():
             db_session.add(
-                Attivita(
-                    titolo="x",
-                    stato=stato,
-                    completata_il=today_local() if stato == "completata" else None,
-                    origine="automazione",
-                    regola=regola,
+                Task(
+                    title="x",
+                    status=status,
+                    completed_at=today_local() if status == "completed" else None,
+                    origin="automation",
+                    rule=rule,
                     invoice_id=invoice.id,
                     custom_fields={},
                 )
             )
 
-    add("fattura_scaduta")
-    add("fattura_scaduta", "completata")
+    add("overdue_invoice")
+    add("overdue_invoice", "completed")
     add("altra_regola")
-    with pytest.raises(IntegrityError, match="uq_attivita_regola_aperta"):
-        add("fattura_scaduta")
+    with pytest.raises(IntegrityError, match="uq_tasks_rule_open"):
+        add("overdue_invoice")
 
 
-def test_reopening_an_old_attivita_next_to_the_one_the_pass_opened_is_a_conflict(
+def test_reopening_an_old_task_next_to_the_one_the_pass_opened_is_to_conflict(
     db_session: Session,
 ) -> None:
     """The index that keeps the pass to one open attivita also stops a person bringing a
@@ -526,8 +522,8 @@ def test_reopening_an_old_attivita_next_to_the_one_the_pass_opened_is_a_conflict
 
     _invoice(db_session, _customer(db_session))
     _run(db_session)
-    (first,) = _rows(db_session, "fattura_scaduta")
-    service = AttivitaService(db_session)
+    (first,) = _rows(db_session, "overdue_invoice")
+    service = TaskService(db_session)
     service.complete(first.id, ADMIN)
     _run(db_session)
 
@@ -543,7 +539,7 @@ def committed_overdue_invoice(db_engine: Engine) -> Iterator[UUID]:
     factory = session_factory(db_engine)
     with factory() as session:
         customer = _customer(session, "RACE Cliente")
-        invoice = _invoice(session, customer, numero=99)
+        invoice = _invoice(session, customer, number=99)
         # The configuration row exists before the passes start: two first reads racing to
         # create it is a different race, and not the one this test is about.
         session.add(AutomationConfig())
@@ -555,7 +551,7 @@ def committed_overdue_invoice(db_engine: Engine) -> Iterator[UUID]:
         with factory() as session:
             ids = [invoice_id]
             session.execute(delete(Activity).where(Activity.entity_type == "attivita"))
-            session.execute(delete(Attivita).where(Attivita.invoice_id.in_(ids)))
+            session.execute(delete(Task).where(Task.invoice_id.in_(ids)))
             session.execute(delete(Invoice).where(Invoice.id == invoice_id))
             session.execute(delete(Customer).where(Customer.id == customer_id))
             session.execute(delete(AutomationConfig))
@@ -579,29 +575,29 @@ def test_the_pass_sees_the_space_through_the_application_role(
     try:
         with session_factory(app)() as session:
             report = AutomationPass(session).run()
-        assert _report(report, "fattura_scaduta") == (False, 1, 0)
+        assert _report(report, "overdue_invoice") == (False, 1, 0)
         with session_factory(app)() as session:
-            assert _report(AutomationPass(session).run(), "fattura_scaduta") == (False, 0, 1)
+            assert _report(AutomationPass(session).run(), "overdue_invoice") == (False, 0, 1)
     finally:
         app.dispose()
 
 
-def test_two_passes_at_the_same_instant_open_one_attivita(
+def test_two_passes_at_the_same_instant_open_one_task(
     db_engine: Engine,
     committed_overdue_invoice: UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Slice 7 §10.4, on two real connections. Both passes read «no open attivita» before
     either has written (the barrier holds each after its read), both try to insert, and the
-    index lets exactly one through: the loser's insert fails on `uq_attivita_regola_aperta`,
+    index lets exactly one through: the loser's insert fails on `uq_tasks_rule_open`,
     is absorbed under its savepoint and counted as «già aperta», not raised."""
     factory = session_factory(db_engine)
     after_read = Barrier(2)
     original = AutomationPass._already_open
 
-    def read_then_wait(self: AutomationPass, rule: AttivitaRule, subjects: set[UUID]) -> set[UUID]:
+    def read_then_wait(self: AutomationPass, rule: TaskRule, subjects: set[UUID]) -> set[UUID]:
         seen = original(self, rule, subjects)
-        if rule == "fattura_scaduta":
+        if rule == "overdue_invoice":
             after_read.wait(timeout=30)
         return seen
 
@@ -609,7 +605,7 @@ def test_two_passes_at_the_same_instant_open_one_attivita(
 
     def one_pass() -> tuple[bool, int, int]:
         with factory() as session:
-            return _report(AutomationPass(session).run(), "fattura_scaduta")
+            return _report(AutomationPass(session).run(), "overdue_invoice")
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = sorted(
@@ -620,6 +616,6 @@ def test_two_passes_at_the_same_instant_open_one_attivita(
     assert results == [(False, 0, 1), (False, 1, 0)]
     with factory() as session:
         rows = session.scalars(
-            select(Attivita).where(Attivita.invoice_id == committed_overdue_invoice)
+            select(Task).where(Task.invoice_id == committed_overdue_invoice)
         ).all()
     assert len(rows) == 1

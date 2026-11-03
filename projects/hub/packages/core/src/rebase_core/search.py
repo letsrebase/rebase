@@ -49,7 +49,7 @@ def escape_like(term: str) -> str:
 
 def matches_any(columns: Sequence[Any], term: str) -> ColumnElement[bool]:
     """Whether any of `columns` contains `term`, case-insensitively. A column that is
-    NULL for this row (a lead's `posizione`, a card's `origine`) simply never matches --
+    NULL for this row (a lead's `posizione`, a card's `origin`) simply never matches --
     `ILIKE` against NULL is NULL, which `or_` treats as "no", not as an error."""
     pattern = f"%{escape_like(term)}%"
     return or_(*(column.ilike(pattern, escape="\\") for column in columns))

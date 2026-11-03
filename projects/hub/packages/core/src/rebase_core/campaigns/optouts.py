@@ -21,7 +21,7 @@ class OptoutService:
         if not token or len(token) > TOKEN_MAX_LENGTH:
             return
         row = self.session.scalar(
-            select(CampaignRecipient).where(CampaignRecipient.disiscrizione_token == token)
+            select(CampaignRecipient).where(CampaignRecipient.unsubscribe_token == token)
         )
         if row is not None:
             self.record(row.email, "link", row.campaign_id)
@@ -29,16 +29,16 @@ class OptoutService:
     def never_write(self, email: str) -> None:
         self.record(email, "admin", None)
 
-    def record(self, email: str, fonte: str, campaign_id: UUID | None) -> None:
-        self.stage(email, fonte, campaign_id)
+    def record(self, email: str, source: str, campaign_id: UUID | None) -> None:
+        self.stage(email, source, campaign_id)
         self.session.commit()
 
-    def stage(self, email: str, fonte: str, campaign_id: UUID | None) -> None:
+    def stage(self, email: str, source: str, campaign_id: UUID | None) -> None:
         """`record` without the commit, for a caller whose own write must land in the
-        same transaction as the opt-out (a complaint and its `reclamo_at`)."""
+        same transaction as the opt-out (a complaint and its `complaint_at`)."""
         statement = (
             insert(CampaignOptout)
-            .values(email=email.strip().lower(), fonte=fonte, campaign_id=campaign_id)
+            .values(email=email.strip().lower(), source=source, campaign_id=campaign_id)
             .on_conflict_do_nothing(index_elements=["email"])
         )
         self.session.execute(statement)

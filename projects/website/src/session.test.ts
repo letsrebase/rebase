@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * session.js asks the hub's own `GET /api/hub/me` on load and, only on a real
- * answer, points the `Accedi`/«Entra nella tua area» link at the person's own area
+ * answer, points the `Login`/«Entra nella tua area» link at the person's own area
  * (REB-349): `/hub/me` for a member, `/hub/admin` for an admin. A signed-out visitor
  * (a 401, or no `fetch` at all) leaves the link exactly where the markup put it.
  */
@@ -88,7 +88,7 @@ describe('rewrite', () => {
       '<a class="quiet-link" href="/hub/login?da=home&utm_source=x">Accedi</a>'
     const { rewrite } = load()
     expect(rewrite(document, '/hub/admin')).toBe(1)
-    expect(hrefsOf()).toEqual(['/hub/admin?da=home&utm_source=x'])
+    expect(hrefsOf()).toEqual(['/hub/admin?from=home&utm_source=x'])
   })
 })
 

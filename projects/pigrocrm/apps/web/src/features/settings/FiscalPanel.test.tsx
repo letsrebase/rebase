@@ -19,26 +19,26 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) } as never)
 }
 
-const RIFERIMENTO =
+const REFERENCE =
   "Operazione non soggetta a IVA ai sensi dell'art. 1, commi 54-89, L. 190/2014 - regime forfettario"
 
 const PROFILE = {
   id: 'f-1',
-  codice_regime: 'RF19',
-  aliquota_iva_default: '0.00',
-  natura_default: 'N2.2',
-  riferimento_normativo: RIFERIMENTO,
-  applica_bollo: true,
-  soglia_bollo: '77.47',
-  importo_bollo: '2.00',
-  condizioni_pagamento: 'TP02',
-  modalita_pagamento: 'MP05',
+  regime_code: 'RF19',
+  default_vat_rate: '0.00',
+  default_vat_nature: 'N2.2',
+  legal_reference: REFERENCE,
+  apply_stamp_duty: true,
+  stamp_duty_threshold: '77.47',
+  stamp_duty_amount: '2.00',
+  payment_terms: 'TP02',
+  payment_method: 'MP05',
   // A number on the wire, unlike every other field here, which are strings.
-  giorni_scadenza: 30,
+  due_days: 30,
   iban: null,
-  coefficiente_redditivita: '67.00',
-  aliquota_imposta_sostitutiva: '5.00',
-  aliquota_inps: '26.07',
+  profitability_coefficient: '67.00',
+  substitute_tax_rate: '5.00',
+  social_security_rate: '26.07',
   pack_id: 'it-flat-rate',
   pack_version: '1',
   created_at: '2026-08-20T09:00:00Z',
@@ -49,35 +49,35 @@ const FOREIGN = {
   ...PROFILE,
   id: 'f-2',
   pack_id: 'non-it',
-  codice_regime: null,
-  aliquota_iva_default: '20.00',
-  natura_default: null,
-  riferimento_normativo: null,
-  applica_bollo: false,
-  coefficiente_redditivita: null,
-  aliquota_imposta_sostitutiva: null,
-  aliquota_inps: null,
+  regime_code: null,
+  default_vat_rate: '20.00',
+  default_vat_nature: null,
+  legal_reference: null,
+  apply_stamp_duty: false,
+  profitability_coefficient: null,
+  substitute_tax_rate: null,
+  social_security_rate: null,
 }
 
 const ORDINARY = {
   ...PROFILE,
   id: 'f-3',
   pack_id: 'it-standard',
-  codice_regime: 'RF01',
-  aliquota_iva_default: '22.00',
-  natura_default: null,
-  riferimento_normativo: null,
-  applica_bollo: false,
-  coefficiente_redditivita: null,
-  aliquota_imposta_sostitutiva: null,
-  aliquota_inps: null,
+  regime_code: 'RF01',
+  default_vat_rate: '22.00',
+  default_vat_nature: null,
+  legal_reference: null,
+  apply_stamp_duty: false,
+  profitability_coefficient: null,
+  substitute_tax_rate: null,
+  social_security_rate: null,
 }
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <FiscalPanel aziendaId="a-1" />
+      <FiscalPanel legalEntityId="a-1" />
     </QueryClientProvider>,
   )
 }
@@ -139,7 +139,7 @@ describe('FiscalPanel', () => {
    * quietly store something nobody chose -- an RF19 forfettario with no natura is
    * refused by the SdI on the first invoice, not here.
    *
-   * Every field on the form is pinned here, `riferimento_normativo` now included: it
+   * Every field on the form is pinned here, `legal_reference` now included: it
    * was the one left unasserted, because the panel seeded it blank while the server
    * defaulted it to the forfettario sentence. That was the drift this test exists to
    * catch, so the panel was changed to offer the sentence rather than the test taught
@@ -152,7 +152,7 @@ describe('FiscalPanel', () => {
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
     expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('0.00')
     expect(screen.getByLabelText('Natura')).toHaveValue('N2.2')
-    expect(screen.getByLabelText('Riferimento normativo')).toHaveValue(RIFERIMENTO)
+    expect(screen.getByLabelText('Riferimento normativo')).toHaveValue(REFERENCE)
     expect(screen.getByLabelText('Soglia bollo')).toHaveValue('77.47')
     expect(screen.getByLabelText('Importo bollo')).toHaveValue('2.00')
     expect(screen.getByLabelText('Condizioni di pagamento')).toHaveValue('TP02')
@@ -177,9 +177,9 @@ describe('FiscalPanel', () => {
   it('sends the stored income parameters back, not the defaults', async () => {
     const custom = {
       ...PROFILE,
-      coefficiente_redditivita: '78.00',
-      aliquota_imposta_sostitutiva: '15.00',
-      aliquota_inps: '24.48',
+      profitability_coefficient: '78.00',
+      substitute_tax_rate: '15.00',
+      social_security_rate: '24.48',
     }
     vi.mocked(api.GET).mockImplementation(() => ok(custom))
     vi.mocked(api.PUT).mockImplementation(() => ok(custom))
@@ -196,10 +196,10 @@ describe('FiscalPanel', () => {
 
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
     expect(bodyOfSave()).toMatchObject({
-      coefficiente_redditivita: '78.00',
-      aliquota_imposta_sostitutiva: '15.00',
-      aliquota_inps: '24.48',
-      giorni_scadenza: '60',
+      profitability_coefficient: '78.00',
+      substitute_tax_rate: '15.00',
+      social_security_rate: '24.48',
+      due_days: '60',
     })
   })
 
@@ -252,12 +252,12 @@ describe('FiscalPanel', () => {
     expect(bodyOfSave()).toHaveProperty('iban', '')
   })
 
-  /** `applica_bollo` is the one non-string field on the form, and `FiscalProfileUpsert`
+  /** `apply_stamp_duty` is the one non-string field on the form, and `FiscalProfileUpsert`
    *  declares `extra="forbid"`: it has to arrive as a real `false`, never as `""` or
    *  `"off"`, and no key may be invented alongside it. */
   it('sends the bollo switch as a boolean, with no extra keys', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
-    vi.mocked(api.PUT).mockImplementation(() => ok({ ...PROFILE, applica_bollo: false }))
+    vi.mocked(api.PUT).mockImplementation(() => ok({ ...PROFILE, apply_stamp_duty: false }))
     renderPanel()
 
     await userEvent.click(await screen.findByLabelText(/Applica il bollo/))
@@ -265,28 +265,28 @@ describe('FiscalPanel', () => {
 
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
     const body = bodyOfSave()
-    expect(body).toHaveProperty('applica_bollo', false)
+    expect(body).toHaveProperty('apply_stamp_duty', false)
     expect(Object.keys(body).sort()).toEqual([
-      'aliquota_imposta_sostitutiva',
-      'aliquota_inps',
-      'aliquota_iva_default',
-      'applica_bollo',
-      'codice_regime',
-      'coefficiente_redditivita',
-      'condizioni_pagamento',
-      'giorni_scadenza',
+      'substitute_tax_rate',
+      'social_security_rate',
+      'default_vat_rate',
+      'apply_stamp_duty',
+      'regime_code',
+      'profitability_coefficient',
+      'payment_terms',
+      'due_days',
       'iban',
-      'importo_bollo',
-      'modalita_pagamento',
-      'natura_default',
+      'stamp_duty_amount',
+      'payment_method',
+      'default_vat_nature',
       'pack_id',
-      'riferimento_normativo',
-      'soglia_bollo',
+      'legal_reference',
+      'stamp_duty_threshold',
       // The version the form was seeded from (REB-622), beside the fifteen fields.
       'updated_at',
     ])
     expect(body).toHaveProperty('pack_id', 'it-flat-rate')
-    expect(body).toHaveProperty('codice_regime', 'RF19')
+    expect(body).toHaveProperty('regime_code', 'RF19')
   })
 
   it('declares a foreign azienda: no code, no bollo, the Italian fields gone and sent empty', async () => {
@@ -295,8 +295,8 @@ describe('FiscalPanel', () => {
     renderPanel()
 
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
-    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'estero')
-    expect(screen.getByLabelText('Regime')).toHaveValue('estero')
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'foreign')
+    expect(screen.getByLabelText('Regime')).toHaveValue('foreign')
     // The fields an Italian regime reads leave the form; the ones a foreign company
     // still has stay, natura and riferimento included, emptied of the forfettario's.
     expect(screen.getByLabelText('Natura')).toHaveValue('')
@@ -315,14 +315,14 @@ describe('FiscalPanel', () => {
     const body = bodyOfSave()
     expect(body).toMatchObject({
       pack_id: 'non-it',
-      codice_regime: null,
-      aliquota_iva_default: '20.00',
-      natura_default: null,
-      riferimento_normativo: null,
-      applica_bollo: false,
-      coefficiente_redditivita: null,
-      aliquota_imposta_sostitutiva: null,
-      aliquota_inps: null,
+      regime_code: null,
+      default_vat_rate: '20.00',
+      default_vat_nature: null,
+      legal_reference: null,
+      apply_stamp_duty: false,
+      profitability_coefficient: null,
+      substitute_tax_rate: null,
+      social_security_rate: null,
     })
     // The same fifteen keys as an Italian save, plus the version: a full replace leaves
     // nothing to the server's defaults, which are the forfettario's.
@@ -333,7 +333,7 @@ describe('FiscalPanel', () => {
     vi.mocked(api.GET).mockImplementation(() => ok(FOREIGN))
     renderPanel()
 
-    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('estero'))
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('foreign'))
     expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('20.00')
     expect(screen.getByLabelText('Natura')).toHaveValue('')
     expect(screen.queryByLabelText('Soglia bollo')).not.toBeInTheDocument()
@@ -357,13 +357,13 @@ describe('FiscalPanel', () => {
           code: 'validation_failed',
           detail: 'il bollo e’ attivo ma il suo importo non e’ positivo',
           entity: 'fiscal_profile',
-          field: 'importo_bollo',
+          field: 'stamp_duty_amount',
         },
         422,
       ),
     )
     renderPanel()
-    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('estero'))
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('foreign'))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/importo non e’ positivo/)
   })
@@ -373,11 +373,11 @@ describe('FiscalPanel', () => {
     renderPanel()
 
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
-    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'estero')
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'foreign')
     expect(screen.getByLabelText('Natura')).toHaveValue('')
     await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF19')
     expect(screen.getByLabelText('Natura')).toHaveValue('N2.2')
-    expect(screen.getByLabelText('Riferimento normativo')).toHaveValue(RIFERIMENTO)
+    expect(screen.getByLabelText('Riferimento normativo')).toHaveValue(REFERENCE)
     expect(screen.getByLabelText(/Applica il bollo/)).toBeChecked()
   })
 
@@ -394,14 +394,14 @@ describe('FiscalPanel', () => {
     // in place of the forfettario's zero and nothing only the forfettario carries.
     expect(bodyOfSave()).toMatchObject({
       pack_id: 'it-standard',
-      codice_regime: 'RF01',
-      aliquota_iva_default: '22.00',
-      natura_default: null,
-      riferimento_normativo: null,
-      applica_bollo: false,
-      coefficiente_redditivita: null,
-      aliquota_imposta_sostitutiva: null,
-      aliquota_inps: null,
+      regime_code: 'RF01',
+      default_vat_rate: '22.00',
+      default_vat_nature: null,
+      legal_reference: null,
+      apply_stamp_duty: false,
+      profitability_coefficient: null,
+      substitute_tax_rate: null,
+      social_security_rate: null,
     })
   })
 
@@ -416,7 +416,7 @@ describe('FiscalPanel', () => {
     await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
-    expect(bodyOfSave()).toMatchObject({ soglia_bollo: '77.47', importo_bollo: '2.00' })
+    expect(bodyOfSave()).toMatchObject({ stamp_duty_threshold: '77.47', stamp_duty_amount: '2.00' })
   })
 
   it('shows an ordinary profile as «Ordinario» with only the fields it reads', async () => {
@@ -470,7 +470,7 @@ describe('FiscalPanel', () => {
           title: 'Dati non validi',
           status: 422,
           entity: 'fiscal_profile',
-          field: 'natura_default',
+          field: 'default_vat_nature',
           reason,
           expected: 'una natura, per esempio N2.2',
           detail: reason,
@@ -590,7 +590,7 @@ describe('FiscalPanel', () => {
   })
 
   it('shows the saved values and carries the new version while the refetch is still out', async () => {
-    const saved = { ...PROFILE, giorni_scadenza: 60, updated_at: '2026-08-21T09:00:00Z' }
+    const saved = { ...PROFILE, due_days: 60, updated_at: '2026-08-21T09:00:00Z' }
     let answer!: (value: unknown) => void
     vi.mocked(api.GET)
       .mockImplementationOnce(() => ok(PROFILE))
@@ -607,13 +607,13 @@ describe('FiscalPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
     const [, second] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
-    expect(second.body).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
+    expect(second.body).toMatchObject({ due_days: '60', updated_at: '2026-08-21T09:00:00Z' })
     answer({ data: saved, response: new Response(null, { status: 200 }) })
   })
 
   it('follows a newer row while untouched, and keeps its seed under an open draft', async () => {
     const newer = { ...PROFILE, iban: 'IT60X0542811101000000123456', updated_at: '2026-08-21T09:00:00Z' }
-    const newest = { ...newer, giorni_scadenza: 45, updated_at: '2026-08-22T09:00:00Z' }
+    const newest = { ...newer, due_days: 45, updated_at: '2026-08-22T09:00:00Z' }
     vi.mocked(api.GET)
       .mockImplementationOnce(() => ok(PROFILE))
       .mockImplementationOnce(() => ok(newer))
@@ -622,7 +622,7 @@ describe('FiscalPanel', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <FiscalPanel aziendaId="a-1" />
+        <FiscalPanel legalEntityId="a-1" />
       </QueryClientProvider>,
     )
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
@@ -636,7 +636,7 @@ describe('FiscalPanel', () => {
     expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
-    expect(bodyOfSave()).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
+    expect(bodyOfSave()).toMatchObject({ due_days: '60', updated_at: '2026-08-21T09:00:00Z' })
   })
 
   it('keeps a first-save draft when another admin creates the profile, and reloads under it', async () => {
@@ -659,7 +659,7 @@ describe('FiscalPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
     const [, second] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
-    expect(second.body).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
+    expect(second.body).toMatchObject({ due_days: '60', updated_at: '2026-08-21T09:00:00Z' })
   })
 
   it('says a first-save draft could not be checked when the reload fails, and keeps it', async () => {
@@ -719,7 +719,7 @@ describe('FiscalPanel', () => {
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
     const [, second] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
     expect(second.body).toMatchObject({
-      giorni_scadenza: '60',
+      due_days: '60',
       iban: 'IT60X0542811101000000123456',
       updated_at: '2026-08-21T09:00:00Z',
     })

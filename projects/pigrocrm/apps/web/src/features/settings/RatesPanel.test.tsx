@@ -29,22 +29,22 @@ const IVAN = {
   id: 'u1',
   nome: 'Ivan',
   email: 'ivan@x.test',
-  ruolo: 'admin',
-  attivo: true,
+  role: 'admin',
+  active: true,
   // Six decimals, because that is what `Numeric(12,6)` stores and what must survive
   // the round trip untouched.
-  tariffa_oraria_default: '80.000000',
-  costo_orario_default: '35.000000',
+  default_hourly_rate: '80.000000',
+  default_hourly_cost: '35.000000',
   created_at: '2026-01-01T00:00:00Z',
 }
 const MARA = {
   id: 'u2',
   nome: 'Mara',
   email: 'mara@x.test',
-  ruolo: 'collaboratore',
-  attivo: true,
-  tariffa_oraria_default: null,
-  costo_orario_default: null,
+  role: 'collaborator',
+  active: true,
+  default_hourly_rate: null,
+  default_hourly_cost: null,
   created_at: '2026-01-01T00:00:00Z',
 }
 
@@ -52,20 +52,20 @@ const DEAL_TIMES = { created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01
 const DEAL_BASE = {
   customer_id: 'cli-1',
   pipeline_stage_id: 'st-1',
-  valore_previsto: null,
-  probabilita: 50,
-  data_chiusura_prevista: null,
+  expected_value: null,
+  probability: 50,
+  expected_close_date: null,
   owner_id: null,
   note: null,
-  ore_preventivate: null,
-  valore_preventivato: null,
+  budgeted_hours: null,
+  budgeted_value: null,
   custom_fields: {},
   ...DEAL_TIMES,
 }
-const ACME = { ...DEAL_BASE, id: 'd1', nome: 'Sito Acme', tariffa_oraria: '120.000000' }
+const ACME = { ...DEAL_BASE, id: 'd1', nome: 'Sito Acme', hourly_rate: '120.000000' }
 /** A real rate meaning "these hours are not billed", not the absence of one. */
-const PRO_BONO = { ...DEAL_BASE, id: 'd2', nome: 'Pro bono ONLUS', tariffa_oraria: '0.000000' }
-const SENZA = { ...DEAL_BASE, id: 'd3', nome: 'Restyling Bianchi', tariffa_oraria: null }
+const PRO_BONO = { ...DEAL_BASE, id: 'd2', nome: 'Pro bono ONLUS', hourly_rate: '0.000000' }
+const WITHOUT = { ...DEAL_BASE, id: 'd3', nome: 'Restyling Bianchi', hourly_rate: null }
 
 function respond(users: unknown[], deals: unknown[]) {
   vi.mocked(api.GET).mockImplementation((path: string) => {
@@ -156,9 +156,9 @@ describe('RatesPanel', () => {
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
     expect(api.PUT).toHaveBeenCalledWith('/api/users/{user_id}/rates', {
       params: { path: { user_id: 'u1' } },
-      body: { tariffa_oraria_default: null, costo_orario_default: '35.000000' },
+      body: { default_hourly_rate: null, default_hourly_cost: '35.000000' },
     })
-    expect(bodyOfCall(0)).toHaveProperty('tariffa_oraria_default', null)
+    expect(bodyOfCall(0)).toHaveProperty('default_hourly_rate', null)
   })
 
   /**
@@ -168,7 +168,7 @@ describe('RatesPanel', () => {
    * test instead of `!== null` puts it in the wrong half of the screen.
    */
   it('treats a zero deal rate as a rate, not as the absence of one', async () => {
-    respond([], [ACME, PRO_BONO, SENZA])
+    respond([], [ACME, PRO_BONO, WITHOUT])
     renderPanel()
 
     await waitFor(() =>
@@ -197,7 +197,7 @@ describe('RatesPanel', () => {
     await waitFor(() =>
       expect(api.PUT).toHaveBeenCalledWith('/api/deals/{deal_id}/rate', {
         params: { path: { deal_id: 'd1' } },
-        body: { tariffa_oraria: '150' },
+        body: { hourly_rate: '150' },
       }),
     )
     expect(api.PUT).toHaveBeenCalledTimes(1)
@@ -205,7 +205,7 @@ describe('RatesPanel', () => {
   })
 
   it('sets a rate on a deal that has none through the picker', async () => {
-    respond([], [SENZA])
+    respond([], [WITHOUT])
     vi.mocked(api.PUT).mockImplementation(() => ok(undefined, 204))
     renderPanel()
 
@@ -217,7 +217,7 @@ describe('RatesPanel', () => {
     await waitFor(() =>
       expect(api.PUT).toHaveBeenCalledWith('/api/deals/{deal_id}/rate', {
         params: { path: { deal_id: 'd3' } },
-        body: { tariffa_oraria: '90' },
+        body: { hourly_rate: '90' },
       }),
     )
   })
@@ -228,7 +228,7 @@ describe('RatesPanel', () => {
    * how that contradiction stays impossible.
    */
   it('refuses to submit the picker until both a deal and a rate are chosen', async () => {
-    respond([], [SENZA])
+    respond([], [WITHOUT])
     renderPanel()
 
     expect(await screen.findByRole('button', { name: 'Imposta' })).toBeDisabled()
@@ -252,7 +252,7 @@ describe('RatesPanel', () => {
           detail: [
             {
               type: 'greater_than_equal',
-              loc: ['body', 'costo_orario_default'],
+              loc: ['body', 'default_hourly_cost'],
               msg: 'Input should be greater than or equal to 0',
             },
           ],
@@ -262,15 +262,15 @@ describe('RatesPanel', () => {
     )
     renderPanel()
 
-    const costo = await screen.findByLabelText('Costo orario di Ivan')
-    await userEvent.clear(costo)
-    await userEvent.type(costo, '-5')
-    await userEvent.click(within(rowOf(costo)).getByRole('button', { name: 'Salva' }))
+    const cost = await screen.findByLabelText('Costo orario di Ivan')
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '-5')
+    await userEvent.click(within(rowOf(cost)).getByRole('button', { name: 'Salva' }))
 
     expect(
       await screen.findByText('Input should be greater than or equal to 0'),
     ).toBeInTheDocument()
-    expect(costo).toHaveAttribute('aria-invalid', 'true')
+    expect(cost).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('Tariffa oraria di Ivan')).toHaveAttribute(
       'aria-invalid',
       'false',
@@ -315,17 +315,17 @@ describe('RatesPanel', () => {
     renderPanel()
 
     const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    const salva = within(rowOf(tariffa)).getByRole('button', { name: 'Salva' })
-    await userEvent.click(salva)
+    const save = within(rowOf(tariffa)).getByRole('button', { name: 'Salva' })
+    await userEvent.click(save)
     expect(await screen.findByRole('alert')).toHaveTextContent('periodo chiuso')
 
     vi.mocked(api.PUT).mockImplementation(() => ok(undefined, 204))
-    await userEvent.click(salva)
+    await userEvent.click(save)
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 
   it('says plainly when no deal has a rate of its own', async () => {
-    respond([IVAN], [SENZA])
+    respond([IVAN], [WITHOUT])
     renderPanel()
 
     expect(

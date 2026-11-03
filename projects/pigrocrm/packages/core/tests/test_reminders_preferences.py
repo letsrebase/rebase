@@ -15,18 +15,18 @@ from pigrocrm.core.reminders.models import ReminderPreference
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService, ReminderSettings
 from pigrocrm.core.reminders.schemas import QuietHours, ReminderPreferenceWrite
 
-OVERDUE = "attivita_overdue"
+OVERDUE = "task_overdue"
 
 
-def _user(session: Session, ruolo: str = "collaboratore") -> User:
-    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="P", ruolo=ruolo)
+def _user(session: Session, role: str = "collaborator") -> User:
+    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="P", role=role)
     session.add(user)
     session.flush()
     return user
 
 
 def _actor(user: User) -> Actor:
-    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
 def _effective(session: Session, user: User, type_key: str = OVERDUE):
@@ -223,7 +223,7 @@ def test_only_an_unscoped_admin_sets_the_spaces_defaults(db_session: Session) ->
         service.write(_actor(member), "space", OVERDUE, write)
     with pytest.raises(PermissionDenied):
         service.reset(_actor(member), "space", OVERDUE)
-    scoped = Actor(id=admin.id, type="user", role="admin", aziende=())
+    scoped = Actor(id=admin.id, type="user", role="admin", legal_entities=())
     with pytest.raises(ScopedAdmin):
         service.write(scoped, "space", OVERDUE, write)
 
@@ -243,7 +243,7 @@ def test_a_readonly_member_sets_their_own_preferences(db_session: Session) -> No
 def test_a_job_has_no_preferences_of_its_own(db_session: Session) -> None:
     with pytest.raises(Conflict):
         ReminderPreferenceService(db_session).write(
-            Actor.system().model_copy(update={"role": "collaboratore"}),
+            Actor.system().model_copy(update={"role": "collaborator"}),
             "me",
             OVERDUE,
             ReminderPreferenceWrite(enabled=False),
@@ -271,7 +271,7 @@ def test_the_read_carries_both_layers_and_what_they_resolve_to(db_session: Sessi
 def test_the_candidate_bound_is_the_loosest_rung_of_any_layer(db_session: Session) -> None:
     admin, member = _user(db_session, "admin"), _user(db_session)
     service = ReminderPreferenceService(db_session)
-    stale, due = REMINDER_TYPES["deal_stale"], REMINDER_TYPES["attivita_due"]
+    stale, due = REMINDER_TYPES["deal_stale"], REMINDER_TYPES["task_due"]
     assert ReminderSettings.load(db_session).candidate_bound(stale) == 21
     assert ReminderSettings.load(db_session).candidate_bound(due) == 0
 
@@ -279,7 +279,7 @@ def test_the_candidate_bound_is_the_loosest_rung_of_any_layer(db_session: Sessio
         _actor(member), "me", "deal_stale", ReminderPreferenceWrite(ladder={"warning": 7})
     )
     service.write(
-        _actor(admin), "space", "attivita_due", ReminderPreferenceWrite(ladder={"warning": 3})
+        _actor(admin), "space", "task_due", ReminderPreferenceWrite(ladder={"warning": 3})
     )
 
     settings = ReminderSettings.load(db_session)

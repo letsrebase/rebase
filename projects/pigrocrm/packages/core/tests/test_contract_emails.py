@@ -18,8 +18,6 @@ from pigrocrm.core.contract_emails.schemas import (
 from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import (
     AgentForbidden,
     Conflict,
@@ -32,6 +30,8 @@ from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceIssue
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
@@ -51,73 +51,77 @@ BODY = (
 def _setup(db_session: Session) -> Contract:
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
             cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
     )
-    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 
-    azienda = LegalEntityRepository(db_session).default()
-    assert azienda is not None
-    if FiscalProfileRepository(db_session).get(azienda.id) is None:
-        FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    legal_entity = LegalEntityRepository(db_session).default()
+    assert legal_entity is not None
+    if FiscalProfileRepository(db_session).get(legal_entity.id) is None:
+        FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     customer = Customer(
-        ragione_sociale=f"Acme {uuid4()} S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
+        legal_name=f"Acme {uuid4()} S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
         cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
     db_session.add(
-        Person(customer_id=customer.id, nome="Mario", cognome="Verdi", email="mario@acme.example")
+        Person(customer_id=customer.id, nome="Mario", last_name="Verdi", email="mario@acme.example")
     )
     contract = Contract(
         customer_id=customer.id,
-        titolo="Consulenza",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"kind": "non_rimborsabile"},
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
     )
     db_session.add(contract)
     db_session.flush()
     db_session.add(
         RateCard(
             contract_id=contract.id,
-            valido_da=date(2026, 1, 1),
-            tipo="giornaliero",
-            importo=Decimal("500.00"),
-            unita="giorno",
+            valid_from=date(2026, 1, 1),
+            type="daily",
+            amount=Decimal("500.00"),
+            unit="day",
         )
     )
     db_session.flush()
     return contract
 
 
-def _template(db_session: Session, contract: Contract, allegati: list[str] | None = None) -> UUID:
+def _template(
+    db_session: Session, contract: Contract, attachments: list[str] | None = None
+) -> UUID:
     return (
         ContractEmailService(db_session)
         .create(
             contract.id,
             ContractEmailTemplateCreate(
                 nome="Fattura mensile",
-                oggetto="Fattura {{numero_fattura}} - {{contratto}}",
-                corpo=BODY,
-                allegati=allegati if allegati is not None else ["fattura_pdf", "registro_pdf"],  # type: ignore[arg-type]
+                subject="Fattura {{numero_fattura}} - {{contratto}}",
+                body=BODY,
+                attachments=attachments
+                if attachments is not None
+                else ["fattura_pdf", "registro_pdf"],  # type: ignore[arg-type]
             ),
             ADMIN,
         )
@@ -131,9 +135,9 @@ def _issued_invoice(db_session: Session, storage: LocalFileStorage, contract: Co
             WorkUnit(
                 contract_id=contract.id,
                 data=day,
-                quantita=Decimal("1.00"),
-                descrizione="Giornata",
-                stato="lavorato",
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status="worked",
             )
         )
     db_session.flush()
@@ -151,9 +155,9 @@ def test_a_template_is_saved_listed_and_archived(db_session: Session) -> None:
 
     assert [t.nome for t in service.list_for_contract(contract.id, ADMIN)] == ["Fattura mensile"]
     archived = service.update(
-        contract.id, template_id, ContractEmailTemplateUpdate(attivo=False), ADMIN
+        contract.id, template_id, ContractEmailTemplateUpdate(active=False), ADMIN
     )
-    assert archived.attivo is False
+    assert archived.active is False
 
 
 def test_an_unknown_variable_is_refused_when_the_template_is_saved(db_session: Session) -> None:
@@ -162,7 +166,7 @@ def test_an_unknown_variable_is_refused_when_the_template_is_saved(db_session: S
         ContractEmailService(db_session).create(
             contract.id,
             ContractEmailTemplateCreate(
-                nome="Rotto", oggetto="Ciao", corpo="Ciao {{nome_inventato}}"
+                nome="Rotto", subject="Ciao", body="Ciao {{nome_inventato}}"
             ),
             ADMIN,
         )
@@ -174,7 +178,7 @@ def test_two_templates_of_a_contract_cannot_share_a_name_in_any_case(db_session:
     with pytest.raises(Conflict):
         ContractEmailService(db_session).create(
             contract.id,
-            ContractEmailTemplateCreate(nome="FATTURA MENSILE", oggetto="x", corpo="y"),
+            ContractEmailTemplateCreate(nome="FATTURA MENSILE", subject="x", body="y"),
             ADMIN,
         )
 
@@ -183,7 +187,7 @@ def test_a_reader_cannot_save_a_template(db_session: Session) -> None:
     contract = _setup(db_session)
     with pytest.raises(PermissionDenied):
         ContractEmailService(db_session).create(
-            contract.id, ContractEmailTemplateCreate(nome="x", oggetto="x", corpo="y"), READER
+            contract.id, ContractEmailTemplateCreate(nome="x", subject="x", body="y"), READER
         )
 
 
@@ -197,14 +201,14 @@ def test_the_preview_renders_the_invoices_own_figures_and_suggests_the_customers
     preview = ContractEmailService(db_session).preview(contract.id, template_id, invoice_id, ADMIN)
 
     invoice = InvoiceService(db_session, local_storage).get(invoice_id, ADMIN)
-    numero = f"{invoice.anno}/{invoice.numero}"
-    assert preview.subject == f"Fattura {numero} - Consulenza"
-    assert f"la fattura {numero} del " in preview.body
+    number = f"{invoice.year}/{invoice.number}"
+    assert preview.subject == f"Fattura {number} - Consulenza"
+    assert f"la fattura {number} del " in preview.body
     assert "07/10/2026 - 08/10/2026 (2.00 giornate)" in preview.body
     assert preview.body.rstrip().endswith("Studio Rossi")
     assert "\\/" not in preview.body  # the plain context, not the markdown one
-    assert preview.to_suggeriti == ["mario@acme.example"]
-    assert [a.tipo for a in preview.allegati] == ["fattura_pdf", "registro_pdf"]
+    assert preview.to_suggested == ["mario@acme.example"]
+    assert [a.type for a in preview.attachments] == ["invoice_pdf", "register_pdf"]
     assert (preview.da, preview.a) == (date(2026, 10, 7), date(2026, 10, 8))
 
 
@@ -215,9 +219,9 @@ def test_a_draft_invoice_is_not_sent(db_session: Session, local_storage: LocalFi
         WorkUnit(
             contract_id=contract.id,
             data=date(2026, 10, 7),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="lavorato",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="worked",
         )
     )
     db_session.flush()
@@ -239,10 +243,8 @@ def test_an_invoice_with_no_days_of_this_contract_is_refused(
     other = service.create(
         InvoiceCreate(
             customer_id=contract.customer_id,
-            righe=[
-                InvoiceLineIn(
-                    descrizione="Altro", quantita=Decimal("1"), prezzo_unitario=Decimal("10")
-                )
+            lines=[
+                InvoiceLineIn(description="Altro", quantity=Decimal("1"), unit_price=Decimal("10"))
             ],
         ),
         ADMIN,
@@ -269,7 +271,7 @@ def test_prepare_writes_a_draft_with_the_invoice_and_the_register_attached_and_s
         storage=local_storage,
     )
 
-    assert draft.send_state == "bozza"
+    assert draft.send_state == "draft"
     assert draft.to_addresses == ["mario@acme.example"]
     assert draft.entity_id == contract.customer_id
     assert len(draft.attachment_version_ids) == 2
@@ -296,7 +298,7 @@ def test_an_agent_cannot_write_a_template_or_prepare_a_draft(
 
     with pytest.raises(AgentForbidden):
         service.create(
-            contract.id, ContractEmailTemplateCreate(nome="x", oggetto="x", corpo="y"), agent
+            contract.id, ContractEmailTemplateCreate(nome="x", subject="x", body="y"), agent
         )
     with pytest.raises(AgentForbidden):
         service.update(contract.id, template_id, ContractEmailTemplateUpdate(nome="z"), agent)

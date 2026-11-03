@@ -4,7 +4,7 @@ import { StatusPill, type StatusTone } from '@/components/StatusPill'
 import { useCustomer } from '@/features/customers/queries'
 import {
   BAND_LABELS,
-  STATO_LABELS,
+  StatusLabels,
   TARGET_LABELS,
   confidenceBand,
   formatConfidence,
@@ -14,18 +14,18 @@ import {
 import { useProposalContract } from './queries'
 
 /**
- * The tone each state reads as. `in_attesa` is gold: in this product gold means «waiting
+ * The tone each state reads as. `pending` is gold: in this product gold means «waiting
  * on somebody», and a proposal in the queue is exactly that. An accepted one is the
  * settled, ordinary outcome (`ink`), a refused one the one that went the other way.
  */
-const STATO_TONE: Record<string, StatusTone> = {
-  in_attesa: 'gold',
-  accettata: 'ink',
-  rifiutata: 'danger',
+const StatusTone: Record<string, StatusTone> = {
+  pending: 'gold',
+  accepted: 'ink',
+  rejected: 'danger',
 }
 
-export function ProposalStatoPill({ stato }: { stato: string }) {
-  return <StatusPill tone={STATO_TONE[stato] ?? 'muted'}>{STATO_LABELS[stato] ?? stato}</StatusPill>
+export function ProposalStatusPill({ status }: { status: string }) {
+  return <StatusPill tone={StatusTone[status] ?? 'muted'}>{StatusLabels[status] ?? status}</StatusPill>
 }
 
 export function TargetBadge({ targetType }: { targetType: string }) {
@@ -38,14 +38,14 @@ export function TargetBadge({ targetType }: { targetType: string }) {
  * to look first, where «0,42» alone says nothing.
  */
 export function Confidence({ proposal, showReason = false }: { proposal: Proposal; showReason?: boolean }) {
-  const band = confidenceBand(proposal.confidenza)
+  const band = confidenceBand(proposal.confidence)
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
       <StatusPill tone={band === 'alta' ? 'ink' : band === 'media' ? 'gold' : 'danger'}>
-        {BAND_LABELS[band]} ({formatConfidence(proposal.confidenza)})
+        {BAND_LABELS[band]} ({formatConfidence(proposal.confidence)})
       </StatusPill>
-      {showReason && proposal.motivo_confidenza ? (
-        <span className="text-sm text-muted-foreground">{proposal.motivo_confidenza}</span>
+      {showReason && proposal.confidence_reason ? (
+        <span className="text-sm text-muted-foreground">{proposal.confidence_reason}</span>
       ) : null}
     </span>
   )
@@ -70,7 +70,7 @@ export function ProposalSubject({
   const customer = useCustomer(description.customerId ?? '', { enabled: description.customerId !== null })
   const contract = useProposalContract(description.contractId)
   if (description.customerId !== null && customer.data) {
-    const name = customer.data.ragione_sociale
+    const name = customer.data.legal_name
     return link ? (
       <>
         {prefix}
@@ -93,7 +93,7 @@ export function ProposalSubject({
     return (
       <>
         {prefix}
-        {contract.data.titolo}
+        {contract.data.title}
       </>
     )
   }

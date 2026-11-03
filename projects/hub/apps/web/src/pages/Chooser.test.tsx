@@ -64,7 +64,7 @@ describe('the root chooser', () => {
     // Regression: `<Link to="/freelance">` carries no `search`, so a visitor who
     // opened /hub/?rif=CODE and picked a door lost the code the moment they clicked,
     // since nothing had stored it yet.
-    mount('/?rif=ABC123')
+    mount('/?ref=ABC123')
     await screen.findByRole('link', { name: /Sono un talento/ })
     expect(sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
   })

@@ -15,15 +15,15 @@ import { Empty, Header, LoadMore } from './list-kit'
 interface Draft {
   email: string
   nome: string
-  cognome: string
+  last_name: string
 }
 
-const EMPTY: Draft = { email: '', nome: '', cognome: '' }
+const EMPTY: Draft = { email: '', nome: '', last_name: '' }
 
 /**
  * Who reads this area, and the one form that grants or revokes the role (ORB-123,
  * REB-279): typing an email promotes whatever `users` row already answers to it, or
- * creates a bare one from `nome`/`cognome` when none exists yet -- those two fields
+ * creates a bare one from `nome`/`last_name` when none exists yet -- those two fields
  * only matter for a brand-new address, and the server ignores them harmlessly for one
  * it already knows. There is no password anywhere on this page any more: the magic
  * link is the only way in, for a member and an admin alike. Demoting is one click on
@@ -52,7 +52,7 @@ export function AdminAdmins() {
       admin.promote({
         email: data.email.trim(),
         nome: data.nome.trim() || undefined,
-        cognome: data.cognome.trim() || undefined,
+        last_name: data.last_name.trim() || undefined,
       }),
     onSuccess: (saved) => {
       setDraft(EMPTY)
@@ -134,9 +134,9 @@ export function AdminAdmins() {
             maxLength={120}
             autoComplete="off"
             placeholder="Solo per un indirizzo nuovo"
-            value={draft.cognome}
-            onChange={(event) => field('cognome')(event.target.value)}
-            aria-invalid={wrong('cognome')}
+            value={draft.last_name}
+            onChange={(event) => field('last_name')(event.target.value)}
+            aria-invalid={wrong('last_name')}
           />
         </div>
         <Button type="submit" disabled={promote.isPending}>
@@ -199,7 +199,7 @@ export function AdminAdmins() {
                         <p className="text-xs text-muted-foreground">{row.email}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="pill">{row.attivo ? 'Attivo' : 'Disattivato'}</Badge>
+                        <Badge variant="pill">{row.active ? 'Attivo' : 'Disattivato'}</Badge>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatDate(row.created_at)}</TableCell>
                       <TableCell className="text-right">

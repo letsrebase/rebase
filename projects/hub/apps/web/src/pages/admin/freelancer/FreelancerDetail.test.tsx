@@ -48,16 +48,16 @@ describe('the anonymous card on the freelancer detail (REB-514)', () => {
       'GET /api/hub/freelancers/f2/card': {
         ...noCard('f2'),
         card: {
-          ruolo: 'CTO',
+          role: 'CTO',
           seniority: 'lead',
-          anni: 15,
-          competenze: ['Architettura'],
-          settori: [],
-          lingue: ['italiano'],
-          luogo: null,
-          sintesi: 'Guida team di prodotto da quindici anni.',
+          experience_years: 15,
+          skills: ['Architettura'],
+          industries: [],
+          languages: ['italiano'],
+          location: null,
+          profile_summary: 'Guida team di prodotto da quindici anni.',
         },
-        modalita: 'remoto',
+        mode: 'remote',
         generated_at: '2026-09-25T10:00:00Z',
         model: 'claude-opus-5',
       },
@@ -84,7 +84,7 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
     const withComment = {
       ...INCOMPLETE,
       note: [
-        { id: 'c1', testo: 'Ha risposto alla call.', autore: 'Ivan', autore_id: null, fonte: 'web', created_at: '2026-09-12T10:00:00Z', modificata_at: null, modificata_da: null, modificabile: true },
+        { id: 'c1', text: 'Ha risposto alla call.', author: 'Ivan', author_id: null, source: 'web', created_at: '2026-09-12T10:00:00Z', edited_at: null, edited_by: null, editable: true },
       ],
     }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -162,7 +162,7 @@ describe('REB-356: the state-change mutations keep the notes thread visible', ()
     const withComment = {
       ...INCOMPLETE,
       note: [
-        { id: 'c1', testo: 'Ha risposto alla call.', autore: 'Ivan', autore_id: null, fonte: 'web', created_at: '2026-09-12T10:00:00Z', modificata_at: null, modificata_da: null, modificabile: true },
+        { id: 'c1', text: 'Ha risposto alla call.', author: 'Ivan', author_id: null, source: 'web', created_at: '2026-09-12T10:00:00Z', edited_at: null, edited_by: null, editable: true },
       ],
     }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -170,10 +170,10 @@ describe('REB-356: the state-change mutations keep the notes thread visible', ()
       if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
       if (url === '/api/hub/freelancers/f1' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
-        expect(body.stato).toBe('contattato')
+        expect(body.status).toBe('contacted')
         // The move response's own `note` is always `[]` (only `get` fills it):
         // a replace that took it verbatim would wipe the existing thread from view.
-        return answer(200, { ...withComment, stato: 'contattato', note: [] })
+        return answer(200, { ...withComment, status: 'contacted', note: [] })
       }
       return answer(200, withComment)
     })
@@ -256,7 +256,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
       'GET /api/hub/freelancers/f1/audit': [],
       'GET /api/hub/freelancers/f1/card': noCard('f1'),
     })
-    mount('/admin/freelance/f1', { unibili: [LINKED_PAIR], da_rivedere: [], iscrizioni: 0 })
+    mount('/admin/freelance/f1', { mergeable: [LINKED_PAIR], from_review: [], signups: 0 })
     const banner = await screen.findByRole('banner')
     expect(await within(banner).findByRole('link', { name: 'Possibile duplicato' })).toHaveAttribute(
       'href',
@@ -270,8 +270,8 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
       'GET /api/hub/freelancers/f1/audit': [],
       'GET /api/hub/freelancers/f1/card': noCard('f1'),
     })
-    const elsewhere = { ...LINKED_PAIR, survivor: person('f8', 'Linus', 'Torvalds'), assorbito: person('f9', 'Dennis', 'Ritchie') }
-    mount('/admin/freelance/f1', { unibili: [elsewhere], da_rivedere: [], iscrizioni: 0 })
+    const elsewhere = { ...LINKED_PAIR, survivor: person('f8', 'Linus', 'Torvalds'), absorbed: person('f9', 'Dennis', 'Ritchie') }
+    mount('/admin/freelance/f1', { mergeable: [elsewhere], from_review: [], signups: 0 })
     await screen.findByRole('banner')
     await settle()
     expect(screen.queryByText('Possibile duplicato')).toBeNull()

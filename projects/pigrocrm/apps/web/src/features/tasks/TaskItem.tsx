@@ -1,0 +1,86 @@
+import { useState } from 'react'
+import { toast } from '@rebase/ui/sonner'
+import { Button } from '@rebase/ui/button'
+import {
+  useCancelTask,
+  useCompleteTask,
+  type Task,
+} from '@/features/calendar/queries'
+import { toProblem } from '@/lib/api'
+import { useCanWrite } from '@/lib/auth'
+import { formatIsoDateItalian } from '@/lib/dates'
+import { TaskDialog } from './TaskDialog'
+import { TaskMeta } from './TaskMeta'
+
+/**
+ * One attività as a list shows it, wherever the list is: the title (struck through once
+ * it is closed), what it is for and about, its deadline when the list does not already
+ * say it, and the three things a person does to it without opening anything: «Fatto»,
+ * «Annulla» and «Modifica».
+ *
+ * «Annulla» is not a delete and not «fatto»: it records that the commitment stopped
+ * mattering, which is the answer to *why* six months later. Deleting is «Archivia», in the
+ * dialog «Modifica» opens.
+ *
+ * The edit dialog lives here, one per row and mounted only while open, so a list never has
+ * to know which of its rows is being edited.
+ */
+export function TaskItem({
+  attivita,
+  showDueDate = false,
+  hideLink = false,
+}: {
+  attivita: Task
+  showDueDate?: boolean
+  hideLink?: boolean
+}) {
+  const canWrite = useCanWrite()
+  const complete = useCompleteTask()
+  const cancel = useCancelTask()
+  const [editing, setEditing] = useState(false)
+  const open = attivita.status === 'open'
+  // One closure at a time: «Fatto» then «Annulla» in quick succession would race two writes
+  // on the same row, and the second would answer with the first one's state.
+  const pending = complete.isPending || cancel.isPending
+
+  function close(mutation: typeof complete, done: string) {
+    mutation.mutate(attivita.id, {
+      onSuccess: () => toast.success(done),
+      onError: (error) => toast.error(toProblem(error).detail),
+    })
+  }
+
+  return (
+    // Stacked on a phone, side by side from `sm`: three buttons beside the title left it a
+    // column a word wide at 390px once the sidebar is the rail (the Home's band shows it).
+    <li className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className={open ? undefined : 'line-through opacity-60'}>{attivita.title}</span>
+        {showDueDate && (
+          <span className="text-xs text-muted-foreground">
+            {attivita.due_date ? `Entro il ${formatIsoDateItalian(attivita.due_date)}` : 'Senza scadenza'}
+          </span>
+        )}
+        <TaskMeta attivita={attivita} hideLink={hideLink} />
+      </span>
+      {canWrite && (
+        <span className="flex shrink-0 gap-2">
+          {open && (
+            <>
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => close(complete, 'Fatto')}>
+                Fatto
+              </Button>
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => close(cancel, 'Annullata')}>
+                Annulla
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            Modifica
+          </Button>
+        </span>
+      )}
+      {editing && <TaskDialog open onOpenChange={setEditing} attivita={attivita} />}
+    </li>
+  )
+}

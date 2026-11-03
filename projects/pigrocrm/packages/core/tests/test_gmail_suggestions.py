@@ -100,21 +100,21 @@ def test_the_proposals_group_the_sent_conversations_by_domain(db_session: Sessio
 
     proposals = sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
 
-    assert [proposal.dominio for proposal in proposals] == ["acme.it", "studio-rossi.it"]
+    assert [proposal.domain for proposal in proposals] == ["acme.it", "studio-rossi.it"]
     acme, rossi = proposals
     assert acme.nome == "Acme"
-    assert acme.conversazioni == 2
+    assert acme.conversations == 2
     # The last message of any conversation it took part in: t2, three days ago.
-    assert acme.ultimo_messaggio == datetime.fromtimestamp(
+    assert acme.last_message == datetime.fromtimestamp(
         fake.messages["m3"].internal_date_ms / 1000, tz=UTC
     )
-    people = {person.indirizzo: person.nome for person in acme.persone}
+    people = {person.address: person.nome for person in acme.people}
     # Sara never received a mail from the owner, but she answered in a thread the owner
     # started: she is somebody the owner corresponds with.
     assert people == {"marco@acme.it": "Marco Bianchi", "sara@acme.it": "Sara Verdi"}
     assert rossi.nome == "Studio Rossi"
-    assert rossi.conversazioni == 1
-    assert [person.indirizzo for person in rossi.persone] == ["anna@studio-rossi.it"]
+    assert rossi.conversations == 1
+    assert [person.address for person in rossi.people] == ["anna@studio-rossi.it"]
 
 
 def test_what_names_nobody_to_import_is_left_out(db_session: Session) -> None:
@@ -124,7 +124,7 @@ def test_what_names_nobody_to_import_is_left_out(db_session: Session) -> None:
 
     proposals = sync_service(db_session, _mailbox()).suggest_customers(actor=actor_for(account))
 
-    domains = {proposal.dominio for proposal in proposals}
+    domains = {proposal.domain for proposal in proposals}
     for absent in (
         "example.it",
         "gmail.com",
@@ -143,7 +143,7 @@ def test_google_is_asked_for_the_sent_mail_of_the_period_and_headers_only(
     account = connected_account(db_session)
     fake = _mailbox()
 
-    sync_service(db_session, fake).suggest_customers(actor=actor_for(account), mesi=6)
+    sync_service(db_session, fake).suggest_customers(actor=actor_for(account), months=6)
 
     listings = [request for request in fake.requests if request.is_messages_list]
     assert len(listings) == 1
@@ -181,8 +181,8 @@ def test_a_domain_already_filed_under_a_customer_is_not_proposed_again(
     """By the customer's website, and by a person of a customer whose record carries no
     domain of its own. A person already in the address book is marked, not dropped."""
     account = connected_account(db_session)
-    db_session.add(Customer(ragione_sociale="Acme S.r.l.", sito_web="https://www.acme.it"))
-    rossi = Customer(ragione_sociale="Studio Rossi")
+    db_session.add(Customer(legal_name="Acme S.r.l.", website="https://www.acme.it"))
+    rossi = Customer(legal_name="Studio Rossi")
     db_session.add(rossi)
     db_session.flush()
     db_session.add(Person(nome="Anna", email="anna@studio-rossi.it", customer_id=rossi.id))
@@ -194,8 +194,8 @@ def test_a_domain_already_filed_under_a_customer_is_not_proposed_again(
 
     proposals = sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
 
-    assert [proposal.dominio for proposal in proposals] == ["nuovo.it"]
-    assert [(p.indirizzo, p.gia_in_anagrafica) for p in proposals[0].persone] == [
+    assert [proposal.domain for proposal in proposals] == ["nuovo.it"]
+    assert [(p.address, p.already_in_directory) for p in proposals[0].people] == [
         ("luca@nuovo.it", True)
     ]
 
@@ -217,9 +217,9 @@ def test_a_long_year_is_read_as_its_most_recent_conversations(
 def test_the_period_is_bounded(db_session: Session) -> None:
     account = connected_account(db_session)
     service = sync_service(db_session, _mailbox())
-    for mesi in (0, 25):
+    for months in (0, 25):
         with pytest.raises(ValidationFailed):
-            service.suggest_customers(actor=actor_for(account), mesi=mesi)
+            service.suggest_customers(actor=actor_for(account), months=months)
 
 
 def test_a_readonly_person_and_a_plain_agent_are_refused(db_session: Session) -> None:
@@ -254,7 +254,7 @@ def test_a_conversation_gone_before_its_read_is_skipped(
 
     monkeypatch.setattr(service, "_thread_headers", vanished)
     proposals = service.suggest_customers(actor=actor_for(account))
-    assert [proposal.dominio for proposal in proposals] == ["acme.it"]
+    assert [proposal.domain for proposal in proposals] == ["acme.it"]
 
 
 def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(
@@ -290,9 +290,9 @@ def test_a_read_that_finished_in_time_counts_even_behind_a_slow_one(
     proposals = service.suggest_customers(actor=actor_for(account))
 
     # t1 (Acme, with Sara) missed the budget; t2 (Acme) and t3 (Studio Rossi) did not.
-    assert {proposal.dominio for proposal in proposals} == {"acme.it", "studio-rossi.it"}
-    acme = next(proposal for proposal in proposals if proposal.dominio == "acme.it")
-    assert [person.indirizzo for person in acme.persone] == ["marco@acme.it"]
+    assert {proposal.domain for proposal in proposals} == {"acme.it", "studio-rossi.it"}
+    acme = next(proposal for proposal in proposals if proposal.domain == "acme.it")
+    assert [person.address for person in acme.people] == ["marco@acme.it"]
 
 
 def test_a_slow_gmail_gives_a_shorter_list_not_a_timeout(
@@ -352,30 +352,30 @@ ADMIN = Actor(id=None, type="user", role="admin")
 
 
 def _import(**overrides: object) -> CustomersFromSuggestions:
-    clienti: object = overrides.get(
-        "clienti",
+    customers: object = overrides.get(
+        "customers",
         [
             {
-                "dominio": "acme.it",
-                "ragione_sociale": "Acme S.r.l.",
-                "persone": [
-                    {"indirizzo": "marco@acme.it", "nome": "Marco Bianchi"},
-                    {"indirizzo": "sara@acme.it", "nome": ""},
+                "domain": "acme.it",
+                "legal_name": "Acme S.r.l.",
+                "people": [
+                    {"address": "marco@acme.it", "nome": "Marco Bianchi"},
+                    {"address": "sara@acme.it", "nome": ""},
                 ],
             },
-            {"dominio": "studio-rossi.it", "ragione_sociale": "  Studio Rossi  ", "persone": []},
+            {"domain": "studio-rossi.it", "legal_name": "  Studio Rossi  ", "people": []},
         ],
     )
-    return CustomersFromSuggestions.model_validate({"clienti": clienti})
+    return CustomersFromSuggestions.model_validate({"customers": customers})
 
 
 def test_ticked_proposals_become_customers_and_people_in_one_go(db_session: Session) -> None:
     created = CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
 
-    assert [customer.ragione_sociale for customer in created] == ["Acme S.r.l.", "Studio Rossi"]
-    assert [customer.sito_web for customer in created] == ["acme.it", "studio-rossi.it"]
+    assert [customer.legal_name for customer in created] == ["Acme S.r.l.", "Studio Rossi"]
+    assert [customer.website for customer in created] == ["acme.it", "studio-rossi.it"]
     people = db_session.execute(select(Person).order_by(Person.email)).scalars().all()
-    assert [(p.email, p.nome, p.cognome, p.customer_id) for p in people] == [
+    assert [(p.email, p.nome, p.last_name, p.customer_id) for p in people] == [
         ("marco@acme.it", "Marco", "Bianchi", created[0].id),
         # No display name: the address stands in for it.
         ("sara@acme.it", "Sara", None, created[0].id),
@@ -391,7 +391,7 @@ def test_ticked_proposals_become_customers_and_people_in_one_go(db_session: Sess
 def test_a_domain_that_is_already_a_customer_refuses_the_whole_import(
     db_session: Session,
 ) -> None:
-    db_session.add(Customer(ragione_sociale="Rossi", sito_web="studio-rossi.it"))
+    db_session.add(Customer(legal_name="Rossi", website="studio-rossi.it"))
     db_session.flush()
     before = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
 
@@ -401,33 +401,31 @@ def test_a_domain_that_is_already_a_customer_refuses_the_whole_import(
     db_session.rollback()
     # Nothing of Acme either: all of them or none.
     assert db_session.execute(select(func.count()).select_from(Customer)).scalar_one() <= before
-    assert (
-        db_session.execute(select(Customer).where(Customer.sito_web == "acme.it")).first() is None
-    )
+    assert db_session.execute(select(Customer).where(Customer.website == "acme.it")).first() is None
 
 
 def test_the_same_domain_twice_is_one_customer_not_two(db_session: Session) -> None:
     twice = [
-        {"dominio": "acme.it", "ragione_sociale": "Acme", "persone": []},
-        {"dominio": "acme.it", "ragione_sociale": "Acme di nuovo", "persone": []},
+        {"domain": "acme.it", "legal_name": "Acme", "people": []},
+        {"domain": "acme.it", "legal_name": "Acme di nuovo", "people": []},
     ]
     with pytest.raises(Conflict):
-        CustomerService(db_session).create_from_suggestions(_import(clienti=twice), ADMIN)
+        CustomerService(db_session).create_from_suggestions(_import(customers=twice), ADMIN)
 
 
 def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: Session) -> None:
     stranger = [
         {
-            "dominio": "acme.it",
-            "ragione_sociale": "Acme",
-            "persone": [{"indirizzo": "ceo@rival.it", "nome": "Ceo"}],
+            "domain": "acme.it",
+            "legal_name": "Acme",
+            "people": [{"address": "ceo@rival.it", "nome": "Ceo"}],
         }
     ]
     with pytest.raises(ValidationFailed):
-        CustomerService(db_session).create_from_suggestions(_import(clienti=stranger), ADMIN)
-    webmail = [{"dominio": "gmail.com", "ragione_sociale": "Gmail", "persone": []}]
+        CustomerService(db_session).create_from_suggestions(_import(customers=stranger), ADMIN)
+    webmail = [{"domain": "gmail.com", "legal_name": "Gmail", "people": []}]
     with pytest.raises(ValidationFailed):
-        CustomerService(db_session).create_from_suggestions(_import(clienti=webmail), ADMIN)
+        CustomerService(db_session).create_from_suggestions(_import(customers=webmail), ADMIN)
 
 
 def test_a_person_already_in_the_address_book_is_left_where_it_is(db_session: Session) -> None:
@@ -466,15 +464,15 @@ def test_a_refusal_half_way_through_leaves_nothing_behind(db_session: Session) -
 def test_a_display_name_longer_than_a_person_holds_is_clipped(db_session: Session) -> None:
     long = [
         {
-            "dominio": "acme.it",
-            "ragione_sociale": "Acme",
-            "persone": [{"indirizzo": "marco@acme.it", "nome": "M" * 130 + " " + "B" * 124}],
+            "domain": "acme.it",
+            "legal_name": "Acme",
+            "people": [{"address": "marco@acme.it", "nome": "M" * 130 + " " + "B" * 124}],
         }
     ]
-    CustomerService(db_session).create_from_suggestions(_import(clienti=long), ADMIN)
+    CustomerService(db_session).create_from_suggestions(_import(customers=long), ADMIN)
     person = db_session.execute(select(Person)).scalar_one()
     assert len(person.nome) == 120
-    assert person.cognome is not None and len(person.cognome) == 120
+    assert person.last_name is not None and len(person.last_name) == 120
 
 
 def test_an_import_holds_the_lock_a_concurrent_one_waits_on(

@@ -43,7 +43,7 @@ export async function login(page: Page, email: string, password: string): Promis
   // And not the `/\/app\/?$/` that replaced it either, which anchored on the end of the
   // string and therefore stopped being true the moment `/app/` grew a `validateSearch`
   // (slice 6: the dashboard's period is in the URL, §4). The landing URL is now
-  // `/app?tab=commerciale&da=…&a=…`, so an end-anchored pattern fails for every spec in
+  // `/app?tab=commercial&da=…&a=…`, so an end-anchored pattern fails for every spec in
   // this suite while the login it is checking has actually succeeded. `(\?|$)` is what
   // admits the search string without re-admitting `/app/login`: after `/app` the next
   // character has to be `?` or nothing, and in `/app/login` it is `l`.
@@ -72,7 +72,7 @@ export async function ensureSpaceHasWork(page: Page): Promise<void> {
   const list = (await (await page.request.get('/api/customers?limit=1')).json()) as { items: unknown[] }
   if (list.items.length > 0) return
   const created = await page.request.post('/api/customers', {
-    data: { ragione_sociale: `Home ${Date.now()} Srl` },
+    data: { legal_name: `Home ${Date.now()} Srl` },
   })
   expect(created.status()).toBe(201)
 }
@@ -315,7 +315,7 @@ export async function relaunchApi(): Promise<void> {
  * behind `get_actor`, so that jar's requests all come back 401. `page.request` shares
  * the browser context's cookies, session cookie included.
  *
- * `tariffa` travels as the string it was written as (`"80.000000"`), never as a
+ * `rate` travels as the string it was written as (`"80.000000"`), never as a
  * number: `Numeric(12,6)` is what the column is, and a rate at the sixth decimal
  * place is exactly what a `number` round trip would quietly lose.
  */
@@ -323,19 +323,19 @@ export async function seedDealWithRate(
   request: APIRequestContext,
   {
     nome,
-    tariffa,
-    cliente,
-  }: { nome: string; tariffa: string; cliente?: Record<string, string> },
+    rate: tariffa,
+    customer: cliente,
+  }: { nome: string; rate: string; customer?: Record<string, string> },
 ): Promise<{ dealId: string; customerId: string }> {
   const customerResponse = await request.post('/api/customers', {
     // Merged over the default, never replacing it: `time-tracking.spec.ts` needs
     // nothing but a name, and `economics.spec.ts` needs a customer complete enough to
     // be *invoiced* -- `check_party_exportable` and `check_recipient_routing` both run
     // inside `InvoiceService.issue`, before a register number is consumed, and refuse a
-    // recipient with no address, no P.IVA or no `codice_sdi`. A second seeding helper
+    // recipient with no address, no P.IVA or no `sdi_code`. A second seeding helper
     // for that one difference would be two fixtures to keep in step; an override on the
     // one that exists is the same fixture with more of the record filled in.
-    data: { ragione_sociale: `${nome} SRL`, ...cliente },
+    data: { legal_name: `${nome} SRL`, ...cliente },
   })
   expect(customerResponse.status(), await customerResponse.text()).toBe(201)
   const customer = (await customerResponse.json()) as { id: string }
@@ -346,12 +346,12 @@ export async function seedDealWithRate(
   expect(dealResponse.status(), await dealResponse.text()).toBe(201)
   const deal = (await dealResponse.json()) as { id: string }
 
-  // The rate goes on through its own endpoint rather than as a `tariffa_oraria` on
+  // The rate goes on through its own endpoint rather than as a `hourly_rate` on
   // `DealCreate` (which would also accept it): `PUT /api/deals/{id}/rate` is the one
   // the Tariffe screen itself calls, so seeding through it means the fixture and the
   // screen under test are writing the same column the same way.
   const rate = await request.put(`/api/deals/${deal.id}/rate`, {
-    data: { tariffa_oraria: tariffa },
+    data: { hourly_rate: tariffa },
   })
   expect(rate.status(), await rate.text()).toBe(204)
 
@@ -379,7 +379,7 @@ export async function seedCustomers(page: Page, prefix: string, count: number): 
     const responses = await Promise.all(
       Array.from({ length: size }, (_, offset) =>
         page.request.post('/api/customers', {
-          data: { ragione_sociale: `${prefix} ${String(start + offset).padStart(4, '0')} Srl` },
+          data: { legal_name: `${prefix} ${String(start + offset).padStart(4, '0')} Srl` },
         }),
       ),
     )
@@ -400,18 +400,18 @@ export interface CycleFixture {
   customerName: string
   dealId: string
   dealName: string
-  /** The offer still `inviata`. Accepting it in the UI is the human half of criterion 15. */
+  /** The offer still `sent`. Accepting it in the UI is the human half of criterion 15. */
   documentId: string
   documentTitle: string
-  /** Already `accettata`, on the same still-open deal: the inconsistency the signal counts. */
+  /** Already `accepted`, on the same still-open deal: the inconsistency the signal counts. */
   staleDocumentId: string
-  partitaIva: string
+  vatNumber: string
 }
 
 /**
  * One customer with a recognisable VAT number, one deal in an open stage, and **two**
- * offers on that deal: one already `accettata` from a moment when automation A1 was
- * switched off, and one still `inviata` for a human to accept with A1 back on.
+ * offers on that deal: one already `accepted` from a moment when automation A1 was
+ * switched off, and one still `sent` for a human to accept with A1 back on.
  *
  * Two offers on one deal, rather than the brief's one offer on each of two deals, because
  * the criterion asks to watch «offerta accettata, deal non vinto» go **down by one** when
@@ -439,7 +439,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   const stamp = Date.now()
   // Eleven digits, the shape `_check_fiscal` requires; the last eleven of the millisecond
   // clock, which is what makes it unique per run.
-  const partitaIva = String(stamp).slice(-11)
+  const vatNumber = String(stamp).slice(-11)
   // A suffix with no digits in it, deliberately: the only place the fragment searched
   // through the palette can be found is the P.IVA, a column the palette's row never shows.
   const suffix = stamp.toString(36).replace(/[0-9]/g, 'x')
@@ -448,7 +448,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   const documentTitle = `Ciclo offerta impianti ${suffix}`
 
   const customer = await page.request.post('/api/customers', {
-    data: { ragione_sociale: customerName, partita_iva: partitaIva },
+    data: { legal_name: customerName, vat_number: vatNumber },
   })
   expect(customer.status(), await customer.text()).toBe(201)
   const customerId = ((await customer.json()) as { id: string }).id
@@ -467,10 +467,10 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
       nome: dealName,
       customer_id: customerId,
       pipeline_stage_id: openStage.id,
-      // A string, never a JSON number: `valore_previsto` is `Numeric(12,2)`, and a float
+      // A string, never a JSON number: `expected_value` is `Numeric(12,2)`, and a float
       // round trip is exactly what the rest of this codebase refuses to do to money.
-      valore_previsto: '18000.00',
-      probabilita: 60,
+      expected_value: '18000.00',
+      probability: 60,
     },
   })
   expect(deal.status(), await deal.text()).toBe(201)
@@ -482,7 +482,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   // exactly the state the signal exists to detect — an accepted offer whose deal was never
   // moved — and leaves the automation on for the half of the cycle a human drives.
   await setAutomationA1(page, false)
-  await setOfferState(page, staleDocumentId, 'accettata')
+  await setOfferState(page, staleDocumentId, 'accepted')
   await setAutomationA1(page, true)
 
   const documentId = await seedOffer(page, dealId, documentTitle)
@@ -495,40 +495,40 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
     documentId,
     documentTitle,
     staleDocumentId,
-    partitaIva,
+    vatNumber,
   }
 }
 
 /**
- * An offer on `dealId`, created and moved to `inviata` — the one state `accettata` is
+ * An offer on `dealId`, created and moved to `sent` — the one state `accepted` is
  * reachable from, in the server's own state machine and in `OFFER_TRANSITIONS` which
  * mirrors it.
  */
-async function seedOffer(page: Page, dealId: string, titolo: string): Promise<string> {
+async function seedOffer(page: Page, dealId: string, title: string): Promise<string> {
   const created = await page.request.post('/api/documents', {
-    data: { deal_id: dealId, tipo: 'offerta', titolo },
+    data: { deal_id: dealId, type: 'offer', title },
   })
   expect(created.status(), await created.text()).toBe(201)
   const documentId = ((await created.json()) as { id: string }).id
-  await setOfferState(page, documentId, 'inviata')
+  await setOfferState(page, documentId, 'sent')
   return documentId
 }
 
-async function setOfferState(page: Page, documentId: string, stato: string): Promise<void> {
+async function setOfferState(page: Page, documentId: string, status: string): Promise<void> {
   const response = await page.request.post(`/api/documents/${documentId}/status`, {
-    data: { stato },
+    data: { status },
   })
   expect(response.status(), await response.text()).toBe(200)
 }
 
 async function setAutomationA1(page: Page, on: boolean): Promise<void> {
   const response = await page.request.put('/api/automation-config', {
-    data: { a1_offerta_accettata_vince_deal: on },
+    data: { a1_wins_accepted_offer_deal: on },
   })
   expect(response.status(), await response.text()).toBe(200)
   // Read back rather than trusted. Everything the fixture is for depends on which way this
   // switch points, and a body the server quietly ignored would seed the opposite state and
   // fail three screens later, somewhere that looks like the product's fault.
-  const config = (await response.json()) as { a1_offerta_accettata_vince_deal: boolean }
-  expect(config.a1_offerta_accettata_vince_deal).toBe(on)
+  const config = (await response.json()) as { a1_wins_accepted_offer_deal: boolean }
+  expect(config.a1_wins_accepted_offer_deal).toBe(on)
 }

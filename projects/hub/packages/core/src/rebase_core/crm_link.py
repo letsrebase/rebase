@@ -1,7 +1,7 @@
 """A completed company request filed in rebase's own CRM (REB-868, spec 2026-10-30 § 4).
 
 `CrmLeadService` is `EngagementService`'s twin for a request: the same states as a match's
-Pigro link (`da_collegare`, `collegato`, `errore`, `rifiutato`), the same house rule (**no
+Pigro link (`to_link`, `linked`, `error`, `rejected`), the same house rule (**no
 database lock is held across the AI call or the HTTP call**: the row is locked to read what
 is sent and to stamp the attempt, released with that commit, and locked again to write what
 the CRM answered), the same seam (`HttpCall`, `urllib_engagements_call` in production) and
@@ -9,7 +9,7 @@ the same token (`REBASE_PIGRO_ENGAGEMENTS_TOKEN`). The door is
 `PUT {pigro_api_url}/api/rebase/leads/{request_id}`, idempotent on the request's id.
 
 The deal is built in code. The AI (`rebase_core.crm_lead`) gives a bounded draft, made once
-and kept in `crm_bozza`, so a CRM that is down for a day is retried every sweep without
+and kept in `crm_draft`, so a CRM that is down for a day is retried every sweep without
 spending the task's cap again; a call that cannot answer files the request with no draft
 (the AI improves a filing, it never blocks one). Every value is cut or dropped to the CRM's
 limits before it leaves, so a long value never becomes a permanent 422.
@@ -38,13 +38,13 @@ from sqlalchemy.orm import Session
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.crm_lead import LeadDraft, draft_lead
-from rebase_core.crm_words import REFERENTE_WITHOUT_NAME, crm_state_sentence
+from rebase_core.crm_words import CONTACT_PERSON_WITHOUT_NAME, crm_state_sentence
 from rebase_core.db import SessionOpener
 from rebase_core.errors import InvalidState, NotFound
 from rebase_core.framework import rome_today
 from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
-from rebase_core.match_words import COLLEGATO, DA_COLLEGARE, ERRORE, HTTPS_ONLY
+from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, TO_LINK
 from rebase_core.models import Company, User
 from rebase_core.pigro_door import (
     Outcome,
@@ -60,19 +60,19 @@ _log = logging.getLogger(__name__)
 
 ENTITY = "company"
 LEADS_PATH = "/api/rebase/leads"
-# The states the sweep picks up; `rifiutato` waits for a person.
-PENDING = (DA_COLLEGARE, ERRORE)
+# The states the sweep picks up; `rejected` waits for a person.
+PENDING = (TO_LINK, ERROR)
 # The sweep leaves a row alone for this long after it was written or last attempted, so it
 # never races the job that was started with the request (two calls would spend the AI twice).
 GRACE = timedelta(minutes=5)
 
-# The CRM's own limits (`LeadReferente`, `LeadDeal`), met before the call.
+# The CRM's own limits (`LeadContactPerson`, `LeadDeal`), met before the call.
 COMPANY_MAX = 255
 PERSON_NAME_MAX = 120
 PHONE_MAX = 40
 LINKEDIN_MAX = 255
 DEAL_NAME_MAX = 255
-# `deals.valore_previsto` is Numeric(12, 2): ten integer digits at most.
+# `deals.expected_value` is Numeric(12, 2): ten integer digits at most.
 VALUE_LIMIT = Decimal(10) ** 10
 CENT = Decimal("0.01")
 
@@ -80,7 +80,7 @@ NOT_CONFIGURED = (
     "Il CRM non è configurato su questo ambiente: manca REBASE_PIGRO_ENGAGEMENTS_TOKEN."
 )
 NO_DRAFT_NOTE = "Nessuna bozza AI: il modello non ha risposto, la scheda è da compilare a mano."
-REMOTE_WORDS = {"remoto": "da remoto", "ibrido": "ibrido", "in_sede": "in sede"}
+REMOTE_WORDS = {"remote": "da remoto", "hybrid": "hybrid", "on_site": "in sede"}
 
 
 def _cut(value: str | None, limit: int) -> str | None:
@@ -100,7 +100,7 @@ class _Lead(BaseModel):
     customer_id: UUID
     deal_id: UUID
     deal_url: str
-    creato: bool = False
+    created: bool = False
 
     @field_validator("deal_url")
     @classmethod
@@ -114,22 +114,22 @@ class _Sent(NamedTuple):
     """What the request says, read under the first lock as plain values."""
 
     company_id: UUID
-    nome_azienda: str
-    figura_richiesta: str
-    progetto: str
-    durata: str
-    periodo_da: date
-    budget_giornaliero: Decimal
-    remoto: str
-    giorni_presenza: int | None
-    numero_risorse: int
+    company_name: str
+    requested_role: str
+    project: str
+    duration: str
+    period_from: date
+    daily_budget: Decimal
+    remote: str
+    onsite_days: int | None
+    headcount: int
     nome: str
-    cognome: str
+    last_name: str
     email: str
-    telefono: str | None
+    phone: str | None
     linkedin_url: str | None
-    bozza: dict[str, Any] | None
-    stato: str | None
+    draft: dict[str, Any] | None
+    status: str | None
     # The CRM deal an admin named when opening the request (REB-870), kept on the row so a
     # retry or the sweep asks for that deal and never files the customer by its address.
     deal_id: UUID | None
@@ -139,8 +139,8 @@ class _Sent(NamedTuple):
 class CrmLinkResult:
     """What `link` leaves the request at, for the caller that answers or logs it."""
 
-    stato: str | None
-    errore: str | None
+    status: str | None
+    error: str | None
     deal_url: str | None
     # False when nothing was asked of the CRM: a request deleted, waiting for a token, or one
     # the sweep found already taken care of.
@@ -178,26 +178,26 @@ class CrmLeadService:
         """The door's `PUT` body (spec § 2, § 3): the company's name, the referente, the
         deal as built here, and `deal_id` for a request linked to a deal the CRM has.
         Refused with `_NotAsked` for a referente with no name, which the door would refuse
-        in English: `link` records it as `errore`, so a retry after it is completed works."""
+        in English: `link` records it as `error`, so a retry after it is completed works."""
         nome = _cut(sent.nome, PERSON_NAME_MAX)
         if nome is None:
-            raise _NotAsked(REFERENTE_WITHOUT_NAME)
-        ruolo = draft.ruolo if draft is not None else ""
+            raise _NotAsked(CONTACT_PERSON_WITHOUT_NAME)
+        role = draft.role if draft is not None else ""
         deal: dict[str, Any] = {
-            "nome": (f"{sent.nome_azienda}: {ruolo or sent.figura_richiesta}")[:DEAL_NAME_MAX],
-            "valore_previsto": self._value(sent, draft),
-            "data_chiusura_prevista": (
-                sent.periodo_da.isoformat() if sent.periodo_da > self.today() else None
+            "nome": (f"{sent.company_name}: {role or sent.requested_role}")[:DEAL_NAME_MAX],
+            "expected_value": self._value(sent, draft),
+            "expected_close_date": (
+                sent.period_from.isoformat() if sent.period_from > self.today() else None
             ),
             "note": self._note(sent, draft),
         }
         return {
-            "azienda": sent.nome_azienda[:COMPANY_MAX],
-            "referente": {
+            "company": sent.company_name[:COMPANY_MAX],
+            "contact_person": {
                 "nome": nome,
-                "cognome": _cut(sent.cognome, PERSON_NAME_MAX),
+                "last_name": _cut(sent.last_name, PERSON_NAME_MAX),
                 "email": sent.email,
-                "telefono": _cut(sent.telefono, PHONE_MAX),
+                "phone": _cut(sent.phone, PHONE_MAX),
                 "linkedin_url": _cut(sent.linkedin_url, LINKEDIN_MAX),
             },
             "deal": deal,
@@ -208,52 +208,52 @@ class CrmLeadService:
     def _value(sent: _Sent, draft: LeadDraft | None) -> str | None:
         """The budget a day times the days a week, the weeks and the people: only when
         every input is there, and dropped when it does not fit the CRM's column."""
-        if draft is None or draft.giorni_settimana is None or draft.durata_settimane is None:
+        if draft is None or draft.week_days is None or draft.duration_weeks is None:
             return None
         value = (
-            sent.budget_giornaliero
-            * Decimal(str(draft.giorni_settimana))
-            * draft.durata_settimane
-            * sent.numero_risorse
+            sent.daily_budget
+            * Decimal(str(draft.week_days))
+            * draft.duration_weeks
+            * sent.headcount
         ).quantize(CENT, rounding=ROUND_HALF_UP)
         if value < 0 or value >= VALUE_LIMIT:
             return None
         return format(value, "f")
 
     def _note(self, sent: _Sent, draft: LeadDraft | None) -> str:
-        """Two blocks, in Italian: what the company wrote, `progetto` verbatim, and the
+        """Two blocks, in Italian: what the company wrote, `project` verbatim, and the
         AI's draft under its own heading."""
-        modo = REMOTE_WORDS.get(sent.remoto, sent.remoto)
-        if sent.giorni_presenza is not None:
-            modo += f", {sent.giorni_presenza} giorni a settimana in sede"
+        modo = REMOTE_WORDS.get(sent.remote, sent.remote)
+        if sent.onsite_days is not None:
+            modo += f", {sent.onsite_days} giorni a settimana in sede"
         hub = f"{self.settings.hub_url.rstrip('/')}/admin/companies/{sent.company_id}"
         written = [
             "Richiesta arrivata dall'hub di rebase.",
             "",
-            f"Azienda: {sent.nome_azienda}",
-            f"Figura richiesta: {sent.figura_richiesta}",
-            f"Persone richieste: {sent.numero_risorse}",
-            f"Inizio desiderato: {sent.periodo_da.strftime('%d/%m/%Y')}",
-            f"Durata: {sent.durata}",
-            f"Budget giornaliero: {sent.budget_giornaliero:.2f} €",
+            f"Azienda: {sent.company_name}",
+            f"Figura richiesta: {sent.requested_role}",
+            f"Persone richieste: {sent.headcount}",
+            f"Inizio desiderato: {sent.period_from.strftime('%d/%m/%Y')}",
+            f"Durata: {sent.duration}",
+            f"Budget giornaliero: {sent.daily_budget:.2f} €",
             f"Modalità: {modo}",
             f"Richiesta sull'hub: {hub}",
             "",
             "Progetto, come l'ha scritto l'azienda:",
-            sent.progetto,
+            sent.project,
         ]
         block = ["", "Bozza AI, da rivedere"]
         if draft is None:
             block.append(NO_DRAFT_NOTE)
         else:
             block += [
-                f"Ruolo: {draft.ruolo or '-'}",
+                f"Ruolo: {draft.role or '-'}",
                 "Giorni a settimana: "
-                + ("-" if draft.giorni_settimana is None else f"{draft.giorni_settimana:g}"),
+                + ("-" if draft.week_days is None else f"{draft.week_days:g}"),
                 "Durata in settimane: "
-                + ("-" if draft.durata_settimane is None else str(draft.durata_settimane)),
-                f"Competenze: {', '.join(draft.competenze) or '-'}",
-                f"Sintesi: {draft.sintesi or '-'}",
+                + ("-" if draft.duration_weeks is None else str(draft.duration_weeks)),
+                f"Competenze: {', '.join(draft.skills) or '-'}",
+                f"Sintesi: {draft.profile_summary or '-'}",
             ]
         return "\n".join(written + block)
 
@@ -267,12 +267,12 @@ class CrmLeadService:
         *,
         sweep: bool = False,
     ) -> CrmLinkResult:
-        """Files the request in the CRM, or records why not (spec § 4): `collegato` on a
-        `201` or `200`; `rifiutato` with the CRM's sentence on a `422`, which only an
-        admin's «Riprova» asks again; `errore` with its cause on anything else, which the
+        """Files the request in the CRM, or records why not (spec § 4): `linked` on a
+        `201` or `200`; `rejected` with the CRM's sentence on a `422`, which only an
+        admin's «Riprova» asks again; `error` with its cause on anything else, which the
         sweep retries. A request with no state (written before the link existed) is set to
-        `da_collegare` first, as an admin asking for it means it. Without a token nothing is
-        asked and the request waits as `da_collegare`. A request already `collegato` by
+        `to_link` first, as an admin asking for it means it. Without a token nothing is
+        asked and the request waits as `to_link`. A request already `linked` by
         another caller while this one was away keeps its link.
 
         With `deal_id` the door links that deal and creates nothing («Collega a un altro
@@ -298,27 +298,27 @@ class CrmLeadService:
         body: dict[str, Any] = {}
         unasked: Outcome[_Lead] | None = None
         if not speaks_https(self.door.api_url):
-            unasked = Outcome(ERRORE, HTTPS_ONLY)
+            unasked = Outcome(ERROR, HTTPS_ONLY)
         else:
             if deal_id is None:
                 draft = self._draft(sent)
             try:
                 body = self.payload(sent, draft, deal_id)
             except _NotAsked as missing:
-                unasked = Outcome(ERRORE, missing.sentence)
+                unasked = Outcome(ERROR, missing.sentence)
         outcome = unasked if unasked is not None else self._put(company_id, body)
 
         try:
             row = self._lock(company_id)
             if deal_id is not None and not inherited and outcome.answer is None:
-                refusal = crm_state_sentence(outcome.stato, outcome.errore)
+                refusal = crm_state_sentence(outcome.status, outcome.error)
                 self.session.rollback()
                 self._record(admin_id, company_id, outcome, deal_id)
-                raise InvalidState(refusal, crm_stato=outcome.stato)
+                raise InvalidState(refusal, crm_status=outcome.status)
             # A request another caller linked meanwhile, or one that was linked before this
             # call, keeps its link: only a deal the admin named replaces it, and a failure
             # never takes a link away.
-            if (deal_id is not None and not inherited) or row.crm_stato != COLLEGATO:
+            if (deal_id is not None and not inherited) or row.crm_status != LINKED:
                 self._write(row, outcome)
             self.session.commit()
         except InvalidState:
@@ -327,14 +327,14 @@ class CrmLeadService:
             self.session.rollback()
             raise
         if outcome.answer is None:
-            _log.warning("request %s is not filed in the CRM: %s", company_id, outcome.stato)
+            _log.warning("request %s is not filed in the CRM: %s", company_id, outcome.status)
         self._record(admin_id, company_id, outcome, deal_id)
         return self._result(company_id)
 
     def link_pending(self) -> SweepCount:
-        """The sweep's round: `link` on every live request waiting (`da_collegare`) or
-        failed (`errore`) that nothing is attempting right now, each on its own, a failure
-        logged without stopping the rest. A `rifiutato` request is not asked again, nor a
+        """The sweep's round: `link` on every live request waiting (`to_link`) or
+        failed (`error`) that nothing is attempting right now, each on its own, a failure
+        logged without stopping the rest. A `rejected` request is not asked again, nor a
         row with no state. Without a token nothing is asked."""
         if not self.configured:
             _log.info("no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: no request filed")
@@ -343,7 +343,7 @@ class CrmLeadService:
         rows = self.session.scalars(
             select(Company.id)
             .where(
-                Company.crm_stato.in_(PENDING),
+                Company.crm_status.in_(PENDING),
                 Company.deleted_at.is_(None),
                 Company.created_at <= cutoff,
                 or_(Company.crm_attempted_at.is_(None), Company.crm_attempted_at <= cutoff),
@@ -353,7 +353,7 @@ class CrmLeadService:
 
         def link(company_id: UUID) -> bool | None:
             result = self.link(company_id, sweep=True)
-            return None if not result.asked else result.stato == COLLEGATO
+            return None if not result.asked else result.status == LINKED
 
         return sweep_round(self.session, rows, link, what="request")
 
@@ -372,7 +372,7 @@ class CrmLeadService:
 
     def _begin(self, company_id: UUID, deal_id: UUID | None, sweep: bool) -> _Sent | None:
         """Under the row's lock: what the request says, the attempt stamped, the state set
-        to `da_collegare` if it had none (not for a deal the admin named: a refusal must
+        to `to_link` if it had none (not for a deal the admin named: a refusal must
         leave the row out of the sweep), then committed and released. `None` when nothing is
         to be asked: a soft-deleted request, which is not linked, a sweep that finds the row
         taken care of, or no token (the request waits)."""
@@ -383,10 +383,10 @@ class CrmLeadService:
             if sweep:
                 cutoff = self.now() - GRACE
                 busy = row.crm_attempted_at is not None and row.crm_attempted_at > cutoff
-                if row.crm_stato not in PENDING or busy or row.created_at > cutoff:
+                if row.crm_status not in PENDING or busy or row.created_at > cutoff:
                     return None
-            if row.crm_stato is None and deal_id is None:
-                row.crm_stato = DA_COLLEGARE
+            if row.crm_status is None and deal_id is None:
+                row.crm_status = TO_LINK
             if not self.configured:
                 _log.info(
                     "no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: request %s waits "
@@ -399,23 +399,23 @@ class CrmLeadService:
             ).one()
             sent = _Sent(
                 company_id=row.id,
-                nome_azienda=row.nome_azienda,
-                figura_richiesta=row.figura_richiesta,
-                progetto=row.progetto,
-                durata=row.durata,
-                periodo_da=row.periodo_da,
-                budget_giornaliero=row.budget_giornaliero,
-                remoto=row.remoto,
-                giorni_presenza=row.giorni_presenza,
-                numero_risorse=row.numero_risorse,
+                company_name=row.company_name,
+                requested_role=row.requested_role,
+                project=row.project,
+                duration=row.duration,
+                period_from=row.period_from,
+                daily_budget=row.daily_budget,
+                remote=row.remote,
+                onsite_days=row.onsite_days,
+                headcount=row.headcount,
                 nome=user.nome,
-                cognome=user.cognome,
+                last_name=user.last_name,
                 email=user.email,
-                telefono=user.telefono,
+                phone=user.phone,
                 linkedin_url=user.linkedin_url,
-                bozza=row.crm_bozza,
-                stato=row.crm_stato,
-                deal_id=row.crm_deal_id if row.crm_stato != COLLEGATO else None,
+                draft=row.crm_draft,
+                status=row.crm_status,
+                deal_id=row.crm_deal_id if row.crm_status != LINKED else None,
             )
             row.crm_attempted_at = self.now()
         return sent
@@ -423,24 +423,24 @@ class CrmLeadService:
     def _draft(self, sent: _Sent) -> LeadDraft | None:
         """The kept draft, or one asked for now with no lock held and kept at once: so the
         AI is spent once however many times the CRM has to be asked."""
-        if sent.bozza is not None:
-            return LeadDraft.from_json(sent.bozza)
+        if sent.draft is not None:
+            return LeadDraft.from_json(sent.draft)
         llm = self.llm() if self.llm is not None else None
         draft = draft_lead(
             llm,
-            figura_richiesta=sent.figura_richiesta,
-            progetto=sent.progetto,
-            durata=sent.durata,
-            periodo_da=sent.periodo_da,
+            requested_role=sent.requested_role,
+            project=sent.project,
+            duration=sent.duration,
+            period_from=sent.period_from,
         )
         if draft is None:
             return None
         with committed(self.session):
             row = self._lock(sent.company_id)
-            if row.crm_bozza is None:
-                row.crm_bozza = draft.to_json()
+            if row.crm_draft is None:
+                row.crm_draft = draft.to_json()
             else:  # another caller kept one first: that is the draft
-                draft = LeadDraft.from_json(row.crm_bozza)
+                draft = LeadDraft.from_json(row.crm_draft)
         return draft
 
     def _put(self, company_id: UUID, body: dict[str, Any]) -> Outcome[_Lead]:
@@ -451,14 +451,14 @@ class CrmLeadService:
 
     @staticmethod
     def _write(row: Company, outcome: Outcome[_Lead]) -> None:
-        write(row, outcome, state="crm_stato", error="crm_errore", copy=_copy_lead)
+        write(row, outcome, state="crm_status", error="crm_errore", copy=_copy_lead)
 
     def _record(
         self, admin_id: UUID | None, company_id: UUID, outcome: Outcome[_Lead], deal_id: UUID | None
     ) -> None:
         if admin_id is None:
             return
-        payload: dict[str, Any] = {"esito": outcome.stato, "errore": outcome.errore}
+        payload: dict[str, Any] = {"outcome": outcome.status, "error": outcome.error}
         if deal_id is not None:
             payload["deal_id"] = str(deal_id)
         AdminActionService(self.session).record(ENTITY, company_id, "crm_link", admin_id, payload)
@@ -469,7 +469,7 @@ class CrmLeadService:
             .where(Company.id == company_id)
             .execution_options(populate_existing=True)
         ).one()
-        result = CrmLinkResult(row.crm_stato, row.crm_errore, row.crm_deal_url, asked)
+        result = CrmLinkResult(row.crm_status, row.crm_error, row.crm_deal_url, asked)
         self.session.rollback()
         return result
 
@@ -482,7 +482,7 @@ def _copy_lead(row: Company, lead: _Lead) -> None:
 
 class _NotAsked(Exception):
     """A request the hub will not send to the CRM yet, with the sentence its page shows:
-    recorded as `errore`, never `rifiutato`, since it is the hub's own data to complete."""
+    recorded as `error`, never `rejected`, since it is the hub's own data to complete."""
 
     def __init__(self, sentence: str) -> None:
         super().__init__(sentence)
@@ -498,7 +498,7 @@ def link_after_response(
 ) -> None:
     """The first attempt, run by `BackgroundTasks` after the response, in a session of its
     own (the request's is closed by then). It never raises: whatever fails, the request is
-    in `da_collegare` or `errore` and the sweep takes it from there."""
+    in `to_link` or `error` and the sweep takes it from there."""
     try:
         with open_session() as session:
             CrmLeadService(session, settings, http, llm).link(company_id)

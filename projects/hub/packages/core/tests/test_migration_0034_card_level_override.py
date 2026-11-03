@@ -1,4 +1,4 @@
-"""0034 (REB-799): `freelancers.seniority_admin` and `anni_admin`, nullable, pinned to the
+"""0034 (REB-799): `freelancers.seniority_admin` and `experience_years_admin`, nullable, pinned to the
 card's own words and to 0..60; a retried deploy lands on the same schema, and the
 downgrade drops them."""
 
@@ -66,7 +66,7 @@ def test_migration_0034_adds_the_admins_level_pinned_to_the_cards_words(
         for _ in range(2):  # a retried deploy runs the same revision again
             command.upgrade(config, "head")
             with engine.begin() as connection:
-                assert _columns(connection) == {"seniority_admin", "anni_admin"}
+                assert _columns(connection) == {"seniority_admin", "experience_years_admin"}
                 assert connection.execute(
                     text("SELECT seniority_admin, anni_admin FROM freelancers WHERE id = :i"),
                     {"i": freelancer},

@@ -4,13 +4,13 @@ import { downloadFromApi } from '@/lib/download'
 import { fetchAllPages } from '@/lib/fetchAllPages'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStato } from './labels'
+import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStatus } from './labels'
 
 export interface DaysListParams {
   contractId?: string
   da?: string
   a?: string
-  stato?: WorkUnitStato
+  status?: WorkUnitStatus
 }
 
 /**
@@ -23,7 +23,7 @@ export function useWorkUnits(params: DaysListParams, options: { enabled?: boolea
   const bounded = params.contractId !== undefined || params.da !== undefined || params.a !== undefined
   return useQuery({
     enabled: (options.enabled ?? true) && bounded,
-    queryKey: queryKeys.workUnits({ ...params, azienda: selected }),
+    queryKey: queryKeys.workUnits({ ...params, legal_entity: selected }),
     queryFn: () =>
       unwrap(
         api.GET('/api/work-units', {
@@ -32,10 +32,10 @@ export function useWorkUnits(params: DaysListParams, options: { enabled?: boolea
               contract_id: params.contractId,
               da: params.da,
               a: params.a,
-              stato: params.stato,
+              status: params.status,
               // A contract names its own azienda: the sidebar's only narrows a read that does
               // not, and both together would answer nothing for a contract of the other one.
-              azienda_id: params.contractId === undefined ? (selected ?? undefined) : undefined,
+              legal_entity_id: params.contractId === undefined ? (selected ?? undefined) : undefined,
             },
           },
         }),
@@ -59,7 +59,7 @@ export function useWorkUnit(workUnitId: string) {
 /**
  * The contracts a day can be recorded against: the ones that have not ended, in the
  * sidebar's azienda, every page of them (a long history of ended contracts must not push a
- * live one off the first page and out of the picker). A contract in `bozza` is offered too,
+ * live one off the first page and out of the picker). A contract in `draft` is offered too,
  * because that is the state every contract is born in and the ledger does not wait for it to
  * be activated.
  *
@@ -69,18 +69,18 @@ export function useWorkUnit(workUnitId: string) {
 export function useDayContracts() {
   const { selected } = useLegalEntity()
   return useQuery({
-    queryKey: queryKeys.contracts({ for: 'days', azienda: selected }),
+    queryKey: queryKeys.contracts({ for: 'days', legal_entity: selected }),
     queryFn: async () => {
       const { items } = await fetchAllPages((cursor) =>
         unwrap(
           api.GET('/api/contracts', {
             params: {
-              query: { azienda_id: selected ?? undefined, limit: 200, sort: 'titolo', cursor },
+              query: { legal_entity_id: selected ?? undefined, limit: 200, sort: 'title', cursor },
             },
           }),
         ),
       )
-      return items.filter((contract) => contract.stato !== 'terminato' && contract.stato !== 'scaduto')
+      return items.filter((contract) => contract.status !== 'terminated' && contract.status !== 'expired')
     },
   })
 }
@@ -135,9 +135,9 @@ export function useDayRateCards(contractId: string) {
  * lists reach must stay reachable from its own page).
  */
 export function useApprovalCandidates(contractId: string, openedFor: readonly string[]) {
-  const proposed = useWorkUnits({ contractId, stato: 'proposto' }, { enabled: contractId !== '' })
+  const proposed = useWorkUnits({ contractId, status: 'proposed' }, { enabled: contractId !== '' })
   const flagged = useWorkUnits(
-    { contractId, stato: 'lavorato_senza_approvazione' },
+    { contractId, status: 'worked_without_approval' },
     { enabled: contractId !== '' },
   )
   const listed = new Set([...(proposed.data?.items ?? []), ...(flagged.data?.items ?? [])].map((day) => day.id))
@@ -194,7 +194,7 @@ export function useMoveDay(workUnitId: string) {
   const queryClient = useQueryClient()
   const invalidate = useInvalidateDays()
   return useMutation({
-    mutationFn: (body: { stato: WorkUnitStato; motivo: string }) =>
+    mutationFn: (body: { status: WorkUnitStatus; reason: string }) =>
       unwrap(
         api.POST('/api/work-units/{work_unit_id}/transitions', {
           params: { path: { work_unit_id: workUnitId } },

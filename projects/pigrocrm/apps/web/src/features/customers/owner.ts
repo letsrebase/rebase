@@ -26,7 +26,7 @@ export function useCustomerOwners() {
   const options = useMemo<OwnerOption[]>(
     () =>
       canChange
-        ? (users.data ?? []).filter((item) => item.attivo).map(({ id, nome }) => ({ id, nome }))
+        ? (users.data ?? []).filter((item) => item.active).map(({ id, nome }) => ({ id, nome }))
         : [],
     [canChange, users.data],
   )

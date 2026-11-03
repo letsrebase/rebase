@@ -29,21 +29,21 @@ function failed(error: unknown, status: number) {
 const CONTRACT = {
   id: 'c1',
   customer_id: 'cust-1',
-  titolo: 'Sviluppo piattaforma',
-  inizio: '2026-01-01',
-  fine: '2026-12-31',
-  tipo_rinnovo: 'tacito',
-  preavviso_rinnovo_giorni: 60,
-  preavviso_disdetta_giorni: 30,
-  giorni_pagamento: 30,
-  pagamento_fine_mese: true,
-  cadenza_fatturazione: 'mensile',
-  divisa: 'EUR',
+  title: 'Sviluppo piattaforma',
+  start: '2026-01-01',
+  end: '2026-12-31',
+  renewal_type: 'tacit',
+  renewal_notice_days: 60,
+  termination_notice_days: 30,
+  payment_days: 30,
+  payment_end_of_month: true,
+  billing_cadence: 'monthly',
+  currency: 'EUR',
   requires_prior_approval: true,
   applies_social_charge: false,
-  tetto_quota_cliente: '50.00',
-  politica_spese: { kind: 'rimborsabile_con_tetto', importo_tetto: '500.00' },
-  stato: 'bozza',
+  customer_share_cap: '50.00',
+  expense_policy: { kind: 'reimbursable_with_cap', amount_cap: '500.00' },
+  status: 'draft',
   note: null,
   custom_fields: {},
 }
@@ -51,8 +51,8 @@ const CONTRACT = {
 function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
   mockGet.mockImplementation(((path: string) => {
     if (path === '/api/contracts/{contract_id}') return contract
-    if (path === '/api/customers/{customer_id}') return ok({ id: 'cust-1', ragione_sociale: 'ACME Srl' })
-    if (path === '/api/work-units') return ok({ items: [], troncato: false })
+    if (path === '/api/customers/{customer_id}') return ok({ id: 'cust-1', legal_name: 'ACME Srl' })
+    if (path === '/api/work-units') return ok({ items: [], truncated: false })
     if (path === '/api/schema/{entity_type}') {
       return ok({ entity_type: 'contract', native_fields: [], custom_fields: [] })
     }
@@ -61,43 +61,43 @@ function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
     }
     if (path.endsWith('/projection')) {
       return ok({
-        finestra_irrevocabilita_fino_al: '2026-11-25',
-        programmato: '0.00',
-        da_rinnovo: '0.00',
-        totale: '0.00',
+        irrevocability_window_until_to: '2026-11-25',
+        scheduled: '0.00',
+        from_renewal: '0.00',
+        total: '0.00',
       })
     }
     if (path.endsWith('/concentration')) {
       return ok({
-        periodo_da: '2026-01-01',
-        periodo_a: '2026-12-31',
-        valute: [{ divisa: 'EUR', ricavi_cliente: '0.00', ricavi_totali: '0.00', quota: 0 }],
+        period_from: '2026-01-01',
+        period_to: '2026-12-31',
+        currencies: [{ currency: 'EUR', customer_revenue: '0.00', total_revenue: '0.00', share: 0 }],
       })
     }
     if (path.endsWith('/billable-days')) {
       return ok({
         contract_id: 'c1',
-        divisa: 'EUR',
-        righe: [],
-        mesi: [],
-        giornate: 0,
-        quantita: '0',
-        imponibile: '0.00',
-        senza_tariffa: [],
-        senza_approvazione: 0,
-        fatturabile: false,
+        currency: 'EUR',
+        lines: [],
+        months: [],
+        work_units: 0,
+        quantity: '0',
+        taxable_amount: '0.00',
+        without_rate: [],
+        without_approval: 0,
+        billable: false,
       })
     }
     if (path.endsWith('/register')) {
       return ok({
         contract_id: 'c1',
-        titolo: 'Sviluppo piattaforma',
-        cliente: 'ACME Srl',
+        title: 'Sviluppo piattaforma',
+        customer: 'ACME Srl',
         da: '2026-10-01',
         a: '2026-10-31',
-        voci: [],
-        totale_quantita: '0',
-        senza_approvazione: 0,
+        entries: [],
+        quantity_total: '0',
+        without_approval: 0,
       })
     }
     return ok([])
@@ -146,7 +146,7 @@ describe('ContractDetail', () => {
     expect(screen.getByText('Tetto sulla quota').parentElement).toHaveTextContent('50%')
     first.unmount()
 
-    mockApi(ok({ ...CONTRACT, tetto_quota_cliente: null }))
+    mockApi(ok({ ...CONTRACT, customer_share_cap: null }))
     renderPage()
     expect(await screen.findByText('Nessuno')).toBeInTheDocument()
     expect(screen.getByText('Tetto sulla quota').parentElement).toHaveTextContent('Nessuno')

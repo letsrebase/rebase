@@ -64,20 +64,20 @@ export const queryKeys = {
   // The agent proposals the Proposte queue reviews (REB-750). `proposals` is the prefix a
   // decision invalidates; the contract behind a day proposal has a key of its own because
   // the page only needs its title, not the contracts feature's cache.
-  proposals: (stato?: string) => ['proposals', stato ?? 'all'] as const,
+  proposals: (status?: string) => ['proposals', status ?? 'all'] as const,
   proposal: (id: string) => ['proposal', id] as const,
   proposalTimeline: (id: string) => ['proposal-timeline', id] as const,
   proposalContract: (id: string) => ['proposal-contract', id] as const,
   // The aziende of the space (REB-617): the list every selector and Impostazioni →
   // Aziende read; a single azienda is read from the list, so there is no per-id key.
-  aziende: ['aziende'] as const,
-  // One azienda's logo or signature bytes (REB-629), under the `aziende` prefix so the
+  legal_entities: ['legal_entities'] as const,
+  // One azienda's logo or signature bytes (REB-629), under the `legal_entities` prefix so the
   // save's invalidation refreshes the preview with the row.
-  aziendaImage: (aziendaId: string, slot: 'logo' | 'firma') =>
-    ['aziende', 'image', aziendaId, slot] as const,
-  // The azienda a nation proposes for a new customer (REB-626). Under the `aziende`
+  legalEntityImage: (legalEntityId: string, slot: 'logo' | 'signature') =>
+    ['legal_entities', 'image', legalEntityId, slot] as const,
+  // The azienda a nation proposes for a new customer (REB-626). Under the `legal_entities`
   // prefix on purpose: a rename or a deactivation invalidates the proposal with the list.
-  aziendaProposta: (nazione: string) => ['aziende', 'proposta', nazione] as const,
+  legalEntityProposal: (country: string) => ['legal_entities', 'proposal', country] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
   // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
   // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,
@@ -93,7 +93,7 @@ export const queryKeys = {
   invoicePdfs: (id: string) => ['invoice-pdf', id] as const,
   invoicePdf: (id: string, documentId: string) => ['invoice-pdf', id, documentId] as const,
   // Keyed by azienda since REB-615: a fiscal profile belongs to one.
-  fiscalProfile: (aziendaId: string) => ['fiscal-profile', aziendaId] as const,
+  fiscalProfile: (legalEntityId: string) => ['fiscal-profile', legalEntityId] as const,
   // The space's own settings (`GET /api/settings/space`): the panel in Impostazioni reads
   // and writes it, and the get-started invoice door reads the same entry.
   spaceSettings: ['settings', 'space'] as const,
@@ -103,8 +103,8 @@ export const queryKeys = {
   // rather than the month the page happens to be showing.
   // The sidebar's azienda is part of the key since REB-625: the hours and the invoices
   // of a month differ by it, and a switch is a new key rather than an invalidation.
-  calendarMonth: (mese: string, aziendaId: string | null = null) =>
-    ['calendar', mese, aziendaId] as const,
+  calendarMonth: (month: string, legalEntityId: string | null = null) =>
+    ['calendar', month, legalEntityId] as const,
   /** The prefix of every month: a write that moves a date invalidates all of them. */
   calendarAll: ['calendar'] as const,
   activities: (params?: unknown) => ['activities', params ?? {}] as const,
@@ -119,7 +119,7 @@ export const queryKeys = {
   dealRates: (dealId: string, userId: string) => ['deal-rates', dealId, userId] as const,
   costs: (params?: unknown) => ['costs', params ?? {}] as const,
   costCategories: (includeArchived: boolean) => ['cost-categories', includeArchived] as const,
-  periodLocks: (anno?: number) => ['period-locks', anno ?? null] as const,
+  periodLocks: (year?: number) => ['period-locks', year ?? null] as const,
   dealPnl: (dealId: string) => ['deal-pnl', dealId] as const,
   // Keyed on the whole query object, window included: the same customer read over two
   // different periods is two different answers, and a key that dropped the dates would
@@ -127,21 +127,21 @@ export const queryKeys = {
   periodPnl: (params?: unknown) => ['period-pnl', params ?? {}] as const,
   // The azienda is part of the key since REB-632: an estimate is one azienda's, and in
   // «tutte» the economic tab holds one entry per azienda at once.
-  fiscalEstimate: (anno: number, aziendaId: string | null = null) =>
-    ['fiscal-estimate', anno, aziendaId] as const,
+  fiscalEstimate: (year: number, legalEntityId: string | null = null) =>
+    ['fiscal-estimate', year, legalEntityId] as const,
   // The ceilings and the year register are one azienda's as well (REB-755, REB-757), and
   // the simulation is keyed on everything typed: the same deal against another date is
   // another answer.
-  ceilings: (anno: number, aziendaId: string | null = null) =>
-    ['ceilings', anno, aziendaId] as const,
+  ceilings: (year: number, legalEntityId: string | null = null) =>
+    ['ceilings', year, legalEntityId] as const,
   ceilingSimulation: (params: Record<string, string>) => ['ceiling-simulation', params] as const,
-  yearOverview: (anno: number, aziendaId: string | null = null) =>
-    ['year-overview', anno, aziendaId] as const,
+  yearOverview: (year: number, legalEntityId: string | null = null) =>
+    ['year-overview', year, legalEntityId] as const,
   yearOverviewAll: ['year-overview'] as const,
   // The term is part of the key so an in-flight response for "ross" cannot overwrite the
   // rendering of "rossi": TanStack Query discards the stale entry rather than the
   // component having to compare what came back with what was typed.
-  search: (term: string, aziendaId: string | null = null) => ['search', term, aziendaId] as const,
+  search: (term: string, legalEntityId: string | null = null) => ['search', term, legalEntityId] as const,
   // The period is part of the key, so switching period is a different cache entry rather
   // than a refetch that briefly shows March's numbers under April's heading. Every
   // dashboard key starts with the literal 'dashboard' so a mutation that cannot know which
@@ -149,7 +149,7 @@ export const queryKeys = {
   /** Every dashboard read, whatever the period: for a write that cannot know which is on screen. */
   dashboardAll: ['dashboard'] as const,
   dashboard: (
-    kind: 'commerciale' | 'economica' | 'panoramica' | 'scadenziario' | 'giornate',
+    kind: 'commercial' | 'economic' | 'panoramica' | 'receivables' | 'work_units',
     params: Record<string, string>,
   ) =>
     ['dashboard', kind, params] as const,

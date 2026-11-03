@@ -17,9 +17,9 @@ const USER = {
   id: 'u1',
   email: 'collab@pigro.it',
   nome: 'Cora Collaboratrice',
-  ruolo: 'collaboratore' as const,
-  attivo: true,
-  digest_settimanale: true,
+  role: 'collaborator' as const,
+  active: true,
+  weekly_digest: true,
 }
 
 function renderPanel() {
@@ -50,7 +50,7 @@ describe('ProfilePanel', () => {
 
     expect(screen.getByText('Cora Collaboratrice')).toBeInTheDocument()
     expect(screen.getByText('collab@pigro.it')).toBeInTheDocument()
-    expect(screen.getByText('collaboratore')).toBeInTheDocument()
+    expect(screen.getByText('collaborator')).toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })

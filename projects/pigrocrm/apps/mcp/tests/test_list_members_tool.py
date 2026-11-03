@@ -1,5 +1,5 @@
 """REB-809: `list_members` is how an agent turns a name into the id `owner_id` and
-`assegnata_a` take. Same people as the web pickers, with the role for everybody and the
+`assigned_to` take. Same people as the web pickers, with the role for everybody and the
 email for an administrator only."""
 
 from pathlib import Path
@@ -17,15 +17,13 @@ from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
 
-def _user(
-    session: Session, nome: str, *, ruolo: str = "collaboratore", attivo: bool = True
-) -> User:
+def _user(session: Session, nome: str, *, role: str = "collaborator", active: bool = True) -> User:
     user = User(
         email=f"{nome.lower()}-{uuid4()}@example.test",
         password_hash="x",
         nome=nome,
-        ruolo=ruolo,
-        attivo=attivo,
+        role=role,
+        active=active,
     )
     session.add(user)
     session.flush()
@@ -44,8 +42,8 @@ def _server_as(session: Session, tmp_path: Path, role: str) -> Any:
 async def test_an_admin_lists_the_active_members_with_role_and_email(
     server, mcp_session: Session
 ) -> None:
-    ada = _user(mcp_session, "Ada", ruolo="admin")
-    gone = _user(mcp_session, "Andata", attivo=False)
+    ada = _user(mcp_session, "Ada", role="admin")
+    gone = _user(mcp_session, "Andata", active=False)
 
     async with Client(server) as client:
         result = await client.call_tool("list_members", {})
@@ -55,7 +53,7 @@ async def test_an_admin_lists_the_active_members_with_role_and_email(
     assert members[str(ada.id)] == {
         "id": str(ada.id),
         "nome": "Ada",
-        "ruolo": "admin",
+        "role": "admin",
         "email": ada.email,
     }
 
@@ -63,21 +61,21 @@ async def test_an_admin_lists_the_active_members_with_role_and_email(
 async def test_anybody_else_gets_the_role_and_no_email(
     mcp_session: Session, tmp_path: Path
 ) -> None:
-    ada = _user(mcp_session, "Ada", ruolo="admin")
+    ada = _user(mcp_session, "Ada", role="admin")
 
-    for role in ("collaboratore", "readonly"):
+    for role in ("collaborator", "readonly"):
         async with Client(_server_as(mcp_session, tmp_path, role)) as client:
             result = await client.call_tool("list_members", {})
         members = {m["id"]: m for m in result.structured_content["result"]}
-        assert members[str(ada.id)]["ruolo"] == "admin"
+        assert members[str(ada.id)]["role"] == "admin"
         assert members[str(ada.id)]["email"] is None
         assert all(m["email"] is None for m in members.values())
 
 
 async def test_it_lists_the_people_the_web_pickers_list(server, mcp_session: Session) -> None:
-    _user(mcp_session, "Ada", ruolo="admin")
+    _user(mcp_session, "Ada", role="admin")
     _user(mcp_session, "Bruno")
-    _user(mcp_session, "Andata", attivo=False)
+    _user(mcp_session, "Andata", active=False)
 
     members = UserService(mcp_session).members()
     # What the REST picker answers stays id and name only: the role and the email are the
@@ -91,7 +89,7 @@ async def test_it_lists_the_people_the_web_pickers_list(server, mcp_session: Ses
     assert [m["nome"] for m in listed] == sorted(m["nome"] for m in listed)
 
 
-async def test_an_agent_resolves_a_name_to_an_id_and_assigns_an_attivita_with_it(
+async def test_an_agent_resolves_to_name_to_an_id_and_assigns_an_task_with_it(
     server, mcp_session: Session
 ) -> None:
     bruno = _user(mcp_session, "Bruno")
@@ -100,25 +98,25 @@ async def test_an_agent_resolves_a_name_to_an_id_and_assigns_an_attivita_with_it
         members = (await client.call_tool("list_members", {})).structured_content["result"]
         found = next(m["id"] for m in members if m["nome"] == "Bruno")
         attivita = await client.call_tool(
-            "create_attivita", {"titolo": "Chiamare il cliente", "assegnata_a": found}
+            "create_task", {"title": "Chiamare il cliente", "assigned_to": found}
         )
         reassigned = await client.call_tool(
-            "update_attivita",
-            {"attivita_id": attivita.structured_content["id"], "changes": {"assegnata_a": found}},
+            "update_task",
+            {"task_id": attivita.structured_content["id"], "changes": {"assigned_to": found}},
         )
 
     assert found == str(bruno.id)
-    assert attivita.structured_content["assegnata_a"] == found
+    assert attivita.structured_content["assigned_to"] == found
     assert reassigned.structured_content["changed"] == []
 
 
 async def test_a_scoped_admin_sees_the_emails_like_on_the_team_page(
     mcp_session: Session, tmp_path: Path
 ) -> None:
-    ada = _user(mcp_session, "Ada", ruolo="admin")
+    ada = _user(mcp_session, "Ada", role="admin")
     scoped = build_server(
         lambda: mcp_session,
-        lambda: Actor(id=None, type="mcp", role="admin", aziende=(uuid4(),)),
+        lambda: Actor(id=None, type="mcp", role="admin", legal_entities=(uuid4(),)),
         LocalFileStorage(tmp_path),
         Settings(_env_file=None),  # type: ignore[call-arg]
     )

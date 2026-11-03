@@ -43,7 +43,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
         _env_file=None, signer_json=json.dumps(SIGNER), contracts_mail=CONTRACTS_MAIL
     )
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -70,9 +70,9 @@ def test_the_send_hands_documenso_the_framework_and_mails_one_link(
 
     assert sent.status_code == 200, sent.text
     report = sent.json()
-    assert (report["inviato"], report["mail_inviata"]) == ("quadro", True)
-    assert report["match"]["stato"] == "in_firma"
-    assert report["match"]["lettera"]["stato"] == "in_attesa"
+    assert (report["sent"], report["mail_sent"]) == ("framework", True)
+    assert report["match"]["status"] == "awaiting_signature"
+    assert report["match"]["letter"]["status"] == "pending"
     [payload] = documenso.created()
     assert payload["meta"]["distributionMethod"] == "NONE"
     assert not any(payload["meta"]["emailSettings"].values())
@@ -81,7 +81,7 @@ def test_the_send_hands_documenso_the_framework_and_mails_one_link(
     assert mail.subject == "Da firmare: contratto quadro rebase"
     assert "https://firma.letsrebase.test/sign/" in mail.text
     page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches")
-    assert page.json()["quadro"]["stato"] == "inviato"
+    assert page.json()["framework"]["status"] == "sent"
     # The recipient's token is the signing URL's secret half: no admin page reads it.
     assert "firma.letsrebase.test/sign" not in page.text
     assert "777.77" not in sent.text
@@ -95,7 +95,7 @@ def test_without_documenso_the_send_says_signing_is_off(
     answered = client.post(f"/api/hub/matches/{match['id']}/send")
     assert answered.status_code == 503
     assert "non è attiva" in answered.json()["detail"]
-    assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "bozza"
+    assert client.get(f"/api/hub/matches/{match['id']}").json()["status"] == "draft"
 
 
 def test_a_malformed_signer_setting_503s_the_send_naming_it(
@@ -117,7 +117,7 @@ def test_a_malformed_signer_setting_503s_the_send_naming_it(
 
     assert answered.status_code == 503
     assert "REBASE_SIGNER_JSON" in answered.json()["detail"]
-    assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "bozza"
+    assert client.get(f"/api/hub/matches/{match['id']}").json()["status"] == "draft"
 
 
 def test_a_draft_text_never_leaves(
@@ -132,7 +132,7 @@ def test_a_draft_text_never_leaves(
     assert documenso.created() == []
 
 
-def test_an_ordinary_draft_whose_partita_iva_was_removed_is_a_422_on_regime(
+def test_an_ordinary_draft_whose_vat_number_was_removed_is_to_422_on_regime(
     client: TestClient,
     admin: None,
     sender: RecordingSender,
@@ -160,7 +160,7 @@ def test_an_ordinary_draft_whose_partita_iva_was_removed_is_a_422_on_regime(
         }
     ]
     assert documenso.created() == []
-    assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "bozza"
+    assert client.get(f"/api/hub/matches/{match['id']}").json()["status"] == "draft"
 
 
 def test_documenso_refusing_is_a_502_with_its_sentence_alone(
@@ -176,8 +176,8 @@ def test_documenso_refusing_is_a_502_with_its_sentence_alone(
     assert answered.status_code == 502
     assert answered.json() == {"detail": "Documenso ha rifiutato la richiesta: Invalid PDF"}
     page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches").json()
-    assert page["quadro"]["stato"] == "generato"
-    assert page["matches"][0]["stato"] == "bozza"
+    assert page["framework"]["status"] == "generated"
+    assert page["matches"][0]["status"] == "draft"
 
 
 def test_a_soft_deleted_freelancers_match_cannot_be_sent(
@@ -216,7 +216,7 @@ def _sent(client: TestClient, sender: RecordingSender) -> tuple[dict[str, Any], 
     match = draft_match(client, sender)
     assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
     page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches").json()
-    return match, page["quadro"]
+    return match, page["framework"]
 
 
 def test_without_the_cookie_the_signing_actions_are_401s(client: TestClient, admin: None) -> None:
@@ -232,30 +232,30 @@ def test_resend_refresh_and_cancel_a_framework_out_for_signature(
     renderer: FakeRenderer,
     documenso: FakeDocumenso,
 ) -> None:
-    match, quadro = _sent(client, sender)
+    match, framework = _sent(client, sender)
     before = len(sender.sent)
 
-    resent = client.post(f"/api/hub/contract-documents/{quadro['id']}/resend")
-    assert resent.status_code == 200 and resent.json()["stato"] == "inviato"
+    resent = client.post(f"/api/hub/contract-documents/{framework['id']}/resend")
+    assert resent.status_code == 200 and resent.json()["status"] == "sent"
     assert sender.sent[before].subject == "Da firmare: contratto quadro rebase"
-    refreshed = client.post(f"/api/hub/contract-documents/{quadro['id']}/refresh")
-    assert refreshed.status_code == 200 and refreshed.json()["stato"] == "inviato"
+    refreshed = client.post(f"/api/hub/contract-documents/{framework['id']}/refresh")
+    assert refreshed.status_code == 200 and refreshed.json()["status"] == "sent"
 
-    cancelled = client.post(f"/api/hub/contract-documents/{quadro['id']}/cancel")
+    cancelled = client.post(f"/api/hub/contract-documents/{framework['id']}/cancel")
     assert cancelled.status_code == 200
-    assert (cancelled.json()["stato"], cancelled.json()["cancel_reason"]) == (
-        "annullato",
+    assert (cancelled.json()["status"], cancelled.json()["cancel_reason"]) == (
+        "cancelled",
         "Annullato da rebase.",
     )
     [envelope] = documenso.envelopes.values()
     assert envelope.status == "CANCELLED"
-    letter = client.get(f"/api/hub/matches/{match['id']}").json()["lettera"]
+    letter = client.get(f"/api/hub/matches/{match['id']}").json()["letter"]
     assert client.post(f"/api/hub/contract-documents/{letter['id']}/cancel").status_code == 409
 
     # Spec § 6: «Annulla» on a sent framework agreement leaves it shown, not hidden.
     page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches").json()
-    assert (page["quadro"]["stato"], page["quadro"]["cancel_reason"]) == (
-        "annullato",
+    assert (page["framework"]["status"], page["framework"]["cancel_reason"]) == (
+        "cancelled",
         "Annullato da rebase.",
     )
 
@@ -267,22 +267,22 @@ def test_refresh_recovers_a_signature_and_the_match_can_then_be_cancelled(
     renderer: FakeRenderer,
     documenso: FakeDocumenso,
 ) -> None:
-    match, quadro = _sent(client, sender)
+    match, framework = _sent(client, sender)
     [envelope] = documenso.envelopes.values()
     documenso.sign(envelope.id, SIGNED_AT)
 
-    read = client.post(f"/api/hub/contract-documents/{quadro['id']}/refresh").json()
+    read = client.post(f"/api/hub/contract-documents/{framework['id']}/refresh").json()
 
-    assert (read["stato"], read["ha_pdf_firmato"], read["attivo"]) == ("firmato", True, True)
+    assert (read["status"], read["has_pdf_signed"], read["active"]) == ("signed", True, True)
     signed = client.get(
-        f"/api/hub/contract-documents/{quadro['id']}/pdf", params={"firmato": "true"}
+        f"/api/hub/contract-documents/{framework['id']}/pdf", params={"signed": "true"}
     )
     assert signed.content == documenso.signed_pdf(envelope.id)
-    letter = client.get(f"/api/hub/matches/{match['id']}").json()["lettera"]
-    assert letter["stato"] == "inviato"
+    letter = client.get(f"/api/hub/matches/{match['id']}").json()["letter"]
+    assert letter["status"] == "sent"
 
     cancelled = client.post(f"/api/hub/matches/{match['id']}/cancel")
-    assert cancelled.status_code == 200 and cancelled.json()["stato"] == "annullato"
+    assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
     letter_envelope = [e for e in documenso.envelopes.values() if e.id != envelope.id][0]
     assert letter_envelope.status == "CANCELLED"
 
@@ -294,16 +294,16 @@ def test_a_notice_is_recorded_on_an_active_framework_only(
     renderer: FakeRenderer,
     documenso: FakeDocumenso,
 ) -> None:
-    _match, quadro = _sent(client, sender)
-    assert client.post(f"/api/hub/contract-documents/{quadro['id']}/notice").status_code == 409
+    _match, framework = _sent(client, sender)
+    assert client.post(f"/api/hub/contract-documents/{framework['id']}/notice").status_code == 409
     [envelope] = documenso.envelopes.values()
     documenso.sign(envelope.id, SIGNED_AT)
-    assert client.post(f"/api/hub/contract-documents/{quadro['id']}/refresh").status_code == 200
+    assert client.post(f"/api/hub/contract-documents/{framework['id']}/refresh").status_code == 200
 
-    noticed = client.post(f"/api/hub/contract-documents/{quadro['id']}/notice")
+    noticed = client.post(f"/api/hub/contract-documents/{framework['id']}/notice")
 
     assert noticed.status_code == 200
-    assert (noticed.json()["stato"], noticed.json()["attivo"]) == ("disdetto", False)
+    assert (noticed.json()["status"], noticed.json()["active"]) == ("notice_served", False)
 
 
 @pytest.mark.parametrize("action", ["refresh", "resend", "cancel", "notice"])
@@ -319,7 +319,7 @@ def test_a_soft_deleted_freelancers_document_actions_are_hidden(
     """REB-407: the four `/contract-documents/{id}/...` routes guard exactly as
     `download_contract` already does (`require_live_freelancer`), before any of them
     reaches the service, let alone Documenso."""
-    _match, quadro = _sent(client, sender)
+    _match, framework = _sent(client, sender)
     api_session.execute(
         text("UPDATE freelancers SET deleted_at = now() WHERE id = :id"),
         {"id": _match["freelancer_id"]},
@@ -327,8 +327,8 @@ def test_a_soft_deleted_freelancers_document_actions_are_hidden(
     api_session.commit()
     calls_before = len(documenso.calls)
 
-    answered = client.post(f"/api/hub/contract-documents/{quadro['id']}/{action}")
+    answered = client.post(f"/api/hub/contract-documents/{framework['id']}/{action}")
 
     assert answered.status_code == 404
-    assert answered.json() == {"detail": f"documento {quadro['id']} non trovato"}
+    assert answered.json() == {"detail": f"documento {framework['id']} non trovato"}
     assert len(documenso.calls) == calls_before

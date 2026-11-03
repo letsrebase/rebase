@@ -12,21 +12,21 @@ from rebase_core.perks import guide_bytes
 
 def test_a_real_pdf_answers_its_pages_and_its_text() -> None:
     read = extract_text(guide_bytes(), "guida.pdf")
-    assert (read.filename, read.pagine, read.troncato) == ("guida.pdf", 6, False)
-    assert "prima fattura" in read.testo
-    assert TRUNCATION_MARKER not in read.testo
+    assert (read.filename, read.pages, read.truncated) == ("guida.pdf", 6, False)
+    assert "prima fattura" in read.text
+    assert TRUNCATION_MARKER not in read.text
 
 
 def test_a_pdf_with_no_readable_text_answers_empty_text_and_no_truncation() -> None:
     # A header on nothing: pypdf cannot count a page in it, and that is not a document
     # cut short, it is a document with nothing to read.
     read = extract_text(b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n", "vuoto.pdf")
-    assert read == CvText(filename="vuoto.pdf", pagine=0, testo="", troncato=False)
+    assert read == CvText(filename="vuoto.pdf", pages=0, text="", truncated=False)
 
 
 def test_bytes_that_are_not_a_pdf_answer_the_same_and_never_raise() -> None:
-    assert extract_text(b"not a pdf at all", "x.pdf").testo == ""
-    empty = CvText(filename="x.pdf", pagine=0, testo="", troncato=False)
+    assert extract_text(b"not a pdf at all", "x.pdf").text == ""
+    empty = CvText(filename="x.pdf", pages=0, text="", truncated=False)
     assert extract_text(b"", "x.pdf") == empty
 
 
@@ -43,7 +43,7 @@ def test_a_parse_that_overruns_its_deadline_is_refused_cleanly_and_stops() -> No
 
     read = extract_text(guide_bytes(), "guida.pdf", timeout=0.001)
 
-    assert read == CvText(filename="guida.pdf", pagine=0, testo="", troncato=False)
+    assert read == CvText(filename="guida.pdf", pages=0, text="", truncated=False)
     assert time.monotonic() - started < 5
 
 
@@ -58,7 +58,7 @@ def test_a_parser_that_ends_with_an_error_is_the_same_answer(
 
     monkeypatch.setattr(subprocess, "run", fails)
 
-    assert extract_text(guide_bytes(), "guida.pdf").testo == ""
+    assert extract_text(guide_bytes(), "guida.pdf").text == ""
 
 
 def test_a_parser_killed_by_a_signal_is_an_outage_not_an_unreadable_file(

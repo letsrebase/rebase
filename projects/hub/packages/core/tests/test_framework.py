@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from rebase_core.contracts.render import text_version
 from rebase_core.db import session_factory
 from rebase_core.framework import (
-    current_quadro_version,
+    current_framework_version,
     document_read,
     is_active,
     last_notice_day,
@@ -53,19 +53,19 @@ def test_the_last_day_for_a_notice_is_thirty_days_before_the_renewal() -> None:
     assert last_notice_day(date(2027, 10, 1)) == date(2027, 9, 1)
 
 
-def _quadro(**columns: object) -> ContractDocument:
-    return ContractDocument(kind="quadro", **columns)  # type: ignore[arg-type]
+def _framework(**columns: object) -> ContractDocument:
+    return ContractDocument(kind="framework", **columns)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
     ("document", "active"),
     [
-        (_quadro(stato="firmato", notice_at=None), True),
-        (_quadro(stato="firmato", notice_at=datetime(2027, 1, 1, tzinfo=UTC)), False),
-        (_quadro(stato="disdetto", notice_at=datetime(2027, 1, 1, tzinfo=UTC)), False),
-        (_quadro(stato="generato", notice_at=None), False),
-        (_quadro(stato="inviato", notice_at=None), False),
-        (ContractDocument(kind="lettera", stato="firmato", notice_at=None), False),
+        (_framework(status="signed", notice_at=None), True),
+        (_framework(status="signed", notice_at=datetime(2027, 1, 1, tzinfo=UTC)), False),
+        (_framework(status="notice_served", notice_at=datetime(2027, 1, 1, tzinfo=UTC)), False),
+        (_framework(status="generated", notice_at=None), False),
+        (_framework(status="sent", notice_at=None), False),
+        (ContractDocument(kind="letter", status="signed", notice_at=None), False),
     ],
 )
 def test_a_framework_is_active_while_signed_and_without_notice(
@@ -76,9 +76,9 @@ def test_a_framework_is_active_while_signed_and_without_notice(
 
 def test_a_signature_is_dated_in_rome() -> None:
     """23:30 UTC on 30 September is 1 October where rebase signs."""
-    late = _quadro(signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
+    late = _framework(signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
     assert signed_on(late) == date(2026, 10, 1)
-    assert signed_on(_quadro(signed_at=None)) is None
+    assert signed_on(_framework(signed_at=None)) is None
 
 
 def test_the_read_model_computes_the_dates_only_for_an_active_framework() -> None:
@@ -88,31 +88,31 @@ def test_the_read_model_computes_the_dates_only_for_an_active_framework() -> Non
         "created_by": UUID("01a00000-0000-7000-8000-00000000000c"),
         "created_at": datetime(2026, 9, 23, tzinfo=UTC),
         "match_id": None,
-        "numero": None,
-        "testo_bozza": False,
+        "number": None,
+        "draft_text": False,
         "sent_at": None,
         "signed_pdf": None,
         "regime": "partita_iva",
     }
-    signed = _quadro(
+    signed = _framework(
         **common,
         text_version="0.0",
-        stato="firmato",
+        status="signed",
         signed_at=datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
         notice_at=None,
     )
     read = document_read(signed, date(2026, 12, 1), current_version="0.1")
-    assert (read.attivo, read.rinnovo, read.ultimo_giorno_disdetta) == (
+    assert (read.active, read.renewal, read.last_notice_day) == (
         True,
         date(2027, 10, 1),
         date(2027, 9, 1),
     )
-    assert read.nuova_versione is True and read.ha_pdf_firmato is False
-    generated = _quadro(
-        **common, text_version="0.1", stato="generato", signed_at=None, notice_at=None
+    assert read.new_version is True and read.has_pdf_signed is False
+    generated = _framework(
+        **common, text_version="0.1", status="generated", signed_at=None, notice_at=None
     )
     read = document_read(generated, date(2026, 12, 1), current_version="0.1")
-    assert (read.attivo, read.rinnovo, read.ultimo_giorno_disdetta, read.nuova_versione) == (
+    assert (read.active, read.renewal, read.last_notice_day, read.new_version) == (
         False,
         None,
         None,
@@ -161,38 +161,38 @@ DOCUMENT = {
     "freelancer_id": UUID("01a00000-0000-7000-8000-00000000001b"),
     "created_by": UUID("01a00000-0000-7000-8000-00000000001c"),
     "created_at": datetime(2026, 10, 12, tzinfo=UTC),
-    "testo_bozza": False,
+    "draft_text": False,
     "sent_at": None,
     "signed_at": None,
     "notice_at": None,
     "signed_pdf": None,
     "text_version": "1.0",
-    "stato": "generato",
+    "status": "generated",
 }
 
 
 def test_the_read_model_names_the_documents_regime_and_type() -> None:
     """REB-687: every document read says which family it belongs to, in a word for the
     code and a type for the pages."""
-    quadro = ContractDocument(
-        kind="quadro", regime="occasionale", match_id=None, numero=None, **DOCUMENT
+    framework = ContractDocument(
+        kind="framework", regime="occasional", match_id=None, number=None, **DOCUMENT
     )
     letter = ContractDocument(
-        kind="lettera",
+        kind="letter",
         regime="partita_iva",
         match_id=UUID("01a00000-0000-7000-8000-00000000001d"),
-        numero="2026-001",
+        number="2026-001",
         **DOCUMENT,
     )
-    read = document_read(quadro, date(2026, 10, 12), current_version="1.0")
-    assert (read.regime, read.tipo) == (
-        "occasionale",
+    read = document_read(framework, date(2026, 10, 12), current_version="1.0")
+    assert (read.regime, read.kind) == (
+        "occasional",
         "Contratto quadro per prestazioni occasionali",
     )
     read = document_read(letter, date(2026, 10, 12), current_version="1.0")
-    assert (read.regime, read.tipo) == ("partita_iva", "Lettera di incarico")
+    assert (read.regime, read.kind) == ("partita_iva", "Lettera di incarico")
 
 
-def test_each_quadro_compares_its_version_with_its_own_regimes_text() -> None:
-    assert current_quadro_version("partita_iva") == text_version("contratto-quadro")
-    assert current_quadro_version("occasionale") == text_version("contratto-quadro-occasionale")
+def test_each_framework_compares_its_version_with_its_own_regimes_text() -> None:
+    assert current_framework_version("partita_iva") == text_version("framework-agreement")
+    assert current_framework_version("occasional") == text_version("framework-agreement-occasional")

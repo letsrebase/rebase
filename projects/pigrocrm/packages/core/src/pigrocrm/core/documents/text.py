@@ -9,14 +9,14 @@ from pigrocrm.core.errors import Conflict
 from pigrocrm.core.text import file_text
 
 # `TEXT_SOURCE_MAX_BYTES` is how large a stored file may be for `extract_text` to parse it
-# at all. `DIMENSIONE_MAX` (100 MB) is what the archive accepts -- a zip of photos, a video
+# at all. `SIZE_MAX` (100 MB) is what the archive accepts -- a zip of photos, a video
 # somebody attached to a deal -- and parsing one of those to answer "what is the codice
 # destinatario" would spend a hundred megabytes of this process on a file with no text in
 # it. It is Drive's own ceiling (`drive/reader.py::DOWNLOAD_MAX_BYTES`, the one definition,
 # imported here) because it is the same question about the same kind of file;
 # `settings.gmail_attachment_max_bytes` is its environment-overridable twin, and a test
 # pins that its default equals it.
-_TESTO_TROPPO_GRANDE = (
+_TEXT_TOO_MUCH_LARGE = (
     "il documento supera {max_bytes} byte: scaricalo invece di leggerlo come testo"
 )
 
@@ -26,7 +26,7 @@ class DocumentText:
         self.ctx = context
 
     def extract_text(
-        self, document_id: UUID, numero: int | None, *, max_bytes: int | None = None
+        self, document_id: UUID, number: int | None, *, max_bytes: int | None = None
     ) -> DocumentTextRead:
         """The text of an archived document: a PDF, a `.docx`, a `.md`/`.txt`, an XML.
 
@@ -47,7 +47,7 @@ class DocumentText:
         not know which door they came in by, and one parser of somebody else's malformed
         file is one place to fix it. Which means the same discipline holds here --
         nothing raises on a strange file, a type this does not read comes back as the
-        empty string *with its mime*, and `troncato` says only whether something was
+        empty string *with its mime*, and `truncated` says only whether something was
         cut, never that the file had no text to begin with.
 
         Two ceilings, like Drive's: the stored file is refused above
@@ -58,27 +58,27 @@ class DocumentText:
         and an `activities` row per read would put a client's document title and the
         fact somebody read it into a timeline that exists to record changes.
         """
-        document, version = self.ctx.resolve_version(document_id, numero)
-        if version.dimensione > TEXT_SOURCE_MAX_BYTES:
+        document, version = self.ctx.resolve_version(document_id, number)
+        if version.size > TEXT_SOURCE_MAX_BYTES:
             # Refused, not cut. Half a PDF is not a PDF: truncation is meaningful for
             # text and meaningless for the bytes a parser has to see whole.
             raise Conflict(
                 ENTITY,
-                _TESTO_TROPPO_GRANDE.format(max_bytes=TEXT_SOURCE_MAX_BYTES),
+                _TEXT_TOO_MUCH_LARGE.format(max_bytes=TEXT_SOURCE_MAX_BYTES),
                 document_id=str(document_id),
-                numero=version.numero,
-                dimensione=version.dimensione,
+                number=version.number,
+                size=version.size,
             )
         limit = self.ctx.settings.document_text_max_bytes if max_bytes is None else max_bytes
-        estratto = file_text(
+        excerpt = file_text(
             self.ctx.storage.get(version.storage_key), mime=version.content_type, max_bytes=limit
         )
         return DocumentTextRead(
             document_id=document.id,
-            numero=version.numero,
-            titolo=document.titolo,
-            testo=estratto.testo,
-            mime=estratto.mime,
-            troncato=estratto.troncato,
-            provenienza=estratto.provenienza,
+            number=version.number,
+            title=document.title,
+            text=excerpt.text,
+            mime=excerpt.mime,
+            truncated=excerpt.truncated,
+            provenance=excerpt.provenance,
         )

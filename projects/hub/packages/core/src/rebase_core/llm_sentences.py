@@ -10,7 +10,7 @@ draft. The team builder's sentence is the original one, word for word.
 UNAVAILABLE_SENTENCES: dict[str, str] = {
     "team_proposal": "Non riesco a proporre un team adesso: riprova tra poco.",
     "card": "Non riesco a scrivere la scheda adesso: riprova tra poco.",
-    "cv_anonimo": "Non riesco a scrivere il CV anonimo adesso: riprova tra poco.",
+    "anonymous_cv": "Non riesco a scrivere il CV anonimo adesso: riprova tra poco.",
     "crm_lead": "Non riesco a preparare la bozza della richiesta adesso: riprova tra poco.",
 }
 

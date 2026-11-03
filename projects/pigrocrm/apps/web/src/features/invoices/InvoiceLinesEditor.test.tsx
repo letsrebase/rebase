@@ -12,22 +12,22 @@ function wrap(children: ReactNode) {
   return render(<QueryClientProvider client={client}>{children}</QueryClientProvider>)
 }
 
-const DRAFT = { id: 'inv-1', tipo: 'fattura', stato: 'bozza' } as unknown as Invoice
+const DRAFT = { id: 'inv-1', type: 'invoice', status: 'draft' } as unknown as Invoice
 
 const LINE: InvoiceLine = {
   id: 'line-1',
   invoice_id: 'inv-1',
-  numero_linea: 1,
-  descrizione: 'Consulenza',
-  quantita: '3.000000',
-  unita_misura: 'ore',
-  prezzo_unitario: '500.000000',
-  sconto_percentuale: null,
-  sconto_importo: null,
-  prezzo_totale: '1500.00',
-  aliquota_iva: '0.00',
-  natura: 'N2.2',
-  riferimento_normativo: 'art. 1',
+  line_number: 1,
+  description: 'Consulenza',
+  quantity: '3.000000',
+  unit_of_measure: 'hours',
+  unit_price: '500.000000',
+  discount_percentage: null,
+  discount_amount: null,
+  total_price: '1500.00',
+  vat_rate: '0.00',
+  vat_nature: 'N2.2',
+  legal_reference: 'art. 1',
 }
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -38,7 +38,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() 
 
 beforeEach(() => {
   vi.mocked(api.PUT).mockResolvedValue({
-    data: { id: 'inv-1', totale: '1500.00' },
+    data: { id: 'inv-1', total: '1500.00' },
     response: new Response(null, { status: 200 }),
   } as never)
 })
@@ -47,15 +47,15 @@ afterEach(() => {
   vi.mocked(api.PUT).mockReset()
 })
 
-/** The `righe` array as it reached `api.PUT`. Asserting on what we send beats
+/** The `lines` array as it reached `api.PUT`. Asserting on what we send beats
  *  asserting on a serialised HTTP body: it is the same fact, one layer earlier, and it
  *  survives a change of transport. */
-function sentLines(): { sconto_percentuale: string | null; unita_misura: string | null }[] {
+function sentLines(): { discount_percentage: string | null; unit_of_measure: string | null }[] {
   const [, options] = vi.mocked(api.PUT).mock.calls[0] as unknown as [
     string,
-    { body: { righe: { sconto_percentuale: string | null; unita_misura: string | null }[] } },
+    { body: { lines: { discount_percentage: string | null; unit_of_measure: string | null }[] } },
   ]
-  return options.body.righe
+  return options.body.lines
 }
 
 describe('InvoiceLinesEditor', () => {
@@ -89,7 +89,7 @@ describe('InvoiceLinesEditor', () => {
     // the click sees no call at all. The brief's version raced and reported
     // '"undefined" is not valid JSON', which reads like a body-shape problem.
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
-    expect(sentLines()[0]?.sconto_percentuale).toBe('0')
+    expect(sentLines()[0]?.discount_percentage).toBe('0')
   })
 
   it('sends an emptied optional field as null so the bulk replace clears it', async () => {
@@ -101,11 +101,11 @@ describe('InvoiceLinesEditor', () => {
     // the click sees no call at all. The brief's version raced and reported
     // '"undefined" is not valid JSON', which reads like a body-shape problem.
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
-    expect(sentLines()[0]?.unita_misura).toBeNull()
+    expect(sentLines()[0]?.unit_of_measure).toBeNull()
   })
 
   it('is read-only for an issued invoice, with no save button at all', () => {
-    const issued = { ...DRAFT, stato: 'emessa' } as unknown as Invoice
+    const issued = { ...DRAFT, status: 'issued' } as unknown as Invoice
     wrap(<InvoiceLinesEditor invoice={issued} lines={[LINE]} readOnly />)
     expect(screen.queryByRole('button', { name: /salva righe/i })).not.toBeInTheDocument()
     expect(screen.getByText('Consulenza')).toBeInTheDocument()

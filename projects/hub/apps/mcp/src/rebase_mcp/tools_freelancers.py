@@ -8,7 +8,7 @@ from mcp.server import MCPServer
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_schemas import StatusChange
-from rebase_core.card_persona import persona_differences, stored_persona
+from rebase_core.card_person import person_differences, stored_person
 from rebase_core.freelancer_schemas import FreelancerDraft, FreelancerOverride, FreelancerRead
 from rebase_core.freelancers import FreelancerService
 from rebase_core.notes import NoteService
@@ -30,37 +30,37 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def create_freelancer_from_signup(
         signup_id: str,
         nome: str,
-        cognome: str,
-        fonti: list[str],
+        last_name: str,
+        sources: list[str],
         linkedin_url: str | None = None,
         posizione: str | None = None,
-        tariffa_giornaliera: str | None = None,
-        remoto: str | None = None,
+        daily_rate: str | None = None,
+        remote: str | None = None,
         links: list[str] | None = None,
     ) -> dict[str, Any]:
         """Crea (o riscrive) la scheda freelance di un'iscrizione con quanto si trova in
         pubblico su quella persona: nome e cognome obbligatori, poi il profilo LinkedIn,
         la posizione come la dichiara lei, altri link (sito, GitHub, portfolio). Tariffa e
         modalità di lavoro solo se una fonte pubblica le dice, altrimenti restano vuote
-        con il CV: la persona le completa dalla sua area. `fonti` sono gli indirizzi https
+        con il CV: la persona le completa dalla sua area. `sources` sono gli indirizzi https
         da cui vengono le informazioni, da una a dieci, e finiscono come nota nel thread della
         scheda, firmata dall'admin dietro il token. Una
         scheda che la persona ha già compilato non si tocca: il tool rifiuta."""
         draft = FreelancerDraft(
             nome=nome,
-            cognome=cognome,
+            last_name=last_name,
             linkedin_url=linkedin_url,
             posizione=posizione,
-            tariffa_giornaliera=number(tariffa_giornaliera, "tariffa_giornaliera"),
-            remoto=as_remote(remoto),
+            daily_rate=number(daily_rate, "daily_rate"),
+            remote=as_remote(remote),
             links=links or [],
-            fonti=fonti,
+            sources=sources,
         )
         # `draft_from_signup` returns through `get()`, which now answers a
         # `FreelancerDetail` for the admin HTTP route (REB-284); this tool keeps the
         # plain `FreelancerRead` shape it always had. The card was just drafted, so it
         # has no logins, downloads or signup UTM to report yet, and the thread comes
-        # back on the write anyway. `get_talento` is the tool for the full detail.
+        # back on the write anyway. `get_talent` is the tool for the full detail.
         return deps.run(
             lambda s: FreelancerRead.model_validate(
                 FreelancerService(s)
@@ -72,8 +72,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def get_freelancer(freelancer_id: str) -> dict[str, Any]:
         """Un freelance, per id, con `note`: il thread di chi lo ha seguito, dal più
-        recente, ognuna con `id`, autore, data, `fonte` (`web`, `mcp`, `persona`, `sistema`),
-        l'ultima modifica e `modificabile`. Le note cancellate non ci sono. `telefono` è
+        recente, ognuna con `id`, autore, data, `source` (`web`, `mcp`, `person`, `system`),
+        l'ultima modifica e `editable`. Le note cancellate non ci sono. `phone` è
         quello dell'account; `contatti_cv` è quanto il CV dice della persona, letto da
         Claude insieme alla scheda anonima (nome, cognome, email, telefono, città, LinkedIn,
         altri link, aziende), `None` se la scheda non ne ha ancora (scritta prima della
@@ -84,20 +84,20 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         def call(session: Session) -> dict[str, Any]:
             key = to_uuid(freelancer_id, "freelancer_id")
             read = FreelancerRead.model_validate(FreelancerService(session).get(key).model_dump())
-            persona = stored_persona(session, key)
+            person = stored_person(session, key)
             return {
                 **read.model_dump(mode="json"),
-                "contatti_cv": persona.model_dump(mode="json") if persona is not None else None,
+                "contatti_cv": person.model_dump(mode="json") if person is not None else None,
                 "differenze_cv": [
                     difference.model_dump(mode="json")
-                    for difference in persona_differences(session, persona, key)
+                    for difference in person_differences(session, person, key)
                 ],
             }
 
         return deps.call(call)
 
     @mcp.tool()
-    def set_freelancer_status(freelancer_id: str, stato: str) -> dict[str, Any]:
+    def set_freelancer_status(freelancer_id: str, status: str) -> dict[str, Any]:
         """Sposta una candidatura fra nuovo, contattato, attivo e scartato. Non tocca
         quello che la persona ha scritto. Il cambio finisce nel registro di
         `get_freelancer_audit` (`status_changed`, con prima e dopo): per il perché usa
@@ -105,17 +105,17 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         return deps.run(
             lambda s: FreelancerService(s).set_status(
                 to_uuid(freelancer_id, "freelancer_id"),
-                StatusChange(stato=stato),
+                StatusChange(status=status),
                 admin_id=deps.admin().id,
-                fonte=SOURCE,
+                source=SOURCE,
             )
         )
 
     @mcp.tool()
-    def add_freelancer_note(freelancer_id: str, testo: str) -> dict[str, Any]:
+    def add_freelancer_note(freelancer_id: str, text: str) -> dict[str, Any]:
         """Aggiunge una nota al thread di un freelance, senza toccare lo stato: una
         telefonata fatta, un'impressione, una cosa da ricordare. La nota è già firmata
-        (l'admin dietro il token) e datata, con `fonte` `mcp`: il testo non deve iniziare
+        (l'admin dietro il token) e datata, con `source` `mcp`: il testo non deve iniziare
         con una data o un'ora né nominare chi scrive. Fino a 4000 caratteri, anche su più
         righe. Si può correggere con `update_note` e cancellare con `delete_note`, e ogni
         aggiunta finisce nel registro di `get_freelancer_audit`."""
@@ -123,23 +123,23 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             lambda s: NoteService(s).add(
                 "freelancer",
                 to_uuid(freelancer_id, "freelancer_id"),
-                testo,
-                autore_id=deps.admin().id,
-                fonte=SOURCE,
+                text,
+                author_id=deps.admin().id,
+                source=SOURCE,
             )
         )
 
     @mcp.tool()
-    def update_note(note_id: str, testo: str) -> dict[str, Any]:
+    def update_note(note_id: str, text: str) -> dict[str, Any]:
         """Sostituisce il testo di una nota di un freelance o di un'azienda, per `id`
         (lo trovi in `note` di `get_freelancer` e `get_company`). Solo le note scritte da
-        un admin (`fonte` `web` o `mcp`, o senza fonte): quelle della persona o del sistema
+        un admin (`source` `web` o `mcp`, o senza fonte): quelle della persona o del sistema
         sono eventi e vengono rifiutate. Resta scritto chi l'ha modificata e quando, e il
         testo di prima è nel registro (`note_edited`). Il testo non deve iniziare con una
         data o un'ora né nominare chi scrive: la nota è già firmata e datata."""
         return deps.run(
             lambda s: NoteService(s).update(
-                to_uuid(note_id, "note_id"), testo, admin_id=deps.admin().id, fonte=SOURCE
+                to_uuid(note_id, "note_id"), text, admin_id=deps.admin().id, source=SOURCE
             )
         )
 
@@ -152,7 +152,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
         def call(session: Session) -> dict[str, Any]:
             NoteService(session).delete(
-                to_uuid(note_id, "note_id"), admin_id=deps.admin().id, fonte=SOURCE
+                to_uuid(note_id, "note_id"), admin_id=deps.admin().id, source=SOURCE
             )
             return {"nota": note_id, "cancellata": True}
 
@@ -162,16 +162,16 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def override_freelancer(
         freelancer_id: str,
         nome: str | None = None,
-        cognome: str | None = None,
+        last_name: str | None = None,
         linkedin_url: str | None = None,
-        tariffa_giornaliera: str | None = None,
+        daily_rate: str | None = None,
         posizione: str | None = None,
-        remoto: str | None = None,
+        remote: str | None = None,
         links: list[str] | None = None,
-        stato: str | None = None,
+        status: str | None = None,
         compilata_da: str | None = None,
         seniority: str | None = None,
-        anni: str | None = None,
+        experience_years: str | None = None,
     ) -> dict[str, Any]:
         """Scrive o svuota qualsiasi campo del profilo: nome,
         cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
@@ -181,39 +181,35 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         il campo dove è ammesso (tariffa, posizione, LinkedIn, modalità di
         lavoro), altrove è rifiutata perché il campo non può restare senza un valore.
         `links` sostituisce l'intera lista, `[]` la svuota. `seniority` (junior, mid,
-        senior o lead) e `anni` (0-60) correggono il livello che la scheda anonima
+        senior o lead) e `experience_years` (0-60) correggono il livello che la scheda anonima
         dichiara: la parola dell'admin vince su quella di Claude in ogni lettura
-        (`list_talenti`, `get_talento`, `get_freelancer_card`, il cloud, il team
+        (`list_talents`, `get_talent`, `get_freelancer_card`, il cloud, il team
         builder) e sopravvive a «Rigenera scheda»; la stringa vuota la toglie. Ogni
         modifica reale finisce nel registro di `get_freelancer_audit`, con il valore
         prima e dopo; per annullarla c'è `revert_freelancer_action`."""
         kwargs: dict[str, Any] = {}
         if nome is not None:
             kwargs["nome"] = supplied_text(nome)
-        if cognome is not None:
-            kwargs["cognome"] = supplied_text(cognome)
+        if last_name is not None:
+            kwargs["last_name"] = supplied_text(last_name)
         if linkedin_url is not None:
             kwargs["linkedin_url"] = supplied_text(linkedin_url)
-        if tariffa_giornaliera is not None:
-            kwargs["tariffa_giornaliera"] = (
-                None
-                if tariffa_giornaliera == ""
-                else number(tariffa_giornaliera, "tariffa_giornaliera")
-            )
+        if daily_rate is not None:
+            kwargs["daily_rate"] = None if daily_rate == "" else number(daily_rate, "daily_rate")
         if posizione is not None:
             kwargs["posizione"] = supplied_text(posizione)
-        if remoto is not None:
-            kwargs["remoto"] = supplied_text(remoto)
+        if remote is not None:
+            kwargs["remote"] = supplied_text(remote)
         if links is not None:
             kwargs["links"] = links
-        if stato is not None:
-            kwargs["stato"] = supplied_text(stato)
+        if status is not None:
+            kwargs["status"] = supplied_text(status)
         if compilata_da is not None:
             kwargs["compilata_da"] = supplied_text(compilata_da)
         if seniority is not None:
             kwargs["seniority_admin"] = supplied_text(seniority)
-        if anni is not None:
-            kwargs["anni_admin"] = integer(anni, "anni")
+        if experience_years is not None:
+            kwargs["experience_years_admin"] = integer(experience_years, "experience_years")
         override = FreelancerOverride(**kwargs)
         return deps.run(
             lambda s: FreelancerService(s).override(
@@ -258,7 +254,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         """Chi ha modificato, svuotato, cancellato o ripristinato questa scheda, e
         quando: ogni voce con l'amministratore, il tipo di azione e, per una modifica di
         campo, il valore prima e dopo. Anche ogni volta che la scheda anonima è stata
-        riscritta (`card_regenerated`: esito, motivo se non scritta, `fonte`, costo, se in
+        riscritta (`card_regenerated`: esito, motivo se non scritta, `source`, costo, se in
         blocco). Funziona anche su una scheda cancellata. Dalla più
         recente. Solo lettura; per annullare una modifica di campo usa
         `revert_freelancer_action` con l'id della voce."""

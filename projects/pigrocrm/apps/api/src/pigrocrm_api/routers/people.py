@@ -32,8 +32,8 @@ def create(data: PersonCreate, session: SessionDep, actor: ActorDep) -> PersonRe
 
 class PersonListParams(SortedParams, SearchParams, CustomParams):
     customer_id: UUID | None = None
-    # `cognome` is the one nullable sort column in the whole whitelist.
-    sort: SafeStr | None = sort_field("created_at", "updated_at", "cognome")
+    # `last_name` is the one nullable sort column in the whole whitelist.
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "last_name")
 
 
 @router.get("", response_model=PersonPage)

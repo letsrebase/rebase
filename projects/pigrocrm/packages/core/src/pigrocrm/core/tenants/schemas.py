@@ -34,7 +34,7 @@ RESERVED_SLUGS = frozenset(
         "www",
         "admin",
         "static",
-        "registrati",
+        "register",
         "mcp",
     }
 )
@@ -72,7 +72,7 @@ class TenantSignup(BaseModel):
     # still sends one hears about it.
     # What the wizard learned from the hub about this address: decides whether the
     # welcome mail tells the person about rebase. Never trusted for anything else.
-    membro: bool = False
+    member: bool = False
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +96,6 @@ class TenantRead(BaseModel):
 
 class TenantAvailability(BaseModel):
     slug: str
-    disponibile: bool
+    available: bool
     # Why not, when not: a reserved word, a taken name, a malformed one.
-    motivo: str | None = None
+    reason: str | None = None

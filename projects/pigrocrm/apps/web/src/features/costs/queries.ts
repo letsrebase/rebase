@@ -6,7 +6,7 @@ import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 
 /** Same rule as `features/time/queries.ts`: the wire shapes come from the generated
- *  OpenAPI schema, and every `Decimal` (`importo` above all) arrives as a `string`. */
+ *  OpenAPI schema, and every `Decimal` (`amount` above all) arrives as a `string`. */
 export type Cost = components['schemas']['CostRead']
 export type CostCategory = components['schemas']['CostCategoryRead']
 
@@ -15,8 +15,8 @@ type CostUpdateBody = components['schemas']['CostUpdate']
 
 export interface CostsListParams {
   deal_id?: string
-  azienda_id?: string
-  solo_generali?: boolean
+  legal_entity_id?: string
+  only_general?: boolean
   category_id?: string
   da?: string
   a?: string

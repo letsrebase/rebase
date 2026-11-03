@@ -50,8 +50,8 @@ ENTRY_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 # The days a register of the month counts: committed, worked or billed. A proposal, a day
 # worked without the approval its contract asks for and a day written off are not in a
 # total a client will cross-check; they are listed, marked, and left out of the sum.
-COUNTED = ("approvato", "lavorato", "contestato", "fatturato", "pagato")
-NEVER_HAPPENED = ("rifiutato", "revocato")
+COUNTED = ("approved", "worked", "disputed", "invoiced", "paid")
+NEVER_HAPPENED = ("rejected", "revoked")
 
 
 def safe_entry_name(name: str, fallback: str) -> str:
@@ -87,10 +87,10 @@ def _iso(moment: datetime) -> str:
     return moment.isoformat(timespec="seconds")
 
 
-def _actor_label(attore: dict[str, object]) -> str:
+def _actor_label(actor: dict[str, object]) -> str:
     """Who acted, as stored: the kind and, when there is one, the id of the person or token."""
-    kind = str(attore.get("kind", "sistema"))
-    return f"{kind} {attore['id']}" if attore.get("id") else kind
+    kind = str(actor.get("kind", "system"))
+    return f"{kind} {actor['id']}" if actor.get("id") else kind
 
 
 def _approval_reference(detail: WorkUnitDetail) -> list[str]:
@@ -98,13 +98,13 @@ def _approval_reference(detail: WorkUnitDetail) -> list[str]:
     if approval is None:
         return ["Nessuna approvazione in archivio."]
     lines = [
-        f"Canale: {approval.canale}",
-        f"Mittente: {approval.mittente}",
-        f"Ricevuta il: {_iso(approval.ricevuto_il)}",
+        f"Canale: {approval.channel}",
+        f"Mittente: {approval.sender}",
+        f"Ricevuta il: {_iso(approval.received_at)}",
     ]
     if approval.message_id:
         lines.append(f"Message-ID: {approval.message_id}")
-    lines.append(f'Estratto: "{approval.estratto}"')
+    lines.append(f'Estratto: "{approval.excerpt}"')
     return lines
 
 
@@ -115,7 +115,7 @@ def _proof_label(unit: WorkUnit, approvals: dict[UUID, Approval]) -> str:
     approval = approvals.get(unit.approval_id)
     if approval is None:
         return "approvazione non leggibile"
-    return f"approvazione {approval.canale} di {approval.mittente}, {approval.ricevuto_il.date()}"
+    return f"approvazione {approval.channel} di {approval.sender}, {approval.received_at.date()}"
 
 
 def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str, list[str]]:
@@ -129,7 +129,7 @@ def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str,
                 WorkUnit.contract_id == detail.contract_id,
                 WorkUnit.data >= first,
                 WorkUnit.data <= end,
-                WorkUnit.stato.not_in(NEVER_HAPPENED),
+                WorkUnit.status.not_in(NEVER_HAPPENED),
             )
             .order_by(WorkUnit.data, WorkUnit.id)
         ).scalars()
@@ -146,11 +146,11 @@ def _register_lines(session: Session, detail: WorkUnitDetail) -> tuple[str, str,
     lines: list[str] = []
     total = Decimal("0.00")
     for unit in units:
-        if unit.stato in COUNTED:
-            total += unit.quantita
+        if unit.status in COUNTED:
+            total += unit.quantity
         mark = " <- questa giornata" if unit.id == detail.id else ""
         proof = _proof_label(unit, approvals)
-        lines.append(f"{unit.data.isoformat()}  {unit.quantita}  {unit.stato}  ({proof}){mark}")
+        lines.append(f"{unit.data.isoformat()}  {unit.quantity}  {unit.status}  ({proof}){mark}")
     lines.append(
         f"Totale giornate del mese: {total} (approvate, lavorate, contestate, fatturate, pagate)"
     )
@@ -168,12 +168,12 @@ def _invoice_lines(session: Session, detail: WorkUnitDetail) -> list[str]:
     if row is None:
         return ["La riga di fattura non è più leggibile."]
     line, invoice = row
-    number = f"{invoice.anno}/{invoice.numero}" if invoice.numero is not None else "bozza"
-    issued = f", emessa il {invoice.data_emissione.isoformat()}" if invoice.data_emissione else ""
+    number = f"{invoice.year}/{invoice.number}" if invoice.number is not None else "draft"
+    issued = f", emessa il {invoice.issue_date.isoformat()}" if invoice.issue_date else ""
     return [
-        f"Fattura {number} ({invoice.stato}{issued})",
-        f"Riga {line.numero_linea}: {line.descrizione}",
-        f"Importo della riga: {round_money(line.prezzo_totale)} EUR",
+        f"Fattura {number} ({invoice.status}{issued})",
+        f"Riga {line.line_number}: {line.description}",
+        f"Importo della riga: {round_money(line.total_price)} EUR",
     ]
 
 
@@ -185,11 +185,11 @@ def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -
         *_section(
             "Giornata",
             [
-                f"Contratto: {detail.contract_titolo}",
-                f"Cliente: {detail.customer_nome}",
-                f"Descrizione: {detail.descrizione}",
-                f"Quantità: {detail.quantita}",
-                f"Stato: {detail.stato}",
+                f"Contratto: {detail.contract_title}",
+                f"Cliente: {detail.customer_name}",
+                f"Descrizione: {detail.description}",
+                f"Quantità: {detail.quantity}",
+                f"Stato: {detail.status}",
                 *([f"Note: {detail.note}"] if detail.note else []),
             ],
         ),
@@ -198,9 +198,9 @@ def render_summary(session: Session, detail: WorkUnitDetail, source_line: str) -
         *_section(
             "Storico della giornata",
             [
-                f"{_iso(t.created_at)}  {t.stato_precedente or '-'} -> {t.stato_nuovo}  "
-                f"({_actor_label(t.attore)})  {t.motivo}"
-                for t in detail.transizioni
+                f"{_iso(t.created_at)}  {t.previous_status or '-'} -> {t.new_status}  "
+                f"({_actor_label(t.actor)})  {t.reason}"
+                for t in detail.transitions
             ],
         ),
         *_section(f"Registro del contratto, da {first} a {last}", register),
@@ -213,9 +213,9 @@ def _refuse_oversized_source(session: Session, document: Document, title: str) -
     """The bundle is built in memory, so the archived original it carries is bounded: a
     larger file is refused by name before it is read, not truncated and not left out."""
     size = session.scalar(
-        select(DocumentVersion.dimensione).where(
+        select(DocumentVersion.size).where(
             DocumentVersion.document_id == document.id,
-            DocumentVersion.numero == document.versione_corrente,
+            DocumentVersion.number == document.current_version,
         )
     )
     if size is not None and size > SOURCE_MAX_BYTES:
@@ -238,7 +238,7 @@ def build_dispute_bundle(
     approval = detail.approval
     if approval is not None:
         document = session.get(Document, approval.document_id)
-        title = document.titolo if document is not None else str(approval.document_id)
+        title = document.title if document is not None else str(approval.document_id)
         if document is not None:
             _refuse_oversized_source(session, document, title)
         try:

@@ -4,23 +4,23 @@ its own fixtures over them (`aziende_helpers.py` is the same shape)."""
 
 from typing import Any
 
-from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
 
 
 def set_up_fiscal(logged_in: TestClient) -> None:
     assert (
         logged_in.put(
-            azienda_url(logged_in),
+            legal_entity_url(logged_in),
             json={
-                "ragione_sociale": "Studio Rossi",
-                "partita_iva": "01234567890",
-                "codice_fiscale": "HMCRFT00A01H501K",
-                "indirizzo": "Via Vittorio Veneto 12",
+                "legal_name": "Studio Rossi",
+                "vat_number": "01234567890",
+                "tax_code": "HMCRFT00A01H501K",
+                "address": "Via Vittorio Veneto 12",
                 "cap": "20124",
-                "comune": "Milano",
-                "provincia": "MI",
-                "nazione": "IT",
+                "city": "Milano",
+                "province": "MI",
+                "country": "IT",
                 "email": "mario@example.com",
             },
         ).status_code
@@ -28,7 +28,7 @@ def set_up_fiscal(logged_in: TestClient) -> None:
     )
     assert (
         logged_in.put(
-            azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
+            legal_entity_url(logged_in, "/fiscal-profile"), json={"regime_code": "RF19"}
         ).status_code
         == 200
     )
@@ -38,14 +38,14 @@ def create_contract(logged_in: TestClient) -> dict[str, Any]:
     customer = logged_in.post(
         "/api/customers",
         json={
-            "ragione_sociale": "Acme S.r.l.",
-            "partita_iva": "12345678901",
-            "codice_sdi": "ABCDEFG",
-            "indirizzo": "Corso Italia 5",
+            "legal_name": "Acme S.r.l.",
+            "vat_number": "12345678901",
+            "sdi_code": "ABCDEFG",
+            "address": "Corso Italia 5",
             "cap": "00100",
-            "comune": "Roma",
-            "provincia": "RM",
-            "nazione": "IT",
+            "city": "Roma",
+            "province": "RM",
+            "country": "IT",
         },
     )
     assert customer.status_code == 201, customer.text
@@ -53,22 +53,22 @@ def create_contract(logged_in: TestClient) -> dict[str, Any]:
         "/api/contracts",
         json={
             "customer_id": customer.json()["id"],
-            "titolo": "Consulenza CTO",
-            "inizio": "2026-01-01",
-            "tipo_rinnovo": "nessuno",
-            "preavviso_disdetta_giorni": 30,
-            "cadenza_fatturazione": "mensile",
-            "politica_spese": {"kind": "non_rimborsabile"},
+            "title": "Consulenza CTO",
+            "start": "2026-01-01",
+            "renewal_type": "none",
+            "termination_notice_days": 30,
+            "billing_cadence": "monthly",
+            "expense_policy": {"kind": "not_reimbursable"},
         },
     )
     assert created.status_code == 201, created.text
     card = logged_in.post(
         f"/api/contracts/{created.json()['id']}/rate-cards",
         json={
-            "valido_da": "2026-01-01",
-            "tipo": "giornaliero",
-            "importo": "500.00",
-            "unita": "giorno",
+            "valid_from": "2026-01-01",
+            "type": "daily",
+            "amount": "500.00",
+            "unit": "day",
         },
     )
     assert card.status_code == 201, card.text

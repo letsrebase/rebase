@@ -44,14 +44,14 @@ class Person:
     email: str
     nome: str
     admin: bool
-    aziende: tuple[UUID, ...] | None
+    legal_entities: tuple[UUID, ...] | None
 
-    def sees(self, azienda_id: UUID | None) -> bool:
+    def sees(self, legal_entity_id: UUID | None) -> bool:
         """Whether the user's scope covers a subject of this azienda. `None` is a subject
         no azienda owns, which only an unscoped member may read."""
-        if self.aziende is None:
+        if self.legal_entities is None:
             return True
-        return azienda_id is not None and azienda_id in self.aziende
+        return legal_entity_id is not None and legal_entity_id in self.legal_entities
 
 
 class Directory:
@@ -66,14 +66,14 @@ class Directory:
         users = UserRepository(session)
         people = [
             _person(user)
-            for user in session.scalars(select(User).where(User.attivo.is_(True)).order_by(User.id))
+            for user in session.scalars(select(User).where(User.active.is_(True)).order_by(User.id))
             if user.email
         ]
         owner = users.first_active_admin()
-        return cls(people, owner.id if owner is not None and owner.attivo else None)
+        return cls(people, owner.id if owner is not None and owner.active else None)
 
     def recipients(
-        self, candidates: Iterable[UUID | None], azienda_id: UUID | None
+        self, candidates: Iterable[UUID | None], legal_entity_id: UUID | None
     ) -> frozenset[UUID]:
         """The users among `candidates` who can be told and may read the subject, or the
         space's owner when none of them can."""
@@ -82,12 +82,12 @@ class Directory:
             for candidate in candidates
             if candidate is not None
             and (person := self.people.get(candidate)) is not None
-            and person.sees(azienda_id)
+            and person.sees(legal_entity_id)
         )
         if chosen:
             return chosen
         owner = self.people.get(self.owner_id) if self.owner_id is not None else None
-        if owner is not None and owner.sees(azienda_id):
+        if owner is not None and owner.sees(legal_entity_id):
             return frozenset({owner.id})
         return frozenset()
 
@@ -101,6 +101,6 @@ def _person(user: User) -> Person:
         id=user.id,
         email=user.email,
         nome=user.nome,
-        admin=user.ruolo == "admin",
-        aziende=scope_of(user),
+        admin=user.role == "admin",
+        legal_entities=scope_of(user),
     )

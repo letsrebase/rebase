@@ -31,13 +31,13 @@ export function displayNative(value: string | null): string {
 }
 
 /**
- * A Deal-specific currency formatter, not `renderFieldValue`: `valore_previsto`/
- * `valore_preventivato` are native `Decimal` columns (deals/models.py), not a
+ * A Deal-specific currency formatter, not `renderFieldValue`: `expected_value`/
+ * `budgeted_value` are native `Decimal` columns (deals/models.py), not a
  * tenant-defined custom field, so there is no `FieldDefinition` to hand
  * `renderFieldValue`. `null` is a real, absent state (a deal nobody has priced
  * yet yields `None`); an empty string cannot occur here the way it can for a
  * native text column -- `DealUpdate` has no supported way to write `""` into a
- * `Decimal` field at all (see `sumValorePrevisto`'s docstring below for the one
+ * `Decimal` field at all (see `sumExpectedValue`'s docstring below for the one
  * place this matters on this screen).
  */
 export function formatMoney(value: string | null): string {
@@ -45,7 +45,7 @@ export function formatMoney(value: string | null): string {
 }
 
 /** Same reasoning as `formatMoney`, for the one native column that is a plain
- *  quantity rather than money: `ore_preventivate` (`Numeric(8, 2)`, deals/
+ *  quantity rather than money: `budgeted_hours` (`Numeric(8, 2)`, deals/
  *  models.py). Kept distinct from `formatMoney` rather than reusing it with a
  *  flag: a value here is never a euro amount, and `renderFieldValue`'s own
  *  `'number'` case (DynamicFieldRenderer.tsx) uses the identical formatter for
@@ -59,7 +59,7 @@ export function formatDate(value: string | null): string {
 }
 
 /**
- * The Kanban column total: every deal's `valore_previsto` in the stage, summed
+ * The Kanban column total: every deal's `expected_value` in the stage, summed
  * in exact integer cents and divided back to euros exactly once, purely for
  * display -- never re-summed as a float. A `null` (unpriced) deal contributes
  * nothing, the same way `formatMoney` shows it as a dash rather than as zero.
@@ -72,13 +72,13 @@ export function formatDate(value: string | null): string {
  * screens start disagreeing about the same euro; `lib/decimal.ts`'s docstring
  * carries the full reasoning for why money never touches a float here.
  */
-export function sumValorePrevisto(deals: Deal[]): string {
+export function sumExpectedValue(deals: Deal[]): string {
   const totalCents = deals.reduce(
     (sum, deal) =>
       sum +
-      (deal.valore_previsto === null
+      (deal.expected_value === null
         ? 0
-        : scaledFromDecimalString(deal.valore_previsto, MONEY_SCALE)),
+        : scaledFromDecimalString(deal.expected_value, MONEY_SCALE)),
     0,
   )
   return formatEuro(decimalStringFromScaled(totalCents, MONEY_SCALE))
@@ -96,7 +96,7 @@ export function sumValorePrevisto(deals: Deal[]): string {
  * own convention: a field defined at runtime through `POST /api/field-
  * definitions` shows up here with no code change. `customFields` already
  * excludes archived definitions (`useEntitySchema`/`describe_specs`), so there is
- * nothing here to filter a second time. `ore_preventivate`/`valore_preventivato`
+ * nothing here to filter a second time. `budgeted_hours`/`budgeted_value`
  * are deliberately not table columns, matching the detail route's own
  * "Preventivo" card (`routes/app/deal/$dealId.tsx`): they are written now but
  * not read until the slice 4 estimate-vs-actual report.
@@ -111,39 +111,39 @@ export function buildDealColumns(
       // The first cell carries the deal's identity as a chip, with the customer on the
       // line under it (design spec §4) -- which is what turns a list of project names
       // into a list of work. It costs no request per row: `DealRead` carries
-      // `customer_ragione_sociale`, filled by one batched lookup per page, precisely so
+      // `customer_legal_name`, filled by one batched lookup per page, precisely so
       // this cell could exist (see `DealService._reads`).
       cell: ({ row }) => (
-        <EntityCell name={row.original.nome} sub={row.original.customer_ragione_sociale ?? null} />
+        <EntityCell name={row.original.nome} sub={row.original.customer_legal_name ?? null} />
       ),
     },
     {
       header: 'Valore previsto',
-      id: 'valore_previsto',
-      accessorFn: (row) => formatMoney(row.valore_previsto),
+      id: 'expected_value',
+      accessorFn: (row) => formatMoney(row.expected_value),
       // `meta.align` right-aligns the header over the digits too; `MoneyCell` alone
       // could only align what is inside the cell.
       meta: { align: 'right' },
-      cell: ({ row }) => <MoneyCell>{formatMoney(row.original.valore_previsto)}</MoneyCell>,
+      cell: ({ row }) => <MoneyCell>{formatMoney(row.original.expected_value)}</MoneyCell>,
     },
     {
       header: 'Probabilità',
-      id: 'probabilita',
-      accessorFn: (row) => `${row.probabilita}%`,
+      id: 'probability',
+      accessorFn: (row) => `${row.probability}%`,
       // A percentage is a number: it belongs on the right with the money, so a column
       // of them can be scanned down the units digit. `meta.align` right-aligns the
       // header over the digits; `NumberCell` gives the digits themselves the tabular
       // figures that make a column of them line up.
       meta: { align: 'right' },
-      cell: ({ row }) => <NumberCell>{row.original.probabilita}%</NumberCell>,
+      cell: ({ row }) => <NumberCell>{row.original.probability}%</NumberCell>,
     },
     {
       header: 'Chiusura prevista',
-      id: 'data_chiusura_prevista',
+      id: 'expected_close_date',
       // `DateCell` formats the raw ISO value through the same `lib/dates.ts`
       // `formatDate` above calls, and adds the calendar icon.
-      accessorFn: (row) => formatDate(row.data_chiusura_prevista),
-      cell: ({ row }) => <DateCell value={row.original.data_chiusura_prevista} />,
+      accessorFn: (row) => formatDate(row.expected_close_date),
+      cell: ({ row }) => <DateCell value={row.original.expected_close_date} />,
     },
   ]
 

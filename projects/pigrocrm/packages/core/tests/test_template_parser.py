@@ -73,9 +73,9 @@ def test_segment_records_the_line_each_segment_starts_on() -> None:
 def test_parse_gives_each_variable_the_context_of_its_segment() -> None:
     nodes = parse_template(TYPST_BLOCK_TEMPLATE)
     variables = {n.path: n.context for n in nodes if isinstance(n, VariableNode)}
-    assert variables[("cliente", "ragione_sociale")] == "markdown"
+    assert variables[("customer", "legal_name")] == "markdown"
     assert variables[("riga", "servizio")] == "typst"
-    assert variables[("riga", "totale")] == "typst"
+    assert variables[("riga", "total")] == "typst"
 
 
 def test_the_same_placeholder_gets_two_different_contexts_in_two_places() -> None:
@@ -171,7 +171,7 @@ def test_parse_rejects_a_helper_call_because_the_engine_has_no_helpers() -> None
 # that both omits the "#each r" block's own path entirely and puts the loop-
 # relative "nome" in the same list as the root path "a.b". The coordinator
 # overrode this: a template whose entire behaviour depends on an `#if`/`#each`
-# path (the spec's own example is `offerta.sconto`) used to declare that it
+# path (the spec's own example is `offer.sconto`) used to declare that it
 # needed nothing at all, which defeats what `describe_template` exists for. See
 # `DeclaredPaths` and `declared_paths`'s own docstring in parser.py.
 
@@ -876,7 +876,7 @@ def test_for_real_the_line_marker_survives_pandoc_and_produces_no_visible_text(
         ["pdftotext", "-layout", str(pdf_path), "-"], check=True, capture_output=True, text=True
     ).stdout
     assert "pigrocrm:line" not in text
-    assert "prima" in text and "dopo" in text
+    assert "before" in text and "after" in text
 
 
 # --- Fix round 1, item 2: a placeholder that is the entire content of a Typst

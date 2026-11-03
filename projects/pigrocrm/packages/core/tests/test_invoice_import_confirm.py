@@ -26,8 +26,6 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import LegalEntity
-from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -44,19 +42,21 @@ from pigrocrm.core.invoices.import_upload import UploadedPartyDecision, party_ke
 from pigrocrm.core.invoices.models import Invoice, InvoiceRegisterGap
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.storage import LocalFileStorage
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
-CONSULENZA = "fpr12-consulenza-marzo.xml"
-LOTTO = "fpr12-lotto-due-fatture.xml"
+CONSULTING = "fpr-12-march-consulting.xml"
+LOTTO = "fpr-12-batch-due-invoices.xml"
 ADMIN = Actor(id=None, type="user", role="admin")
 
 # The FPR12 fixtures' own `CedentePrestatore` (fornitore): matching this on an
 # `LegalEntity` is what makes them "outgoing" for the account holder.
-FORNITORE_PIVA = "01234567890"
-FORNITORE_CF = "BNCCHR85M41H501Z"
+SUPPLIER_VAT_NUMBER = "01234567890"
+SUPPLIER_CF = "BNCCHR85M41H501Z"
 # Their `CessionarioCommittente` (cliente).
-CLIENTE_PIVA = "09876543210"
+CUSTOMER_VAT_NUMBER = "09876543210"
 
 
 def _fixture(name: str) -> bytes:
@@ -66,22 +66,22 @@ def _fixture(name: str) -> bytes:
 def _fiscal_profile(session: Session) -> FiscalProfile:
     # A fiscal profile belongs to an azienda since REB-615: the default one, created
     # here when a test asks for the profile before the emitter.
-    azienda = LegalEntityRepository(session).default() or _emitter(session)
-    existing = FiscalProfileRepository(session).get(azienda.id)
+    legal_entity = LegalEntityRepository(session).default() or _legal_entity(session)
+    existing = FiscalProfileRepository(session).get(legal_entity.id)
     if existing is not None:
         return existing
-    profile = FiscalProfile(codice_regime="RF19", azienda_id=azienda.id)
+    profile = FiscalProfile(regime_code="RF19", legal_entity_id=legal_entity.id)
     session.add(profile)
     session.flush()
     return profile
 
 
-def _emitter(session: Session, **overrides: object) -> LegalEntity:
+def _legal_entity(session: Session, **overrides: object) -> LegalEntity:
     base: dict[str, object] = {
-        "ragione_sociale": "Chiara Bianchi",
-        "partita_iva": FORNITORE_PIVA,
-        "codice_fiscale": FORNITORE_CF,
-        "nazione": "IT",
+        "legal_name": "Chiara Bianchi",
+        "vat_number": SUPPLIER_VAT_NUMBER,
+        "tax_code": SUPPLIER_CF,
+        "country": "IT",
         "predefinita": True,
     }
     base.update(overrides)
@@ -102,7 +102,7 @@ def _svc(session: Session, storage: LocalFileStorage) -> InvoiceService:
     already in place, the emitter matching the fixtures' own `CedentePrestatore`
     so a confirmed invoice classifies "outgoing" by default."""
     _fiscal_profile(session)
-    _emitter(session)
+    _legal_entity(session)
     return InvoiceService(session, storage)
 
 
@@ -116,29 +116,27 @@ def _document(
 ) -> UUID:
     owner = owner if owner is not None else make_customer_with_address(session)
     service = DocumentService(session, storage)
-    document = service.create(
-        DocumentCreate(customer_id=owner.id, titolo="Fattura ricevuta"), ADMIN
-    )
+    document = service.create(DocumentCreate(customer_id=owner.id, title="Fattura ricevuta"), ADMIN)
     service.add_version(document.id, content, content_type, ADMIN)
     return document.id
 
 
 def _seed_register_row(
-    session: Session, *, anno: int, numero: int, xml_hash_sha256: str | None
+    session: Session, *, year: int, number: int, xml_hash_sha256: str | None
 ) -> UUID:
     row = Invoice(
         customer_id=make_customer_with_address(session).id,
-        tipo="fattura",
-        stato="emessa",
-        anno=anno,
-        numero=numero,
-        data_emissione=date(2026, 3, 15),
-        importata_da="fatturapa",
+        type="invoice",
+        status="issued",
+        year=year,
+        number=number,
+        issue_date=date(2026, 3, 15),
+        imported_from="fatturapa",
         xml_hash_sha256=xml_hash_sha256,
-        imponibile=Decimal("1000.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("2.00"),
-        totale=Decimal("1000.00"),
+        taxable_amount=Decimal("1000.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("2.00"),
+        total=Decimal("1000.00"),
     )
     session.add(row)
     session.flush()
@@ -153,37 +151,36 @@ def test_confirming_a_fresh_invoice_produces_exactly_what_import_issued_would_by
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
-    content = _fixture(CONSULENZA)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
+    content = _fixture(CONSULTING)
     document_id = _document(db_session, local_storage, content, owner=customer)
 
     [row] = service.confirm_import(document_id, ADMIN)
 
     assert row.outcome == "imported"
     assert row.document_id == document_id
-    assert row.fattura is not None
-    fattura = row.fattura
-    assert (fattura.anno, fattura.numero, fattura.stato, fattura.tipo) == (
+    assert row.invoice is not None
+    invoice = row.invoice
+    assert (invoice.year, invoice.number, invoice.status, invoice.type) == (
         2026,
         6,
-        "emessa",
-        "fattura",
+        "issued",
+        "invoice",
     )
-    assert fattura.customer_id == customer.id
-    assert fattura.data_emissione == date(2026, 3, 15)
-    assert fattura.imponibile == Decimal("1000.00")
-    assert fattura.imposta == Decimal("0.00")
-    assert fattura.bollo == Decimal("2.00")
-    assert fattura.totale == Decimal("1000.00")
-    # REB-368: `confirm_import` passes `importata_da="fatturapa"` to `import_issued`
+    assert invoice.customer_id == customer.id
+    assert invoice.issue_date == date(2026, 3, 15)
+    assert invoice.taxable_amount == Decimal("1000.00")
+    assert invoice.vat_amount == Decimal("0.00")
+    assert invoice.stamp_duty == Decimal("2.00")
+    assert invoice.total == Decimal("1000.00")
+    # REB-368: `confirm_import` passes `imported_from="fatturapa"` to `import_issued`
     # as its own keyword-only override -- never through `InvoiceImport` itself, which
-    # stays fixed to `"esterno"` so a hand-declare caller can never claim otherwise.
-    assert fattura.importata_da == "fatturapa"
-    assert fattura.stato_pagamento == "da_incassare"
-    lines = service.repo.lines(fattura.id)
+    # stays fixed to `"external"` so a hand-declare caller can never claim otherwise.
+    assert invoice.imported_from == "fatturapa"
+    assert invoice.payment_status == "unpaid"
+    lines = service.repo.lines(invoice.id)
     assert [
-        (riga.descrizione, riga.quantita, riga.prezzo_unitario, riga.prezzo_totale)
-        for riga in lines
+        (riga.description, riga.quantity, riga.unit_price, riga.total_price) for riga in lines
     ] == [
         (
             "Consulenza professionale - marzo 2026",
@@ -195,22 +192,22 @@ def test_confirming_a_fresh_invoice_produces_exactly_what_import_issued_would_by
     # The register starts empty and this invoice is number 6: 1-5 are undeclared
     # gaps, exactly as `import_issued`'s own response would report for the same
     # hand-declared numero on an empty register.
-    assert row.buchi_non_dichiarati == [1, 2, 3, 4, 5]
+    assert row.undeclared_gaps == [1, 2, 3, 4, 5]
 
 
 def test_a_single_invoice_source_document_gets_a_hash_verified_xml_document_id(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    content = _fixture(CONSULTING)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     document_id = _document(db_session, local_storage, content, owner=customer)
 
     [row] = service.confirm_import(document_id, ADMIN)
 
-    assert row.fattura is not None
-    assert row.fattura.xml_document_id == document_id
-    assert row.fattura.xml_hash_sha256 == hashlib.sha256(content).hexdigest()
+    assert row.invoice is not None
+    assert row.invoice.xml_document_id == document_id
+    assert row.invoice.xml_hash_sha256 == hashlib.sha256(content).hexdigest()
 
 
 def test_a_batch_sourced_document_leaves_xml_document_id_and_hash_null_on_every_invoice(
@@ -218,7 +215,7 @@ def test_a_batch_sourced_document_leaves_xml_document_id_and_hash_null_on_every_
 ) -> None:
     service = _svc(db_session, local_storage)
     content = _fixture(LOTTO)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     document_id = _document(db_session, local_storage, content, owner=customer)
 
     rows = service.confirm_import(document_id, ADMIN)
@@ -226,25 +223,25 @@ def test_a_batch_sourced_document_leaves_xml_document_id_and_hash_null_on_every_
     assert len(rows) == 2
     assert {row.outcome for row in rows} == {"imported"}
     for row in rows:
-        assert row.fattura is not None
-        assert row.fattura.xml_document_id is None
-        assert row.fattura.xml_hash_sha256 is None
-    assert {row.fattura.numero for row in rows if row.fattura is not None} == {6, 7}
+        assert row.invoice is not None
+        assert row.invoice.xml_document_id is None
+        assert row.invoice.xml_hash_sha256 is None
+    assert {row.invoice.number for row in rows if row.invoice is not None} == {6, 7}
 
 
 def test_confirming_an_already_present_invoice_is_a_no_op_never_a_duplicate_insert(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
     existing_id = _seed_register_row(
-        db_session, anno=2026, numero=6, xml_hash_sha256=hashlib.sha256(content).hexdigest()
+        db_session, year=2026, number=6, xml_hash_sha256=hashlib.sha256(content).hexdigest()
     )
     document_id = _document(
         db_session,
         local_storage,
         content,
-        owner=make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA),
+        owner=make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER),
     )
 
     before = _invoice_count(db_session)
@@ -253,20 +250,20 @@ def test_confirming_an_already_present_invoice_is_a_no_op_never_a_duplicate_inse
 
     assert before == after
     assert row.outcome == "already_present"
-    assert row.fattura is not None
-    assert row.fattura.id == existing_id
-    assert row.buchi_non_dichiarati is None
+    assert row.invoice is not None
+    assert row.invoice.id == existing_id
+    assert row.undeclared_gaps is None
 
 
 def test_a_conflicting_or_missing_hash_is_reported_and_never_written(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    content = _fixture(CONSULENZA)
+    content = _fixture(CONSULTING)
     _seed_register_row(
         db_session,
-        anno=2026,
-        numero=6,
+        year=2026,
+        number=6,
         xml_hash_sha256=hashlib.sha256(b"a different document").hexdigest(),
     )
     document_id = _document(db_session, local_storage, content)
@@ -275,7 +272,7 @@ def test_a_conflicting_or_missing_hash_is_reported_and_never_written(
     [row] = service.confirm_import(document_id, ADMIN)
 
     assert row.outcome == "conflict"
-    assert row.fattura is None
+    assert row.invoice is None
     assert _invoice_count(db_session) == before
 
 
@@ -283,15 +280,15 @@ def test_a_suppliers_invoice_is_incoming_skipped_and_never_written(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     _fiscal_profile(db_session)
-    _emitter(db_session, partita_iva="99999999999", codice_fiscale="ZZZZZZ00A01H501Z")
+    _legal_entity(db_session, vat_number="99999999999", tax_code="ZZZZZZ00A01H501Z")
     service = InvoiceService(db_session, local_storage)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
 
     before = _invoice_count(db_session)
     [row] = service.confirm_import(document_id, ADMIN)
 
     assert row.outcome == "incoming_skipped"
-    assert row.fattura is None
+    assert row.invoice is None
     assert _invoice_count(db_session) == before
 
 
@@ -307,7 +304,7 @@ def test_a_document_no_adapter_recognises_is_unclaimed_and_never_written(
     [row] = service.confirm_import(document_id, ADMIN)
 
     assert row.outcome == "unclaimed"
-    assert row.fattura is None
+    assert row.invoice is None
     assert _invoice_count(db_session) == before
 
 
@@ -315,13 +312,13 @@ def test_no_matching_customer_refuses_and_never_writes(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
 
     before = _invoice_count(db_session)
     [row] = service.confirm_import(document_id, ADMIN)
 
     assert row.outcome == "needs_customer_confirmation"
-    assert row.fattura is None
+    assert row.invoice is None
     assert _invoice_count(db_session) == before
 
 
@@ -332,18 +329,18 @@ def test_an_explicit_customer_id_overrides_the_automatic_match(
     is exactly how a reviewer says which `Customer` this invoice attaches to, even
     when one already matches on its own."""
     service = _svc(db_session, local_storage)
-    matched = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    matched = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     chosen = make_customer_with_address(db_session)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=matched)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=matched)
 
     [row] = service.confirm_import(document_id, ADMIN, customer_id=chosen.id)
 
     assert row.outcome == "imported"
-    assert row.fattura is not None
-    assert row.fattura.customer_id == chosen.id
+    assert row.invoice is not None
+    assert row.invoice.customer_id == chosen.id
 
 
-def test_a_customer_of_another_azienda_is_refused_and_nothing_is_written(
+def test_to_customer_of_another_legal_entity_is_refused_and_nothing_is_written(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """REB-783: `customer_id` is a human decision, but the register it lands on is the
@@ -352,12 +349,12 @@ def test_a_customer_of_another_azienda_is_refused_and_nothing_is_written(
     naming the party, and no invoice is written."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
-        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", predefinita=False
     )
     db_session.add(other)
     db_session.flush()
-    foreign = make_customer_with_address(db_session, azienda_id=other.id)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    foreign = make_customer_with_address(db_session, legal_entity_id=other.id)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
 
     before = _invoice_count(db_session)
     with pytest.raises(ValidationFailed) as caught:
@@ -369,13 +366,13 @@ def test_a_customer_of_another_azienda_is_refused_and_nothing_is_written(
     assert _invoice_count(db_session) == before
 
 
-def test_an_archived_customer_is_refused_and_one_of_the_right_azienda_still_imports(
+def test_an_archived_customer_is_refused_and_one_of_the_right_legal_entity_still_imports(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
     archived = make_customer_with_address(db_session, deleted_at=datetime.now(UTC))
     chosen = make_customer_with_address(db_session)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
 
     with pytest.raises(ValidationFailed) as caught:
         service.confirm_import(document_id, ADMIN, customer_id=archived.id)
@@ -383,8 +380,8 @@ def test_an_archived_customer_is_refused_and_one_of_the_right_azienda_still_impo
 
     [row] = service.confirm_import(document_id, ADMIN, customer_id=chosen.id)
     assert row.outcome == "imported"
-    assert row.fattura is not None
-    assert row.fattura.customer_id == chosen.id
+    assert row.invoice is not None
+    assert row.invoice.customer_id == chosen.id
 
 
 def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
@@ -395,13 +392,13 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     refusal is found before the first write: nothing of the request is written."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
-        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", predefinita=False
     )
     db_session.add(other)
     db_session.flush()
     own = make_customer_with_address(db_session)
-    foreign = make_customer_with_address(db_session, azienda_id=other.id)
-    first = _fixture(CONSULENZA)
+    foreign = make_customer_with_address(db_session, legal_entity_id=other.id)
+    first = _fixture(CONSULTING)
     second = (
         first.decode()
         .replace("<Numero>2026/6</Numero>", "<Numero>2026/9</Numero>")
@@ -413,7 +410,7 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     for xml in (first, second):
         adapter = detect_adapter(xml)
         assert adapter is not None
-        parties.extend(party_key(invoice.cliente) for invoice in adapter.parse(xml))
+        parties.extend(party_key(invoice.customer) for invoice in adapter.parse(xml))
     assert len(set(parties)) == 2
 
     before = _invoice_count(db_session)
@@ -431,7 +428,7 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     assert _invoice_count(db_session) == before
 
 
-def test_the_automatic_match_never_attaches_a_customer_of_another_azienda(
+def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """The same tax id on file under another azienda is not this invoice's customer:
@@ -439,12 +436,14 @@ def test_the_automatic_match_never_attaches_a_customer_of_another_azienda(
     makes one on the azienda the file landed on instead of reusing the other's."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
-        ragione_sociale="Acme Ltd", partita_iva="IE6388047V", nazione="IE", predefinita=False
+        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", predefinita=False
     )
     db_session.add(other)
     db_session.flush()
-    foreign = make_customer_with_address(db_session, azienda_id=other.id, partita_iva=CLIENTE_PIVA)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=foreign)
+    foreign = make_customer_with_address(
+        db_session, legal_entity_id=other.id, vat_number=CUSTOMER_VAT_NUMBER
+    )
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=foreign)
 
     [reviewed] = service.review_import([document_id], ADMIN)
     assert reviewed.outcome == "needs_customer_confirmation"
@@ -453,11 +452,11 @@ def test_the_automatic_match_never_attaches_a_customer_of_another_azienda(
     [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
 
     assert row.outcome == "imported"
-    assert row.fattura is not None
-    assert row.fattura.customer_id != foreign.id
-    created = db_session.get(Customer, row.fattura.customer_id)
+    assert row.invoice is not None
+    assert row.invoice.customer_id != foreign.id
+    created = db_session.get(Customer, row.invoice.customer_id)
     assert created is not None
-    assert created.azienda_id == row.azienda_id
+    assert created.legal_entity_id == row.legal_entity_id
 
 
 def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterpartys_batch(
@@ -474,7 +473,7 @@ def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterp
     rows = service.confirm_import(document_id, ADMIN, create_customer=True)
 
     assert [row.outcome for row in rows] == ["imported", "imported"]
-    customer_ids = {row.fattura.customer_id for row in rows if row.fattura is not None}
+    customer_ids = {row.invoice.customer_id for row in rows if row.invoice is not None}
     assert len(customer_ids) == 1
     after_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
     # The document's own owner customer (the `_document` baseline) plus exactly one
@@ -483,8 +482,8 @@ def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterp
     [customer_id] = customer_ids
     created = CustomerRepository(db_session).get(customer_id)
     assert created is not None
-    assert created.ragione_sociale == "Esempio Servizi S.r.l."
-    assert created.partita_iva == CLIENTE_PIVA
+    assert created.legal_name == "Esempio Servizi S.r.l."
+    assert created.vat_number == CUSTOMER_VAT_NUMBER
 
 
 def test_a_register_failure_after_the_customer_insert_leaves_neither_committed(
@@ -498,16 +497,16 @@ def test_a_register_failure_after_the_customer_insert_leaves_neither_committed(
     invoice pointing at it."""
     service = _svc(db_session, local_storage)
     InvoiceRepository(db_session).add_gap(
-        InvoiceRegisterGap(anno=2026, numero=6, motivo="annullata prima della trasmissione")
+        InvoiceRegisterGap(year=2026, number=6, reason="annullata prima della trasmissione")
     )
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     before_invoices = _invoice_count(db_session)
     before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
 
     [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
 
     assert row.outcome == "conflict"
-    assert row.fattura is None
+    assert row.invoice is None
     assert _invoice_count(db_session) == before_invoices
     assert (
         db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
@@ -515,7 +514,7 @@ def test_a_register_failure_after_the_customer_insert_leaves_neither_committed(
     )
     assert (
         CustomerRepository(db_session).match_by_fiscal_id(
-            partita_iva=CLIENTE_PIVA, codice_fiscale=None
+            vat_number=CUSTOMER_VAT_NUMBER, tax_code=None
         )
         is None
     )
@@ -532,7 +531,7 @@ def test_a_conflict_on_the_customer_creating_invoice_does_not_poison_the_rest_of
     crashing with a `NotFound` on a dangling id."""
     service = _svc(db_session, local_storage)
     InvoiceRepository(db_session).add_gap(
-        InvoiceRegisterGap(anno=2026, numero=6, motivo="annullata prima della trasmissione")
+        InvoiceRegisterGap(year=2026, number=6, reason="annullata prima della trasmissione")
     )
     document_id = _document(db_session, local_storage, _fixture(LOTTO))
     before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
@@ -540,18 +539,18 @@ def test_a_conflict_on_the_customer_creating_invoice_does_not_poison_the_rest_of
     rows = service.confirm_import(document_id, ADMIN, create_customer=True)
 
     assert [row.outcome for row in rows] == ["conflict", "imported"]
-    assert rows[0].fattura is None
-    assert rows[1].fattura is not None
-    assert rows[1].fattura.numero == 7
+    assert rows[0].invoice is None
+    assert rows[1].invoice is not None
+    assert rows[1].invoice.number == 7
     after_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
     # Exactly one new customer survives: the one invoice 6's own rollback undid,
     # plus the one invoice 7 created for itself.
     assert after_customers == before_customers + 1
     created = CustomerRepository(db_session).match_by_fiscal_id(
-        partita_iva=CLIENTE_PIVA, codice_fiscale=None
+        vat_number=CUSTOMER_VAT_NUMBER, tax_code=None
     )
     assert created is not None
-    assert rows[1].fattura.customer_id == created.id
+    assert rows[1].invoice.customer_id == created.id
 
 
 def test_confirming_the_same_document_twice_the_second_time_is_already_present(
@@ -560,8 +559,8 @@ def test_confirming_the_same_document_twice_the_second_time_is_already_present(
     """The natural-key/hash rule applies to confirm's own prior write too: a second
     confirm of the same document never inserts a second row."""
     service = _svc(db_session, local_storage)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA), owner=customer)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING), owner=customer)
 
     [first] = service.confirm_import(document_id, ADMIN)
     before = _invoice_count(db_session)
@@ -569,14 +568,14 @@ def test_confirming_the_same_document_twice_the_second_time_is_already_present(
 
     assert first.outcome == "imported"
     assert second.outcome == "already_present"
-    assert first.fattura is not None and second.fattura is not None
-    assert second.fattura.id == first.fattura.id
+    assert first.invoice is not None and second.invoice is not None
+    assert second.invoice.id == first.invoice.id
     assert _invoice_count(db_session) == before
 
 
 def test_a_readonly_actor_is_refused(db_session: Session, local_storage: LocalFileStorage) -> None:
     service = _svc(db_session, local_storage)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     readonly = Actor(id=None, type="user", role="readonly")
     with pytest.raises(PermissionDenied):
         service.confirm_import(document_id, readonly)
@@ -589,13 +588,13 @@ def test_an_agent_credential_without_full_access_is_forbidden(
     proven at the service the tool actually calls -- the tool's own absence on a
     default installation is `test_mcp_invoice_ban.py`'s guarantee, not this one."""
     service = _svc(db_session, local_storage)
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     agent = Actor(id=None, type="mcp", role="admin", full_access=False)
     with pytest.raises(AgentForbidden):
         service.confirm_import(document_id, agent)
 
 
-def test_no_emitter_profile_configured_refuses_rather_than_guesses(
+def test_no_legal_entities_configured_refuses_rather_than_guesses(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     # Since REB-615 every space has its azienda from the first boot, so «not configured»
@@ -603,93 +602,93 @@ def test_no_emitter_profile_configured_refuses_rather_than_guesses(
     # than a missing row: the import never guesses which P.IVA is ours. Blanked here
     # rather than assumed, since the race tests commit an identity on the default azienda.
     db_session.execute(text("UPDATE emitter_profile SET partita_iva = NULL, codice_fiscale = NULL"))
-    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     with pytest.raises(ValidationFailed) as caught:
         InvoiceService(db_session, local_storage).confirm_import(document_id, ADMIN)
-    assert caught.value.details["entity"] == "emitter_profile"
-    assert caught.value.details["field"] == "partita_iva"
+    assert caught.value.details["entity"] == "legal_entities"
+    assert caught.value.details["field"] == "vat_number"
 
 
-def test_natura_is_read_from_the_line_itself_never_reconstructed_by_rate_alone() -> None:
+def test_vat_nature_is_read_from_the_line_itself_never_reconstructed_by_rate_alone() -> None:
     """Regression: an invoice can carry two `DatiRiepilogo` blocks at the *same*
-    rate with a *different* `natura` each -- a mixed-exemption invoice, and
-    exactly the case this codebase's own `totals.RiepilogoGroup` already keys on
+    rate with a *different* `vat_nature` each -- a mixed-exemption invoice, and
+    exactly the case this codebase's own `totals.RecapGroup` already keys on
     the pair `(aliquota_iva, natura)` for the export side. Reconstructing a
-    line's `natura` from `riepiloghi` matched by rate alone would silently tag
+    line's `vat_nature` from `recaps` matched by rate alone would silently tag
     both lines with whichever riepilogo happened to be seen first; this proves
-    each line keeps its own, correctly-parsed `natura`, and `riferimento_
+    each line keeps its own, correctly-parsed `vat_nature`, and `riferimento_
     normativo` is looked up by the matching pair, not by rate alone."""
-    cliente = ParsedInvoiceParty(
-        ragione_sociale="Cliente Test",
-        indirizzo="Via Test 1",
+    customer = ParsedInvoiceParty(
+        legal_name="Cliente Test",
+        address="Via Test 1",
         cap="00100",
-        comune="Roma",
-        nazione="IT",
+        city="Roma",
+        country="IT",
     )
-    fornitore = ParsedInvoiceParty(
-        ragione_sociale="Emittente Test",
-        partita_iva=FORNITORE_PIVA,
-        indirizzo="Via Test 2",
+    supplier = ParsedInvoiceParty(
+        legal_name="Emittente Test",
+        vat_number=SUPPLIER_VAT_NUMBER,
+        address="Via Test 2",
         cap="20100",
-        comune="Milano",
-        nazione="IT",
+        city="Milano",
+        country="IT",
     )
     invoice = ParsedInvoice(
-        numero="2026/6",
-        data_emissione=date(2026, 3, 15),
-        tipo_documento="fattura",
-        divisa="EUR",
-        fornitore=fornitore,
-        cliente=cliente,
-        righe=[
+        number="2026/6",
+        issue_date=date(2026, 3, 15),
+        sdi_document_type="invoice",
+        currency="EUR",
+        supplier=supplier,
+        customer=customer,
+        lines=[
             ParsedInvoiceLine(
-                descrizione="Riga non soggetta",
-                quantita=Decimal("1"),
-                prezzo_unitario=Decimal("500.00"),
-                prezzo_totale=Decimal("500.00"),
-                aliquota_iva=Decimal("0.00"),
-                natura="N2.2",
+                description="Riga non soggetta",
+                quantity=Decimal("1"),
+                unit_price=Decimal("500.00"),
+                total_price=Decimal("500.00"),
+                vat_rate=Decimal("0.00"),
+                vat_nature="N2.2",
             ),
             ParsedInvoiceLine(
-                descrizione="Riga esente",
-                quantita=Decimal("1"),
-                prezzo_unitario=Decimal("300.00"),
-                prezzo_totale=Decimal("300.00"),
-                aliquota_iva=Decimal("0.00"),
-                natura="N4",
+                description="Riga esente",
+                quantity=Decimal("1"),
+                unit_price=Decimal("300.00"),
+                total_price=Decimal("300.00"),
+                vat_rate=Decimal("0.00"),
+                vat_nature="N4",
             ),
         ],
-        riepiloghi=[
+        recaps=[
             ParsedInvoiceTaxSummary(
-                aliquota_iva=Decimal("0.00"),
-                natura="N2.2",
-                riferimento_normativo="Regime forfettario, art. 1 commi 54-89 L. 190/2014",
-                imponibile=Decimal("500.00"),
-                imposta=Decimal("0.00"),
+                vat_rate=Decimal("0.00"),
+                vat_nature="N2.2",
+                legal_reference="Regime forfettario, art. 1 commi 54-89 L. 190/2014",
+                taxable_amount=Decimal("500.00"),
+                vat_amount=Decimal("0.00"),
             ),
             ParsedInvoiceTaxSummary(
-                aliquota_iva=Decimal("0.00"),
-                natura="N4",
-                riferimento_normativo="Operazioni esenti, art. 10 DPR 633/1972",
-                imponibile=Decimal("300.00"),
-                imposta=Decimal("0.00"),
+                vat_rate=Decimal("0.00"),
+                vat_nature="N4",
+                legal_reference="Operazioni esenti, art. 10 DPR 633/1972",
+                taxable_amount=Decimal("300.00"),
+                vat_amount=Decimal("0.00"),
             ),
         ],
-        imponibile=Decimal("800.00"),
-        imposta=Decimal("0.00"),
-        totale=Decimal("800.00"),
-        cassa_previdenziale=[],
-        termini_pagamento=[],
-        trasmissione=ParsedInvoiceTransmission(id_trasmittente="X", progressivo_invio="1"),
+        taxable_amount=Decimal("800.00"),
+        vat_amount=Decimal("0.00"),
+        total=Decimal("800.00"),
+        social_security_pension_fund=[],
+        termini_payment=[],
+        transmission=ParsedInvoiceTransmission(id_transmitter="X", send_sequential="1"),
     )
 
-    data = map_parsed_invoice_to_import(invoice, anno=2026, numero=6, customer_id=uuid4())
+    data = map_parsed_invoice_to_import(invoice, year=2026, number=6, customer_id=uuid4())
 
-    first, second = data.righe
-    assert first.natura == "N2.2"
-    assert first.riferimento_normativo == "Regime forfettario, art. 1 commi 54-89 L. 190/2014"
-    assert second.natura == "N4"
-    assert second.riferimento_normativo == "Operazioni esenti, art. 10 DPR 633/1972"
+    first, second = data.lines
+    assert first.vat_nature == "N2.2"
+    assert first.legal_reference == "Regime forfettario, art. 1 commi 54-89 L. 190/2014"
+    assert second.vat_nature == "N4"
+    assert second.legal_reference == "Operazioni esenti, art. 10 DPR 633/1972"
 
 
 def test_a_register_rule_conflict_mid_batch_is_reported_and_the_rest_still_lands(
@@ -703,18 +702,18 @@ def test_a_register_rule_conflict_mid_batch_is_reported_and_the_rest_still_lands
     it hits one of those rules: the first invoice's write survives, the second is
     reported `"conflict"`, and the session stays usable after."""
     service = _svc(db_session, local_storage)
-    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, vat_number=CUSTOMER_VAT_NUMBER)
     InvoiceRepository(db_session).add_gap(
-        InvoiceRegisterGap(anno=2026, numero=7, motivo="annullata prima della trasmissione")
+        InvoiceRegisterGap(year=2026, number=7, reason="annullata prima della trasmissione")
     )
     document_id = _document(db_session, local_storage, _fixture(LOTTO), owner=customer)
 
     rows = service.confirm_import(document_id, ADMIN)
 
     assert [row.outcome for row in rows] == ["imported", "conflict"]
-    assert rows[0].fattura is not None
-    assert rows[0].fattura.numero == 6
-    assert rows[1].fattura is None
+    assert rows[0].invoice is not None
+    assert rows[0].invoice.number == 6
+    assert rows[1].invoice is None
     assert _invoice_count(db_session) == 1
     # The session must still answer a query after the mid-batch Conflict.
     assert len(db_session.execute(select(Invoice)).scalars().all()) == 1

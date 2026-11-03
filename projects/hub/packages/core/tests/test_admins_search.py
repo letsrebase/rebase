@@ -72,7 +72,7 @@ def test_a_malformed_cursor_is_refused(clean: Session) -> None:
 
 
 def test_a_non_admin_never_appears_in_the_list(clean: Session) -> None:
-    clean.add(User(email="membro@rebase.it", nome="Membro", cognome="Utente", role="member"))
+    clean.add(User(email="membro@rebase.it", nome="Membro", last_name="Utente", role="member"))
     clean.commit()
     admin = an_admin(clean, "ivan@rebase.it", "Ivan")
 

@@ -2,7 +2,7 @@
 
 `fields/validator.py` rejects a NUL byte in a *custom* field's text; `activities/
 sanitize.py` strips one from an *audit payload*. Neither ever touched a native
-`String`/`Text` column: `CustomerCreate.ragione_sociale`, `PersonCreate.nome`,
+`String`/`Text` column: `CustomerCreate.legal_name`, `PersonCreate.nome`,
 `FieldDefinitionCreate.label`, and every other plain string field on every domain's
 schema had no check at all. `" "` is valid JSON and a syntactically ordinary Python
 `str`, so `"\\x00"` sails straight through Pydantic and reaches `flush()`, where

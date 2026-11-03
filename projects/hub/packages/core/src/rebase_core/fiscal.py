@@ -20,7 +20,7 @@ from rebase_core.errors import NotFound
 from rebase_core.models import Freelancer, FreelancerFiscal
 
 ENTITY = "freelancer_fiscal"
-FISCAL_FIELDS = ("codice_fiscale", "partita_iva", "domicilio", "pec")
+FISCAL_FIELDS = ("tax_code", "partita_iva", "domicile", "certified_email")
 
 
 class FiscalService:

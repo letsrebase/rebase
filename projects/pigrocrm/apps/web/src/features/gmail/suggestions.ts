@@ -37,9 +37,9 @@ export function useImportSuggestions() {
     mutationFn: (body: CustomersFromSuggestions) =>
       unwrap(api.POST('/api/customers/from-suggestions', { body })),
     onSuccess: (_created, body) => {
-      const imported = new Set(body.clienti.map((cliente) => cliente.dominio))
+      const imported = new Set(body.customers.map((customer) => customer.domain))
       queryClient.setQueryData<SuggestedCustomer[]>(suggestionKeys.all, (proposals) =>
-        proposals?.filter((proposal) => !imported.has(proposal.dominio)),
+        proposals?.filter((proposal) => !imported.has(proposal.domain)),
       )
       void queryClient.invalidateQueries({ queryKey: queryKeys.customers() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.people() })

@@ -1,4 +1,4 @@
-/* Sends a signed-in visitor from `Accedi` straight to their own area (REB-349).
+/* Sends a signed-in visitor from `Login` straight to their own area (REB-349).
  *
  * Lorenzo, 2026-09-22: the Accedi button on the landing always sends a visitor to
  * login even with a session already open; it should send them straight to their own
@@ -33,7 +33,7 @@
     return me && me.role === 'admin' ? '/hub/admin' : '/hub/me'
   }
 
-  /** Points every `Accedi`/«Entra nella tua area» link at `to`'s path, keeping
+  /** Points every `Login`/«Entra nella tua area» link at `to`'s path, keeping
    *  whatever query string `utm.js` already gave it. Returns how many links were
    *  rewritten, for the test. */
   function rewrite(root, to) {

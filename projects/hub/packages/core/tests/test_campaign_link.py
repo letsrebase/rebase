@@ -50,27 +50,27 @@ from rebase_core.models import Campaign, CampaignRecipient
 LUMA = "https://lu.ma/rebase-house"
 NO_PAUSE = lambda _seconds: None  # noqa: E731
 TARGET = RenderTarget(
-    email="ada@studio.it", nome="Ada", codice="ab12cd34", token="tok", recipient_id="r-1"
+    email="ada@studio.it", nome="Ada", code="ab12cd34", token="tok", recipient_id="r-1"
 )
 
 
 def link_draft(**fields: object) -> CampaignDraft:
-    return draft(**{"bottone_meta": "link", "bottone_url": LUMA, "azione": "clic", **fields})
+    return draft(**{"button_meta": "link", "button_url": LUMA, "action": "click", **fields})
 
 
 def link_campaign(url: str) -> Campaign:
     return Campaign(
         nome="Casa",
         slug="c-2026-09-28-casa",
-        fonte="stato",
-        stato_percorso="completo",
-        oggetto="Vieni",
-        testo="Ciao {nome},\n\nti aspettiamo.",
-        bottone_testo="Iscriviti",
-        bottone_meta="link",
-        bottone_url=url,
-        azione="clic",
-        contenuto_at=NOW,
+        source="status",
+        journey_status="complete",
+        subject="Vieni",
+        text="Ciao {nome},\n\nti aspettiamo.",
+        button_text="Iscriviti",
+        button_meta="link",
+        button_url=url,
+        action="click",
+        content_at=NOW,
     )
 
 
@@ -116,7 +116,7 @@ def test_only_letsrebase_com_and_its_subdomains_are_ours() -> None:
 def test_the_hub_destinations_keep_their_exact_tracked_url() -> None:
     """A retry must send Resend the same bytes: the join changed nothing for them."""
     campaign = link_campaign(LUMA)
-    campaign.bottone_meta, campaign.bottone_url, campaign.azione = "area", None, "entrato"
+    campaign.button_meta, campaign.button_url, campaign.action = "area", None, "signed_in"
     assert (
         "https://letsrebase.com/hub/login?utm_source=email&utm_medium=campagna"
         "&utm_campaign=c-2026-09-28-casa&utm_content=entrato&utm_term=ab12cd34"
@@ -128,8 +128,8 @@ def test_the_hub_destinations_keep_their_exact_tracked_url() -> None:
 
 def test_a_link_campaign_is_stored_with_its_trimmed_address(clean: Session) -> None:  # noqa: F811  (fixture)
     service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
-    created = service.create(admin(clean).id, link_draft(bottone_url=f"  {LUMA}  "))
-    assert (created.bottone_meta, created.bottone_url, created.azione) == ("link", LUMA, "clic")
+    created = service.create(admin(clean).id, link_draft(button_url=f"  {LUMA}  "))
+    assert (created.button_meta, created.button_url, created.action) == ("link", LUMA, "click")
 
 
 @pytest.mark.parametrize(
@@ -150,40 +150,40 @@ def test_an_address_a_browser_opens_is_taken(
     url: str,
 ) -> None:
     service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
-    assert service.create(admin(clean).id, link_draft(bottone_url=url)).bottone_url == url
+    assert service.create(admin(clean).id, link_draft(button_url=url)).button_url == url
 
 
 @pytest.mark.parametrize(
     ("fields", "field", "sentence"),
     [
-        ({"bottone_url": None}, "bottone_url", LINK_URL_MISSING),
-        ({"bottone_url": "   "}, "bottone_url", LINK_URL_MISSING),
-        ({"bottone_url": "http://lu.ma/casa"}, "bottone_url", LINK_URL_NOT_HTTPS),
-        ({"bottone_url": "lu.ma/casa"}, "bottone_url", LINK_URL_NOT_HTTPS),
-        ({"bottone_url": "https://"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://lu.ma/una casa"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://ivan:pw@lu.ma/casa"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://evil.io\\@lu.ma/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://lu.ma/" + "a" * 490}, "bottone_url", LINK_URL_TOO_LONG),
+        ({"button_url": None}, "button_url", LINK_URL_MISSING),
+        ({"button_url": "   "}, "button_url", LINK_URL_MISSING),
+        ({"button_url": "http://lu.ma/casa"}, "button_url", LINK_URL_NOT_HTTPS),
+        ({"button_url": "lu.ma/casa"}, "button_url", LINK_URL_NOT_HTTPS),
+        ({"button_url": "https://"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://lu.ma/una casa"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://ivan:pw@lu.ma/casa"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://evil.io\\@lu.ma/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://lu.ma/" + "a" * 490}, "button_url", LINK_URL_TOO_LONG),
         # Greptile P1s on #476: what `urlsplit` raises on, or lets through while a
         # browser (and the editor's `new URL`) refuses it, is the same 422.
-        ({"bottone_url": "https://[invalid"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://a]b.com/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://[zzz]/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://lu.ma:99999/rebase-house"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://lu.ma:65536/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://lu.ma:abc/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://lu.ma:-1/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https:lu.ma"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https:///lu.ma"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://@lu.ma/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://a%2eb.com/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://a<b.com/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://a|b.com/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://999.1.1.1/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://127.1/"}, "bottone_url", LINK_URL_INVALID),
-        ({"bottone_url": "https://xn--a.com/"}, "bottone_url", LINK_URL_INVALID),
-        ({"azione": "entrato"}, "azione", LINK_MEASURES_CLICK),
+        ({"button_url": "https://[invalid"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://a]b.com/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://[zzz]/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://lu.ma:99999/rebase-house"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://lu.ma:65536/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://lu.ma:abc/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://lu.ma:-1/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https:lu.ma"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https:///lu.ma"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://@lu.ma/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://a%2eb.com/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://a<b.com/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://a|b.com/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://999.1.1.1/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://127.1/"}, "button_url", LINK_URL_INVALID),
+        ({"button_url": "https://xn--a.com/"}, "button_url", LINK_URL_INVALID),
+        ({"action": "signed_in"}, "action", LINK_MEASURES_CLICK),
     ],
 )
 def test_a_link_campaign_refuses_a_bad_address_or_another_action(
@@ -203,15 +203,15 @@ def test_an_address_or_the_click_without_a_link_is_refused(clean: Session) -> No
     service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
     who = admin(clean).id
     with pytest.raises(ValidationFailed) as unused:
-        service.create(who, draft(bottone_url=LUMA))
+        service.create(who, draft(button_url=LUMA))
     assert unused.value.details == {
-        "entity": "campagna",
-        "field": "bottone_url",
+        "entity": "campaign",
+        "field": "button_url",
         "reason": LINK_URL_UNUSED,
     }
     with pytest.raises(ValidationFailed) as click:
-        service.create(who, draft(azione="clic"))
-    assert click.value.details["field"] == "azione"
+        service.create(who, draft(action="click"))
+    assert click.value.details["field"] == "action"
     assert click.value.details["reason"] == CLICK_NEEDS_LINK
 
 
@@ -219,23 +219,23 @@ def test_a_patch_is_checked_on_the_campaign_it_leaves(clean: Session) -> None:  
     service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
     created = service.create(admin(clean).id, draft())
     with pytest.raises(ValidationFailed) as missing:
-        service.update(created.id, CampaignPatch(bottone_meta="link", azione="clic"))
+        service.update(created.id, CampaignPatch(button_meta="link", action="click"))
     assert missing.value.details["reason"] == LINK_URL_MISSING
     clean.rollback()  # as the API's request session does after a refusal
     with pytest.raises(ValidationFailed) as not_https:
         service.update(
             created.id,
-            CampaignPatch(bottone_meta="link", azione="clic", bottone_url="ftp://lu.ma/x"),
+            CampaignPatch(button_meta="link", action="click", button_url="ftp://lu.ma/x"),
         )
     assert not_https.value.details["reason"] == LINK_URL_NOT_HTTPS
     clean.rollback()
     linked = service.update(
-        created.id, CampaignPatch(bottone_meta="link", azione="clic", bottone_url=LUMA)
+        created.id, CampaignPatch(button_meta="link", action="click", button_url=LUMA)
     )
-    assert (linked.bottone_meta, linked.bottone_url) == ("link", LUMA)
+    assert (linked.button_meta, linked.button_url) == ("link", LUMA)
     # Leaving «Un link» takes the address with it, the request need not say so.
-    back = service.update(created.id, CampaignPatch(bottone_meta="area", azione="cv"))
-    assert (back.bottone_meta, back.bottone_url, back.azione) == ("area", None, "cv")
+    back = service.update(created.id, CampaignPatch(button_meta="area", action="cv"))
+    assert (back.button_meta, back.button_url, back.action) == ("area", None, "cv")
 
 
 def test_a_new_address_makes_the_last_test_stale(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -246,10 +246,10 @@ def test_a_new_address_makes_the_last_test_stale(clean: Session) -> None:  # noq
     clock.at += timedelta(minutes=1)
     recording = RecordingCampaignSender()
     tested = service.send_test(created.id, as_admin(who), recording)
-    assert tested.pronta and LUMA in recording.sent[0].mail.text
+    assert tested.ready and LUMA in recording.sent[0].mail.text
     clock.at += timedelta(minutes=1)
-    moved = service.update(created.id, CampaignPatch(bottone_url="https://chat.whatsapp.com/x"))
-    assert moved.pronta is False
+    moved = service.update(created.id, CampaignPatch(button_url="https://chat.whatsapp.com/x"))
+    assert moved.ready is False
 
 
 # ---- what it measures ---------------------------------------------------------------
@@ -258,7 +258,7 @@ def test_a_new_address_makes_the_last_test_stale(clean: Session) -> None:  # noq
 def sent_link_campaign(session: Session, clock: Clock) -> Campaign:
     service = CampaignService(session, SETTINGS, clock=clock)
     who = admin(session)
-    created = service.create(who.id, link_draft(stato_percorso="completo"))
+    created = service.create(who.id, link_draft(journey_status="complete"))
     clock.at += timedelta(minutes=1)
     service.send_test(created.id, as_admin(who), RecordingCampaignSender())
     service.schedule(created.id, ScheduleRequest())
@@ -271,19 +271,19 @@ def test_the_first_click_is_a_link_campaigns_action(clean: Session) -> None:  # 
     person(clean, "ada@studio.it")
     campaign = sent_link_campaign(clean, clock)
     row = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).one()
-    assert row.stato == "inviata" and row.motivo is None
+    assert row.status == "sent" and row.reason is None
     assert stamp_outcomes(clean, now=clock.at + timedelta(minutes=1)) == 0
     clicked = clock.at + timedelta(hours=3)
     clean.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.id == row.id)
-        .values(primo_clic_at=clicked)
+        .values(first_click_at=clicked)
     )
     clean.commit()
     assert stamp_outcomes(clean, now=clicked + timedelta(minutes=1)) == 1
     clean.expire_all()
     row = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).one()
-    assert (row.azione_at, row.entrato_at) == (clicked, None)
+    assert (row.action_at, row.signed_in_at) == (clicked, None)
 
 
 def test_a_follow_up_keeps_the_link(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -292,9 +292,9 @@ def test_a_follow_up_keeps_the_link(clean: Session) -> None:  # noqa: F811  (fix
     campaign = sent_link_campaign(clean, clock)
     service = CampaignService(clean, SETTINGS, clock=clock)
     follow = service.follow_up(campaign.id, admin(clean).id)
-    assert (follow.bottone_meta, follow.bottone_url, follow.azione) == ("link", LUMA, "clic")
+    assert (follow.button_meta, follow.button_url, follow.action) == ("link", LUMA, "click")
     with pytest.raises(ValidationFailed) as refused:
-        service.update(follow.id, CampaignPatch(bottone_meta="area"))
+        service.update(follow.id, CampaignPatch(button_meta="area"))
     assert refused.value.details["reason"] == CLICK_NEEDS_LINK
 
 
@@ -319,7 +319,7 @@ def click_on(session: Session, campaign: Campaign, at: datetime) -> None:
     session.execute(
         update(CampaignRecipient)
         .where(CampaignRecipient.campaign_id == campaign.id)
-        .values(primo_clic_at=at)
+        .values(first_click_at=at)
     )
     session.commit()
 
@@ -333,10 +333,10 @@ def test_a_click_on_the_first_mail_after_scheduling_stops_the_follow_up(clean: S
     clock.at += timedelta(minutes=1)
     recording = RecordingCampaignSender()
     result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
-    assert (result.inviate, result.saltate, recording.sent) == (0, 1, [])
+    assert (result.sent, result.skipped, recording.sent) == (0, 1, [])
     clean.expire_all()
     row = clean.query(CampaignRecipient).filter_by(campaign_id=follow.id).one()
-    assert (row.stato, row.motivo) == ("saltata", REASON_DONE)
+    assert (row.status, row.reason) == ("skipped", REASON_DONE)
 
 
 def test_a_follow_up_is_credited_only_with_a_click_after_it_left(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -344,22 +344,22 @@ def test_a_follow_up_is_credited_only_with_a_click_after_it_left(clean: Session)
     parent, follow = scheduled_follow_up(clean, clock)
     # Its own Resend id: a second recorder would answer `rec-1` again, which the parent's
     # row already holds (`uq_campaign_recipients_resend_id`).
-    follow_sender = RecordingCampaignSender([SendOutcome("accettata", "rec-follow")])
+    follow_sender = RecordingCampaignSender([SendOutcome("accepted", "rec-follow")])
     run_tick(clean, follow_sender, SETTINGS, clock=clock, pause=NO_PAUSE)
     clean.expire_all()
     row = clean.query(CampaignRecipient).filter_by(campaign_id=follow.id).one()
-    assert row.stato == "inviata" and row.inviata_at is not None
+    assert row.status == "sent" and row.sent_at is not None
     # A click on the first mail from before this one left does not count for it...
-    assert earlier_click(clean, row, since=row.inviata_at) is None
-    click_on(clean, parent, row.inviata_at - timedelta(minutes=1))
-    assert earlier_click(clean, row, since=row.inviata_at) is None
+    assert earlier_click(clean, row, since=row.sent_at) is None
+    click_on(clean, parent, row.sent_at - timedelta(minutes=1))
+    assert earlier_click(clean, row, since=row.sent_at) is None
     # ...one after it does, and the tick stamps it.
-    later = row.inviata_at + timedelta(hours=2)
+    later = row.sent_at + timedelta(hours=2)
     click_on(clean, parent, later)
     assert stamp_outcomes(clean, now=later + timedelta(minutes=1)) >= 1
     clean.expire_all()
     row = clean.query(CampaignRecipient).filter_by(campaign_id=follow.id).one()
-    assert row.azione_at == later
+    assert row.action_at == later
 
 
 # ---- the database -------------------------------------------------------------------
@@ -384,12 +384,12 @@ def test_the_link_constraints_are_installed(hub_engine: Engine) -> None:
             ":slug, 'stato', 'lead', '', '', '', :meta, :url, :azione, 'bozza', now(), "
             "now(), now())"
         )
-        good = {"meta": "link", "url": LUMA, "azione": "clic"}
+        good = {"meta": "link", "url": LUMA, "action": "click"}
         for slug, bad in (
             ("a", {**good, "url": None}),  # ck_campaigns_bottone_url
             ("b", {**good, "meta": "area"}),  # ck_campaigns_bottone_url
-            ("c", {**good, "azione": "entrato"}),  # ck_campaigns_link_clic
-            ("d", {"meta": "area", "url": None, "azione": "clic"}),  # ck_campaigns_link_clic
+            ("c", {**good, "action": "signed_in"}),  # ck_campaigns_link_clic
+            ("d", {"meta": "area", "url": None, "action": "click"}),  # ck_campaigns_link_clic
         ):
             savepoint = connection.begin_nested()
             with pytest.raises(IntegrityError):
@@ -402,9 +402,9 @@ def test_the_link_constraints_are_installed(hub_engine: Engine) -> None:
 def test_the_address_column_holds_five_hundred_characters(clean: Session) -> None:  # noqa: F811  (fixture)
     url = "https://lu.ma/" + "a" * 486
     assert len(url) == 500
-    row = campaign_row(clean, bottone_meta="link", bottone_url=url, azione="clic")
+    row = campaign_row(clean, button_meta="link", button_url=url, action="click")
     clean.expire_all()
-    assert clean.get(Campaign, row.id).bottone_url == url  # type: ignore[union-attr]
+    assert clean.get(Campaign, row.id).button_url == url  # type: ignore[union-attr]
 
 
 def test_migration_0027_can_run_again_and_roll_back() -> None:

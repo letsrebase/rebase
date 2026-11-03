@@ -20,13 +20,13 @@ from rebase_core.migrate import INI_PATH, upgrade_to_head
 REVISION = "0046"
 
 COLUMNS = {
-    "crm_stato": ("character varying", "YES"),
+    "crm_status": ("character varying", "YES"),
     "crm_customer_id": ("uuid", "YES"),
     "crm_deal_id": ("uuid", "YES"),
     "crm_deal_url": ("text", "YES"),
-    "crm_errore": ("text", "YES"),
+    "crm_error": ("text", "YES"),
     "crm_attempted_at": ("timestamp with time zone", "YES"),
-    "crm_bozza": ("jsonb", "YES"),
+    "crm_draft": ("jsonb", "YES"),
 }
 
 
@@ -48,7 +48,7 @@ def _columns(connection: Any) -> dict[str, tuple[str, str]]:
     }
 
 
-def _company(connection: Any, crm_stato: str | None) -> None:
+def _company(connection: Any, crm_status: str | None) -> None:
     user_id = uuid4()
     connection.execute(
         text(
@@ -64,7 +64,7 @@ def _company(connection: Any, crm_stato: str | None) -> None:
             "VALUES (:id, :u, 'Acme', 'Dev', 'p', '2026-12-01', '3 mesi', 100, 'remoto', 1, "
             "'nuovo', :s)"
         ),
-        {"id": uuid4(), "u": user_id, "s": crm_stato},
+        {"id": uuid4(), "u": user_id, "s": crm_status},
     )
 
 
@@ -87,9 +87,9 @@ def test_upgrade_adds_the_columns_and_the_check_and_leaves_old_rows_null(
         command.upgrade(config, "head")
         with engine.begin() as connection:
             assert _columns(connection) == COLUMNS
-            _company(connection, "da_collegare")
+            _company(connection, "to_link")
             _company(connection, None)
-        with pytest.raises(IntegrityError, match="ck_companies_crm_stato"), engine.begin() as c:
+        with pytest.raises(IntegrityError, match="ck_companies_crm_status"), engine.begin() as c:
             _company(c, "altro")
         engine.dispose()
 

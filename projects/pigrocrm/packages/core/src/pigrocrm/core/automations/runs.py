@@ -21,8 +21,8 @@ def recent_runs(session: Session, limit: int) -> list[AutomationRun]:
             # would give the `automation_config` row's own id for a configuration change,
             # which renders as a link to a deal that does not exist.
             deal_id=activity.entity_id if activity.entity_type == "deal" else None,
-            regola=activity.payload.get("regola"),
-            motivo=activity.payload.get("motivo"),
+            rule=activity.payload.get("rule"),
+            reason=activity.payload.get("reason"),
             payload=activity.payload,
         )
         for activity in ActivityRepository(session).by_kind(AUTOMATION_KINDS, limit)

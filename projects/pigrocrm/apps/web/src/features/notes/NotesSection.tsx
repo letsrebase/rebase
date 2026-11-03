@@ -24,12 +24,12 @@ const NOTE_MAX_LENGTH = 10_000
 
 /**
  * Who a note reads as signed by when the row has no name to give: a note from before the
- * thread existed (`fonte` null), one a job or rebase wrote, or one whose author the CRM no
+ * thread existed (`source` null), one a job or rebase wrote, or one whose author the CRM no
  * longer has a name for.
  */
-const AUTHOR_FALLBACK: Record<NoteSource | 'precedente', string> = {
-  precedente: 'Nota precedente',
-  sistema: 'Sistema',
+const AUTHOR_FALLBACK: Record<NoteSource | 'previous', string> = {
+  previous: 'Nota precedente',
+  system: 'Sistema',
   rebase: 'rebase',
   mcp: 'Agente AI',
   web: 'Un membro',
@@ -40,7 +40,7 @@ const AUTHOR_FALLBACK: Record<NoteSource | 'precedente', string> = {
  *  chips: a thread shows one per note, and the page's one strong action is elsewhere. */
 const SOURCE_BADGE: Partial<Record<NoteSource, string>> = {
   mcp: 'via MCP',
-  sistema: 'Sistema',
+  system: 'Sistema',
   rebase: 'rebase',
 }
 
@@ -63,17 +63,17 @@ function NoteItem({
   const update = useUpdateNote(entityType, entityId)
   const remove = useDeleteNote(entityType, entityId)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(note.testo)
+  const [draft, setDraft] = useState(note.text)
 
-  const author = note.autore ?? AUTHOR_FALLBACK[note.fonte ?? 'precedente']
-  const badge = note.fonte === null ? undefined : SOURCE_BADGE[note.fonte]
+  const author = note.author ?? AUTHOR_FALLBACK[note.source ?? 'previous']
+  const badge = note.source === null ? undefined : SOURCE_BADGE[note.source]
   const text = draft.trim()
   const error = update.error ?? remove.error
   // Which note a button is about, for a screen reader that lists the buttons of the page.
   const subject = `la nota di ${author} del ${formatOccurredAt(note.created_at)}`
 
   function startEditing() {
-    setDraft(note.testo)
+    setDraft(note.text)
     update.reset()
     remove.reset()
     setEditing(true)
@@ -81,18 +81,18 @@ function NoteItem({
 
   function cancelEditing() {
     setEditing(false)
-    setDraft(note.testo)
+    setDraft(note.text)
     update.reset()
   }
 
   function save() {
     // Nothing changed: there is nothing to write, and the thread would record an edit.
-    if (text === note.testo) {
+    if (text === note.text) {
       cancelEditing()
       return
     }
     update.mutate(
-      { noteId: note.id, testo: text },
+      { noteId: note.id, text: text },
       {
         onSuccess: () => {
           setEditing(false)
@@ -113,10 +113,10 @@ function NoteItem({
         <span className="font-medium text-foreground">{author}</span>
         <time dateTime={note.created_at}>{formatOccurredAt(note.created_at)}</time>
         {badge !== undefined && badge !== author && <Badge variant="outline">{badge}</Badge>}
-        {note.modificata_at !== null && (
+        {note.edited_at !== null && (
           <span>
-            modificata{note.modificata_da ? ` da ${note.modificata_da}` : ''} il{' '}
-            {formatOccurredAt(note.modificata_at)}
+            modificata{note.edited_by ? ` da ${note.edited_by}` : ''} il{' '}
+            {formatOccurredAt(note.edited_at)}
           </span>
         )}
       </p>
@@ -153,10 +153,10 @@ function NoteItem({
           </div>
         </form>
       ) : (
-        <p className="whitespace-pre-wrap break-words text-sm">{note.testo}</p>
+        <p className="whitespace-pre-wrap break-words text-sm">{note.text}</p>
       )}
 
-      {note.modificabile && !editing && (canUpdate || canDelete) && (
+      {note.editable && !editing && (canUpdate || canDelete) && (
         <div className="flex flex-wrap gap-2 pt-1">
           {canUpdate && (
             <Button
@@ -199,7 +199,7 @@ function NoteItem({
  * dated and marked with the door it came through. The text never carries the author or
  * the date: the line above it does, and both are written by the CRM, never typed. A
  * person who may write adds a note; whoever wrote one (or an admin) edits and deletes it,
- * and the API says which in each row's `modificabile`. Every change is an entry of the
+ * and the API says which in each row's `editable`. Every change is an entry of the
  * record's timeline. A person who may not write sees the thread and no form.
  */
 export function NotesSection({

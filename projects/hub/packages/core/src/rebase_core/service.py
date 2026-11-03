@@ -35,19 +35,19 @@ class SignupService:
 
         # The first attribution of an address is the one that stays: a person who comes
         # back through another ad and types the same email is the same person.
-        # The signups table predates `origine` and the community page has no door to name,
+        # The signups table predates `origin` and the community page has no door to name,
         # so the page slug stays out of this row (ORB-167).
         utm = (
-            data.utm.model_dump(exclude={"origine"})
+            data.utm.model_dump(exclude={"origin"})
             if data.utm is not None and not data.utm.is_empty()
             else {}
         )
         row = Signup(
             email=email,
             nome=data.nome,
-            cognome=data.cognome,
+            last_name=data.last_name,
             linkedin_url=data.linkedin_url,
-            rif=data.rif,
+            ref=data.ref,
             **utm,
         )
         self.session.add(row)
@@ -83,10 +83,10 @@ class SignupService:
             .order_by(Signup.created_at.desc(), Signup.id.desc())
             .limit(limit)
         ).all()
-        totale = self.session.scalar(select(func.count()).select_from(Signup)) or 0
+        total = self.session.scalar(select(func.count()).select_from(Signup)) or 0
         return SignupList(
-            totale=totale,
-            iscrizioni=[
+            total=total,
+            signups=[
                 SignupListItem.model_validate(
                     {**SignupListItem.model_validate(row).model_dump(), "freelancer_id": card_id}
                 )
@@ -108,7 +108,7 @@ class SignupService:
         already there.
         """
         changed = False
-        for field in ("nome", "cognome", "linkedin_url"):
+        for field in ("nome", "last_name", "linkedin_url"):
             value = getattr(data, field)
             if value is not None and not (getattr(row, field) or "").strip():
                 if field == "linkedin_url" and self._find_by_linkedin(value) is not None:
@@ -130,4 +130,4 @@ class SignupService:
 
 
 def _read(row: Signup, *, nuova: bool) -> SignupRead:
-    return SignupRead.model_validate(row, from_attributes=True).model_copy(update={"nuova": nuova})
+    return SignupRead.model_validate(row, from_attributes=True).model_copy(update={"new": nuova})

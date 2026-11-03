@@ -28,20 +28,20 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 
 def _seed(session: Session) -> FiscalProfileService:
-    """A profile written the way the settings screen writes one: `codice_regime` and
+    """A profile written the way the settings screen writes one: `regime_code` and
     nothing else, so what lands in the three new columns is whatever the schema
     defaults say and not something the test itself supplied."""
     service = FiscalProfileService(session)
-    service.upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    service.upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     return service
 
 
 def test_the_three_columns_exist_at_the_right_precision(db_engine: Engine) -> None:
     columns = {c["name"]: c for c in inspect(db_engine).get_columns("fiscal_profile")}
     for name in (
-        "coefficiente_redditivita",
-        "aliquota_imposta_sostitutiva",
-        "aliquota_inps",
+        "profitability_coefficient",
+        "substitute_tax_rate",
+        "social_security_rate",
     ):
         assert name in columns, name
         assert columns[name]["nullable"] is True
@@ -55,9 +55,9 @@ def test_the_three_columns_exist_at_the_right_precision(db_engine: Engine) -> No
                 )
             ).all()
         )
-    assert precisions["coefficiente_redditivita"] == "5,2"
-    assert precisions["aliquota_imposta_sostitutiva"] == "5,2"
-    assert precisions["aliquota_inps"] == "5,2"
+    assert precisions["profitability_coefficient"] == "5,2"
+    assert precisions["substitute_tax_rate"] == "5,2"
+    assert precisions["social_security_rate"] == "5,2"
 
 
 def test_there_is_exactly_one_fiscal_profile_table(db_engine: Engine) -> None:
@@ -69,9 +69,9 @@ def test_there_is_exactly_one_fiscal_profile_table(db_engine: Engine) -> None:
 
 def test_the_previous_systems_values_are_the_defaults(db_session: Session) -> None:
     profile = _seed(db_session).get(ADMIN)
-    assert profile.coefficiente_redditivita == Decimal("67.00")
-    assert profile.aliquota_imposta_sostitutiva == Decimal("5.00")
-    assert profile.aliquota_inps == Decimal("26.07")
+    assert profile.profitability_coefficient == Decimal("67.00")
+    assert profile.substitute_tax_rate == Decimal("5.00")
+    assert profile.social_security_rate == Decimal("26.07")
 
 
 def test_a_supplied_rate_is_stored_as_a_percentage(db_session: Session) -> None:
@@ -79,9 +79,9 @@ def test_a_supplied_rate_is_stored_as_a_percentage(db_session: Session) -> None:
     the column holds the number the way its owner reads and types it."""
     service = _seed(db_session)
     profile = service.upsert(
-        FiscalProfileUpsert(codice_regime="RF19", aliquota_inps=Decimal("25.72")), ADMIN
+        FiscalProfileUpsert(regime_code="RF19", social_security_rate=Decimal("25.72")), ADMIN
     )
-    assert profile.aliquota_inps == Decimal("25.72")
+    assert profile.social_security_rate == Decimal("25.72")
     stored = db_session.execute(
         text("SELECT aliquota_inps FROM fiscal_profile WHERE id = :id"), {"id": profile.id}
     ).scalar_one()
@@ -94,10 +94,12 @@ def test_changing_one_writes_an_activity(db_session: Session) -> None:
     historicise the profile at all."""
     service = _seed(db_session)
     before = service.get(ADMIN)
-    service.upsert(FiscalProfileUpsert(codice_regime="RF19", aliquota_inps=Decimal("25.00")), ADMIN)
+    service.upsert(
+        FiscalProfileUpsert(regime_code="RF19", social_security_rate=Decimal("25.00")), ADMIN
+    )
     entries = ActivityService(db_session).timeline("fiscal_profile", before.id)
     assert entries[0].kind == "updated"
-    assert "aliquota_inps" in str(entries[0].payload)
+    assert "social_security_rate" in str(entries[0].payload)
 
 
 def test_an_out_of_range_rate_is_refused_before_the_database(db_session: Session) -> None:
@@ -106,4 +108,4 @@ def test_an_out_of_range_rate_is_refused_before_the_database(db_session: Session
     into a value the caller never asked for."""
     for bad in (Decimal("-1.00"), Decimal("100.01"), Decimal("1.005")):
         with pytest.raises(ValidationError):
-            FiscalProfileUpsert(codice_regime="RF19", aliquota_inps=bad)
+            FiscalProfileUpsert(regime_code="RF19", social_security_rate=bad)

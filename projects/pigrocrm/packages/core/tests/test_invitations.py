@@ -50,7 +50,7 @@ def _admin(session: Session) -> Actor:
     existing = UserRepository(session).get_by_email(ADMIN)
     if existing is None:
         created = UserService(session).create(
-            UserCreate(email=ADMIN, password="lunghissima1", nome="Ada", ruolo="admin"),
+            UserCreate(email=ADMIN, password="lunghissima1", nome="Ada", role="admin"),
             Actor.system(),
         )
         return Actor(id=created.id, type="user", role="admin")
@@ -58,10 +58,10 @@ def _admin(session: Session) -> Actor:
 
 
 def _invite(
-    session: Session, email: str = INVITEE, nome: str | None = "Luca", ruolo: str = "collaboratore"
+    session: Session, email: str = INVITEE, nome: str | None = "Luca", role: str = "collaborator"
 ) -> tuple[Invitation, str]:
     invite, raw = InvitationService(session).create(
-        InvitationCreate(email=email, nome=nome, ruolo=ruolo), _admin(session)
+        InvitationCreate(email=email, nome=nome, role=role), _admin(session)
     )
     row = session.get(Invitation, invite.id)
     assert row is not None
@@ -73,7 +73,7 @@ def test_create_writes_the_row_and_answers_a_token(db_session: Session) -> None:
     assert raw and len(raw) >= 32
     assert row.token_hash == _hash(raw)
     assert row.accepted_at is None and row.revoked_at is None
-    assert row.ruolo == "collaboratore" and row.nome == "Luca"
+    assert row.role == "collaborator" and row.nome == "Luca"
     assert row.expires_at > datetime.now(UTC) + timedelta(days=INVITATION_TTL_DAYS - 1)
     assert row.invited_by == _admin(db_session).id
     # The list reads it back, and the read model never carries the credential.
@@ -82,17 +82,17 @@ def test_create_writes_the_row_and_answers_a_token(db_session: Session) -> None:
     assert "token" not in str(listed[0].model_dump())
 
 
-def test_a_collaboratore_cannot_invite(db_session: Session) -> None:
+def test_to_collaborator_cannot_invite(db_session: Session) -> None:
     UserService(db_session).create(
-        UserCreate(email="help@x.it", password="lunghissima1", nome="Bruno", ruolo="collaboratore"),
+        UserCreate(email="help@x.it", password="lunghissima1", nome="Bruno", role="collaborator"),
         Actor.system(),
     )
     helper = UserRepository(db_session).get_by_email("help@x.it")
     assert helper is not None
-    actor = Actor(id=helper.id, type="user", role="collaboratore")
+    actor = Actor(id=helper.id, type="user", role="collaborator")
     with pytest.raises(PermissionDenied):
         InvitationService(db_session).create(
-            InvitationCreate(email=INVITEE, nome=None, ruolo="readonly"), actor
+            InvitationCreate(email=INVITEE, nome=None, role="readonly"), actor
         )
 
 
@@ -101,32 +101,32 @@ def test_an_unverified_admin_cannot_mint_an_invitation(db_session: Session) -> N
     of a space who has never opened their welcome mail has an address nobody proved.
     The same guard `PatService.create` already applies to a token."""
     nobody = UserService(db_session).create(
-        UserCreate(email="appena@x.it", password=None, nome="Zero", ruolo="admin"),
+        UserCreate(email="appena@x.it", password=None, nome="Zero", role="admin"),
         Actor.system(),
     )
     actor = Actor(id=nobody.id, type="user", role="admin")
     with pytest.raises(ValidationFailed) as refused:
         InvitationService(db_session).create(
-            InvitationCreate(email=INVITEE, nome=None, ruolo="admin"), actor
+            InvitationCreate(email=INVITEE, nome=None, role="admin"), actor
         )
     assert "conferma il tuo indirizzo" in refused.value.message
 
 
 def test_an_active_user_and_a_pending_invitation_are_both_409(db_session: Session) -> None:
     UserService(db_session).create(
-        UserCreate(email="attiva@x.it", password="lunghissima1", nome="Già", ruolo="admin"),
+        UserCreate(email="attiva@x.it", password="lunghissima1", nome="Già", role="admin"),
         Actor.system(),
     )
     admin = _admin(db_session)
     with pytest.raises(Conflict) as existing:
         InvitationService(db_session).create(
-            InvitationCreate(email="attiva@x.it", nome=None, ruolo="admin"), admin
+            InvitationCreate(email="attiva@x.it", nome=None, role="admin"), admin
         )
     assert "persona attiva" in existing.value.message
     _invite(db_session)
     with pytest.raises(Conflict) as pending:
         InvitationService(db_session).create(
-            InvitationCreate(email=INVITEE.upper(), nome="Luca", ruolo="collaboratore"), admin
+            InvitationCreate(email=INVITEE.upper(), nome="Luca", role="collaborator"), admin
         )
     assert "invito in attesa" in pending.value.message
     # The uppercase retry addressed the same row, not a second one.
@@ -140,14 +140,14 @@ def test_an_expired_invitation_is_rewritten_in_place_not_duplicated(db_session: 
     row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
     db_session.commit()
     with pytest.raises(InvitationExpired):
-        InvitationService(db_session).peek(stale, spazio="x")
+        InvitationService(db_session).peek(stale, space="x")
     invitation_id = row.id
     again, fresh = InvitationService(db_session).create(
-        InvitationCreate(email=INVITEE, nome=None, ruolo="readonly"), _admin(db_session)
+        InvitationCreate(email=INVITEE, nome=None, role="readonly"), _admin(db_session)
     )
     assert again.id == invitation_id
     assert fresh != stale
-    assert row.ruolo == "readonly" and row.nome is None
+    assert row.role == "readonly" and row.nome is None
     assert row.expires_at > datetime.now(UTC) + timedelta(days=INVITATION_TTL_DAYS - 1)
     assert db_session.scalar(select(Invitation)) is row  # still one row, not two
 
@@ -158,9 +158,9 @@ def test_resend_kills_the_old_token(db_session: Session) -> None:
     assert fresh != stale
     assert after.id == row.id
     with pytest.raises(InvitationUnknown):
-        InvitationService(db_session).peek(stale, spazio="x")
-    peek = InvitationService(db_session).peek(fresh, spazio="studio")
-    assert peek.spazio == "studio" and peek.invitato_da == "Ada" and peek.nome == "Luca"
+        InvitationService(db_session).peek(stale, space="x")
+    peek = InvitationService(db_session).peek(fresh, space="studio")
+    assert peek.space == "studio" and peek.invited_from == "Ada" and peek.nome == "Luca"
     # A peek is not a spend.
     assert row.accepted_at is None
 
@@ -207,14 +207,14 @@ def test_the_three_dead_states_answer_three_ways(db_session: Session) -> None:
 
 
 def test_accept_creates_the_verified_user_and_audits_both_sides(db_session: Session) -> None:
-    row, raw = _invite(db_session, email="Entrante@X.it", ruolo="readonly")
+    row, raw = _invite(db_session, email="Entrante@X.it", role="readonly")
     user = InvitationService(db_session).accept(raw, None)
     assert user.email == "entrante@x.it"
-    assert user.ruolo == "readonly" and user.attivo and user.nome == "Luca"
+    assert user.role == "readonly" and user.active and user.nome == "Luca"
     created = db_session.get(User, user.id)
     assert created is not None
     assert created.password_hash is None
-    assert created.email_verificata_il is not None  # the click proved the address
+    assert created.email_verified_at is not None  # the click proved the address
     # The invitation's own lifecycle and the account's, both audited, neither leaking
     # the token: `created`/`accepted` carry the email and the role only.
     invitation_events = db_session.scalars(
@@ -237,7 +237,7 @@ def test_accept_creates_the_verified_user_and_audits_both_sides(db_session: Sess
 
 def test_accept_records_last_login_at_on_the_row_and_the_answer(db_session: Session) -> None:
     """REB-297: accepting an invitation opens the account's first session, exactly
-    like `email_verificata_il` above -- and the `UserRead` this call answers must
+    like `email_verified_at` above -- and the `UserRead` this call answers must
     carry it too, not just the row, since `create`'s own answer is built before
     either write lands."""
     _, raw = _invite(db_session, email="prima@x.it")
@@ -333,7 +333,7 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
                 Invitation(
                     email="dup@x.it",
                     nome=None,
-                    ruolo="admin",
+                    role="admin",
                     token_hash="a" * 64,
                     invited_by=admin.id,
                     expires_at=soon,
@@ -344,7 +344,7 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
                 Invitation(
                     email="Dup@X.it",
                     nome=None,
-                    ruolo="admin",
+                    role="admin",
                     token_hash="b" * 64,
                     invited_by=admin.id,
                     expires_at=soon,
@@ -360,7 +360,7 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
                 Invitation(
                     email="finita@x.it",
                     nome=None,
-                    ruolo="admin",
+                    role="admin",
                     token_hash="c" * 64,
                     invited_by=admin.id,
                     expires_at=soon,
@@ -372,7 +372,7 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
                 Invitation(
                     email="finita@x.it",
                     nome=None,
-                    ruolo="admin",
+                    role="admin",
                     token_hash="d" * 64,
                     invited_by=admin.id,
                     expires_at=soon,
@@ -387,10 +387,10 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
 # --- a scoped invitation (REB-633, spec 2026-10-03 §1.11) ----------------------------
 
 
-def _second_azienda(session: Session, nome: str = "rebase ltd", **overrides: object) -> UUID:
-    from pigrocrm.core.emitter.models import LegalEntity
+def _second_legal_entity(session: Session, nome: str = "rebase ltd", **overrides: object) -> UUID:
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
-    values: dict[str, object] = {"nome": nome, "ragione_sociale": nome.title(), "nazione": "GB"}
+    values: dict[str, object] = {"nome": nome, "legal_name": nome.title(), "country": "GB"}
     values.update(overrides)
     row = LegalEntity(**values)  # type: ignore[arg-type]
     session.add(row)
@@ -401,67 +401,71 @@ def _second_azienda(session: Session, nome: str = "rebase ltd", **overrides: obj
 def test_an_invitation_carries_its_scope_and_the_accepted_account_keeps_it(
     db_session: Session,
 ) -> None:
-    ltd = _second_azienda(db_session)
+    ltd = _second_legal_entity(db_session)
     invite, raw = InvitationService(db_session).create(
-        InvitationCreate(email=INVITEE, nome="Bea", aziende=[ltd]), _admin(db_session)
+        InvitationCreate(email=INVITEE, nome="Bea", legal_entities=[ltd]), _admin(db_session)
     )
-    assert invite.aziende == [ltd]
+    assert invite.legal_entities == [ltd]
     user = InvitationService(db_session).accept(raw, None)
-    assert user.aziende == [ltd]
+    assert user.legal_entities == [ltd]
     row = UserRepository(db_session).get(user.id)
-    assert row is not None and row.ambito_limitato is True
-    assert [s.azienda_id for s in row.scopes] == [ltd]
+    assert row is not None and row.limited_scope is True
+    assert [s.legal_entity_id for s in row.scopes] == [ltd]
 
 
 def test_an_unscoped_invitation_opens_an_unscoped_account_as_before(db_session: Session) -> None:
     _, raw = _invite(db_session)
     user = InvitationService(db_session).accept(raw, None)
-    assert user.aziende is None
+    assert user.legal_entities is None
     row = UserRepository(db_session).get(user.id)
-    assert row is not None and row.ambito_limitato is False and row.scopes == []
+    assert row is not None and row.limited_scope is False and row.scopes == []
 
 
-def test_an_empty_scope_and_an_unknown_azienda_are_refused_by_field(db_session: Session) -> None:
+def test_an_empty_scope_and_an_unknown_legal_entity_are_refused_by_field(
+    db_session: Session,
+) -> None:
     from uuid import uuid4
 
     from pigrocrm.core.errors import ValidationFailed
 
     service = InvitationService(db_session)
     with pytest.raises(ValidationFailed) as empty:
-        service.create(InvitationCreate(email=INVITEE, aziende=[]), _admin(db_session))
-    assert empty.value.details["field"] == "aziende"
+        service.create(InvitationCreate(email=INVITEE, legal_entities=[]), _admin(db_session))
+    assert empty.value.details["field"] == "legal_entities"
     with pytest.raises(ValidationFailed) as unknown:
-        service.create(InvitationCreate(email=INVITEE, aziende=[uuid4()]), _admin(db_session))
-    assert unknown.value.details["field"] == "aziende"
+        service.create(
+            InvitationCreate(email=INVITEE, legal_entities=[uuid4()]), _admin(db_session)
+        )
+    assert unknown.value.details["field"] == "legal_entities"
 
 
-def test_an_azienda_deactivated_before_the_click_leaves_the_scope_empty_not_tutte(
+def test_an_legal_entity_deactivated_before_the_click_leaves_the_scope_empty_not_all(
     db_session: Session,
 ) -> None:
     """Nothing turns an empty scope into «tutte» (spec §1.11): the account opens, sees
     nothing, and the Team panel says so."""
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
-    ltd = _second_azienda(db_session)
+    ltd = _second_legal_entity(db_session)
     _, raw = InvitationService(db_session).create(
-        InvitationCreate(email=INVITEE, nome="Bea", aziende=[ltd]), _admin(db_session)
+        InvitationCreate(email=INVITEE, nome="Bea", legal_entities=[ltd]), _admin(db_session)
     )
     row = db_session.get(LegalEntity, ltd)
     assert row is not None
-    row.attiva = False
+    row.active = False
     db_session.flush()
     user = InvitationService(db_session).accept(raw, None)
-    assert user.aziende == []
+    assert user.legal_entities == []
     fresh = UserRepository(db_session).get(user.id)
-    assert fresh is not None and fresh.ambito_limitato is True and fresh.scopes == []
+    assert fresh is not None and fresh.limited_scope is True and fresh.scopes == []
 
 
 def test_a_scoped_admin_cannot_invite(db_session: Session) -> None:
     from pigrocrm.core.errors import ScopedAdmin
 
-    ltd = _second_azienda(db_session)
+    ltd = _second_legal_entity(db_session)
     admin = _admin(db_session)
-    scoped = Actor(id=admin.id, type="user", role="admin", aziende=(ltd,))
+    scoped = Actor(id=admin.id, type="user", role="admin", legal_entities=(ltd,))
     with pytest.raises(ScopedAdmin) as refused:
         InvitationService(db_session).create(InvitationCreate(email=INVITEE), scoped)
     assert refused.value.code == "permission_denied"
@@ -493,7 +497,7 @@ def test_an_expired_row_rewritten_by_create_forgets_the_old_mail(db_session: Ses
     row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
     db_session.commit()
     InvitationService(db_session).create(
-        InvitationCreate(email=INVITEE, nome=None, ruolo="readonly"), _admin(db_session)
+        InvitationCreate(email=INVITEE, nome=None, role="readonly"), _admin(db_session)
     )
     assert row.mail_id is None and row.mail_status is None and row.mail_sent_at is None
 
@@ -507,19 +511,19 @@ def test_a_terminal_row_takes_no_mail_outcome(db_session: Session) -> None:
 
 def test_refresh_mail_status_reads_only_the_admin_surface(db_session: Session) -> None:
     _invite(db_session)
-    collaboratore = Actor(id=_admin(db_session).id, type="user", role="collaboratore")
+    collaborator = Actor(id=_admin(db_session).id, type="user", role="collaborator")
     with pytest.raises(PermissionDenied):
-        InvitationService(db_session).refresh_mail_status(collaboratore, RecordingSender())
+        InvitationService(db_session).refresh_mail_status(collaborator, RecordingSender())
 
 
 def test_offer_for_shows_a_live_invitation_to_the_address_it_was_sent_to(
     db_session: Session,
 ) -> None:
-    row, _ = _invite(db_session, email="Atteso@X.it", nome=None, ruolo="readonly")
+    row, _ = _invite(db_session, email="Atteso@X.it", nome=None, role="readonly")
     service = InvitationService(db_session)
     offer = service.offer_for("atteso@x.it")
     assert offer is not None
-    assert (offer.ruolo, offer.invitato_da, offer.nome) == ("readonly", "Ada", None)
+    assert (offer.role, offer.invited_from, offer.nome) == ("readonly", "Ada", None)
     assert service.offer_for("altro@x.it") is None
     # Dead is not an offer: an expired row waits for a resend, a revoked one is over.
     row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
@@ -541,8 +545,8 @@ def test_open_for_mints_a_token_the_acceptance_page_takes_and_kills_the_mailed_o
     assert raw != mailed and row.token_hash == _hash(raw)
     assert row.expires_at == expires_at  # finding it does not lengthen it
     with pytest.raises(InvitationUnknown):
-        service.peek(mailed, spazio="x")
-    assert service.peek(raw, spazio="x").nome == "Luca"
+        service.peek(mailed, space="x")
+    assert service.peek(raw, space="x").nome == "Luca"
     opened = db_session.scalars(
         select(Activity).where(Activity.entity_type == "invitation", Activity.kind == "opened")
     ).all()

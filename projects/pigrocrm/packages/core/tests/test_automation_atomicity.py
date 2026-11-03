@@ -1,7 +1,7 @@
 """**Criterion 7.** The automation is atomic with its trigger.
 
 With an error injected between the automation and the commit, neither thing happened: the
-offer is still `inviata` and the deal is still in its old stage, verified by re-reading
+offer is still `sent` and the deal is still in its old stage, verified by re-reading
 both rows on a fresh session. This is the assertion that makes "there is no halfway" a
 property rather than a claim, and it needs its own committed rows -- `db_session` holds an
 outer transaction open, so a rollback inside it cannot be told apart from the fixture's
@@ -12,7 +12,7 @@ was a `session.rollback()` whose scope was **wider** than its author imagined. T
 file is built to catch is the inverse: a commit whose scope is **narrower** than its
 author imagined -- a `commit()` inside `DealService` or inside the runner that persists the
 deal's movement on its own, so that a later failure leaves the deal moved and the offer
-still `inviata`. Re-reading two rows after a successful call cannot see that; only failing
+still `sent`. Re-reading two rows after a successful call cannot see that; only failing
 the second half, and watching a concurrent observer mid-transaction, can. Hence
 `test_an_error_between_the_automation_and_the_commit_undoes_both` and
 `test_a_concurrent_reader_sees_neither_half_until_the_commit`, which is a real race on two
@@ -71,24 +71,24 @@ def committed(db_engine: Engine) -> Iterator[Committed]:
     PipelineService(session).seed_defaults(SEED)
     stages = {s.code: s for s in PipelineService(session).list() if s.code is not None}
 
-    customer = Customer(ragione_sociale="ATOMIC Cliente", nazione="IT", custom_fields={})
+    customer = Customer(legal_name="ATOMIC Cliente", country="IT", custom_fields={})
     session.add(customer)
     session.flush()
     deal = Deal(
         nome="ATOMIC Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
-        probabilita=10,
+        probability=10,
         custom_fields={},
     )
     session.add(deal)
     session.flush()
     document = Document(
         deal_id=deal.id,
-        tipo="offerta",
-        titolo="ATOMIC Offerta",
-        stato="inviata",
-        versione_corrente=1,
+        type="offer",
+        title="ATOMIC Offerta",
+        status="sent",
+        current_version=1,
         custom_fields={},
     )
     session.add(document)
@@ -100,9 +100,9 @@ def committed(db_engine: Engine) -> Iterator[Committed]:
         session.rollback()
         # `activities.entity_id` is a plain UUID, not a foreign key, so nothing cascades.
         session.execute(delete(Activity).where(Activity.entity_id.in_(touched)))
-        session.execute(delete(Document).where(Document.titolo.like("ATOMIC %")))
+        session.execute(delete(Document).where(Document.title.like("ATOMIC %")))
         session.execute(delete(Deal).where(Deal.nome.like("ATOMIC %")))
-        session.execute(delete(Customer).where(Customer.ragione_sociale.like("ATOMIC %")))
+        session.execute(delete(Customer).where(Customer.legal_name.like("ATOMIC %")))
         session.execute(delete(PipelineStage))
         session.execute(delete(AutomationConfig))
         session.commit()
@@ -117,13 +117,13 @@ def test_accepting_an_offer_moves_the_deal_in_the_same_transaction(
     db_engine: Engine, committed: Committed, tmp_path: Path
 ) -> None:
     session, document, deal, stages = committed
-    _service(session, tmp_path).set_offer_state(document.id, "accettata", ADMIN)
+    _service(session, tmp_path).set_offer_state(document.id, "accepted", ADMIN)
 
     with session_factory(db_engine)() as other:
         reread_document = other.get(Document, document.id)
         reread_deal = other.get(Deal, deal.id)
         assert reread_document is not None and reread_deal is not None
-        assert reread_document.stato == "accettata"
+        assert reread_document.status == "accepted"
         assert reread_deal.pipeline_stage_id == stages["vinto"].id
 
 
@@ -151,7 +151,7 @@ def test_an_error_between_the_automation_and_the_commit_undoes_both(
     monkeypatch.setattr(ActivityRepository, "add", fail_on_the_documents_entry)
 
     with pytest.raises(RuntimeError, match="injected failure"):
-        _service(session, tmp_path).set_offer_state(document.id, "accettata", ADMIN)
+        _service(session, tmp_path).set_offer_state(document.id, "accepted", ADMIN)
     assert calls["n"] == 2, "the failure was not injected after the automation's own entry"
     session.rollback()
 
@@ -160,9 +160,9 @@ def test_an_error_between_the_automation_and_the_commit_undoes_both(
         reread_deal = other.get(Deal, deal.id)
         assert reread_document is not None and reread_deal is not None
         # Neither happened. There is no halfway.
-        assert reread_document.stato == "inviata"
+        assert reread_document.status == "sent"
         assert reread_deal.pipeline_stage_id == stages["lead"].id
-        assert reread_deal.chiuso_il is None
+        assert reread_deal.closed_at is None
         assert ActivityRepository(other).by_kind([KIND_STAGE_MOVED], limit=5) == []
 
 
@@ -184,7 +184,7 @@ def test_a_concurrent_reader_sees_neither_half_until_the_commit(
     `ActivityRepository.add` for the document's own `state_changed` entry, which is the
     last statement before `set_offer_state` commits. At that instant the automation has
     already run. A reader on a **different connection** — the only place from which a
-    committed row and an uncommitted one look different — must still see `inviata` and
+    committed row and an uncommitted one look different — must still see `sent` and
     `lead`. Two barriers rather than one: the first releases the reader once the writer is
     in position, the second holds the writer until the reader has finished, so neither
     thread can pass by being slower than the other.
@@ -208,7 +208,7 @@ def test_a_concurrent_reader_sees_neither_half_until_the_commit(
 
     def accept() -> None:
         with factory() as writer:
-            _service(writer, tmp_path).set_offer_state(document_id, "accettata", ADMIN)
+            _service(writer, tmp_path).set_offer_state(document_id, "accepted", ADMIN)
 
     def observe() -> tuple[str | None, UUID]:
         writer_in_position.wait(timeout=30)
@@ -217,17 +217,17 @@ def test_a_concurrent_reader_sees_neither_half_until_the_commit(
                 seen_document = reader.get(Document, document_id)
                 seen_deal = reader.get(Deal, deal_id)
                 assert seen_document is not None and seen_deal is not None
-                return seen_document.stato, seen_deal.pipeline_stage_id
+                return seen_document.status, seen_deal.pipeline_stage_id
         finally:
             reader_done.wait(timeout=30)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         accepted = pool.submit(accept)
         observed = pool.submit(observe)
-        seen_stato, seen_stage_id = observed.result(timeout=60)
+        seen_status, seen_stage_id = observed.result(timeout=60)
         accepted.result(timeout=60)
 
-    assert (seen_stato, seen_stage_id) == ("inviata", stages["lead"].id), (
+    assert (seen_status, seen_stage_id) == ("sent", stages["lead"].id), (
         "a concurrent reader saw part of the trigger before it committed: something "
         "inside the runner or DealService commits on its own behalf"
     )
@@ -237,7 +237,7 @@ def test_a_concurrent_reader_sees_neither_half_until_the_commit(
         final_document = after.get(Document, document_id)
         final_deal = after.get(Deal, deal_id)
         assert final_document is not None and final_deal is not None
-        assert final_document.stato == "accettata"
+        assert final_document.status == "accepted"
         assert final_deal.pipeline_stage_id == stages["vinto"].id
 
 
@@ -252,13 +252,13 @@ def test_with_the_won_stage_deleted_accepting_still_succeeds(
     session.delete(won)
     session.commit()
 
-    _service(session, tmp_path).set_offer_state(document.id, "accettata", ADMIN)
+    _service(session, tmp_path).set_offer_state(document.id, "accepted", ADMIN)
 
     with session_factory(db_engine)() as other:
         reread = other.get(Document, document.id)
-        assert reread is not None and reread.stato == "accettata"
+        assert reread is not None and reread.status == "accepted"
         skipped = ActivityRepository(other).by_kind([KIND_NOT_EXECUTED], limit=5)
-        assert skipped[0].payload["motivo"] == "stage_bersaglio_assente"
+        assert skipped[0].payload["reason"] == "target_stage_missing"
         assert skipped[0].entity_id == deal.id
 
 
@@ -270,14 +270,14 @@ def test_a_readonly_actor_never_reaches_the_runner(
     session, document, deal, stages = committed
 
     with pytest.raises(PermissionDenied):
-        _service(session, tmp_path).set_offer_state(document.id, "accettata", READONLY)
+        _service(session, tmp_path).set_offer_state(document.id, "accepted", READONLY)
     session.rollback()
 
     with session_factory(db_engine)() as other:
         reread_document = other.get(Document, document.id)
         reread_deal = other.get(Deal, deal.id)
         assert reread_document is not None and reread_deal is not None
-        assert reread_document.stato == "inviata"
+        assert reread_document.status == "sent"
         assert reread_deal.pipeline_stage_id == stages["lead"].id
         assert ActivityRepository(other).by_kind([KIND_STAGE_MOVED], limit=5) == []
         assert ActivityRepository(other).by_kind([KIND_NOT_EXECUTED], limit=5) == []

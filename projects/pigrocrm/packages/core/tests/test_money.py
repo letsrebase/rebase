@@ -50,11 +50,11 @@ def test_an_aggregate_is_the_sum_of_rounded_rows_and_diverges_from_the_exact_sum
     """1000 rows of 0.10 h at 33.333333 EUR/h. `Σ ROUND(...)` is 3330.00;
     `ROUND(Σ exact)` is 3333.33. The rule is the first, and this test exhibits the
     difference rather than asserting the rule in prose (criterion 4)."""
-    ore, tariffa = Decimal("0.10"), Decimal("33.333333")
-    rows = [line_value(ore, tariffa) for _ in range(1000)]
+    hours, rate = Decimal("0.10"), Decimal("33.333333")
+    rows = [line_value(hours, rate) for _ in range(1000)]
     assert sum_money(rows) == Decimal("3330.00")
-    assert round_money(ore * tariffa * 1000) == Decimal("3333.33")
-    assert sum_money(rows) != round_money(ore * tariffa * 1000)
+    assert round_money(hours * rate * 1000) == Decimal("3333.33")
+    assert sum_money(rows) != round_money(hours * rate * 1000)
 
 
 def test_the_same_thousand_rows_summed_as_floats_diverge_from_the_decimal_total() -> None:

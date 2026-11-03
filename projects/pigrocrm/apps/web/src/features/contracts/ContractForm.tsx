@@ -60,18 +60,18 @@ const EMPTY_SELECT_HINT = 'Seleziona…'
 /** The API fields this dialog has a control for, so an error on any other is shown
  *  above the buttons instead of vanishing. */
 const DRAWN_FIELDS = [
-  'titolo',
-  'inizio',
-  'fine',
-  'tipo_rinnovo',
-  'preavviso_rinnovo_giorni',
-  'preavviso_disdetta_giorni',
-  'giorni_pagamento',
-  'pagamento_fine_mese',
-  'cadenza_fatturazione',
-  'divisa',
-  'tetto_quota_cliente',
-  'politica_spese',
+  'title',
+  'start',
+  'end',
+  'renewal_type',
+  'renewal_notice_days',
+  'termination_notice_days',
+  'payment_days',
+  'payment_end_of_month',
+  'billing_cadence',
+  'currency',
+  'customer_share_cap',
+  'expense_policy',
   'note',
 ]
 
@@ -164,9 +164,9 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
         ? problem.detail
         : `${fieldError.field}: ${fieldError.message}`
 
-  const cadences: string[] = CADENCES.includes(values.cadenza_fatturazione as (typeof CADENCES)[number])
+  const cadences: string[] = CADENCES.includes(values.billing_cadence as (typeof CADENCES)[number])
     ? [...CADENCES]
-    : [...CADENCES, values.cadenza_fatturazione]
+    : [...CADENCES, values.billing_cadence]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -179,11 +179,11 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
           <Label htmlFor="contract-titolo">Titolo</Label>
           <Input
             id="contract-titolo"
-            value={values.titolo}
-            onChange={(event) => set('titolo', event.target.value)}
-            aria-invalid={fieldError?.field === 'titolo'}
+            value={values.title}
+            onChange={(event) => set('title', event.target.value)}
+            aria-invalid={fieldError?.field === 'title'}
           />
-          {errorOn('titolo')}
+          {errorOn('title')}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -192,23 +192,23 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
             <Input
               id="contract-inizio"
               type="date"
-              value={values.inizio}
-              onChange={(event) => set('inizio', event.target.value)}
-              aria-invalid={fieldError?.field === 'inizio'}
+              value={values.start}
+              onChange={(event) => set('start', event.target.value)}
+              aria-invalid={fieldError?.field === 'start'}
             />
-            {errorOn('inizio')}
+            {errorOn('start')}
           </div>
           <div className="space-y-2">
             <Label htmlFor="contract-fine">Fine</Label>
             <Input
               id="contract-fine"
               type="date"
-              value={values.fine}
-              onChange={(event) => set('fine', event.target.value)}
-              aria-invalid={fieldError?.field === 'fine'}
+              value={values.end}
+              onChange={(event) => set('end', event.target.value)}
+              aria-invalid={fieldError?.field === 'end'}
             />
             <p className="text-xs text-muted-foreground">Vuota se il contratto non ha scadenza.</p>
-            {errorOn('fine')}
+            {errorOn('end')}
           </div>
         </div>
 
@@ -216,8 +216,8 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
           <div className="space-y-2">
             <Label htmlFor="contract-rinnovo">Rinnovo</Label>
             <Select
-              value={values.tipo_rinnovo}
-              onValueChange={(value) => set('tipo_rinnovo', value as RenewalType)}
+              value={values.renewal_type}
+              onValueChange={(value) => set('renewal_type', value as RenewalType)}
             >
               <SelectTrigger id="contract-rinnovo" className="w-full">
                 <SelectValue placeholder={EMPTY_SELECT_HINT} />
@@ -230,20 +230,20 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
                 ))}
               </SelectContent>
             </Select>
-            {errorOn('tipo_rinnovo')}
+            {errorOn('renewal_type')}
           </div>
-          {values.tipo_rinnovo !== 'nessuno' && (
+          {values.renewal_type !== 'none' && (
             <div className="space-y-2">
               <Label htmlFor="contract-preavviso-rinnovo">Preavviso di rinnovo (giorni)</Label>
               <Input
                 id="contract-preavviso-rinnovo"
                 type="number"
                 min={0}
-                value={values.preavviso_rinnovo_giorni}
-                onChange={(event) => set('preavviso_rinnovo_giorni', event.target.value)}
-                aria-invalid={fieldError?.field === 'preavviso_rinnovo_giorni'}
+                value={values.renewal_notice_days}
+                onChange={(event) => set('renewal_notice_days', event.target.value)}
+                aria-invalid={fieldError?.field === 'renewal_notice_days'}
               />
-              {errorOn('preavviso_rinnovo_giorni')}
+              {errorOn('renewal_notice_days')}
             </div>
           )}
         </div>
@@ -254,25 +254,25 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
             id="contract-preavviso-disdetta"
             type="number"
             min={0}
-            value={values.preavviso_disdetta_giorni}
-            onChange={(event) => set('preavviso_disdetta_giorni', event.target.value)}
-            aria-invalid={fieldError?.field === 'preavviso_disdetta_giorni'}
+            value={values.termination_notice_days}
+            onChange={(event) => set('termination_notice_days', event.target.value)}
+            aria-invalid={fieldError?.field === 'termination_notice_days'}
           />
-          {errorOn('preavviso_disdetta_giorni')}
+          {errorOn('termination_notice_days')}
         </div>
 
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Checkbox
               id="contract-pagamento-proprio"
-              checked={values.pagamento_proprio}
-              onCheckedChange={(checked) => set('pagamento_proprio', checked === true)}
+              checked={values.payment_proprio}
+              onCheckedChange={(checked) => set('payment_proprio', checked === true)}
             />
             <Label htmlFor="contract-pagamento-proprio" className="font-normal">
               Termini di pagamento propri del contratto
             </Label>
           </div>
-          {values.pagamento_proprio ? (
+          {values.payment_proprio ? (
             <div className="grid grid-cols-2 items-end gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contract-giorni-pagamento">Giorni di pagamento</Label>
@@ -280,17 +280,17 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
                   id="contract-giorni-pagamento"
                   type="number"
                   min={0}
-                  value={values.giorni_pagamento}
-                  onChange={(event) => set('giorni_pagamento', event.target.value)}
-                  aria-invalid={fieldError?.field === 'giorni_pagamento'}
+                  value={values.payment_days}
+                  onChange={(event) => set('payment_days', event.target.value)}
+                  aria-invalid={fieldError?.field === 'payment_days'}
                 />
-                {errorOn('giorni_pagamento')}
+                {errorOn('payment_days')}
               </div>
               <div className="flex items-center gap-2 pb-2">
                 <Checkbox
                   id="contract-fine-mese"
-                  checked={values.pagamento_fine_mese}
-                  onCheckedChange={(checked) => set('pagamento_fine_mese', checked === true)}
+                  checked={values.payment_end_of_month}
+                  onCheckedChange={(checked) => set('payment_end_of_month', checked === true)}
                 />
                 <Label htmlFor="contract-fine-mese" className="font-normal">
                   Scadenza a fine mese
@@ -308,8 +308,8 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
           <div className="space-y-2">
             <Label htmlFor="contract-cadenza">Cadenza di fatturazione</Label>
             <Select
-              value={values.cadenza_fatturazione}
-              onValueChange={(value) => set('cadenza_fatturazione', value)}
+              value={values.billing_cadence}
+              onValueChange={(value) => set('billing_cadence', value)}
             >
               <SelectTrigger id="contract-cadenza" className="w-full">
                 <SelectValue placeholder={EMPTY_SELECT_HINT} />
@@ -322,18 +322,18 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
                 ))}
               </SelectContent>
             </Select>
-            {errorOn('cadenza_fatturazione')}
+            {errorOn('billing_cadence')}
           </div>
           <div className="space-y-2">
             <Label htmlFor="contract-divisa">Divisa</Label>
             <Input
               id="contract-divisa"
               maxLength={3}
-              value={values.divisa}
-              onChange={(event) => set('divisa', event.target.value)}
-              aria-invalid={fieldError?.field === 'divisa'}
+              value={values.currency}
+              onChange={(event) => set('currency', event.target.value)}
+              aria-invalid={fieldError?.field === 'currency'}
             />
-            {errorOn('divisa')}
+            {errorOn('currency')}
           </div>
         </div>
 
@@ -366,24 +366,24 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
             id="contract-tetto-quota"
             inputMode="decimal"
             placeholder="50"
-            value={values.tetto_quota_cliente}
-            onChange={(event) => set('tetto_quota_cliente', event.target.value)}
-            aria-invalid={fieldError?.field === 'tetto_quota_cliente'}
+            value={values.customer_share_cap}
+            onChange={(event) => set('customer_share_cap', event.target.value)}
+            aria-invalid={fieldError?.field === 'customer_share_cap'}
             aria-describedby="contract-tetto-quota-hint"
           />
           <p id="contract-tetto-quota-hint" className="text-xs text-muted-foreground">
             La quota del cliente sui ricavi fatturati dell’azienda che non deve raggiungere, sull’anno di
             anniversario del contratto. Vuoto se non c’è un tetto.
           </p>
-          {errorOn('tetto_quota_cliente')}
+          {errorOn('customer_share_cap')}
         </div>
 
         <div className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="contract-spese">Politica sulle spese</Label>
             <Select
-              value={values.spese_kind}
-              onValueChange={(value) => set('spese_kind', value as ExpensePolicyKind)}
+              value={values.expenses_kind}
+              onValueChange={(value) => set('expenses_kind', value as ExpensePolicyKind)}
             >
               <SelectTrigger id="contract-spese" className="w-full">
                 <SelectValue placeholder={EMPTY_SELECT_HINT} />
@@ -396,26 +396,26 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
                 ))}
               </SelectContent>
             </Select>
-            {errorOn('politica_spese')}
+            {errorOn('expense_policy')}
           </div>
-          {values.spese_kind === 'rimborsabile_con_tetto' && (
+          {values.expenses_kind === 'reimbursable_with_cap' && (
             <div className="space-y-2">
               <Label htmlFor="contract-tetto">Tetto di rimborso</Label>
               <Input
                 id="contract-tetto"
                 inputMode="decimal"
                 placeholder="500.00"
-                value={values.spese_tetto}
-                onChange={(event) => set('spese_tetto', event.target.value)}
+                value={values.expenses_cap}
+                onChange={(event) => set('expenses_cap', event.target.value)}
               />
             </div>
           )}
-          {values.spese_kind !== 'non_rimborsabile' && (
+          {values.expenses_kind !== 'not_reimbursable' && (
             <div className="flex items-center gap-2">
               <Checkbox
                 id="contract-preautorizzazione"
-                checked={values.spese_preautorizzazione}
-                onCheckedChange={(checked) => set('spese_preautorizzazione', checked === true)}
+                checked={values.expenses_preautorizzazione}
+                onCheckedChange={(checked) => set('expenses_preautorizzazione', checked === true)}
               />
               <Label htmlFor="contract-preautorizzazione" className="font-normal">
                 Ogni spesa va autorizzata prima

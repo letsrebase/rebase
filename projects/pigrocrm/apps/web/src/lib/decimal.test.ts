@@ -43,7 +43,7 @@ describe('sumDecimalStrings', () => {
   it('is exact where the naive float sum is not', () => {
     // 300 values near the top of Numeric(12,2)'s range: the integer sum is exact,
     // the float sum displays two cents high. The same demonstration
-    // `features/deals/columns.test.ts` already carries for `sumValorePrevisto`.
+    // `features/deals/columns.test.ts` already carries for `sumExpectedValue`.
     const values: string[] = []
     let cents = 999999999999
     for (let index = 0; index < 300; index += 1) {

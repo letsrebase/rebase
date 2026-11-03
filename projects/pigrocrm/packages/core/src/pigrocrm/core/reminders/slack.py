@@ -58,7 +58,7 @@ from pigrocrm.core.reminders.dispatch import (
     PassContext,
     Prepared,
 )
-from pigrocrm.core.reminders.links import AVVISI_PATH, absolute, record_path
+from pigrocrm.core.reminders.links import REMINDERS_PATH, absolute, record_path
 from pigrocrm.core.slack.client import SlackClient
 from pigrocrm.core.slack.errors import SlackRefused, SlackTokenRevoked
 from pigrocrm.core.slack.matching import RETRY_UNMATCHED_AFTER
@@ -126,7 +126,7 @@ def _body(lines: list[_Line], public_url: str, header: str, footer: bool) -> str
         rows.append(row)
     parts = [header, *rows]
     if footer and public_url:
-        parts.append(f"<{absolute(public_url, AVVISI_PATH)}|Apri gli avvisi>")
+        parts.append(f"<{absolute(public_url, REMINDERS_PATH)}|Apri gli avvisi>")
     return "\n".join(parts)
 
 

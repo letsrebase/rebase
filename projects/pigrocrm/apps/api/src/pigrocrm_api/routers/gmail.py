@@ -16,7 +16,7 @@ a page of the SPA, with an outcome code the SPA renders in Italian: the Home whi
 space is still empty, since that is where its «Collega Gmail» door is (spec 2026-09-16
 §4.2, REB-222); otherwise the settings page for an admin, and «Primi passi», the other
 page with that door, for anybody the admin-only settings page would turn away. A browser
-that comes back with no live session at all lands on «Primi passi» with `sessione`, and
+that comes back with no live session at all lands on «Primi passi» with `session_expired`, and
 the SPA's own login sends it on there once the person is back in (REB-446). Google's
 own `error` is never forwarded: it is English and occasionally embeds the client id. Nor is a
 `Conflict` from the exchange rendered as a problem document -- an RFC 9457 body in the
@@ -129,7 +129,7 @@ def finish_oauth(
 ) -> RedirectResponse:
     # Every refusal this flow can produce is a `Conflict` -- a replayed or expired state, a
     # mailbox that is not the connected one, a grant that came back with no refresh token,
-    # Gmail not answering -- so `finish_consent` turns exactly those into the `errore`
+    # Gmail not answering -- so `finish_consent` turns exactly those into the `error`
     # page. A `PermissionDenied` is not an outcome of the consent flow but a caller who may
     # not perform it, and it belongs in the problem document like every other 403.
     return finish_consent(
@@ -172,12 +172,12 @@ def disconnect(
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
-    elimina_messaggi: Annotated[bool, Query()] = False,
+    delete_messages: Annotated[bool, Query()] = False,
 ) -> None:
-    """`elimina_messaggi` defaults to false, and the default is the decision: deleting a
+    """`delete_messages` defaults to false, and the default is the decision: deleting a
     customer's correspondence because a token expired would be a disaster, so the
     destructive half has to be asked for."""
-    _oauth(session, settings).disconnect(delete_messages=elimina_messaggi, actor=actor)
+    _oauth(session, settings).disconnect(delete_messages=delete_messages, actor=actor)
 
 
 @authenticated.patch(_ACCOUNT_PATH, response_model=GoogleAccountRead)
@@ -215,9 +215,9 @@ def suggest_customers(
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
-    mesi: Annotated[int, Query(ge=1, le=SUGGEST_MAX_MONTHS)] = 12,
+    months: Annotated[int, Query(ge=1, le=SUGGEST_MAX_MONTHS)] = 12,
 ) -> list[SuggestedCustomer]:
-    return _sync(session, settings).suggest_customers(actor=actor, mesi=mesi)
+    return _sync(session, settings).suggest_customers(actor=actor, months=months)
 
 
 # Who at one customer's domain the connected mailbox has written to or heard from
@@ -238,15 +238,15 @@ def read_messages(
     entity_type: Annotated[Literal["customer", "person", "deal"], Query()],
     entity_id: Annotated[UUID, Query()],
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
-    ordine: Annotated[
-        Literal["conversazioni", "recenti"],
+    order: Annotated[
+        Literal["conversations", "recent"],
         Query(
             description=(
-                "`conversazioni`: per conversazione, come la pagina di un cliente; "
-                "`recenti`: dal più recente, perché il limite tagli i più vecchi"
+                "`conversations`: per conversazione, come la pagina di un cliente; "
+                "`recent`: dal più recente, perché il limite tagli i più vecchi"
             )
         ),
-    ] = "conversazioni",
+    ] = "conversations",
 ) -> list[GmailMessageRead]:
     """Reads only what is already in the CRM. There is no parameter here that reaches
     Gmail, by design (spec 8.2): the correspondence on a customer page comes from the
@@ -259,7 +259,7 @@ def read_messages(
     "wrong question".
     """
     return GmailMessageService(session).list_for_entity(
-        entity_type, entity_id, actor, limit=limit, newest_first=ordine == "recenti"
+        entity_type, entity_id, actor, limit=limit, newest_first=order == "recent"
     )
 
 

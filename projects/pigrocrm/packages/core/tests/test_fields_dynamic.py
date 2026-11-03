@@ -47,7 +47,7 @@ def test_the_model_name_mentions_the_entity() -> None:
 
 def test_optional_fields_default_to_none() -> None:
     model = build_custom_fields_model("customer", [spec("settore", "text")])
-    assert model().settore is None  # type: ignore[attr-defined]
+    assert model().industry is None  # type: ignore[attr-defined]
 
 
 def test_required_fields_are_required() -> None:
@@ -67,10 +67,10 @@ def test_json_schema_exposes_every_key_with_its_label_as_description() -> None:
 
 def test_select_becomes_an_enum_in_the_json_schema() -> None:
     """An enum is what lets the model pick a valid option instead of guessing."""
-    s = spec("stato", "select", options=["attivo", "sospeso"])
+    s = spec("status", "select", options=["active", "sospeso"])
     schema = build_custom_fields_model("customer", [s]).model_json_schema()
     rendered = str(schema)
-    assert "attivo" in rendered and "sospeso" in rendered
+    assert "active" in rendered and "sospeso" in rendered
 
 
 def test_multiselect_becomes_an_array() -> None:
@@ -93,8 +93,8 @@ def test_multiselect_becomes_an_array() -> None:
     ],
 )
 def test_each_type_round_trips_a_valid_value(field_type: str, value: Any) -> None:
-    model = build_custom_fields_model("customer", [spec("campo", field_type)])
-    assert model(campo=value).model_dump()["campo"] == value
+    model = build_custom_fields_model("customer", [spec("field", field_type)])
+    assert model(field=value).model_dump()["field"] == value
 
 
 def test_checkbox_rejects_a_non_boolean() -> None:
@@ -106,16 +106,16 @@ def test_checkbox_rejects_a_non_boolean() -> None:
 def test_describe_specs_returns_plain_serialisable_data() -> None:
     import json
 
-    specs = [spec("stato", "select", options=["attivo"], required=True)]
+    specs = [spec("status", "select", options=["active"], required=True)]
     described = describe_specs(specs)
 
     assert described == [
         {
-            "key": "stato",
+            "key": "status",
             "label": "Stato",
             "type": "select",
             "required": True,
-            "options": ["attivo"],
+            "options": ["active"],
         }
     ]
     json.dumps(described)  # must not raise
@@ -131,27 +131,27 @@ def test_two_entities_produce_independent_models() -> None:
 @pytest.mark.parametrize(
     ("s", "value"),
     [
-        (spec("campo", "date"), "06/08/2026"),
-        (spec("campo", "date"), "domani"),
-        (spec("campo", "currency"), "hello"),
-        (spec("campo", "url"), "javascript:alert(1)"),
-        (spec("campo", "url"), "example.com"),
-        (spec("campo", "checkbox"), "si"),
+        (spec("field", "date"), "06/08/2026"),
+        (spec("field", "date"), "domani"),
+        (spec("field", "currency"), "hello"),
+        (spec("field", "url"), "javascript:alert(1)"),
+        (spec("field", "url"), "example.com"),
+        (spec("field", "checkbox"), "si"),
         # Found by an independent 47-row review sweep across all nine types: the
         # model called `coerce_value` directly, with no notion of "blank," so a
         # required text/textarea accepted "" (the validator's blank-check rejects
         # it before coerce_value is even called), and an optional multiselect
         # stored [] as a real value instead of treating it as absent.
-        (spec("campo", "text", required=True), ""),
-        (spec("campo", "textarea", required=True), ""),
-        (spec("campo", "multiselect", options=["a", "b"]), []),
+        (spec("field", "text", required=True), ""),
+        (spec("field", "textarea", required=True), ""),
+        (spec("field", "multiselect", options=["a", "b"]), []),
         # Symmetric counterparts, so the fix is proven in both directions rather
         # than just on the exact rows the review happened to list.
-        (spec("campo", "text", required=False), ""),
-        (spec("campo", "multiselect", options=["a", "b"], required=True), []),
+        (spec("field", "text", required=False), ""),
+        (spec("field", "multiselect", options=["a", "b"], required=True), []),
         # Guard rail: False is a value, not a blank -- a required checkbox set to
         # False must be *accepted* by both, never confused with "missing."
-        (spec("campo", "checkbox", required=True), False),
+        (spec("field", "checkbox", required=True), False),
     ],
     ids=[
         "date-slash-format",
@@ -216,8 +216,8 @@ def test_types_with_a_recognisable_shape_carry_a_format_hint(
     `{"type": "string"}` in the JSON Schema -- structurally indistinguishable. An
     agent reading the schema (not the human `label`) needs a signal that tells it
     to send "2026-08-06", not "domani". `format` is that signal."""
-    model = build_custom_fields_model("customer", [spec("campo", field_type)])
-    prop = model.model_json_schema()["properties"]["campo"]
+    model = build_custom_fields_model("customer", [spec("field", field_type)])
+    prop = model.model_json_schema()["properties"]["field"]
     assert prop["format"] == expected_format
 
 
@@ -225,6 +225,6 @@ def test_text_and_textarea_carry_no_format_hint() -> None:
     """Unlike date/currency/url, plain text has no shape narrower than "a string" --
     asserting the absence guards against a future edit adding a misleading one."""
     for field_type in ("text", "textarea"):
-        model = build_custom_fields_model("customer", [spec("campo", field_type)])
-        prop = model.model_json_schema()["properties"]["campo"]
+        model = build_custom_fields_model("customer", [spec("field", field_type)])
+        prop = model.model_json_schema()["properties"]["field"]
         assert "format" not in prop

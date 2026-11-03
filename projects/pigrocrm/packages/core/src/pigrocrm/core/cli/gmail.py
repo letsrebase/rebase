@@ -45,7 +45,7 @@ def gmail_sync(settings: Settings, email: str | None) -> int:
     **Counters and ids only, never an address.** The line names the mailbox by its account
     id, and a refusal says the class or a sentence that names no address: the log is
     appended to a file on the host (B-16). A space whose settings or mailboxes cannot be
-    read, or a failure nobody foresaw, is `saltato` with the exception's type, followed by
+    read, or a failure nobody foresaw, is `skipped` with the exception's type, followed by
     the frames of its traceback and never its message, which can carry the URL (a psycopg
     error) or a statement's parameters.
 
@@ -268,7 +268,7 @@ def _cron_actor(session: Session, account: GoogleAccount) -> Actor:
     if not actor.can_write:
         raise Conflict(
             "google_account",
-            f"il titolare della casella ha il ruolo {user.ruolo} e non può sincronizzarla: "
+            f"il titolare della casella ha il ruolo {user.role} e non può sincronizzarla: "
             "il cron non agisce con più diritti del titolare",
         )
     return actor

@@ -61,7 +61,7 @@ def frame(title: str, body: str) -> str:
     step = f'bgcolor="{INK}" style="background-color:{INK};padding:0 {STEP}px {STEP}px 0;"'
     card = f'bgcolor="#ffffff" style="background-color:#ffffff;border:2px solid {INK};"'
     copy = f"font-family:{FONT};font-size:17px;font-weight:400;line-height:1.6;color:{INK};"
-    fine = f"font-family:{FONT};font-size:13px;line-height:1.6;color:{INK_QUIET};"
+    end = f"font-family:{FONT};font-size:13px;line-height:1.6;color:{INK_QUIET};"
     gap = "&nbsp;&nbsp;&nbsp;"
     footer = gap.join(
         (
@@ -96,7 +96,7 @@ def frame(title: str, body: str) -> str:
             body,
             "</td></tr></table>",
             "</td></tr>",
-            f'<tr><td style="padding:24px 0 0 0;{fine}">{footer}</td></tr>',
+            f'<tr><td style="padding:24px 0 0 0;{end}">{footer}</td></tr>',
             "</table>",
             "</td></tr></table>",
             "</body></html>",

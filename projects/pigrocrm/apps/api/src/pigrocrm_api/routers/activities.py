@@ -4,18 +4,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from pigrocrm.core.attivita.schemas import (
-    AttivitaCreate,
-    AttivitaListQuery,
-    AttivitaOggi,
-    AttivitaOggiQuery,
-    AttivitaPage,
-    AttivitaRead,
-    AttivitaStato,
-    AttivitaUpdate,
-)
-from pigrocrm.core.attivita.service import AttivitaService
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
+from pigrocrm.core.tasks.schemas import (
+    TaskCreate,
+    TaskListQuery,
+    TaskPage,
+    TaskRead,
+    TaskStatus,
+    TaskToday,
+    TaskTodayQuery,
+    TaskUpdate,
+)
+from pigrocrm.core.tasks.service import TaskService
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
@@ -28,30 +28,30 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=AttivitaRead, status_code=status.HTTP_201_CREATED)
-def create(data: AttivitaCreate, session: SessionDep, actor: ActorDep) -> AttivitaRead:
-    return AttivitaService(session).create(data, actor)
+@router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+def create(data: TaskCreate, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).create(data, actor)
 
 
-@router.get("", response_model=AttivitaPage)
-def list_attivita(
+@router.get("", response_model=TaskPage)
+def list_tasks(
     session: SessionDep,
     actor: ActorDep,
-    stato: Annotated[AttivitaStato | None, Query()] = None,
-    assegnata_a: Annotated[UUID | None, Query()] = None,
-    anche_non_assegnate: Annotated[
+    status: Annotated[TaskStatus | None, Query()] = None,
+    assigned_to: Annotated[UUID | None, Query()] = None,
+    include_unassigned: Annotated[
         bool,
-        Query(description="Con `assegnata_a`: anche le attività senza assegnatario"),
+        Query(description="Con `assigned_to`: anche le attività senza assegnatario"),
     ] = False,
     customer_id: Annotated[UUID | None, Query()] = None,
     person_id: Annotated[UUID | None, Query()] = None,
     deal_id: Annotated[UUID | None, Query()] = None,
     invoice_id: Annotated[UUID | None, Query()] = None,
-    scade_entro: Annotated[date | None, Query()] = None,
+    due_within: Annotated[date | None, Query()] = None,
     # Three states and not two: `None` is «both», which is what a caller who does not
-    # care has to be able to say. See `AttivitaListQuery`.
-    senza_scadenza: Annotated[bool | None, Query()] = None,
-    archiviate: Annotated[
+    # care has to be able to say. See `TaskListQuery`.
+    without_due_date: Annotated[bool | None, Query()] = None,
+    archived: Annotated[
         bool, Query(description="Solo le archiviate (per ripristinarle); di default, le vive")
     ] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -59,92 +59,88 @@ def list_attivita(
     # value as well as the id.
     cursor: Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)] = None,
     # A plain string and not a `Literal`, like every other list in this API: the
-    # whitelist lives in `ATTIVITA_SORTS` and an unknown key resolves to the default
+    # whitelist lives in `TASK_SORTS` and an unknown key resolves to the default
     # there, in one place.
     sort: Annotated[SafeStr | None, Query(description="created_at | scadenza")] = None,
     dir: Annotated[SortDirection, Query()] = "asc",
-) -> AttivitaPage:
-    query = AttivitaListQuery(
-        stato=stato,
-        assegnata_a=assegnata_a,
-        anche_non_assegnate=anche_non_assegnate,
+) -> TaskPage:
+    query = TaskListQuery(
+        status=status,
+        assigned_to=assigned_to,
+        include_unassigned=include_unassigned,
         customer_id=customer_id,
         person_id=person_id,
         deal_id=deal_id,
         invoice_id=invoice_id,
-        scade_entro=scade_entro,
-        senza_scadenza=senza_scadenza,
-        archiviate=archiviate,
+        due_within=due_within,
+        without_due_date=without_due_date,
+        archived=archived,
         limit=limit,
         cursor=cursor,
         sort=sort,
         dir=dir,
     )
-    return AttivitaService(session).list(query, actor)
+    return TaskService(session).list(query, actor)
 
 
-# Declared before `/{attivita_id}`: «oggi» is not a UUID, and the path parameter would
+# Declared before `/{task_id}`: «oggi» is not a UUID, and the path parameter would
 # otherwise claim it and answer 422.
-@router.get("/oggi", response_model=AttivitaOggi)
-def oggi(
+@router.get("/today", response_model=TaskToday)
+def today(
     session: SessionDep,
     actor: ActorDep,
-    assegnata_a: Annotated[
+    assigned_to: Annotated[
         UUID | None,
         Query(description="Solo le attività di questa persona; senza, di tutto lo spazio"),
     ] = None,
-    anche_non_assegnate: Annotated[
+    include_unassigned: Annotated[
         bool,
-        Query(description="Con `assegnata_a`: anche le attività senza assegnatario"),
+        Query(description="Con `assigned_to`: anche le attività senza assegnatario"),
     ] = False,
     limit: Annotated[int, Query(ge=1, le=200, description="Righe per sezione")] = 100,
-) -> AttivitaOggi:
-    return AttivitaService(session).oggi(
+) -> TaskToday:
+    return TaskService(session).today(
         actor,
-        AttivitaOggiQuery(
-            assegnata_a=assegnata_a, anche_non_assegnate=anche_non_assegnate, limit=limit
-        ),
+        TaskTodayQuery(assigned_to=assigned_to, include_unassigned=include_unassigned, limit=limit),
     )
 
 
-@router.get("/{attivita_id}", response_model=AttivitaRead)
-def get(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
-    return AttivitaService(session).get(attivita_id, actor)
+@router.get("/{task_id}", response_model=TaskRead)
+def get(task_id: UUID, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).get(task_id, actor)
 
 
-@router.patch("/{attivita_id}", response_model=AttivitaRead)
-def update(
-    attivita_id: UUID, data: AttivitaUpdate, session: SessionDep, actor: ActorDep
-) -> AttivitaRead:
-    return AttivitaService(session).update(attivita_id, data, actor)
+@router.patch("/{task_id}", response_model=TaskRead)
+def update(task_id: UUID, data: TaskUpdate, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).update(task_id, data, actor)
 
 
 # The three closures, each its own route rather than a `PATCH {"stato": ...}`. Two
 # reasons: the state machine is the service's business (a cancelled activity does not
 # become completed by writing a column), and «done» has a side effect -- the day it was
 # done -- that a caller must not be able to supply.
-@router.post("/{attivita_id}/complete", response_model=AttivitaRead)
-def complete(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
-    return AttivitaService(session).complete(attivita_id, actor)
+@router.post("/{task_id}/complete", response_model=TaskRead)
+def complete(task_id: UUID, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).complete(task_id, actor)
 
 
-@router.post("/{attivita_id}/cancel", response_model=AttivitaRead)
-def cancel(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
-    return AttivitaService(session).cancel(attivita_id, actor)
+@router.post("/{task_id}/cancel", response_model=TaskRead)
+def cancel(task_id: UUID, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).cancel(task_id, actor)
 
 
-@router.post("/{attivita_id}/reopen", response_model=AttivitaRead)
-def reopen(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
-    return AttivitaService(session).reopen(attivita_id, actor)
+@router.post("/{task_id}/reopen", response_model=TaskRead)
+def reopen(task_id: UUID, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).reopen(task_id, actor)
 
 
-@router.delete("/{attivita_id}", status_code=status.HTTP_204_NO_CONTENT)
-def archive(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> None:
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def archive(task_id: UUID, session: SessionDep, actor: ActorDep) -> None:
     """Archiving, which is for the typo. The change of plan is `cancel` -- and the two
     being different operations is the whole reason there are three states."""
-    AttivitaService(session).soft_delete(attivita_id, actor)
+    TaskService(session).soft_delete(task_id, actor)
 
 
-@router.post("/{attivita_id}/restore", response_model=AttivitaRead)
-def restore(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
-    return AttivitaService(session).restore(attivita_id, actor)
+@router.post("/{task_id}/restore", response_model=TaskRead)
+def restore(task_id: UUID, session: SessionDep, actor: ActorDep) -> TaskRead:
+    return TaskService(session).restore(task_id, actor)

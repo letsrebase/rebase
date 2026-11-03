@@ -75,8 +75,8 @@ def test_a_token_without_the_flag_is_refused_a_fiscal_act_over_rest_and_one_with
     closed = _make(open_space, "chiacchiere")["token"]
     opened = _make(open_space, "fatturazione", full_access=True)["token"]
 
-    refused = _bearer(open_space, closed).post("/api/period-locks", json={"anno": 2026, "mese": 1})
-    allowed = _bearer(open_space, opened).post("/api/period-locks", json={"anno": 2026, "mese": 1})
+    refused = _bearer(open_space, closed).post("/api/period-locks", json={"year": 2026, "month": 1})
+    allowed = _bearer(open_space, opened).post("/api/period-locks", json={"year": 2026, "month": 1})
 
     assert refused.status_code == 403, refused.text
     assert refused.json()["code"] == "agent_forbidden"
@@ -86,13 +86,13 @@ def test_a_token_without_the_flag_is_refused_a_fiscal_act_over_rest_and_one_with
 def test_the_owner_closes_a_token_and_the_next_call_follows(open_space: TestClient) -> None:
     created = _make(open_space, "fatturazione", full_access=True)
     agent = _bearer(open_space, created["token"])
-    assert agent.post("/api/period-locks", json={"anno": 2026, "mese": 2}).status_code == 201
+    assert agent.post("/api/period-locks", json={"year": 2026, "month": 2}).status_code == 201
 
     closed = open_space.patch(f"/api/tokens/{created['id']}", json={"full_access": False})
 
     assert closed.status_code == 200, closed.text
     assert closed.json()["full_access"] is False
-    assert agent.post("/api/period-locks", json={"anno": 2026, "mese": 3}).status_code == 403
+    assert agent.post("/api/period-locks", json={"year": 2026, "month": 3}).status_code == 403
 
 
 def test_a_token_cannot_open_itself_nor_mint_an_open_one(open_space: TestClient) -> None:
@@ -127,7 +127,7 @@ def test_every_change_of_the_flag_is_on_the_owners_timeline(
     assert created["token"] not in str(timeline)
 
 
-def test_an_administrator_sees_and_closes_a_colleagues_token_and_a_collaboratore_cannot(
+def test_an_administrator_sees_and_closes_to_colleagues_token_and_to_collaborator_cannot(
     open_space: TestClient, collaborator_client: TestClient, api_session: Any, admin_user: Any
 ) -> None:
     # `collaborator_client` is the same client with the collaboratore's cookie: it makes the
@@ -141,7 +141,7 @@ def test_an_administrator_sees_and_closes_a_colleagues_token_and_a_collaboratore
     )
     assert login.status_code == 200, login.text
     team = open_space.get("/api/tokens/team")
-    assert [(t["owner_nome"], t["full_access"]) for t in team.json()] == [("Test", True)]
+    assert [(t["owner_name"], t["full_access"]) for t in team.json()] == [("Test", True)]
 
     closed = open_space.patch(f"/api/tokens/{mine['id']}", json={"full_access": False})
     assert closed.status_code == 200, closed.text

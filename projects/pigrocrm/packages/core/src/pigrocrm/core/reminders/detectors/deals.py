@@ -20,15 +20,15 @@ from uuid import UUID
 from sqlalchemy import Date, Select, cast, func, literal, select
 from sqlalchemy.sql import ColumnElement
 
-from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
-from pigrocrm.core.mail import giorno_breve
+from pigrocrm.core.mail import day_short
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
-from pigrocrm.core.reminders.detectors.text import giorni, giorni_fa
+from pigrocrm.core.reminders.detectors.text import days, days_fa
+from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.timetracking.models import TimeEntry
 
 PAST_CLOSE = REMINDER_TYPES["deal_past_close"]
@@ -39,12 +39,12 @@ _NEVER = date(1970, 1, 1)
 
 def _open_deals() -> Select[Deal, str | None, UUID | None]:
     return (
-        select(Deal, Customer.ragione_sociale, Customer.owner_id)
+        select(Deal, Customer.legal_name, Customer.owner_id)
         .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
         # Outer: a deal stays readable when its customer is not, which happens once a
         # customer moves to another azienda and the deal's owner is scoped to the old one.
         .outerjoin(Customer, Customer.id == Deal.customer_id)
-        .where(PipelineStage.tipo == "open", Deal.deleted_at.is_(None))
+        .where(PipelineStage.type == "open", Deal.deleted_at.is_(None))
     )
 
 
@@ -63,29 +63,29 @@ def _detection(
         type=type_key,
         subject_id=deal.id,
         measure=float(measure),
-        recipients=ctx.directory.recipients((deal.owner_id, customer_owner), deal.azienda_id),
+        recipients=ctx.directory.recipients((deal.owner_id, customer_owner), deal.legal_entity_id),
         title=title,
         detail=f"{detail} · {customer_name}" if customer_name else detail,
         entity="deal",
         entity_id=deal.id,
-        azienda_id=deal.azienda_id,
+        legal_entity_id=deal.legal_entity_id,
         customer_id=deal.customer_id,
     )
 
 
 def detect_past_close(ctx: DetectorContext) -> list[Detection]:
-    """Open deals past their `data_chiusura_prevista` by at least `bound` days, never
+    """Open deals past their `expected_close_date` by at least `bound` days, never
     fewer than one."""
     cutoff = ctx.today - timedelta(days=max(ctx.bound(PAST_CLOSE), 1))
     rows = ctx.session.execute(
         _open_deals()
-        .where(Deal.data_chiusura_prevista.is_not(None), Deal.data_chiusura_prevista <= cutoff)
-        .order_by(Deal.data_chiusura_prevista, Deal.id)
+        .where(Deal.expected_close_date.is_not(None), Deal.expected_close_date <= cutoff)
+        .order_by(Deal.expected_close_date, Deal.id)
     )
     found: list[Detection] = []
     for deal, customer_name, customer_owner in rows:
-        assert deal.data_chiusura_prevista is not None
-        late = (ctx.today - deal.data_chiusura_prevista).days
+        assert deal.expected_close_date is not None
+        late = (ctx.today - deal.expected_close_date).days
         found.append(
             _detection(
                 ctx,
@@ -95,10 +95,7 @@ def detect_past_close(ctx: DetectorContext) -> list[Detection]:
                 type_key="deal_past_close",
                 measure=late,
                 title=f"Deal oltre la chiusura prevista: {deal.nome}",
-                detail=(
-                    f"Doveva chiudere {giorno_breve(deal.data_chiusura_prevista)}, "
-                    f"{giorni_fa(late)}"
-                ),
+                detail=(f"Doveva chiudere {day_short(deal.expected_close_date)}, {days_fa(late)}"),
             )
         )
     return found
@@ -124,12 +121,12 @@ def _last_activity(zone: str) -> ColumnElement[date]:
         select(
             func.max(
                 func.greatest(
-                    _local_day(Attivita.created_at, zone),
-                    func.coalesce(Attivita.completata_il, literal(_NEVER)),
+                    _local_day(Task.created_at, zone),
+                    func.coalesce(Task.completed_at, literal(_NEVER)),
                 )
             )
         )
-        .where(Attivita.deal_id == Deal.id, Attivita.deleted_at.is_(None))
+        .where(Task.deal_id == Deal.id, Task.deleted_at.is_(None))
         .scalar_subquery()
     )
     hours = (
@@ -167,7 +164,7 @@ def detect_stale(ctx: DetectorContext) -> list[Detection]:
                 type_key="deal_stale",
                 measure=idle,
                 title=f"Deal fermo: {deal.nome}",
-                detail=f"Niente da {giorni(idle)} (ultima cosa: {giorno_breve(last_activity)})",
+                detail=f"Niente da {days(idle)} (ultima cosa: {day_short(last_activity)})",
             )
         )
     return found

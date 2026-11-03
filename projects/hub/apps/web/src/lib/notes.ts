@@ -5,8 +5,8 @@ import type { ActionSource, NoteSource } from '@/lib/api'
 export const NOTE_SOURCE_LABELS: Record<NoteSource, string> = {
   web: 'dal sito',
   mcp: 'MCP',
-  persona: 'dalla persona',
-  sistema: 'dal sistema',
+  person: 'dalla persona',
+  system: 'dal sistema',
 }
 
 /** The doors a regeneration of the cards adds (REB-861): the command line. */
@@ -15,8 +15,8 @@ export const ACTION_SOURCE_LABELS: Record<ActionSource, string> = {
   cli: 'da riga di comando',
 }
 
-export function noteSourceLabel(fonte: string | null | undefined): string | null {
-  return fonte ? ((ACTION_SOURCE_LABELS as Record<string, string>)[fonte] ?? fonte) : null
+export function noteSourceLabel(source: string | null | undefined): string | null {
+  return source ? ((ACTION_SOURCE_LABELS as Record<string, string>)[source] ?? source) : null
 }
 
 /** Why a regeneration did not write a card, in a few words: the failures the writer

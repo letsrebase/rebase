@@ -2,8 +2,8 @@ import { Link, useSearch } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 
 export function Thanks() {
-  const { chi } = useSearch({ strict: false }) as { chi?: 'freelance' | 'azienda' }
-  const azienda = chi === 'azienda'
+  const { who } = useSearch({ strict: false }) as { who?: 'freelance' | 'company' }
+  const company = who === 'company'
   // The CV is optional in the wizard, so this page cannot promise we have one: it says
   // what is true of everybody who gets here, and the line below sends them to the area
   // where the CV can be added, which is where they would go for it anyway.
@@ -13,10 +13,10 @@ export function Thanks() {
         <Check className="size-6" aria-hidden="true" />
       </span>
       <h1 className="text-3xl font-semibold tracking-tight">
-        {azienda ? 'Grazie, ci siamo.' : 'Grazie, sei dentro.'}
+        {company ? 'Grazie, ci siamo.' : 'Grazie, sei dentro.'}
       </h1>
       <p className="text-muted-foreground">
-        {azienda
+        {company
           ? 'Abbiamo la tua richiesta. Ti scriviamo noi entro qualche giorno con le persone che possono fare al caso tuo.'
           : 'Abbiamo il tuo profilo. Ti scriviamo noi: appena c’è un progetto che ti somiglia, o anche solo per conoscerci.'}
       </p>
@@ -34,7 +34,7 @@ export function Thanks() {
           contact could always self-edit its request (REB-314), this line just never
           said so. */}
       <p className="text-sm text-muted-foreground">
-        {azienda
+        {company
           ? 'Vuoi rileggere o cambiare quello che ci hai mandato?'
           : 'Vuoi rileggere, cambiare o completare quello che ci hai mandato, CV compreso?'}{' '}
         <Link to="/login" className="underline underline-offset-2">

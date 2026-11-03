@@ -34,11 +34,11 @@ ADMIN = Actor(id=None, type="system", role="admin")
 READONLY = Actor(id=None, type="system", role="readonly")
 
 PDF = b"%PDF-1.4 l'originale che il cliente ha in mano"
-ORIGINE = {"drive_file_id": "1PreventivoPdfXXXX", "nome": "Fattura 7.pdf"}
+ORIGIN = {"drive_file_id": "1PreventivoPdfXXXX", "nome": "Fattura 7.pdf"}
 
 
 def _customer_id(session: Session) -> UUID:
-    customer = Customer(ragione_sociale=f"Acme {uuid4()}")
+    customer = Customer(legal_name=f"Acme {uuid4()}")
     session.add(customer)
     session.flush()
     return customer.id
@@ -62,44 +62,44 @@ def test_import_bytes_files_the_document_and_its_first_version_together(
 
     read = docs.import_bytes(
         customer_id=cid,
-        tipo="fattura",
-        titolo="Fattura 2026/7 (originale del gestionale precedente)",
+        type="invoice",
+        title="Fattura 2026/7 (originale del gestionale precedente)",
         data=PDF,
         content_type="application/pdf",
         actor=ADMIN,
-        origine=ORIGINE,
+        origin=ORIGIN,
     )
 
-    assert (read.customer_id, read.tipo, read.titolo) == (
+    assert (read.customer_id, read.type, read.title) == (
         cid,
-        "fattura",
+        "invoice",
         "Fattura 2026/7 (originale del gestionale precedente)",
     )
-    assert read.versione_corrente == 1
+    assert read.current_version == 1
     # The bytes are really in storage, readable through the ordinary download path: an
     # import that filed a row and lost the file would be worse than no import.
     data, content_type, filename = docs.download(read.id, None, ADMIN)
     assert (data, content_type) == (PDF, "application/pdf")
     assert filename.endswith(".pdf")
     versions = docs.versions(read.id, ADMIN)
-    assert [(v.numero, v.content_type, v.dimensione) for v in versions] == [
+    assert [(v.number, v.content_type, v.size) for v in versions] == [
         (1, "application/pdf", len(PDF))
     ]
 
 
 def test_the_import_records_where_the_bytes_came_from(db_session: Session, tmp_path: Any) -> None:
-    """`origine` is the whole point of the activity: a PDF nobody in this CRM produced
+    """`origin` is the whole point of the activity: a PDF nobody in this CRM produced
     has to be able to answer "where did this come from?" years later, and the answer is
     the Drive id it was fetched from -- not merely "a file was uploaded"."""
     docs = _docs(db_session, tmp_path)
     read = docs.import_bytes(
         customer_id=_customer_id(db_session),
-        tipo="fattura",
-        titolo="Fattura 2026/7 (originale del gestionale precedente)",
+        type="invoice",
+        title="Fattura 2026/7 (originale del gestionale precedente)",
         data=PDF,
         content_type="application/pdf",
         actor=ADMIN,
-        origine=ORIGINE,
+        origin=ORIGIN,
     )
 
     rows = list(
@@ -112,7 +112,7 @@ def test_the_import_records_where_the_bytes_came_from(db_session: Session, tmp_p
     kinds = [kind for kind, _ in rows]
     assert "document.importato" in kinds
     payload = next(payload for kind, payload in rows if kind == "document.importato")
-    assert payload["origine"] == ORIGINE
+    assert payload["origin"] == ORIGIN
 
 
 def test_a_content_type_outside_the_allowed_set_leaves_no_row_behind(
@@ -129,12 +129,12 @@ def test_a_content_type_outside_the_allowed_set_leaves_no_row_behind(
     with pytest.raises(ValidationFailed) as caught:
         docs.import_bytes(
             customer_id=cid,
-            tipo="fattura",
-            titolo="Uno zip travestito",
+            type="invoice",
+            title="Uno zip travestito",
             data=b"PK\x03\x04",
             content_type="application/zip",
             actor=ADMIN,
-            origine=ORIGINE,
+            origin=ORIGIN,
         )
 
     assert caught.value.details["field"] == "content_type"
@@ -148,12 +148,12 @@ def test_empty_bytes_are_refused_before_any_row_is_flushed(
     with pytest.raises(ValidationFailed):
         docs.import_bytes(
             customer_id=_customer_id(db_session),
-            tipo="fattura",
-            titolo="Zero byte",
+            type="invoice",
+            title="Zero byte",
             data=b"",
             content_type="application/pdf",
             actor=ADMIN,
-            origine=ORIGINE,
+            origin=ORIGIN,
         )
     assert _documents(db_session) == []
 
@@ -164,12 +164,12 @@ def test_one_owner_exactly_neither_none_nor_both(db_session: Session, tmp_path: 
     for owners in ({}, {"customer_id": cid, "deal_id": uuid4()}):
         with pytest.raises(ValidationFailed):
             docs.import_bytes(
-                tipo="fattura",
-                titolo="Senza padrone",
+                type="invoice",
+                title="Senza padrone",
                 data=PDF,
                 content_type="application/pdf",
                 actor=ADMIN,
-                origine=ORIGINE,
+                origin=ORIGIN,
                 **owners,  # type: ignore[arg-type]
             )
     assert _documents(db_session) == []
@@ -181,12 +181,12 @@ def test_a_deal_can_own_an_imported_document(
     docs = _docs(db_session, tmp_path)
     read = docs.import_bytes(
         deal_id=seeded_deal_id,
-        tipo="documento",
-        titolo="Contratto firmato (da Drive)",
+        type="document",
+        title="Contratto firmato (da Drive)",
         data=b"%PDF-1.4 contratto",
         content_type="application/pdf",
         actor=ADMIN,
-        origine=ORIGINE,
+        origin=ORIGIN,
     )
     assert (read.deal_id, read.customer_id) == (seeded_deal_id, None)
 
@@ -198,12 +198,12 @@ def test_an_import_is_a_write_and_a_readonly_actor_cannot(
     with pytest.raises(PermissionDenied):
         docs.import_bytes(
             customer_id=_customer_id(db_session),
-            tipo="fattura",
-            titolo="Non mio",
+            type="invoice",
+            title="Non mio",
             data=PDF,
             content_type="application/pdf",
             actor=READONLY,
-            origine=ORIGINE,
+            origin=ORIGIN,
         )
     assert _documents(db_session) == []
 
@@ -221,12 +221,12 @@ def test_commit_false_leaves_the_whole_import_to_the_callers_transaction(
     docs = _docs(db_session, tmp_path)
     read = docs.import_bytes(
         customer_id=_customer_id(db_session),
-        tipo="fattura",
-        titolo="Da annullare",
+        type="invoice",
+        title="Da annullare",
         data=PDF,
         content_type="application/pdf",
         actor=ADMIN,
-        origine=ORIGINE,
+        origin=ORIGIN,
         commit=False,
     )
     # Visible inside the transaction that made it...
@@ -250,12 +250,12 @@ def test_by_default_the_import_commits_on_its_own(db_session: Session, tmp_path:
     docs = _docs(db_session, tmp_path)
     read = docs.import_bytes(
         customer_id=_customer_id(db_session),
-        tipo="fattura",
-        titolo="Da tenere",
+        type="invoice",
+        title="Da tenere",
         data=PDF,
         content_type="application/pdf",
         actor=ADMIN,
-        origine=ORIGINE,
+        origin=ORIGIN,
     )
 
     db_session.rollback()
@@ -275,7 +275,7 @@ def test_the_public_create_and_add_version_still_commit_one_at_a_time(
 
     docs = _docs(db_session, tmp_path)
     doc = docs.create(
-        DocumentCreate(customer_id=_customer_id(db_session), tipo="fattura", titolo="A mano"),
+        DocumentCreate(customer_id=_customer_id(db_session), type="invoice", title="A mano"),
         ADMIN,
     )
     db_session.rollback()
@@ -284,4 +284,4 @@ def test_the_public_create_and_add_version_still_commit_one_at_a_time(
     version = docs.add_version(doc.id, PDF, "application/pdf", ADMIN)
     db_session.rollback()
     assert db_session.get(DocumentVersion, version.id) is not None
-    assert db_session.get(Document, doc.id).versione_corrente == 1
+    assert db_session.get(Document, doc.id).current_version == 1

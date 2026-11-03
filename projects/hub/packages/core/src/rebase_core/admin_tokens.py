@@ -44,14 +44,14 @@ _TOKEN_SEARCH_COLUMNS = (AdminToken.nome,)
 
 class AdminRead(ResponseModel):
     """An admin as the API and the MCP server both read them: never the card, never a
-    join. `attivo` and `created_at` are here for the list of admins (ORB-123)."""
+    join. `active` and `created_at` are here for the list of admins (ORB-123)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     email: str
     nome: str
-    attivo: bool
+    active: bool
     created_at: datetime
 
 
@@ -118,7 +118,7 @@ class AdminTokenService:
             if expires_at <= datetime.now(UTC):
                 raise ValidationFailed(ENTITY, "expires_at", "deve essere nel futuro")
         owner = self.session.get(User, user_id)
-        if owner is None or owner.role != "admin" or not owner.attivo:
+        if owner is None or owner.role != "admin" or not owner.active:
             raise NotFound("admin", user_id)
         raw = TOKEN_PREFIX + secrets.token_urlsafe(32)
         row = AdminToken(
@@ -151,7 +151,7 @@ class AdminTokenService:
         same. Stamps `last_used_at` (the list's «ultimo uso») at most once a minute, with
         a conditional `UPDATE` that commits only when it changed a row, so a busy agent
         costs no write per request. `populate_existing` forces a fresh read of the owner:
-        `role`/`attivo` can change between two calls against the same long-lived session
+        `role`/`active` can change between two calls against the same long-lived session
         (an MCP server's, in production; a test's raw `UPDATE` in this package's own
         suite), and a cached, stale copy would let a just-demoted or just-deactivated
         admin's token keep resolving."""
@@ -166,7 +166,7 @@ class AdminTokenService:
         ):
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
         owner = self.session.get(User, row.user_id, populate_existing=True)
-        if owner is None or owner.role != "admin" or not owner.attivo:
+        if owner is None or owner.role != "admin" or not owner.active:
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
         admin = AdminRead.model_validate(owner)
         stamped = self.session.execute(

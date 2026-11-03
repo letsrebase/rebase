@@ -16,7 +16,7 @@ from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 READER = Actor(id=None, type="user", role="readonly")
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 
 
 def test_an_incomplete_deal_does_not_lie(
@@ -24,7 +24,7 @@ def test_an_incomplete_deal_does_not_lie(
 ) -> None:
     """**Criterion 6.** An open deal with 20 hours and no invoice: revenue `0.00`, margin
     percentage `null` (not `"0.00"`), state "in corso", and the accrued value in a field
-    whose name is not `ricavi`.
+    whose name is not `revenue`.
 
     Zero per cent means "everything I earned went out in costs"; here nothing has been
     earned. Two different facts, and the report does not flatten them."""
@@ -33,25 +33,25 @@ def test_an_incomplete_deal_does_not_lie(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
             data=date(2026, 3, 4),
-            ore=Decimal("20.00"),
-            descrizione="Sviluppo",
-            tariffa_applicata=Decimal("100.000000"),
-            costo_applicato=Decimal("30.000000"),
+            hours=Decimal("20.00"),
+            description="Sviluppo",
+            applied_rate=Decimal("100.000000"),
+            applied_cost=Decimal("30.000000"),
         ),
         WRITER,
     )
     pnl = AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER)
-    assert pnl.ricavi == Decimal("0.00")
-    assert pnl.margine_percentuale is None
-    assert pnl.stato == "in corso"
-    assert pnl.valore_maturato == Decimal("2000.00")
-    assert pnl.costo_lavoro == Decimal("600.00")
-    assert pnl.margine_lordo == Decimal("-600.00")
+    assert pnl.revenue == Decimal("0.00")
+    assert pnl.percentage_margin is None
+    assert pnl.status == "in_progress"
+    assert pnl.accrued_value == Decimal("2000.00")
+    assert pnl.work_cost == Decimal("600.00")
+    assert pnl.gross_margin == Decimal("-600.00")
     # The accrued value is not revenue and lives under a different heading.
-    assert "valore_maturato" in pnl.model_dump() and pnl.valore_maturato != pnl.ricavi
+    assert "accrued_value" in pnl.model_dump() and pnl.accrued_value != pnl.revenue
     # `null` in the JSON too, not the string "0.00": the field is what a client reads,
     # and a serialiser that filled it in would undo the distinction above.
-    assert pnl.model_dump(mode="json")["margine_percentuale"] is None
+    assert pnl.model_dump(mode="json")["percentage_margin"] is None
 
 
 def test_costs_of_an_uninvoiced_deal_still_appear(
@@ -66,14 +66,14 @@ def test_costs_of_an_uninvoiced_deal_still_appear(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             data=date(2026, 3, 1),
-            importo=Decimal("500.00"),
-            descrizione="Licenze",
+            amount=Decimal("500.00"),
+            description="Licenze",
         ),
         WRITER,
     )
     pnl = AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER)
-    assert pnl.costi_diretti == Decimal("500.00")
-    assert pnl.margine_lordo == Decimal("-500.00")
+    assert pnl.direct_costs == Decimal("500.00")
+    assert pnl.gross_margin == Decimal("-500.00")
 
 
 def test_labour_cost_includes_non_billable_hours(
@@ -82,25 +82,25 @@ def test_labour_cost_includes_non_billable_hours(
     """An internal meeting costs exactly what it would cost if it were billed, and
     excluding it would make the deal that demanded more of them look more profitable."""
     service = TimeEntryService(db_session)
-    for fatturabile in (True, False):
+    for billable in (True, False):
         service.create(
             TimeEntryCreate(
                 deal_id=seeded_deal_id,
                 user_id=seeded_user_id,
                 data=date(2026, 3, 4),
-                ore=Decimal("2.00"),
-                descrizione="x",
-                fatturabile=fatturabile,
-                tariffa_applicata=Decimal("100.000000"),
-                costo_applicato=Decimal("30.000000"),
+                hours=Decimal("2.00"),
+                description="x",
+                billable=billable,
+                applied_rate=Decimal("100.000000"),
+                applied_cost=Decimal("30.000000"),
             ),
             WRITER,
         )
     pnl = AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER)
-    assert pnl.costo_lavoro == Decimal("120.00")
+    assert pnl.work_cost == Decimal("120.00")
     # But only the billable hour contributes accrued value: a non-billable hour is never
     # potential revenue.
-    assert pnl.valore_maturato == Decimal("200.00")
+    assert pnl.accrued_value == Decimal("200.00")
 
 
 def test_unpriced_hours_are_counted_and_excluded_never_valued_at_zero(
@@ -112,16 +112,16 @@ def test_unpriced_hours_are_counted_and_excluded_never_valued_at_zero(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
             data=date(2026, 3, 4),
-            ore=Decimal("5.00"),
-            descrizione="senza tariffa",
+            hours=Decimal("5.00"),
+            description="senza tariffa",
         ),
         WRITER,
     )
     pnl = AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER)
-    assert pnl.ore_totali == Decimal("5.00")
-    assert pnl.ore_senza_tariffa == 1
-    assert pnl.valore_maturato == Decimal("0.00")
-    assert pnl.costo_lavoro == Decimal("0.00")
+    assert pnl.total_hours == Decimal("5.00")
+    assert pnl.hours_without_rate == 1
+    assert pnl.accrued_value == Decimal("0.00")
+    assert pnl.work_cost == Decimal("0.00")
 
 
 def test_the_three_states(
@@ -139,31 +139,31 @@ def test_the_three_states(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
             data=date(2026, 3, 4),
-            ore=Decimal("2.00"),
-            descrizione="x",
-            tariffa_applicata=Decimal("100.000000"),
+            hours=Decimal("2.00"),
+            description="x",
+            applied_rate=Decimal("100.000000"),
         ),
         WRITER,
     )
     analytics = AnalyticsService(db_session)
-    assert analytics.deal_pnl(seeded_deal_id, READER).stato == "in corso"
+    assert analytics.deal_pnl(seeded_deal_id, READER).status == "in_progress"
 
     deal = db_session.get(Deal, seeded_deal_id)
     assert deal is not None
     deal.pipeline_stage_id = seeded_won_stage_id
     db_session.flush()
-    assert analytics.deal_pnl(seeded_deal_id, READER).stato == "da fatturare"
+    assert analytics.deal_pnl(seeded_deal_id, READER).status == "to_invoice"
 
     db_session.execute(
         text("UPDATE time_entries SET invoice_line_id = :line WHERE id = :id"),
         {"line": issued_invoice_line_id, "id": entry.id},
     )
     db_session.flush()
-    assert analytics.deal_pnl(seeded_deal_id, READER).stato == "chiuso"
+    assert analytics.deal_pnl(seeded_deal_id, READER).status == "closed"
 
 
 def test_the_stamp_duty_is_not_a_deal_cost(
-    db_session: Session, deal_with_bollo_invoice: UUID
+    db_session: Session, deal_with_stamp_duty_invoice: UUID
 ) -> None:
     """Slice 3 §7.2 keeps the stamp duty out of the total and on the issuer. Making it a
     deal cost would require this slice to look inside an invoice's fiscal composition,
@@ -171,17 +171,17 @@ def test_the_stamp_duty_is_not_a_deal_cost(
     an ordinary `cost`."""
     from sqlalchemy import text
 
-    bollo = db_session.execute(
+    stamp_duty = db_session.execute(
         text("SELECT SUM(bollo) FROM invoices WHERE deal_id = :id"),
-        {"id": deal_with_bollo_invoice},
+        {"id": deal_with_stamp_duty_invoice},
     ).scalar_one()
-    assert bollo == Decimal("2.00"), "the fixture must produce an invoice bearing stamp duty"
+    assert stamp_duty == Decimal("2.00"), "the fixture must produce an invoice bearing stamp duty"
 
-    pnl = AnalyticsService(db_session).deal_pnl(deal_with_bollo_invoice, READER)
-    assert pnl.costi_diretti == Decimal("0.00")
-    # And it is not silently netted off the revenue either: `ricavi` is the imponibile,
+    pnl = AnalyticsService(db_session).deal_pnl(deal_with_stamp_duty_invoice, READER)
+    assert pnl.direct_costs == Decimal("0.00")
+    # And it is not silently netted off the revenue either: `revenue` is the imponibile,
     # whole.
-    assert pnl.ricavi == Decimal("1000.00")
+    assert pnl.revenue == Decimal("1000.00")
 
 
 def test_no_path_lets_the_same_expense_in_twice(
@@ -200,8 +200,8 @@ def test_no_path_lets_the_same_expense_in_twice(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             data=date(2026, 3, 1),
-            importo=Decimal("1000.00"),
-            descrizione="Consulente esterno",
+            amount=Decimal("1000.00"),
+            description="Consulente esterno",
         ),
         WRITER,
     )
@@ -210,15 +210,15 @@ def test_no_path_lets_the_same_expense_in_twice(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
             data=date(2026, 3, 2),
-            ore=Decimal("10.00"),
-            descrizione="ore del consulente",
+            hours=Decimal("10.00"),
+            description="ore del consulente",
         ),
         WRITER,
     )
     pnl = AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER)
-    assert pnl.costi_diretti == Decimal("1000.00")
-    assert pnl.costo_lavoro == Decimal("0.00")
-    assert pnl.margine_lordo == Decimal("-1000.00")
+    assert pnl.direct_costs == Decimal("1000.00")
+    assert pnl.work_cost == Decimal("0.00")
+    assert pnl.gross_margin == Decimal("-1000.00")
 
 
 def test_margin_percentage_when_there_is_revenue(
@@ -229,21 +229,21 @@ def test_margin_percentage_when_there_is_revenue(
             deal_id=deal_with_mixed_invoices,
             category_id=seeded_category_id,
             data=date(2026, 3, 1),
-            importo=Decimal("583.83"),
-            descrizione="Licenze",
+            amount=Decimal("583.83"),
+            description="Licenze",
         ),
         WRITER,
     )
     pnl = AnalyticsService(db_session).deal_pnl(deal_with_mixed_invoices, READER)
-    assert pnl.ricavi > 0
-    assert pnl.margine_percentuale is not None
-    assert pnl.margine_percentuale == (pnl.margine_lordo / pnl.ricavi * Decimal(100)).quantize(
+    assert pnl.revenue > 0
+    assert pnl.percentage_margin is not None
+    assert pnl.percentage_margin == (pnl.gross_margin / pnl.revenue * Decimal(100)).quantize(
         Decimal("0.01")
     )
     # 1000.00 of margin on 1583.83 of revenue: 63.1382...% -> 63.14, two places,
     # ROUND_HALF_UP, computed once in `money.percentage_of`.
-    assert pnl.margine_lordo == Decimal("1000.00")
-    assert pnl.margine_percentuale == Decimal("63.14")
+    assert pnl.gross_margin == Decimal("1000.00")
+    assert pnl.percentage_margin == Decimal("63.14")
 
 
 def test_a_deal_that_does_not_exist_is_not_an_empty_pl(db_session: Session) -> None:

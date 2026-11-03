@@ -9,7 +9,7 @@ transaction.
 Which reading of "already invoiced" each figure uses is the thing this file is most
 careful about, because task 4B-3 deliberately left two that differ. The **link-based**
 reading is `time_entries.invoice_line_id IS NOT NULL` -- one indexed column, no join --
-and it is what the `fatturato` list filter applies. The **invoice-state** reading goes
+and it is what the `invoiced` list filter applies. The **invoice-state** reading goes
 through `billed_entry_ids`, joins to `invoices` and asks whether the line belongs to an
 *issued* one. `bind_time_to_invoice` writes the link, which is what makes the two
 readings differ at all; the double-invoicing guard and every P&L figure use the
@@ -39,7 +39,7 @@ from pigrocrm.core.timetracking.schemas import TimeEntryCreate, TimeEntryRead
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 ADMIN = Actor(id=None, type="system", role="admin")
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 READER = Actor(id=None, type="user", role="readonly")
 
 
@@ -49,19 +49,19 @@ def _log(
     user_id: UUID,
     *,
     day: date,
-    ore: str,
-    tariffa: str | None,
-    fatturabile: bool = True,
+    hours: str,
+    rate: str | None,
+    billable: bool = True,
 ) -> TimeEntryRead:
     return TimeEntryService(session).create(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=user_id,
             data=day,
-            ore=Decimal(ore),
-            descrizione=f"Attivita' {day.isoformat()}",
-            fatturabile=fatturabile,
-            tariffa_applicata=Decimal(tariffa) if tariffa is not None else None,
+            hours=Decimal(hours),
+            description=f"Attivita' {day.isoformat()}",
+            billable=billable,
+            applied_rate=Decimal(rate) if rate is not None else None,
         ),
         WRITER,
     )
@@ -90,7 +90,7 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
     attached to it."""
     entries = []
     for month, day_base in ((3, 1), (4, 1)):
-        for index, tariffa in enumerate(("80.000000", "100.000000", "120.000000")):
+        for index, rate in enumerate(("80.000000", "100.000000", "120.000000")):
             for offset in range(6 if (month, index) != (4, 2) else 7):
                 entries.append(
                     _log(
@@ -98,8 +98,8 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
                         billable_deal_id,
                         seeded_user_id,
                         day=date(2026, month, day_base + offset),
-                        ore="1.50",
-                        tariffa=tariffa,
+                        hours="1.50",
+                        rate=rate,
                     )
                 )
     assert len(entries) == 37
@@ -115,7 +115,7 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
     # seventh entry and so 10.50 h. A grouping keyed on anything but
     # `(tariffa, mese)` -- on the entry, on the day, on the rate alone -- produces a
     # different list here, so this one assertion pins the whole rule.
-    assert [(quantita, prezzo) for _, quantita, prezzo, _ in lines] == [
+    assert [(quantity, price) for _, quantity, price, _ in lines] == [
         (Decimal("9.00"), Decimal("80")),
         (Decimal("9.00"), Decimal("100")),
         (Decimal("9.00"), Decimal("120")),
@@ -123,9 +123,9 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
         (Decimal("9.00"), Decimal("100")),
         (Decimal("10.50"), Decimal("120")),
     ]
-    # `Sum(quantita)` is **exactly** `Sum(ore)` of the bound entries.
-    assert sum_hours([quantita for _, quantita, _, _ in lines]) == sum_hours(
-        [e.ore for e in entries]
+    # `Sum(quantity)` is **exactly** `Sum(hours)` of the bound entries.
+    assert sum_hours([quantity for _, quantity, _, _ in lines]) == sum_hours(
+        [e.hours for e in entries]
     )
 
     # Every entry is bound, and bound to the line of *its own* group. The mapping from
@@ -140,15 +140,15 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
         {"deal": billable_deal_id},
     ).all()
     assert len(bound) == 37
-    for _, tariffa, data, prezzo, descrizione in bound:
-        assert Decimal(tariffa) == Decimal(prezzo)
-        assert ("marzo" if data.month == 3 else "aprile") in descrizione
+    for _, rate, data, price, description in bound:
+        assert Decimal(rate) == Decimal(price)
+        assert ("marzo" if data.month == 3 else "aprile") in description
 
     # The description names the month and the hours, which is what makes a six-line
     # invoice legible next to a timesheet the client can check it against.
-    assert any("marzo 2026" in descrizione for *_, descrizione in lines)
-    assert any("aprile 2026" in descrizione for *_, descrizione in lines)
-    assert all("ore" in descrizione for *_, descrizione in lines)
+    assert any("marzo 2026" in description for *_, description in lines)
+    assert any("aprile 2026" in description for *_, description in lines)
+    assert all("hours" in description for *_, description in lines)
 
     # One activity for the whole binding, not thirty-seven: it is a single commercial
     # act over a selection, unlike `recalculate_rates`, which changes each row's meaning
@@ -169,7 +169,7 @@ def test_one_line_per_rate_when_the_monthly_grouping_is_turned_off(
     seeded_user_id: UUID,
     local_storage: LocalFileStorage,
 ) -> None:
-    """`raggruppa_per_mese=False` collapses the same hours to one line per rate.
+    """`group_by_by_month=False` collapses the same hours to one line per rate.
 
     The monthly cut is what a client usually expects, but it is a presentation choice
     and not a rule, so it is a field on the request rather than a constant -- and the
@@ -182,11 +182,11 @@ def test_one_line_per_rate_when_the_monthly_grouping_is_turned_off(
             billable_deal_id,
             seeded_user_id,
             day=date(2026, month, 5),
-            ore="2.00",
-            tariffa=tariffa,
+            hours="2.00",
+            rate=rate,
         )
         for month in (3, 4)
-        for tariffa in ("80.000000", "100.000000")
+        for rate in ("80.000000", "100.000000")
     ]
     service = TimeBilling(db_session, local_storage)
 
@@ -197,17 +197,17 @@ def test_one_line_per_rate_when_the_monthly_grouping_is_turned_off(
 
     collapsed = service.bind_to_invoice(
         billable_deal_id,
-        BindTimeRequest(entry_ids=[e.id for e in entries], raggruppa_per_mese=False),
+        BindTimeRequest(entry_ids=[e.id for e in entries], group_by_by_month=False),
         ADMIN,
     )
     lines = _lines(db_session, collapsed.id)
-    assert [(quantita, prezzo) for _, quantita, prezzo, _ in lines] == [
+    assert [(quantity, price) for _, quantity, price, _ in lines] == [
         (Decimal("4.00"), Decimal("80")),
         (Decimal("4.00"), Decimal("100")),
     ]
     # No month to name, so the label falls back to a neutral one rather than inventing
     # a period the line does not cover.
-    assert all("marzo" not in descrizione for *_, descrizione in lines)
+    assert all("marzo" not in description for *_, description in lines)
 
 
 def test_the_derived_value_stops_being_consulted_once_the_invoice_exists(
@@ -232,12 +232,12 @@ def test_the_derived_value_stops_being_consulted_once_the_invoice_exists(
             billable_deal_id,
             seeded_user_id,
             day=date(2026, 3, day),
-            ore="0.10",
-            tariffa="33.333333",
+            hours="0.10",
+            rate="33.333333",
         )
         for day in (1, 2, 3)
     ]
-    derived = sum_money([line_value(e.ore, e.tariffa_applicata) for e in entries])
+    derived = sum_money([line_value(e.hours, e.applied_rate) for e in entries])
     assert derived == Decimal("9.99")
 
     billing = TimeBilling(db_session, local_storage)
@@ -246,25 +246,25 @@ def test_the_derived_value_stops_being_consulted_once_the_invoice_exists(
     )
     InvoiceService(db_session, local_storage).issue(invoice.id, InvoiceIssue(), ADMIN)
 
-    issued_imponibile = Decimal(
+    issued_taxable_amount = Decimal(
         db_session.execute(
             text("SELECT imponibile FROM invoices WHERE id = :id"), {"id": invoice.id}
         ).scalar_one()
     )
     # The two figures, and the size and direction of the disagreement, named outright:
     # the invoice is one cent *above* the sum of the per-entry values.
-    assert issued_imponibile == Decimal("10.00")
-    assert issued_imponibile - derived == Decimal("0.01")
+    assert issued_taxable_amount == Decimal("10.00")
+    assert issued_taxable_amount - derived == Decimal("0.01")
 
     pnl = AnalyticsService(db_session).deal_pnl(billable_deal_id, READER)
     # The invoice's figure, not the sum of the derived ones. This is the assertion the
     # whole rounding question reduces to.
-    assert pnl.ricavi == Decimal("10.00")
-    assert pnl.ricavi != derived
+    assert pnl.revenue == Decimal("10.00")
+    assert pnl.revenue != derived
     # And the accrued value no longer counts those hours at all: they are invoiced, so
-    # `valore_maturato` is the revenue alone and carries none of the 9.99 with it.
-    assert pnl.ore_fatturabili_non_fatturate == Decimal("0.00")
-    assert pnl.valore_maturato == Decimal("10.00")
+    # `accrued_value` is the revenue alone and carries none of the 9.99 with it.
+    assert pnl.billable_uninvoiced_hours == Decimal("0.00")
+    assert pnl.accrued_value == Decimal("10.00")
 
 
 def test_the_draft_is_not_revenue_and_the_estimate_is_still_the_one_consulted(
@@ -277,7 +277,7 @@ def test_the_draft_is_not_revenue_and_the_estimate_is_still_the_one_consulted(
     have to differ.
 
     Between the bind and the emission the hours carry a `invoice_line_id` -- they are
-    `fatturato` under the **link-based** reading the list filter applies -- and yet no
+    `invoiced` under the **link-based** reading the list filter applies -- and yet no
     invoice has been issued, so there is no revenue. The P&L uses the **invoice-state**
     reading and therefore still counts them as billable-and-unbilled, at the derived
     9.99. Under the link-based reading their value would exist in neither figure: work
@@ -289,8 +289,8 @@ def test_the_draft_is_not_revenue_and_the_estimate_is_still_the_one_consulted(
             billable_deal_id,
             seeded_user_id,
             day=date(2026, 3, day),
-            ore="0.10",
-            tariffa="33.333333",
+            hours="0.10",
+            rate="33.333333",
         )
         for day in (1, 2, 3)
     ]
@@ -310,14 +310,14 @@ def test_the_draft_is_not_revenue_and_the_estimate_is_still_the_one_consulted(
     assert linked == 3
 
     on_draft = analytics.deal_pnl(billable_deal_id, READER)
-    assert on_draft.ricavi == Decimal("0.00")
-    assert on_draft.ore_fatturabili_non_fatturate == Decimal("0.30")
+    assert on_draft.revenue == Decimal("0.00")
+    assert on_draft.billable_uninvoiced_hours == Decimal("0.30")
     # The derived value, cents and all -- and it is the *lower* of the two, which is
     # what makes the swap at emission observable rather than a no-op.
-    assert on_draft.valore_maturato == Decimal("9.99")
+    assert on_draft.accrued_value == Decimal("9.99")
 
     InvoiceService(db_session, local_storage).issue(invoice.id, InvoiceIssue(), ADMIN)
-    assert analytics.deal_pnl(billable_deal_id, READER).valore_maturato == Decimal("10.00")
+    assert analytics.deal_pnl(billable_deal_id, READER).accrued_value == Decimal("10.00")
 
 
 def test_unpriced_entries_are_refused_with_a_count_and_a_list(
@@ -335,8 +335,8 @@ def test_unpriced_entries_are_refused_with_a_count_and_a_list(
         billable_deal_id,
         seeded_user_id,
         day=date(2026, 3, 1),
-        ore="1.00",
-        tariffa="80.000000",
+        hours="1.00",
+        rate="80.000000",
     )
     unpriced = [
         _log(
@@ -344,8 +344,8 @@ def test_unpriced_entries_are_refused_with_a_count_and_a_list(
             billable_deal_id,
             seeded_user_id,
             day=date(2026, 3, day),
-            ore="1.00",
-            tariffa=None,
+            hours="1.00",
+            rate=None,
         )
         for day in (2, 3)
     ]
@@ -387,9 +387,9 @@ def test_non_billable_entries_are_refused_by_definition(
         billable_deal_id,
         seeded_user_id,
         day=date(2026, 3, 1),
-        ore="1.00",
-        tariffa="80.000000",
-        fatturabile=False,
+        hours="1.00",
+        rate="80.000000",
+        billable=False,
     )
     with pytest.raises(ValidationFailed) as excinfo:
         TimeBilling(db_session, local_storage).bind_to_invoice(
@@ -413,8 +413,8 @@ def test_an_hour_already_on_an_issued_invoice_cannot_be_invoiced_twice(
         billable_deal_id,
         seeded_user_id,
         day=date(2026, 3, 1),
-        ore="1.00",
-        tariffa="80.000000",
+        hours="1.00",
+        rate="80.000000",
     )
     billing = TimeBilling(db_session, local_storage)
     invoice = billing.bind_to_invoice(
@@ -424,12 +424,12 @@ def test_an_hour_already_on_an_issued_invoice_cannot_be_invoiced_twice(
 
     with pytest.raises(Conflict) as excinfo:
         billing.bind_to_invoice(billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN)
-    assert "fattura" in excinfo.value.message
+    assert "invoice" in excinfo.value.message
     # The refusal names the document, because "already invoiced" is only actionable if
     # the user can go and look at the invoice in question.
-    assert excinfo.value.details["numero"] == issued.numero
-    assert excinfo.value.details["anno"] == issued.anno
-    assert excinfo.value.details["voci"] == 1
+    assert excinfo.value.details["number"] == issued.number
+    assert excinfo.value.details["year"] == issued.year
+    assert excinfo.value.details["entries"] == 1
 
 
 def test_an_hour_on_a_draft_can_be_rebound(
@@ -461,8 +461,8 @@ def test_an_hour_on_a_draft_can_be_rebound(
         billable_deal_id,
         seeded_user_id,
         day=date(2026, 3, 1),
-        ore="1.00",
-        tariffa="80.000000",
+        hours="1.00",
+        rate="80.000000",
     )
     billing = TimeBilling(db_session)
     first = billing.bind_to_invoice(billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN)
@@ -499,10 +499,10 @@ def test_an_entry_from_another_deal_is_refused(
     """A selection is checked against the deal it is being invoiced under, not trusted:
     two deals can belong to two different customers, and an invoice carries one."""
     other = budgeted_deal(
-        ore_preventivate=None,
-        valore_preventivato=None,
-        ore_registrate="1.00",
-        ricavi=None,
+        budgeted_hours=None,
+        budgeted_value=None,
+        hours_logged="1.00",
+        revenue=None,
         nome="Progetto estraneo",
     )
     stray = db_session.execute(
@@ -513,8 +513,8 @@ def test_an_entry_from_another_deal_is_refused(
         billable_deal_id,
         seeded_user_id,
         day=date(2026, 3, 1),
-        ore="1.00",
-        tariffa="80.000000",
+        hours="1.00",
+        rate="80.000000",
     )
     with pytest.raises(ValidationFailed) as excinfo:
         TimeBilling(db_session, local_storage).bind_to_invoice(
@@ -546,7 +546,7 @@ def test_the_same_entry_twice_in_one_selection_is_billed_once(
     local_storage: LocalFileStorage,
 ) -> None:
     """A repeated id is the one duplication that would be invisible: both occurrences
-    land in the same group, so the line's `quantita` doubles while every count in this
+    land in the same group, so the line's `quantity` doubles while every count in this
     file still agrees with itself -- one line, one bound entry, one activity. Only the
     quantity gives it away, which is why this is the assertion."""
     entry = _log(
@@ -554,13 +554,13 @@ def test_the_same_entry_twice_in_one_selection_is_billed_once(
         billable_deal_id,
         seeded_user_id,
         day=date(2026, 3, 1),
-        ore="1.00",
-        tariffa="80.000000",
+        hours="1.00",
+        rate="80.000000",
     )
     invoice = TimeBilling(db_session, local_storage).bind_to_invoice(
         billable_deal_id, BindTimeRequest(entry_ids=[entry.id, entry.id]), ADMIN
     )
     lines = _lines(db_session, invoice.id)
-    assert [(quantita, prezzo) for _, quantita, prezzo, _ in lines] == [
+    assert [(quantity, price) for _, quantity, price, _ in lines] == [
         (Decimal("1.00"), Decimal("80"))
     ]

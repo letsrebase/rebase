@@ -23,9 +23,9 @@ from sqlalchemy.orm import Session
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.contract_schemas import (
     DAY_RATE,
-    ClienteDraft,
     ContractPdf,
-    LetteraDraft,
+    CustomerDraft,
+    LetterDraft,
     MatchCheck,
     MatchCreate,
     MatchPrefill,
@@ -34,12 +34,12 @@ from rebase_core.contracts.fields import DAYS, MONTH_END
 from rebase_core.contracts.render import company_defaults
 from rebase_core.errors import ValidationFailed
 from rebase_core.fiscal import FiscalService
-from rebase_core.framework import active_framework, current_quadro_version, document_read
+from rebase_core.framework import active_framework, current_framework_version, document_read
 from rebase_core.match_documents import MatchDocuments
 from rebase_core.match_rows import (
     ENTITY,
-    LETTERA,
-    QUADRO,
+    FRAMEWORK,
+    LETTER,
     company_row,
     fiscal_row,
     framework_step,
@@ -50,7 +50,7 @@ from rebase_core.match_rows import (
 )
 from rebase_core.match_words import check_sentences
 from rebase_core.models import Company, FreelancerFiscal, Match
-from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, Regime, text_name
+from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED, Regime, text_name
 
 # Pydantic's own error types, whose messages are English; any other type is one the hub
 # raised itself (`PydanticCustomError`), with an Italian message.
@@ -63,7 +63,7 @@ def _italian_amounts(
     part: str, given: Mapping[str, object], known: Mapping[str, FieldInfo]
 ) -> dict[str, object]:
     """`given` with every amount typed as a string read the Italian way (REB-485): the
-    letter's `compenso` «1.500» is 1500, where Pydantic's own reading of the string gives
+    letter's `fee` «1.500» is 1500, where Pydantic's own reading of the string gives
     1.5. A number is already one and stays as it is. A string that is not an amount is
     refused here, by its field, with the word Pydantic's refusal gets («non valido»):
     handed on, Pydantic would take «1e3», «1_000» or digits of another script, which the
@@ -79,11 +79,11 @@ def _italian_amounts(
     return read
 
 
-def luogo_suggestion(remoto: str, giorni_presenza: int | None) -> str:
-    if remoto == "ibrido" and giorni_presenza:
-        giornate = "1 giornata" if giorni_presenza == 1 else f"{giorni_presenza} giornate"
-        return f"in parte da remoto, con {giornate} a settimana presso il Cliente"
-    if remoto == "in_sede":
+def location_suggestion(remote: str, onsite_days: int | None) -> str:
+    if remote == "hybrid" and onsite_days:
+        work_units = "1 giornata" if onsite_days == 1 else f"{onsite_days} giornate"
+        return f"in parte da remoto, con {work_units} a settimana presso il Cliente"
+    if remote == "on_site":
         return "presso la sede del Cliente"
     return "da remoto"
 
@@ -115,73 +115,73 @@ class MatchDrafts:
         request's company name), and the letter from the request, the card and
         `rebase.json`."""
         freelancer, _user = freelancer_row(self.session, freelancer_id)
-        company, referente = company_row(self.session, company_id)
+        company, contact_person = company_row(self.session, company_id)
         previous = self.session.scalars(
             select(Match)
             .join(Company, Company.id == Match.company_id)
-            .where(Company.user_id == company.user_id, Match.stato != "annullato")
+            .where(Company.user_id == company.user_id, Match.status != "cancelled")
             .order_by(Match.created_at.desc(), Match.id.desc())
             .limit(1)
         ).first()
-        cliente = (
-            ClienteDraft(
-                cliente_ragione_sociale=previous.cliente_ragione_sociale,
-                cliente_piva=previous.cliente_piva,
-                cliente_sede=previous.cliente_sede,
+        customer = (
+            CustomerDraft(
+                customer_legal_name=previous.customer_legal_name,
+                customer_vat_number=previous.customer_vat_number,
+                customer_registered_office=previous.customer_registered_office,
             )
             if previous is not None
-            else ClienteDraft(cliente_ragione_sociale=company.nome_azienda)
+            else CustomerDraft(customer_legal_name=company.company_name)
         )
         defaults = company_defaults()
         days, month_end = defaults.get(DAYS), defaults.get(MONTH_END)
-        lettera = LetteraDraft(
-            ruolo=company.figura_richiesta,
-            attivita=company.progetto,
-            data_inizio=company.periodo_da,
-            impegno=company.durata,
-            luogo=luogo_suggestion(company.remoto, company.giorni_presenza),
-            referente_cliente=full_name(referente) or None,
-            modalita=DAY_RATE,
-            unita=DAY_RATE,
-            compenso=freelancer.tariffa_giornaliera,
-            giorni_pagamento=days if isinstance(days, int) and not isinstance(days, bool) else None,
-            fine_mese=month_end if isinstance(month_end, bool) else None,
+        letter = LetterDraft(
+            role=company.requested_role,
+            activities=company.project,
+            start_date=company.period_from,
+            commitment=company.duration,
+            location=location_suggestion(company.remote, company.onsite_days),
+            customer_contact=full_name(contact_person) or None,
+            mode=DAY_RATE,
+            unit=DAY_RATE,
+            fee=freelancer.daily_rate,
+            payment_days=days if isinstance(days, int) and not isinstance(days, bool) else None,
+            month_end=month_end if isinstance(month_end, bool) else None,
         )
-        fiscale = FiscalService(self.session).get(freelancer.id)
+        tax = FiscalService(self.session).get(freelancer.id)
         regime: Regime = (
-            OCCASIONALE if fiscale is not None and fiscale.partita_iva is None else PARTITA_IVA
+            OCCASIONAL if tax is not None and tax.vat_number is None else VAT_REGISTERED
         )
         active, step = framework_step(self.session, freelancer.id, regime)
         today = self.documents.today()
         return MatchPrefill(
-            fiscale=fiscale,
-            cliente=cliente,
-            lettera=lettera,
+            tax=tax,
+            customer=customer,
+            letter=letter,
             regime=regime,
-            quadro_attivo=(
-                document_read(active, today, current_quadro_version(regime))
+            active_framework=(
+                document_read(active, today, current_framework_version(regime))
                 if active is not None
                 else None
             ),
-            quadro_necessario=step == "da_inviare",
-            lettera_in_attesa=active is None,
+            required_framework=step == "to_send",
+            letter_pending=active is None,
         )
 
     def proposal(
         self,
         freelancer_id: UUID,
         company_id: UUID,
-        cliente: dict[str, object] | None = None,
-        lettera: dict[str, object] | None = None,
+        customer: dict[str, object] | None = None,
+        letter: dict[str, object] | None = None,
         match_id: UUID | None = None,
         regime: Regime | None = None,
     ) -> MatchCreate:
-        """`prefill` as the body `create` takes, each field given in `cliente` or
-        `lettera` laid over what the hub suggests (a `None` given blanks a suggestion):
+        """`prefill` as the body `create` takes, each field given in `customer` or
+        `letter` laid over what the hub suggests (a `None` given blanks a suggestion):
         what an MCP tool saves when the admin asked for a match in a sentence. `regime`
         `None` takes the letter type the prefill proposes (REB-687). A key that is not a
         field of the letter or of the client, and a required field still empty once laid
-        over, are a `ValidationFailed` naming it (`lettera.compenso`), in Italian
+        over, are a `ValidationFailed` naming it (`letter.fee`), in Italian
         (`field_reason`)."""
         prefill = self.prefill(freelancer_id, company_id)
         body: dict[str, object] = {
@@ -190,8 +190,8 @@ class MatchDrafts:
             "regime": regime if regime is not None else prefill.regime,
         }
         for part, suggested, given, known in (
-            ("cliente", prefill.cliente, cliente, ClienteDraft.model_fields),
-            ("lettera", prefill.lettera, lettera, LetteraDraft.model_fields),
+            ("customer", prefill.customer, customer, CustomerDraft.model_fields),
+            ("letter", prefill.letter, letter, LetterDraft.model_fields),
         ):
             unknown = sorted(set(given or {}) - set(known))
             if unknown:
@@ -212,12 +212,12 @@ class MatchDrafts:
         freelancer, user = freelancer_row(self.session, freelancer_id)
         matchable_company(self.session, data.company_id)
         fiscal = fiscal_row(self.session, freelancer.id)
-        require_regime_fits(fiscal.partita_iva, data.regime)
+        require_regime_fits(fiscal.vat_number, data.regime)
         today = self.documents.today()
-        if kind not in (QUADRO, LETTERA):
-            raise ValidationFailed(ENTITY, "documento", "uno fra lettera e quadro")
+        if kind not in (FRAMEWORK, LETTER):
+            raise ValidationFailed(ENTITY, "document", "uno fra lettera e quadro")
         name = text_name(kind, data.regime)
-        if kind == QUADRO:
+        if kind == FRAMEWORK:
             fields = self.documents.quadro_data(user, fiscal, today, data.regime)
         else:
             active = active_framework(self.session, freelancer.id, data.regime)
@@ -240,21 +240,21 @@ class MatchDrafts:
             .execution_options(populate_existing=True)
         )
         if fiscal is not None:
-            require_regime_fits(fiscal.partita_iva, payload.regime)
+            require_regime_fits(fiscal.vat_number, payload.regime)
         _active, step = framework_step(self.session, freelancer_id, payload.regime)
-        riepilogo, cosa_succede = check_sentences(
+        recap, what_happens = check_sentences(
             full_name(user),
-            payload.cliente.cliente_ragione_sociale,
-            payload.lettera,
+            payload.customer.customer_legal_name,
+            payload.letter,
             step,
-            dati_fiscali_mancanti=fiscal is None,
+            missing_tax_data=fiscal is None,
             regime=payload.regime,
-            ha_partita_iva=fiscal is not None and fiscal.partita_iva is not None,
+            has_vat_number=fiscal is not None and fiscal.vat_number is not None,
         )
         return MatchCheck(
-            riepilogo=riepilogo,
-            cosa_succede=cosa_succede,
-            quadro_necessario=step == "da_inviare",
-            dati_fiscali_mancanti=fiscal is None,
+            recap=recap,
+            what_happens=what_happens,
+            required_framework=step == "to_send",
+            missing_tax_data=fiscal is None,
             regime=payload.regime,
         )

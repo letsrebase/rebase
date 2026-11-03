@@ -1,10 +1,10 @@
 """The azienda scope a session carries, bound as two transaction-local Postgres
 settings the row-level policies read (REB-633, spec 2026-10-03 §4).
 
-`pigrocrm.aziende` is `*` for an unscoped actor, or the comma-joined ids of the
+`pigrocrm.legal_entities` is `*` for an unscoped actor, or the comma-joined ids of the
 actor's aziende, possibly the empty string for a scoped person with no active azienda
 left. A connection with nothing set reads `NULL`, a pooled one whose transaction-local
-value expired reads the empty string, and `azienda_visibile()` reads both as nothing:
+value expired reads the empty string, and `legal_entity_visible()` reads both as nothing:
 the default is closed. `pigrocrm.user_id` is the actor's own user id, read by the one
 policy that needs to know whose mailbox a row belongs to (`gmail_messages`).
 
@@ -26,19 +26,19 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     from pigrocrm.core.actor import Actor
 
-SCOPE_SETTING = "pigrocrm.aziende"
+SCOPE_SETTING = "pigrocrm.legal_entities"
 USER_SETTING = "pigrocrm.user_id"
-EVERY_AZIENDA = "*"
+EVERY_LEGAL_ENTITY = "*"
 _BOUND = "pigrocrm_scope_listener"
 
 
 def scope_value(actor: Actor) -> str:
-    """What `pigrocrm.aziende` holds for `actor`: `*` for an unscoped one, the ids of
+    """What `pigrocrm.legal_entities` holds for `actor`: `*` for an unscoped one, the ids of
     the scope otherwise, and the empty string for a scope with no azienda left, which
     the policies read as nothing (spec §1.11: nothing turns an empty scope into «tutte»)."""
-    if actor.aziende is None:
-        return EVERY_AZIENDA
-    return ",".join(str(azienda) for azienda in actor.aziende)
+    if actor.legal_entities is None:
+        return EVERY_LEGAL_ENTITY
+    return ",".join(str(legal_entity) for legal_entity in actor.legal_entities)
 
 
 def user_value(actor: Actor) -> str:
@@ -100,7 +100,7 @@ def is_policy_refusal(exc: BaseException) -> bool:
 
 
 __all__ = [
-    "EVERY_AZIENDA",
+    "EVERY_LEGAL_ENTITY",
     "INSUFFICIENT_PRIVILEGE",
     "SCOPE_SETTING",
     "USER_SETTING",

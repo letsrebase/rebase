@@ -4,7 +4,7 @@ Shaped exactly like `tools/customers.py`: resolve the service on the context's s
 it, `model_dump(mode="json")`.
 
 What keeps the score out of an agent's context as `0.6000000238418579` is
-`SearchHit.punteggio` being a `Decimal` and not a `float` -- measured, not assumed:
+`SearchHit.score` being a `Decimal` and not a `float` -- measured, not assumed:
 swapping `mode="json"` for the default here leaves every assertion in
 `apps/mcp/tests/test_mcp_search.py` green, because the SDK's own encoder renders a
 `Decimal` and a `UUID` as strings anyway. `mode="json"` stays because every other tool

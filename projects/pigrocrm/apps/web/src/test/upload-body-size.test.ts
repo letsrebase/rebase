@@ -2,7 +2,7 @@
  * REB-252: neither nginx layer in front of the CRM set `client_max_body_size`, so an
  * ordinary upload over nginx's own compiled-in 1 MiB default was answered with a bare
  * 413 by `web` (or, on the host, by the vhost) before the request ever reached `api`,
- * whatever the application itself allows -- `DIMENSIONE_MAX`
+ * whatever the application itself allows -- `SIZE_MAX`
  * (`packages/core/src/pigrocrm/core/documents/schemas.py:51`, 100 MiB). This asserts
  * all three of the container's and the host's nginx configs carry the same shape: a
  * tight, explicit server-level default (so the limit is versioned rather than left to
@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest'
 // Mirrors DIMENSIONE_MAX in packages/core/src/pigrocrm/core/documents/schemas.py: kept
 // in bytes here too, so a change to either side is a diff a reviewer can compare
 // against the other rather than two numbers that silently drift apart.
-const DIMENSIONE_MAX_BYTES = 100 * 1024 * 1024
+const SIZE_MAX_BYTES = 100 * 1024 * 1024
 
 const pigrocrmRoot = join(__dirname, '..', '..', '..', '..')
 
@@ -53,7 +53,7 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
   it('never proxies through a prefix location that ends with a slash (REB-636)', () => {
     // `location ^~ /api/x/ { proxy_pass ... }` makes nginx answer the bare `/api/x`
     // with a 301 to `/api/x/`, which FastAPI answers with a 307 back: a redirect loop
-    // on every collection route, measured on the preview's `/api/aziende`. Every such
+    // on every collection route, measured on the preview's `/api/legal-entities`. Every such
     // block under `/api/` is a regex with `(/|$)`. The catch-all `/api/` is the one
     // exception: the API has no route at `/api`, so its redirect ends in a 404 and never
     // loops. The SPA's own prefixes (`/app/`, `/`) are not API routes and may redirect.
@@ -87,7 +87,7 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
       const directive = block[1]?.match(/^\s*client_max_body_size\s+(\S+);/m)
       expect(directive, `no client_max_body_size in ${block[0].slice(0, 60)}`).toBeTruthy()
       if (!directive) throw new Error('unreachable: truthy assertion above already failed')
-      expect(bodySizeBytes(directive[1] ?? '')).toBeGreaterThanOrEqual(DIMENSIONE_MAX_BYTES)
+      expect(bodySizeBytes(directive[1] ?? '')).toBeGreaterThanOrEqual(SIZE_MAX_BYTES)
     }
   })
 
@@ -101,6 +101,6 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
     const directive = block[1]?.match(/^\s*client_max_body_size\s+(\S+);/m)
     expect(directive, 'no client_max_body_size for the prefixed upload path').toBeTruthy()
     if (!directive) throw new Error('unreachable: truthy assertion above already failed')
-    expect(bodySizeBytes(directive[1] ?? '')).toBeGreaterThanOrEqual(DIMENSIONE_MAX_BYTES)
+    expect(bodySizeBytes(directive[1] ?? '')).toBeGreaterThanOrEqual(SIZE_MAX_BYTES)
   })
 })

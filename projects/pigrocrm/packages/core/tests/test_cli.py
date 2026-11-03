@@ -40,7 +40,7 @@ def test_resetpassword_reads_the_new_password_from_stdin_when_there_is_no_tty(
     with session_factory(cli_engine)() as session:
         UserService(session).create(
             UserCreate(
-                email="cli-reset@studio.it", password="vecchia-password-1", nome="C", ruolo="admin"
+                email="cli-reset@studio.it", password="vecchia-password-1", nome="C", role="admin"
             ),
             Actor.system(),
         )
@@ -57,7 +57,7 @@ def test_resetpassword_reads_the_new_password_from_stdin_when_there_is_no_tty(
 
 
 @pytest.fixture
-def root_without_azienda(cli_engine: Engine) -> Iterator[set[object]]:
+def root_without_legal_entity(cli_engine: Engine) -> Iterator[set[object]]:
     """The root as `createadmin` finds a freshly migrated one: no azienda. The worker's
     database carries the one committed default every other world shares (REB-623): it is
     set aside for the duration and put back at the end, with the identity it had. Yields
@@ -93,21 +93,21 @@ def root_without_azienda(cli_engine: Engine) -> Iterator[set[object]]:
                     {
                         "id": row.id,
                         "nome": row.nome,
-                        "rs": row.ragione_sociale,
-                        "nazione": row.nazione,
+                        "rs": row.legal_name,
+                        "country": row.country,
                     },
                 )
 
 
 def _createadmin(monkeypatch: pytest.MonkeyPatch, email: str, nome: str) -> int:
     monkeypatch.setattr("sys.stdin", io.StringIO("una-password-lunga-1\n"))
-    monkeypatch.setattr("sys.argv", ["pigrocrm", "createadmin", "--email", email, "--nome", nome])
+    monkeypatch.setattr("sys.argv", ["pigrocrm", "createadmin", "--email", email, "--name", nome])
     return cli.main()
 
 
-def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
+def test_createadmin_gives_to_root_with_no_legal_entity_one_named_after_the_admin(
     cli_engine: Engine,
-    root_without_azienda: set[object],
+    root_without_legal_entity: set[object],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -125,7 +125,7 @@ def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
     assert rows == [("Ada Lovelace", "Ada Lovelace", True, True)]
 
     assert _createadmin(monkeypatch, "cli-root-2@studio.it", "Grace Hopper") == 0
-    assert "azienda" not in capsys.readouterr().out
+    assert "legal_entity" not in capsys.readouterr().out
     with cli_engine.connect() as connection:
         names = connection.execute(text("select nome from emitter_profile")).scalars().all()
     assert names == ["Ada Lovelace"]
@@ -133,12 +133,12 @@ def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
 
 def test_createadmin_works_as_the_application_role_the_api_container_connects_as(
     cli_engine: Engine,
-    root_without_azienda: set[object],
+    root_without_legal_entity: set[object],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """B-01. The documented production path runs the command in the `api` container,
-    which connects as `pigrocrm_app` (`NOBYPASSRLS`). The policy on `emitter_profile` reads
+    which connects as `pigrocrm_app` (`NOBYPASSRLS`). The policy on `legal_entities` reads
     the scope the session binds, and an unbound session saw no azienda and was refused the
     insert after the admin row had already been committed. The other tests run as the
     superuser, to whom policies do not apply."""

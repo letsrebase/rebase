@@ -41,7 +41,7 @@ from rebase_core.team_schemas import CardsRefreshed
 
 NOW = datetime(2026, 10, 28, 9, 0, tzinfo=UTC)
 NO_ANSWERS = RecordingCall([])
-GENDERED = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperienza."}
+GENDERED = {**CARD, "profile_summary": "Lei è una sviluppatrice con nove anni di esperienza."}
 
 
 def _stale(session: Session, count: int = 3) -> list[UUID]:
@@ -71,7 +71,7 @@ def _writer(
 
 
 def _start(session: Session, call: RecordingBatch, limit: int = 50) -> CardsRefreshed:
-    return _writer(session, call).regenerate_stale(an_admin(session), limit, fonte="web")
+    return _writer(session, call).regenerate_stale(an_admin(session), limit, source="web")
 
 
 def _poll(session: Session, call: RecordingBatch, llm: object = NO_ANSWERS) -> BatchPolled:
@@ -111,7 +111,7 @@ def test_a_start_above_the_threshold_sends_one_batch_and_writes_nothing(clean_hu
     assert action.payload == {
         "limit": 50,
         "queued": 3,
-        "fonte": "web",
+        "source": "web",
         "batch": True,
         "batch_id": str(batch.id),
     }
@@ -136,12 +136,12 @@ def test_below_the_threshold_the_workers_write_it(clean_hub: Session) -> None:
     call = RecordingBatch()
     llm = RecordingCall([card_response(), card_response()])
 
-    result = _writer(clean_hub, call, llm).regenerate_stale(an_admin(clean_hub), 50, fonte="web")
+    result = _writer(clean_hub, call, llm).regenerate_stale(an_admin(clean_hub), 50, source="web")
 
     assert result == CardsRefreshed(written=2, failed=0)
     assert call.submissions == 0 and clean_hub.scalars(select(CardBatch)).all() == []
     [action] = clean_hub.scalars(select(AdminAction).where(AdminAction.kind == "cards_regenerate"))
-    assert action.payload == {"limit": 50, "queued": 2, "fonte": "web", "batch": False}
+    assert action.payload == {"limit": 50, "queued": 2, "source": "web", "batch": False}
 
 
 def test_a_second_start_while_a_batch_is_active_queues_nothing(clean_hub: Session) -> None:

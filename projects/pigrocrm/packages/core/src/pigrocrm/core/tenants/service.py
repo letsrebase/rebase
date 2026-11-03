@@ -144,13 +144,11 @@ class TenantService:
     def availability(self, slug: str) -> TenantAvailability:
         reason = self._reason(slug)
         if reason is not None:
-            return TenantAvailability(slug=slug, disponibile=False, motivo=reason)
+            return TenantAvailability(slug=slug, available=False, reason=reason)
         taken = self.session.scalar(select(Tenant.id).where(Tenant.slug == slug)) is not None
         if taken:
-            return TenantAvailability(
-                slug=slug, disponibile=False, motivo="questo nome è già in uso"
-            )
-        return TenantAvailability(slug=slug, disponibile=True)
+            return TenantAvailability(slug=slug, available=False, reason="questo nome è già in uso")
+        return TenantAvailability(slug=slug, available=True)
 
     def provision(self, data: TenantSignup) -> TenantRead:
         """The registry row first, so the unique index decides who gets the name; then
@@ -185,7 +183,7 @@ class TenantService:
                     UserService(space).create(
                         # No password: the admin enters with a link by mail, and the first
                         # link proves the address (spec 2026-09-12 §6.4).
-                        UserCreate(email=data.email, password=None, nome=data.nome, ruolo="admin"),
+                        UserCreate(email=data.email, password=None, nome=data.nome, role="admin"),
                         Actor.system(),
                     )
                     # Born ready (spec 2026-09-12 §6.5): stages, templates and

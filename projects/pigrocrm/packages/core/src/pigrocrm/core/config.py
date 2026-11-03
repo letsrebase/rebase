@@ -187,9 +187,9 @@ class Settings(BaseSettings):
     mcp_full_access: bool = False
 
     # The emitter's timezone, and the only one. Every `Date` column in the product is a
-    # calendar day in *this* zone: `invoices.data_emissione` (slice 3 §6.2),
-    # `costs.data` and `time_entries.data` (slice 4), `deals.chiuso_il` and
-    # `documents.stato_dal` (slice 6 §4.1). Deriving any of them from
+    # calendar day in *this* zone: `invoices.issue_date` (slice 3 §6.2),
+    # `costs.date` and `time_entries.date` (slice 4), `deals.closed_at` and
+    # `documents.status_since` (slice 6 §4.1). Deriving any of them from
     # `datetime.now(UTC).date()` moves everything after 23:00 CET by a day and everything
     # on 31 December by a year -- the exact defect slice 3 §6.2 names. Single-tenant, so
     # one zone: a per-user zone would mean the same invoice falling in two fiscal years
@@ -366,43 +366,43 @@ class Settings(BaseSettings):
     # which makes `true` the choice that cannot lose. If Gmail keeps the id, the lookup
     # is exact; if it replaces it, the lookup answers nothing and costs one request per
     # unresolved send. `false` only saves that request: it never changes a verdict, so it
-    # is not a remedy for delivered mail reported as `fallito`. The setting follows what
+    # is not a remedy for delivered mail reported as `failed`. The setting follows what
     # the note records (`tests/test_gmail_message_id_contract.py`).
     gmail_reconcile_by_message_id: bool = True
 
     # The three numbers that decide whether a reminder is legitimate, bearable and
     # finite. Each carries `ge`/`le` because they are plain integers that reach no
-    # service-level range check: a `solleciti_grace_days` of `0` would chase the day
+    # service-level range check: a `payment_reminders_grace_days` of `0` would chase the day
     # after the due date while the transfer is still in flight, and a
-    # `solleciti_min_interval_days` of `0` would remove the layer that stops the double
+    # `payment_reminders_min_interval_days` of `0` would remove the layer that stops the double
     # send hours apart. The upper bounds are not tidiness either -- an operator who typed
     # a year into the grace period would silently switch the feature off, and one who
     # typed 50 into the ceiling would have configured a persecution.
-    solleciti_grace_days: int = Field(default=7, ge=1, le=365)
-    solleciti_min_interval_days: int = Field(default=14, ge=1, le=365)
-    # 3 is also `MAX_SOLLECITO_LEVEL` in `gmail/solleciti_template.py`, which is where the
+    payment_reminders_grace_days: int = Field(default=7, ge=1, le=365)
+    payment_reminders_min_interval_days: int = Field(default=14, ge=1, le=365)
+    # 3 is also `MAX_PAYMENT_REMINDER_LEVEL` in `gmail/solleciti_template.py`, which is where the
     # wording stops escalating: above it a fourth register would have to be a legal
     # threat, which is not a sentence this project has standing to put in a freelancer's
     # name. The `le` therefore matches the template rather than being a round number.
-    solleciti_max_reminders: int = Field(default=3, ge=1, le=3)
+    payment_reminders_max_reminders: int = Field(default=3, ge=1, le=3)
 
     # The whole-practice, calendar-year concentration cap (§1.5, §3 and §5 item 2 of
     # docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md):
     # the maximum share of a calendar year's invoiced revenue any one customer should
-    # represent before `OperationalDashboard.segnali` flags it. A fraction in (0, 1],
-    # the same range `AnalyticsRepository.RevenueByCustomerRow.quota` already reports
+    # represent before `OperationalDashboard.signals` flags it. A fraction in (0, 1],
+    # the same range `AnalyticsRepository.RevenueByCustomerRow.share` already reports
     # in -- never a percentage, so the two compare directly with no conversion at the
     # call site. `gt=0.0` because a threshold of zero would flag every customer with
     # any revenue at all, which is not a preference, and `le=1.0` because a share
     # cannot exceed the whole.
     #
-    # 0.30 is a starting default, not a rule of law the way `soglia_bollo` is: a
+    # 0.30 is a starting default, not a rule of law the way `stamp_duty_threshold` is: a
     # freelance practice with one dominant client for a season is not wrong, only
     # worth naming. That is why this is a per-space `Settings` field an operator can
     # raise or lower exactly the way the three `solleciti_*` thresholds above already
     # are, rather than a column on `FiscalProfile` -- nothing here is a legal fact the
     # way the stamp-duty threshold is.
-    concentrazione_soglia_preferita: float = Field(default=0.30, gt=0.0, le=1.0)
+    preferred_concentration_threshold: float = Field(default=0.30, gt=0.0, le=1.0)
 
     @field_validator("jwt_secret")
     @classmethod

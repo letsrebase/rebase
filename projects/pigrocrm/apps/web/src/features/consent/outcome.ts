@@ -15,7 +15,7 @@ import { SLACK_OAUTH_START } from '@/features/slack/queries'
  * flow started, REB-222) and «Primi passi», where a consent that came back with no session
  * lands (REB-446).
  *
- * A lookup in a fixed table rather than rendering the parameter: `?esito=` arrives from
+ * A lookup in a fixed table rather than rendering the parameter: `?outcome=` arrives from
  * the address bar, and echoing it would let anybody who can get a link clicked put a
  * sentence of their choosing on the page. An unknown code renders nothing at all.
  *
@@ -29,66 +29,66 @@ export type ConsentProvider = 'gmail' | 'drive' | 'slack'
 interface ProviderOutcomes {
   /** Where «Riprova» leads after a session that ran out. */
   start: string
-  messages: Record<'collegato' | 'negato' | 'errore' | 'sessione', string>
+  messages: Record<'connected' | 'denied' | 'error' | 'session_expired', string>
 }
 
 const PROVIDERS: Record<ConsentProvider, ProviderOutcomes> = {
   gmail: {
     start: GMAIL_OAUTH_START,
     messages: {
-      collegato: 'Casella Google collegata.',
-      negato: 'Autorizzazione negata: la casella non è stata collegata.',
+      connected: 'Casella Google collegata.',
+      denied: 'Autorizzazione negata: la casella non è stata collegata.',
       // Deliberately says nothing about the cause. The panel below re-reads the account
       // and shows the true state -- which mailbox is connected, and the button that
       // disconnects it -- and that is more actionable than any sentence this table could
       // carry.
-      errore:
+      error:
         'Il collegamento non è andato a buon fine. Controlla qui sotto lo stato della ' +
         'casella e riprova.',
       // The browser came back from Google with no live session (REB-446): nothing was
       // redeemed, and the SPA's login has just brought the person to «Primi passi».
       // Followed by «Riprova», since starting again is the whole of what is left.
-      sessione:
+      session:
         'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.',
     },
   },
   drive: {
     start: DRIVE_OAUTH_START,
     messages: {
-      collegato: 'Google Drive collegato.',
-      negato: 'Autorizzazione negata: Drive non è stato collegato.',
-      errore:
+      connected: 'Google Drive collegato.',
+      denied: 'Autorizzazione negata: Drive non è stato collegato.',
+      error:
         'Il collegamento non è andato a buon fine. Controlla qui sotto lo stato di Drive e ' +
         'riprova.',
-      sessione: 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.',
+      session: 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.',
     },
   },
   slack: {
     start: SLACK_OAUTH_START,
     messages: {
-      collegato: 'Slack collegato.',
-      negato: 'Autorizzazione negata: Slack non è stato collegato.',
-      errore:
+      connected: 'Slack collegato.',
+      denied: 'Autorizzazione negata: Slack non è stato collegato.',
+      error:
         'Il collegamento non è andato a buon fine. Controlla qui sotto lo stato di Slack e riprova.',
-      sessione: 'La sessione è scaduta mentre eri su Slack, quindi Slack non è stato collegato.',
+      session: 'La sessione è scaduta mentre eri su Slack, quindi Slack non è stato collegato.',
     },
   },
 }
 
 /**
- * What a consent callback's `?esito=` says, as the two props of `ConsentOutcome`:
+ * What a consent callback's `?outcome=` says, as the two props of `ConsentOutcome`:
  * `messaggio` is the sentence (null for no code or an unknown one) and `riprova` where
  * «Riprova» leads, null for an outcome that offers none.
  */
 export function consentOutcome(
   provider: ConsentProvider,
   code: string | undefined,
-): { messaggio: string | null; riprova: string | null } {
+): { message: string | null; retry: string | null } {
   const { start, messages } = PROVIDERS[provider]
-  // An own property only: `?esito=__proto__` must read as no outcome, not as an object.
-  const messaggio =
+  // An own property only: `?outcome=__proto__` must read as no outcome, not as an object.
+  const message =
     code !== undefined && Object.hasOwn(messages, code)
       ? messages[code as keyof typeof messages]
       : null
-  return { messaggio, riprova: code === 'sessione' ? start : null }
+  return { message, retry: code === 'session_expired' ? start : null }
 }

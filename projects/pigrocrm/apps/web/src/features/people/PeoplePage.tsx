@@ -44,7 +44,7 @@ function CompanyFilter({
       ? 'Tutte le aziende'
       : company.isError
         ? 'Azienda non disponibile'
-        : (company.data?.ragione_sociale ?? 'Caricamento…')
+        : (company.data?.legal_name ?? 'Caricamento…')
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>

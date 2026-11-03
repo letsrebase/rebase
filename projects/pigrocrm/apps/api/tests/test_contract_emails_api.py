@@ -42,9 +42,9 @@ def _issued_invoice(logged_in: TestClient, api_session: Session, contract: dict[
             WorkUnit(
                 contract_id=UUID(contract["id"]),
                 data=day,
-                quantita=Decimal("1.00"),
-                descrizione="Giornata",
-                stato="lavorato",
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status="worked",
             )
         )
     api_session.flush()
@@ -81,7 +81,7 @@ def test_the_variables_a_template_may_name_are_listed(
         v["nome"]
         for v in logged_in.get(f"/api/contracts/{contract['id']}/email-template-variables").json()
     ]
-    assert "numero_fattura" in names and "emittente.ragione_sociale" in names
+    assert "invoice_number" in names and "emittente.ragione_sociale" in names
 
 
 def test_preview_then_draft_with_both_files_attached(
@@ -96,14 +96,14 @@ def test_preview_then_draft_with_both_files_attached(
     body = preview.json()
     assert body["subject"].startswith("Fattura 20")
     assert "Acme S.r.l." in body["body"] and "07/10/2026 - 08/10/2026" in body["body"]
-    assert [a["tipo"] for a in body["allegati"]] == ["fattura_pdf", "registro_pdf"]
+    assert [a["type"] for a in body["attachments"]] == ["invoice_pdf", "register_pdf"]
 
     draft = logged_in.post(
         f"/api/contracts/{contract['id']}/email/draft",
         json={**request, "to_addresses": ["cliente@example.test"]},
     )
     assert draft.status_code == 201, draft.text
-    assert draft.json()["send_state"] == "bozza"
+    assert draft.json()["send_state"] == "draft"
     assert len(draft.json()["attachment_version_ids"]) == 2
     assert draft.json()["subject"] == body["subject"]
 
@@ -116,9 +116,9 @@ def test_a_draft_invoice_cannot_be_previewed(
         WorkUnit(
             contract_id=UUID(contract["id"]),
             data=date(2026, 10, 7),
-            quantita=Decimal("1.00"),
-            descrizione="Giornata",
-            stato="lavorato",
+            quantity=Decimal("1.00"),
+            description="Giornata",
+            status="worked",
         )
     )
     api_session.flush()
@@ -140,7 +140,7 @@ def test_a_reader_cannot_save_a_template(
             "email": "lettore@pigro.it",
             "password": "supersegreta1",
             "nome": "L",
-            "ruolo": "readonly",
+            "role": "readonly",
         },
     )
     reader = TestClient(logged_in.app, base_url="https://testserver")
@@ -151,6 +151,6 @@ def test_a_reader_cannot_save_a_template(
         == 200
     )
     response = reader.post(
-        f"/api/contracts/{contract['id']}/{path}", json={"nome": "x", "oggetto": "x", "corpo": "y"}
+        f"/api/contracts/{contract['id']}/{path}", json={"nome": "x", "subject": "x", "body": "y"}
     )
     assert response.status_code == 403, response.text

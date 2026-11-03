@@ -44,9 +44,9 @@ export function UsersPanel() {
   const [inviting, setInviting] = useState(false)
   const [renameOf, setRenameOf] = useState<UserRecord | null>(null)
   const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
-  const azienda = useLegalEntity()
-  const several = azienda.aziende.length > 1
-  const byId = (id: string) => azienda.byId(id)
+  const legal_entity = useLegalEntity()
+  const several = legal_entity.legal_entities.length > 1
+  const byId = (id: string) => legal_entity.byId(id)
 
   const users = useUsers()
   const invites = usePendingInvites()
@@ -59,15 +59,15 @@ export function UsersPanel() {
   // «nessuna azienda attiva» and widens them back.
   const showScope =
     several ||
-    (users.data ?? []).some((u) => Array.isArray(u.aziende)) ||
-    (invites.data ?? []).some((i) => Array.isArray(i.aziende))
+    (users.data ?? []).some((u) => Array.isArray(u.legal_entities)) ||
+    (invites.data ?? []).some((i) => Array.isArray(i.legal_entities))
 
   const columns: ColumnDef<DataTableFeatures, UserRecord>[] = [
     { header: 'Nome', accessorKey: 'nome' },
     { header: 'Email', accessorKey: 'email' },
     {
       header: 'Ruolo',
-      id: 'ruolo',
+      id: 'role',
       cell: (info) => {
         const user = info.row.original
         // Disabled for your own row: nothing server-side stops the last
@@ -78,11 +78,11 @@ export function UsersPanel() {
         const isSelf = user.id === currentUser?.id
         return (
           <Select
-            value={user.ruolo}
+            value={user.role}
             disabled={isSelf || update.isPending}
             onValueChange={(value) =>
               update.mutate(
-                { userId: user.id, body: { ruolo: value } },
+                { userId: user.id, body: { role: value } },
                 {
                   onSuccess: () => toast.success('Ruolo aggiornato'),
                   onError: (error) => toast.error(toProblem(error).detail),
@@ -112,20 +112,20 @@ export function UsersPanel() {
       ? [
           {
             header: 'Aziende',
-            id: 'aziende',
-            cell: (info) => scopeLabel(info.row.original.aziende, byId),
+            id: 'legal_entities',
+            cell: (info) => scopeLabel(info.row.original.legal_entities, byId),
           } satisfies ColumnDef<DataTableFeatures, UserRecord>,
         ]
       : []),
     {
       header: 'Stato',
-      id: 'attivo',
+      id: 'active',
       // The same pill every state in the product goes through (design spec §4). `ink`
       // for the settled, ordinary state and `muted` for one that claims nothing: a
       // deactivated account is not an error, so it is not `danger`.
       cell: (info) => (
-        <StatusPill tone={info.row.original.attivo ? 'ink' : 'muted'}>
-          {info.row.original.attivo ? 'Attivo' : 'Disattivato'}
+        <StatusPill tone={info.row.original.active ? 'ink' : 'muted'}>
+          {info.row.original.active ? 'Attivo' : 'Disattivato'}
         </StatusPill>
       ),
     },
@@ -170,14 +170,14 @@ export function UsersPanel() {
                   ]
                 : []),
               {
-                label: user.attivo ? 'Disattiva' : 'Riattiva',
-                disabled: update.isPending || (user.attivo && isSelf),
+                label: user.active ? 'Disattiva' : 'Riattiva',
+                disabled: update.isPending || (user.active && isSelf),
                 onSelect: () =>
                   update.mutate(
-                    { userId: user.id, body: { attivo: !user.attivo } },
+                    { userId: user.id, body: { active: !user.active } },
                     {
                       onSuccess: () =>
-                        toast.success(user.attivo ? 'Utente disattivato' : 'Utente riattivato'),
+                        toast.success(user.active ? 'Utente disattivato' : 'Utente riattivato'),
                       onError: (error) => toast.error(toProblem(error).detail),
                     },
                   ),
@@ -200,15 +200,15 @@ export function UsersPanel() {
     { header: 'Email', accessorKey: 'email' },
     {
       header: 'Ruolo',
-      accessorKey: 'ruolo',
-      cell: (info) => roleLabel(info.row.original.ruolo),
+      accessorKey: 'role',
+      cell: (info) => roleLabel(info.row.original.role),
     },
     ...(showScope
       ? [
           {
             header: 'Aziende',
-            id: 'aziende',
-            cell: (info) => scopeLabel(info.row.original.aziende, byId),
+            id: 'legal_entities',
+            cell: (info) => scopeLabel(info.row.original.legal_entities, byId),
           } satisfies ColumnDef<DataTableFeatures, InvitationRecord>,
         ]
       : []),
@@ -232,7 +232,7 @@ export function UsersPanel() {
     },
     {
       header: 'Scadenza',
-      id: 'scadenza',
+      id: 'due_date',
       cell: (info) => shortDateTime.format(new Date(info.row.original.expires_at)),
     },
     {

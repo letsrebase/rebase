@@ -22,14 +22,14 @@ import { useLegalEntities, type LegalEntityRecord } from './queries'
  * moment the list has two.
  */
 export function LegalEntitiesPanel() {
-  const aziende = useLegalEntities()
+  const legal_entities = useLegalEntities()
   const [selected, setSelected] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
-  if (aziende.isError) return <QueryErrorBanner error={aziende.error} />
-  if (aziende.isLoading || !aziende.data) return <Skeleton className="h-64 w-full" />
+  if (legal_entities.isError) return <QueryErrorBanner error={legal_entities.error} />
+  if (legal_entities.isLoading || !legal_entities.data) return <Skeleton className="h-64 w-full" />
 
-  const list = aziende.data
+  const list = legal_entities.data
   // The default first, which `GET /api/aziende` already guarantees; a selection that
   // no longer names a listed azienda (deactivated meanwhile) falls back to it.
   const current = list.find((a) => a.id === selected) ?? list[0] ?? null
@@ -67,8 +67,8 @@ export function LegalEntitiesPanel() {
           Nuova azienda
         </Button>
       </div>
-      <LegalEntityPanel azienda={current} />
-      <FiscalPanel aziendaId={current.id} />
+      <LegalEntityPanel legal_entity={current} />
+      <FiscalPanel legalEntityId={current.id} />
     </div>
   )
 }
@@ -84,17 +84,17 @@ function LegalEntityPicker({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Aziende">
-      {list.map((azienda) => (
+      {list.map((legal_entity) => (
         <Button
-          key={azienda.id}
+          key={legal_entity.id}
           role="tab"
-          aria-selected={azienda.id === current.id}
-          variant={azienda.id === current.id ? 'default' : 'outline'}
+          aria-selected={legal_entity.id === current.id}
+          variant={legal_entity.id === current.id ? 'default' : 'outline'}
           size="sm"
-          onClick={() => onPick(azienda.id)}
+          onClick={() => onPick(legal_entity.id)}
         >
-          {azienda.nome}
-          {azienda.predefinita ? (
+          {legal_entity.nome}
+          {legal_entity.predefinita ? (
             <Badge variant="secondary" className="ml-2">
               predefinita
             </Badge>

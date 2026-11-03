@@ -74,9 +74,9 @@ def _build_tree() -> tuple[FakeDrive, dict[str, str]]:
     entirely -- so that "children of `Offerte` are exactly `a.pdf` and `sub`" is not
     accidentally true only because nothing else was ever added to the drive."""
     drive = FakeDrive()
-    offerte = drive.add_folder("Offerte", parent=drive.root_id)
-    a_pdf = drive.add_file("a.pdf", parent=offerte, mime="application/pdf", content=b"%PDF-a\n")
-    sub = drive.add_folder("sub", parent=offerte)
+    offers = drive.add_folder("Offerte", parent=drive.root_id)
+    a_pdf = drive.add_file("a.pdf", parent=offers, mime="application/pdf", content=b"%PDF-a\n")
+    sub = drive.add_folder("sub", parent=offers)
     b_docx = drive.add_file(
         "b.docx",
         parent=sub,
@@ -89,7 +89,7 @@ def _build_tree() -> tuple[FakeDrive, dict[str, str]]:
         mime=GOOGLE_DOC_MIME,
         content=b"Testo del preventivo, in chiaro.",
     )
-    return drive, {"offerte": offerte, "a_pdf": a_pdf, "sub": sub, "b_docx": b_docx, "doc": doc}
+    return drive, {"offerte": offers, "a_pdf": a_pdf, "sub": sub, "b_docx": b_docx, "doc": doc}
 
 
 def test_lists_the_children_of_a_folder() -> None:

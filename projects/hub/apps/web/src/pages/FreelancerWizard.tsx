@@ -12,12 +12,12 @@ import { screensFromFields, Wizard, type Field } from '@/wizard/Wizard'
 
 const EMPTY: FreelancerApplication = {
   nome: '',
-  cognome: '',
+  last_name: '',
   email: '',
   linkedin_url: '',
-  tariffa_giornaliera: '',
+  daily_rate: '',
   posizione: '',
-  remoto: '',
+  remote: '',
   links: [],
   cv: null,
 }
@@ -42,17 +42,17 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
         />
         <TextField
           aria-label="Cognome"
-          aria-invalid={!!error && !value.cognome.trim()}
+          aria-invalid={!!error && !value.last_name.trim()}
           aria-describedby={error ? errorId : undefined}
           placeholder="Cognome"
-          value={value.cognome}
-          onChange={(cognome) => set({ cognome })}
+          value={value.last_name}
+          onChange={(last_name) => set({ last_name })}
         />
       </div>
     ),
     validate: (value) =>
-      value.nome.trim() && value.cognome.trim() ? null : 'Servono nome e cognome.',
-    summary: (value) => `${value.nome.trim()} ${value.cognome.trim()}`.trim(),
+      value.nome.trim() && value.last_name.trim() ? null : 'Servono nome e cognome.',
+    summary: (value) => `${value.nome.trim()} ${value.last_name.trim()}`.trim(),
   },
   {
     id: 'email',
@@ -128,7 +128,7 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
     label: 'Il tuo CV',
     // Optional since the wizard started turning away people who did not have a PDF to
     // hand: the card is stored without one, the area they land in asks for it again,
-    // and `completa` on the admin side already says which cards are missing it.
+    // and `complete` on the admin side already says which cards are missing it.
     optional: true,
     hint: 'Il CV conta: lo leggiamo per scrivere la tua scheda anonima, quella con cui ti proponiamo alle aziende. Più è completo e aggiornato (ruoli, progetti, date, tecnologie), più è facile proporti per il progetto giusto.',
     render: ({ value, set, error, errorId }) => (
@@ -155,7 +155,7 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
     summary: (value) => value.cv?.name ?? '',
   },
   {
-    id: 'tariffa_giornaliera',
+    id: 'daily_rate',
     label: 'Quanto costa una tua giornata?',
     hint: 'In euro, IVA esclusa. Una cifra indicativa: serve a proporti i progetti giusti.',
     render: ({ value, set, autoFocus, error, errorId }) => (
@@ -166,20 +166,20 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
           aria-describedby={error ? errorId : undefined}
           inputMode="decimal"
           placeholder="450"
-          value={value.tariffa_giornaliera}
-          onChange={(tariffa_giornaliera) => set({ tariffa_giornaliera })}
+          value={value.daily_rate}
+          onChange={(daily_rate) => set({ daily_rate })}
           autoFocus={autoFocus}
         />
         <span className="text-lg text-muted-foreground">€ / giorno</span>
       </div>
     ),
     validate: (value) => {
-      const number = euroAmount(value.tariffa_giornaliera)
+      const number = euroAmount(value.daily_rate)
       return Number.isFinite(number) && number >= 1 && number <= 99999
         ? null
         : AMOUNT_PROBLEM
     },
-    summary: (value) => (value.tariffa_giornaliera ? `${value.tariffa_giornaliera} € / giorno` : ''),
+    summary: (value) => (value.daily_rate ? `${value.daily_rate} € / giorno` : ''),
   },
   {
     id: 'posizione',
@@ -200,24 +200,24 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
     summary: (value) => value.posizione.trim(),
   },
   {
-    id: 'remoto',
+    id: 'remote',
     label: 'Come preferisci lavorare?',
     render: ({ value, set, error, errorId }) => (
       <ChoiceField
-        value={value.remoto}
-        onChange={(remoto) => set({ remoto })}
+        value={value.remote}
+        onChange={(remote) => set({ remote })}
         invalid={!!error}
         describedBy={error ? errorId : undefined}
         options={[
-          { value: 'remoto', label: 'Da remoto', hint: 'Ovunque, con le call che servono.' },
-          { value: 'ibrido', label: 'Ibrido', hint: 'Qualche giorno in sede va bene.' },
-          { value: 'in_sede', label: 'In sede', hint: 'Preferisco essere dal cliente.' },
+          { value: 'remote', label: 'Da remoto', hint: 'Ovunque, con le call che servono.' },
+          { value: 'hybrid', label: 'Ibrido', hint: 'Qualche giorno in sede va bene.' },
+          { value: 'on_site', label: 'In sede', hint: 'Preferisco essere dal cliente.' },
         ]}
       />
     ),
-    validate: (value) => (value.remoto ? null : 'Scegli una delle tre.'),
+    validate: (value) => (value.remote ? null : 'Scegli una delle tre.'),
     summary: (value) =>
-      ({ remoto: 'Da remoto', ibrido: 'Ibrido', in_sede: 'In sede', '': '' })[value.remoto],
+      ({ remote: 'Da remoto', hybrid: 'Ibrido', on_site: 'In sede', '': '' })[value.remote],
   },
   {
     id: 'links',
@@ -349,7 +349,7 @@ export function FreelancerWizard() {
     setSubmitError(null)
     try {
       await applyAsFreelancer(
-        { ...value, tariffa_giornaliera: sentAmount(value.tariffa_giornaliera) },
+        { ...value, daily_rate: sentAmount(value.daily_rate) },
         resolveAttribution(searchStr),
         distinctId(),
         resolveReferral(searchStr),
@@ -357,7 +357,7 @@ export function FreelancerWizard() {
       sent.current = true
       clearDraft(FREELANCER_DRAFT_KEY)
       analytics.completed()
-      void navigate({ to: '/thanks', search: { chi: 'freelance' } })
+      void navigate({ to: '/thanks', search: { who: 'freelance' } })
     } catch (error) {
       const failure = error instanceof ApiError ? error : null
       setSubmitError({

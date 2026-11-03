@@ -48,6 +48,6 @@ def resend_webhook(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_body") from None
     if not isinstance(event, dict):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_body")
-    if apply_event(session, event) == "da_riprovare":
+    if apply_event(session, event) == "retry":
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "retry")
     return Ack()

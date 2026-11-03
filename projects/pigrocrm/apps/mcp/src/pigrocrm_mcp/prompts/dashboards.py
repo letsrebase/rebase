@@ -12,7 +12,7 @@ whereas here the human picks it and can see what was attached.
 The context travels as **Markdown text inside the message**. It is a resource block only
 where the resource already exists, which in this slice means `customer://{id}` and therefore
 only `prompts/customer.py`. §11.1 adds no new resource, and inventing
-`dashboard://commerciale?da=...` in order to have a URI to embed would be adding one without
+`dashboard://commercial?da=...` in order to have a URI to embed would be adding one without
 saying so.
 
 **Every figure rendered here is a field of a dashboard response, printed.** Nothing in this
@@ -32,7 +32,7 @@ from decimal import Decimal
 from typing import Any
 
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.dashboard.schemas import PeriodoQuery
+from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds
 from pigrocrm.core.deals.service import DealService
@@ -66,8 +66,8 @@ def _percent(value: Decimal | None) -> str:
 
     Zero per cent means "I lost everything"; `None` means nothing closed, or nothing was
     earned. Two different facts, and a briefing that conflates them is worse than one that
-    omits the line -- the same rule `PnlTotals.margine_percentuale` and
-    `ClosedInPeriod.tasso_conversione` are both typed `Decimal | None` to express.
+    omits the line -- the same rule `PnlTotals.percentage_margin` and
+    `ClosedInPeriod.conversion_rate` are both typed `Decimal | None` to express.
     """
     return "—" if value is None else f"{str(value).replace('.', ',')}%"
 
@@ -83,24 +83,24 @@ def _and_the_rest(shown: int, total: int) -> list[str]:
     return ["", f"_Altre {total - shown} righe non mostrate._"]
 
 
-def revisione_pipeline(
+def review_pipeline(
     context: McpContext, da: str | None = None, a: str | None = None
 ) -> list[dict[str, Any]]:
     """The weekly review. Posture: ask about the deals that have not moved.
 
-    The pending offers come from `board.offerte_in_attesa` rather than from a second call to
+    The pending offers come from `board.offers_pending` rather than from a second call to
     `DocumentRepository.pending_offers`: the dashboard already read them inside its one
     `REPEATABLE READ` transaction, and a second read here would be a second instant -- a
     briefing whose list and whose count could disagree with each other by construction.
     """
-    query = PeriodoQuery(
+    query = PeriodQuery(
         da=date.fromisoformat(da) if da else None,
         a=date.fromisoformat(a) if a else None,
     )
     board = DashboardService(context.session).get_commercial_dashboard(query, context.actor)
 
     lines = [
-        f"# Revisione pipeline — {board.periodo.da} → {board.periodo.a}",
+        f"# Revisione pipeline — {board.period.da} → {board.period.a}",
         "",
         "## Pipeline per stato",
         "",
@@ -109,8 +109,8 @@ def revisione_pipeline(
     ]
     for row in board.pipeline:
         lines.append(
-            f"| {row.stage_nome} | {row.numero} | {_euro(row.valore_totale)} "
-            f"| {row.senza_valore} | {_euro(row.valore_ponderato)} |"
+            f"| {row.stage_name} | {row.number} | {_euro(row.total_value)} "
+            f"| {row.without_value} | {_euro(row.weighted_value)} |"
         )
     lines += [
         "",
@@ -123,34 +123,32 @@ def revisione_pipeline(
         "",
         "## Chiusure nel periodo",
         "",
-        f"- Vinti: {board.chiusure.vinti}",
-        f"- Persi: {board.chiusure.persi}",
-        f"- Tasso di conversione: {_percent(board.chiusure.tasso_conversione)}",
+        f"- Vinti: {board.closings.won}",
+        f"- Persi: {board.closings.lost}",
+        f"- Tasso di conversione: {_percent(board.closings.conversion_rate)}",
         f"- Valore vinto (dichiarato dai deal, **non** fatturato): "
-        f"{_euro(board.chiusure.valore_vinto)}",
-        f"- Chiusure attese nei 30 giorni successivi al periodo: "
-        f"{board.chiusure_previste_30_giorni}",
+        f"{_euro(board.closings.won_value)}",
+        f"- Chiusure attese nei 30 giorni successivi al periodo: {board.expected_closings_30_days}",
     ]
-    if board.chiusure_non_attribuibili:
+    if board.closings_not_attributable:
         lines.append(
-            f"- {board.chiusure_non_attribuibili} deal chiusi prima dell'introduzione di "
+            f"- {board.closings_not_attributable} deal chiusi prima dell'introduzione di "
             "questa misura non sono attribuibili a un periodo e non sono nei numeri sopra."
         )
     lines += ["", "## Offerte inviate in attesa di risposta", ""]
-    offers = board.offerte_in_attesa[:PENDING_OFFERS_SHOWN]
+    offers = board.offers_pending[:PENDING_OFFERS_SHOWN]
     if not offers:
         lines.append("Nessuna offerta in attesa.")
     else:
         for offer in offers:
-            # `None` days is not zero days: an offer whose `stato_dal` was never recorded is
+            # `None` days is not zero days: an offer whose `status_since` was never recorded is
             # of unknown age, and "ferma da 0 giorni" would read as "sent today".
-            age = "data ignota" if offer.giorni is None else f"{offer.giorni} giorni"
-            lines.append(f"- {offer.titolo} — ferma da {age}")
-        lines += _and_the_rest(len(offers), board.offerte_in_attesa_totale)
+            age = "data ignota" if offer.days is None else f"{offer.days} giorni"
+            lines.append(f"- {offer.title} — ferma da {age}")
+        lines += _and_the_rest(len(offers), board.offers_pending_total)
     lines += [
         "",
-        f"Segnale: {board.offerte_accettate_deal_non_vinto} offerte accettate il cui deal "
-        "non è vinto.",
+        f"Segnale: {board.accepted_offers_deal_not_won} offerte accettate il cui deal non è vinto.",
         "",
         "---",
         "",
@@ -163,59 +161,59 @@ def revisione_pipeline(
     return [_user("\n".join(lines))]
 
 
-def chiusura_mese(context: McpContext, anno: int, mese: int) -> list[dict[str, Any]]:
+def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, Any]]:
     """The list of things to do before closing a month. **No fiscal figure** (§10.1).
 
-    `month_bounds` refuses a month outside 1-12 with a `ValidationFailed` naming `mese`,
+    `month_bounds` refuses a month outside 1-12 with a `ValidationFailed` naming `month`,
     which the server's guard renders as guidance. Validating it here as well would be a
     second rule that agrees with the first until one of them is edited.
     """
-    da, a = month_bounds(anno, mese)
+    da, a = month_bounds(year, month)
     service = DashboardService(context.session)
-    economic = service.get_economic_dashboard(PeriodoQuery(da=da, a=a), context.actor)
+    economic = service.get_economic_dashboard(PeriodQuery(da=da, a=a), context.actor)
     backlog = AnalyticsService(context.session).unbilled_backlog(context.actor)
 
     pnl = economic.pnl
     lines = [
-        f"# Chiusura mese — {anno}-{mese:02d}",
+        f"# Chiusura mese — {year}-{month:02d}",
         "",
         "## Conto economico del periodo",
         "",
         "| Voce | Deal chiusi | Deal in corso |",
         "|---|---|---|",
-        f"| Ricavi (imponibile, emesso) | {_euro(pnl.chiusi.ricavi)} "
-        f"| {_euro(pnl.in_corso.ricavi)} |",
-        f"| Costi diretti | {_euro(pnl.chiusi.costi_diretti)} "
-        f"| {_euro(pnl.in_corso.costi_diretti)} |",
-        f"| Costo del lavoro | {_euro(pnl.chiusi.costo_lavoro)} "
-        f"| {_euro(pnl.in_corso.costo_lavoro)} |",
-        f"| Margine lordo | {_euro(pnl.chiusi.margine_lordo)} "
-        f"| {_euro(pnl.in_corso.margine_lordo)} |",
-        f"| Margine % | {_percent(pnl.chiusi.margine_percentuale)} "
-        f"| {_percent(pnl.in_corso.margine_percentuale)} |",
+        f"| Ricavi (imponibile, emesso) | {_euro(pnl.closed.revenue)} "
+        f"| {_euro(pnl.in_progress.revenue)} |",
+        f"| Costi diretti | {_euro(pnl.closed.direct_costs)} "
+        f"| {_euro(pnl.in_progress.direct_costs)} |",
+        f"| Costo del lavoro | {_euro(pnl.closed.work_cost)} "
+        f"| {_euro(pnl.in_progress.work_cost)} |",
+        f"| Margine lordo | {_euro(pnl.closed.gross_margin)} "
+        f"| {_euro(pnl.in_progress.gross_margin)} |",
+        f"| Margine % | {_percent(pnl.closed.percentage_margin)} "
+        f"| {_percent(pnl.in_progress.percentage_margin)} |",
         "",
         "La cifra riportabile è la colonna **deal chiusi**. Le due colonne non si sommano: "
         "il margine di un lavoro finito e quello di uno a metà non sono la stessa cosa.",
         "",
-        f"Spese generali del periodo: {_euro(pnl.spese_generali)} — **non ripartite** "
+        f"Spese generali del periodo: {_euro(pnl.general_expenses)} — **non ripartite** "
         "su nessun deal.",
         "",
         "## Da chiudere prima della chiusura",
         "",
         f"- Ore fatturabili non fatturate **nel periodo**: "
-        f"{pnl.ore_fatturabili_non_fatturate} ore, valore maturato "
-        f"{_euro(pnl.valore_maturato)}",
-        f"- Voci senza tariffa nel periodo: {pnl.ore_senza_tariffa}",
+        f"{pnl.billable_uninvoiced_hours} ore, valore maturato "
+        f"{_euro(pnl.accrued_value)}",
+        f"- Voci senza tariffa nel periodo: {pnl.hours_without_rate}",
         f"- Arretrato **in totale** (senza periodo): "
-        f"{backlog.ore_fatturabili_non_fatturate} ore, "
-        f"{_euro(backlog.valore_maturato)}, di cui {backlog.voci_senza_tariffa} voci senza "
+        f"{backlog.billable_uninvoiced_hours} ore, "
+        f"{_euro(backlog.accrued_value)}, di cui {backlog.entries_without_rate} voci senza "
         "tariffa",
-        f"- Fatture emesse nel periodo: {economic.fatture_emesse}",
-        f"- Da incassare (totale con IVA, senza periodo): {_euro(economic.da_incassare)}",
-        f"- Di cui **scaduto**: {_euro(economic.scaduto)}",
+        f"- Fatture emesse nel periodo: {economic.issued_invoices}",
+        f"- Da incassare (totale con IVA, senza periodo): {_euro(economic.unpaid)}",
+        f"- Di cui **scaduto**: {_euro(economic.expired)}",
         "",
-        f"Periodo chiuso: {'sì' if pnl.periodo_chiuso else 'no'}. "
-        f"Voci scritte in ritardo: {pnl.voci_scritte_in_ritardo}.",
+        f"Periodo chiuso: {'sì' if pnl.closed_period else 'no'}. "
+        f"Voci scritte in ritardo: {pnl.written_entries_overdue}.",
         "",
         "---",
         "",
@@ -229,25 +227,25 @@ def chiusura_mese(context: McpContext, anno: int, mese: int) -> list[dict[str, A
     return [_user("\n".join(lines))]
 
 
-def ore_da_registrare(context: McpContext, settimana: str | None = None) -> list[dict[str, Any]]:
+def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str, Any]]:
     """The most useful prompt in the product (§10): it attacks "I never entered Tuesday".
 
-    `settimana` is accepted and refused for anything but the current week rather than
+    `week` is accepted and refused for anything but the current week rather than
     silently ignored: `get_operational_dashboard` is the current week by construction (§6),
     and an argument the prompt advertised and answered with a different week's figures would
     be worse than one it does not have -- the caller would believe it worked.
 
-    `giorni_senza_ore` is the field, not a set difference computed here. The service already
+    `days_without_hours` is the field, not a set difference computed here. The service already
     knows which days have no *entry*, which is not the same statement as "these hours sum to
-    zero", and re-deriving it from `giorni` would silently pick the second reading.
+    zero", and re-deriving it from `days` would silently pick the second reading.
     """
     board = DashboardService(context.session).get_operational_dashboard(context.actor)
-    week = board.settimana
-    if settimana is not None and settimana != week.da.isoformat():
+    week = board.week
+    if week is not None and week != week.da.isoformat():
         return [
             _user(
                 f"La dashboard operativa copre solo la settimana corrente "
-                f"({week.da} → {week.a}); la settimana richiesta ({settimana}) non è "
+                f"({week.da} → {week.a}); la settimana richiesta ({week}) non è "
                 "disponibile. Per le ore di una settimana passata usa il rapporto ore."
             )
         ]
@@ -258,12 +256,12 @@ def ore_da_registrare(context: McpContext, settimana: str | None = None) -> list
         "| Giorno | Ore |",
         "|---|---|",
     ]
-    for day in week.giorni:
-        lines.append(f"| {day.giorno} | {day.ore} |")
-    lines += ["", f"Totale settimana: {week.ore_totali} ore.", ""]
-    if week.giorni_senza_ore:
+    for day in week.days:
+        lines.append(f"| {day.day} | {day.hours} |")
+    lines += ["", f"Totale settimana: {week.total_hours} ore.", ""]
+    if week.days_without_hours:
         lines.append("**Giorni senza nessuna ora registrata:**")
-        lines += [f"- {day}" for day in week.giorni_senza_ore]
+        lines += [f"- {day}" for day in week.days_without_hours]
     else:
         lines.append("Nessun giorno scoperto: la settimana è completa.")
 
@@ -271,7 +269,7 @@ def ore_da_registrare(context: McpContext, settimana: str | None = None) -> list
     # Names, not identifiers: a list of UUIDs is a section nobody can answer from. The feed
     # carries fifty rows and can name the same deal many times, so the names are resolved in
     # one batch, deduplicated in feed order and capped.
-    feed = [a.entity_id for a in board.attivita_recenti if a.entity_type == "deal"]
+    feed = [a.entity_id for a in board.recent_task if a.entity_type == "deal"]
     deals = DealService(context.session).get_many(set(feed), context.actor)
     seen: list[str] = []
     for deal_id in feed:

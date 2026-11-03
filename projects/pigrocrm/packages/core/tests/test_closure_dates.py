@@ -2,8 +2,8 @@
 
 `Date`, not `timestamptz`, against slice 1 §5's general convention and for slice 3 §6.2's
 precise reason: a date that decides which period a figure falls in is not an instant. All
-of this slice's period filters land on `Date` columns -- `invoices.data_emissione`,
-`costs.data`, `time_entries.data`, `chiuso_il` -- and no mixed comparison exists anywhere.
+of this slice's period filters land on `Date` columns -- `invoices.issue_date`,
+`costs.date`, `time_entries.date`, `closed_at` -- and no mixed comparison exists anywhere.
 
 Two of the tests below freeze `orologio.ISTANTE` rather than comparing against
 `today_local()`. Comparing against `today_local()` is what the brief asked for and it
@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from orologio import OGGI_DEL_PROCESSO, OGGI_IN_ITALIA, congela
+from orologio import TODAY_IN_ITALY, TODAY_OF_PROCESSO, congela
 from sqlalchemy import Date, DateTime
 from sqlalchemy.orm import Session
 
@@ -59,14 +59,14 @@ def document_service(db_session: Session, tmp_path: Path) -> DocumentService:
 
 
 def _deal(db_session: Session, stage_id: object) -> Deal:
-    customer = Customer(ragione_sociale="Cliente Srl", nazione="IT", custom_fields={})
+    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
         nome="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stage_id,
-        probabilita=50,
+        probability=50,
         custom_fields={},
     )
     db_session.add(deal)
@@ -75,11 +75,11 @@ def _deal(db_session: Session, stage_id: object) -> Deal:
 
 
 def _offer(service: DocumentService, db_session: Session) -> DocumentRead:
-    customer = Customer(ragione_sociale="Cliente Offerta Srl", nazione="IT", custom_fields={})
+    customer = Customer(legal_name="Cliente Offerta Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     return service.create(
-        DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="Offerta 2026-01"), ADMIN
+        DocumentCreate(customer_id=customer.id, type="offer", title="Offerta 2026-01"), ADMIN
     )
 
 
@@ -87,7 +87,7 @@ def test_a_new_deal_has_no_closure_date(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
     deal = _deal(db_session, stages["lead"].id)
-    assert deal.chiuso_il is None
+    assert deal.closed_at is None
 
 
 def test_moving_to_a_won_stage_stamps_the_local_day(
@@ -96,7 +96,7 @@ def test_moving_to_a_won_stage_stamps_the_local_day(
     deal = _deal(db_session, stages["lead"].id)
     DealService(db_session).move_stage(deal.id, stages["vinto"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il == today_local()
+    assert deal.closed_at == today_local()
 
 
 def test_moving_to_a_lost_stage_also_stamps_it(
@@ -107,7 +107,7 @@ def test_moving_to_a_lost_stage_also_stamps_it(
     deal = _deal(db_session, stages["lead"].id)
     DealService(db_session).move_stage(deal.id, stages["perso"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il == today_local()
+    assert deal.closed_at == today_local()
 
 
 def test_the_stamped_day_is_italys_own_and_not_the_processs(
@@ -127,8 +127,8 @@ def test_the_stamped_day_is_italys_own_and_not_the_processs(
     deal = _deal(db_session, stages["lead"].id)
     DealService(db_session).move_stage(deal.id, stages["vinto"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il == OGGI_IN_ITALIA
-    assert deal.chiuso_il != OGGI_DEL_PROCESSO
+    assert deal.closed_at == TODAY_IN_ITALY
+    assert deal.closed_at != TODAY_OF_PROCESSO
 
 
 def test_reopening_a_deal_clears_the_closure_date(
@@ -141,16 +141,16 @@ def test_reopening_a_deal_clears_the_closure_date(
     service.move_stage(deal.id, stages["vinto"].id, ADMIN)
     service.move_stage(deal.id, stages["negoziazione"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il is None
+    assert deal.closed_at is None
 
 
 def test_moving_between_two_open_stages_never_stamps_it(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
     deal = _deal(db_session, stages["lead"].id)
-    DealService(db_session).move_stage(deal.id, stages["offerta"].id, ADMIN)
+    DealService(db_session).move_stage(deal.id, stages["offer"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il is None
+    assert deal.closed_at is None
 
 
 def test_moving_from_won_to_lost_keeps_the_original_closure_date(
@@ -162,20 +162,20 @@ def test_moving_from_won_to_lost_keeps_the_original_closure_date(
     deal = _deal(db_session, stages["lead"].id)
     service.move_stage(deal.id, stages["vinto"].id, ADMIN)
     db_session.refresh(deal)
-    original = deal.chiuso_il
-    deal.chiuso_il = date(2026, 1, 15)  # simulate a closure recorded earlier
+    original = deal.closed_at
+    deal.closed_at = date(2026, 1, 15)  # simulate a closure recorded earlier
     db_session.flush()
 
     service.move_stage(deal.id, stages["perso"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il == date(2026, 1, 15), original
+    assert deal.closed_at == date(2026, 1, 15), original
 
 
 def test_reopening_then_closing_again_stamps_the_new_day(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
     """The three cases compose. A deal that was won, reopened and won again closed on the
-    second day, not the first -- otherwise `chiuso_il` would be a "first ever closed on"
+    second day, not the first -- otherwise `closed_at` would be a "first ever closed on"
     column, and the conversion rate for the month the deal actually landed in would miss
     it. Distinguishes clearing from a mere `if target.tipo == 'open': pass`.
     """
@@ -183,79 +183,79 @@ def test_reopening_then_closing_again_stamps_the_new_day(
     deal = _deal(db_session, stages["lead"].id)
     service.move_stage(deal.id, stages["vinto"].id, ADMIN)
     db_session.refresh(deal)
-    deal.chiuso_il = date(2026, 1, 15)
+    deal.closed_at = date(2026, 1, 15)
     db_session.flush()
 
     service.move_stage(deal.id, stages["negoziazione"].id, ADMIN)
     service.move_stage(deal.id, stages["vinto"].id, ADMIN)
     db_session.refresh(deal)
-    assert deal.chiuso_il == today_local()
+    assert deal.closed_at == today_local()
 
 
-def test_chiuso_il_is_exposed_on_the_read_schema(
+def test_closed_at_is_exposed_on_the_read_schema(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
     deal = _deal(db_session, stages["lead"].id)
     read = DealService(db_session).move_stage(deal.id, stages["vinto"].id, ADMIN)
-    assert read.chiuso_il == today_local()
+    assert read.closed_at == today_local()
 
 
-def test_chiuso_il_is_on_no_write_schema() -> None:
-    """Derived, never claimed. `DealUpdate.chiuso_il` would let a caller assert a closure
+def test_closed_at_is_on_no_write_schema() -> None:
+    """Derived, never claimed. `DealUpdate.closed_at` would let a caller assert a closure
     that never happened, straight into the conversion rate."""
     from pigrocrm.core.deals.schemas import DealCreate, DealUpdate
 
-    assert "chiuso_il" not in DealCreate.model_fields
-    assert "chiuso_il" not in DealUpdate.model_fields
+    assert "closed_at" not in DealCreate.model_fields
+    assert "closed_at" not in DealUpdate.model_fields
 
 
-def test_setting_an_offer_state_stamps_stato_dal(
+def test_setting_an_offer_state_stamps_status_since(
     db_session: Session, document_service: DocumentService
 ) -> None:
-    """`documents.stato_dal` is what makes "questa offerta è ferma da N giorni"
+    """`documents.status_since` is what makes "questa offerta è ferma da N giorni"
     answerable; §4 shows the age in days on the commercial dashboard."""
     document = _offer(document_service, db_session)
-    document_service.set_offer_state(document.id, "inviata", ADMIN)
+    document_service.set_offer_state(document.id, "sent", ADMIN)
     row = db_session.get(Document, document.id)
     assert row is not None
-    assert row.stato_dal == today_local()
+    assert row.status_since == today_local()
 
 
-def test_stato_dal_moves_on_every_state_change(
+def test_status_since_moves_on_every_state_change(
     db_session: Session, document_service: DocumentService
 ) -> None:
     document = _offer(document_service, db_session)
-    document_service.set_offer_state(document.id, "inviata", ADMIN)
+    document_service.set_offer_state(document.id, "sent", ADMIN)
     row = db_session.get(Document, document.id)
     assert row is not None
-    row.stato_dal = date(2026, 1, 1)
+    row.status_since = date(2026, 1, 1)
     db_session.flush()
 
-    document_service.set_offer_state(document.id, "accettata", ADMIN)
+    document_service.set_offer_state(document.id, "accepted", ADMIN)
     db_session.refresh(row)
-    assert row.stato_dal == today_local()
+    assert row.status_since == today_local()
 
 
-def test_stato_dal_is_italys_own_day_too(
+def test_status_since_is_italys_own_day_too(
     db_session: Session, document_service: DocumentService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Same reason as `chiuso_il`: an offer whose state was set at 00:30 CET on 1 January
+    """Same reason as `closed_at`: an offer whose state was set at 00:30 CET on 1 January
     would be reported as having been in that state since the previous year."""
     congela(monkeypatch, documents_service_module)
     document = _offer(document_service, db_session)
-    document_service.set_offer_state(document.id, "inviata", ADMIN)
+    document_service.set_offer_state(document.id, "sent", ADMIN)
     row = db_session.get(Document, document.id)
     assert row is not None
-    assert row.stato_dal == OGGI_IN_ITALIA
-    assert row.stato_dal != OGGI_DEL_PROCESSO
+    assert row.status_since == TODAY_IN_ITALY
+    assert row.status_since != TODAY_OF_PROCESSO
 
 
-def test_stato_dal_is_exposed_on_the_read_schema(
+def test_status_since_is_exposed_on_the_read_schema(
     db_session: Session, document_service: DocumentService
 ) -> None:
     document = _offer(document_service, db_session)
-    read = document_service.set_offer_state(document.id, "inviata", ADMIN)
-    assert read.stato_dal == today_local()
+    read = document_service.set_offer_state(document.id, "sent", ADMIN)
+    assert read.status_since == today_local()
 
 
 def test_both_columns_are_date_and_not_timestamp() -> None:
@@ -265,7 +265,7 @@ def test_both_columns_are_date_and_not_timestamp() -> None:
     `DateTime` column would compare equal to a `date` in Python while filtering
     differently in Postgres.
     """
-    for column in (Deal.__table__.c.chiuso_il, Document.__table__.c.stato_dal):
+    for column in (Deal.__table__.c.closed_at, Document.__table__.c.status_since):
         assert isinstance(column.type, Date), column
         assert not isinstance(column.type, DateTime), column
         assert column.nullable, column
@@ -277,5 +277,5 @@ def test_both_columns_are_indexed_in_the_models() -> None:
     `Base.metadata.create_all` builds the test schema and an index that exists only in a
     migration is an index no test ever sees.
     """
-    assert "ix_deals_chiuso_il" in {index.name for index in Deal.__table__.indexes}
-    assert "ix_documents_stato_dal" in {index.name for index in Document.__table__.indexes}
+    assert "ix_deals_closed_at" in {index.name for index in Deal.__table__.indexes}
+    assert "ix_documents_status_since" in {index.name for index in Document.__table__.indexes}

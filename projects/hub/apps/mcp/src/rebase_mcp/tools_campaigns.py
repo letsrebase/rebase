@@ -21,23 +21,23 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     """Declares this family's tools on `mcp`."""
 
     @mcp.tool()
-    def list_campagne(
+    def list_campaigns(
         limit: int = CAMPAIGNS_LIMIT_DEFAULT, cursor: str | None = None
     ) -> dict[str, Any]:
         """Le campagne di mail della sezione «Campagne», dalla più recente. Per ognuna:
 
         - nome, oggetto e stato (bozza, programmata, in_invio, inviata, annullata);
-        - quando parte o è partita (`programmata_per`, `inviata_at`);
-        - se l'invio è fermo, da quando e perché (`fermo_at`, `fermo_motivo`), finché
+        - quando parte o è partita (`scheduled_for`, `sent_at`);
+        - se l'invio è fermo, da quando e perché (`stalled_at`, `stalled_reason`), finché
           non parte la prossima mail (anche quando il limite giornaliero di mail ferma
-          il resto della lista: `fermo_motivo` dice il giorno in cui riparte);
+          il resto della lista: `stalled_reason` dice il giorno in cui riparte);
         - l'azione che misura: entrato, cv, scheda_completa, profilo_creato o
           richiesta_aggiornata, oppure clic quando il bottone porta a un link;
-        - in `conteggi` quante sono state inviate, saltate, fallite, consegnate,
+        - in `counts` quante sono state inviate, saltate, fallite, consegnate,
           rimbalzate e cliccate, quante persone sono entrate nella loro area dopo la mail
-          (`entrate`) e quante hanno fatto l'azione (`azioni`);
-        - dove porta il bottone (`bottone_meta`: area, wizard, richiesta o link) e, per
-          un link, il suo indirizzo (`bottone_url`), `null` altrimenti.
+          (`income`) e quante hanno fatto l'azione (`actions`);
+        - dove porta il bottone (`button_meta`: area, wizard, richiesta o link) e, per
+          un link, il suo indirizzo (`button_url`), `null` altrimenti.
 
         `limit` è di 20 campagne se non lo dai e di 100 al massimo; `next_cursor` è il
         cursore opaco della pagina successiva, `None` all'ultima: ripassalo in `cursor`.
@@ -48,26 +48,26 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         return deps.run(lambda s: CampaignService(s, deps.campaign_settings).list_all(page, cursor))
 
     @mcp.tool()
-    def get_campagna(
-        campagna_id: str, limit: int = RECIPIENTS_LIMIT_DEFAULT, cursor: str | None = None
+    def get_campaign(
+        campaign_id: str, limit: int = RECIPIENTS_LIMIT_DEFAULT, cursor: str | None = None
     ) -> dict[str, Any]:
         """Una campagna, per id, con i suoi numeri e l'esito di ogni persona in
-        `destinatari`:
+        `recipients`:
 
         - lo stato (in_coda, inviata, saltata con il motivo, fallita);
         - quando la mail è stata inviata, consegnata o è rimbalzata, e il primo clic;
-        - quando la persona è entrata nella sua area (`entrato_dalla_mail` vero se dal
+        - quando la persona è entrata nella sua area (`signed_in_from_mail` vero se dal
           link di questa mail);
-        - quando ha fatto l'azione (`azione_dalla_mail` per un profilo creato dal link).
+        - quando ha fatto l'azione (`action_from_mail` per un profilo creato dal link).
 
-        `campagna.segue_id` è la campagna da cui viene una «Riscrivi a chi non ha fatto
-        niente»; `campagna.bottone_meta` e `campagna.bottone_url` dicono dove porta il
-        bottone, come in `list_campagne`. `destinatari` va per indirizzo, `limit` ne dà 50 se
+        `campaign.segue_id` è la campagna da cui viene una «Riscrivi a chi non ha fatto
+        niente»; `campaign.button_meta` e `campaign.button_url` dicono dove porta il
+        bottone, come in `list_campaigns`. `recipients` va per indirizzo, `limit` ne dà 50 se
         non lo dai e 200 al massimo; `next_cursor` è il cursore opaco dei destinatari
-        successivi, `None` agli ultimi: ripassalo in `cursor` con lo stesso `campagna_id`.
-        `conteggi` contano sempre l'intera campagna. Ogni lettura dei destinatari (nomi e
+        successivi, `None` agli ultimi: ripassalo in `cursor` con lo stesso `campaign_id`.
+        `counts` contano sempre l'intera campagna. Ogni lettura dei destinatari (nomi e
         indirizzi) è registrata fra le azioni dell'admin (`recipients_read`). Solo lettura."""
-        key = to_uuid(campagna_id, "campagna_id")
+        key = to_uuid(campaign_id, "campaign_id")
         bounded(cursor, "cursor")
         page = max(1, min(limit, RECIPIENTS_LIMIT_MAX))
 
@@ -78,7 +78,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                 "campaign",
                 key,
                 RECIPIENTS_READ,
-                {"righe": len(detail.destinatari)},
+                {"lines": len(detail.recipients)},
             )
             return detail.model_dump(mode="json")
 

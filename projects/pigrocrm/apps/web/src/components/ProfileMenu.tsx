@@ -68,7 +68,7 @@ export function ProfileMenu({ rail, go }: { rail: boolean; go: (url: string) => 
               {/* The role in words: «admin» is what the API stores, not what the
                   product writes (spec §5.5). */}
               <p className="truncate text-xs text-sidebar-foreground/70">
-                {user ? roleLabel(user.ruolo) : null}
+                {user ? roleLabel(user.role) : null}
               </p>
             </div>
             <ChevronsUpDown
@@ -111,7 +111,7 @@ export function ProfileMenu({ rail, go }: { rail: boolean; go: (url: string) => 
               outcome lands. Read from the tab table, so a readonly person, whose
               consent the service refuses, is not offered it. An admin reaches it through
               the sidebar's «Collegamenti». */}
-          {!isAdmin && user !== null && canSeeSettingsTab(user.ruolo, 'drive') && (
+          {!isAdmin && user !== null && canSeeSettingsTab(user.role, 'drive') && (
             <DropdownMenuItem asChild>
               <Link to={SETTINGS_PATHS.drive}>
                 <HardDrive className="size-4" />

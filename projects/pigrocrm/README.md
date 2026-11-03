@@ -167,7 +167,7 @@ else (never a subject, a message body or a correspondent's address). A space wit
 mailbox prints nothing. It exits `0` when every loop went through, or found another one
 already running, which is not an error, and `1` when at least one line went to `stderr`
 with a sentence: no mailbox anywhere, a deactivated owner, a revoked consent, or a space
-whose database or schema could not be used (`saltato`). An unforeseen failure is
+whose database or schema could not be used (`skipped`). An unforeseen failure is
 `saltato (Type)` followed by the frames of its traceback, in this same log. One line
 never stops the next.
 `--env-file ../../.env` and `--no-sync` are here for exactly the reasons of §1 and §5.
@@ -178,7 +178,7 @@ Same shape for the weekly report, one line for `pigrocrm digest` at eight on Mon
 0 8 * * 1 cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
 ```
 
-Every run prints one line per space: `inviato a N`, `vuoto`, `già inviato`, `nessun
+Every run prints one line per space: `inviato a N`, `empty`, `già inviato`, `nessun
 destinatario`, or `saltato (Type)` on `stderr`. `0 8` assumes the host's clock is already
 on Europe/Rome — check with `timedatectl` before pasting the line, or the report lands at
 the wrong hour. The runbook below now covers both jobs.

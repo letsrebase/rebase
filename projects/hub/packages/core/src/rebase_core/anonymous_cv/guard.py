@@ -19,7 +19,7 @@ And a statement of birth: «nato il», «born on», «data di nascita» or «DOB
 words on, «nato a» or «born in» with a date or a place right after it. A postal address has
 no shape to check, so it is left to the prompt and to the admin who reads the PDF.
 
-In every string but a place (`luogo`) or a language (`lingue`): the identifiers that are
+In every string but a place (`location`) or a language (`languages`): the identifiers that are
 names, read as whole phrases of tokens: the handle of an email, the GitHub logins, the handle
 in the path of each of the person's links (`linkedin.com/in/<slug>`), the whole host of each
 and the labels of a personal one (not an employer's the CV names itself); and the surname,
@@ -102,7 +102,7 @@ _LINK_LIKE = re.compile(r"[/_\-]|\w\.\w")
 _STRICT_LINK = re.compile(r"[/_]|\w\.\w")
 
 # A codice fiscale's shape: six letters, the year, the month's letter, the day, the place.
-_CODICE_FISCALE = re.compile(
+_TAX_CODE = re.compile(
     r"\b[A-Z]{6}[\dLMNPQRSTUV]{2}[A-EHLMPRST][\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{3}[A-Z]\b",
     re.IGNORECASE,
 )
@@ -293,7 +293,7 @@ def _path_handles(link: str) -> list[str]:
 def who_of(
     *,
     nome: str | None,
-    cognome: str | None,
+    last_name: str | None,
     emails: Iterable[str | None],
     phones: Iterable[str | None],
     links: Iterable[str | None],
@@ -304,7 +304,7 @@ def who_of(
     urls = [link.strip() for link in links if link and link.strip()]
     return Who(
         nomi=[nome.strip()] if nome and nome.strip() else [],
-        cognomi=[cognome.strip()] if cognome and cognome.strip() else [],
+        cognomi=[last_name.strip()] if last_name and last_name.strip() else [],
         emails=_unique(email.strip().lower() for email in emails if email and email.strip()),
         phones=_unique(digits for phone in phones if (digits := phone_digits(phone))),
         github_logins=_unique(
@@ -326,7 +326,7 @@ def _has_tax_id(value: str, known: list[str]) -> bool:
     is read between non-digits («IT01234567890» is the partita IVA), a known code between
     non-alphanumerics."""
     if (
-        _CODICE_FISCALE.search(value)
+        _TAX_CODE.search(value)
         or _IBAN_AFTER_LABEL.search(value)
         or _LABELLED_TAX_NUMBER.search(value)
         or any(

@@ -42,9 +42,9 @@ def clean(factory: sessionmaker[Session]) -> Iterator[sessionmaker[Session]]:
         ("get_freelancer", "freelancer_id"),
         ("read_freelancer_cv", "freelancer_id"),
         ("set_freelancer_status", "freelancer_id"),
-        ("get_talento", "talento_id"),
+        ("get_talent", "talent_id"),
         ("get_company", "company_id"),
-        ("get_campagna", "campagna_id"),
+        ("get_campaign", "campaign_id"),
         ("get_match", "match_id"),
         ("list_matches", "freelancer_id"),
         ("refresh_contract", "document_id"),
@@ -59,7 +59,7 @@ async def test_a_malformed_id_is_an_italian_sentence_naming_the_parameter(
     English text reached the agent."""
     arguments = {field: NOT_AN_ID}
     if tool == "set_freelancer_status":
-        arguments["stato"] = "attivo"
+        arguments["status"] = "active"
     async with Client(build_server(factory, lambda: IVAN)) as client:
         result = await client.call_tool(tool, arguments)
     assert result.is_error
@@ -74,7 +74,7 @@ async def test_a_long_malformed_id_is_not_echoed_whole(factory: sessionmaker[Ses
     assert result.is_error and len(result.content[0].text) < 200  # type: ignore[union-attr]
 
 
-async def test_remoto_is_one_of_its_three_words_before_a_card_is_drafted(
+async def test_remote_is_one_of_its_three_words_before_to_card_is_drafted(
     factory: sessionmaker[Session],
 ) -> None:
     async with Client(build_server(factory, lambda: IVAN)) as client:
@@ -83,26 +83,26 @@ async def test_remoto_is_one_of_its_three_words_before_a_card_is_drafted(
             {
                 "signup_id": "01a00000-0000-7000-8000-000000000009",
                 "nome": "Ada",
-                "cognome": "Lovelace",
-                "fonti": ["https://www.linkedin.com/in/ada"],
-                "remoto": "a casa",
+                "last_name": "Lovelace",
+                "sources": ["https://www.linkedin.com/in/ada"],
+                "remote": "a casa",
             },
         )
     assert result.is_error
     text = result.content[0].text  # type: ignore[union-attr]
-    assert "remoto" in text and "in_sede" in text and "Traceback" not in text
+    assert "remote" in text and "on_site" in text and "Traceback" not in text
 
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
     [
-        ("list_talenti", {"posizione": "x" * (SEARCH_MAX_LENGTH + 1)}),
-        ("list_talenti", {"utm_source": "x" * (SEARCH_MAX_LENGTH + 1)}),
-        ("list_talenti", {"pagina_origine": "x" * (SEARCH_MAX_LENGTH + 1)}),
-        ("list_talenti", {"cursor": "x" * 10_000}),
-        ("list_aziende", {"origine": "x" * (SEARCH_MAX_LENGTH + 1)}),
-        ("list_aziende", {"cursor": "x" * 10_000}),
-        ("list_campagne", {"cursor": "x" * 10_000}),
+        ("list_talents", {"posizione": "x" * (SEARCH_MAX_LENGTH + 1)}),
+        ("list_talents", {"utm_source": "x" * (SEARCH_MAX_LENGTH + 1)}),
+        ("list_talents", {"origin_page": "x" * (SEARCH_MAX_LENGTH + 1)}),
+        ("list_talents", {"cursor": "x" * 10_000}),
+        ("list_companies", {"origin": "x" * (SEARCH_MAX_LENGTH + 1)}),
+        ("list_companies", {"cursor": "x" * 10_000}),
+        ("list_campaigns", {"cursor": "x" * 10_000}),
     ],
 )
 async def test_a_free_text_filter_past_its_bound_is_refused_before_a_query(
@@ -168,7 +168,7 @@ async def test_a_cv_read_is_in_the_trail_without_the_text(factory: sessionmaker[
             await client.call_tool("read_freelancer_cv", {"freelancer_id": freelancer_id})
         )
         trail = await client.call_tool("get_freelancer_audit", {"freelancer_id": freelancer_id})
-    assert "Python" in read["testo"]
+    assert "Python" in read["text"]
     with factory() as session:
         [action] = session.scalars(select(AdminAction).where(AdminAction.kind == CV_READ)).all()
     assert (action.entity_type, str(action.entity_id), action.admin_id) == (
@@ -176,7 +176,7 @@ async def test_a_cv_read_is_in_the_trail_without_the_text(factory: sessionmaker[
         freelancer_id,
         IVAN.id,
     )
-    assert action.payload == {"fonte": "mcp"}
+    assert action.payload == {"source": "mcp"}
     assert not trail.is_error and CV_READ in trail.content[0].text  # type: ignore[union-attr]
 
 
@@ -187,17 +187,17 @@ async def test_a_list_that_carries_addresses_is_in_the_trail_and_one_that_does_n
     _seed_company(factory)
     _seed_admin(factory)
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        await client.call_tool("list_talenti", {})
-        await client.call_tool("list_talenti", {"campi": ["fascia"]})
-        assert _read_lines(factory, "list_talenti") == []
-        await client.call_tool("list_talenti", {"campi": ["email"]})
-        await client.call_tool("list_aziende", {})
-    [talenti] = _read_lines(factory, "list_talenti")
-    [aziende] = _read_lines(factory, "list_aziende")
-    assert talenti.admin_id == aziende.admin_id == IVAN.id
-    assert talenti.entity_type == READ_ENTITY and talenti.kind == EMAILS_READ
-    assert talenti.payload == {"fonte": "mcp", "tool": "list_talenti", "righe": 1}
-    assert aziende.payload["righe"] == 1
+        await client.call_tool("list_talents", {})
+        await client.call_tool("list_talents", {"fields": ["band"]})
+        assert _read_lines(factory, "list_talents") == []
+        await client.call_tool("list_talents", {"fields": ["email"]})
+        await client.call_tool("list_companies", {})
+    [talents] = _read_lines(factory, "list_talents")
+    [companies] = _read_lines(factory, "list_companies")
+    assert talents.admin_id == companies.admin_id == IVAN.id
+    assert talents.entity_type == READ_ENTITY and talents.kind == EMAILS_READ
+    assert talents.payload == {"source": "mcp", "tool": "list_talents", "lines": 1}
+    assert companies.payload["lines"] == 1
 
 
 def _read_lines(factory: sessionmaker[Session], tool: str) -> list[AdminAction]:
@@ -217,7 +217,7 @@ async def test_a_well_formed_id_nobody_has_is_not_found_not_an_id_error(
 ) -> None:
     async with Client(build_server(factory, lambda: IVAN)) as client:
         result = await client.call_tool(
-            "get_talento", {"talento_id": "01a00000-0000-7000-8000-0000000000aa"}
+            "get_talent", {"talent_id": "01a00000-0000-7000-8000-0000000000aa"}
         )
     assert result.is_error
     assert "identificativo" not in result.content[0].text  # type: ignore[union-attr]

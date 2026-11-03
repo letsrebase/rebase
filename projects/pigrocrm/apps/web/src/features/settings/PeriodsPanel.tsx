@@ -9,15 +9,15 @@ import { toIsoMonth } from '@/lib/dates'
 import { useUsers } from './queries'
 import { useClosePeriod, usePeriodLocks, useReopenPeriod } from './queries.timetracking'
 
-const MESI = [
-  'gennaio',
-  'febbraio',
+const Months = [
+  'january',
+  'february',
   'marzo',
   'aprile',
   'maggio',
-  'giugno',
+  'june',
   'luglio',
-  'agosto',
+  'august',
   'settembre',
   'ottobre',
   'novembre',
@@ -26,8 +26,8 @@ const MESI = [
 
 /** `marzo 2026`. The same long-form Italian label `period_label` produces on the
  *  backend, so a `Conflict` naming a month and this list read identically. */
-function label(anno: number, mese: number): string {
-  return `${MESI[mese - 1] ?? mese} ${anno}`
+function label(year: number, month: number): string {
+  return `${Months[month - 1] ?? month} ${year}`
 }
 
 const stamp = new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' })
@@ -40,7 +40,7 @@ export function PeriodsPanel() {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   // `toIsoMonth`, never `toISOString().slice(0, 7)`: on the last evening of a month east
   // of Greenwich the UTC route opens the picker on the month that has not started yet.
-  const [mese, setMese] = useState(() => toIsoMonth(new Date()))
+  const [month, setMonth] = useState(() => toIsoMonth(new Date()))
 
   // The failed request replaces the list rather than colouring a row inside it: an
   // empty `<ul>` next to a banner would still be readable as "nothing is closed", which
@@ -78,22 +78,22 @@ export function PeriodsPanel() {
           <Input
             id="periodo-da-chiudere"
             type="month"
-            value={mese}
-            onChange={(event) => setMese(event.target.value)}
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
             className="w-40"
           />
         </div>
         <Button
           disabled={close.isPending}
           onClick={() => {
-            const [anno, numero] = mese.split('-').map(Number)
+            const [year, number] = month.split('-').map(Number)
             setProblem(null)
             // No client-side bounds check: `PeriodLockCreate` carries them, and a second
             // opinion here is how this screen and the API start disagreeing about what a
             // valid month is. A nonsense value comes back as a problem document and is
             // shown above, in the server's own words.
             close.mutate(
-              { anno: anno ?? 0, mese: numero ?? 0 },
+              { year: year ?? 0, month: number ?? 0 },
               { onError: (error) => setProblem(toProblem(error)) },
             )
           }}
@@ -104,12 +104,12 @@ export function PeriodsPanel() {
 
       <ul className="divide-y border">
         {(locks.data ?? []).map((lock) => (
-          <li key={`${lock.anno}-${lock.mese}`} className="flex items-center justify-between p-3">
+          <li key={`${lock.year}-${lock.month}`} className="flex items-center justify-between p-3">
             <div>
-              <p className="font-medium">{label(lock.anno, lock.mese)}</p>
+              <p className="font-medium">{label(lock.year, lock.month)}</p>
               <p className="text-xs text-muted-foreground">
-                Chiuso il {stamp.format(new Date(lock.chiuso_il))}
-                {lock.chiuso_da ? ` da ${names.get(lock.chiuso_da) ?? lock.chiuso_da}` : ''}
+                Chiuso il {stamp.format(new Date(lock.closed_at))}
+                {lock.closed_by ? ` da ${names.get(lock.closed_by) ?? lock.closed_by}` : ''}
               </p>
             </div>
             {/* Behind the «⋯» like every other row action (§4), destructive, and it keeps
@@ -120,7 +120,7 @@ export function PeriodsPanel() {
                 period is not reopened by accident and not reopened in silence -- the
                 service writes an activity. */}
             <RowActions
-              label={`Azioni per ${label(lock.anno, lock.mese)}`}
+              label={`Azioni per ${label(lock.year, lock.month)}`}
               items={[
                 {
                   label: 'Riapri',
@@ -128,12 +128,12 @@ export function PeriodsPanel() {
                   disabled: reopen.isPending,
                   onSelect: () => {
                     const confirmed = window.confirm(
-                      `Riaprire ${label(lock.anno, lock.mese)}? Le ore e i costi di quel mese tornano modificabili, e la riapertura viene registrata.`,
+                      `Riaprire ${label(lock.year, lock.month)}? Le ore e i costi di quel mese tornano modificabili, e la riapertura viene registrata.`,
                     )
                     if (!confirmed) return
                     setProblem(null)
                     reopen.mutate(
-                      { anno: lock.anno, mese: lock.mese },
+                      { year: lock.year, month: lock.month },
                       { onError: (error) => setProblem(toProblem(error)) },
                     )
                   },

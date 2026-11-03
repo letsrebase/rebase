@@ -34,11 +34,11 @@ from pigrocrm.core.contracts.schemas import (
 )
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # How many clause notes `ContractService.detail` carries, the latest ones.
@@ -52,7 +52,7 @@ class ContractService:
         self.customers = CustomerRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
-        self.emitter = LegalEntityService(session)
+        self.legal_entity = LegalEntityService(session)
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom
@@ -73,10 +73,10 @@ class ContractService:
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
         # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
         # refused when deactivated.
-        payload["azienda_id"] = self.emitter.inherited(customer.azienda_id, ENTITY)
+        payload["legal_entity_id"] = self.legal_entity.inherited(customer.legal_entity_id, ENTITY)
 
         contract = self.repo.add(Contract(**payload))
-        self.activities.record(ENTITY, contract.id, "created", actor, {"titolo": contract.titolo})
+        self.activities.record(ENTITY, contract.id, "created", actor, {"title": contract.title})
         self.session.commit()
         return ContractRead.model_validate(contract)
 
@@ -103,27 +103,27 @@ class ContractService:
             .limit(DETAIL_NOTES_LIMIT)
         )
         notes = reversed(list(latest))
-        totale = self.session.scalar(
+        total = self.session.scalar(
             select(func.count())
             .select_from(ClauseNote)
             .where(ClauseNote.contract_id == contract_id)
         )
         return ContractDetail(
             **ContractRead.model_validate(contract).model_dump(),
-            contratto_successivo_id=self.session.scalar(
+            next_contract_id=self.session.scalar(
                 select(Contract.id).where(
-                    Contract.contratto_precedente_id == contract_id,
+                    Contract.previous_contract_id == contract_id,
                     Contract.deleted_at.is_(None),
                 )
             ),
-            note_clausole=[ClauseNoteRead.model_validate(note) for note in notes],
-            note_clausole_totale=totale or 0,
+            note_clauses=[ClauseNoteRead.model_validate(note) for note in notes],
+            note_total_clauses=total or 0,
         )
 
     def update(self, contract_id: UUID, data: ContractUpdate, actor: Actor) -> ContractRead:
         """A partial patch. The cross-field rules run on the merged row, so a call that
-        moves `tipo_rinnovo` to `tacito` without a notice is refused, and so is one that
-        clears `giorni_pagamento` and leaves `pagamento_fine_mese` behind."""
+        moves `renewal_type` to `tacit` without a notice is refused, and so is one that
+        clears `payment_days` and leaves `payment_end_of_month` behind."""
         actor.require_write("update_contract")
         contract = self.repo.get_locked(contract_id)
         if contract is None:
@@ -134,22 +134,22 @@ class ContractService:
         merged = {
             key: changes.get(key, getattr(contract, key))
             for key in (
-                "inizio",
-                "fine",
-                "tipo_rinnovo",
-                "preavviso_rinnovo_giorni",
-                "giorni_pagamento",
-                "pagamento_fine_mese",
+                "start",
+                "end",
+                "renewal_type",
+                "renewal_notice_days",
+                "payment_days",
+                "payment_end_of_month",
             )
         }
         check_payment_terms_together(merged)
         check_renewal_notice(merged)
-        if merged["fine"] is not None and merged["fine"] < merged["inizio"]:
+        if merged["end"] is not None and merged["end"] < merged["start"]:
             raise ValidationFailed(
                 ENTITY,
-                "fine",
+                "end",
                 "non può precedere inizio",
-                expected=f">= {merged['inizio'].isoformat()}",
+                expected=f">= {merged['start'].isoformat()}",
             )
         if data.custom_fields is not None:
             changes["custom_fields"] = merge_custom(
@@ -163,14 +163,14 @@ class ContractService:
         for key, value in changes.items():
             setattr(contract, key, value)
         self.session.flush()
-        if "politica_spese" in changes:
+        if "expense_policy" in changes:
             self._reevaluate_unbilled_expenses(contract.id)
         self.activities.record(ENTITY, contract.id, "updated", actor, {"changed": sorted(changes)})
         self.session.commit()
         return ContractRead.model_validate(contract)
 
     def _reevaluate_unbilled_expenses(self, contract_id: UUID) -> None:
-        """`contract_expenses.rimborsabile` is written by a trigger when an expense is
+        """`contract_expenses.reimbursable` is written by a trigger when an expense is
         inserted or updated, from the contract's policy as it stands then. A policy
         that changes afterwards would leave every existing expense with the verdict of
         the old one, still «Da fatturare» and still picked up by the invoice assembly,
@@ -187,33 +187,33 @@ class ContractService:
                 ContractExpense.contract_id == contract_id,
                 ContractExpense.invoice_line_id.is_(None),
             )
-            .values(pre_autorizzata=ContractExpense.pre_autorizzata)
+            .values(pre_authorized=ContractExpense.pre_authorized)
             .returning(ContractExpense)
             .execution_options(populate_existing=True, synchronize_session=False)
         ).all()
 
     def set_state(self, contract_id: UUID, data: ContractStateChange, actor: Actor) -> ContractRead:
-        """The one writer of `Contract.stato`. Any state to any other; the same state
+        """The one writer of `Contract.status`. Any state to any other; the same state
         again is refused, so a double click never writes a second timeline row."""
         actor.require_write("set_contract_state")
         contract = self.repo.get_locked(contract_id)
         if contract is None:
             raise NotFound(ENTITY, contract_id)
-        if contract.stato == data.stato:
+        if contract.status == data.status:
             raise Conflict(
                 ENTITY,
-                f"il contratto è già «{data.stato}»",
+                f"il contratto è già «{data.status}»",
                 contract_id=str(contract_id),
             )
-        previous = contract.stato
-        contract.stato = data.stato
+        previous = contract.status
+        contract.status = data.status
         self.session.flush()
         self.activities.record(
             ENTITY,
             contract.id,
             "state_changed",
             actor,
-            {"from": previous, "to": data.stato},
+            {"from": previous, "to": data.status},
         )
         self.session.commit()
         return ContractRead.model_validate(contract)
@@ -227,19 +227,21 @@ class ContractService:
         contract_id: UUID,
         actor: Actor,
         as_of: date | None = None,
-        soglia: float | None = None,
+        threshold: float | None = None,
     ) -> ContractConcentrationCap:
         """One engagement's share of revenue over its anniversary year. See
         `ContractCapService.concentration_cap`."""
-        return ContractCapService(self.session).concentration_cap(contract_id, actor, as_of, soglia)
+        return ContractCapService(self.session).concentration_cap(
+            contract_id, actor, as_of, threshold
+        )
 
     def simulate_cap(
-        self, contract_id: UUID, aggiunta: Decimal, data_prevista: date | None, actor: Actor
+        self, contract_id: UUID, addition: Decimal, expected_date: date | None, actor: Actor
     ) -> ContractCapSimulation:
         """The contract's cap against its customer's share after a synthetic addition. See
         `ContractCapService.simulate_cap`."""
         return ContractCapService(self.session).simulate_cap(
-            contract_id, aggiunta, data_prevista, actor
+            contract_id, addition, expected_date, actor
         )
 
     # `list` is defined LAST in this class on purpose -- see ContractRepository.list's

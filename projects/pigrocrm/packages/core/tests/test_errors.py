@@ -15,13 +15,13 @@ from pigrocrm.core.errors import (
 def test_errors_carry_structured_details_not_formatted_strings() -> None:
     """The same exception becomes an HTTP problem detail AND an LLM-readable message.
     That is only possible if the data stays structured."""
-    err = ValidationFailed("customer", "partita_iva", "must be 11 digits", expected="11 digits")
+    err = ValidationFailed("customer", "vat_number", "must be 11 digits", expected="11 digits")
 
     assert isinstance(err, DomainError)
     assert err.code == "validation_failed"
     assert err.details == {
         "entity": "customer",
-        "field": "partita_iva",
+        "field": "vat_number",
         "reason": "must be 11 digits",
         "expected": "11 digits",
     }
@@ -29,11 +29,11 @@ def test_errors_carry_structured_details_not_formatted_strings() -> None:
 
 def test_validation_failed_without_expected() -> None:
     """When expected is not provided, it should not be in details."""
-    err = ValidationFailed("customer", "partita_iva", "must be 11 digits")
+    err = ValidationFailed("customer", "vat_number", "must be 11 digits")
     assert err.code == "validation_failed"
     assert err.details == {
         "entity": "customer",
-        "field": "partita_iva",
+        "field": "vat_number",
         "reason": "must be 11 digits",
     }
     assert "expected" not in err.details
@@ -55,14 +55,14 @@ def test_not_found_message_and_str() -> None:
 
 def test_validation_failed_message_and_str() -> None:
     """Error message is available on .message and str(exc)."""
-    err = ValidationFailed("customer", "partita_iva", "must be 11 digits")
+    err = ValidationFailed("customer", "vat_number", "must be 11 digits")
     assert err.message == "customer.partita_iva: must be 11 digits"
     assert str(err) == "customer.partita_iva: must be 11 digits"
 
 
 def test_permission_denied_message_and_str() -> None:
     """Error message is available on .message and str(exc)."""
-    err = PermissionDenied("update_deal", ["admin", "collaboratore"], "readonly")
+    err = PermissionDenied("update_deal", ["admin", "collaborator"], "readonly")
     expected_msg = "update_deal requires one of ['admin', 'collaboratore'], actor has readonly"
     assert err.message == expected_msg
     assert str(err) == expected_msg
@@ -75,8 +75,8 @@ def test_conflict_accepts_arbitrary_context() -> None:
 
 
 def test_permission_denied_states_what_role_would_be_enough() -> None:
-    err = PermissionDenied("update_deal", ["admin", "collaboratore"], "readonly")
-    assert err.details["required_roles"] == ["admin", "collaboratore"]
+    err = PermissionDenied("update_deal", ["admin", "collaborator"], "readonly")
+    assert err.details["required_roles"] == ["admin", "collaborator"]
     assert err.details["actual_role"] == "readonly"
 
 
@@ -87,7 +87,7 @@ def test_immutable_field_is_its_own_error() -> None:
 
 @pytest.mark.parametrize(
     ("role", "can_write", "can_administer"),
-    [("admin", True, True), ("collaboratore", True, False), ("readonly", False, False)],
+    [("admin", True, True), ("collaborator", True, False), ("readonly", False, False)],
 )
 def test_actor_permissions_by_role(role: str, can_write: bool, can_administer: bool) -> None:
     actor = Actor(id=None, type="user", role=role)  # type: ignore[arg-type]
@@ -113,7 +113,7 @@ def test_actor_is_immutable() -> None:
     ("role", "should_raise_write", "should_raise_admin"),
     [
         ("admin", False, False),
-        ("collaboratore", False, True),
+        ("collaborator", False, True),
         ("readonly", True, True),
     ],
 )
@@ -126,7 +126,7 @@ def test_require_write_and_admin_by_role(
     if should_raise_write:
         with pytest.raises(PermissionDenied) as exc_info:
             actor.require_write("do_something")
-        assert exc_info.value.details["required_roles"] == ["admin", "collaboratore"]
+        assert exc_info.value.details["required_roles"] == ["admin", "collaborator"]
         assert exc_info.value.details["actual_role"] == role
     else:
         actor.require_write("do_something")  # should not raise
@@ -140,9 +140,9 @@ def test_require_write_and_admin_by_role(
         actor.require_admin("do_admin_thing")  # should not raise
 
 
-def test_collaboratore_passes_write_but_not_admin() -> None:
+def test_collaborator_passes_write_but_not_admin() -> None:
     """Demonstrates role distinction: collaboratore can write but not administer."""
-    actor = Actor(id=None, type="user", role="collaboratore")
+    actor = Actor(id=None, type="user", role="collaborator")
     actor.require_write("update_field")  # should not raise
     with pytest.raises(PermissionDenied):
         actor.require_admin("delete_entity")
@@ -168,4 +168,4 @@ def test_permission_denied_details_are_not_aliased_to_global_state() -> None:
     err2 = exc_info.value
 
     assert err2.details["required_roles"] == original_roles
-    assert err2.details["required_roles"] == ["admin", "collaboratore"]
+    assert err2.details["required_roles"] == ["admin", "collaborator"]

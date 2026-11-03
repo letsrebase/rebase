@@ -26,7 +26,7 @@ from pigrocrm.core.tenants.database import tenant_database_name, tenant_database
 from pigrocrm_api.deps import get_session, reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import (
-    DISPONIBILE_REQUESTS_PER_MINUTE,
+    AVAILABLE_REQUESTS_BY_MINUTE,
     MAIL_BURST_PER_RECIPIENT,
     REQUESTS_PER_MINUTE,
     reset_rate_limit,
@@ -117,28 +117,28 @@ def test_a_reserved_or_malformed_name_is_refused_before_touching_the_server(
 
 
 def test_availability_says_why(spaces_client: TestClient) -> None:
-    assert spaces_client.get("/api/tenants/app/disponibile").json() == {
+    assert spaces_client.get("/api/tenants/app/available").json() == {
         "slug": "app",
-        "disponibile": False,
-        "motivo": "questo nome è riservato",
+        "available": False,
+        "reason": "questo nome è riservato",
     }
-    assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").json()["disponibile"] is True
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
 
 
-def test_disponibile_is_throttled_per_client(spaces_client: TestClient) -> None:
-    """Unauthenticated by design, like `membro` (REB-228): the request past the budget
-    is a 429 with a `Retry-After`. Its own, larger budget (`DISPONIBILE_REQUESTS_PER_MINUTE`),
-    separate from `membro`'s and `signup`'s `REQUESTS_PER_MINUTE`: this is the one route
+def test_available_is_throttled_by_client(spaces_client: TestClient) -> None:
+    """Unauthenticated by design, like `member` (REB-228): the request past the budget
+    is a 429 with a `Retry-After`. Its own, larger budget (`AVAILABLE_REQUESTS_BY_MINUTE`),
+    separate from `member`'s and `signup`'s `REQUESTS_PER_MINUTE`: this is the one route
     of the three a person's own typing calls repeatedly, and sharing the signup's tighter
     bucket would let a few hesitations while naming a business starve the tokens the
     actual `POST /` still needs to create the space."""
-    for _ in range(DISPONIBILE_REQUESTS_PER_MINUTE):
-        assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").status_code == 200
-    refused = spaces_client.get(f"/api/tenants/{SLUG}/disponibile")
+    for _ in range(AVAILABLE_REQUESTS_BY_MINUTE):
+        assert spaces_client.get(f"/api/tenants/{SLUG}/available").status_code == 200
+    refused = spaces_client.get(f"/api/tenants/{SLUG}/available")
     assert refused.status_code == 429, refused.text
     assert refused.headers["Retry-After"] == "60"
     # Another client has its own bucket.
-    other = spaces_client.get(f"/api/tenants/{SLUG}/disponibile", headers={"X-Real-IP": "10.0.0.7"})
+    other = spaces_client.get(f"/api/tenants/{SLUG}/available", headers={"X-Real-IP": "10.0.0.7"})
     assert other.status_code == 200, other.text
 
 
@@ -152,7 +152,7 @@ def test_signing_up_creates_a_space_that_serves_its_own_data(
     assert created.headers["Location"] == f"/{SLUG}/app/"
 
     # The name is gone, and a second signup with it is a 409, not a second space.
-    assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").json()["disponibile"] is False
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is False
     again = spaces_client.post("/api/tenants/", json={**SIGNUP, "email": "bob@studio.it"})
     assert again.status_code == 409, again.text
 
@@ -254,7 +254,7 @@ def test_the_root_slug_is_the_root_itself_and_nobody_elses_name(
             deletions = logout.headers.get_list("set-cookie")
             assert sum("Path=/studiorossi/;" in c for c in deletions) == 2
             assert sum("Path=/;" in c for c in deletions) == 2
-            assert client.get("/api/tenants/studiorossi/disponibile").json()["motivo"] == (
+            assert client.get("/api/tenants/studiorossi/available").json()["reason"] == (
                 "questo nome è riservato"
             )
             refused = client.post("/api/tenants/", json={**SIGNUP, "slug": "studiorossi"})
@@ -374,19 +374,19 @@ def test_the_signup_learns_whether_an_address_is_a_member_and_owns_a_space_and_n
 
     def fake_lookup(settings: Settings, email: str) -> MemberLookup:
         asked.append(email)
-        return MemberLookup(membro=True, nome="Ada", cognome="Lovelace")
+        return MemberLookup(member=True, nome="Ada", last_name="Lovelace")
 
     monkeypatch.setattr("pigrocrm_api.routers.tenants.lookup_member", fake_lookup)
 
     before = spaces_client.post("/api/tenants/member", json={"email": "Ada@Studio.it"})
     assert before.status_code == 200, before.text
-    assert before.json() == {"membro": True, "has_spaces": False}
+    assert before.json() == {"member": True, "has_spaces": False}
     assert asked == ["ada@studio.it"]
 
     created = spaces_client.post("/api/tenants/", json=SIGNUP)
     assert created.status_code == 201, created.text
     after = spaces_client.post("/api/tenants/member", json={"email": SIGNUP["email"]})
-    assert after.json() == {"membro": True, "has_spaces": True}
+    assert after.json() == {"member": True, "has_spaces": True}
     assert SLUG not in after.text
     # Somebody else's address owns nothing here, whatever the hub says about them.
     other = spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"})
@@ -403,7 +403,7 @@ def test_an_unreachable_hub_still_answers_and_says_not_a_member(
     with _serving(with_hub) as client:
         answer = client.post("/api/tenants/member", json={"email": "ada@studio.it"})
         assert answer.status_code == 200, answer.text
-        assert answer.json() == {"membro": False, "has_spaces": False}
+        assert answer.json() == {"member": False, "has_spaces": False}
 
 
 def test_a_malformed_or_missing_address_is_a_422_and_the_query_string_is_not_read(
@@ -427,7 +427,7 @@ def test_the_member_question_is_throttled_per_client(
     because the limiter runs inside the route, after validation."""
     monkeypatch.setattr(
         "pigrocrm_api.routers.tenants.lookup_member",
-        lambda settings, email: MemberLookup(membro=False),
+        lambda settings, email: MemberLookup(member=False),
     )
     question = {"email": "ada@studio.it"}
     for _ in range(REQUESTS_PER_MINUTE):
@@ -442,7 +442,7 @@ def test_the_member_question_is_throttled_per_client(
     assert other.status_code == 200, other.text
 
 
-WIZARD_SIGNUP = {**SIGNUP, "membro": False}
+WIZARD_SIGNUP = {**SIGNUP, "member": False}
 
 
 def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
@@ -465,7 +465,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
     assert not any("pigrocrm_refresh=" in c for c in cookies)
     # In, for the access token's life: `me` answers, `refresh` has nothing to refresh.
     me = spaces_client.get(f"/{SLUG}/api/auth/me")
-    assert me.status_code == 200 and me.json()["ruolo"] == "admin"
+    assert me.status_code == 200 and me.json()["role"] == "admin"
     assert spaces_client.post(f"/{SLUG}/api/auth/refresh").status_code == 401
     # Nothing durable before the address is proven: no token, no second user.
     token = spaces_client.post(f"/{SLUG}/api/tokens", json={"nome": "claude"})
@@ -477,7 +477,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
             "email": "b@studio.it",
             "password": "lunghissima1",
             "nome": "B",
-            "ruolo": "collaboratore",
+            "role": "collaborator",
         },
     )
     assert user.status_code == 422, user.text
@@ -504,7 +504,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
 
 
 def test_signing_up_without_a_sender_still_creates_the_space(spaces_client: TestClient) -> None:
-    created = spaces_client.post("/api/tenants/", json={**WIZARD_SIGNUP, "membro": True})
+    created = spaces_client.post("/api/tenants/", json={**WIZARD_SIGNUP, "member": True})
     assert created.status_code == 201, created.text
     assert spaces_client.get(f"/{SLUG}/api/auth/me").status_code == 200
 
@@ -521,7 +521,7 @@ def test_the_signup_refuses_past_the_ceiling_on_spaces(container_settings: Setti
         )
         assert full.status_code == 503, full.text
         assert full.json()["detail"] == SIGNUP_CLOSED
-        assert client.get("/api/tenants/studio-due/disponibile").json()["disponibile"] is True
+        assert client.get("/api/tenants/studio-due/available").json()["available"] is True
 
 
 def test_signups_in_flight_are_bounded_and_the_slot_comes_back(
@@ -537,7 +537,7 @@ def test_signups_in_flight_are_bounded_and_the_slot_comes_back(
     busy = spaces_client.post("/api/tenants/", json=SIGNUP)
     assert busy.status_code == 503, busy.text
     assert busy.headers["Retry-After"] == "60"
-    assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").json()["disponibile"] is True
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
 
     slots.release()
     assert spaces_client.post("/api/tenants/", json=SIGNUP).status_code == 201

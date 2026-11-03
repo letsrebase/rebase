@@ -5,7 +5,7 @@ import re
 FPR12_NAMESPACE = "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"
 DS_NAMESPACE = "http://www.w3.org/2000/09/xmldsig#"
 XSI_NAMESPACE = "http://www.w3.org/2001/XMLSchema-instance"
-FORMATO_TRASMISSIONE = "FPR12"
+FORMAT_TRANSMISSION = "FPR12"
 
 # All three prefixes are declared on the root, `ds:` and `xsi:` included even though
 # nothing in this file uses either. `ds:` becomes load-bearing only with the digital
@@ -17,50 +17,50 @@ NSMAP: dict[str | None, str] = {"p": FPR12_NAMESPACE, "ds": DS_NAMESPACE, "xsi":
 # `CodiceDestinatario` for a private recipient with no SDI code, paired with
 # `PECDestinatario`. Not deducible from the schema, where the field is simply
 # mandatory.
-CODICE_DESTINATARIO_FALLBACK = "0000000"
+CODE_RECIPIENT_FALLBACK = "0000000"
 # And for a recipient outside Italy, whom the SdI does not route to at all. Seven
 # X's is what the specification reserves for that case; a foreign customer has no SDI
 # code and no PEC and is not supposed to have either.
-CODICE_DESTINATARIO_ESTERO = "XXXXXXX"
+CODE_RECIPIENT_FOREIGN = "XXXXXXX"
 # `CAP` is a five-digit numeric string in FPR12 and the technical specifications fill
 # it with `00000` for an address outside Italy, where `Provincia` is left out. The
 # writer applies the convention whatever the customer row holds: a London company keeps
-# `EC1V 9HL` in its record, the PDF prints it, and `indirizzo_xml` carries it at the
+# `EC1V 9HL` in its record, the PDF prints it, and `address_xml` carries it at the
 # end of `Indirizzo` so the document does not lose it (ORB-38).
-CAP_ESTERO = "00000"
+POSTAL_CODE_FOREIGN = "00000"
 # Immediate VAT liability. The deferred and cash-basis variants are out of scope.
-ESIGIBILITA_IVA = "I"
-BOLLO_VIRTUALE = "SI"
+VAT_COLLECTABILITY_VAT = "I"
+STAMP_DUTY_VIRTUAL = "SI"
 
 # FPR12 widths. Every one is narrower than the Postgres column it comes from, so each
 # is a real check and not a restatement of the schema's own bound.
-DENOMINAZIONE_MAX = 80
-INDIRIZZO_MAX = 60
-COMUNE_MAX = 60
-DESCRIZIONE_MAX = 1000
-CAUSALE_MAX = 200
+DENOMINATION_MAX = 80
+ADDRESS_MAX = 60
+CITY_MAX = 60
+DESCRIPTION_MAX = 1000
+MEMO_MAX = 200
 
 # `DatiOrdineAcquisto` (REB-693): IdDocumento is String20Type, CodiceCUP and CodiceCIG are
 # String15Type, all three Basic Latin.
-ID_DOCUMENTO_MAX = 20
-CODICE_CUP_MAX = 15
-CODICE_CIG_MAX = 15
-RIFERIMENTO_NORMATIVO_MAX = 100
-UNITA_MISURA_MAX = 10
+ID_DOCUMENT_MAX = 20
+CODE_PROJECT_CODE_MAX = 15
+CODE_TENDER_CODE_MAX = 15
+LEGAL_REFERENCE_MAX = 100
+UNIT_OF_MEASURE_MAX = 10
 EMAIL_MAX = 256
 # `EmailContattiType`'s own `minLength` (REB-227): `ContattiTrasmittente/Email` carries
 # it, `PECDestinatario`'s `EmailType` does not.
 EMAIL_MIN = 7
-TELEFONO_MAX = 12
+PHONE_MAX = 12
 
 # `xs:pattern` restrictions the schema applies. `.fullmatch` at every call site, never
 # `.match` with `$`.
 CAP_RE = re.compile(r"\d{5}")
-PROVINCIA_RE = re.compile(r"[A-Z]{2}")
-NAZIONE_RE = re.compile(r"[A-Z]{2}")
+PROVINCE_RE = re.compile(r"[A-Z]{2}")
+COUNTRY_RE = re.compile(r"[A-Z]{2}")
 IBAN_RE = re.compile(r"[A-Z]{2}\d{2}[A-Za-z0-9]{11,30}")
-CODICE_DESTINATARIO_RE = re.compile(r"[A-Z0-9]{7}")
-TIPO_PAGAMENTO_RE = re.compile(r"(TP|MP)\d{2}")
+CODE_RECIPIENT_RE = re.compile(r"[A-Z0-9]{7}")
+TYPE_PAYMENT_RE = re.compile(r"(TP|MP)\d{2}")
 # `EmailType`'s own pattern (REB-227), translated from the vendored XSD's
 # `xs:pattern` verbatim: a proper `local@domain` shape, not merely "contains an @".
 EMAIL_RE = re.compile(
@@ -76,9 +76,9 @@ EMAIL_RE = re.compile(
 # 719), so both are checked against the intersection of the two patterns: a value the
 # schema's own `EmailContattiType` accepts and that also has the shape of a real
 # address, never merely "contains an @ and a dot somewhere".
-EMAIL_CONTATTI_RE = re.compile(r"(?=.+@.+[.]+.+)(?:" + EMAIL_RE.pattern + r")")
+EMAIL_CONTACTS_RE = re.compile(r"(?=.+@.+[.]+.+)(?:" + EMAIL_RE.pattern + r")")
 # The pattern refusal's `expected` reaches the web client verbatim
-# (`apps/web/src/lib/api.ts`'s `atteso: ...`); `EMAIL_RE`/`EMAIL_CONTATTI_RE` are each
+# (`apps/web/src/lib/api.ts`'s `atteso: ...`); `EMAIL_RE`/`EMAIL_CONTACTS_RE` are each
 # too long to show a user, unlike the short patterns above, so both PEC and Email
 # refusals use this wording instead of the raw regex.
 EMAIL_PATTERN_EXPECTED = "un indirizzo email nella forma nome@dominio"
@@ -154,9 +154,9 @@ LATIN_SPELLINGS = str.maketrans(
 # value the writer never emits would be its own kind of drift, so each role is checked
 # for the field it actually contributes.
 RECIPIENT_ENTITY = "customer"
-ISSUER_ENTITY = "emitter_profile"
+ISSUER_ENTITY = "legal_entities"
 # FPR12 allows an `IdCodice` of up to 28 characters, which is what makes room for the
 # registers of other countries. Italy's own two shapes are narrower and are checked by
 # `normalise_fiscal_id`; outside Italy there is no shape this exporter can meaningfully
 # assert, since every country issues its own.
-ID_CODICE_MAX = 28
+ID_CODE_MAX = 28

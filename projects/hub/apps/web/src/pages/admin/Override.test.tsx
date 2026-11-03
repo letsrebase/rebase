@@ -7,70 +7,70 @@ import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from
 const FREELANCER: Freelancer = {
   id: 'f1',
   nome: 'Ada',
-  cognome: 'Lovelace',
+  last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   cv_filename: 'cv.pdf',
   cv_size: 2048,
-  tariffa_giornaliera: '500.00',
+  daily_rate: '500.00',
   posizione: 'CTO',
-  remoto: 'remoto',
+  remote: 'remote',
   links: ['https://github.com/ada', 'https://ada.dev'],
-  stato: 'attivo',
-  origine: null,
+  status: 'active',
+  origin: null,
   utm_source: null,
   utm_medium: null,
   utm_campaign: null,
   utm_content: null,
   utm_term: null,
   utm_id: null,
-  telefono: null,
+  phone: null,
   seniority_admin: null,
-  anni_admin: null,
+  experience_years_admin: null,
   created_at: '2026-09-10T10:00:00Z',
-  compilata_da: 'persona',
-  completa: true,
+  compilata_da: 'person',
+  complete: true,
   note: [],
-  accessi: 3,
-  provenienza: 'landing',
-  ultimo_accesso: null,
+  logins: 3,
+  provenance: 'landing',
+  last_access: null,
   deleted_at: null,
   vetted_at: null,
   cv_mime: 'application/pdf',
   updated_at: '2026-09-10T10:00:00Z',
-  iscrizione_utm: null,
-  ultimi_accessi: [],
-  ultimi_download_guida: [],
+  signup_utm: null,
+  last_logins: [],
+  last_download_guide: [],
   pigro_slug: null,
 }
 
 const COMPANY: Company = {
   id: 'c1',
-  nome_azienda: 'Rossi Studio',
-  referente: 'Mario Rossi',
+  company_name: 'Rossi Studio',
+  contact_person: 'Mario Rossi',
   email: 'mario@rossi.it',
-  telefono: '+39 345 1234567',
-  figura_richiesta: 'Backend developer',
-  progetto: 'Piattaforma di prenotazione',
-  periodo_da: '2026-10-01',
-  durata: '3 mesi',
-  budget_giornaliero: '450.00',
-  remoto: 'remoto',
-  giorni_presenza: null,
-  numero_risorse: 2,
-  stato: 'nuovo',
-  crm_stato: null,
-  crm_situazione: null,
+  phone: '+39 345 1234567',
+  requested_role: 'Backend developer',
+  project: 'Piattaforma di prenotazione',
+  period_from: '2026-10-01',
+  duration: '3 mesi',
+  daily_budget: '450.00',
+  remote: 'remote',
+  onsite_days: null,
+  headcount: 2,
+  status: 'new',
+  crm_status: null,
+  crm_situation: null,
   crm_deal_url: null,
   crm_attempted_at: null,
-  origine: null,
+  origin: null,
   utm_source: null,
   utm_medium: null,
   utm_campaign: null,
   utm_content: null,
   utm_term: null,
   utm_id: null,
-  crm_errore: null,
+  crm_error: null,
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
   note: [],
@@ -149,13 +149,13 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     expect(onSave).toHaveBeenCalledWith({
       nome: 'Ada',
-      cognome: 'Lovelace',
+      last_name: 'Lovelace',
       linkedin_url: 'https://www.linkedin.com/in/ada',
-      tariffa_giornaliera: '500.00',
+      daily_rate: '500.00',
       posizione: 'CTO',
-      remoto: 'remoto',
+      remote: 'remote',
       links: ['https://github.com/ada', 'https://ada.dev'],
-      compilata_da: 'persona',
+      compilata_da: 'person',
     })
   })
 
@@ -169,7 +169,7 @@ describe('FreelancerOverrideDialog', () => {
     const sent = onSave.mock.calls[0]![0]
     expect(sent.linkedin_url).toBeNull()
     expect(sent.posizione).toBeNull()
-    expect(sent.tariffa_giornaliera).toBeNull()
+    expect(sent.daily_rate).toBeNull()
   })
 
   it('sets remoto to null through the "Non impostata" option', async () => {
@@ -178,7 +178,7 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
     await userEvent.click(screen.getByRole('option', { name: 'Non impostata' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].remoto).toBeNull()
+    expect(onSave.mock.calls[0]![0].remote).toBeNull()
   })
 
   it('splits the links textarea into a trimmed array, blank lines dropped', async () => {
@@ -203,7 +203,7 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.clear(rate)
     await userEvent.type(rate, typed)
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].tariffa_giornaliera).toBe(sent)
+    expect(onSave.mock.calls[0]![0].daily_rate).toBe(sent)
   })
 
   it('says a rate that is not an amount is not one, and keeps Save off (REB-485)', async () => {
@@ -276,7 +276,7 @@ describe('CompanyOverrideDialog', () => {
   })
 
   it('shows and requires giorni in sede only for ibrido, pre-filled from the current row', () => {
-    mountCompany({ company: { ...COMPANY, remoto: 'ibrido', giorni_presenza: 3 } })
+    mountCompany({ company: { ...COMPANY, remote: 'hybrid', onsite_days: 3 } })
     expect(screen.getByLabelText('Giorni in sede a settimana')).toHaveValue(3)
   })
 
@@ -286,26 +286,26 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
     expect(sent).toEqual({
-      nome_azienda: 'Rossi Studio',
-      figura_richiesta: 'Backend developer',
-      progetto: 'Piattaforma di prenotazione',
-      periodo_da: '2026-10-01',
-      durata: '3 mesi',
-      budget_giornaliero: '450.00',
-      remoto: 'remoto',
-      giorni_presenza: null,
-      numero_risorse: 2,
+      company_name: 'Rossi Studio',
+      requested_role: 'Backend developer',
+      project: 'Piattaforma di prenotazione',
+      period_from: '2026-10-01',
+      duration: '3 mesi',
+      daily_budget: '450.00',
+      remote: 'remote',
+      onsite_days: null,
+      headcount: 2,
     })
   })
 
   it('clears giorni_presenza to null the moment remoto leaves ibrido', async () => {
     const onSave = vi.fn<(data: CompanyOverride) => void>()
-    mountCompany({ onSave, company: { ...COMPANY, remoto: 'ibrido', giorni_presenza: 3 } })
+    mountCompany({ onSave, company: { ...COMPANY, remote: 'hybrid', onsite_days: 3 } })
     await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
     await userEvent.click(screen.getByRole('option', { name: 'In sede' }))
     expect(screen.queryByLabelText('Giorni in sede a settimana')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0]).toMatchObject({ remoto: 'in_sede', giorni_presenza: null })
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ remote: 'on_site', onsite_days: null })
   })
 
   it('sends giorni_presenza as a number when remoto is ibrido', async () => {
@@ -315,7 +315,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Ibrido' }))
     await userEvent.type(screen.getByLabelText('Giorni in sede a settimana'), '2')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0]).toMatchObject({ remoto: 'ibrido', giorni_presenza: 2 })
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ remote: 'hybrid', onsite_days: 2 })
   })
 
   it('sends the referente nome/cognome only once filled in', async () => {
@@ -326,7 +326,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
     expect(sent.nome).toBe('Mario')
-    expect(sent.cognome).toBe('Bianchi')
+    expect(sent.last_name).toBe('Bianchi')
     expect(sent.linkedin_url).toBeUndefined()
   })
 
@@ -345,7 +345,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.clear(budget)
     await userEvent.type(budget, '1.500')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].budget_giornaliero).toBe('1500.00')
+    expect(onSave.mock.calls[0]![0].daily_budget).toBe('1500.00')
   })
 
   it('says a budget that is not an amount is not one, and keeps Save off (REB-485)', async () => {

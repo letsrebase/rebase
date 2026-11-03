@@ -40,8 +40,8 @@ describe('«Il tuo link di segnalazione» in the member area (P-REB-44)', () => 
       ...RATES,
       code: 'ABC123',
       referred: [
-        { kind: 'freelancer', nome: 'Ada Lovelace', created_at: '2026-09-20T10:00:00Z', stato: 'nuovo' },
-        { kind: 'company', nome: 'ACME S.r.l.', created_at: '2026-09-22T10:00:00Z', stato: 'nuovo' },
+        { kind: 'freelancer', nome: 'Ada Lovelace', created_at: '2026-09-20T10:00:00Z', status: 'new' },
+        { kind: 'company', nome: 'ACME S.r.l.', created_at: '2026-09-22T10:00:00Z', status: 'new' },
       ],
     })
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()

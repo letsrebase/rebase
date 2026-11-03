@@ -43,15 +43,13 @@ from pigrocrm.core.search.scoring import (
     row_score,
 )
 
-_NAME = ScoredField(
-    name="ragione_sociale", column=Customer.ragione_sociale, weight=WEIGHT_IDENTIFYING
-)
+_NAME = ScoredField(name="legal_name", column=Customer.legal_name, weight=WEIGHT_IDENTIFYING)
 _EMAIL = ScoredField(name="email", column=Customer.email, weight=WEIGHT_EMAIL)
 _FIELDS = (_NAME, _EMAIL)
 
 
-def _add(session: Session, ragione_sociale: str, email: str | None = None) -> Customer:
-    row = Customer(ragione_sociale=ragione_sociale, email=email, nazione="IT", custom_fields={})
+def _add(session: Session, legal_name: str, email: str | None = None) -> Customer:
+    row = Customer(legal_name=legal_name, email=email, country="IT", custom_fields={})
     session.add(row)
     session.flush()
     return row
@@ -121,7 +119,7 @@ def test_best_field_names_the_column_that_produced_the_score(db_session: Session
 
 
 def test_best_field_resolves_a_tie_to_the_earlier_field(db_session: Session) -> None:
-    """Criterion 4 asks for byte-identical responses across runs, and `campo` is in the
+    """Criterion 4 asks for byte-identical responses across runs, and `field` is in the
     response. Two fields of equal weight matching equally well is not a rare case -- a
     person whose surname is also in their email address produces it -- so the tie has to
     resolve by declaration order rather than by whichever `CASE` arm the planner reaches
@@ -142,7 +140,7 @@ def test_best_field_resolves_a_tie_to_the_earlier_field(db_session: Session) -> 
     name = db_session.scalar(
         select(best_field(equal_weight, "Vulcano")).where(Customer.id == row.id)
     )
-    assert name == "ragione_sociale"
+    assert name == "legal_name"
 
 
 def test_matches_any_is_true_only_for_a_row_that_contains_the_term(
@@ -194,9 +192,9 @@ def test_a_null_column_never_wins_and_never_raises(db_session: Session) -> None:
     assert _score(db_session, nothing, "zzqqxxww") == Decimal("0")
 
     # Scored against the nullable column *alone*, which is the only shape that reaches
-    # the `coalesce`: with `customers.ragione_sociale` in the list, `GREATEST` hides a
+    # the `coalesce`: with `customers.legal_name` in the list, `GREATEST` hides a
     # NULL behind the non-null field's own zero and the miss branch is never observed.
-    # Some entity's searched columns are all nullable -- an invoice's `causale` is --
+    # Some entity's searched columns are all nullable -- an invoice's `memo` is --
     # and that row must score zero rather than heading the palette.
     assert _score(db_session, row, "zzqqxxww", (_EMAIL,)) == Decimal("0")
 

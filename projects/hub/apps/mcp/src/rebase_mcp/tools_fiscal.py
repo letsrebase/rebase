@@ -22,10 +22,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def set_freelancer_tax_data(
         freelancer_id: str,
-        codice_fiscale: str,
-        domicilio: str,
-        partita_iva: str | None = None,
-        pec: str | None = None,
+        tax_code: str,
+        domicile: str,
+        vat_number: str | None = None,
+        certified_email: str | None = None,
     ) -> dict[str, Any]:
         """Salva i dati fiscali di un freelance, quelli che i contratti stampano: codice
         fiscale (16 caratteri, o 11 cifre per una ditta), domicilio su una riga, la partita
@@ -36,10 +36,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         key = to_uuid(freelancer_id, "freelancer_id")
         try:
             data = FiscalData(
-                codice_fiscale=codice_fiscale,
-                partita_iva=partita_iva or None,
-                domicilio=domicilio,
-                pec=pec or None,
+                tax_code=tax_code,
+                vat_number=vat_number or None,
+                domicile=domicile,
+                certified_email=certified_email or None,
             )
         except PydanticValidationError as exc:
             raise field_refusal(exc) from None

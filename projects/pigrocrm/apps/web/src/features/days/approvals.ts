@@ -3,25 +3,25 @@ import type { WorkUnitRow } from './labels'
 
 export type ApprovalRecordBody = components['schemas']['ApprovalRecord']
 export type ApprovalRecorded = components['schemas']['ApprovalRecorded']
-export type ApprovalCanale = ApprovalRecordBody['canale']
+export type ApprovalChannel = ApprovalRecordBody['channel']
 export type GmailMessage = components['schemas']['GmailMessageRead']
 
 /** The channels a notice can arrive by, in the words a person uses (mastro's `noticeChannel`). */
-export const CANALI: Record<ApprovalCanale, string> = {
+export const Channels: Record<ApprovalChannel, string> = {
   email: 'Email',
-  posta_certificata: 'Posta certificata',
-  raccomandata: 'Raccomandata',
-  corriere: 'Corriere',
-  altro: 'Altro',
+  certified_mail: 'Posta certificata',
+  registered_mail: 'Raccomandata',
+  courier: 'Corriere',
+  other: 'Altro',
 }
 
-export const CANALE_IDS = Object.keys(CANALI) as ApprovalCanale[]
+export const ChannelIds = Object.keys(Channels) as ApprovalChannel[]
 
 /** The two states a recorded approval can still use: the API refuses a day in any other. */
-const APPROVABLE = new Set(['proposto', 'lavorato_senza_approvazione'])
+const APPROVABLE = new Set(['proposed', 'worked_without_approval'])
 
-export function canReceiveApproval(day: Pick<WorkUnitRow, 'stato' | 'approval_id'>): boolean {
-  return APPROVABLE.has(day.stato) && day.approval_id === null
+export function canReceiveApproval(day: Pick<WorkUnitRow, 'status' | 'approval_id'>): boolean {
+  return APPROVABLE.has(day.status) && day.approval_id === null
 }
 
 /** Collapses every run of whitespace, so a quotation wrapped differently in the mail

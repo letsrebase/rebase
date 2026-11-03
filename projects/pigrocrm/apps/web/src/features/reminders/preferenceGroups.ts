@@ -11,15 +11,15 @@ const GROUPS: readonly { id: string; label: string; keys: readonly string[] }[] 
     id: 'attivita',
     label: 'Attività e deal',
     keys: [
-      'attivita_due',
-      'attivita_overdue',
+      'task_due',
+      'task_overdue',
       'deal_past_close',
       'deal_stale',
       'timer_running_long',
     ],
   },
   {
-    id: 'fatture',
+    id: 'invoices',
     label: 'Fatture e fatturazione',
     keys: [
       'invoice_overdue',
@@ -48,7 +48,7 @@ const GROUPS: readonly { id: string; label: string; keys: readonly string[] }[] 
     ],
   },
   {
-    id: 'spazio',
+    id: 'space',
     label: 'Spazio',
     keys: [
       'ceiling_approaching',
@@ -62,7 +62,7 @@ const GROUPS: readonly { id: string; label: string; keys: readonly string[] }[] 
   },
 ]
 
-const OTHER = { id: 'altri', label: 'Altri promemoria' }
+const OTHER = { id: 'other', label: 'Altri promemoria' }
 
 function groupOf(kind: PreferenceType) {
   const named = GROUPS.find((group) => group.keys.includes(kind.key))

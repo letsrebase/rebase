@@ -64,14 +64,12 @@ def propose_team(
     slot taken, the client's share of the day used or the day's proposals spent, 502 when
     Claude does not answer."""
     spend_one(request)
-    return slots.propose(
-        builder, data, origine="pubblico", user_id=None, client=client_key(request)
-    )
+    return slots.propose(builder, data, origin="public", user_id=None, client=client_key(request))
 
 
 @router.get("/proposals/{proposal_id}", response_model=TeamProposalRead)
 def read_proposal(proposal_id: UUID, builder: TeamBuilderDep) -> TeamProposalRead:
-    """The public page opened on a proposal by its id (REB-675, `/hub/team?proposta=`,
+    """The public page opened on a proposal by its id (REB-675, `/hub/team?proposal=`,
     where the landing's hero sends a visitor for the whole team): the public read, with
     the description and the headcount it was asked with, of a public proposal younger
     than a day; 404 for anything else. No speed bump: one row read by a random id,
@@ -95,7 +93,7 @@ def request_team(
     same and waits in «Richieste team»."""
     spend_one(request)
     read, mail = TeamRequestService(session, settings=settings, tracker=tracker).create(
-        data, origine="pubblico", user_id=None, company_id=None
+        data, origin="public", user_id=None, company_id=None
     )
     if sender is None:
         _log.info("team request %s: no mail sender, not mailed", read.id)
@@ -112,10 +110,10 @@ def answer_availability(
     settings: SettingsDep,
     tracker: TrackerDep,
 ) -> TeamAvailabilityOutcome:
-    """«Conferma» on `/hub/team/risposta`: `{esito: "si" | "no"}` once recorded, and
+    """«Conferma» on `/hub/team/answer`: `{esito: "si" | "no"}` once recorded, and
     `{esito: "invalid"}` for a token unknown, spent or expired, never saying which."""
     spend_one(request)
-    esito = TeamAvailabilityService(session, settings=settings, tracker=tracker).answer(
-        data.t, data.risposta
+    outcome = TeamAvailabilityService(session, settings=settings, tracker=tracker).answer(
+        data.t, data.answer
     )
-    return TeamAvailabilityOutcome(esito=esito)
+    return TeamAvailabilityOutcome(outcome=outcome)

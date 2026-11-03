@@ -1,7 +1,7 @@
 """The checks of a card that need no model (REB-842): what a rule can say about it, so the
 judging call is asked only what a rule cannot.
 
-* `anni`, recomputed from the CV's dated periods when the text allows a reliable parse, and
+* `experience_years`, recomputed from the CV's dated periods when the text allows a reliable parse, and
   left to the judge when it does not;
 * the anonymity, read again by `card_guard.identifying` against every identifier the
   person's own data holds, whichever prompt wrote the card.
@@ -36,7 +36,7 @@ from rebase_core.team_schemas import Card
 
 # A card's years may differ from the recomputed ones by this many: the CV's months are
 # counted by a rule, the card by a model.
-ANNI_TOLERANCE = 1
+EXPERIENCE_YEARS_TOLERANCE = 1
 # The shortest and the longest count of the CV's periods may differ by this many years for
 # the parse to be called reliable.
 RELIABLE_SPREAD = 1
@@ -237,7 +237,7 @@ YearsMode = Literal["admin", "undated", "recomputed", "judged"]
 
 @dataclass(frozen=True)
 class YearsCheck:
-    """What the rule says of a card's `anni`. `ok` is `None` when the CV does not allow a
+    """What the rule says of a card's `experience_years`. `ok` is `None` when the CV does not allow a
     reliable parse (`mode` `judged`): the judging call then decides. `low` is the years of
     the CV's periods at their shortest and without the studies, `high` at their longest and
     with them; `None` when no period was found."""
@@ -253,24 +253,27 @@ def check_years(
     cv_text: str,
     *,
     hub_completed_months: int = 0,
-    anni_admin: int | None = None,
+    experience_years_admin: int | None = None,
     today: date | None = None,
 ) -> YearsCheck:
-    """`anni` against the CV's dates, the hub's completed engagements and an admin's
-    word. An admin's years are a fact: the card has to be within `ANNI_TOLERANCE` of
+    """`experience_years` against the CV's dates, the hub's completed engagements and an admin's
+    word. An admin's years are a fact: the card has to be within `EXPERIENCE_YEARS_TOLERANCE` of
     them. A CV that writes no year at all dates nothing, so the card has none (the hub's
     years apart). Otherwise, only when the parse is reliable (the module docstring): the
     years may be at most what every period adds up to, the hub's completed years included,
     and at least what the periods at their shortest and without a study add up to; a card
     with no years where the CV has professional periods is a mismatch."""
     today = today or date.today()
-    got = card.anni
-    if anni_admin is not None:
-        return YearsCheck("admin", got is not None and abs(got - anni_admin) <= ANNI_TOLERANCE)
+    got = card.experience_years
+    if experience_years_admin is not None:
+        return YearsCheck(
+            "admin",
+            got is not None and abs(got - experience_years_admin) <= EXPERIENCE_YEARS_TOLERANCE,
+        )
     hub_years = hub_completed_months // 12
     parsed = parse(cv_text, today)
     if not parsed.periods and _ANY_YEAR.search(cv_text) is None:
-        return YearsCheck("undated", got is None or got <= hub_years + ANNI_TOLERANCE)
+        return YearsCheck("undated", got is None or got <= hub_years + EXPERIENCE_YEARS_TOLERANCE)
     if not parsed.periods or not parsed.complete:
         return YearsCheck("judged", None)
     high = years_of(parsed.periods)
@@ -279,7 +282,9 @@ def check_years(
         return YearsCheck("judged", None, low, high)
     if got is None:
         return YearsCheck("recomputed", low == 0, low, high)
-    within = low - ANNI_TOLERANCE <= got <= high + hub_years + ANNI_TOLERANCE
+    within = (
+        low - EXPERIENCE_YEARS_TOLERANCE <= got <= high + hub_years + EXPERIENCE_YEARS_TOLERANCE
+    )
     return YearsCheck("recomputed", within, low, high)
 
 

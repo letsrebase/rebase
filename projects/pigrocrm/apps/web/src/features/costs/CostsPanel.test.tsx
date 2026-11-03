@@ -21,7 +21,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useAuth: () => ({
-    user: { id: '33333333-3333-7333-8333-333333333333', ruolo: 'admin' },
+    user: { id: '33333333-3333-7333-8333-333333333333', role: 'admin' },
     isLoading: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -37,9 +37,9 @@ const cost = (overrides: Record<string, unknown> = {}) => ({
   deal_id: DEAL,
   category_id: 'cat1',
   data: '2026-03-05',
-  importo: '2500.50',
-  descrizione: 'Licenza',
-  fornitore: 'ACME',
+  amount: '2500.50',
+  description: 'Licenza',
+  supplier: 'ACME',
   document_id: null,
   custom_fields: {},
   created_at: '2026-03-05T00:00:00Z',
@@ -50,9 +50,9 @@ const cost = (overrides: Record<string, unknown> = {}) => ({
 const CATEGORY = {
   id: 'cat1',
   nome: 'Software e licenze',
-  posizione: 1,
+  position: 1,
   code: 'software_licenze',
-  archiviata: false,
+  archived: false,
   created_at: 'x',
   updated_at: 'x',
 }
@@ -79,12 +79,12 @@ function respond(routes: Record<string, () => Promise<never>>) {
 
 /** `null` is the general-costs panel, the one with no deal: a defaulted parameter
  *  cannot be handed `undefined` to mean that, it would take the default instead. */
-function renderPanel(dealId: string | null = DEAL, azienda?: LegalEntityValue) {
+function renderPanel(dealId: string | null = DEAL, legal_entity?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const panel = <CostsPanel dealId={dealId ?? undefined} />
   return render(
     <QueryClientProvider client={client}>
-      {azienda ? <LegalEntityContext value={azienda}>{panel}</LegalEntityContext> : panel}
+      {legal_entity ? <LegalEntityContext value={legal_entity}>{panel}</LegalEntityContext> : panel}
     </QueryClientProvider>,
   )
 }
@@ -110,7 +110,7 @@ describe('CostsPanel', () => {
 
   it('shows a negative amount as a refund rather than as an error', async () => {
     respond({
-      '/api/costs': () => ok({ items: [cost({ importo: '-45.50' })], next_cursor: null }),
+      '/api/costs': () => ok({ items: [cost({ amount: '-45.50' })], next_cursor: null }),
       '/api/cost-categories': () => ok([]),
       '/api/schema/{entity_type}': () => ok(EMPTY_SCHEMA),
     })
@@ -163,17 +163,17 @@ describe('CostsPanel', () => {
     expect(options.body).toMatchObject({
       deal_id: DEAL,
       category_id: 'cat1',
-      importo: '120',
-      descrizione: 'Hosting',
+      amount: '120',
+      description: 'Hosting',
     })
   })
 })
 
 describe('the «Azienda» picker of a general expense (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
-    aziende: [HUMANCRAFT, REBASE],
+    legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
     several: true, scoped: false, pinned: false,
@@ -220,10 +220,10 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
 })
 
 describe('a custom cost field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
-    aziende: [HUMANCRAFT, REBASE],
+    legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
     several: true, scoped: false, pinned: false,
@@ -233,14 +233,14 @@ describe('a custom cost field that happens to be named azienda_id (CodeRabbit, P
   it('never shows the owning azienda\'s id as the custom field\'s value', async () => {
     respond({
       '/api/costs': () =>
-        ok({ items: [cost({ deal_id: null, azienda_id: 'a1', custom_fields: {} })], next_cursor: null }),
+        ok({ items: [cost({ deal_id: null, legal_entity_id: 'a1', custom_fields: {} })], next_cursor: null }),
       '/api/cost-categories': () => ok([CATEGORY]),
       '/api/schema/{entity_type}': () =>
         ok({
           entity_type: 'cost',
           native_fields: [],
           custom_fields: [
-            { key: 'azienda_id', label: 'Codice interno', type: 'text', required: false, options: [] },
+            { key: 'legal_entity_id', label: 'Codice interno', type: 'text', required: false, options: [] },
           ],
         }),
     })

@@ -13,7 +13,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 import { api } from '@/lib/api'
 import { InvitePage } from './InvitePage'
-import { stripEntraToken, takeEntraToken } from '@rebase/analytics/entra-token'
+import { stripVerifyToken, takeVerifyToken } from '@rebase/analytics/verify-token'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
@@ -28,7 +28,7 @@ function dead(status: number, code: string, detail: string) {
   return { error: { code, detail }, response: { status } }
 }
 
-const PEEK = { spazio: 'Studio Bianchi', invitato_da: 'Ada Admin', nome: 'Luca' }
+const PEEK = { space: 'Studio Bianchi', invited_from: 'Ada Admin', nome: 'Luca' }
 const PEEK_NO_NOME = { ...PEEK, nome: null }
 
 /** GET routed the way the page uses it: the peek on `/api/auth/invite`, the bare
@@ -45,7 +45,7 @@ beforeEach(() => {
   enterWithInvite.mockReset()
   enterWithInvite.mockResolvedValue(undefined)
   // Whatever a previous test left in the scrubber's one-shot slot.
-  takeEntraToken()
+  takeVerifyToken()
 })
 
 describe('the invitation page', () => {
@@ -111,7 +111,7 @@ describe('the invitation page', () => {
   })
 
   it.each([
-    ['invitation_revoked', 'revocato'],
+    ['invitation_revoked', 'revoked'],
     ['invitation_unknown', 'non esiste'],
   ])('renders %s as its own dead state', async (code, sentence) => {
     GET.mockResolvedValue(dead(code === 'invitation_unknown' ? 404 : 410, code, sentence))
@@ -183,7 +183,7 @@ describe('the invitation page', () => {
 describe('the invitation token stays out of what PostHog can see', () => {
   it('the URL carries no token once the scrub has run, and the page never re-adds it', async () => {
     window.history.replaceState(null, '', '/studio/app/invite?t=secret-token')
-    stripEntraToken(/\/app\/(verify|invite)$/)
+    stripVerifyToken(/\/app\/(verify|invite)$/)
     expect(window.location.href).not.toContain('secret-token')
 
     peeking(PEEK)
@@ -191,6 +191,6 @@ describe('the invitation token stays out of what PostHog can see', () => {
     await screen.findByText('Entra in Studio Bianchi')
     expect(container).not.toHaveTextContent('secret-token')
     expect(window.location.href).not.toContain('secret-token')
-    takeEntraToken()
+    takeVerifyToken()
   })
 })

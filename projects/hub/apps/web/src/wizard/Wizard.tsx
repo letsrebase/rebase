@@ -85,7 +85,7 @@ export function Wizard<T>({
   submitting: boolean
   /** An error from the server, shown on the review screen; when it names a field by id
    *  the engine finds that field's screen, jumps back to it and shows the message
-   *  under that field's own control. An id that names no field (REB-243: `cognome`,
+   *  under that field's own control. An id that names no field (REB-243: `last_name`,
    *  say, which has no field of its own) never suppresses the review's own alert --
    *  the one moment a person is most likely to abandon is a submit that answers with
    *  silence. */
@@ -93,7 +93,7 @@ export function Wizard<T>({
   submitLabel: string
   /** Called with the screen on screen, how many there are, and that screen's own id,
    *  whenever it changes: the first one on mount, the review as `screens.length` and
-   *  `'riepilogo'`, a jump back on a server error too. Memoise it, or it fires on every
+   *  `'recap'`, a jump back on a server error too. Memoise it, or it fires on every
    *  render. */
   onStep?: (index: number, total: number, screenId: string) => void
   /** Where to start: the screen a draft was left at (`wizard/draft.ts`), clamped to the
@@ -114,7 +114,7 @@ export function Wizard<T>({
   const [handled, setHandled] = useState<{ message: string; field?: string } | null>(null)
   // The review has no field of its own, so a funnel still needs one id for it: the
   // same word its own heading reads («Tutto giusto?», announced here as «Riepilogo»).
-  const stepId = screen ? screen.id : 'riepilogo'
+  const stepId = screen ? screen.id : 'recap'
 
   useEffect(() => {
     onStep?.(index, screens.length, stepId)

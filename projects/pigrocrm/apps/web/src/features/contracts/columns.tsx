@@ -7,32 +7,32 @@ import type { Contract } from './queries'
 
 export function buildContractColumns(): ColumnDef<DataTableFeatures, Contract>[] {
   return [
-    { header: 'Titolo', id: 'titolo', accessorFn: (row) => row.titolo },
+    { header: 'Titolo', id: 'title', accessorFn: (row) => row.title },
     {
       header: 'Stato',
-      id: 'stato',
-      accessorFn: (row) => row.stato,
+      id: 'status',
+      accessorFn: (row) => row.status,
       cell: ({ row }) => (
-        <StatusPill tone={stateTone(row.original.stato)}>{stateLabel(row.original.stato)}</StatusPill>
+        <StatusPill tone={stateTone(row.original.status)}>{stateLabel(row.original.status)}</StatusPill>
       ),
     },
     {
       header: 'Inizio',
-      id: 'inizio',
-      accessorFn: (row) => row.inizio,
-      cell: ({ row }) => <DateCell value={row.original.inizio} />,
+      id: 'start',
+      accessorFn: (row) => row.start,
+      cell: ({ row }) => <DateCell value={row.original.start} />,
     },
     {
       header: 'Fine',
-      id: 'fine',
-      accessorFn: (row) => row.fine,
-      cell: ({ row }) => <DateCell value={row.original.fine} absent="senza scadenza" />,
+      id: 'end',
+      accessorFn: (row) => row.end,
+      cell: ({ row }) => <DateCell value={row.original.end} absent="senza scadenza" />,
     },
-    { header: 'Rinnovo', id: 'rinnovo', accessorFn: (row) => renewalLabel(row.tipo_rinnovo) },
+    { header: 'Rinnovo', id: 'rinnovo', accessorFn: (row) => renewalLabel(row.renewal_type) },
     {
       header: 'Fatturazione',
       id: 'fatturazione',
-      accessorFn: (row) => cadenceLabel(row.cadenza_fatturazione),
+      accessorFn: (row) => cadenceLabel(row.billing_cadence),
     },
   ]
 }

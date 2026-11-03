@@ -11,7 +11,7 @@ import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
-import { MemberContratti } from '@/pages/member/Contratti'
+import { MemberContracts } from '@/pages/member/Contracts'
 import { MemberReferral } from '@/pages/member/Referral'
 
 // `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
@@ -37,10 +37,10 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** What the wizard's own field says about one answer of a request (`remoto`'s «Ibrido ·
- *  3 giorni in sede», `numero_risorse`'s «2 persone»), so the list and the edit form use
+/** What the wizard's own field says about one answer of a request (`remote`'s «Ibrido ·
+ *  3 giorni in sede», `headcount`'s «2 persone»), so the list and the edit form use
  *  the same words. */
-function said(id: 'remoto' | 'numero_risorse', request: MemberRequest): string {
+function said(id: 'remote' | 'headcount', request: MemberRequest): string {
   const field = COMPANY_FIELDS.find((candidate) => candidate.id === id)
   return field?.summary(toCompanyApplication(request)) || '—'
 }
@@ -62,14 +62,14 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
     <li className="border bg-card">
       <div className="flex items-start justify-between gap-3 px-4 pt-3">
         <div className="min-w-0">
-          <h3 className="break-words font-semibold">{request.figura_richiesta}</h3>
+          <h3 className="break-words font-semibold">{request.requested_role}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">Inviata il {formatDate(request.created_at)}</p>
         </div>
         <Button asChild variant="outline" size="sm" className="shrink-0">
           <Link
             to="/me/edit-company/$id"
             params={{ id: request.id }}
-            aria-label={`Modifica la richiesta ${position} di ${total}: ${request.figura_richiesta}`}
+            aria-label={`Modifica la richiesta ${position} di ${total}: ${request.requested_role}`}
           >
             <Pencil className="mr-2 size-4" />
             Modifica
@@ -79,15 +79,15 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
       {/* The padding sits on the wrapper: on the clamped element itself the lines past the
           second would show through its bottom padding. */}
       <div className="px-4 pt-2 pb-3">
-        <p className="line-clamp-2 text-sm text-muted-foreground">{request.progetto}</p>
+        <p className="line-clamp-2 text-sm text-muted-foreground">{request.project}</p>
       </div>
       <dl className="grid grid-cols-2 gap-(--line) border-t bg-border">
-        <Cell label="Budget">{formatMoney(request.budget_giornaliero)} / giorno</Cell>
+        <Cell label="Budget">{formatMoney(request.daily_budget)} / giorno</Cell>
         <Cell label="Da quando">
-          {formatDay(request.periodo_da)}, {request.durata}
+          {formatDay(request.period_from)}, {request.duration}
         </Cell>
-        <Cell label="Modalità">{said('remoto', request)}</Cell>
-        <Cell label="Persone">{said('numero_risorse', request)}</Cell>
+        <Cell label="Modalità">{said('remote', request)}</Cell>
+        <Cell label="Persone">{said('headcount', request)}</Cell>
       </dl>
     </li>
   )
@@ -98,7 +98,7 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *
  *  `useMe()` answers member and admin alike (REB-279): a `users` row is no longer
  *  guaranteed to carry a freelancer card, so the card section renders only when
- *  `ha_scheda` is true, and the company section only when `ha_azienda` is true
+ *  `has_card` is true, and the company section only when `has_company` is true
  *  (REB-314); a person with neither sees their name, email and role instead of a
  *  wizard-shaped section reading from fields that are all `null`. A person can carry
  *  both, and both render together. The two perks render only for a freelancer or an
@@ -133,12 +133,12 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *  shell's sidebar now, not here, so there is one button for it instead of two. */
 export function Area() {
   const me = useMe()
-  const { negato } = useSearch({ strict: false }) as { negato?: boolean }
+  const { denied } = useSearch({ strict: false }) as { denied?: boolean }
   if (!me.data) return null
   const profile = me.data
-  const value = profile.ha_scheda ? toApplication(profile) : null
+  const value = profile.has_card ? toApplication(profile) : null
   const fields = FREELANCER_FIELDS.filter((field) => field.id !== 'email' && field.id !== 'cv')
-  const requests = profile.richieste
+  const requests = profile.requests
   const showPerks = value !== null || profile.role === 'admin'
 
   const cardSection = value && (
@@ -146,7 +146,7 @@ export function Area() {
       <h2 id="me-scheda" className="text-lg font-semibold tracking-tight">
         La tua scheda
       </h2>
-      {!profile.completa && (
+      {!profile.complete && (
         // What is missing is what a company would search by, so it is said here and not
         // only in the dashes below. Two ways to get here: a card an admin wrote from a
         // signup (ORB-155), and a person who skipped the CV in the wizard, where it is
@@ -213,8 +213,8 @@ export function Area() {
   // keeps the «Ruolo» row below; an admin with nothing else is already named here, so
   // that row would only say it twice (REB-601).
   const roles = [
-    profile.ha_scheda && 'Freelance',
-    profile.ha_azienda && 'Azienda',
+    profile.has_card && 'Freelance',
+    profile.has_company && 'Azienda',
     profile.role === 'admin' && ROLE_LABELS.admin,
   ].filter((label): label is string => typeof label === 'string')
 
@@ -253,7 +253,7 @@ export function Area() {
           </p>
         </div>
         <Button asChild className="self-start">
-          <a href={member.guideUrl} onClick={() => capture('guida_scaricata')}>
+          <a href={member.guideUrl} onClick={() => capture('guide_downloaded')}>
             <Download className="mr-2 size-4" />
             Scarica la guida
           </a>
@@ -267,7 +267,7 @@ export function Area() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
-      {negato && (
+      {denied && (
         <p role="status" className="border-(length:--line-strong) border-accent bg-card p-4 text-sm">
           Quella sezione è riservata a chi amministra l’hub: eccoti nella tua area.
         </p>
@@ -277,7 +277,7 @@ export function Area() {
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">La tua area</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {profile.nome} {profile.cognome}
+            {profile.nome} {profile.last_name}
           </h1>
           {roles.length > 0 && (
             <div role="group" aria-label="Ruoli" className="mt-2 flex flex-wrap gap-2">
@@ -290,10 +290,10 @@ export function Area() {
           )}
           <p className="mt-1 text-sm text-muted-foreground">
             Ti scriviamo a <span className="font-medium text-foreground">{profile.email}</span>.
-            {profile.ha_scheda && ' Per cambiare indirizzo, rifai la candidatura con quello nuovo.'}
+            {profile.has_card && ' Per cambiare indirizzo, rifai la candidatura con quello nuovo.'}
           </p>
         </div>
-        {profile.ha_scheda && (
+        {profile.has_card && (
           <Button asChild variant="outline" size="sm">
             <Link to="/me/edit">
               <Pencil className="mr-2 size-4" />
@@ -309,7 +309,7 @@ export function Area() {
         {requestsSection}
         {roleSection}
         {perksSection}
-        {value && <MemberContratti />}
+        {value && <MemberContracts />}
       </div>
     </div>
   )

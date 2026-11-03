@@ -1,4 +1,4 @@
-"""0031 (REB-554): `signups.rif` is added empty, survives a retried deploy, and leaves the
+"""0031 (REB-554): `signups.ref` is added empty, survives a retried deploy, and leaves the
 rows that were already there untouched."""
 
 from alembic import command
@@ -43,7 +43,7 @@ def test_migration_0031_adds_an_empty_column_and_runs_again() -> None:
         for _ in range(2):
             command.upgrade(config, "head")
             with engine.begin() as connection:
-                assert _columns(connection) == ["rif"]
+                assert _columns(connection) == ["ref"]
                 row = connection.execute(text("SELECT email, nome, rif FROM signups")).one()
                 assert tuple(row) == ("old@acme.it", "Old", None)
                 connection.execute(text("UPDATE signups SET rif = 'ABCDEFGH23'"))

@@ -18,13 +18,13 @@ docker exec rebase-api-1 uv run --no-sync rebase talent-duplicates          # dr
 
 | Flags | Does |
 |---|---|
-| none | The dry run: how many pairs share a LinkedIn profile (`unibili`, with what a merge would move, by relation and count), how many only share a name or a telephone number (`da rivedere`), the sign-ups that repeat a profile, and whether the two unique indexes exist. Prints internal ids and counts only: never a name, an address or a profile, so the output can go on a Linear card. |
+| none | The dry run: how many pairs share a LinkedIn profile (`mergeable`, with what a merge would move, by relation and count), how many only share a name or a telephone number (`da rivedere`), the sign-ups that repeat a profile, and whether the two unique indexes exist. Prints internal ids and counts only: never a name, an address or a profile, so the output can go on a Linear card. |
 | `--apply --admin EMAIL` | Merges every unibile pair, the card with the **newest CV** surviving, then creates each LinkedIn unique index whose profiles are no longer shared; one still blocked (two sign-ups, or two users that are not cards, on one profile: nothing a merge settles) is reported with how many and left for an admin. `EMAIL` is the admin the merge is signed with. A pair a merge refuses (the sentence is printed) is skipped, and the exit code is 1. Only a personal profile (`linkedin.com/in/<name>`) identifies anybody: a company page or a bare `linkedin.com` that two people typed is never a pair and never blocks an index. |
 | `--apply --admin EMAIL --survivor ID --absorbed ID` | Merges that one pair of freelancer ids, whichever signals it has: an admin who read both cards chose. Also the way to merge a `da rivedere` pair. |
 | `--undo ACTION_ID --admin EMAIL` | Puts one merge back (below). |
 
 The same merge is «Unisci» on the admin's «Duplicati» page, `POST /api/hub/freelancers/{id}/merge`
-and the MCP tool `merge_freelancers`; `GET /api/hub/talent/duplicati` and `list_duplicati` list the
+and the MCP tool `merge_freelancers`; `GET /api/hub/talent/duplicates` and `list_duplicates` list the
 pairs. A name or a telephone number never merges on its own: only a profile does.
 
 ## What a merge does
@@ -35,12 +35,12 @@ sessions and magic links, company requests, team requests, proposals and talent-
 campaign rows, referrals made and received, matches, contract documents, tax data, the notes
 thread, and the audit entries. Where the survivor already has the thing (a referral for the same card,
 a talent already on the same team request, a live grant for the same company, a tax record) the other's
-stays where it was and is counted as `lasciati`. The absorbed card's notes move into the survivor's thread by id, whole, beside one `sistema` note that says the cards were merged; a refusal to be mailed given under the absorbed address is given to the survivor's address too; a referral code of the absorbed person credits the survivor.
+stays where it was and is counted as `lasciati`. The absorbed card's notes move into the survivor's thread by id, whole, beside one `system` note that says the cards were merged; a refusal to be mailed given under the absorbed address is given to the survivor's address too; a referral code of the absorbed person credits the survivor.
 
 The CV and its anonymous card travel together and the newest stays on the survivor; if the absorbed
 card had the newer one the two swap, and the older file and card stay on the absorbed card. A survivor
 left with a CV and no card, or with a card written from another CV, is flagged
-(`scheda_da_rigenerare`, `absorbed` entry) and a failure recorded for its CV is cleared: the hourly
+(`card_from_regenerate`, `absorbed` entry) and a failure recorded for its CV is cleared: the hourly
 `cards-refresh` writes it, or an admin's «Rigenera scheda». A merge never calls Claude.
 
 **Nothing is deleted.** The absorbed card is soft-deleted, its `users` row keeps its address and points at
@@ -50,8 +50,8 @@ and the sign-up form that type it land on the survivor. The absorbed row gives u
 entry whose payload lists every row that moved.
 
 A merge is **refused**, with a sentence, when the absorbed card is an admin's, when the two have different
-tax codes, when both have a live framework agreement of the same regime (`inviato`, `in_attesa` or
-`firmato` and not yet terminated), or when both have an active match (`in_firma`, `attivo`) with the
+tax codes, when both have a live framework agreement of the same regime (`sent`, `pending` or
+`signed` and not yet terminated), or when both have an active match (`awaiting_signature`, `active`) with the
 same company.
 
 ## Production, in order
@@ -73,7 +73,7 @@ same company.
    ```
    docker exec rebase-api-1 uv run --no-sync rebase talent-duplicates --apply --admin lorenzo@...
    ```
-   It prints one line per pair with the `azione` id (keep those: they are what undo takes), then
+   It prints one line per pair with the `action` id (keep those: they are what undo takes), then
    «indici unici creati: uq_users_linkedin_lower, uq_signups_linkedin_lower». A second dry run must say
    `0 coppie unibili` and `indici unici mancanti: nessuno`.
 4. **The cards**: the survivor's card is flagged. With `REBASE_CARDS_LOOP=on` the next hourly run writes it;
@@ -91,7 +91,7 @@ migration.
 docker exec rebase-api-1 uv run --no-sync rebase talent-duplicates --undo ACTION_ID --admin lorenzo@...
 ```
 
-`ACTION_ID` is the `azione` the merge printed, or the `id` of the `merged` entry in the absorbed card's
+`ACTION_ID` is the `action` the merge printed, or the `id` of the `merged` entry in the absorbed card's
 trail (`GET /api/hub/freelancers/{absorbed id}/audit`, `get_freelancer_audit`). It moves every row the entry
 names back to the absorbed card and person (only the rows still on the survivor: a login or a note the
 survivor got since stays with the survivor), gives back the CV and card if they swapped, restores the

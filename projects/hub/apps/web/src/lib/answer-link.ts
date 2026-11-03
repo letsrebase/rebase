@@ -1,11 +1,11 @@
 /**
- * The availability mail's link (`/hub/team/risposta?t=…&r=si|no`, REB-517), taken out
- * of the URL before anything else runs, the way `entra-token.ts` takes the magic link's.
+ * The availability mail's link (`/hub/team/answer?t=…&r=si|no`, REB-517), taken out
+ * of the URL before anything else runs, the way `verify-token.ts` takes the magic link's.
  *
  * The token is one talent's answer: left in the address bar it would sit in the
  * browser's history, in the first pageview PostHog captures at `initAnalytics`, and in
  * the session replay that starts there. `main.tsx` calls `stripAnswerLink` right after
- * `stripEntraToken`, ahead of `initAnalytics`, and the page reads the pair back with
+ * `stripVerifyToken`, ahead of `initAnalytics`, and the page reads the pair back with
  * `readAnswerLink`, keeping its own search params as the fallback for whatever reaches it
  * without `main.tsx` having run first (a test that renders the page directly). `r`
  * leaves with `t`: an answer without its token is nothing to keep.
@@ -21,10 +21,10 @@ export interface AnswerLink {
   r: string
 }
 
-const PATH = '/hub/team/risposta'
+const PATH = '/hub/team/answer'
 
 /** Where the tab keeps the pair until the answer is posted. */
-export const ANSWER_LINK_KEY = 'rebase.team-risposta'
+export const ANSWER_LINK_KEY = 'rebase.team-answer'
 
 let link: AnswerLink | null = null
 

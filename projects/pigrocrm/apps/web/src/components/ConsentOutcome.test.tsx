@@ -15,26 +15,26 @@ afterEach(() => {
   auth.canWrite = true
 })
 
-const SESSIONE_GMAIL = 'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.'
-const SESSIONE_DRIVE = 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.'
+const SESSION_GMAIL = 'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.'
+const SESSION_DRIVE = 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.'
 
 function outcome(provider: ConsentProvider, esito: string) {
   return render(<ConsentOutcome {...consentOutcome(provider, esito)} />)
 }
 
 describe.each([
-  ['gmail', '/api/gmail/oauth/start', SESSIONE_GMAIL],
-  ['drive', '/api/drive/oauth/start', SESSIONE_DRIVE],
-] as const)('the %s consent outcome', (provider, start, sessione) => {
+  ['gmail', '/api/gmail/oauth/start', SESSION_GMAIL],
+  ['drive', '/api/drive/oauth/start', SESSION_DRIVE],
+] as const)('the %s consent outcome', (provider, start, session) => {
   it('says the session ran out, in Italian, and offers to start the consent again', () => {
-    outcome(provider, 'sessione')
-    expect(screen.getByRole('status')).toHaveTextContent(sessione)
+    outcome(provider, 'session_expired')
+    expect(screen.getByRole('status')).toHaveTextContent(session)
     expect(screen.getByRole('link', { name: 'Riprova' })).toHaveAttribute('href', start)
   })
 
   it('offers «Riprova» under no other outcome', () => {
-    for (const esito of ['collegato', 'negato', 'errore']) {
-      expect(consentOutcome(provider, esito).riprova).toBeNull()
+    for (const esito of ['connected', 'denied', 'error']) {
+      expect(consentOutcome(provider, esito).retry).toBeNull()
       const { unmount } = outcome(provider, esito)
       expect(screen.getByRole('status')).toBeInTheDocument()
       expect(screen.queryByRole('link')).toBeNull()
@@ -51,7 +51,7 @@ describe.each([
 describe('«Riprova» for a readonly person', () => {
   it('is left out, since the start it leads to would refuse them', () => {
     auth.canWrite = false
-    outcome('gmail', 'sessione')
+    outcome('gmail', 'session_expired')
     expect(screen.getByRole('status')).toHaveTextContent('La sessione è scaduta')
     expect(screen.queryByRole('link', { name: 'Riprova' })).toBeNull()
   })

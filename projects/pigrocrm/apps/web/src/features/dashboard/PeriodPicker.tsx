@@ -1,5 +1,5 @@
 import { Button } from '@rebase/ui/button'
-import { currentMonth, presetQuarter, presetYear, type Periodo } from './periodo'
+import { currentMonth, presetQuarter, presetYear, type Period } from './period'
 
 /**
  * Two dates and three presets. Every change is handed straight back to the caller, which
@@ -12,11 +12,11 @@ import { currentMonth, presetQuarter, presetYear, type Periodo } from './periodo
  * same 1px ink line as every other control on a filter row.
  */
 export function PeriodPicker({
-  periodo,
+  period,
   onChange,
 }: {
-  periodo: Periodo
-  onChange: (next: Periodo) => void
+  period: Period
+  onChange: (next: Period) => void
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -26,8 +26,8 @@ export function PeriodPicker({
       <input
         id="periodo-da"
         type="date"
-        value={periodo.da}
-        onChange={(event) => onChange({ ...periodo, da: event.target.value })}
+        value={period.da}
+        onChange={(event) => onChange({ ...period, da: event.target.value })}
         className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
       <label className="text-sm text-muted-foreground" htmlFor="periodo-a">
@@ -36,8 +36,8 @@ export function PeriodPicker({
       <input
         id="periodo-a"
         type="date"
-        value={periodo.a}
-        onChange={(event) => onChange({ ...periodo, a: event.target.value })}
+        value={period.a}
+        onChange={(event) => onChange({ ...period, a: event.target.value })}
         className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
       <Button variant="outline" size="sm" onClick={() => onChange(currentMonth())}>

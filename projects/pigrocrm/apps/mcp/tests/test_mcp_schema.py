@@ -32,7 +32,7 @@ async def test_describe_schema_lists_native_and_custom_fields(server, mcp_sessio
         result = await client.call_tool("describe_schema", {"entity_type": "customer"})
 
     body = _payload(result)
-    assert "ragione_sociale" in body["native_fields"]
+    assert "legal_name" in body["native_fields"]
     assert any(field["key"] == "settore" for field in body["custom_fields"])
 
 
@@ -71,7 +71,7 @@ async def test_customer_resource_returns_readable_markdown(server, mcp_session: 
     from pigrocrm.core.customers.service import CustomerService
 
     customer = CustomerService(mcp_session).create(
-        CustomerCreate(ragione_sociale="ACME Srl", partita_iva="12345678901"), ADMIN
+        CustomerCreate(legal_name="ACME Srl", vat_number="12345678901"), ADMIN
     )
     async with Client(server) as client:
         result = await client.read_resource(f"customer://{customer.id}")

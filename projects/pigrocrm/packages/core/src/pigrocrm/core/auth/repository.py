@@ -21,7 +21,7 @@ class UserRepository:
         used to be copied verbatim in both places, which is exactly how the two could
         have drifted."""
         user = self.get(user_id)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             raise ValidationFailed("user", "id", "utente non trovato o non attivo")
         return user
 
@@ -37,7 +37,7 @@ class UserRepository:
         on the plan Postgres picks."""
         stmt = (
             select(User)
-            .where(User.ruolo == "admin", User.attivo.is_(True))
+            .where(User.role == "admin", User.active.is_(True))
             .order_by(User.created_at, User.id)
             .limit(1)
         )
@@ -49,7 +49,7 @@ class UserRepository:
     def list_active(self) -> list[User]:
         return list(
             self.session.execute(
-                select(User).where(User.attivo.is_(True)).order_by(User.nome)
+                select(User).where(User.active.is_(True)).order_by(User.nome)
             ).scalars()
         )
 

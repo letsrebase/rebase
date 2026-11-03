@@ -100,7 +100,7 @@ class GmailTransport:
         therefore a mechanism for delivering a second copy of somebody's email to their
         client -- three of them, at this loop's four attempts -- and
         `test_gmail_reconcile.py` reproduced exactly that before this parameter existed.
-        A send whose outcome is unknown is `incerto` and is resolved by asking, which is
+        A send whose outcome is unknown is `uncertain` and is resolved by asking, which is
         what `EmailSendService.reconcile` is for.
         """
         status, payload, response_headers = call_with_retry(

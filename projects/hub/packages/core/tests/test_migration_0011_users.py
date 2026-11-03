@@ -55,7 +55,7 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
                 )
             )
             # 3. A freelancer who is also an admin, but a *deactivated* one: stays a
-            #    member, and `attivo` stays true -- it is the freelancer's own flag,
+            #    member, and `active` stays true -- it is the freelancer's own flag,
             #    unaffected by the admin_users row's.
             connection.execute(
                 text(
@@ -73,7 +73,7 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
                 )
             )
             # 4. An admin with no card and no company request at all: a brand-new row,
-            #    `cognome` left blank on purpose (decision (d)).
+            #    `last_name` left blank on purpose (decision (d)).
             connection.execute(
                 text(
                     "INSERT INTO admin_users (id, email, nome, password_hash, attivo, "
@@ -138,7 +138,7 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             }
 
             ada = rows["ada@studio.it"]
-            assert (ada["nome"], ada["cognome"], ada["role"], ada["attivo"]) == (
+            assert (ada["nome"], ada["last_name"], ada["role"], ada["active"]) == (
                 "Ada",
                 "Lovelace",
                 "admin",
@@ -146,20 +146,20 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             ), "the freelancer's own two names survive; the admin_users row only promotes the role"
 
             bob = rows["bob@studio.it"]
-            assert (bob["role"], bob["attivo"]) == (
+            assert (bob["role"], bob["active"]) == (
                 "member",
                 True,
             ), "a deactivated admin who is also a freelancer stays a member, attivo=true"
 
             ivan = rows["ivan@rebase.it"]
-            assert (ivan["nome"], ivan["cognome"], ivan["role"]) == (
+            assert (ivan["nome"], ivan["last_name"], ivan["role"]) == (
                 "Ivan Fiore",
                 "",
                 "admin",
             ), "an admin with no card at all: cognome blank on purpose (decision d)"
 
             acme = rows["acme@example.it"]
-            assert (acme["nome"], acme["cognome"], acme["role"]) == (
+            assert (acme["nome"], acme["last_name"], acme["role"]) == (
                 "Wile E. Coyote",
                 "",
                 "member",

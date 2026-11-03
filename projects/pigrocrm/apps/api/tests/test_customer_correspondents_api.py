@@ -96,7 +96,7 @@ def _mail(fake: FakeGmail, index: int, sender: str, to: str, *, days_ago: int) -
 
 
 def _acme(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme S.r.l.", sito_web="acme.it")
+    customer = Customer(legal_name="Acme S.r.l.", website="acme.it")
     session.add(customer)
     session.flush()
     return customer
@@ -119,15 +119,15 @@ def test_the_addresses_at_the_customers_domain_come_with_their_counts(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["dominio"] == "acme.it"
+    assert body["domain"] == "acme.it"
     assert [
-        (c["indirizzo"], c["nome"], c["conversazioni"], c["gia_in_anagrafica"])
+        (c["address"], c["nome"], c["conversations"], c["already_in_directory"])
         for c in body["corrispondenti"]
     ] == [
         ("marco@acme.it", "Marco Bianchi", 2, False),
         ("sara@acme.it", "Sara Verdi", 1, False),
     ]
-    assert body["corrispondenti"][0]["ultimo_messaggio"] is not None
+    assert body["corrispondenti"][0]["last_message"] is not None
     assert "riservato" not in response.text
 
 
@@ -146,19 +146,19 @@ def test_an_address_in_the_address_book_is_marked_as_known(
 
     body = logged_in.get(f"/api/gmail/customers/{customer.id}/correspondents").json()
 
-    assert [c["gia_in_anagrafica"] for c in body["corrispondenti"]] == [True]
+    assert [c["already_in_directory"] for c in body["corrispondenti"]] == [True]
 
 
 def test_a_customer_without_a_domain_or_a_mailbox_answers_conflict(
     logged_in: TestClient, gmail_ready: TestClient, api_session: Session, admin_user: Any
 ) -> None:
-    bare = Customer(ragione_sociale="Senza sito")
+    bare = Customer(legal_name="Senza sito")
     api_session.add(bare)
     api_session.flush()
     _connect(api_session, admin_user.id)
     response = logged_in.get(f"/api/gmail/customers/{bare.id}/correspondents")
     assert response.status_code == 409, response.text
-    assert "dominio" in response.json()["detail"]
+    assert "domain" in response.json()["detail"]
 
 
 def test_an_unknown_customer_is_not_found(
@@ -194,12 +194,12 @@ def test_one_address_becomes_a_person_of_the_customer(
 
     response = logged_in.post(
         f"/api/customers/{customer.id}/people-from-mail",
-        json={"indirizzo": "Marco@Acme.it", "nome": "Bianchi, Marco"},
+        json={"address": "Marco@Acme.it", "nome": "Bianchi, Marco"},
     )
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert (body["nome"], body["cognome"], body["email"]) == ("Marco", "Bianchi", "marco@acme.it")
+    assert (body["nome"], body["last_name"], body["email"]) == ("Marco", "Bianchi", "marco@acme.it")
     assert body["customer_id"] == str(customer.id)
     person = api_session.execute(select(Person).where(Person.email == "marco@acme.it")).scalar_one()
     assert person.customer_id == customer.id
@@ -211,9 +211,9 @@ def test_an_address_from_another_domain_or_already_filed_is_refused(
     customer = _acme(api_session)
     url = f"/api/customers/{customer.id}/people-from-mail"
     for lookalike in ("x@altro.it", "x@evil-acme.it", "x@mail.acme.it", "x@acme.it.evil.com"):
-        assert logged_in.post(url, json={"indirizzo": lookalike}).status_code == 422, lookalike
-    assert logged_in.post(url, json={"indirizzo": "marco@acme.it"}).status_code == 201
-    again = logged_in.post(url, json={"indirizzo": "marco@acme.it"})
+        assert logged_in.post(url, json={"address": lookalike}).status_code == 422, lookalike
+    assert logged_in.post(url, json={"address": "marco@acme.it"}).status_code == 201
+    again = logged_in.post(url, json={"address": "marco@acme.it"})
     assert again.status_code == 409, again.text
     assert (
         len(api_session.execute(select(Person).where(Person.email == "marco@acme.it")).all()) == 1
@@ -223,16 +223,16 @@ def test_an_address_from_another_domain_or_already_filed_is_refused(
 def test_a_missing_or_domainless_customer_cannot_take_a_person(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    body = {"indirizzo": "marco@acme.it"}
+    body = {"address": "marco@acme.it"}
     assert (
         logged_in.post(f"/api/customers/{uuid4()}/people-from-mail", json=body).status_code == 404
     )
-    bare = Customer(ragione_sociale="Senza sito")
+    bare = Customer(legal_name="Senza sito")
     api_session.add(bare)
     api_session.flush()
     response = logged_in.post(f"/api/customers/{bare.id}/people-from-mail", json=body)
     assert response.status_code == 409, response.text
-    assert "dominio" in response.json()["detail"]
+    assert "domain" in response.json()["detail"]
 
 
 def test_a_readonly_person_can_neither_ask_nor_add(
@@ -241,6 +241,6 @@ def test_a_readonly_person_can_neither_ask_nor_add(
     some = uuid4()
     assert readonly_client.get(f"/api/gmail/customers/{some}/correspondents").status_code == 403
     response = readonly_client.post(
-        f"/api/customers/{some}/people-from-mail", json={"indirizzo": "a@acme.it"}
+        f"/api/customers/{some}/people-from-mail", json={"address": "a@acme.it"}
     )
     assert response.status_code == 403, response.text

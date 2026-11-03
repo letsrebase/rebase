@@ -14,10 +14,10 @@ import { gmailKeys } from '@/features/gmail/queries'
  */
 export function useFileProof() {
   return useMutation({
-    mutationFn: async (args: { contractId: string; titolo: string; file: File }) => {
+    mutationFn: async (args: { contractId: string; title: string; file: File }) => {
       const document = await unwrap(
         api.POST('/api/documents', {
-          body: { contract_id: args.contractId, tipo: 'documento', titolo: args.titolo, custom_fields: {} },
+          body: { contract_id: args.contractId, type: 'document', title: args.title, custom_fields: {} },
         }),
       )
       try {
@@ -51,7 +51,7 @@ export function useRecordApproval() {
 const MESSAGES_LIMIT = 200
 
 /**
- * The messages synced for one customer, newest first, asked for in that order (`ordine=recenti`)
+ * The messages synced for one customer, newest first, asked for in that order (`order=recent`)
  * and not sorted here: the API's default lists a mailbox by thread so a conversation can be
  * followed, and it cuts at its limit, so a long history would fill the response and hide the
  * recent email that approved the days; sorting what is left cannot bring it back. Only read
@@ -69,7 +69,7 @@ export function useCustomerMessages(customerId: string | undefined, enabled: boo
               entity_type: 'customer',
               entity_id: customerId ?? '',
               limit: MESSAGES_LIMIT,
-              ordine: 'recenti',
+              order: 'recent',
             },
           },
         }),

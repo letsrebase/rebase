@@ -18,7 +18,7 @@ export type ConfirmOutcome = ConfirmRow['outcome']
 /** What the confirmation takes: one decision per new customer, keyed by the `party_key`
  *  the review named (`UploadedInvoiceDecisions`). */
 export interface ImportDecisions {
-  clienti: Record<string, { create_customer?: true; customer_id?: string; skip?: true }>
+  customers: Record<string, { create_customer?: true; customer_id?: string; skip?: true }>
 }
 
 /** The words of each verdict. Typed on the API's own union, so a seventh outcome added
@@ -100,12 +100,12 @@ export interface NewParty {
   /** The azienda the file's issuer is: the one every invoice of this party is written on,
    *  and so the only one whose customers it may be attached to. `null` when the server
    *  did not say. */
-  aziendaId: string | null
+  legalEntityId: string | null
   /** The party's invoices are written on more than one azienda (one upload of two issuers'
    *  files to the same counterparty): the key names the party and not the issuer, so one
    *  decision covers both, and a customer that belongs to one azienda cannot be attached
    *  to the other's invoice. */
-  mixedAziende: boolean
+  mixedLegalEntities: boolean
 }
 
 export function newParties(rows: readonly ReviewRow[]): NewParty[] {
@@ -115,16 +115,16 @@ export function newParties(rows: readonly ReviewRow[]): NewParty[] {
     const party = found.get(row.party_key)
     if (party) {
       party.invoices += 1
-      if ((row.azienda_id ?? null) !== party.aziendaId) party.mixedAziende = true
+      if ((row.legal_entity_id ?? null) !== party.legalEntityId) party.mixedLegalEntities = true
     } else {
-      const { cliente } = row.invoice
+      const { customer } = row.invoice
       found.set(row.party_key, {
         key: row.party_key,
-        name: cliente.ragione_sociale,
-        taxId: cliente.partita_iva ?? cliente.codice_fiscale ?? '',
+        name: customer.legal_name,
+        taxId: customer.vat_number ?? customer.tax_code ?? '',
         invoices: 1,
-        aziendaId: row.azienda_id ?? null,
-        mixedAziende: false,
+        legalEntityId: row.legal_entity_id ?? null,
+        mixedLegalEntities: false,
       })
     }
   }
@@ -171,26 +171,26 @@ export function decisionsFor(
   created: ReadonlyMap<string, string> = new Map(),
   chosen: ReadonlyMap<string, ChosenCustomer> = new Map(),
 ): ImportDecisions {
-  const clienti: ImportDecisions['clienti'] = {}
+  const customers: ImportDecisions['customers'] = {}
   for (const row of rows) {
     if (row.outcome !== 'needs_customer_confirmation' || !row.party_key) continue
     const key = row.party_key
     const customerId = created.get(key) ?? chosen.get(key)?.id
-    clienti[key] = declined.has(key)
+    customers[key] = declined.has(key)
       ? { skip: true }
       : customerId === undefined
         ? { create_customer: true }
         : { customer_id: customerId }
   }
-  return { clienti }
+  return { customers }
 }
 
 /** The customer each party's imported invoices went to, from a confirmation's rows. */
 export function customersOf(rows: readonly ConfirmRow[]): Map<string, string> {
   const customers = new Map<string, string>()
   for (const row of rows) {
-    if (row.outcome === 'imported' && row.party_key && row.fattura) {
-      customers.set(row.party_key, row.fattura.customer_id)
+    if (row.outcome === 'imported' && row.party_key && row.invoice) {
+      customers.set(row.party_key, row.invoice.customer_id)
     }
   }
   return customers
@@ -210,8 +210,8 @@ export function reviewedAsConfirmed(rows: readonly ReviewRow[]): ConfirmRow[] {
             sha256: row.sha256,
             outcome: row.outcome,
             party_key: row.party_key,
-            motivo: row.motivo,
-            azienda_id: row.azienda_id,
+            reason: row.reason,
+            legal_entity_id: row.legal_entity_id,
           },
         ],
   )
@@ -246,27 +246,27 @@ export function batchFiles(
 }
 
 /** The numbers a register year still lacks after the import, as the last invoice written
- *  into it reports them (`buchi_non_dichiarati` is read after each write, so the last one
+ *  into it reports them (`undeclared_gaps` is read after each write, so the last one
  *  of a year is the register's state when the import ended). */
 export interface RegisterYear {
-  aziendaId: string | null
-  anno: number
+  legalEntityId: string | null
+  year: number
   missing: number[]
 }
 
 export function registerYears(rows: readonly ConfirmRow[]): RegisterYear[] {
   const years = new Map<string, RegisterYear>()
   for (const row of rows) {
-    if (row.outcome !== 'imported' || !row.fattura || row.buchi_non_dichiarati == null) continue
-    const { anno } = row.fattura
-    if (anno == null) continue
-    years.set(`${row.azienda_id ?? ''}/${anno}`, {
-      aziendaId: row.azienda_id ?? null,
-      anno,
-      missing: row.buchi_non_dichiarati,
+    if (row.outcome !== 'imported' || !row.invoice || row.undeclared_gaps == null) continue
+    const { year } = row.invoice
+    if (year == null) continue
+    years.set(`${row.legal_entity_id ?? ''}/${year}`, {
+      legalEntityId: row.legal_entity_id ?? null,
+      year,
+      missing: row.undeclared_gaps,
     })
   }
-  return [...years.values()].sort((a, b) => a.anno - b.anno)
+  return [...years.values()].sort((a, b) => a.year - b.year)
 }
 
 export function countConfirmed(rows: readonly ConfirmRow[]): Partial<Record<ConfirmOutcome, number>> {

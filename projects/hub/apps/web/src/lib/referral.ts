@@ -8,7 +8,7 @@ const RATE_SCALE = 10_000
 
 /** The invented numbers of the popover's example, in whole euro and days. They are not
  *  any engagement's: the member area never shows a real one. */
-export const EXAMPLE = { budget: 500, compenso: 400, giorni: 20 } as const
+export const EXAMPLE = { budget: 500, fee: 400, days: 20 } as const
 
 const percent = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 })
 
@@ -69,7 +69,7 @@ export function referralExample(rates: {
   rate_freelancer: string | null | undefined
   rate_company: string | null | undefined
 }): ReferralExample {
-  const marginCents = (EXAMPLE.budget - EXAMPLE.compenso) * EXAMPLE.giorni * 100
+  const marginCents = (EXAMPLE.budget - EXAMPLE.fee) * EXAMPLE.days * 100
   const share = (rate: string | null | undefined) => {
     const units = rate == null ? null : rateUnits(rate)
     return units === null ? null : money(roundedShare(marginCents, units))

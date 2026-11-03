@@ -31,7 +31,7 @@ import { GmailDoor } from './GmailDoor'
 import { InvoiceDoor } from './InvoiceDoor'
 import { INTRO_PROMPT, STEP_PROMPTS } from './prompts'
 
-export function GetStartedPage({ esito }: { esito?: string }) {
+export function GetStartedPage({ outcome }: { outcome?: string }) {
   const canWrite = useCanWrite()
   const state = useFirstSteps()
 
@@ -52,7 +52,7 @@ export function GetStartedPage({ esito }: { esito?: string }) {
               {/* Two doors side by side (§4.2): the mailbox, and the last invoice issued
                   (REB-224). */}
               <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                <GmailDoor esito={esito} />
+                <GmailDoor outcome={outcome} />
                 <InvoiceDoor assistantConnected={state.assistantConnected} />
               </div>
             </Block>

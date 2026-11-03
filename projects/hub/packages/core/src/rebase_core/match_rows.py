@@ -22,26 +22,26 @@ from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.framework import active_framework, pending_framework
-from rebase_core.match_words import ORDINARY_NEEDS_PARTITA_IVA, FrameworkStep
+from rebase_core.match_words import ORDINARY_NEEDS_VAT_NUMBER, FrameworkStep
 from rebase_core.models import Company, ContractDocument, Freelancer, FreelancerFiscal, Match, User
-from rebase_core.regimes import PARTITA_IVA
+from rebase_core.regimes import VAT_REGISTERED
 
 ENTITY = "match"
-DOCUMENT_ENTITY = "documento"
-QUADRO, LETTERA = "quadro", "lettera"
+DOCUMENT_ENTITY = "document"
+FRAMEWORK, LETTER = "framework", "letter"
 
 
 def full_name(user: User) -> str:
-    return f"{user.nome} {user.cognome}".strip()
+    return f"{user.nome} {user.last_name}".strip()
 
 
-def require_regime_fits(partita_iva: str | None, regime: str) -> None:
+def require_regime_fits(vat_number: str | None, regime: str) -> None:
     """An ordinary letter prints the freelancer's partita IVA, so it needs saved tax data
     with one (REB-687). An occasional letter never prints one and is allowed either way:
-    the check warns a partita IVA holder (`match_words.HAS_PARTITA_IVA`). `check`,
+    the check warns a partita IVA holder (`match_words.HAS_VAT_NUMBER`). `check`,
     `preview` and `create` refuse on `regime`, the field «Tipo di lettera» sets."""
-    if regime == PARTITA_IVA and partita_iva is None:
-        raise ValidationFailed(ENTITY, "regime", ORDINARY_NEEDS_PARTITA_IVA)
+    if regime == VAT_REGISTERED and vat_number is None:
+        raise ValidationFailed(ENTITY, "regime", ORDINARY_NEEDS_VAT_NUMBER)
 
 
 def freelancer_row(session: Session, freelancer_id: UUID) -> tuple[Freelancer, User]:
@@ -74,10 +74,10 @@ def company_row(session: Session, company_id: UUID, *, lock: bool = False) -> tu
 def matchable_company(
     session: Session, company_id: UUID, *, lock: bool = False
 ) -> tuple[Company, User]:
-    company, referente = company_row(session, company_id, lock=lock)
-    if company.stato == "chiuso":
+    company, contact_person = company_row(session, company_id, lock=lock)
+    if company.status == "closed":
         raise ValidationFailed(ENTITY, "company_id", "la richiesta è chiusa: riaprila prima")
-    return company, referente
+    return company, contact_person
 
 
 def fiscal_row(session: Session, freelancer_id: UUID) -> FreelancerFiscal:
@@ -87,7 +87,7 @@ def fiscal_row(session: Session, freelancer_id: UUID) -> FreelancerFiscal:
         .execution_options(populate_existing=True)
     )
     if row is None:
-        raise ValidationFailed(ENTITY, "fiscale", "mancano i dati fiscali del freelance")
+        raise ValidationFailed(ENTITY, "tax", "mancano i dati fiscali del freelance")
     return row
 
 
@@ -95,14 +95,14 @@ def framework_step(
     session: Session, freelancer_id: UUID, regime: str
 ) -> tuple[ContractDocument | None, FrameworkStep]:
     """The active framework agreement of `regime`, and where the next match's stands:
-    `attivo`, `in_firma` when one is out for signature (the letter waits for it), else
-    `da_inviare` (a new one leaves first, or the one generated for an earlier draft)."""
+    `active`, `awaiting_signature` when one is out for signature (the letter waits for it), else
+    `to_send` (a new one leaves first, or the one generated for an earlier draft)."""
     active = active_framework(session, freelancer_id, regime)
     if active is not None:
-        return active, "attivo"
+        return active, "active"
     pending = pending_framework(session, freelancer_id, regime)
-    out = pending is not None and pending.stato == "inviato"
-    return None, "in_firma" if out else "da_inviare"
+    out = pending is not None and pending.status == "sent"
+    return None, "awaiting_signature" if out else "to_send"
 
 
 def match_freelancer(session: Session, match_id: UUID) -> UUID:

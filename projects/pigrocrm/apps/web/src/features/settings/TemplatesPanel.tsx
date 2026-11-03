@@ -42,13 +42,13 @@ import {
 import { templateTypeLabel } from './labels'
 
 const TIPI = [
-  { value: 'offerta', label: 'Offerta' },
-  { value: 'contratto', label: 'Contratto' },
-  { value: 'verbale', label: 'Verbale' },
-  { value: 'documento', label: 'Documento' },
+  { value: 'offer', label: 'Offerta' },
+  { value: 'contract', label: 'Contratto' },
+  { value: 'minutes', label: 'Verbale' },
+  { value: 'document', label: 'Documento' },
 ] as const
 
-const TIPI_VARIABILE = [
+const TIPI_VARIABLE = [
   { value: 'text', label: 'Testo' },
   { value: 'textarea', label: 'Testo lungo' },
   { value: 'number', label: 'Numero' },
@@ -65,24 +65,24 @@ const TIPI_VARIABILE = [
  *  press a button per entry. It becomes an array only on submit. */
 interface VariableDraft {
   nome: string
-  etichetta: string
-  tipo: string
-  obbligatoria: boolean
+  label: string
+  type: string
+  required: boolean
   options: string
 }
 
 function draftFrom(variable: TemplateVariable): VariableDraft {
   return {
     nome: variable.nome,
-    etichetta: variable.etichetta,
-    tipo: variable.tipo,
-    obbligatoria: variable.obbligatoria,
+    label: variable.label,
+    type: variable.type,
+    required: variable.required,
     options: (variable.options ?? []).join(', '),
   }
 }
 
 function emptyDraft(): VariableDraft {
-  return { nome: '', etichetta: '', tipo: 'text', obbligatoria: false, options: '' }
+  return { nome: '', label: '', type: 'text', required: false, options: '' }
 }
 
 /** Splits on commas and drops blanks, so a trailing comma while typing does not
@@ -103,10 +103,10 @@ export function TemplatesPanel() {
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Template | null>(null)
-  const [nome, setNome] = useState('')
-  const [tipo, setTipo] = useState<string>('offerta')
-  const [corpo, setCorpo] = useState('')
-  const [variabili, setVariabili] = useState<VariableDraft[]>([])
+  const [nome, setName] = useState('')
+  const [type, setType] = useState<string>('offer')
+  const [corpo, setBody] = useState('')
+  const [variables, setVariables] = useState<VariableDraft[]>([])
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [previewText, setPreviewText] = useState<string | null>(null)
 
@@ -116,10 +116,10 @@ export function TemplatesPanel() {
 
   function openCreate() {
     setEditing(null)
-    setNome('')
-    setTipo('offerta')
-    setCorpo('')
-    setVariabili([])
+    setName('')
+    setType('offer')
+    setBody('')
+    setVariables([])
     setProblem(null)
     setPreviewText(null)
     setOpen(true)
@@ -127,10 +127,10 @@ export function TemplatesPanel() {
 
   function openEdit(template: Template) {
     setEditing(template)
-    setNome(template.nome)
-    setTipo(template.tipo)
-    setCorpo(template.corpo_markdown)
-    setVariabili((template.variabili_dichiarate ?? []).map(draftFrom))
+    setName(template.nome)
+    setType(template.type)
+    setBody(template.body_markdown)
+    setVariables((template.declared_variables ?? []).map(draftFrom))
     setProblem(null)
     setPreviewText(null)
     setOpen(true)
@@ -139,13 +139,13 @@ export function TemplatesPanel() {
   function body() {
     return {
       nome,
-      tipo,
-      corpo_markdown: corpo,
-      variabili_dichiarate: variabili.map((variable) => ({
+      type,
+      body_markdown: corpo,
+      declared_variables: variables.map((variable) => ({
         nome: variable.nome,
-        etichetta: variable.etichetta,
-        tipo: variable.tipo,
-        obbligatoria: variable.obbligatoria,
+        label: variable.label,
+        type: variable.type,
+        required: variable.required,
         options: optionsFrom(variable.options),
       })),
     }
@@ -180,8 +180,8 @@ export function TemplatesPanel() {
     preview.mutate(
       {
         templateId: editing.id,
-        variabili: Object.fromEntries(
-          variabili.map((variable) => [variable.nome, variable.etichetta || variable.nome]),
+        variables: Object.fromEntries(
+          variables.map((variable) => [variable.nome, variable.label || variable.nome]),
         ),
       },
       {
@@ -195,10 +195,10 @@ export function TemplatesPanel() {
   }
 
   function toggle(template: Template) {
-    const mutation = template.attivo ? deactivate : activate
+    const mutation = template.active ? deactivate : activate
     mutation.mutate(template.id, {
       onSuccess: () =>
-        toast.success(template.attivo ? 'Template disattivato' : 'Template riattivato'),
+        toast.success(template.active ? 'Template disattivato' : 'Template riattivato'),
       onError: (error) => toast.error(toProblem(error).detail),
     })
   }
@@ -207,31 +207,31 @@ export function TemplatesPanel() {
     { header: 'Nome', accessorKey: 'nome' },
     {
       header: 'Tipo',
-      id: 'tipo',
-      accessorFn: (row) => templateTypeLabel(row.tipo),
+      id: 'type',
+      accessorFn: (row) => templateTypeLabel(row.type),
     },
     {
       header: 'Variabili',
-      id: 'variabili',
+      id: 'variables',
       // `0` is a value, not a blank: a template with no declared variables shows
       // `0`, never a dash.
-      accessorFn: (row) => String((row.variabili_dichiarate ?? []).length),
+      accessorFn: (row) => String((row.declared_variables ?? []).length),
     },
     {
       header: 'Stato',
-      id: 'attivo',
+      id: 'active',
       // The same pill every state in the product goes through (design spec §4). `ink`
       // for the settled state, `muted` for one that claims nothing: a deactivated
       // template is a decision, not a fault, so it is not `danger`.
       cell: ({ row }) => (
-        <StatusPill tone={row.original.attivo ? 'ink' : 'muted'}>
-          {row.original.attivo ? 'Attivo' : 'Disattivato'}
+        <StatusPill tone={row.original.active ? 'ink' : 'muted'}>
+          {row.original.active ? 'Attivo' : 'Disattivato'}
         </StatusPill>
       ),
     },
     {
       header: '',
-      id: 'azioni',
+      id: 'actions',
       meta: { align: 'right' },
       // Two icon buttons until the 2026-09-08 revision, now the «⋯» menu every row in
       // the product uses (§4): the labels say what they do in words, so «Disattiva» no
@@ -243,7 +243,7 @@ export function TemplatesPanel() {
           items={[
             { label: 'Modifica', onSelect: () => openEdit(row.original) },
             {
-              label: row.original.attivo ? 'Disattiva' : 'Riattiva',
+              label: row.original.active ? 'Disattiva' : 'Riattiva',
               onSelect: () => toggle(row.original),
             },
           ]}
@@ -298,7 +298,7 @@ export function TemplatesPanel() {
                   id="template-nome"
                   value={nome}
                   aria-invalid={fieldError?.field === 'nome' ? true : undefined}
-                  onChange={(event) => setNome(event.target.value)}
+                  onChange={(event) => setName(event.target.value)}
                 />
                 {fieldError?.field === 'nome' ? (
                   <p className="text-destructive text-sm">{fieldError.message}</p>
@@ -306,7 +306,7 @@ export function TemplatesPanel() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="template-tipo">Tipo</Label>
-                <Select value={tipo} onValueChange={setTipo}>
+                <Select value={type} onValueChange={setType}>
                   <SelectTrigger id="template-tipo">
                     <SelectValue />
                   </SelectTrigger>
@@ -328,10 +328,10 @@ export function TemplatesPanel() {
                 value={corpo}
                 rows={14}
                 className="font-mono text-sm"
-                aria-invalid={fieldError?.field === 'corpo_markdown' ? true : undefined}
-                onChange={(event) => setCorpo(event.target.value)}
+                aria-invalid={fieldError?.field === 'body_markdown' ? true : undefined}
+                onChange={(event) => setBody(event.target.value)}
               />
-              {fieldError?.field === 'corpo_markdown' ? (
+              {fieldError?.field === 'body_markdown' ? (
                 <p className="text-destructive text-sm">{fieldError.message}</p>
               ) : null}
               <p className="text-muted-foreground text-xs">
@@ -346,17 +346,17 @@ export function TemplatesPanel() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setVariabili((previous) => [...previous, emptyDraft()])}
+                  onClick={() => setVariables((previous) => [...previous, emptyDraft()])}
                 >
                   Aggiungi variabile
                 </Button>
               </div>
 
-              {variabili.length === 0 ? (
+              {variables.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Nessuna variabile dichiarata.</p>
               ) : null}
 
-              {variabili.map((variable, index) => (
+              {variables.map((variable, index) => (
                 <div key={index} className="grid items-end gap-2 sm:grid-cols-12">
                   <div className="space-y-1 sm:col-span-3">
                     <Label htmlFor={`variabile-nome-${index}`} className="text-xs">
@@ -366,7 +366,7 @@ export function TemplatesPanel() {
                       id={`variabile-nome-${index}`}
                       value={variable.nome}
                       onChange={(event) =>
-                        setVariabili((previous) =>
+                        setVariables((previous) =>
                           previous.map((entry, position) =>
                             position === index ? { ...entry, nome: event.target.value } : entry,
                           ),
@@ -380,11 +380,11 @@ export function TemplatesPanel() {
                     </Label>
                     <Input
                       id={`variabile-etichetta-${index}`}
-                      value={variable.etichetta}
+                      value={variable.label}
                       onChange={(event) =>
-                        setVariabili((previous) =>
+                        setVariables((previous) =>
                           previous.map((entry, position) =>
-                            position === index ? { ...entry, etichetta: event.target.value } : entry,
+                            position === index ? { ...entry, label: event.target.value } : entry,
                           ),
                         )
                       }
@@ -395,11 +395,11 @@ export function TemplatesPanel() {
                       Tipo
                     </Label>
                     <Select
-                      value={variable.tipo}
+                      value={variable.type}
                       onValueChange={(value) =>
-                        setVariabili((previous) =>
+                        setVariables((previous) =>
                           previous.map((entry, position) =>
-                            position === index ? { ...entry, tipo: value } : entry,
+                            position === index ? { ...entry, type: value } : entry,
                           ),
                         )
                       }
@@ -408,7 +408,7 @@ export function TemplatesPanel() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {TIPI_VARIABILE.map((entry) => (
+                        {TIPI_VARIABLE.map((entry) => (
                           <SelectItem key={entry.value} value={entry.value}>
                             {entry.label}
                           </SelectItem>
@@ -424,9 +424,9 @@ export function TemplatesPanel() {
                       id={`variabile-options-${index}`}
                       value={variable.options}
                       placeholder="a, b, c"
-                      disabled={variable.tipo !== 'select' && variable.tipo !== 'multiselect'}
+                      disabled={variable.type !== 'select' && variable.type !== 'multiselect'}
                       onChange={(event) =>
-                        setVariabili((previous) =>
+                        setVariables((previous) =>
                           previous.map((entry, position) =>
                             position === index ? { ...entry, options: event.target.value } : entry,
                           ),
@@ -438,12 +438,12 @@ export function TemplatesPanel() {
                     <label className="flex items-center gap-2 text-xs">
                       <Checkbox
                         aria-label={`Obbligatoria ${variable.nome || index + 1}`}
-                        checked={variable.obbligatoria}
+                        checked={variable.required}
                         onCheckedChange={(checked) =>
-                          setVariabili((previous) =>
+                          setVariables((previous) =>
                             previous.map((entry, position) =>
                               position === index
-                                ? { ...entry, obbligatoria: checked === true }
+                                ? { ...entry, required: checked === true }
                                 : entry,
                             ),
                           )
@@ -456,7 +456,7 @@ export function TemplatesPanel() {
                       size="sm"
                       aria-label={`Rimuovi variabile ${variable.nome || index + 1}`}
                       onClick={() =>
-                        setVariabili((previous) =>
+                        setVariables((previous) =>
                           previous.filter((_, position) => position !== index),
                         )
                       }

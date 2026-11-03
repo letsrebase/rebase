@@ -197,8 +197,8 @@ deploy, not before: nothing else runs DDL on a space.
 
 **A deal, a customer and a person have no `note` column: they have a thread (REB-879).** The
 table `notes` (`core/notes/`) holds one row per remark, signed by the actor that wrote it: the
-member's id and name, the door it came through (`fonte`: `web` for a browser session, `mcp` for
-a token, `sistema` for a job, `rebase` for the engagements door, NULL for a note moved over from
+member's id and name, the door it came through (`source`: `web` for a browser session, `mcp` for
+a token, `system` for a job, `rebase` for the engagements door, NULL for a note moved over from
 the old column, shown «Nota precedente») and the moment. A caller never passes an author, a
 date or a source. `CustomerCreate`, `PersonCreate` and `DealCreate` still accept `note`, which
 becomes the record's first note, written in the creation's own transaction by `append_note`
@@ -206,12 +206,12 @@ becomes the record's first note, written in the creation's own transaction by `a
 ask a tool for it); the Update and Read schemas have no `note`, and it is not a native field
 (`schema_registry.NOT_COLUMNS`). A note is edited or deleted by its author or an admin (by anyone who may
 write the record, when it came over from the old field with no author and no source), never a
-`sistema` or `rebase` one, and every read carries `modificabile` for the caller. Each add, edit
+`system` or `rebase` one, and every read carries `editable` for the caller. Each add, edit
 and delete is an entry on the parent's timeline (`note_added`, `note_edited`, `note_deleted`);
 the whole text an edit replaced is a row of `note_revisions`, since a timeline payload is cut at
 2000 characters (`GET /api/notes/{id}/revisions`). `note` is a reserved name: no custom field
 may take it. The table has the row-level policy of its parent through
-`entita_visibile` (migration 0064), so a scoped member reads and writes the notes of their
+`entity_visible` (migration 0064), so a scoped member reads and writes the notes of their
 aziende alone. The `rebase:request=<uuid>` / `rebase:match=<uuid>` references of the engagements
 door are not text any more: they are `deals.rebase_refs`, written only through
 `DealService.create(rebase_ref=...)` and `attach_rebase_ref` and found by

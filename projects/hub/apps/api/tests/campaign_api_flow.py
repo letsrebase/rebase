@@ -26,17 +26,17 @@ def recipient_row(session: Session, token: str) -> None:
 def recipient_rows(session: Session, addresses: dict[str, str]) -> None:
     """One campaign with one recipient per `token: address` pair."""
     campaign = Campaign(
-        created_by=an_admin(session, cognome="Sala"),
+        created_by=an_admin(session, last_name="Sala"),
         nome="n",
         slug="c-n",
-        fonte="stato",
-        stato_percorso="manca_cv",
-        oggetto="o",
-        testo="t",
-        bottone_testo="b",
-        bottone_meta="area",
-        azione="cv",
-        contenuto_at=datetime.now(UTC),
+        source="status",
+        journey_status="missing_cv",
+        subject="o",
+        text="t",
+        button_text="b",
+        button_meta="area",
+        action="cv",
+        content_at=datetime.now(UTC),
     )
     session.add(campaign)
     session.flush()
@@ -45,10 +45,10 @@ def recipient_rows(session: Session, addresses: dict[str, str]) -> None:
             CampaignRecipient(
                 campaign_id=campaign.id,
                 email=email,
-                tipo="freelancer",
-                codice="1",
-                prima={},
-                disiscrizione_token=token,
+                kind="freelancer",
+                code="1",
+                before={},
+                unsubscribe_token=token,
             )
         )
     session.commit()

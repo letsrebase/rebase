@@ -86,7 +86,7 @@ def test_an_html_only_message_stores_the_text_conversion_and_flags_it() -> None:
         "body": {"data": _b64("<p>Ciao <b>Ada</b></p><script>evil()</script>"), "size": 44},
     }
     parsed = parse_message(payload, body_max_bytes=262_144, store_bodies=True)
-    assert parsed.body_html_scartato is True
+    assert parsed.body_html_discarded is True
     assert "<script>" not in parsed.body_text
     assert "evil()" not in parsed.body_text
     assert "Ciao Ada" in parsed.body_text
@@ -105,7 +105,7 @@ def test_a_multipart_alternative_prefers_the_plain_part_and_flags_nothing() -> N
     }
     parsed = parse_message(payload, body_max_bytes=262_144, store_bodies=True)
     assert parsed.body_text == "testo semplice"
-    assert parsed.body_html_scartato is False
+    assert parsed.body_html_discarded is False
 
 
 def test_a_nested_multipart_still_yields_its_plain_part() -> None:

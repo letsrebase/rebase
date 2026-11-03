@@ -11,29 +11,29 @@ import { ChoiceField, LongTextField, TextField } from '@/wizard/fields'
 import { screensFromFields, Wizard, type Field } from '@/wizard/Wizard'
 
 /** The blank starting shape, exported so a page that never asks the identity fields
- *  (`member/NuovaRichiestaAzienda.tsx`, REB-381) can still satisfy `CompanyRequest`'s
+ *  (`member/NewRequestCompany.tsx`, REB-381) can still satisfy `CompanyRequest`'s
  *  full shape without retyping every key. */
 export const EMPTY: CompanyRequest = {
-  nome_azienda: '',
-  figura_richiesta: '',
-  referente_nome: '',
-  referente_cognome: '',
+  company_name: '',
+  requested_role: '',
+  contact_first_name: '',
+  contact_last_name: '',
   email: '',
-  telefono: '',
-  progetto: '',
-  periodo_da: '',
-  durata: '',
-  budget_giornaliero: '',
-  remoto: '',
-  giorni_presenza: '',
-  numero_risorse: '',
+  phone: '',
+  project: '',
+  period_from: '',
+  duration: '',
+  daily_budget: '',
+  remote: '',
+  onsite_days: '',
+  headcount: '',
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
   {
-    id: 'nome_azienda',
+    id: 'company_name',
     label: 'Come si chiama la tua azienda?',
     render: ({ value, set, autoFocus, error, errorId }) => (
       <TextField
@@ -41,16 +41,16 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
         aria-invalid={!!error}
         aria-describedby={error ? errorId : undefined}
         placeholder="ACME Srl"
-        value={value.nome_azienda}
-        onChange={(nome_azienda) => set({ nome_azienda })}
+        value={value.company_name}
+        onChange={(company_name) => set({ company_name })}
         autoFocus={autoFocus}
       />
     ),
-    validate: (value) => (value.nome_azienda.trim() ? null : 'Serve il nome dell’azienda.'),
-    summary: (value) => value.nome_azienda.trim(),
+    validate: (value) => (value.company_name.trim() ? null : 'Serve il nome dell’azienda.'),
+    summary: (value) => value.company_name.trim(),
   },
   {
-    id: 'figura_richiesta',
+    id: 'requested_role',
     label: 'Che figura state cercando?',
     hint: 'Il ruolo in poche parole: «Backend developer», «Fractional CTO», «Data engineer».',
     render: ({ value, set, autoFocus, error, errorId }) => (
@@ -59,36 +59,36 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
         aria-invalid={!!error}
         aria-describedby={error ? errorId : undefined}
         placeholder="Backend developer"
-        value={value.figura_richiesta}
-        onChange={(figura_richiesta) => set({ figura_richiesta })}
+        value={value.requested_role}
+        onChange={(requested_role) => set({ requested_role })}
         autoFocus={autoFocus}
       />
     ),
-    validate: (value) => (value.figura_richiesta.trim() ? null : 'Serve una figura.'),
-    summary: (value) => value.figura_richiesta.trim(),
+    validate: (value) => (value.requested_role.trim() ? null : 'Serve una figura.'),
+    summary: (value) => value.requested_role.trim(),
   },
   {
-    id: 'referente',
+    id: 'contact_person',
     label: 'Chi sei, e dove ti scriviamo?',
     render: ({ value, set, autoFocus, error, errorId }) => (
       <div className="grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField
             aria-label="Nome"
-            aria-invalid={!!error && !value.referente_nome.trim()}
+            aria-invalid={!!error && !value.contact_first_name.trim()}
             aria-describedby={error ? errorId : undefined}
             placeholder="Nome"
-            value={value.referente_nome}
-            onChange={(referente_nome) => set({ referente_nome })}
+            value={value.contact_first_name}
+            onChange={(contact_first_name) => set({ contact_first_name })}
             autoFocus={autoFocus}
           />
           <TextField
             aria-label="Cognome"
-            aria-invalid={!!error && !value.referente_cognome.trim()}
+            aria-invalid={!!error && !value.contact_last_name.trim()}
             aria-describedby={error ? errorId : undefined}
             placeholder="Cognome"
-            value={value.referente_cognome}
-            onChange={(referente_cognome) => set({ referente_cognome })}
+            value={value.contact_last_name}
+            onChange={(contact_last_name) => set({ contact_last_name })}
           />
         </div>
         <TextField
@@ -103,27 +103,27 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
         />
         <TextField
           aria-label="Telefono"
-          aria-invalid={!!error && value.telefono.trim().length < 6}
+          aria-invalid={!!error && value.phone.trim().length < 6}
           aria-describedby={error ? errorId : undefined}
           type="tel"
           placeholder="+39 345 1234567"
-          value={value.telefono}
-          onChange={(telefono) => set({ telefono })}
+          value={value.phone}
+          onChange={(phone) => set({ phone })}
         />
       </div>
     ),
     validate: (value) =>
-      value.referente_nome.trim() &&
-      value.referente_cognome.trim() &&
+      value.contact_first_name.trim() &&
+      value.contact_last_name.trim() &&
       EMAIL.test(value.email.trim()) &&
-      value.telefono.trim().length >= 6
+      value.phone.trim().length >= 6
         ? null
         : 'Servono nome, cognome, un indirizzo email valido e un numero di telefono.',
     summary: (value) =>
-      `${value.referente_nome.trim()} ${value.referente_cognome.trim()} · ${value.email.trim()} · ${value.telefono.trim()}`,
+      `${value.contact_first_name.trim()} ${value.contact_last_name.trim()} · ${value.email.trim()} · ${value.phone.trim()}`,
   },
   {
-    id: 'progetto',
+    id: 'project',
     label: 'Raccontaci il progetto in due righe',
     hint: 'Cosa serve fare, con che stack o competenze, e cosa deve uscirne. Shift+Invio per andare a capo.',
     render: ({ value, set, autoFocus, error, errorId }) => (
@@ -132,48 +132,48 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
         aria-invalid={!!error}
         aria-describedby={error ? errorId : undefined}
         placeholder="Dobbiamo rifare il backend del portale clienti…"
-        value={value.progetto}
-        onChange={(progetto) => set({ progetto })}
+        value={value.project}
+        onChange={(project) => set({ project })}
         autoFocus={autoFocus}
       />
     ),
     validate: (value) =>
-      value.progetto.trim().length >= 20 ? null : 'Due righe bastano, ma servono: almeno venti caratteri.',
-    summary: (value) => value.progetto.trim(),
+      value.project.trim().length >= 20 ? null : 'Due righe bastano, ma servono: almeno venti caratteri.',
+    summary: (value) => value.project.trim(),
   },
   {
-    id: 'periodo_da',
+    id: 'period_from',
     label: 'Da quando, e per quanto?',
     hint: 'Anche approssimativo: «da ottobre, per tre mesi».',
     render: ({ value, set, autoFocus, error, errorId }) => (
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField
           aria-label="Da quando"
-          aria-invalid={!!error && !/^\d{4}-\d{2}-\d{2}$/.test(value.periodo_da)}
+          aria-invalid={!!error && !/^\d{4}-\d{2}-\d{2}$/.test(value.period_from)}
           aria-describedby={error ? errorId : undefined}
           type="date"
-          value={value.periodo_da}
-          onChange={(periodo_da) => set({ periodo_da })}
+          value={value.period_from}
+          onChange={(period_from) => set({ period_from })}
           autoFocus={autoFocus}
         />
         <TextField
           aria-label="Per quanto"
-          aria-invalid={!!error && !value.durata.trim()}
+          aria-invalid={!!error && !value.duration.trim()}
           aria-describedby={error ? errorId : undefined}
           placeholder="3 mesi"
-          value={value.durata}
-          onChange={(durata) => set({ durata })}
+          value={value.duration}
+          onChange={(duration) => set({ duration })}
         />
       </div>
     ),
     validate: (value) =>
-      /^\d{4}-\d{2}-\d{2}$/.test(value.periodo_da) && value.durata.trim()
+      /^\d{4}-\d{2}-\d{2}$/.test(value.period_from) && value.duration.trim()
         ? null
         : 'Servono una data di inizio e una durata.',
-    summary: (value) => (value.periodo_da ? `dal ${value.periodo_da}, ${value.durata.trim()}` : ''),
+    summary: (value) => (value.period_from ? `dal ${value.period_from}, ${value.duration.trim()}` : ''),
   },
   {
-    id: 'budget_giornaliero',
+    id: 'daily_budget',
     label: 'Che budget hai per una giornata?',
     hint: 'In euro, IVA esclusa. Serve a proporti le persone giuste, non a trattare.',
     render: ({ value, set, autoFocus, error, errorId }) => (
@@ -184,53 +184,53 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
           aria-describedby={error ? errorId : undefined}
           inputMode="decimal"
           placeholder="500"
-          value={value.budget_giornaliero}
-          onChange={(budget_giornaliero) => set({ budget_giornaliero })}
+          value={value.daily_budget}
+          onChange={(daily_budget) => set({ daily_budget })}
           autoFocus={autoFocus}
         />
         <span className="text-lg text-muted-foreground">€ / giorno</span>
       </div>
     ),
     validate: (value) => {
-      const number = euroAmount(value.budget_giornaliero)
+      const number = euroAmount(value.daily_budget)
       return Number.isFinite(number) && number >= 1 && number <= 99999 ? null : AMOUNT_PROBLEM
     },
-    summary: (value) => (value.budget_giornaliero ? `${value.budget_giornaliero} € / giorno` : ''),
+    summary: (value) => (value.daily_budget ? `${value.daily_budget} € / giorno` : ''),
   },
   {
-    id: 'remoto',
+    id: 'remote',
     label: 'Come si lavorerà?',
     render: ({ value, set, error, errorId }) => (
       <div className="grid gap-4">
         <ChoiceField
-          value={value.remoto}
-          onChange={(remoto) =>
-            set({ remoto, giorni_presenza: remoto === 'ibrido' ? value.giorni_presenza : '' })
+          value={value.remote}
+          onChange={(remote) =>
+            set({ remote, onsite_days: remote === 'hybrid' ? value.onsite_days : '' })
           }
           invalid={!!error}
           describedBy={error ? errorId : undefined}
           options={[
-            { value: 'remoto', label: 'Da remoto', hint: 'Nessun giorno fisso in sede.' },
-            { value: 'ibrido', label: 'Ibrido', hint: 'Qualche giorno in sede, gli altri no.' },
-            { value: 'in_sede', label: 'In sede', hint: 'Serve una presenza fissa.' },
+            { value: 'remote', label: 'Da remoto', hint: 'Nessun giorno fisso in sede.' },
+            { value: 'hybrid', label: 'Ibrido', hint: 'Qualche giorno in sede, gli altri no.' },
+            { value: 'on_site', label: 'In sede', hint: 'Serve una presenza fissa.' },
           ]}
         />
-        {value.remoto === 'ibrido' && (
+        {value.remote === 'hybrid' && (
           <TextField
             aria-label="Giorni in sede a settimana"
             aria-invalid={!!error}
             aria-describedby={error ? errorId : undefined}
             placeholder="1-4"
-            value={value.giorni_presenza}
-            onChange={(giorni_presenza) => set({ giorni_presenza })}
+            value={value.onsite_days}
+            onChange={(onsite_days) => set({ onsite_days })}
           />
         )}
       </div>
     ),
     validate: (value) => {
-      if (!value.remoto) return 'Scegli una delle tre.'
-      if (value.remoto === 'ibrido') {
-        const days = Number(value.giorni_presenza)
+      if (!value.remote) return 'Scegli una delle tre.'
+      if (value.remote === 'hybrid') {
+        const days = Number(value.onsite_days)
         return Number.isInteger(days) && days >= 1 && days <= 4
           ? null
           : 'Servono i giorni in sede a settimana, da 1 a 4.'
@@ -238,12 +238,12 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
       return null
     },
     summary: (value) => {
-      if (value.remoto === 'ibrido') return `Ibrido · ${value.giorni_presenza} giorni in sede`
-      return { remoto: 'Da remoto', in_sede: 'In sede', '': '' }[value.remoto]
+      if (value.remote === 'hybrid') return `Ibrido · ${value.onsite_days} giorni in sede`
+      return { remote: 'Da remoto', on_site: 'In sede', '': '' }[value.remote]
     },
   },
   {
-    id: 'numero_risorse',
+    id: 'headcount',
     label: 'Quante persone servono?',
     render: ({ value, set, autoFocus, error, errorId }) => (
       <TextField
@@ -252,24 +252,24 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
         aria-describedby={error ? errorId : undefined}
         inputMode="decimal"
         placeholder="1"
-        value={value.numero_risorse}
-        onChange={(numero_risorse) => set({ numero_risorse })}
+        value={value.headcount}
+        onChange={(headcount) => set({ headcount })}
         autoFocus={autoFocus}
       />
     ),
     validate: (value) => {
-      const number = Number(value.numero_risorse)
+      const number = Number(value.headcount)
       return Number.isInteger(number) && number >= 1 ? null : 'Serve almeno una persona.'
     },
     summary: (value) =>
-      value.numero_risorse
-        ? `${value.numero_risorse} ${value.numero_risorse === '1' ? 'persona' : 'persone'}`
+      value.headcount
+        ? `${value.headcount} ${value.headcount === '1' ? 'person' : 'people'}`
         : '',
   },
 ]
 
 export const COMPANY_SCREENS = screensFromFields(COMPANY_FIELDS)
-export const COMPANY_DRAFT_KEY = 'rebase.wizard.azienda'
+export const COMPANY_DRAFT_KEY = 'rebase.wizard.company'
 
 /** Above the first question, as on the freelance side (REB-215): what this is and how
  *  long it takes, before a company is asked its name. */
@@ -325,7 +325,7 @@ export function CompanyWizard() {
   // The URL's own query string, from the router rather than `window`: the attribution
   // is whatever this page was opened with.
   const searchStr = useLocation({ select: (location) => location.searchStr })
-  const analytics = useWizardAnalytics('azienda', searchStr)
+  const analytics = useWizardAnalytics('company', searchStr)
   const [draft] = useState(() => loadDraft<CompanyRequest>(COMPANY_DRAFT_KEY))
   const [value, setValue] = useState<CompanyRequest>(() => ({ ...EMPTY, ...draft?.value }))
   const [index, setIndex] = useState(draft?.index ?? 0)
@@ -334,7 +334,7 @@ export function CompanyWizard() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<{ message: string; field?: string } | null>(null)
   // The origin as the request will carry it (`resolveAttribution`), read once.
-  const [forTalentCloud] = useState(() => resolveAttribution(searchStr).origine === TEAM_BUILDER_ORIGIN)
+  const [forTalentCloud] = useState(() => resolveAttribution(searchStr).origin === TEAM_BUILDER_ORIGIN)
 
   // Once the application is in, nothing is saved again, whatever React still has to
   // flush: the next visit must open a blank form, not the one just sent.
@@ -358,7 +358,7 @@ export function CompanyWizard() {
       await requestPeople(
         {
           ...value,
-          budget_giornaliero: sentAmount(value.budget_giornaliero),
+          daily_budget: sentAmount(value.daily_budget),
         },
         resolveAttribution(searchStr),
         distinctId(),
@@ -367,24 +367,24 @@ export function CompanyWizard() {
       sent.current = true
       clearDraft(COMPANY_DRAFT_KEY)
       analytics.completed()
-      void navigate({ to: '/thanks', search: { chi: 'azienda' } })
+      void navigate({ to: '/thanks', search: { who: 'company' } })
     } catch (error) {
       const failure = error instanceof ApiError ? error : null
-      // `durata` shares a field with `periodo_da`; `email`, `referente_nome`,
-      // `referente_cognome` and `telefono` all share the one step that collects them
-      // together; `giorni_presenza` shares `remoto`'s own step; anything else names
+      // `duration` shares a field with `period_from`; `email`, `contact_first_name`,
+      // `contact_last_name` and `phone` all share the one step that collects them
+      // together; `onsite_days` shares `remote`'s own step; anything else names
       // its own field.
       const field = failure?.fields[0]
       const knownField =
-        field === 'durata'
-          ? 'periodo_da'
+        field === 'duration'
+          ? 'period_from'
           : field === 'email' ||
-              field === 'referente_nome' ||
-              field === 'referente_cognome' ||
-              field === 'telefono'
-            ? 'referente'
-            : field === 'giorni_presenza'
-              ? 'remoto'
+              field === 'contact_first_name' ||
+              field === 'contact_last_name' ||
+              field === 'phone'
+            ? 'contact_person'
+            : field === 'onsite_days'
+              ? 'remote'
               : field
       setSubmitError({
         message: failure?.message ?? 'Non siamo riusciti a inviare la richiesta. Riprova.',

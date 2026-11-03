@@ -39,7 +39,7 @@ class Links:
     customer_owner_id: UUID | None = None
     deal_id: UUID | None = None
     deal_owner_id: UUID | None = None
-    azienda_id: UUID | None = None
+    legal_entity_id: UUID | None = None
 
     @property
     def owners(self) -> tuple[UUID | None, UUID | None]:
@@ -51,7 +51,7 @@ class _Customer:
     id: UUID
     name: str
     owner_id: UUID | None
-    azienda_id: UUID
+    legal_entity_id: UUID
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ class _Deal:
     id: UUID
     customer_id: UUID
     owner_id: UUID | None
-    azienda_id: UUID
+    legal_entity_id: UUID
 
 
 class LinkResolver:
@@ -82,12 +82,12 @@ class LinkResolver:
     ) -> None:
         invoice_ids = {value for value in invoices if value is not None}
         if invoice_ids:
-            for invoice_id, customer_id, deal_id, azienda_id in self.session.execute(
-                select(Invoice.id, Invoice.customer_id, Invoice.deal_id, Invoice.azienda_id).where(
-                    Invoice.id.in_(invoice_ids)
-                )
+            for invoice_id, customer_id, deal_id, legal_entity_id in self.session.execute(
+                select(
+                    Invoice.id, Invoice.customer_id, Invoice.deal_id, Invoice.legal_entity_id
+                ).where(Invoice.id.in_(invoice_ids))
             ):
-                self._invoices[invoice_id] = (customer_id, deal_id, azienda_id)
+                self._invoices[invoice_id] = (customer_id, deal_id, legal_entity_id)
         person_ids = {value for value in people if value is not None}
         if person_ids:
             for person_id, person_customer in self.session.execute(
@@ -99,12 +99,12 @@ class LinkResolver:
         }
         if deal_ids:
             for deal in self.session.execute(
-                select(Deal.id, Deal.customer_id, Deal.owner_id, Deal.azienda_id).where(
+                select(Deal.id, Deal.customer_id, Deal.owner_id, Deal.legal_entity_id).where(
                     Deal.id.in_(deal_ids)
                 )
             ):
                 self._deals[deal.id] = _Deal(
-                    deal.id, deal.customer_id, deal.owner_id, deal.azienda_id
+                    deal.id, deal.customer_id, deal.owner_id, deal.legal_entity_id
                 )
         customer_ids = (
             {value for value in customers if value is not None}
@@ -115,11 +115,11 @@ class LinkResolver:
         if customer_ids:
             for row in self.session.execute(
                 select(
-                    Customer.id, Customer.ragione_sociale, Customer.owner_id, Customer.azienda_id
+                    Customer.id, Customer.legal_name, Customer.owner_id, Customer.legal_entity_id
                 ).where(Customer.id.in_(customer_ids))
             ):
                 self._customers[row.id] = _Customer(
-                    row.id, row.ragione_sociale, row.owner_id, row.azienda_id
+                    row.id, row.legal_name, row.owner_id, row.legal_entity_id
                 )
 
     def resolve(
@@ -131,10 +131,10 @@ class LinkResolver:
         invoice_id: UUID | None = None,
     ) -> Links:
         """Needs `preload` to have been given these ids."""
-        azienda_id: UUID | None = None
+        legal_entity_id: UUID | None = None
         if invoice_id is not None and invoice_id in self._invoices:
-            invoice_customer, invoice_deal, invoice_azienda = self._invoices[invoice_id]
-            azienda_id = invoice_azienda
+            invoice_customer, invoice_deal, invoice_legal_entity = self._invoices[invoice_id]
+            legal_entity_id = invoice_legal_entity
             customer_id = customer_id or invoice_customer
             deal_id = deal_id or invoice_deal
         if person_id is not None:
@@ -142,15 +142,15 @@ class LinkResolver:
         deal = self._deals.get(deal_id) if deal_id is not None else None
         if deal is not None:
             customer_id = customer_id or deal.customer_id
-            azienda_id = azienda_id or deal.azienda_id
+            legal_entity_id = legal_entity_id or deal.legal_entity_id
         customer = self._customers.get(customer_id) if customer_id is not None else None
         if customer is not None:
-            azienda_id = azienda_id or customer.azienda_id
+            legal_entity_id = legal_entity_id or customer.legal_entity_id
         return Links(
             customer_id=customer.id if customer is not None else customer_id,
             customer_name=customer.name if customer is not None else None,
             customer_owner_id=customer.owner_id if customer is not None else None,
             deal_id=deal.id if deal is not None else deal_id,
             deal_owner_id=deal.owner_id if deal is not None else None,
-            azienda_id=azienda_id,
+            legal_entity_id=legal_entity_id,
         )

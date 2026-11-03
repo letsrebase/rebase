@@ -102,7 +102,7 @@ class GmailMessageRead(BaseModel):
     internal_date: datetime
     body_text: str
     body_truncated: bool
-    body_html_scartato: bool
+    body_html_discarded: bool
     attachments: list[dict[str, object]]
 
 
@@ -148,15 +148,15 @@ class DiscoveredCorrespondent(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    indirizzo: str
+    address: str
     # The display name the headers gave, or "" when they never did.
     nome: str
-    messaggi: int
+    messages: int
     # In how many conversations the address took part, which is what a person reads off
-    # a customer's page; `messaggi` stays the tally the order of the list follows.
-    conversazioni: int
-    ultimo_messaggio: datetime | None
-    gia_in_anagrafica: bool
+    # a customer's page; `messages` stays the tally the order of the list follows.
+    conversations: int
+    last_message: datetime | None
+    already_in_directory: bool
 
 
 class SuggestedPerson(BaseModel):
@@ -165,11 +165,11 @@ class SuggestedPerson(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    indirizzo: str
+    address: str
     # The display name the headers gave, or "" when they never did.
     nome: str
     # Already a Person in this CRM: importing leaves them alone.
-    gia_in_anagrafica: bool
+    already_in_directory: bool
 
 
 class SuggestedCustomer(BaseModel):
@@ -179,13 +179,13 @@ class SuggestedCustomer(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    dominio: str
+    domain: str
     # A company name guessed from the domain, for the person to correct before importing.
     nome: str
     # Conversations (Gmail threads) the mailbox wrote in with somebody at this domain.
-    conversazioni: int
-    ultimo_messaggio: datetime | None
-    persone: list[SuggestedPerson]
+    conversations: int
+    last_message: datetime | None
+    people: list[SuggestedPerson]
 
 
 class DiscoveryReport(BaseModel):
@@ -194,10 +194,10 @@ class DiscoveryReport(BaseModel):
     nobody else, and it is never logged."""
 
     started_at: datetime
-    dominio: str
+    domain: str
     threads_scanned: int = 0
     messages_seen: int = 0
-    corrispondenti: list[DiscoveredCorrespondent] = []
+    matching: list[DiscoveredCorrespondent] = []
 
 
 class GmailBackfillRequest(BaseModel):
@@ -251,11 +251,11 @@ MAX_RECIPIENTS = 50
 # the *number*, which is what costs a database read and a storage read each.
 MAX_ATTACHMENTS = 20
 
-# Five states, and none of them is a synonym for another. `incerto` is the whole of spec
+# Five states, and none of them is a synonym for another. `uncertain` is the whole of spec
 # 6.3(b): the send neither succeeded nor failed, and the interface says «esito da
 # verificare» rather than guessing. Collapsing it into either neighbour is the previous system's
 # defect -- «il CRM crede una cosa diversa da quella che è successa».
-SendState = Literal["bozza", "in_invio", "inviato", "incerto", "fallito"]
+SendState = Literal["draft", "sending", "sent", "uncertain", "failed"]
 
 # The states in which the text is still the user's -- and therefore, necessarily, the
 # states from which it can be sent. One set and not two: "you may edit this" and "you may
@@ -263,11 +263,11 @@ SendState = Literal["bozza", "in_invio", "inviato", "incerto", "fallito"]
 # drifting apart would produce a draft the composer offers to edit and the send path
 # refuses, or the reverse.
 #
-# `fallito` is in it on purpose. Spec 6.3(a) says a refused send leaves «la bozza intatta
+# `failed` is in it on purpose. Spec 6.3(a) says a refused send leaves «la bozza intatta
 # con l'errore accanto, il composer si riapre con il testo dentro»; a draft frozen by its
 # own failure would leave "write it again" as the only recovery, which is exactly the
 # loss the `email_drafts` table exists to prevent.
-EDITABLE_SEND_STATES: frozenset[str] = frozenset({"bozza", "fallito"})
+EDITABLE_SEND_STATES: frozenset[str] = frozenset({"draft", "failed"})
 
 
 class EmailDraftCreate(BaseModel):
@@ -334,7 +334,7 @@ class EmailDraftAttachment(BaseModel):
 
     version_id: UUID
     filename: str | None
-    dimensione: int | None
+    size: int | None
 
 
 class EmailDraftRead(BaseModel):
@@ -383,7 +383,7 @@ class EmailDraftListQuery(BaseModel):
     entity_type: Literal["customer", "person", "deal"] | None = None
     entity_id: UUID | None = None
     send_state: SendState | None = None
-    # Everything but `inviato`: the drafts a person still has to act on (REB-415). A
+    # Everything but `sent`: the drafts a person still has to act on (REB-415). A
     # flag rather than a second `send_state`, because the Email tab wants four states
     # at once, and a sent draft only accumulates -- asking for every state and dropping
     # the sent ones afterwards lets enough of them push an unsent one off the page.
@@ -396,19 +396,19 @@ class EmailDraftPage(BaseModel):
     total: int
 
 
-class SollecitoCandidate(BaseModel):
+class PaymentReminderCandidate(BaseModel):
     """One invoice worth chasing, with everything the person needs to decide.
 
     Read-only, so no `SafeStr` and no `max_length`: nothing here is ever an input. It is
-    what `SollecitiService.candidates` answers, and building this list -- crossing due
+    what `PaymentRemindersService.candidates` answers, and building this list -- crossing due
     dates against payments against what has already been sent -- is the part of the job
     that was actually laborious. Pressing a button never was.
 
-    `importo` is the invoice's own frozen `totale`, a `Decimal` at two places, never a
+    `amount` is the invoice's own frozen `total`, a `Decimal` at two places, never a
     sum recomputed at reminder time: a demand for payment that names a figure the
     client's copy of the invoice does not carry is a demand they are right to ignore.
 
-    `ultima_risposta_il` is the signal the previous system could not have had, and it is `None` on
+    `last_answer_at` is the signal the previous system could not have had, and it is `None` on
     an installation with no mailbox connected -- the honest degradation, not a claim that
     nobody replied.
     """
@@ -416,29 +416,29 @@ class SollecitoCandidate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     invoice_id: UUID
-    # `{anno}/{numero}`, through `invoices.naming.numero_completo`. The register keeps
+    # `{year}/{number}`, through `invoices.naming.number_complete`. The register keeps
     # two integers; this is the string printed on the document the client is holding.
-    numero: str
-    data_fattura: date
-    data_scadenza: date
-    giorni_di_ritardo: int
-    importo: Decimal = Field(max_digits=12, decimal_places=2)
-    cliente: str
+    number: str
+    invoice_date: date
+    due_date: date
+    days_of_delay: int
+    amount: Decimal = Field(max_digits=12, decimal_places=2)
+    customer: str
     customer_id: UUID
     # How many reminders actually *left*, which is not how many rows exist: a reminder
     # prepared and never sent occupies a position in the sequence without having been
     # received by anybody.
-    solleciti_inviati: int
-    ultimo_sollecito_il: date | None
-    # The tone the next reminder would carry, derived from `solleciti_inviati` and not
+    sent_payment_reminders: int
+    last_payment_reminder_at: date | None
+    # The tone the next reminder would carry, derived from `sent_payment_reminders` and not
     # from the row count, so an unsent draft can never make the next letter open with
     # «nonostante il precedente sollecito».
-    prossimo_livello: int
-    ultima_risposta_il: date | None
+    next_level: int
+    last_answer_at: date | None
 
 
-class SollecitiPage(BaseModel):
-    items: list[SollecitoCandidate]
+class PaymentRemindersPage(BaseModel):
+    items: list[PaymentReminderCandidate]
     total: int
 
 
@@ -446,8 +446,8 @@ class PaymentReminderCreate(BaseModel):
     """The whole of the request: which invoice to chase.
 
     One field, and no room for a second. Everything the letter says -- the number, the
-    two dates, the frozen `totale`, the IBAN, the tone of the sequence -- is derived from
-    the register by `SollecitiService.create_reminder`, and a field here that let a caller
+    two dates, the frozen `total`, the IBAN, the tone of the sequence -- is derived from
+    the register by `PaymentRemindersService.create_reminder`, and a field here that let a caller
     override any of them would be a demand for payment naming a figure the client's own
     copy of the invoice does not carry. `extra="forbid"` is what makes that a refusal
     rather than a silently ignored key.

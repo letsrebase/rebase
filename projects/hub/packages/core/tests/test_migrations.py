@@ -23,8 +23,8 @@ def test_the_migrations_produce_exactly_the_models_schema(hub_engine: Engine) ->
 
 
 def test_the_company_check_constraints_are_installed(hub_engine: Engine) -> None:
-    """REB-380: `ck_companies_giorni_presenza_range`, `ck_companies_giorni_presenza_together`
-    and `ck_companies_numero_risorse_positive` are real database constraints, not only a
+    """REB-380: `ck_companies_onsite_days_range`, `ck_companies_onsite_days_together`
+    and `ck_companies_headcount_positive` are real database constraints, not only a
     Pydantic rule -- proven with a raw `INSERT` that bypasses the schema entirely. Every
     attempt runs inside one savepoint of a transaction rolled back at the end, so nothing
     here leaves a row behind for another test."""
@@ -38,32 +38,32 @@ def test_the_company_check_constraints_are_installed(hub_engine: Engine) -> None
             )
         ).scalar()
 
-        def _insert(remoto: str, giorni_presenza: str, numero_risorse: int) -> None:
+        def _insert(remote: str, onsite_days: str, headcount: int) -> None:
             connection.execute(
                 text(
                     "INSERT INTO companies (id, user_id, nome_azienda, figura_richiesta, "
                     "progetto, periodo_da, durata, budget_giornaliero, remoto, "
                     "giorni_presenza, numero_risorse, stato) VALUES (gen_random_uuid(), "
                     f":user_id, 'ACME', 'Dev', 'Un progetto', '2026-10-01', '3 mesi', "
-                    f"500, :remoto, {giorni_presenza}, :numero_risorse, 'nuovo')"
+                    f"500, :remoto, {onsite_days}, :numero_risorse, 'nuovo')"
                 ),
-                {"user_id": user_id, "remoto": remoto, "numero_risorse": numero_risorse},
+                {"user_id": user_id, "remote": remote, "headcount": headcount},
             )
 
         with pytest.raises(IntegrityError), connection.begin_nested():  # ibrido, no days
-            _insert("ibrido", "NULL", 1)
+            _insert("hybrid", "NULL", 1)
 
         with pytest.raises(IntegrityError), connection.begin_nested():  # not ibrido, days set
-            _insert("remoto", "2", 1)
+            _insert("remote", "2", 1)
 
         with pytest.raises(IntegrityError), connection.begin_nested():  # days outside 1-4
-            _insert("ibrido", "5", 1)
+            _insert("hybrid", "5", 1)
 
         with pytest.raises(IntegrityError), connection.begin_nested():  # fewer than one person
-            _insert("remoto", "NULL", 0)
+            _insert("remote", "NULL", 0)
 
         with connection.begin_nested():  # the same shape, valid, must be accepted
-            _insert("ibrido", "3", 2)
+            _insert("hybrid", "3", 2)
 
         outer.rollback()
 
@@ -116,7 +116,7 @@ def test_the_production_table_is_adopted_with_its_rows(hub_postgres: Any) -> Non
                     )
                 ).scalars()
             )
-            assert {"nome", "cognome", "linkedin_url", "utm_id"} <= columns
+            assert {"nome", "last_name", "linkedin_url", "utm_id"} <= columns
             version = connection.execute(text("SELECT version_num FROM alembic_version"))
             assert version.scalar() == head_revision()
             # And the result is the models' schema, on the adopted table as on a fresh one.
@@ -165,7 +165,7 @@ def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
             {"freelancer_id": freelancer_id, "company_id": company_id, "user_id": user_id},
         ).scalar()
 
-        def _document(kind: str, match: object, numero: str | None, stato: str) -> None:
+        def _document(kind: str, match: object, number: str | None, status: str) -> None:
             connection.execute(
                 text(
                     "INSERT INTO contract_documents (id, kind, freelancer_id, match_id, numero, "
@@ -177,31 +177,31 @@ def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
                     "kind": kind,
                     "freelancer_id": freelancer_id,
                     "match_id": match,
-                    "numero": numero,
+                    "number": number,
                     "pdf": b"%PDF-",
-                    "stato": stato,
+                    "status": status,
                     "user_id": user_id,
                 },
             )
 
         refused = (
-            ("quadro", match_id, None, "generato"),  # a framework hangs on no match
-            ("quadro", None, "2026-001", "generato"),  # and takes no number
-            ("lettera", match_id, None, "generato"),  # a letter always has a number
-            ("lettera", None, "2026-001", "generato"),  # and a match
-            ("lettera", match_id, "2026-001", "disdetto"),  # a notice is a framework's
-            ("quadro", None, None, "forse"),  # an unknown state
-            ("fattura", None, None, "generato"),  # an unknown kind
+            ("framework", match_id, None, "generated"),  # a framework hangs on no match
+            ("framework", None, "2026-001", "generated"),  # and takes no number
+            ("letter", match_id, None, "generated"),  # a letter always has a number
+            ("letter", None, "2026-001", "generated"),  # and a match
+            ("letter", match_id, "2026-001", "notice_served"),  # a notice is a framework's
+            ("framework", None, None, "forse"),  # an unknown state
+            ("fattura", None, None, "generated"),  # an unknown kind
         )
-        for kind, match, numero, stato in refused:
+        for kind, match, number, status in refused:
             with pytest.raises(IntegrityError), connection.begin_nested():
-                _document(kind, match, numero, stato)
+                _document(kind, match, number, status)
 
         with connection.begin_nested():  # the valid shapes are accepted
-            _document("quadro", None, None, "generato")
-            _document("lettera", match_id, "2026-001", "in_attesa")
+            _document("framework", None, None, "generated")
+            _document("letter", match_id, "2026-001", "pending")
         with pytest.raises(IntegrityError), connection.begin_nested():  # a number, once
-            _document("lettera", match_id, "2026-001", "generato")
+            _document("letter", match_id, "2026-001", "generated")
         with pytest.raises(IntegrityError), connection.begin_nested():  # one tax row per card
             for _ in range(2):
                 connection.execute(
@@ -365,9 +365,9 @@ def test_migration_0020_can_run_again_and_roll_back(hub_postgres: Any) -> None:
         engine.dispose()
 
 
-def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgres: Any) -> None:
-    """REB-497, § 3.1 of the design: a match already `attivo` when 0021 ships waits as
-    `da_collegare`, so the sweep links it; nothing else would ever look at it again. A
+def test_migration_0021_backfills_every_active_match_as_to_link(hub_postgres: Any) -> None:
+    """REB-497, § 3.1 of the design: a match already `active` when 0021 ships waits as
+    `to_link`, so the sweep links it; nothing else would ever look at it again. A
     match in any other state keeps no link state until it turns active."""
     with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
@@ -400,7 +400,7 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
                 ),
                 {"user_id": user_id},
             ).scalar()
-            for stato in ("attivo", "bozza", "in_firma", "concluso"):
+            for status in ("active", "draft", "awaiting_signature", "concluded"):
                 connection.execute(
                     text(
                         "INSERT INTO matches (id, freelancer_id, company_id, "
@@ -412,7 +412,7 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
                     {
                         "freelancer_id": freelancer_id,
                         "company_id": company_id,
-                        "stato": stato,
+                        "status": status,
                         "user_id": user_id,
                     },
                 )
@@ -422,10 +422,10 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
         with engine.connect() as connection:
             states = dict(connection.execute(text("SELECT stato, pigro_stato FROM matches")).all())
         assert states == {
-            "attivo": "da_collegare",
-            "bozza": None,
-            "in_firma": None,
-            "concluso": None,
+            "active": "to_link",
+            "draft": None,
+            "awaiting_signature": None,
+            "concluded": None,
         }
         engine.dispose()
 
@@ -451,23 +451,23 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
             ":stato, now(), now(), now())"
         )
         valid = {
-            "fonte": "stato",
+            "source": "status",
             "sp": "lead",
-            "filtri": None,
+            "filters": None,
             "segue": None,
-            "bottone_meta": "area",
-            "azione": "cv",
-            "stato": "bozza",
+            "button_meta": "area",
+            "action": "cv",
+            "status": "draft",
         }
         bad = (
             {**valid, "slug": "a", "sp": None},  # ck_campaigns_stato_percorso
-            {**valid, "slug": "b", "fonte": "filtri"},  # ck_campaigns_filtri
-            {**valid, "slug": "c", "azione": "vola"},  # ck_campaigns_azione
-            {**valid, "slug": "d", "fonte": "nuvola"},  # ck_campaigns_fonte
-            {**valid, "slug": "e", "stato": "volante"},  # ck_campaigns_stato
-            {**valid, "slug": "f", "bottone_meta": "cielo"},  # ck_campaigns_bottone_meta
+            {**valid, "slug": "b", "source": "filters"},  # ck_campaigns_filtri
+            {**valid, "slug": "c", "action": "vola"},  # ck_campaigns_azione
+            {**valid, "slug": "d", "source": "nuvola"},  # ck_campaigns_fonte
+            {**valid, "slug": "e", "status": "volante"},  # ck_campaigns_stato
+            {**valid, "slug": "f", "button_meta": "cielo"},  # ck_campaigns_bottone_meta
             # ck_campaigns_segue
-            {**valid, "slug": "g", "fonte": "lista", "sp": None, "filtri": None},
+            {**valid, "slug": "g", "source": "list", "sp": None, "filters": None},
         )
         for values in bad:
             savepoint = connection.begin_nested()
@@ -486,9 +486,9 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
         )
         for values in (
             # ck_campaign_recipients_tipo
-            {"email": "r1@rebase.it", "tipo": "volante", "stato": "in_coda", "token": "t1"},
+            {"email": "r1@rebase.it", "kind": "volante", "status": "in_coda", "token": "t1"},
             # ck_campaign_recipients_stato
-            {"email": "r2@rebase.it", "tipo": "lead", "stato": "spedita", "token": "t2"},
+            {"email": "r2@rebase.it", "kind": "lead", "status": "spedita", "token": "t2"},
         ):
             savepoint = connection.begin_nested()
             with pytest.raises(IntegrityError):
@@ -499,8 +499,8 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
             {
                 "campaign_id": campaign_id,
                 "email": "r3@rebase.it",
-                "tipo": "lead",
-                "stato": "in_coda",
+                "kind": "lead",
+                "status": "in_coda",
                 "token": "t3",
             },
         )
@@ -508,9 +508,9 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
         optout = "INSERT INTO campaign_optouts (email, fonte) VALUES (:email, :fonte)"
         savepoint = connection.begin_nested()  # ck_campaign_optouts_fonte
         with pytest.raises(IntegrityError):
-            connection.execute(text(optout), {"email": "o1@rebase.it", "fonte": "spam"})
+            connection.execute(text(optout), {"email": "o1@rebase.it", "source": "spam"})
         savepoint.rollback()
-        connection.execute(text(optout), {"email": "o2@rebase.it", "fonte": "link"})
+        connection.execute(text(optout), {"email": "o2@rebase.it", "source": "link"})
 
         outer.rollback()
 

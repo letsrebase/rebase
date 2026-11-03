@@ -37,7 +37,7 @@ PERIOD_LOCK_TIMELINE_ID = UUID("00000000-0000-0000-0000-0000706c6f63")
 # a namespace of this project's own next to `gmail/repository.py` and `customers/repository.py`.
 PERIOD_LOCK_NAMESPACE = 0x7093
 
-MESI_ITALIANI = (
+MONTHS_ITALIAN = (
     "gennaio",
     "febbraio",
     "marzo",
@@ -53,18 +53,18 @@ MESI_ITALIANI = (
 )
 
 
-def period_label(anno: int, mese: int) -> str:
+def period_label(year: int, month: int) -> str:
     """`marzo 2026`. Long-form Italian, carried over from the previous system's own period label:
     the monthly cut is what a client expects next to an invoice, and it is what gets
     agreed on."""
-    return f"{MESI_ITALIANI[mese - 1]} {anno}"
+    return f"{MONTHS_ITALIAN[month - 1]} {year}"
 
 
 class PeriodLockRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def lock_month(self, anno: int, mese: int, *, exclusive: bool) -> None:
+    def lock_month(self, year: int, month: int, *, exclusive: bool) -> None:
         """Holds a transaction-scoped advisory lock on one month until the transaction ends.
 
         Why an advisory lock and not `SELECT ... FOR SHARE` on the lock row: a month that
@@ -75,12 +75,12 @@ class PeriodLockRepository:
         (`close_period`, `reopen_period`): shared ones do not block each other, and the
         locks one session holds never conflict with each other."""
         take = func.pg_advisory_xact_lock if exclusive else func.pg_advisory_xact_lock_shared
-        self.session.execute(select(take(PERIOD_LOCK_NAMESPACE, anno * 100 + mese)))
+        self.session.execute(select(take(PERIOD_LOCK_NAMESPACE, year * 100 + month)))
 
-    def get(self, anno: int, mese: int) -> PeriodLock | None:
+    def get(self, year: int, month: int) -> PeriodLock | None:
         """The row as it is now: overwritten from the database, so a lock another
         transaction closed or reopened is not read from a copy loaded earlier."""
-        return self.session.get(PeriodLock, (anno, mese), populate_existing=True)
+        return self.session.get(PeriodLock, (year, month), populate_existing=True)
 
     def add(self, lock: PeriodLock) -> PeriodLock:
         self.session.add(lock)
@@ -97,13 +97,13 @@ class PeriodLockRepository:
         self.session.flush()
 
     # `list` stays the last method in this class -- the unconditional project rule.
-    def list(self, *, anno: int | None = None) -> list[PeriodLock]:
+    def list(self, *, year: int | None = None) -> list[PeriodLock]:
         stmt = select(PeriodLock)
-        if anno is not None:
-            stmt = stmt.where(PeriodLock.anno == anno)
+        if year is not None:
+            stmt = stmt.where(PeriodLock.year == year)
         return list(
             self.session.execute(
-                stmt.order_by(PeriodLock.anno.desc(), PeriodLock.mese.desc())
+                stmt.order_by(PeriodLock.year.desc(), PeriodLock.month.desc())
             ).scalars()
         )
 
@@ -120,17 +120,17 @@ class PeriodLockService:
         # the second finds the first one's row, and the writes that already checked the month
         # (they hold it shared) commit before this one inserts. The composite primary key
         # stays the database's own guard.
-        self.repo.lock_month(data.anno, data.mese, exclusive=True)
-        if self.repo.get(data.anno, data.mese) is not None:
+        self.repo.lock_month(data.year, data.month, exclusive=True)
+        if self.repo.get(data.year, data.month) is not None:
             raise Conflict(
                 ENTITY,
-                f"il periodo {period_label(data.anno, data.mese)} è già chiuso",
-                anno=data.anno,
-                mese=data.mese,
+                f"il periodo {period_label(data.year, data.month)} è già chiuso",
+                year=data.year,
+                month=data.month,
             )
         lock = self.repo.add(
             PeriodLock(
-                anno=data.anno, mese=data.mese, chiuso_il=datetime.now(UTC), chiuso_da=actor.id
+                year=data.year, month=data.month, closed_at=datetime.now(UTC), closed_by=actor.id
             )
         )
         self.activities.record(
@@ -138,28 +138,28 @@ class PeriodLockService:
             PERIOD_LOCK_TIMELINE_ID,
             "closed",
             actor,
-            {"anno": data.anno, "mese": data.mese},
+            {"year": data.year, "month": data.month},
         )
         self.session.commit()
         return PeriodLockRead.model_validate(lock)
 
-    def reopen_period(self, anno: int, mese: int, actor: Actor) -> None:
+    def reopen_period(self, year: int, month: int, actor: Actor) -> None:
         actor.require_unscoped_admin("reopen_period")
-        self.repo.lock_month(anno, mese, exclusive=True)
-        lock = self.repo.get(anno, mese)
+        self.repo.lock_month(year, month, exclusive=True)
+        lock = self.repo.get(year, month)
         if lock is None:
-            raise NotFound(ENTITY, f"{anno}-{mese:02d}")
+            raise NotFound(ENTITY, f"{year}-{month:02d}")
         self.repo.delete(lock)
         self.activities.record(
-            ENTITY, PERIOD_LOCK_TIMELINE_ID, "reopened", actor, {"anno": anno, "mese": mese}
+            ENTITY, PERIOD_LOCK_TIMELINE_ID, "reopened", actor, {"year": year, "month": month}
         )
         self.session.commit()
 
-    def is_closed(self, giorno: date) -> PeriodLockRead | None:
-        lock = self.repo.get(giorno.year, giorno.month)
+    def is_closed(self, day: date) -> PeriodLockRead | None:
+        lock = self.repo.get(day.year, day.month)
         return PeriodLockRead.model_validate(lock) if lock is not None else None
 
-    def assert_writable(self, entity: str, field: str, *giorni: date | None) -> None:
+    def assert_writable(self, entity: str, field: str, *days: date | None) -> None:
         """Refuses if **any** of the supplied days falls in a closed month.
 
         Variadic because an update has to pass both the stored date and the new one:
@@ -176,23 +176,23 @@ class PeriodLockService:
         (`PeriodLockRepository.lock_month`), so a close of that month waits for the write
         that checked it instead of committing between the check and the write.
         """
-        for giorno in giorni:
-            if giorno is None:
+        for day in days:
+            if day is None:
                 continue
-            self.repo.lock_month(giorno.year, giorno.month, exclusive=False)
-            lock = self.repo.get(giorno.year, giorno.month)
+            self.repo.lock_month(day.year, day.month, exclusive=False)
+            lock = self.repo.get(day.year, day.month)
             if lock is None:
                 continue
             raise Conflict(
                 entity,
-                f"il periodo {period_label(lock.anno, lock.mese)} è chiuso: riaprilo per "
+                f"il periodo {period_label(lock.year, lock.month)} è chiuso: riaprilo per "
                 "modificare voci datate in quel mese",
                 field=field,
-                anno=lock.anno,
-                mese=lock.mese,
-                chiuso_il=lock.chiuso_il.isoformat(),
-                chiuso_da=str(lock.chiuso_da) if lock.chiuso_da else None,
+                year=lock.year,
+                month=lock.month,
+                closed_at=lock.closed_at.isoformat(),
+                closed_by=str(lock.closed_by) if lock.closed_by else None,
             )
 
-    def list_locks(self, *, anno: int | None = None) -> list[PeriodLockRead]:
-        return [PeriodLockRead.model_validate(lock) for lock in self.repo.list(anno=anno)]
+    def list_locks(self, *, year: int | None = None) -> list[PeriodLockRead]:
+        return [PeriodLockRead.model_validate(lock) for lock in self.repo.list(year=year)]

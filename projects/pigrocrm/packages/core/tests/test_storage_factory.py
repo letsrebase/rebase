@@ -105,10 +105,10 @@ def _account(
     storage_folder_id: str | None = STORAGE_FOLDER,
     updated_at: datetime | None = None,
     scopes: tuple[str, ...] = (DRIVE_SCOPE_READONLY, DRIVE_SCOPE_FILE),
-    ruolo: str = "admin",
+    role: str = "admin",
 ) -> GoogleDriveAccount:
     """A connected Drive with a write folder chosen -- the state the lazy storage has
-    to find. Its owner is an admin unless `ruolo` says otherwise: only an admin's row
+    to find. Its owner is an admin unless `role` says otherwise: only an admin's row
     may supply the space's storage (REB-457).
 
     The refresh token is really sealed, with the same key `gmail_settings()` publishes,
@@ -119,8 +119,8 @@ def _account(
         email=f"drive-{uuid4().hex[:8]}@example.it",
         nome="Titolare",
         password_hash="x",
-        ruolo=ruolo,
-        attivo=True,
+        role=role,
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -303,9 +303,9 @@ def test_storage_account_prefers_the_most_recently_updated_when_more_than_one_qu
     assert found is newer and found is not older
 
 
-@pytest.mark.parametrize("ruolo", ["collaboratore", "readonly"])
+@pytest.mark.parametrize("role", ["collaborator", "readonly"])
 def test_storage_account_never_answers_with_a_non_admin_s_row(
-    db_session: Session, ruolo: str
+    db_session: Session, role: str
 ) -> None:
     """REB-457. The write folder is the space's, not a person's: every document the
     space generates lands there, an automation's included. So a non-admin's row never
@@ -317,7 +317,7 @@ def test_storage_account_never_answers_with_a_non_admin_s_row(
     admin = _account(db_session, updated_at=datetime(2026, 1, 1, tzinfo=UTC))
     _account(
         db_session,
-        ruolo=ruolo,
+        role=role,
         storage_folder_id=OTHER_FOLDER,
         updated_at=datetime(2026, 6, 1, tzinfo=UTC),
     )
@@ -330,7 +330,7 @@ def test_storage_account_with_only_a_non_admin_s_folder_is_not_configured(
 ) -> None:
     """The behaviour change REB-457 accepts: an installation whose only write folder
     sits on a non-admin's row reads as not configured until an admin chooses one."""
-    _account(db_session, ruolo="collaboratore")
+    _account(db_session, role="collaborator")
     assert DriveRepository(db_session).storage_account() is None
 
 
@@ -353,14 +353,14 @@ def test_storage_holder_names_the_same_row_storage_account_answers_with(
 def test_storage_holder_is_none_when_only_a_non_admin_s_row_names_a_folder(
     db_session: Session,
 ) -> None:
-    _account(db_session, ruolo="collaboratore")
+    _account(db_session, role="collaborator")
     assert DriveRepository(db_session).storage_holder() is None
 
 
 def test_storage_account_stops_answering_with_an_admin_who_is_demoted(
     db_session: Session,
 ) -> None:
-    """The role is read at each resolution, from `users.ruolo` as it is now, not
+    """The role is read at each resolution, from `users.role` as it is now, not
     remembered from the moment the folder was chosen: a demoted admin stops supplying
     the space's storage at the next operation."""
     account = _account(db_session)
@@ -368,7 +368,7 @@ def test_storage_account_stops_answering_with_an_admin_who_is_demoted(
 
     owner = db_session.get(User, account.user_id)
     assert owner is not None
-    owner.ruolo = "collaboratore"
+    owner.role = "collaborator"
     db_session.flush()
 
     assert DriveRepository(db_session).storage_account() is None
@@ -385,7 +385,7 @@ def test_the_lazy_storage_stops_writing_into_a_demoted_admin_s_folder(
 
     owner = db_session.get(User, account.user_id)
     assert owner is not None
-    owner.ruolo = "collaboratore"
+    owner.role = "collaborator"
     db_session.flush()
 
     with pytest.raises(StorageNotConfigured):
@@ -593,7 +593,7 @@ def test_a_revoked_grant_is_recorded_on_the_row_and_answers_with_no_account_name
     assert MAILBOX in stored.last_error
     assert REFRESH_TOKEN not in stored.last_error
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "drive.credenziale_revocata" in kinds
+    assert "drive.credential_revoked" in kinds
 
 
 def test_after_a_revocation_the_next_operation_asks_for_configuration_again(
@@ -870,7 +870,7 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
         db_session.execute(
             select(Activity.entity_id).where(
                 Activity.entity_type == "google_drive_account",
-                Activity.kind == "drive.credenziale_revocata",
+                Activity.kind == "drive.credential_revoked",
                 Activity.entity_id.in_([failing.id, other.id]),
             )
         )

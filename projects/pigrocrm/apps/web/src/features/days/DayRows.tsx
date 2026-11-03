@@ -4,7 +4,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { DayStatePill } from './DayStatePill'
-import { quantitaLabel, type WorkUnitRow } from './labels'
+import { quantityLabel, type WorkUnitRow } from './labels'
 import type { useWorkUnits } from './queries'
 
 /**
@@ -13,7 +13,7 @@ import type { useWorkUnits } from './queries'
  * contract are on the row so a list of them reads without opening one.
  *
  * `showContract` is off inside a contract's own panel, where the contract is the page.
- * A list the API cut (`troncato`) says so: a register that silently stops at the newest
+ * A list the API cut (`truncated`) says so: a register that silently stops at the newest
  * two hundred is a register that lies about the oldest.
  */
 export function DayRows({
@@ -52,7 +52,7 @@ export function DayRows({
           <DayRow key={day.id} day={day} showContract={showContract} />
         ))}
       </ul>
-      {days.data.troncato ? (
+      {days.data.truncated ? (
         <p className="mt-3 text-sm text-muted-foreground">
           Ci sono più giornate di quelle mostrate: sono le più recenti. Restringi il periodo per vedere le altre.
         </p>
@@ -71,13 +71,13 @@ function DayRow({ day, showContract }: { day: WorkUnitRow; showContract: boolean
       >
         <div className="w-24 shrink-0 text-sm font-medium tabular-nums">{formatIsoDateItalian(day.data)}</div>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{day.descrizione}</p>
+          <p className="truncate font-medium">{day.description}</p>
           <p className="truncate text-sm text-muted-foreground">
-            {quantitaLabel(day.quantita)}
-            {showContract ? ` · ${day.contract_titolo}, ${day.customer_nome}` : ''}
+            {quantityLabel(day.quantity)}
+            {showContract ? ` · ${day.contract_title}, ${day.customer_name}` : ''}
           </p>
         </div>
-        <DayStatePill stato={day.stato} />
+        <DayStatePill status={day.status} />
         <ChevronRight className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden />
       </Link>
     </li>

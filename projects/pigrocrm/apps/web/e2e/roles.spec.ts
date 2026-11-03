@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { login, loginAsAdmin, logout } from './helpers'
 
 /**
- * `collaboratore` sits deliberately in the middle of this product's three roles:
+ * `collaborator` sits deliberately in the middle of this product's three roles:
  * it can write records (unlike `readonly`) but administers nothing
  * (`SettingsLayout.tsx`'s own docstring: Campi/Pipeline/Utenti are admin-only at
  * the service layer). Access tokens are the one screen that specifically must
@@ -21,10 +21,10 @@ test('a collaboratore is offered only their own Settings groups and cannot reach
   // Admin creates the collaboratore. The Utenti panel has no «Nuovo utente» form with a
   // password any more: people enter with an invitation by mail (UsersPanel, REB-291), and
   // no mail leaves the e2e stack. `POST /api/users` is still how an admin creates an
-  // account with a password, and `aziende.spec.ts` seeds its second member the same way.
+  // account with a password, and `legal_entities.spec.ts` seeds its second member the same way.
   await loginAsAdmin(page)
   const created = await page.request.post('/api/users', {
-    data: { email, password, nome: 'Collaboratore E2E', ruolo: 'collaboratore' },
+    data: { email, password, nome: 'Collaboratore E2E', role: 'collaborator' },
   })
   expect(created.status(), await created.text()).toBe(201)
 

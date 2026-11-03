@@ -21,13 +21,13 @@ AGENT = Actor(id=uuid4(), type="mcp", role="admin")
 def test_record_stores_who_did_what(db_session: Session) -> None:
     service = ActivityService(db_session)
     entity_id = uuid4()
-    service.record("customer", entity_id, "created", USER, {"ragione_sociale": "ACME"})
+    service.record("customer", entity_id, "created", USER, {"legal_name": "ACME"})
     db_session.commit()
 
     entries = service.timeline("customer", entity_id)
     assert len(entries) == 1
     assert entries[0].kind == "created"
-    assert entries[0].payload == {"ragione_sociale": "ACME"}
+    assert entries[0].payload == {"legal_name": "ACME"}
     assert entries[0].actor_id == USER.id
 
 
@@ -134,8 +134,8 @@ def test_record_never_fails_on_a_value_json_has_no_encoder_for(db_session: Sessi
         "created",
         USER,
         {
-            "totale": Decimal("12.50"),
-            "tipo": Kind.PLAIN,
+            "total": Decimal("12.50"),
+            "type": Kind.PLAIN,
             "raw": b"ab\xffc",
             "pair": (1, float("nan")),
             "when": datetime(2026, 11, 2, 9, 30, tzinfo=UTC),
@@ -145,8 +145,8 @@ def test_record_never_fails_on_a_value_json_has_no_encoder_for(db_session: Sessi
 
     entry = service.timeline("customer", entity_id)[0]
     assert entry.payload == {
-        "totale": "12.50",
-        "tipo": "plain",
+        "total": "12.50",
+        "type": "plain",
         "raw": "ab\ufffdc",
         "pair": [1, "NaN"],
         "when": "2026-11-02T09:30:00+00:00",
@@ -214,7 +214,7 @@ def test_session_remains_usable_after_a_hostile_payload(db_session: Session) -> 
 # would refuse the same value outright. Bounding it here, at the one place both
 # adapters share, is what makes the MCP tool match REST without the tool itself
 # needing its own copy of the rule -- the same pattern `_check_numbers` already
-# uses for `probabilita` on `create_deal`'s tool parameter.
+# uses for `probability` on `create_deal`'s tool parameter.
 
 
 def test_timeline_rejects_a_limit_below_one(db_session: Session) -> None:

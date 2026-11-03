@@ -10,7 +10,7 @@ import { EmailTemplateDialog } from './EmailTemplateDialog'
 import { SendInvoiceDialog } from './SendInvoiceDialog'
 import { useEmailTemplates, useUpdateEmailTemplate, type EmailTemplate } from './emailQueries'
 
-const ATTACHMENT_LABEL = { fattura_pdf: 'fattura', registro_pdf: 'registro' } as const
+const ATTACHMENT_LABEL = { invoice_pdf: 'invoice', register_pdf: 'register' } as const
 
 function Archive({ contractId, template }: { contractId: string; template: EmailTemplate }) {
   const update = useUpdateEmailTemplate(contractId, template.id)
@@ -19,9 +19,9 @@ function Archive({ contractId, template }: { contractId: string; template: Email
       size="sm"
       variant="ghost"
       disabled={update.isPending}
-      onClick={() => update.mutate({ attivo: !template.attivo })}
+      onClick={() => update.mutate({ active: !template.active })}
     >
-      {template.attivo ? 'Archivia' : 'Ripristina'}
+      {template.active ? 'Archivia' : 'Ripristina'}
     </Button>
   )
 }
@@ -44,7 +44,7 @@ export function ContractEmailSection({
   const templates = useEmailTemplates(contractId)
   const [editing, setEditing] = useState<{ open: boolean; template?: EmailTemplate }>({ open: false })
   const [sending, setSending] = useState(false)
-  const active = (templates.data ?? []).filter((template) => template.attivo)
+  const active = (templates.data ?? []).filter((template) => template.active)
 
   return (
     <Card>
@@ -83,12 +83,12 @@ export function ContractEmailSection({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="font-medium">{template.nome}</span>
-                    {!template.attivo && <StatusPill tone="muted">Archiviato</StatusPill>}
+                    {!template.active && <StatusPill tone="muted">Archiviato</StatusPill>}
                   </div>
                   <p className="truncate text-sm text-muted-foreground">
-                    {template.oggetto}
-                    {template.allegati.length > 0 &&
-                      ` · allegati: ${template.allegati.map((kind) => ATTACHMENT_LABEL[kind]).join(', ')}`}
+                    {template.subject}
+                    {template.attachments.length > 0 &&
+                      ` · allegati: ${template.attachments.map((kind) => ATTACHMENT_LABEL[kind]).join(', ')}`}
                   </p>
                 </div>
                 {canWrite && (

@@ -53,7 +53,7 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  *   admin, which REB-221's first round shipped and its second round exists to fix.
  * - `drive` (`DrivePanel`) is open to a collaboratore (REB-457). The Drive credential is
  *   per CRM user and the service lets any writer connect their own, and the consent's
- *   callback lands every outcome (`?esito=`) on this tab. A collaboratore reads the
+ *   callback lands every outcome (`?outcome=`) on this tab. A collaboratore reads the
  *   outcome there, from the route itself, and manages their own Drive under it.
  *
  * A non-admin past the gate sees only the tabs their role may see, never the admin-only
@@ -61,7 +61,7 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  *
  * One outcome is still read out in front of the gate: the Drive consent's, to a readonly
  * person (REB-446). They cannot start that consent, but the callback cannot know the
- * role, so an outcome that lands here anyway (`sessione` after logging back in as
+ * role, so an outcome that lands here anyway (`session_expired` after logging back in as
  * somebody else, a link somebody sent) is read above the explanation, without «Riprova»,
  * which `ConsentOutcome` offers only to a writer.
  */
@@ -73,17 +73,17 @@ export function SettingsLayout() {
   const current = SETTINGS_TABS.find((tab) => path.endsWith(`/settings/${tab.value}`))
   const mayOpen =
     isAdmin ||
-    (user !== null && current !== undefined && canSeeSettingsTab(user.ruolo, current.value))
+    (user !== null && current !== undefined && canSeeSettingsTab(user.role, current.value))
 
   if (!mayOpen) {
     const search = (location as { search?: Record<string, unknown> }).search
-    const driveEsito =
-      current?.value === 'drive' && typeof search?.esito === 'string' ? search.esito : undefined
+    const driveOutcome =
+      current?.value === 'drive' && typeof search?.outcome === 'string' ? search.outcome : undefined
     return (
       <div className="p-8">
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 pt-16 text-center">
-          {driveEsito ? (
-            <ConsentOutcome {...consentOutcome('drive', driveEsito)} className="mb-4 text-left" />
+          {driveOutcome ? (
+            <ConsentOutcome {...consentOutcome('drive', driveOutcome)} className="mb-4 text-left" />
           ) : null}
           <ShieldAlert className="size-10 text-muted-foreground" aria-hidden="true" />
           <h1 className="text-xl font-semibold tracking-tight">Accesso riservato</h1>
@@ -115,7 +115,7 @@ export function SettingsLayout() {
   // REB-771: the strip is cut to the entries of the group the page is on (the sidebar
   // lists the groups), and a path that is no section falls back to Profilo's group.
   const group = settingsGroupOf(current?.value) ?? SETTINGS_GROUPS[0]
-  const tabs = group.tabs.filter((tab) => user !== null && canSeeSettingsTab(user.ruolo, tab.value))
+  const tabs = group.tabs.filter((tab) => user !== null && canSeeSettingsTab(user.role, tab.value))
   const active = current?.value ?? 'profile'
 
   // `Tabs` wraps the header rather than sitting under it: the underline tabs of §4 are

@@ -1,15 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { EnterPage } from '@/features/auth/EnterPage'
-import { takeEntraToken } from '@rebase/analytics/entra-token'
+import { takeVerifyToken } from '@rebase/analytics/verify-token'
 
 function EnterRoute() {
   const { t } = Route.useSearch()
   // Lazy initialiser: computed once per mount, whatever else re-renders this
-  // component, so `takeEntraToken`'s one-shot read is not repeated. (React's Strict
+  // component, so `takeVerifyToken`'s one-shot read is not repeated. (React's Strict
   // Mode calls a `useState` initialiser twice in development to check it is pure; the
   // second call's result is discarded, so this stays a single effective read.)
-  const [token] = useState(() => takeEntraToken() ?? t)
+  const [token] = useState(() => takeVerifyToken() ?? t)
   return <EnterPage token={token} />
 }
 

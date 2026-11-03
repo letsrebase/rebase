@@ -23,10 +23,10 @@ export const JOB_STATES: Record<JobState, { label: string; tone: StatusTone }> =
  * exception's type name, shown as such.
  */
 const FAILURES: Record<string, string> = {
-  titolare_mancante: 'lo spazio non ha un titolare a cui scrivere',
-  titolare_disattivato: 'il titolare dello spazio è disattivato',
-  invio_rifiutato: 'il servizio di posta ha rifiutato l’invio',
-  invio_non_configurato: 'l’invio delle email non è configurato',
+  owner_missing: 'lo spazio non ha un titolare a cui scrivere',
+  owner_disabled: 'il titolare dello spazio è disattivato',
+  send_rejected: 'il servizio di posta ha rifiutato l’invio',
+  send_not_configured: 'l’invio delle email non è configurato',
   CredentialRevoked: 'il consenso Google è stato revocato: la casella va ricollegata da Impostazioni → Gmail',
   ConsentExpired: 'il consenso Google è scaduto: la casella va ricollegata da Impostazioni → Gmail',
   ScopeMissing: 'manca un’autorizzazione di Google: la casella va ri-autorizzata da Impostazioni → Gmail',

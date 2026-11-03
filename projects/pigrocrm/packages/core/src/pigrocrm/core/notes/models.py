@@ -8,14 +8,14 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin
 
 NOTE_ENTITY_TYPES: tuple[str, ...] = ("deal", "customer", "person")
 # Where a note came from, derived from the `Actor` that wrote it and never from the caller:
-# `web` a member in the browser, `mcp` an agent holding a member's token, `sistema` a job
+# `web` a member in the browser, `mcp` an agent holding a member's token, `system` a job
 # of the space, `rebase` the engagements door. A note moved over from the old `note`
 # column (migration 0064) has no source at all: `NULL`, shown as «Nota precedente».
-NOTE_SOURCES: tuple[str, ...] = ("web", "mcp", "sistema", "rebase")
+NOTE_SOURCES: tuple[str, ...] = ("web", "mcp", "system", "rebase")
 # The two sources that are an event of the record's life, not somebody's remark: nobody
 # edits or deletes them, an administrator included.
-NOTE_READ_ONLY_SOURCES: tuple[str, ...] = ("sistema", "rebase")
-AUTORE_MAX_LENGTH = 200
+NOTE_READ_ONLY_SOURCES: tuple[str, ...] = ("system", "rebase")
+AUTHOR_MAX_LENGTH = 200
 
 
 class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
@@ -24,10 +24,10 @@ class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
 
     Polymorphic like `activities` and the Gmail links: `entity_type` names the table
     `entity_id` points at, so there is no foreign key, and the row-level policy reaches
-    the azienda through `entita_visibile` (migration 0064), the way the timeline's does.
+    the azienda through `entity_visible` (migration 0064), the way the timeline's does.
 
-    It says who wrote it and when, so its text carries neither: `autore_id` is the member
-    (the owner of the token, for an agent) and `autore` their name as it read then, kept
+    It says who wrote it and when, so its text carries neither: `author_id` is the member
+    (the owner of the token, for an agent) and `author` their name as it read then, kept
     so the thread still names them if the name changes. A row written by a job or by
     rebase has neither. An edit overwrites the text and keeps who and when in
     `modificata_*`; the text it replaced is in the parent's timeline entry. A delete is
@@ -43,16 +43,16 @@ class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
         ),
         CheckConstraint(
             "fonte IS NULL OR fonte IN ('web', 'mcp', 'sistema', 'rebase')",
-            name="ck_notes_fonte",
+            name="ck_notes_source",
         ),
     )
 
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(nullable=False)
-    testo: Mapped[str] = mapped_column(Text, nullable=False)
-    autore_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-    autore: Mapped[str | None] = mapped_column(String(AUTORE_MAX_LENGTH), default=None)
-    fonte: Mapped[str | None] = mapped_column(String(10), default=None)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    author_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    author: Mapped[str | None] = mapped_column(String(AUTHOR_MAX_LENGTH), default=None)
+    source: Mapped[str | None] = mapped_column(String(10), default=None)
     # The moment of the write, from the clock and not from the transaction (`now()` is the
     # moment the transaction began): a thread is ordered by it.
     created_at: Mapped[datetime] = mapped_column(
@@ -61,8 +61,8 @@ class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
-    modificata_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
-    modificata_da_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    edited_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
 
 class NoteRevision(Base, PrimaryKeyMixin):
@@ -79,7 +79,7 @@ class NoteRevision(Base, PrimaryKeyMixin):
     __table_args__ = (Index("ix_note_revisions_note", "note_id", "edited_at"),)
 
     note_id: Mapped[UUID] = mapped_column(ForeignKey("notes.id"), nullable=False)
-    testo: Mapped[str] = mapped_column(Text, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
     edited_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -87,5 +87,5 @@ class NoteRevision(Base, PrimaryKeyMixin):
         nullable=False,
     )
     edited_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
-    edited_by: Mapped[str | None] = mapped_column(String(AUTORE_MAX_LENGTH), default=None)
-    fonte: Mapped[str | None] = mapped_column(String(10), default=None)
+    edited_by: Mapped[str | None] = mapped_column(String(AUTHOR_MAX_LENGTH), default=None)
+    source: Mapped[str | None] = mapped_column(String(10), default=None)

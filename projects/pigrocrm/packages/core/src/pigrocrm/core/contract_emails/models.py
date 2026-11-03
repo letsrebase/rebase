@@ -7,8 +7,8 @@ none of which fits «the wording this client gets with October's invoice». The 
 rendered by the same engine (`templates/renderer.py`), in the plain context a mail client
 reads, from the variables `service.TEMPLATE_VARIABLES` names.
 
-No delete: a template nobody wants any more is archived (`attivo` false), as every other
-configuration row here is. `allegati` says which files go with it: the invoice's PDF and
+No delete: a template nobody wants any more is archived (`active` false), as every other
+configuration row here is. `attachments` says which files go with it: the invoice's PDF and
 the register's PDF, both archived documents, since a mail attaches document versions and
 never a file made on the spot.
 """
@@ -29,12 +29,12 @@ class ContractEmailTemplate(Base, PrimaryKeyMixin, TimestampMixin):
         ForeignKey("contracts.id"), nullable=False, index=True
     )
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
-    oggetto: Mapped[str] = mapped_column(String(300), nullable=False)
-    corpo: Mapped[str] = mapped_column(Text, nullable=False)
-    allegati: Mapped[list[str]] = mapped_column(
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    attachments: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
-    attivo: Mapped[bool] = mapped_column(
+    active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
 

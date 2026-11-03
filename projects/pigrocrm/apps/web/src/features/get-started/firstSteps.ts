@@ -15,8 +15,8 @@ import { api, toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { queryKeys } from '@/lib/query'
 
-export type StepId = 'fiscali' | 'cliente' | 'lavoro' | 'documento'
-export type StepTarget = '/app/settings/aziende' | '/app/customers' | '/app/deal'
+export type StepId = 'tax' | 'customer' | 'work' | 'document'
+export type StepTarget = '/app/settings/legal-entities' | '/app/customers' | '/app/deal'
 
 export interface FirstStep {
   id: StepId
@@ -101,12 +101,12 @@ async function documentsPage() {
 }
 
 /** «La prima offerta» is an offer, not any document: since the invoice door (REB-224)
- *  files an issued invoice's PDF as a `fattura` document, «any document» would tick the
+ *  files an issued invoice's PDF as a `invoice` document, «any document» would tick the
  *  step for a file that is not an offer. Any document still counts as work
  *  (`documentsPage`, `spaceEmpty`). */
 async function offersPage() {
   return (
-    settled(await api.GET('/api/documents', { params: { query: { tipo: 'offerta', limit: 1 } } })) ??
+    settled(await api.GET('/api/documents', { params: { query: { type: 'offer', limit: 1 } } })) ??
     NO_ITEMS
   )
 }
@@ -115,9 +115,9 @@ async function fiscalDataSaved(): Promise<boolean> {
   // The default azienda is the first of the list (REB-617); a space has one from its
   // first boot, with the name and nothing fiscal, so the step is done once either id
   // is on it.
-  const aziende = settled(await api.GET('/api/aziende'))
-  const profile = aziende?.[0]
-  return Boolean(profile?.partita_iva || profile?.codice_fiscale)
+  const legal_entities = settled(await api.GET('/api/legal-entities'))
+  const profile = legal_entities?.[0]
+  return Boolean(profile?.vat_number || profile?.tax_code)
 }
 
 async function hasToken(): Promise<boolean> {
@@ -140,15 +140,15 @@ const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (
 
 /** The four reads that say whether the space has any work, and the verdict they give. */
 function useWork(options: { staleTime: number; refetchOnWindowFocus?: boolean; enabled?: boolean } = WORK_OPTIONS) {
-  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...options })
+  const customer = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: customersPage, select: hasItems, ...options })
   const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: dealsPage, select: hasItems, ...options })
-  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...options })
-  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...options })
-  const reads = [cliente, deal, ore, documento]
+  const hours = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: timeEntriesPage, select: hasItems, ...options })
+  const document = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: documentsPage, select: hasItems, ...options })
+  const reads = [customer, deal, hours, document]
   return {
-    cliente,
+    customer,
     deal,
-    ore,
+    hours,
     reads,
     // Not while a work read is refetching either: a Home mounted right after the first
     // customer was created would otherwise decide on the cached «empty» that the
@@ -189,61 +189,61 @@ export function useSpaceHasData(): boolean {
 export function useFirstSteps(): FirstStepsState {
   const { user } = useAuth()
   const userId = user?.id ?? ''
-  const isAdmin = user?.ruolo === 'admin'
+  const isAdmin = user?.role === 'admin'
   const token = useQuery({
     queryKey: [...queryKeys.tokens(userId), 'first-steps'],
     queryFn: hasToken,
     ...OPTIONS,
   })
-  const fiscali = useQuery({ queryKey: [...queryKeys.aziende, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
-  const { cliente, deal, ore, reads, spaceEmpty, workFailed } = useWork()
-  const offerta = useQuery({
-    queryKey: queryKeys.documents({ ...SCOPE, tipo: 'offerta' }),
+  const tax = useQuery({ queryKey: [...queryKeys.legal_entities, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
+  const { customer, deal, hours, reads, spaceEmpty, workFailed } = useWork()
+  const offer = useQuery({
+    queryKey: queryKeys.documents({ ...SCOPE, type: 'offer' }),
     queryFn: offersPage,
     select: hasItems,
     ...OPTIONS,
   })
 
-  const loading = [token, fiscali, offerta, ...reads].some((q) => q.isPending)
+  const loading = [token, tax, offer, ...reads].some((q) => q.isPending)
 
   const list: FirstStep[] = [
     {
-      id: 'fiscali',
+      id: 'tax',
       title: 'I tuoi dati fiscali',
       hint: isAdmin
         ? 'Partita IVA o codice fiscale, indirizzo, regime: finiscono su offerte e fatture.'
         : 'Li imposta l’amministratore dello spazio, in Impostazioni.',
-      to: '/app/settings/aziende',
+      to: '/app/settings/legal-entities',
       screen: 'Impostazioni → Aziende',
       canDo: isAdmin,
-      done: value(fiscali),
+      done: value(tax),
     },
     {
-      id: 'cliente',
+      id: 'customer',
       title: 'Il primo cliente',
       hint: 'Un’azienda o una persona per cui lavori. Tutto il resto parte da qui.',
       to: '/app/customers',
       screen: 'Clienti',
       canDo: true,
-      done: value(cliente),
+      done: value(customer),
     },
     {
-      id: 'lavoro',
+      id: 'work',
       title: 'Il primo deal, o le prime ore',
       hint: 'Una trattativa in corso, oppure le ore che hai già lavorato.',
       to: '/app/deal',
       screen: 'Deal',
       canDo: true,
-      done: value(deal) || value(ore),
+      done: value(deal) || value(hours),
     },
     {
-      id: 'documento',
+      id: 'document',
       title: 'La prima offerta',
       hint: 'Dal deal, «Crea documento»: il template «Offerta» è già pronto.',
       to: '/app/deal',
       screen: 'Deal',
       canDo: true,
-      done: value(offerta),
+      done: value(offer),
     },
   ]
   const doneCount = list.filter((s) => s.done).length

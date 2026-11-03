@@ -17,24 +17,24 @@ afterEach(() => vi.useRealTimers())
 
 describe('Freshness', () => {
   it('says «adesso» for a response computed a moment ago', () => {
-    render(<Freshness calcolatoAlle="2026-03-15T09:59:31Z" onRefresh={vi.fn()} />)
+    render(<Freshness calculatedAt="2026-03-15T09:59:31Z" onRefresh={vi.fn()} />)
     expect(screen.getByText('Aggiornato adesso')).toBeInTheDocument()
   })
 
   it('uses the singular for exactly one minute', () => {
-    render(<Freshness calcolatoAlle="2026-03-15T09:59:00Z" onRefresh={vi.fn()} />)
+    render(<Freshness calculatedAt="2026-03-15T09:59:00Z" onRefresh={vi.fn()} />)
     expect(screen.getByText('Aggiornato 1 minuto fa')).toBeInTheDocument()
   })
 
   it('uses the plural beyond one', () => {
-    render(<Freshness calcolatoAlle="2026-03-15T09:56:00Z" onRefresh={vi.fn()} />)
+    render(<Freshness calculatedAt="2026-03-15T09:56:00Z" onRefresh={vi.fn()} />)
     expect(screen.getByText('Aggiornato 4 minuti fa')).toBeInTheDocument()
   })
 
   it('keeps counting as time passes rather than freezing at the first render', async () => {
     // "aggiornato 4 minuti fa" frozen at "adesso" is worse than no indicator: it makes a
     // stale figure look fresh.
-    render(<Freshness calcolatoAlle="2026-03-15T10:00:00Z" onRefresh={vi.fn()} />)
+    render(<Freshness calculatedAt="2026-03-15T10:00:00Z" onRefresh={vi.fn()} />)
     expect(screen.getByText('Aggiornato adesso')).toBeInTheDocument()
     await act(async () => {
       vi.advanceTimersByTime(3 * 60_000)
@@ -47,18 +47,18 @@ describe('Freshness', () => {
     // it needed a synchronous setState to notice the new prop, and it restarted the
     // interval every time one arrived.
     const { rerender } = render(
-      <Freshness calcolatoAlle="2026-03-15T09:55:00Z" onRefresh={vi.fn()} />,
+      <Freshness calculatedAt="2026-03-15T09:55:00Z" onRefresh={vi.fn()} />,
     )
     expect(screen.getByText('Aggiornato 5 minuti fa')).toBeInTheDocument()
-    rerender(<Freshness calcolatoAlle="2026-03-15T10:00:00Z" onRefresh={vi.fn()} />)
+    rerender(<Freshness calculatedAt="2026-03-15T10:00:00Z" onRefresh={vi.fn()} />)
     expect(screen.getByText('Aggiornato adesso')).toBeInTheDocument()
   })
 
   it('never reports a negative age when the server clock is ahead', () => {
-    // `calcolato_alle` is the database's `transaction_timestamp()`, not the browser's
+    // `calculated_at` is the database's `transaction_timestamp()`, not the browser's
     // clock, and the two disagree. "Aggiornato -2 minuti fa" would look like a bug in the
     // figures rather than in the clocks.
-    render(<Freshness calcolatoAlle="2026-03-15T10:02:00Z" onRefresh={vi.fn()} />)
+    render(<Freshness calculatedAt="2026-03-15T10:02:00Z" onRefresh={vi.fn()} />)
     expect(screen.getByText('Aggiornato adesso')).toBeInTheDocument()
   })
 
@@ -66,7 +66,7 @@ describe('Freshness', () => {
     // `fireEvent`, not `userEvent`: this suite runs on fake timers, and `userEvent`'s own
     // delay between events never advances them, so the click never lands.
     const onRefresh = vi.fn()
-    render(<Freshness calcolatoAlle="2026-03-15T10:00:00Z" onRefresh={onRefresh} />)
+    render(<Freshness calculatedAt="2026-03-15T10:00:00Z" onRefresh={onRefresh} />)
     fireEvent.click(screen.getByRole('button', { name: 'Ricalcola' }))
     expect(onRefresh).toHaveBeenCalledTimes(1)
   })

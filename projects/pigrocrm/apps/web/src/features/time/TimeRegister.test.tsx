@@ -25,15 +25,15 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     deal_id: DEAL,
     user_id: 'u1',
     data: '2026-03-09',
-    ore: '2.50',
-    descrizione: 'Analisi',
-    fatturabile: true,
-    tariffa_applicata: null,
-    costo_applicato: null,
-    tariffa_origine: 'assente',
-    costo_origine: 'assente',
-    valore_riga: null,
-    costo_riga: null,
+    hours: '2.50',
+    description: 'Analisi',
+    billable: true,
+    applied_rate: null,
+    applied_cost: null,
+    rate_source: 'absent',
+    cost_source: 'absent',
+    line_value: null,
+    line_cost: null,
     invoice_line_id: null,
     note_interne: null,
     custom_fields: {},
@@ -74,9 +74,9 @@ describe('groupByDay', () => {
   it('puts the latest day first, the latest entry first within it, and sums each day', () => {
     const groups = groupByDay(
       [
-        entry({ id: 'a', data: '2026-03-09', ore: '2.50', created_at: '2026-03-09T09:00:00Z' }),
-        entry({ id: 'b', data: '2026-03-11', ore: '1.25' }),
-        entry({ id: 'c', data: '2026-03-09', ore: '0.75', created_at: '2026-03-09T15:00:00Z' }),
+        entry({ id: 'a', data: '2026-03-09', hours: '2.50', created_at: '2026-03-09T09:00:00Z' }),
+        entry({ id: 'b', data: '2026-03-11', hours: '1.25' }),
+        entry({ id: 'c', data: '2026-03-09', hours: '0.75', created_at: '2026-03-09T15:00:00Z' }),
       ],
       days,
     )
@@ -89,7 +89,7 @@ describe('groupByDay', () => {
 
 describe('TimeRegister', () => {
   it('shows the week total, the billable share and one section per day', () => {
-    renderRegister([entry(), entry({ id: 'e2', data: '2026-03-11', ore: '1.25', fatturabile: false })])
+    renderRegister([entry(), entry({ id: 'e2', data: '2026-03-11', hours: '1.25', billable: false })])
     expect(screen.getByTestId('week-total')).toHaveTextContent('3,75 h')
     expect(screen.getByTestId('week-total')).toHaveTextContent('fatturabili 2,5 h')
     expect(screen.getByRole('region', { name: /lunedì 9 marzo/ })).toBeInTheDocument()
@@ -103,7 +103,7 @@ describe('TimeRegister', () => {
     await waitFor(() => expect(vi.mocked(api.POST)).toHaveBeenCalledTimes(1))
     const [path, init] = vi.mocked(api.POST).mock.calls[0] as unknown as [string, { body: unknown }]
     expect(path).toBe('/api/time-entries/timer/start')
-    expect(init.body).toEqual({ deal_id: DEAL, descrizione: 'Analisi', fatturabile: true })
+    expect(init.body).toEqual({ deal_id: DEAL, description: 'Analisi', billable: true })
   })
 
   it('offers no actions to a reader, and says when there is nothing', () => {

@@ -20,22 +20,22 @@ from rebase_core.leads import card_by_linkedin
 from rebase_core.models import Company, Freelancer, Login, Signup, User
 from rebase_core.schema_common import card_is_complete
 
-ENTITY = "campagna"
+ENTITY = "campaign"
 
 JOURNEY_STATES: dict[str, str] = {
     "lead": "Lead senza profilo",
     "scheda_vuota_nuovi": "Scheda vuota, mai entrati",
     "scheda_vuota_entrati": "Scheda vuota, già entrati",
-    "manca_cv": "Manca solo il CV",
-    "completo": "Profilo completo",
-    "pigro_vuoto": "Spazio Pigro vuoto",
+    "missing_cv": "Manca solo il CV",
+    "complete": "Profilo completo",
+    "pigro_empty": "Spazio Pigro vuoto",
     "azienda_aperta": "Azienda con richiesta aperta",
 }
-PHASE_ONE_STATES = tuple(key for key in JOURNEY_STATES if key != "pigro_vuoto")
-OPEN_COMPANY_STATES = ("nuovo", "contattato", "in_corso")
+PHASE_ONE_STATES = tuple(key for key in JOURNEY_STATES if key != "pigro_empty")
+OPEN_COMPANY_STATES = ("new", "contacted", "in_progress")
 PIGRO_LATER = "Lo spazio Pigro arriva con la fase Pigro delle campagne."
 
-CardState = Literal["completo", "manca_cv", "scheda"]
+CardState = Literal["complete", "missing_cv", "card"]
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class Candidate:
 
     email: str
     nome: str | None
-    tipo: str
+    kind: str
     user_id: UUID | None = None
     freelancer_id: UUID | None = None
     signup_id: UUID | None = None
@@ -69,28 +69,28 @@ _ANY_CV_SIZE = 0  # a stand-in non-None value: only the other three fields matte
 
 def card_state(
     cv_size: int | None,
-    tariffa: Decimal | None,
+    rate: Decimal | None,
     posizione: str | None,
-    remoto: str | None,
+    remote: str | None,
 ) -> CardState:
-    if card_is_complete(cv_size, tariffa, posizione, remoto):
-        return "completo"
-    others_complete = card_is_complete(_ANY_CV_SIZE, tariffa, posizione, remoto)
+    if card_is_complete(cv_size, rate, posizione, remote):
+        return "complete"
+    others_complete = card_is_complete(_ANY_CV_SIZE, rate, posizione, remote)
     if cv_size is None and others_complete:
-        return "manca_cv"
-    return "scheda"
+        return "missing_cv"
+    return "card"
 
 
-def candidates_for_state(session: Session, stato: str) -> list[Candidate]:
-    if stato == "lead":
+def candidates_for_state(session: Session, status: str) -> list[Candidate]:
+    if status == "lead":
         return _leads(session)
-    if stato in ("scheda_vuota_nuovi", "scheda_vuota_entrati", "manca_cv", "completo"):
-        return _cards(session, stato)
-    if stato == "azienda_aperta":
+    if status in ("scheda_vuota_nuovi", "scheda_vuota_entrati", "missing_cv", "complete"):
+        return _cards(session, status)
+    if status == "azienda_aperta":
         return _companies(session)
-    if stato == "pigro_vuoto":
-        raise ValidationFailed(ENTITY, "stato_percorso", PIGRO_LATER)
-    raise ValidationFailed(ENTITY, "stato_percorso", f"Stato sconosciuto: {stato}.")
+    if status == "pigro_empty":
+        raise ValidationFailed(ENTITY, "journey_status", PIGRO_LATER)
+    raise ValidationFailed(ENTITY, "journey_status", f"Stato sconosciuto: {status}.")
 
 
 def _leads(session: Session) -> list[Candidate]:
@@ -108,7 +108,7 @@ def _leads(session: Session) -> list[Candidate]:
         Candidate(
             email=email.lower(),
             nome=display_name(nome),
-            tipo="lead",
+            kind="lead",
             user_id=user_id,
             signup_id=signup_id,
         )
@@ -116,37 +116,37 @@ def _leads(session: Session) -> list[Candidate]:
     ]
 
 
-def _journey_state(stato: str) -> ColumnElement[bool]:
-    """Whether a card is in journey state `stato`, in SQL: `card_state`'s rule over the
+def _journey_state(status: str) -> ColumnElement[bool]:
+    """Whether a card is in journey state `status`, in SQL: `card_state`'s rule over the
     same four columns (`schema_common.card_is_complete`), with the login `entered` splitting the
     cards that are neither complete nor missing only the CV. A test holds the two to the
     same answer for every combination of the four being there or not."""
     others = and_(
-        Freelancer.tariffa_giornaliera.is_not(None),
+        Freelancer.daily_rate.is_not(None),
         Freelancer.posizione.is_not(None),
-        Freelancer.remoto.is_not(None),
+        Freelancer.remote.is_not(None),
     )
     has_cv = Freelancer.cv_size.is_not(None)
-    if stato == "completo":
+    if status == "complete":
         return and_(has_cv, others)
-    if stato == "manca_cv":
+    if status == "missing_cv":
         return and_(~has_cv, others)
     entered = exists(select(Login.id).where(Login.user_id == Freelancer.user_id))
-    return and_(~others, entered if stato == "scheda_vuota_entrati" else ~entered)
+    return and_(~others, entered if status == "scheda_vuota_entrati" else ~entered)
 
 
-def _cards(session: Session, stato: str) -> list[Candidate]:
+def _cards(session: Session, status: str) -> list[Candidate]:
     rows = session.execute(
         select(Freelancer.id, User.id, User.email, User.nome)
         .join(User, User.id == Freelancer.user_id)
-        .where(Freelancer.deleted_at.is_(None), _journey_state(stato))
+        .where(Freelancer.deleted_at.is_(None), _journey_state(status))
         .order_by(Freelancer.created_at, Freelancer.id)
     ).all()
     return [
         Candidate(
             email=email.lower(),
             nome=display_name(nome),
-            tipo="freelancer",
+            kind="freelancer",
             user_id=user_id,
             freelancer_id=freelancer_id,
         )
@@ -158,7 +158,7 @@ def _companies(session: Session) -> list[Candidate]:
     rows = session.execute(
         select(Company.id, User.id, User.email, User.nome)
         .join(User, User.id == Company.user_id)
-        .where(Company.deleted_at.is_(None), Company.stato.in_(OPEN_COMPANY_STATES))
+        .where(Company.deleted_at.is_(None), Company.status.in_(OPEN_COMPANY_STATES))
         .order_by(Company.created_at, Company.id)
     ).all()
     by_user: dict[UUID, Candidate] = {}
@@ -168,7 +168,7 @@ def _companies(session: Session) -> list[Candidate]:
         by_user[user_id] = Candidate(
             email=email.lower(),
             nome=display_name(nome),
-            tipo="azienda",
+            kind="company",
             user_id=user_id,
             company_ids=ids,
         )

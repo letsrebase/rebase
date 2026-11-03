@@ -20,11 +20,11 @@ def _payload(result) -> dict:
 
 async def test_search_customers_finds_by_free_text(server, mcp_session: Session) -> None:
     async with Client(server) as client:
-        await client.call_tool("create_customer", {"ragione_sociale": "ACME Srl"})
-        await client.call_tool("create_customer", {"ragione_sociale": "Beta Spa"})
+        await client.call_tool("create_customer", {"legal_name": "ACME Srl"})
+        await client.call_tool("create_customer", {"legal_name": "Beta Spa"})
         found = _payload(await client.call_tool("search_customers", {"search": "acme"}))
 
-    assert [c["ragione_sociale"] for c in found["items"]] == ["ACME Srl"]
+    assert [c["legal_name"] for c in found["items"]] == ["ACME Srl"]
 
 
 # --- Final review item 10 (MINOR): *ListQuery.custom was implemented, GIN- ------
@@ -40,14 +40,14 @@ async def test_search_customers_filters_by_a_custom_field(server, mcp_session: S
     )
     async with Client(server) as client:
         await client.call_tool(
-            "create_customer", {"ragione_sociale": "A", "custom_fields": {"settore": "IT"}}
+            "create_customer", {"legal_name": "A", "custom_fields": {"settore": "IT"}}
         )
         await client.call_tool(
-            "create_customer", {"ragione_sociale": "B", "custom_fields": {"settore": "Retail"}}
+            "create_customer", {"legal_name": "B", "custom_fields": {"settore": "Retail"}}
         )
         found = _payload(await client.call_tool("search_customers", {"custom": {"settore": "IT"}}))
 
-    assert [c["ragione_sociale"] for c in found["items"]] == ["A"]
+    assert [c["legal_name"] for c in found["items"]] == ["A"]
 
 
 async def test_search_people_filters_by_a_custom_field(server, mcp_session: Session) -> None:
@@ -74,20 +74,20 @@ async def test_search_people_filters_by_a_custom_field(server, mcp_session: Sess
 async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Session) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     FieldDefinitionService(mcp_session).create(
-        FieldDefinitionCreate(entity_type="deal", key="fonte", label="Fonte", field_type="text"),
+        FieldDefinitionCreate(entity_type="deal", key="source", label="Fonte", field_type="text"),
         SETUP,
     )
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         await client.call_tool(
             "create_deal",
-            {"nome": "A", "customer_id": customer["id"], "custom_fields": {"fonte": "referral"}},
+            {"nome": "A", "customer_id": customer["id"], "custom_fields": {"source": "referral"}},
         )
         await client.call_tool(
             "create_deal",
-            {"nome": "B", "customer_id": customer["id"], "custom_fields": {"fonte": "outbound"}},
+            {"nome": "B", "customer_id": customer["id"], "custom_fields": {"source": "outbound"}},
         )
-        found = _payload(await client.call_tool("search_deals", {"custom": {"fonte": "referral"}}))
+        found = _payload(await client.call_tool("search_deals", {"custom": {"source": "referral"}}))
 
     assert [d["nome"] for d in found["items"]] == ["A"]
 
@@ -106,7 +106,7 @@ async def test_search_customers_can_walk_a_second_page_via_cursor(
     said so."""
     async with Client(server) as client:
         for index in range(3):
-            await client.call_tool("create_customer", {"ragione_sociale": f"Cliente {index:02d}"})
+            await client.call_tool("create_customer", {"legal_name": f"Cliente {index:02d}"})
 
         first = _payload(await client.call_tool("search_customers", {"limit": 2}))
         assert len(first["items"]) == 2
@@ -141,7 +141,7 @@ async def test_search_people_can_walk_a_second_page_via_cursor(server) -> None:
 async def test_search_deals_can_walk_a_second_page_via_cursor(server, mcp_session: Session) -> None:
     PipelineService(mcp_session).seed_defaults(SETUP)
     async with Client(server) as client:
-        customer = _payload(await client.call_tool("create_customer", {"ragione_sociale": "ACME"}))
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         for index in range(3):
             await client.call_tool(
                 "create_deal", {"nome": f"Deal {index:02d}", "customer_id": customer["id"]}
@@ -187,27 +187,27 @@ async def test_search_customers_accepts_sort_and_dir(server) -> None:
     token = f"zz{uuid4().hex[:8]}"
     async with Client(server) as client:
         for nome in ("Gamma", "Alfa", "Beta"):
-            await client.call_tool("create_customer", {"ragione_sociale": f"{token} {nome}"})
+            await client.call_tool("create_customer", {"legal_name": f"{token} {nome}"})
 
         ascending = _payload(
             await client.call_tool(
                 "search_customers",
-                {"search": token, "sort": "ragione_sociale", "dir": "asc", "limit": 10},
+                {"search": token, "sort": "legal_name", "dir": "asc", "limit": 10},
             )
         )
         descending = _payload(
             await client.call_tool(
                 "search_customers",
-                {"search": token, "sort": "ragione_sociale", "dir": "desc", "limit": 10},
+                {"search": token, "sort": "legal_name", "dir": "desc", "limit": 10},
             )
         )
 
-    assert [c["ragione_sociale"] for c in ascending["items"]] == [
+    assert [c["legal_name"] for c in ascending["items"]] == [
         f"{token} Alfa",
         f"{token} Beta",
         f"{token} Gamma",
     ]
-    assert [c["ragione_sociale"] for c in descending["items"]] == [
+    assert [c["legal_name"] for c in descending["items"]] == [
         f"{token} Gamma",
         f"{token} Beta",
         f"{token} Alfa",
@@ -225,7 +225,7 @@ async def test_search_customers_with_an_unknown_sort_key_produces_guidance(serve
     assert result.is_error
     message = result.content[0].text
     assert "errors.pydantic.dev" not in message
-    assert "ragione_sociale" in message
+    assert "legal_name" in message
 
 
 async def test_search_customers_with_an_unknown_direction_produces_guidance(server) -> None:
@@ -253,13 +253,13 @@ async def test_list_documents_accepts_a_search_term(
     from pigrocrm.core.documents.models import Document
 
     token = f"zz{uuid4().hex[:8]}"
-    for titolo in (f"Offerta {token}", f"Verbale {token}"):
+    for title in (f"Offerta {token}", f"Verbale {token}"):
         mcp_session.add(
             Document(
                 customer_id=UUID(seeded_customer_id),
-                tipo="documento",
-                titolo=titolo,
-                versione_corrente=1,
+                type="document",
+                title=title,
+                current_version=1,
                 custom_fields={},
             )
         )
@@ -268,4 +268,4 @@ async def test_list_documents_accepts_a_search_term(
     async with Client(server) as client:
         found = _payload(await client.call_tool("list_documents", {"search": f"offerta {token}"}))
 
-    assert [d["titolo"] for d in found["items"]] == [f"Offerta {token}"]
+    assert [d["title"] for d in found["items"]] == [f"Offerta {token}"]

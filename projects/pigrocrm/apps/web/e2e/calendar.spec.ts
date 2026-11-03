@@ -1,0 +1,189 @@
+import { expect, test, type Locator, type Page } from '@playwright/test'
+import { loginAsAdmin, seedDealWithRate } from './helpers'
+
+/**
+ * The day panel's own «Chiudi», in its footer. A dialog has carried a second «Chiudi»
+ * since the primitive's close control was relabelled (`@rebase/ui/dialog`, the «X» at
+ * its top right), so the bare accessible name matches two buttons and Playwright's
+ * strict mode refuses to pick one. The footer is what the panel itself renders.
+ */
+const closeDayPanel = (dialog: Locator) =>
+  dialog.locator('[data-slot="dialog-footer"]').getByRole('button', { name: 'Chiudi' })
+
+/** «Nuova attività» from an open day panel: the full dialog, with the day prefilled. */
+async function addCommitmentFromDay(page: Page, panel: Locator, title: string) {
+  await panel.getByRole('button', { name: /Aggiungi un’attività per questo giorno/ }).click()
+  const form = page.getByRole('dialog').filter({ has: page.getByLabel('Titolo') })
+  await form.getByLabel('Titolo').fill(title)
+  await form.getByRole('button', { name: 'Aggiungi' }).click()
+  await expect(form).toBeHidden()
+}
+
+/**
+ * Slice 10's definition of done, driven the way a person drives it: the menu entry under
+ * Home, a day logged from a cell that the hours register then shows, and a deadline
+ * created from the same cell.
+ *
+ * Deliberately not a repeat of the unit tests. What is proven here is that the *screens*
+ * connect: a «giornata» written from the calendar is an ordinary time entry -- the same
+ * row `/app/hours` lists and the deal's P&L counts -- and a commitment created on a day
+ * comes back on that day after a reload, which is the one thing a month assembled from
+ * three tables can get wrong.
+ */
+
+// The month the calendar opens on, computed the way the page computes it, so this suite
+// has no expiry date on it: a literal `2026-09` would start failing in October.
+const TODAY = new Date()
+const Month = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`
+// The first of the month is always in the past or today, which is what `TimeEntryService`
+// requires: it refuses a day after today, and the 1st is never after today.
+//
+// Addressed by the *whole* date and not by the day number, which is the defect the first
+// run of this spec found: a month that starts or ends mid-week draws two cells labelled
+// «1», so `/^1: /` matched both 1 September and 1 October. The label is
+// `gg/mm/aaaa: …`, the same `formatIsoDateItalian` the cell builds it with.
+const FIRST = `01/${String(TODAY.getMonth() + 1).padStart(2, '0')}/${TODAY.getFullYear()}`
+const CELLA_FIRST = new RegExp(`^${FIRST.replace(/\//g, '\\/')}: `)
+
+test.describe('il calendario', () => {
+  test('è nel menu, tra le voci di «Da fare», e apre sul mese corrente', async ({ page }) => {
+    await loginAsAdmin(page)
+
+    // The sidebar entry, which is where the request started («lo voglio sotto alla home
+    // nel menu laterale», 2026-09-09); since REB-873 it sits in «Da fare», after Attività.
+    const link = page.getByRole('link', { name: 'Calendario' })
+    await expect(link).toBeVisible()
+    await link.click()
+
+    await expect(page).toHaveURL(/\/app\/calendar/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Calendario' })).toBeVisible()
+    await expect(page.getByRole('grid')).toBeVisible()
+  })
+
+  test('il mese sta nell URL, quindi un link a un mese è un link', async ({ page }) => {
+    await loginAsAdmin(page)
+    await page.goto(`/app/calendar?month=${Month}`)
+
+    await expect(page.getByRole('grid')).toBeVisible()
+    await page.getByRole('button', { name: 'Mese precedente' }).click()
+    // The URL carries the month, so the back button and a pasted link both work.
+    await expect(page).toHaveURL(/mese=\d{4}-\d{2}/)
+  })
+
+  test('una giornata loggata dal calendario è una voce di ore come le altre', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page)
+    const nome = `Calendario E2E ${Date.now()}`
+    // `page.request`, never the top-level `request` fixture: the second is its own
+    // APIRequestContext and carries none of the page's cookies, so every seeding call
+    // through it answers 401. `seedDealWithRate`'s own callers all use `page.request`
+    // for that reason, and this spec's first run learned it the hard way.
+    await seedDealWithRate(page.request, { nome, rate: '80.00' })
+
+    await page.goto(`/app/calendar?month=${Month}`)
+    // The cell is addressed by the label the component builds ("1: … ore"), not by a
+    // loose substring: every cell contains a number.
+    await page.getByRole('button', { name: CELLA_FIRST }).click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('combobox', { name: 'Deal' }).click()
+    await page.getByRole('option', { name: nome }).click()
+    await dialog.getByRole('button', { name: 'Giornata (8h)' }).click()
+
+    // The calendar itself shows it, which is the read the page just invalidated.
+    await expect(dialog.getByRole('heading', { name: /^Ore \(\d+(,\d+)?\)$/ })).toBeVisible()
+    await expect(dialog.getByText('8 h').first()).toBeVisible()
+    await closeDayPanel(dialog).click()
+
+    // And `/app/hours` shows the same row, because it *is* the same row: the calendar
+    // fills `POST /api/time-entries`, it does not write the table a second way. The
+    // register opens on the current week, which contains the 1st only in the first
+    // week of a month -- so the assertion is made through the API, which is the same
+    // claim without a week-dependent screen.
+    const entries = await page.request.get('/api/time-entries', {
+      params: { da: `${Month}-01`, a: `${Month}-01` },
+    })
+    expect(entries.status(), await entries.text()).toBe(200)
+    const body = (await entries.json()) as { items: { hours: string; description: string }[] }
+    expect(body.items.map((item) => item.hours)).toContain('8.00')
+  })
+
+  // REB-792: with many rows the panel is as tall as the window and scrolls inside, so the
+  // last row is reachable and the footer's «Chiudi» stays in view. Run at 390px and 1440px.
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    test(`a day with twenty deadlines scrolls inside the panel at ${viewport.width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport)
+      await loginAsAdmin(page)
+      const stamp = Date.now()
+      for (let n = 1; n <= 20; n += 1) {
+        const created = await page.request.post('/api/activities', {
+          data: { title: `Riga ${stamp} ${String(n).padStart(2, '0')}`, due_date: `${Month}-01` },
+        })
+        expect(created.status()).toBe(201)
+      }
+
+      await page.goto(`/app/calendar?month=${Month}`)
+      await page.getByRole('button', { name: CELLA_FIRST }).click()
+      const dialog = page.getByRole('dialog')
+      const box = await dialog.boundingBox()
+      expect(box!.y).toBeGreaterThanOrEqual(0)
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height)
+
+      const last = dialog.getByText(`Riga ${stamp} 20`)
+      await last.scrollIntoViewIfNeeded()
+      await expect(last).toBeInViewport()
+      await expect(closeDayPanel(dialog)).toBeInViewport()
+    })
+  }
+
+  test('una scadenza creata da un giorno torna su quel giorno', async ({ page }) => {
+    await loginAsAdmin(page)
+    const title = `Scadenza E2E ${Date.now()}`
+
+    await page.goto(`/app/calendar?month=${Month}`)
+    await page.getByRole('button', { name: CELLA_FIRST }).click()
+
+    const dialog = page.getByRole('dialog')
+    await addCommitmentFromDay(page, dialog, title)
+    await expect(dialog.getByText(title)).toBeVisible()
+    await closeDayPanel(dialog).click()
+
+    // The reload is the point: the month is read again from three tables, and the
+    // commitment has to come back on the same day.
+    await page.reload()
+    await page.getByRole('button', { name: CELLA_FIRST }).click()
+    await expect(page.getByRole('dialog').getByText(title)).toBeVisible()
+  })
+
+  test('una scadenza si chiude come fatta, e annullarla è un altro bottone', async ({ page }) => {
+    await loginAsAdmin(page)
+    const title = `Da chiudere E2E ${Date.now()}`
+
+    await page.goto(`/app/calendar?month=${Month}`)
+    await page.getByRole('button', { name: CELLA_FIRST }).click()
+    const dialog = page.getByRole('dialog')
+    await addCommitmentFromDay(page, dialog, title)
+    await expect(dialog.getByText(title)).toBeVisible()
+
+    // Two closures, two buttons: «Fatto» records the day, «Annulla» records that it
+    // stopped mattering. Neither deletes the row.
+    const row = dialog.locator('li', { hasText: title })
+    await expect(row.getByRole('button', { name: 'Annulla' })).toBeVisible()
+    await row.getByRole('button', { name: 'Fatto' }).click()
+
+    // Struck through and without its closing buttons, still there: the calendar does not
+    // hide what was done, or it would read as work that never happened. «Modifica» stays,
+    // since a completed one can be reopened from its dialog (REB-720).
+    await expect(dialog.getByText(title)).toBeVisible()
+    const closed = dialog.locator('li', { hasText: title })
+    await expect(closed.getByRole('button')).toHaveCount(1)
+    await expect(closed.getByRole('button', { name: 'Modifica' })).toBeVisible()
+  })
+})

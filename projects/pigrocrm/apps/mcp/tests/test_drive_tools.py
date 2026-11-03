@@ -42,8 +42,8 @@ def drive_actor(mcp_session: Session) -> Actor:
         email="drive-owner@example.test",
         password_hash="x",
         nome="Owner",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     mcp_session.add(user)
     mcp_session.flush()

@@ -29,17 +29,17 @@ HAND_MAINTAINED_INDEXES = {
     # REB-615, migration 0045: one default per space (partial, `WHERE predefinita`) and
     # one azienda per fiscal id (partial, functional over `upper(...)`). Both are shapes
     # `compare_metadata` cannot compare, so they are asserted on their definitions below.
-    "uq_emitter_profile_predefinita",
-    "uq_emitter_profile_partita_iva",
-    "uq_emitter_profile_codice_fiscale",
+    "uq_legal_entities_default",
+    "uq_legal_entities_vat_number",
+    "uq_legal_entities_tax_code",
     "uq_pipeline_stage_code",
     "ix_customers_custom_fields",
     "ix_people_custom_fields",
     "ix_deals_custom_fields",
-    "uq_invoices_azienda_anno_numero",
+    "uq_invoices_legal_entity_year_number",
     # REB-619: the `(anno, numero)` path the unique index stopped offering to a search
     # across aziende; partial, so `compare_metadata` cannot see it either.
-    "ix_invoices_anno_numero",
+    "ix_invoices_year_number",
     "ix_invoices_custom_fields",
     # Same shape as `uq_pipeline_stage_code`: a plain unique index on a nullable
     # column, one of the two shapes autogenerate is known to silently omit.
@@ -51,15 +51,15 @@ HAND_MAINTAINED_INDEXES = {
     # Slice 6, migration 0021. A *partial* GIN index over an operator class is a fourth
     # shape autogenerate handles poorly, and nine trigram indexes omitted in silence are
     # nine sequential scans that come back a month later.
-    "ix_customers_ragione_sociale_trgm",
-    "ix_customers_partita_iva_trgm",
-    "ix_customers_codice_fiscale_trgm",
+    "ix_customers_legal_name_trgm",
+    "ix_customers_vat_number_trgm",
+    "ix_customers_tax_code_trgm",
     "ix_customers_email_trgm",
-    "ix_people_nome_trgm",
-    "ix_people_cognome_trgm",
+    "ix_people_name_trgm",
+    "ix_people_last_name_trgm",
     "ix_people_email_trgm",
-    "ix_deals_nome_trgm",
-    "ix_documents_titolo_trgm",
+    "ix_deals_name_trgm",
+    "ix_documents_title_trgm",
     # Slice 6, migration 0022. Residuo R9's other half: one `(column, id)` B-tree per
     # admitted sort key, plus the one descending index the single nullable sort column
     # costs. The twelve ascending ones are ordinary composite indexes that autogenerate
@@ -69,27 +69,27 @@ HAND_MAINTAINED_INDEXES = {
     # compare at all.
     "ix_customers_created_at_id",
     "ix_customers_updated_at_id",
-    "ix_customers_ragione_sociale_id",
+    "ix_customers_legal_name_id",
     "ix_people_created_at_id",
     "ix_people_updated_at_id",
-    "ix_people_cognome_id",
-    "ix_people_cognome_desc_id",
+    "ix_people_last_name_id",
+    "ix_people_last_name_desc_id",
     "ix_deals_created_at_id",
     "ix_deals_updated_at_id",
     "ix_deals_nome_id",
     "ix_documents_created_at_id",
     "ix_documents_updated_at_id",
-    "ix_documents_titolo_id",
+    "ix_documents_title_id",
     # Slice 6, migration 0023. The two period-filter columns of §4.1. Both are ordinary
     # single-column B-trees that autogenerate handles correctly; they are listed here for
     # the same reason the twelve ascending sort indexes are, which is that an index
     # dropped in silence is a sequential scan on every dashboard load, and this file is
     # where a missing index is supposed to fail by name.
-    "ix_deals_chiuso_il",
+    "ix_deals_closed_at",
     # REB-879, migration 0064: the references of the engagements door, a `text[]` with a GIN
     # index, the shape autogenerate does not compare.
     "ix_deals_rebase_refs",
-    "ix_documents_stato_dal",
+    "ix_documents_status_since",
     # Slice 6, migration 0024. A *descending* expression index over two columns, which is
     # the fifth shape autogenerate cannot compare: `compare_metadata` does not look at
     # index expressions at all, so this one would be dropped in total silence and the
@@ -99,11 +99,11 @@ HAND_MAINTAINED_INDEXES = {
     # Slice 6, migration 0024 as well: the tenth and last trigram index of §8.3, added
     # with the fifth search branch. Same partial-GIN-over-an-operator-class shape as the
     # nine of 0021, and picked up automatically by `TRGM_INDEX_NAMES` below.
-    "ix_invoices_causale_trgm",
-    # REB-723, migration 0052: the eleventh and twelfth, `attivita.titolo` and `.note`, added
+    "ix_invoices_memo_trgm",
+    # REB-723, migration 0052: the eleventh and twelfth, `tasks.title` and `.note`, added
     # with the sixth search branch. Same shape, picked up by `TRGM_INDEX_NAMES` below.
-    "ix_attivita_titolo_trgm",
-    "ix_attivita_note_trgm",
+    "ix_tasks_title_trgm",
+    "ix_tasks_note_trgm",
     # REB-290, migration 0036. Functional (over `lower(email)`) and partial at once --
     # the two shapes autogenerate omits, stacked: a functional index it drops silently
     # re-opens the case-insensitive duplicate, a partial predicate it drops silently
@@ -238,17 +238,17 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
         "uq_invitations_email_lower_open lost its pending predicate, so an accepted or "
         f"revoked invitation would block the address forever: {invitations_email_open_def}"
     )
-    anno_numero_def = indexes["uq_invoices_azienda_anno_numero"]
-    assert "UNIQUE" in anno_numero_def, "uq_invoices_azienda_anno_numero must be a unique index"
-    assert "WHERE" in anno_numero_def and "numero IS NOT NULL" in anno_numero_def, (
+    year_number_def = indexes["uq_invoices_legal_entity_year_number"]
+    assert "UNIQUE" in year_number_def, "uq_invoices_azienda_anno_numero must be a unique index"
+    assert "WHERE" in year_number_def and "numero IS NOT NULL" in year_number_def, (
         "uq_invoices_azienda_anno_numero lost its partial predicate, so every unnumbered "
-        f"draft is now a duplicate of every other: {anno_numero_def}"
+        f"draft is now a duplicate of every other: {year_number_def}"
     )
     # REB-619: the register is per azienda, so the azienda leads the key.
-    assert "azienda_id" in anno_numero_def, anno_numero_def
+    assert "legal_entity_id" in year_number_def, year_number_def
 
 
-def test_0045_gives_a_used_database_with_no_emitter_row_its_azienda(
+def test_0045_gives_to_used_database_with_no_legal_entity_row_its_legal_entity(
     pigrocrm_postgres: Any,
 ) -> None:
     """The root installation is not in the registry, so `ensure_defaults` never reaches
@@ -282,15 +282,15 @@ def test_0045_gives_a_used_database_with_no_emitter_row_its_azienda(
         engine.dispose()
     assert empty == 0
     assert len(rows) == 1
-    assert rows[0].ragione_sociale == db_name
+    assert rows[0].legal_name == db_name
     assert rows[0].nome == db_name[:80]
-    assert rows[0].predefinita is True and rows[0].attiva is True
+    assert rows[0].predefinita is True and rows[0].active is True
 
 
-def test_the_azienda_indexes_are_partial_and_the_fiscal_ones_functional(
+def test_the_legal_entity_indexes_are_partial_and_the_fiscal_ones_functional(
     pigrocrm_postgres: Any,
 ) -> None:
-    """REB-615: `uq_emitter_profile_predefinita` is what makes «exactly one default»
+    """REB-615: `uq_legal_entities_default` is what makes «exactly one default»
     a fact of the database, and the two fiscal-id indexes compare the upper-cased
     column, the shape the import classifier compares. None of the three is visible to
     `compare_metadata`."""
@@ -306,24 +306,24 @@ def test_the_azienda_indexes_are_partial_and_the_fiscal_ones_functional(
             ).all()
         engine.dispose()
     indexes = {name: definition for name, definition in rows}
-    assert "UNIQUE" in indexes["uq_emitter_profile_predefinita"]
-    assert "WHERE predefinita" in indexes["uq_emitter_profile_predefinita"]
+    assert "UNIQUE" in indexes["uq_legal_entities_default"]
+    assert "WHERE predefinita" in indexes["uq_legal_entities_default"]
     for name, column in (
-        ("uq_emitter_profile_partita_iva", "partita_iva"),
-        ("uq_emitter_profile_codice_fiscale", "codice_fiscale"),
+        ("uq_legal_entities_vat_number", "vat_number"),
+        ("uq_legal_entities_tax_code", "tax_code"),
     ):
         assert "UNIQUE" in indexes[name]
         assert f"upper(({column})::text)" in indexes[name], indexes[name]
         assert f"WHERE ({column} IS NOT NULL)" in indexes[name], indexes[name]
 
 
-def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_two(
+def test_0045_binds_the_one_fiscal_row_to_the_one_legal_entity_and_refuses_to_undo_two(
     pigrocrm_postgres: Any,
 ) -> None:
     """The migration over real rows planted at 0044, not read as text (REB-615).
 
-    A 120-character `ragione_sociale` proves the `nome` backfill cuts to the column's
-    width; the fiscal row proves the backfill of `azienda_id`; a lower-case codice
+    A 120-character `legal_name` proves the `nome` backfill cuts to the column's
+    width; the fiscal row proves the backfill of `legal_entity_id`; a lower-case codice
     fiscale proves the row is brought to the classifier's shape (a P.IVA with an `IT`
     prefix cannot be planted: the column is eleven wide); the downgrade
     with one azienda succeeds, and with two it refuses before touching anything.
@@ -367,13 +367,13 @@ def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_tw
 
         engine = create_engine(url)
         with engine.connect() as connection:
-            azienda = connection.execute(
+            legal_entity = connection.execute(
                 text(
                     "SELECT nome, predefinita, attiva, partita_iva, codice_fiscale "
                     "FROM emitter_profile"
                 )
             ).one()
-            fiscal_azienda = connection.execute(
+            fiscal_legal_entity = connection.execute(
                 text("SELECT azienda_id FROM fiscal_profile")
             ).scalar_one()
             users_flag = connection.execute(
@@ -383,11 +383,11 @@ def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_tw
                 )
             ).scalar_one()
         engine.dispose()
-        assert azienda.nome == "S" * 80
-        assert azienda.predefinita is True and azienda.attiva is True
-        assert azienda.partita_iva == "01234567890"
-        assert azienda.codice_fiscale == "HMCRFT00A01H501K"
-        assert str(fiscal_azienda) == "00000000-0000-7000-8000-0000000000a1"
+        assert legal_entity.nome == "S" * 80
+        assert legal_entity.predefinita is True and legal_entity.active is True
+        assert legal_entity.vat_number == "01234567890"
+        assert legal_entity.tax_code == "HMCRFT00A01H501K"
+        assert str(fiscal_legal_entity) == "00000000-0000-7000-8000-0000000000a1"
         assert users_flag == "false"
 
         # One azienda: the downgrade goes back to 0044 and the two singletons return.
@@ -452,7 +452,7 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
         engine.dispose()
 
     indexes = {row.indexname: row.indexdef for row in rows}
-    # Twelve -- nine from migration 0021, `invoices.causale` from 0024 and the two of
+    # Twelve -- nine from migration 0021, `invoices.memo` from 0024 and the two of
     # `attivita` from 0052 -- and the count is asserted: a set comprehension that silently
     # matched nothing would make every assertion below vacuous, and §8.3 names the columns
     # rather than "some".
@@ -479,17 +479,17 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
 SORT_INDEX_BODIES: dict[str, str] = {
     "ix_customers_created_at_id": "(created_at, id)",
     "ix_customers_updated_at_id": "(updated_at, id)",
-    "ix_customers_ragione_sociale_id": "(ragione_sociale, id)",
+    "ix_customers_legal_name_id": "(ragione_sociale, id)",
     "ix_people_created_at_id": "(created_at, id)",
     "ix_people_updated_at_id": "(updated_at, id)",
-    "ix_people_cognome_id": "(cognome, id)",
-    "ix_people_cognome_desc_id": "(cognome DESC NULLS LAST, id DESC)",
+    "ix_people_last_name_id": "(cognome, id)",
+    "ix_people_last_name_desc_id": "(cognome DESC NULLS LAST, id DESC)",
     "ix_deals_created_at_id": "(created_at, id)",
     "ix_deals_updated_at_id": "(updated_at, id)",
     "ix_deals_nome_id": "(nome, id)",
     "ix_documents_created_at_id": "(created_at, id)",
     "ix_documents_updated_at_id": "(updated_at, id)",
-    "ix_documents_titolo_id": "(titolo, id)",
+    "ix_documents_title_id": "(titolo, id)",
 }
 
 
@@ -500,7 +500,7 @@ def test_every_sort_index_is_a_btree_over_the_column_and_the_identifier(
 
     `compare_metadata` does not compare index expressions at all, so the one index that
     matters most here is exactly the one a schema diff would let through:
-    `ix_people_cognome_desc_id`. Without it a descending scan of `people.cognome` reads
+    `ix_people_last_name_desc_id`. Without it a descending scan of `people.last_name` reads
     the ascending index backwards, which yields NULLS FIRST -- not the order
     `db/sort.py::order_by` declares -- and Postgres sorts the whole table in memory
     instead.
@@ -634,10 +634,10 @@ def test_a_migration_leaves_the_host_process_loggers_emitting(pigrocrm_postgres:
     )
 
 
-def test_stato_dal_is_backfilled_from_the_timeline_and_chiuso_il_is_not() -> None:
+def test_status_since_is_backfilled_from_the_timeline_and_closed_at_is_not() -> None:
     """The asymmetry of spec §4.1, asserted rather than described.
 
-    A migration that quietly backfilled `chiuso_il` from the stage-change payload would
+    A migration that quietly backfilled `closed_at` from the stage-change payload would
     pass every other test in this file and would silently attribute deals to months
     derived from a renamable string. Asserted on the migration's source text because the
     absence of a statement is observable nowhere else: a schema comparison sees identical
@@ -658,8 +658,8 @@ def test_stato_dal_is_backfilled_from_the_timeline_and_chiuso_il_is_not() -> Non
 def test_the_backfill_reaches_only_offers_and_reads_the_emitters_day() -> None:
     """Two clauses that a passing schema comparison cannot see either.
 
-    `d.stato IS NOT NULL` is what keeps the backfill to offers: `documents.stato` is NULL
-    on every non-offer document, and stamping a `stato_dal` on a row with no state would
+    `d.stato IS NOT NULL` is what keeps the backfill to offers: `documents.status` is NULL
+    on every non-offer document, and stamping a `status_since` on a row with no state would
     make "this offer has been sitting for N days" answer for a contract.
 
     `AT TIME ZONE 'Europe/Rome'` is the same rule as `db/clock.py`, applied to history: a
@@ -690,7 +690,7 @@ def test_the_backfill_actually_fills_the_right_day_on_the_right_rows(
       * taking the oldest state change instead of the newest -> 10 March;
       * dropping the `kind` filter -> 1 August, the day of the unrelated activity;
       * projecting through UTC instead of the emitter's zone -> 30 June;
-      * dropping `d.stato IS NOT NULL` -> the contract gets a `stato_dal` too.
+      * dropping `d.stato IS NOT NULL` -> the contract gets a `status_since` too.
     """
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
@@ -759,17 +759,17 @@ def test_the_backfill_actually_fills_the_right_day_on_the_right_rows(
 
         engine = create_engine(url)
         with engine.connect() as connection:
-            offerta, verbale = (
+            offer, minutes = (
                 connection.execute(text("SELECT stato_dal FROM documents ORDER BY id"))
                 .scalars()
                 .all()
             )
-            chiuso_il = connection.execute(text("SELECT chiuso_il FROM deals")).scalar_one()
+            closed_at = connection.execute(text("SELECT chiuso_il FROM deals")).scalar_one()
         engine.dispose()
 
-    assert offerta == date(2026, 7, 1), offerta
-    assert verbale is None, "a document with no stato must not acquire a stato_dal"
-    assert chiuso_il is None, (
+    assert offer == date(2026, 7, 1), offer
+    assert minutes is None, "a document with no stato must not acquire a stato_dal"
+    assert closed_at is None, (
         "deals.chiuso_il must stay null: a closure deduced from a renamable stage name is "
         "a conversion rate that is plausible and wrong (spec §4.1)"
     )
@@ -898,17 +898,17 @@ def test_a_write_folder_configured_before_0027_is_not_assumed_verified(
     )
 
 
-def test_0029_moves_any_legacy_import_provenance_to_esterno(pigrocrm_postgres: Any) -> None:
+def test_0029_moves_any_legacy_import_provenance_to_external(pigrocrm_postgres: Any) -> None:
     """The two things migration 0029 has to get right about the rows that already exist.
 
-    `invoices.importata_da` is read back by the API and by MCP, and its value used to be
+    `invoices.imported_from` is read back by the API and by MCP, and its value used to be
     the *name of a product* -- the previous invoicing tool. Renaming the literal in the
     schema without moving the stored rows would leave the fourteen imported invoices
     holding a value no `Literal` admits any more: `InvoiceRead` would still hand it to a
     client, and the badge would print it. So the rename is a data migration.
 
     Seeded here with a value the migration has never been told about, because that is
-    what it now claims: it matches on "neither NULL nor `'esterno'`" rather than on one
+    what it now claims: it matches on "neither NULL nor `'external'`" rather than on one
     spelling, so any legacy provenance in any older database is collapsed, and a row
     PigroCRM issued itself stays NULL. Naming the old value here would have put it back
     in the repository, and pinning the assertion to that one name would have let a
@@ -997,26 +997,26 @@ def test_0029_moves_any_legacy_import_provenance_to_esterno(pigrocrm_postgres: A
             )
         engine.dispose()
 
-    assert after_upgrade == {7: "esterno", 18: None}, (
+    assert after_upgrade == {7: "external", 18: None}, (
         "the imported rows must carry the new literal, and an invoice PigroCRM issued "
         f"itself must stay NULL: got {after_upgrade}"
     )
-    assert after_downgrade == {7: "esterno", 18: None}, (
+    assert after_downgrade == {7: "external", 18: None}, (
         "the downgrade must not resurrect the old product name, and must not drop to "
         f"NULL either, which would claim PigroCRM issued the document: got {after_downgrade}"
     )
-    assert payloads_after_upgrade["imported"]["importata_da"] == "esterno", (
+    assert payloads_after_upgrade["imported"]["imported_from"] == "external", (
         "the payload of the import's own activity travels to the timeline whole, so a "
         f"payload left behind prints the old name there: got {payloads_after_upgrade}"
     )
     # The rest of the payload is untouched, and an activity of another `kind` gains no
     # key it never had: `jsonb_set` on a missing path would *add* one.
-    assert payloads_after_upgrade["imported"]["numero"] == 7
-    assert "importata_da" not in payloads_after_upgrade["issued"]
-    assert payloads_after_downgrade["imported"]["importata_da"] == "esterno"
+    assert payloads_after_upgrade["imported"]["number"] == 7
+    assert "imported_from" not in payloads_after_upgrade["issued"]
+    assert payloads_after_downgrade["imported"]["imported_from"] == "external"
 
 
-def _competenza_checks(url: str) -> set[str]:
+def _accrual_checks(url: str) -> set[str]:
     engine: Engine = create_engine(url)
     try:
         with engine.connect() as connection:
@@ -1049,12 +1049,12 @@ def _proforma_dates(url: str) -> dict[str, date | None]:
         engine.dispose()
 
 
-def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura(
+def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_invoice(
     pigrocrm_postgres: Any,
 ) -> None:
     """The backfill of migration 0033 (ORB-63), asserted on rows planted at 0032.
 
-    A proforma used to keep `data_emissione` `NULL` until a fattura was issued from it,
+    A proforma used to keep `issue_date` `NULL` until a fattura was issued from it,
     and its PDF printed the Europe/Rome civil date of `created_at`. The backfill has to
     write exactly that date -- so no proforma anyone has already received changes its
     date -- and it has to be the *Rome* date: a row created at 22:30 UTC on 30 June is a
@@ -1113,24 +1113,24 @@ def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura(
                 )
             )
         engine.dispose()
-        assert _competenza_checks(url) == set()
+        assert _accrual_checks(url) == set()
 
         upgrade(config, "0033")
         after_upgrade = _proforma_dates(url)
-        checks_after_upgrade = _competenza_checks(url)
+        checks_after_upgrade = _accrual_checks(url)
 
         downgrade(config, "0032")
         after_downgrade = _proforma_dates(url)
-        checks_after_downgrade = _competenza_checks(url)
+        checks_after_downgrade = _accrual_checks(url)
 
         upgrade(config, "0033")
         after_second_upgrade = _proforma_dates(url)
-        checks_after_second_upgrade = _competenza_checks(url)
+        checks_after_second_upgrade = _accrual_checks(url)
 
     expected = {
         "PROV-2026-0001": date(2026, 7, 1),
         "PROV-2025-0009": date(2026, 1, 1),
-        "bozza": None,
+        "draft": None,
         "1": date(2026, 5, 5),
     }
     assert after_upgrade == expected, (
@@ -1138,8 +1138,8 @@ def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura(
         f"fattura draft stays NULL and an issued fattura keeps its date: got {after_upgrade}"
     )
     assert checks_after_upgrade == {
-        "ck_invoices_competenza_together",
-        "ck_invoices_competenza_ordered",
+        "ck_invoices_accrual_together",
+        "ck_invoices_accrual_ordered",
     }
     assert after_downgrade == expected, (
         f"the downgrade leaves the proforma dates in place on purpose: got {after_downgrade}"
@@ -1193,15 +1193,15 @@ def test_0041_backfills_pack_id_and_pack_version_on_the_existing_row(
     assert (pack_id, pack_version) == ("it-flat-rate", "1")
 
 
-def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo_two(
+def test_0046_keys_the_register_by_legal_entity_over_planted_rows_and_refuses_to_undo_two(
     pigrocrm_postgres: Any,
 ) -> None:
     """The migration over real rows planted at 0045, not read as text (REB-619): a
     default azienda, a fiscal profile, a counter and a declared gap. The upgrade keys
     counter and gap to the azienda, swaps the two uniques and the primary key, lets
-    `codice_regime` be empty and widens the P.IVA; the downgrade with one azienda goes
+    `regime_code` be empty and widens the P.IVA; the downgrade with one azienda goes
     back, and with a second azienda's counter it refuses before touching anything."""
-    azienda = "00000000-0000-7000-8000-0000000000a1"
+    legal_entity = "00000000-0000-7000-8000-0000000000a1"
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
@@ -1217,7 +1217,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                     VALUES (:id, 'Studio', true, true, 'Studio Rossi', 'IT', now(), now())
                     """
                 ),
-                {"id": azienda},
+                {"id": legal_entity},
             )
             connection.execute(
                 text(
@@ -1230,7 +1230,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                             2.00, 'TP02', 'MP05', 30, now(), now())
                     """
                 ),
-                {"id": azienda},
+                {"id": legal_entity},
             )
             connection.execute(
                 text("INSERT INTO invoice_counters (anno, ultimo_numero) VALUES (2026, 3)")
@@ -1268,7 +1268,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
 
         engine = create_engine(url)
         with engine.connect() as connection:
-            invoice_azienda = connection.execute(
+            invoice_legal_entity = connection.execute(
                 text("SELECT azienda_id FROM invoices WHERE numero = 3")
             ).scalar_one()
             counter = connection.execute(
@@ -1290,7 +1290,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                     text("SELECT indexname FROM pg_indexes WHERE tablename = 'invoices'")
                 ).scalars()
             )
-            regime_nullable, piva_width = connection.execute(
+            regime_nullable, vat_number_width = connection.execute(
                 text(
                     "SELECT (SELECT is_nullable FROM information_schema.columns "
                     "        WHERE table_name = 'fiscal_profile' "
@@ -1300,15 +1300,19 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                 )
             ).one()
         engine.dispose()
-        assert str(invoice_azienda) == azienda
-        assert (str(counter.azienda_id), counter.anno, counter.ultimo_numero) == (azienda, 2026, 3)
-        assert (str(gap.azienda_id), gap.anno, gap.numero) == (azienda, 2026, 2)
-        assert pk == ["azienda_id", "anno"]
-        assert "uq_invoices_azienda_anno_numero" in invoice_indexes
-        assert "ix_invoices_anno_numero" in invoice_indexes
-        assert "uq_invoices_anno_numero" not in invoice_indexes
-        assert "ix_invoices_azienda_id" in invoice_indexes
-        assert (regime_nullable, piva_width) == ("YES", 20)
+        assert str(invoice_legal_entity) == legal_entity
+        assert (str(counter.legal_entity_id), counter.year, counter.last_number) == (
+            legal_entity,
+            2026,
+            3,
+        )
+        assert (str(gap.legal_entity_id), gap.year, gap.number) == (legal_entity, 2026, 2)
+        assert pk == ["legal_entity_id", "year"]
+        assert "uq_invoices_legal_entity_year_number" in invoice_indexes
+        assert "ix_invoices_year_number" in invoice_indexes
+        assert "uq_invoices_year_number" not in invoice_indexes
+        assert "ix_invoices_legal_entity_id" in invoice_indexes
+        assert (regime_nullable, vat_number_width) == ("YES", 20)
 
         # One azienda: the downgrade goes back to 0045 and the old key returns.
         downgrade(config, "0045")
@@ -1328,9 +1332,9 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                 ).scalars()
             )
         engine.dispose()
-        assert "uq_invoices_anno_numero" in invoice_indexes
-        assert "ix_invoices_anno_numero" not in invoice_indexes
-        assert "azienda_id" not in counter_columns
+        assert "uq_invoices_year_number" in invoice_indexes
+        assert "ix_invoices_year_number" not in invoice_indexes
+        assert "legal_entity_id" not in counter_columns
 
         # The downgrade refuses what it could not give back: a profile with no regime
         # code, a P.IVA wider than the old column, and then a second azienda with a
@@ -1382,14 +1386,14 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
         assert head == "0046"
 
 
-def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deals(
+def test_0047_binds_every_existing_row_to_the_one_legal_entity_and_to_cost_to_its_deals(
     pigrocrm_postgres: Any,
 ) -> None:
     """The migration over real rows planted at 0046 (REB-623): a customer, a deal, a
     contract, a document, a cost on the deal and a shared one. Every owned row is bound
     to the default azienda, the cost on a deal to the deal's, the shared cost to none;
     the downgrade drops the five columns and the indexes with them."""
-    azienda = "00000000-0000-7000-8000-0000000000a1"
+    legal_entity = "00000000-0000-7000-8000-0000000000a1"
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
@@ -1403,7 +1407,7 @@ def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deal
                     "nazione, created_at, updated_at) VALUES (:id, 'Studio', true, true, "
                     "'Studio Rossi', 'IT', now(), now())"
                 ),
-                {"id": azienda},
+                {"id": legal_entity},
             )
             connection.execute(
                 text(
@@ -1491,15 +1495,15 @@ def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deal
                 ).scalars()
             )
         engine.dispose()
-        assert set(owned.values()) == {azienda}
-        assert costs["00000000-0000-7000-8000-0000000000f1"] == azienda
+        assert set(owned.values()) == {legal_entity}
+        assert costs["00000000-0000-7000-8000-0000000000f1"] == legal_entity
         assert costs["00000000-0000-7000-8000-0000000000f2"] is None
         assert indexes >= {
             "ix_customers_azienda_id",
-            "ix_deals_azienda_id",
+            "ix_deals_legal_entity_id",
             "ix_contracts_azienda_id",
             "ix_documents_azienda_id",
-            "ix_costs_azienda_id",
+            "ix_costs_legal_entity_id",
         }
 
         downgrade(config, "0046")
@@ -1519,7 +1523,7 @@ def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deal
             "invoice_counters",
             "invoice_register_gaps",
             "fiscal_profile",
-            "user_aziende",
+            "user_legal_entities",
         }
 
 
@@ -1608,7 +1612,7 @@ def test_0049_puts_the_fast_path_first_and_its_downgrade_restores_0048(
     assert len(bodies) == 8
     spelled_out = "current_setting('pigrocrm.aziende', true) = '*' OR "
     for name, body in bodies.items():
-        if name == "entita_visibile":
+        if name == "entity_visible":
             assert body.lstrip().startswith("SELECT CASE $1"), name
             assert body.count(f"THEN {spelled_out}EXISTS (") == at_0048[1][name].count(
                 "THEN scope_tutte() OR EXISTS ("
@@ -1620,7 +1624,7 @@ def test_0049_puts_the_fast_path_first_and_its_downgrade_restores_0048(
     assert at_head_again == at_head
 
 
-def _ordine_shape(url: str) -> tuple[set[str], set[str]]:
+def _order_shape(url: str) -> tuple[set[str], set[str]]:
     engine: Engine = create_engine(url)
     try:
         with engine.connect() as connection:
@@ -1646,7 +1650,7 @@ def _ordine_shape(url: str) -> tuple[set[str], set[str]]:
         engine.dispose()
 
 
-def _insert_orphan_cig_draft(url: str) -> None:
+def _insert_orphan_tender_code_draft(url: str) -> None:
     """A draft fattura with a CIG and no order number, straight through SQL."""
     engine: Engine = create_engine(url)
     try:
@@ -1686,20 +1690,25 @@ def test_0050_adds_the_purchase_order_columns_and_its_downgrade_drops_them(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-693: four nullable columns and one CHECK, no backfill, both ways."""
-    ordine = {"ordine_numero", "ordine_data", "ordine_cig", "ordine_cup"}
+    order = {
+        "purchase_order_number",
+        "purchase_order_date",
+        "purchase_order_tender_code",
+        "purchase_order_project_code",
+    }
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0049")
-        assert _ordine_shape(url) == (set(), set())
+        assert _order_shape(url) == (set(), set())
         upgrade(config, "0050")
-        assert _ordine_shape(url) == (ordine, {"ck_invoices_ordine_needs_numero"})
-        with pytest.raises(IntegrityError, match="ck_invoices_ordine_needs_numero"):
-            _insert_orphan_cig_draft(url)
+        assert _order_shape(url) == (order, {"ck_invoices_order_needs_number"})
+        with pytest.raises(IntegrityError, match="ck_invoices_order_needs_number"):
+            _insert_orphan_tender_code_draft(url)
         downgrade(config, "0049")
-        assert _ordine_shape(url) == (set(), set())
+        assert _order_shape(url) == (set(), set())
         upgrade(config, "0050")
-        assert _ordine_shape(url) == (ordine, {"ck_invoices_ordine_needs_numero"})
+        assert _order_shape(url) == (order, {"ck_invoices_order_needs_number"})
 
 
 def _invitation_mail_columns(url: str) -> set[str]:
@@ -1743,7 +1752,7 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
     pack with its coefficients, and a forfettario beside it. The first moves to
     `it-standard` with the forfettario's figures and the bollo cleared; the second is
     untouched; the downgrade points the first back."""
-    ordinary, forfettario = (
+    ordinary, flat_rate = (
         "00000000-0000-7000-8000-0000000000b1",
         "00000000-0000-7000-8000-0000000000b2",
     )
@@ -1753,9 +1762,9 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
         upgrade(config, "0057")
         engine: Engine = create_engine(url)
         with engine.begin() as connection:
-            for azienda, nome, regime, rate, bollo, params in (
+            for legal_entity, nome, regime, rate, stamp_duty, params in (
                 (ordinary, "ordinaria", "RF01", "22.00", "true", ("67.00", "5.00", "26.07")),
-                (forfettario, "forfettaria", "RF19", "0.00", "true", ("78.00", "5.00", "26.07")),
+                (flat_rate, "forfettaria", "RF19", "0.00", "true", ("78.00", "5.00", "26.07")),
             ):
                 connection.execute(
                     text(
@@ -1765,7 +1774,7 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
                         VALUES (:id, :nome, false, true, :nome, 'IT', now(), now())
                         """
                     ),
-                    {"id": azienda, "nome": nome},
+                    {"id": legal_entity, "nome": nome},
                 )
                 connection.execute(
                     text(
@@ -1776,13 +1785,13 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
                             coefficiente_redditivita, aliquota_imposta_sostitutiva,
                             aliquota_inps, natura_default, riferimento_normativo, pack_id,
                             pack_version, created_at, updated_at)
-                        VALUES (gen_random_uuid(), :azienda, :regime, :rate, {bollo}, 77.47,
+                        VALUES (gen_random_uuid(), :azienda, :regime, :rate, {stamp_duty}, 77.47,
                             2.00, 'TP02', 'MP05', 30, :c, :s, :i, 'N2.2', 'L. 190/2014',
                             'it-flat-rate', '1', now(), now())
                         """
                     ),
                     {
-                        "azienda": azienda,
+                        "legal_entity": legal_entity,
                         "regime": regime,
                         "rate": rate,
                         "c": params[0],
@@ -1811,7 +1820,7 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
         upgrade(config, "0058")
         after = read()
         assert after[ordinary] == ("it-standard", False, None, None, None, None, None)
-        assert after[forfettario] == (
+        assert after[flat_rate] == (
             "it-flat-rate",
             True,
             Decimal("78.00"),
@@ -1823,7 +1832,7 @@ def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfet
 
         downgrade(config, "0057")
         assert read()[ordinary][0] == "it-flat-rate"
-        assert read()[forfettario][0] == "it-flat-rate"
+        assert read()[flat_rate][0] == "it-flat-rate"
 
 
 def _cap_shape(url: str) -> tuple[set[str], set[str]]:
@@ -1862,13 +1871,13 @@ def test_0059_adds_the_share_cap_column_and_its_range_check_both_ways(
         assert _cap_shape(url) == (set(), set())
         upgrade(config, "0059")
         assert _cap_shape(url) == (
-            {"tetto_quota_cliente"},
-            {"ck_contracts_tetto_quota_cliente_range"},
+            {"customer_share_cap"},
+            {"ck_contracts_customer_share_cap_range"},
         )
         downgrade(config, "0058")
         assert _cap_shape(url) == (set(), set())
         upgrade(config, "0059")
-        assert _cap_shape(url)[1] == {"ck_contracts_tetto_quota_cliente_range"}
+        assert _cap_shape(url)[1] == {"ck_contracts_customer_share_cap_range"}
 
 
 def _clause_notes_shape(url: str) -> tuple[set[str], bool, set[str]]:
@@ -1898,7 +1907,7 @@ def _clause_notes_shape(url: str) -> tuple[set[str], bool, set[str]]:
         engine.dispose()
 
 
-def test_0060_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_drops_it(
+def test_0060_creates_clause_notes_under_the_legal_entities_policy_and_its_downgrade_drops_it(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-762: one table keyed on a contract, with the row-level policy every table that
@@ -1906,9 +1915,9 @@ def test_0060_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_dr
     columns = {
         "id",
         "contract_id",
-        "riferimento_clausola",
-        "testo_letterale",
-        "interpretazione_adottata",
+        "clause_reference",
+        "literal_text",
+        "adopted_interpretation",
         "note",
         "created_at",
         "updated_at",
@@ -1919,7 +1928,7 @@ def test_0060_creates_clause_notes_under_the_aziende_policy_and_its_downgrade_dr
         upgrade(config, "0059")
         assert _clause_notes_shape(url) == (set(), False, set())
         upgrade(config, "0060")
-        assert _clause_notes_shape(url) == (columns, True, {"ambito_azienda"})
+        assert _clause_notes_shape(url) == (columns, True, {"legal_entity_scope"})
         downgrade(config, "0059")
         assert _clause_notes_shape(url) == (set(), False, set())
         upgrade(config, "0060")
@@ -2127,7 +2136,7 @@ def test_0063_leaves_a_token_made_afterwards_closed(
         get_settings.cache_clear()
 
 
-AZIENDA_0064 = "00000000-0000-7000-8000-0000000000a1"
+LEGAL_ENTITY_0064 = "00000000-0000-7000-8000-0000000000a1"
 STAGE_0064 = "00000000-0000-7000-8000-0000000000e1"
 REQUEST_1, REQUEST_2, REQUEST_3, REQUEST_4 = (
     f"rebase:request=00000000-0000-4000-8000-00000000000{n}" for n in range(1, 5)
@@ -2148,7 +2157,7 @@ def _plant_0064(url: str) -> None:
                     "nazione, created_at, updated_at) VALUES (:id, 'Studio', true, true, "
                     "'Studio Rossi', 'IT', now(), now())"
                 ),
-                {"id": AZIENDA_0064},
+                {"id": LEGAL_ENTITY_0064},
             )
             connection.execute(
                 text(
@@ -2170,7 +2179,7 @@ def _plant_0064(url: str) -> None:
                         f"('00000000-0000-7000-8000-0000000000{key}', :nome, 'IT', :azienda, "
                         ":note, '{}', '2025-01-01', '2026-01-10 09:30:00+00')"
                     ),
-                    {"nome": f"Cliente {key}", "azienda": AZIENDA_0064, "note": note},
+                    {"nome": f"Cliente {key}", "legal_entity": LEGAL_ENTITY_0064, "note": note},
                 )
             connection.execute(
                 text(
@@ -2199,7 +2208,7 @@ def _plant_0064(url: str) -> None:
                     ),
                     {
                         "nome": f"Deal {key}",
-                        "azienda": AZIENDA_0064,
+                        "legal_entity": LEGAL_ENTITY_0064,
                         "stage": STAGE_0064,
                         "note": note,
                     },
@@ -2322,8 +2331,8 @@ def test_0064_moves_every_note_into_a_thread_and_the_markers_into_a_column(
             "d6": [],
         }
         assert _note_columns(url) == set()
-        assert _table_shape(url, "notes") == (True, True, {"ambito_azienda"})
-        assert _table_shape(url, "note_revisions") == (True, True, {"ambito_azienda"})
+        assert _table_shape(url, "notes") == (True, True, {"legal_entity_scope"})
+        assert _table_shape(url, "note_revisions") == (True, True, {"legal_entity_scope"})
 
         downgrade(config, "0063")
 

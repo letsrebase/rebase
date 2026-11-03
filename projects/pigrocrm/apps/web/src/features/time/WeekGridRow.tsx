@@ -33,7 +33,7 @@ export interface WeekGridRowProps {
  */
 export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRowProps) {
   // REB-294: a cell's blur logs or edits a `time_entry`, and clearing one deletes it --
-  // `log_time`, `update_time_entry`, `delete_time_entry`, all `collaboratore` in the
+  // `log_time`, `update_time_entry`, `delete_time_entry`, all `collaborator` in the
   // service. A readonly person gets the same week as plain figures, never thirty-five
   // boxes that look like a spreadsheet and answer a blur with a 403.
   const canWrite = useCanWrite()
@@ -60,7 +60,7 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
     // Compared against the stored decimal string, never against a parsed number: `2.50`
     // and `2.5` are the same quantity but not the same value, and the server is the one
     // that decides which of them it stores.
-    if (value === (cell?.ore ?? '')) return
+    if (value === (cell?.hours ?? '')) return
 
     if (value === '') {
       // Cleared: the honest action is a reversible soft delete, not an entry of zero
@@ -72,7 +72,7 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
     }
 
     if (cell?.entryId) {
-      updateHours.mutate({ entryId: cell.entryId, ore: value }, { onError: failWith })
+      updateHours.mutate({ entryId: cell.entryId, hours: value }, { onError: failWith })
       return
     }
 
@@ -81,12 +81,12 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
         deal_id: dealId,
         user_id: userId,
         data: day.iso,
-        ore: value,
+        hours: value,
         // A grid cell has no description field: typing a number is the whole point of
         // the screen, and a required text box in each of thirty-five cells would be the
         // friction this grid exists to remove. The default says honestly where the entry
         // came from, and the deal's Ore tab -- which has room -- is where it is replaced.
-        descrizione: 'Ore registrate dalla griglia settimanale',
+        description: 'Ore registrate dalla griglia settimanale',
       },
       { onError: failWith },
     )
@@ -108,7 +108,7 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
                 aria-label={`${dealName}, ${day.label}`}
                 inputMode="decimal"
                 className="h-9 w-16 text-center tabular-nums"
-                value={draft[day.iso] ?? hoursForInput(cell?.ore ?? null)}
+                value={draft[day.iso] ?? hoursForInput(cell?.hours ?? null)}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, [day.iso]: event.target.value }))
                 }
@@ -120,7 +120,7 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
                 }}
               />
             ) : (
-              <span className="tabular-nums">{hoursForInput(cell?.ore ?? null)}</span>
+              <span className="tabular-nums">{hoursForInput(cell?.hours ?? null)}</span>
             )}
           </td>
         )

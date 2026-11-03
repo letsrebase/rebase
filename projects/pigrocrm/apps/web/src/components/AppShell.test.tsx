@@ -63,10 +63,10 @@ vi.mock('@tanstack/react-router', () => ({
 // The shell toasts a refusal to enter another space, which is what the switcher's tests read.
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const mockAuth = vi.hoisted(() => ({ ruolo: 'admin' as string, id: undefined as string | undefined }))
+const mockAuth = vi.hoisted(() => ({ role: 'admin' as string, id: undefined as string | undefined }))
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: mockAuth.id, nome: 'Mario', email: 'm@example.com', ruolo: mockAuth.ruolo }, logout: vi.fn() }),
-  useIsAdmin: () => mockAuth.ruolo === 'admin',
+  useAuth: () => ({ user: { id: mockAuth.id, nome: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
+  useIsAdmin: () => mockAuth.role === 'admin',
 }))
 
 vi.mock('@/lib/tenant', async (importOriginal) => {
@@ -94,15 +94,15 @@ const mockGo = vi.fn()
  * provider is part of the harness rather than of any one test. Its query is disabled
  * below three characters, so nothing here issues a request.
  */
-function renderShell(children: React.ReactNode = <div />, azienda?: LegalEntityValue) {
+function renderShell(children: React.ReactNode = <div />, legal_entity?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
-  // Without `azienda` the shell runs on the context's default, a one-azienda space.
+  // Without `legal_entity` the shell runs on the context's default, a one-azienda space.
   const tree = () => (
     <QueryClientProvider client={client}>
-      {azienda ? (
-        <LegalEntityContext value={azienda}>
+      {legal_entity ? (
+        <LegalEntityContext value={legal_entity}>
           <AppShell go={mockGo}>{children}</AppShell>
         </LegalEntityContext>
       ) : (
@@ -145,7 +145,7 @@ function sidebar() {
 
 beforeEach(() => {
   setViewport(true)
-  mockAuth.ruolo = 'admin'
+  mockAuth.role = 'admin'
   mockAuth.id = undefined
   mockRoute.pathname = '/app/customers'
   mockRoute.search = ''
@@ -254,8 +254,8 @@ describe('AppShell', () => {
   it('shows the overdue count beside «Attività» (REB-725, REB-873)', async () => {
     mockAuth.id = 'u-1'
     GET.mockImplementation(async (path: string) =>
-      path === '/api/activities/oggi'
-        ? { data: { in_ritardo: { totale: 3, items: [] } }, response: { status: 200 } }
+      path === '/api/activities/today'
+        ? { data: { overdue: { total: 3, items: [] } }, response: { status: 200 } }
         : { data: [], response: { status: 200 } },
     )
     renderShell()
@@ -263,22 +263,22 @@ describe('AppShell', () => {
     const attivita = await sidebar().findByRole('link', { name: /^Attività\s*3 in ritardo$/ })
     expect(attivita).toBeInTheDocument()
     // Asked for the signed-in user's own, a single row: the sidebar wants the number.
-    expect(GET).toHaveBeenCalledWith('/api/activities/oggi', {
-      params: { query: { assegnata_a: 'u-1', anche_non_assegnate: true, limit: 1 } },
+    expect(GET).toHaveBeenCalledWith('/api/activities/today', {
+      params: { query: { assigned_to: 'u-1', include_unassigned: true, limit: 1 } },
     })
   })
 
   it('draws no count beside «Attività» when nothing is overdue', async () => {
     mockAuth.id = 'u-1'
     GET.mockImplementation(async (path: string) =>
-      path === '/api/activities/oggi'
-        ? { data: { in_ritardo: { totale: 0, items: [] } }, response: { status: 200 } }
+      path === '/api/activities/today'
+        ? { data: { overdue: { total: 0, items: [] } }, response: { status: 200 } }
         : { data: [], response: { status: 200 } },
     )
     renderShell()
 
     await waitFor(() =>
-      expect(GET).toHaveBeenCalledWith('/api/activities/oggi', expect.anything()),
+      expect(GET).toHaveBeenCalledWith('/api/activities/today', expect.anything()),
     )
     // The answer has to have been rendered, not only asked for, before an absence means anything.
     await settle()
@@ -401,7 +401,7 @@ describe('AppShell', () => {
       '/app/settings/profile',
       '/app/settings/space',
       '/app/settings/fields',
-      '/app/settings/aziende',
+      '/app/settings/legal-entities',
       '/app/settings/gmail',
       '/app/settings/reminders',
     ])
@@ -422,12 +422,12 @@ describe('AppShell', () => {
   })
 
   it.each([
-    ['collaboratore', ['Personale', 'Collegamenti'], ['/app/settings/profile', '/app/settings/drive']],
+    ['collaborator', ['Personale', 'Collegamenti'], ['/app/settings/profile', '/app/settings/drive']],
     ['readonly', ['Personale'], ['/app/settings/profile']],
-  ])('shows a %s only the Impostazioni groups it can open', async (ruolo, labels, hrefs) => {
+  ])('shows a %s only the Impostazioni groups it can open', async (role, labels, hrefs) => {
     // The group is there for every role (REB-771); each role sees only the groups with a
     // section it may open, so no link would fail on click.
-    mockAuth.ruolo = ruolo as string
+    mockAuth.role = role as string
     renderShell()
     await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
     const subItems = sidebar()
@@ -437,10 +437,10 @@ describe('AppShell', () => {
     expect(subItems.map((link) => link.getAttribute('href'))).toEqual(hrefs)
   })
 
-  it.each(['admin', 'collaboratore', 'readonly'])(
+  it.each(['admin', 'collaborator', 'readonly'])(
     'links the collapsed rail\'s Impostazioni icon to Profilo for a %s',
-    async (ruolo) => {
-      mockAuth.ruolo = ruolo
+    async (role) => {
+      mockAuth.role = role
       renderShell()
       await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
       expect(sidebar().getByRole('link', { name: 'Impostazioni' })).toHaveAttribute(
@@ -450,14 +450,14 @@ describe('AppShell', () => {
     },
   )
 
-  it.each(['collaboratore', 'readonly'])(
+  it.each(['collaborator', 'readonly'])(
     'keeps the %s navigation surface intact: every entry and the three sections',
-    (ruolo) => {
+    (role) => {
       // REB-294 hid controls, never navigation a role may read -- the readonly person's
       // reading surface is unchanged. Asserted for both non-admin roles in one test
       // because they are meant to see the same shell; only Impostazioni separates them,
       // and that is pinned by its own test above.
-      mockAuth.ruolo = ruolo
+      mockAuth.role = role
       renderShell()
       const nav = sidebar()
       for (const label of ['Home', 'Attività', 'Calendario', 'Avvisi', 'Proposte', 'Agenti']) {
@@ -477,8 +477,8 @@ describe('AppShell', () => {
    * "collaboratore" and "readonly" are two different guard checks that could each
    * independently regress.
    */
-  it.each(['collaboratore', 'readonly'])('shows Agenti to a %s, not just to an admin', (ruolo) => {
-    mockAuth.ruolo = ruolo
+  it.each(['collaborator', 'readonly'])('shows Agenti to a %s, not just to an admin', (role) => {
+    mockAuth.role = role
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Agenti' })).toBeInTheDocument()
   })
@@ -488,21 +488,21 @@ describe('AppShell', () => {
    * «Da fare», right after the calendar and right before Proposte, which stays the last
    * entry of the section (REB-750) and opens `/app/proposals`.
    */
-  it.each(['admin', 'collaboratore', 'readonly'])('shows Avvisi to a %s, between Calendario and Proposte', (ruolo) => {
-    mockAuth.ruolo = ruolo
+  it.each(['admin', 'collaborator', 'readonly'])('shows Avvisi to a %s, between Calendario and Proposte', (role) => {
+    mockAuth.role = role
     renderShell()
     const links = sidebar().getAllByRole('link')
     const names = links.map((link) => link.textContent)
     expect(names.indexOf('Avvisi')).toBe(names.indexOf('Calendario') + 1)
     expect(names.indexOf('Proposte')).toBe(names.indexOf('Avvisi') + 1)
-    expect(links[names.indexOf('Avvisi')]).toHaveAttribute('href', '/app/avvisi')
+    expect(links[names.indexOf('Avvisi')]).toHaveAttribute('href', '/app/reminders')
     expect(links[names.indexOf('Proposte')]).toHaveAttribute('href', '/app/proposals')
   })
 
   it('keeps Avvisi and Proposte one click away in the collapsed icon rail', async () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
-    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveAttribute('href', '/app/avvisi')
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveAttribute('href', '/app/reminders')
     expect(sidebar().getByRole('link', { name: 'Proposte' })).toHaveAttribute('href', '/app/proposals')
   })
 
@@ -510,7 +510,7 @@ describe('AppShell', () => {
   function answerReminders(statuses: Array<'open' | 'snoozed' | 'acknowledged'>) {
     const list = statuses.map((status, index) => ({
       key: `attivita_due:${index}`,
-      type: 'attivita_due',
+      type: 'task_due',
       label: 'Attività in scadenza',
       severity: 'warning',
       measure: 0,
@@ -561,7 +561,7 @@ describe('AppShell', () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
     const entry = await sidebar().findByRole('link', { name: 'Avvisi, 3 da leggere' })
-    expect(entry).toHaveAttribute('href', '/app/avvisi')
+    expect(entry).toHaveAttribute('href', '/app/reminders')
     // The number itself is drawn on the icon's corner, not as a label beside it.
     expect(within(entry).getByText('3')).toHaveClass('absolute')
   })
@@ -606,8 +606,8 @@ describe('AppShell', () => {
   it('keeps the overdue count on the Attività icon in the collapsed rail', async () => {
     mockAuth.id = 'u-1'
     GET.mockImplementation(async (path: string) =>
-      path === '/api/activities/oggi'
-        ? { data: { in_ritardo: { totale: 2, items: [] } }, response: { status: 200 } }
+      path === '/api/activities/today'
+        ? { data: { overdue: { total: 2, items: [] } }, response: { status: 200 } }
         : { data: [], response: { status: 200 } },
     )
     renderShell()
@@ -664,7 +664,7 @@ describe('AppShell', () => {
 
   it('renders its children in the page area', () => {
     renderShell(<p>contenuto</p>)
-    expect(within(screen.getByRole('main')).getByText('contenuto')).toBeInTheDocument()
+    expect(within(screen.getByRole('main')).getByText('content')).toBeInTheDocument()
   })
 
   it('makes the page itself the one scroller, with no inset frame around it', () => {
@@ -711,10 +711,10 @@ describe('AppShell', () => {
    * its child, the role among them. Scoping to the menu is what keeps this from finding
    * the settings sub-item of the same name that an admin also has in the sidebar.
    */
-  it.each(['admin', 'collaboratore', 'readonly'])(
+  it.each(['admin', 'collaborator', 'readonly'])(
     'offers «Profilo» to a %s, linking to the profile tab',
-    async (ruolo) => {
-      mockAuth.ruolo = ruolo
+    async (role) => {
+      mockAuth.role = role
       renderShell()
 
       await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
@@ -735,7 +735,7 @@ describe('AppShell', () => {
    * the sidebar's «Impostazioni».
    */
   it('offers «Google Drive» to a collaboratore in the profile menu', async () => {
-    mockAuth.ruolo = 'collaboratore'
+    mockAuth.role = 'collaborator'
     renderShell()
 
     await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
@@ -747,8 +747,8 @@ describe('AppShell', () => {
     )
   })
 
-  it.each(['admin', 'readonly'])('offers no «Google Drive» in the profile menu to a %s', async (ruolo) => {
-    mockAuth.ruolo = ruolo
+  it.each(['admin', 'readonly'])('offers no «Google Drive» in the profile menu to a %s', async (role) => {
+    mockAuth.role = role
     renderShell()
 
     await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
@@ -759,7 +759,7 @@ describe('AppShell', () => {
   })
 
   it('leaves «Impostazioni dello spazio» to an admin', async () => {
-    mockAuth.ruolo = 'collaboratore'
+    mockAuth.role = 'collaborator'
     renderShell()
 
     await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
@@ -787,10 +787,10 @@ describe('AppShell', () => {
     )
   }
 
-  it.each(['admin', 'collaboratore', 'readonly'])(
+  it.each(['admin', 'collaborator', 'readonly'])(
     'offers «Primi passi» to a %s in the profile menu once the space has data',
-    async (ruolo) => {
-      mockAuth.ruolo = ruolo
+    async (role) => {
+      mockAuth.role = role
       answerWork('/api/customers')
       renderShell()
 
@@ -839,8 +839,8 @@ describe('the space switcher', () => {
   it('lists another space the identity may enter, excluding the one already open', async () => {
     GET.mockResolvedValue({
       data: [
-        { slug: 'studio', ruolo: 'admin' },
-        { slug: 'altro', ruolo: 'collaboratore' },
+        { slug: 'studio', role: 'admin' },
+        { slug: 'other', role: 'collaborator' },
       ],
       response: { status: 200 },
     })
@@ -852,9 +852,9 @@ describe('the space switcher', () => {
   })
 
   it('enters another space on click and navigates to its own basepath', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'altro', ruolo: 'collaboratore' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'other', role: 'collaborator' }], response: { status: 200 } })
     POST.mockResolvedValue({
-      data: { id: 'u1', email: 'ada@altro.it', nome: 'Ada', ruolo: 'collaboratore' },
+      data: { id: 'u1', email: 'ada@altro.it', nome: 'Ada', role: 'collaborator' },
       response: { status: 200 },
     })
     renderShell()
@@ -863,14 +863,14 @@ describe('the space switcher', () => {
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/identity/enter/{slug}', {
-        params: { path: { slug: 'altro' } },
+        params: { path: { slug: 'other' } },
       }),
     )
     await waitFor(() => expect(mockGo).toHaveBeenCalledWith('/altro/app/'))
   })
 
   it('reports the API sentence when entering another space fails', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'altro', ruolo: 'admin' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'other', role: 'admin' }], response: { status: 200 } })
     POST.mockResolvedValue({
       error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
       response: { status: 404 },
@@ -904,7 +904,7 @@ describe('the space switcher', () => {
       if (path === '/api/identity/spaces') {
         spacesCalls += 1
         return Promise.resolve({
-          data: spacesCalls === 1 ? [] : [{ slug: 'altro', ruolo: 'collaboratore' }],
+          data: spacesCalls === 1 ? [] : [{ slug: 'other', role: 'collaborator' }],
           response: { status: 200 },
         })
       }
@@ -921,7 +921,7 @@ describe('the space switcher', () => {
   // goes to the acceptance page rather than entering a space this address has no seat in.
   it('lists an invitation beside the spaces, marked as one', async () => {
     GET.mockResolvedValue({
-      data: [{ slug: 'rebase', ruolo: 'collaboratore', invito: true, invitato_da: 'Ivan' }],
+      data: [{ slug: 'rebase', role: 'collaborator', invitation: true, invited_from: 'Ivan' }],
       response: { status: 200 },
     })
     renderShell()
@@ -932,7 +932,7 @@ describe('the space switcher', () => {
 
   it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
     GET.mockResolvedValue({
-      data: [{ slug: 'rebase', ruolo: 'collaboratore', invito: true }],
+      data: [{ slug: 'rebase', role: 'collaborator', invitation: true }],
       response: { status: 200 },
     })
     POST.mockResolvedValue({
@@ -954,12 +954,12 @@ describe('the space switcher', () => {
 })
 
 describe('the azienda selector (REB-625)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, active: true } as LegalEntityRecord
 
-  function twoAziende(selected: string | null): LegalEntityValue {
+  function twoLegalEntities(selected: string | null): LegalEntityValue {
     return {
-      aziende: [HUMANCRAFT, REBASE],
+      legal_entities: [HUMANCRAFT, REBASE],
       selected,
       select: vi.fn(),
       several: true,
@@ -975,7 +975,7 @@ describe('the azienda selector (REB-625)', () => {
   })
 
   it('sits between the search and the navigation, offers «Tutte le aziende» first and selects by id', async () => {
-    const value = twoAziende(null)
+    const value = twoLegalEntities(null)
     renderShell(<div />, value)
     const trigger = screen.getByRole('combobox', { name: 'Azienda' })
     expect(trigger).toHaveTextContent('Tutte le aziende')
@@ -993,7 +993,7 @@ describe('the azienda selector (REB-625)', () => {
   })
 
   it('shows the selected azienda and goes back to every one of them', async () => {
-    const value = twoAziende('a2')
+    const value = twoLegalEntities('a2')
     renderShell(<div />, value)
     const trigger = screen.getByRole('combobox', { name: 'Azienda' })
     expect(trigger).toHaveTextContent('rebase')
@@ -1004,7 +1004,7 @@ describe('the azienda selector (REB-625)', () => {
 
   it('draws a scoped person’s one azienda as a label, not a control (REB-635)', () => {
     const value: LegalEntityValue = {
-      aziende: [REBASE],
+      legal_entities: [REBASE],
       selected: 'a2',
       select: vi.fn(),
       several: false,

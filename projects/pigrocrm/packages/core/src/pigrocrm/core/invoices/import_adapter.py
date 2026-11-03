@@ -24,7 +24,7 @@ from pigrocrm.core.invoices.import_schemas import ParsedInvoice
 @runtime_checkable
 class InvoiceFormatAdapter(Protocol):
     """One structured invoice format. FatturaPA's FPR12
-    (`fatturapa_import.fattura_pa_fpr12_adapter`) is the first; a second is a new
+    (`fatturapa_import.invoice_pa_fpr_12_adapter`) is the first; a second is a new
     module implementing this protocol, never a change to it.
     """
 

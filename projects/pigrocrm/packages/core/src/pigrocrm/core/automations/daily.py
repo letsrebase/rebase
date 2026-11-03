@@ -8,7 +8,7 @@ digest and the Gmail sync) asks each switched-on rule which subjects match today
 one attivita for each that has none open. The runner and this pass share the configuration
 row and nothing else; there is one place a rule is switched off.
 
-**Idempotent by the database.** `uq_attivita_regola_aperta` allows one open, live attivita
+**Idempotent by the database.** `uq_tasks_rule_open` allows one open, live attivita
 per `(regola, subject)`. The pass reads which subjects already have one and skips them (so
 the log can say «già aperta» instead of failing), and still inserts under a savepoint and
 treats that index's violation as the same answer: two passes at the same instant both pass
@@ -21,22 +21,22 @@ Rossi paying means «I spoke to him», and a month on the reminder is needed aga
 a state. They are different objects and both exist, so the places where they would say the
 same thing twice are decided here rather than left to happen:
 
-* `fattura_scaduta` and the reminder `invoice_overdue` have the same cause (an issued, unpaid
+* `overdue_invoice` and the reminder `invoice_overdue` have the same cause (an issued, unpaid
   invoice past its due date, strictly) and the reminder already climbs its own ladder. The
   attivita is the to-do the reminder points at, so the reminder engine does not raise
-  `attivita_due` or `attivita_overdue` for what this rule opened to a person who is already
+  `task_due` or `task_overdue` for what this rule opened to a person who is already
   told of the invoice by `invoice_overdue`; to anybody else it is the only notice.
-* `deal_fermo` and the reminder `deal_stale` measure different things: the reminder is the
+* `stalled_deal` and the reminder `deal_stale` measure different things: the reminder is the
   absence of any mail, attivita or hours for 21 days, the rule is a deal that has not changed
   stage. The attivita this rule opens is itself an attivita created on the deal, so it
   restarts `deal_stale`'s clock: the two never speak about the same stretch twice.
-* `offerta_inviata_richiama` has no reminder of its own: the attivita is the only notice, so
-  its `attivita_due` reminder is wanted.
+* `sent_offer_follow_up` has no reminder of its own: the attivita is the only notice, so
+  its `task_due` reminder is wanted.
 
 **What it never does.** It sends nothing to anybody: the sollecito stays an act (slice 7 §9),
 and an attivita is a row in somebody's list. It writes through no actor's authority: the
 system opens them, `actor_type = 'system'` on the timeline entry, `origine = 'automazione'`
-and `regola` on the row.
+and `rule` on the row.
 
 **Windows, and why they are there.** An offer is called back a week after it was sent, so
 the one still waiting after thirty-seven days is not the follow-up of that sending any more;
@@ -57,16 +57,14 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.attivita.models import Attivita
-from pigrocrm.core.attivita.schemas import TITOLO_MAX_LENGTH
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.automations.models import AutomationConfig
 from pigrocrm.core.automations.repository import AutomationConfigRepository
 from pigrocrm.core.automations.schemas import (
-    ATTIVITA_RULES,
-    KIND_ATTIVITA_OPENED,
     KIND_STAGE_MOVED,
-    AttivitaRule,
+    KIND_TASK_OPENED,
+    TASK_RULES,
+    TaskRule,
 )
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
@@ -75,36 +73,38 @@ from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.naming import numero_completo
+from pigrocrm.core.invoices.naming import number_complete
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.tasks.models import Task
+from pigrocrm.core.tasks.schemas import TITLE_MAX_LENGTH
 
 # The offer is called back this many days after it was sent, and the attivita falls due then.
-OFFERTA_ATTESA_GIORNI: Final = 7
+OFFER_PENDING_DAYS: Final = 7
 # And stops being the follow-up of that sending this many days after the wait is over.
-OFFERTA_FINESTRA_GIORNI: Final = 30
+OFFER_WINDOW_DAYS: Final = 30
 
-_ATTIVITA_ENTITY = "attivita"
-_UNIQUE_INDEX = "uq_attivita_regola_aperta"
+_TASK_ENTITY = "attivita"
+_UNIQUE_INDEX = "uq_tasks_rule_open"
 # The two timeline kinds that say a deal changed stage: a person's move and the automation
 # A1/A2's. Both, because a deal moved by an accepted offer has changed stage all the same.
 _STAGE_KINDS = ("stage_changed", KIND_STAGE_MOVED)
 _SUBJECT_COLUMNS = {
-    "deal_id": Attivita.deal_id,
-    "customer_id": Attivita.customer_id,
-    "invoice_id": Attivita.invoice_id,
+    "deal_id": Task.deal_id,
+    "customer_id": Task.customer_id,
+    "invoice_id": Task.invoice_id,
 }
 
 
 @dataclass(frozen=True)
 class RuleReport:
     """What one rule did in one space, as three counters that cannot be mistaken for each
-    other: `disattivata` says the switch is off and nothing was looked at, `gia_aperte` the
-    subjects that matched and already had their attivita, `aperte` the ones opened now."""
+    other: `disattivata` says the switch is off and nothing was looked at, `already_open` the
+    subjects that matched and already had their attivita, `open` the ones opened now."""
 
-    regola: AttivitaRule
-    disattivata: bool
-    aperte: int
-    gia_aperte: int
+    rule: TaskRule
+    disabled: bool
+    open: int
+    already_open: int
 
 
 @dataclass(frozen=True)
@@ -112,8 +112,8 @@ class PassReport:
     rules: tuple[RuleReport, ...]
 
     @property
-    def aperte(self) -> int:
-        return sum(report.aperte for report in self.rules)
+    def open(self) -> int:
+        return sum(report.open for report in self.rules)
 
 
 @dataclass(frozen=True)
@@ -122,13 +122,13 @@ class _Candidate:
 
     subject_field: str
     subject_id: UUID
-    titolo: str
-    scadenza: date
+    title: str
+    due_date: date
     owner_id: UUID | None
 
 
-def _titolo(text: str) -> str:
-    return text if len(text) <= TITOLO_MAX_LENGTH else text[: TITOLO_MAX_LENGTH - 1] + "…"
+def _title(text: str) -> str:
+    return text if len(text) <= TITLE_MAX_LENGTH else text[: TITLE_MAX_LENGTH - 1] + "…"
 
 
 class AutomationPass:
@@ -164,15 +164,13 @@ class AutomationPass:
             # that a rule's own failure cannot take it away.
             self.session.commit()
         return PassReport(
-            rules=tuple(
-                self._run_rule(rule, config, day, dry_run=dry_run) for rule in ATTIVITA_RULES
-            )
+            rules=tuple(self._run_rule(rule, config, day, dry_run=dry_run) for rule in TASK_RULES)
         )
 
     # -- one rule -----------------------------------------------------------------
 
     def _run_rule(
-        self, rule: AttivitaRule, config: AutomationConfig, today: date, *, dry_run: bool
+        self, rule: TaskRule, config: AutomationConfig, today: date, *, dry_run: bool
     ) -> RuleReport:
         if not self._enabled(rule, config):
             return RuleReport(rule, True, 0, 0)
@@ -193,62 +191,60 @@ class AutomationPass:
         return RuleReport(rule, False, opened, skipped)
 
     @staticmethod
-    def _enabled(rule: AttivitaRule, config: AutomationConfig) -> bool:
+    def _enabled(rule: TaskRule, config: AutomationConfig) -> bool:
         match rule:
-            case "offerta_inviata_richiama":
-                return config.a3_offerta_inviata_richiama
-            case "deal_fermo":
-                return config.a4_deal_fermo
-            case "fattura_scaduta":
-                return config.a5_fattura_scaduta
+            case "sent_offer_follow_up":
+                return config.a3_sent_offer_follow_up
+            case "stalled_deal":
+                return config.a4_stalled_deal
+            case "overdue_invoice":
+                return config.a5_overdue_invoice
 
     def _candidates(
-        self, rule: AttivitaRule, config: AutomationConfig, today: date
+        self, rule: TaskRule, config: AutomationConfig, today: date
     ) -> list[_Candidate]:
         match rule:
-            case "offerta_inviata_richiama":
-                return self._offerte(today)
-            case "deal_fermo":
-                return self._deal_fermi(config.a4_deal_fermo_giorni, today)
-            case "fattura_scaduta":
-                return self._fatture_scadute(today)
+            case "sent_offer_follow_up":
+                return self._offers(today)
+            case "stalled_deal":
+                return self._deal_fermi(config.a4_stalled_deal_days, today)
+            case "overdue_invoice":
+                return self._invoices_overdue(today)
 
-    def _already_open(self, rule: AttivitaRule, subjects: set[UUID]) -> set[UUID]:
+    def _already_open(self, rule: TaskRule, subjects: set[UUID]) -> set[UUID]:
         """Which of these subjects have an open, live attivita of this rule: the reading
         half of the idempotency, which the index backs."""
         if not subjects:
             return set()
-        subject = func.coalesce(
-            Attivita.customer_id, Attivita.person_id, Attivita.deal_id, Attivita.invoice_id
-        )
+        subject = func.coalesce(Task.customer_id, Task.person_id, Task.deal_id, Task.invoice_id)
         return set(
             self.session.scalars(
                 select(subject).where(
-                    Attivita.regola == rule,
-                    Attivita.stato == "aperta",
-                    Attivita.deleted_at.is_(None),
+                    Task.rule == rule,
+                    Task.status == "open",
+                    Task.deleted_at.is_(None),
                     subject.in_(subjects),
                 )
             )
         )
 
     def _active_users(self, ids: set[UUID]) -> set[UUID]:
-        """An attivita cannot be assigned to a disabled account (`AttivitaService`), and the
+        """An attivita cannot be assigned to a disabled account (`TaskService`), and the
         pass would be the one writer to break that: a rule's attivita for a deal whose owner
         left goes to «whoever opens the list» instead."""
         if not ids:
             return set()
-        return set(self.session.scalars(select(User.id).where(User.id.in_(ids), User.attivo)))
+        return set(self.session.scalars(select(User.id).where(User.id.in_(ids), User.active)))
 
-    def _open(self, rule: AttivitaRule, candidate: _Candidate, active: set[UUID]) -> bool:
+    def _open(self, rule: TaskRule, candidate: _Candidate, active: set[UUID]) -> bool:
         owner = candidate.owner_id if candidate.owner_id in active else None
-        row = Attivita(
-            titolo=candidate.titolo,
-            scadenza=candidate.scadenza,
-            stato="aperta",
-            origine="automazione",
-            regola=rule,
-            assegnata_a=owner,
+        row = Task(
+            title=candidate.title,
+            due_date=candidate.due_date,
+            status="open",
+            origin="automation",
+            rule=rule,
+            assigned_to=owner,
             custom_fields={},
             **{candidate.subject_field: candidate.subject_id},
         )
@@ -263,14 +259,14 @@ class AutomationPass:
                 raise
             return False
         self.activities.record(
-            _ATTIVITA_ENTITY,
+            _TASK_ENTITY,
             row.id,
-            KIND_ATTIVITA_OPENED,
+            KIND_TASK_OPENED,
             Actor.system(),
             {
-                "regola": rule,
-                "titolo": row.titolo,
-                "scadenza": row.scadenza,
+                "rule": rule,
+                "title": row.title,
+                "due_date": row.due_date,
                 candidate.subject_field: str(candidate.subject_id),
             },
         )
@@ -278,39 +274,39 @@ class AutomationPass:
 
     # -- the three rules' queries ---------------------------------------------------
 
-    def _offerte(self, today: date) -> list[_Candidate]:
+    def _offers(self, today: date) -> list[_Candidate]:
         """Offers sent at least seven days ago, still waiting, and not older than thirty
         days past that. The attivita hangs on the offer's deal, or on its customer when the
         offer has none, and falls due seven days after the sending: if the pass is late, it
         is born late, which is the truth."""
-        sent_before = today - timedelta(days=OFFERTA_ATTESA_GIORNI)
-        sent_after = sent_before - timedelta(days=OFFERTA_FINESTRA_GIORNI)
+        sent_before = today - timedelta(days=OFFER_PENDING_DAYS)
+        sent_after = sent_before - timedelta(days=OFFER_WINDOW_DAYS)
         rows = self.session.execute(
             select(
-                Document.titolo,
-                Document.stato_dal,
+                Document.title,
+                Document.status_since,
                 Document.deal_id,
                 Customer.id,
-                Customer.ragione_sociale,
+                Customer.legal_name,
                 func.coalesce(Deal.owner_id, Customer.owner_id),
             )
             .outerjoin(Deal, Deal.id == Document.deal_id)
             .join(Customer, Customer.id == func.coalesce(Document.customer_id, Deal.customer_id))
             .where(
                 Document.deleted_at.is_(None),
-                Document.tipo == "offerta",
-                Document.stato == "inviata",
-                Document.stato_dal.is_not(None),
-                Document.stato_dal <= sent_before,
-                Document.stato_dal >= sent_after,
+                Document.type == "offer",
+                Document.status == "sent",
+                Document.status_since.is_not(None),
+                Document.status_since <= sent_before,
+                Document.status_since >= sent_after,
                 or_(Document.deal_id.is_(None), Deal.deleted_at.is_(None)),
                 Customer.deleted_at.is_(None),
             )
-            .order_by(Document.stato_dal, Document.id)
+            .order_by(Document.status_since, Document.id)
         ).all()
         found: list[_Candidate] = []
-        for titolo, stato_dal, deal_id, customer_id, cliente, owner_id in rows:
-            assert stato_dal is not None  # the query asked for dated ones only
+        for title, status_since, deal_id, customer_id, customer, owner_id in rows:
+            assert status_since is not None  # the query asked for dated ones only
             field, subject = (
                 ("deal_id", deal_id) if deal_id is not None else ("customer_id", customer_id)
             )
@@ -318,15 +314,15 @@ class AutomationPass:
                 _Candidate(
                     field,
                     subject,
-                    _titolo(f"Richiamare {cliente} sull'offerta {titolo}"),
-                    stato_dal + timedelta(days=OFFERTA_ATTESA_GIORNI),
+                    _title(f"Richiamare {customer} sull'offerta {title}"),
+                    status_since + timedelta(days=OFFER_PENDING_DAYS),
                     owner_id,
                 )
             )
         return found
 
-    def _deal_fermi(self, soglia: int, today: date) -> list[_Candidate]:
-        """Open deals that have been in their stage for at least `soglia` days.
+    def _deal_fermi(self, threshold: int, today: date) -> list[_Candidate]:
+        """Open deals that have been in their stage for at least `threshold` days.
 
         «Since when» is the latest stage change on the deal's timeline, a person's or an
         automation's, and the deal's creation when it never moved. Not `updated_at`: a deal
@@ -356,9 +352,9 @@ class AutomationPass:
             .join(Customer, Customer.id == Deal.customer_id)
             .where(
                 Deal.deleted_at.is_(None),
-                PipelineStage.tipo == "open",
+                PipelineStage.type == "open",
                 Customer.deleted_at.is_(None),
-                since_day <= today - timedelta(days=soglia),
+                since_day <= today - timedelta(days=threshold),
             )
             .order_by(Deal.created_at, Deal.id)
         ).all()
@@ -366,50 +362,50 @@ class AutomationPass:
             _Candidate(
                 "deal_id",
                 deal_id,
-                _titolo(f"Il deal {nome} è fermo da {(today - since).days} giorni"),
+                _title(f"Il deal {nome} è fermo da {(today - since).days} giorni"),
                 today,
                 owner_id,
             )
             for deal_id, nome, owner_id, since in rows
         ]
 
-    def _fatture_scadute(self, today: date) -> list[_Candidate]:
+    def _invoices_overdue(self, today: date) -> list[_Candidate]:
         """Issued invoices nobody has paid, strictly past their due date: the receivables
         page's «scaduto», and the reminder `invoice_overdue`'s cause. Assigned to the owner
         of the invoice's deal, or of its customer when it has no deal."""
         rows = self.session.execute(
             select(
                 Invoice.id,
-                Invoice.anno,
-                Invoice.numero,
-                Customer.ragione_sociale,
+                Invoice.year,
+                Invoice.number,
+                Customer.legal_name,
                 func.coalesce(Deal.owner_id, Customer.owner_id),
             )
             .join(Customer, Customer.id == Invoice.customer_id)
             .outerjoin(Deal, Deal.id == Invoice.deal_id)
             .where(
                 Invoice.deleted_at.is_(None),
-                Invoice.tipo == "fattura",
-                Invoice.stato == "emessa",
-                Invoice.stato_pagamento == "da_incassare",
-                Invoice.data_scadenza.is_not(None),
-                Invoice.data_scadenza < today,
+                Invoice.type == "invoice",
+                Invoice.status == "issued",
+                Invoice.payment_status == "unpaid",
+                Invoice.due_date.is_not(None),
+                Invoice.due_date < today,
                 Customer.deleted_at.is_(None),
             )
-            .order_by(Invoice.data_scadenza, Invoice.id)
+            .order_by(Invoice.due_date, Invoice.id)
         ).all()
         found: list[_Candidate] = []
-        for invoice_id, anno, numero, cliente, owner_id in rows:
+        for invoice_id, year, number, customer, owner_id in rows:
             label = (
-                numero_completo(anno, numero)
-                if anno is not None and numero is not None
+                number_complete(year, number)
+                if year is not None and number is not None
                 else "la fattura"
             )
             found.append(
                 _Candidate(
                     "invoice_id",
                     invoice_id,
-                    _titolo(f"Sollecitare {cliente} per {label}"),
+                    _title(f"Sollecitare {customer} per {label}"),
                     today,
                     owner_id,
                 )

@@ -46,17 +46,17 @@ export function TimeRegister({
 
   const failWith = (error: unknown) => toast.error(toProblem(error).detail)
   const total = sumDecimalStrings(
-    entries.map((entry) => entry.ore),
+    entries.map((entry) => entry.hours),
     HOURS_SCALE,
   )
   const billable = sumDecimalStrings(
-    entries.filter((entry) => entry.fatturabile).map((entry) => entry.ore),
+    entries.filter((entry) => entry.billable).map((entry) => entry.hours),
     HOURS_SCALE,
   )
 
   function continueEntry(entry: TimeEntry) {
     start.mutate(
-      { deal_id: entry.deal_id, descrizione: entry.descrizione, fatturabile: entry.fatturabile },
+      { deal_id: entry.deal_id, description: entry.description, billable: entry.billable },
       { onError: failWith },
     )
   }
@@ -98,15 +98,15 @@ export function TimeRegister({
                 return (
                   <li key={entry.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                     <div className="min-w-0 flex-1">
-                      <p className={cn('truncate', entry.descrizione === '' && 'italic text-muted-foreground')}>
-                        {entry.descrizione === '' ? UNDESCRIBED : entry.descrizione}
+                      <p className={cn('truncate', entry.description === '' && 'italic text-muted-foreground')}>
+                        {entry.description === '' ? UNDESCRIBED : entry.description}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {dealNames.get(entry.deal_id) ?? 'Deal'}
                         {billed ? ' · in fattura' : ''}
                       </p>
                     </div>
-                    {entry.fatturabile ? (
+                    {entry.billable ? (
                       <BadgeEuro
                         className="size-4 shrink-0 text-muted-foreground"
                         aria-label="Fatturabile"
@@ -117,14 +117,14 @@ export function TimeRegister({
                       </Badge>
                     )}
                     <span className="w-16 shrink-0 text-right font-medium tabular-nums">
-                      {formatHoursValue(entry.ore)}
+                      {formatHoursValue(entry.hours)}
                     </span>
                     {canWrite && (
                       <>
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`Continua: ${entry.descrizione || UNDESCRIBED}`}
+                          aria-label={`Continua: ${entry.description || UNDESCRIBED}`}
                           title="Continua con un nuovo timer"
                           disabled={Boolean(running.data) || start.isPending}
                           onClick={() => continueEntry(entry)}
@@ -132,7 +132,7 @@ export function TimeRegister({
                           <Play className="size-4" />
                         </Button>
                         <RowActions
-                          label={`Azioni: ${entry.descrizione || UNDESCRIBED}`}
+                          label={`Azioni: ${entry.description || UNDESCRIBED}`}
                           items={[
                             { label: 'Modifica', onSelect: () => setEditing(entry) },
                             {

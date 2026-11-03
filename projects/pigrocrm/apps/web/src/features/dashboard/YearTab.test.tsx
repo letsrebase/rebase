@@ -18,68 +18,68 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
 }))
 
-const RIFERIMENTO =
+const REFERENCE =
   'Operazione senza applicazione dell’IVA ai sensi dell’art. 1, commi 54-89, L. 190/2014 - regime forfettario'
-const BOLLO = 'Imposta di bollo di 2,00 € assolta in modo virtuale a carico dell’emittente.'
+const STAMP_DUTY = 'Imposta di bollo di 2,00 € assolta in modo virtuale a carico dell’emittente.'
 
 const overview = (overrides: Record<string, unknown> = {}) => ({
-  anno: 2026,
-  azienda_id: 'a1',
-  azienda_nome: 'Studio Rossi',
-  totali: {
-    fatture: 2,
-    imponibile: '3580.00',
-    rivalsa: '80.00',
-    bollo: '2.00',
-    totale: '3580.00',
+  year: 2026,
+  legal_entity_id: 'a1',
+  legal_entity_name: 'Studio Rossi',
+  total: {
+    invoices: 2,
+    taxable_amount: '3580.00',
+    social_security_surcharge: '80.00',
+    stamp_duty: '2.00',
+    total: '3580.00',
   },
-  regimi: [{ codice_regime: 'RF19', pack_id: 'it-flat-rate', fatture: 2, ricavi: '3580.00' }],
-  trattamenti: [
+  regimes: [{ regime_code: 'RF19', pack_id: 'it-flat-rate', invoices: 2, revenue: '3580.00' }],
+  treatments: [
     {
-      aliquota_iva: '0.00',
-      natura: 'N2.2',
-      riferimento_normativo: RIFERIMENTO,
-      righe: 3,
-      ricavi: '3580.00',
+      vat_rate: '0.00',
+      vat_nature: 'N2.2',
+      legal_reference: REFERENCE,
+      lines: 3,
+      revenue: '3580.00',
     },
   ],
-  registro: [
+  register: [
     {
       invoice_id: 'i1',
-      anno: 2026,
-      numero: 1,
-      data_emissione: '2026-03-10',
+      year: 2026,
+      number: 1,
+      issue_date: '2026-03-10',
       customer_id: 'c1',
-      ragione_sociale: 'Acme S.r.l.',
-      partita_iva: '01234567890',
-      tipo_documento: 'TD01',
-      imponibile: '2080.00',
-      rivalsa: '80.00',
-      bollo: '2.00',
-      totale: '2080.00',
-      dichiarazione_bollo: BOLLO,
-      stato_pagamento: 'incassato',
-      data_incasso: '2026-04-02',
+      legal_name: 'Acme S.r.l.',
+      vat_number: '01234567890',
+      sdi_document_type: 'TD01',
+      taxable_amount: '2080.00',
+      social_security_surcharge: '80.00',
+      stamp_duty: '2.00',
+      total: '2080.00',
+      stamp_duty_declaration: STAMP_DUTY,
+      payment_status: 'paid',
+      payment_date: '2026-04-02',
     },
     {
       invoice_id: 'i2',
-      anno: 2026,
-      numero: 2,
-      data_emissione: '2026-05-04',
+      year: 2026,
+      number: 2,
+      issue_date: '2026-05-04',
       customer_id: 'c2',
-      ragione_sociale: 'Beta SpA',
-      partita_iva: null,
-      tipo_documento: 'TD01',
-      imponibile: '1500.00',
-      rivalsa: '0.00',
-      bollo: '0.00',
-      totale: '1500.00',
-      dichiarazione_bollo: null,
-      stato_pagamento: 'da_incassare',
-      data_incasso: null,
+      legal_name: 'Beta SpA',
+      vat_number: null,
+      sdi_document_type: 'TD01',
+      taxable_amount: '1500.00',
+      social_security_surcharge: '0.00',
+      stamp_duty: '0.00',
+      total: '1500.00',
+      stamp_duty_declaration: null,
+      payment_status: 'unpaid',
+      payment_date: null,
     },
   ],
-  annullate: 0,
+  cancelled: 0,
   ...overrides,
 })
 
@@ -88,7 +88,7 @@ function ok(data: unknown) {
 }
 
 const ONE: LegalEntityValue = {
-  aziende: [],
+  legal_entities: [],
   selected: null,
   select: () => {},
   several: false,
@@ -102,7 +102,7 @@ function renderTab(legalEntity: LegalEntityValue = ONE) {
   return render(
     <QueryClientProvider client={client}>
       <LegalEntityContext value={legalEntity}>
-        <YearTab periodo={{ da: '2026-01-01', a: '2026-12-31' }} />
+        <YearTab period={{ da: '2026-01-01', a: '2026-12-31' }} />
       </LegalEntityContext>
     </QueryClientProvider>,
   )
@@ -127,16 +127,16 @@ describe('YearTab', () => {
     expect(
       within(screen.getByRole('group', { name: 'Bollo virtuale' })).getByText('2,00 €'),
     ).toBeInTheDocument()
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/year', { params: { query: { anno: 2026 } } })
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/year', { params: { query: { year: 2026 } } })
   })
 
   it('prints the legal reference and the stamp-duty sentence exactly as stored', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(overview()))
     renderTab()
 
-    expect(await screen.findByText(RIFERIMENTO)).toBeInTheDocument()
+    expect(await screen.findByText(REFERENCE)).toBeInTheDocument()
     // Once, with how many invoices carry it, not once per row.
-    expect(screen.getByText(`«${BOLLO}»`, { exact: false })).toBeInTheDocument()
+    expect(screen.getByText(`«${STAMP_DUTY}»`, { exact: false })).toBeInTheDocument()
     expect(screen.getByText('(1 fattura)')).toBeInTheDocument()
     expect(screen.getByText('N2.2')).toBeInTheDocument()
   })
@@ -176,17 +176,17 @@ describe('YearTab', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: /scarica il csv per il commercialista/i }),
     )
-    expect(downloadFromApi).toHaveBeenCalledWith('/api/analytics/year/csv?anno=2026')
+    expect(downloadFromApi).toHaveBeenCalledWith('/api/analytics/year/csv?year=2026')
   })
 
   it('says a year with nothing issued has nothing, and still offers the file', async () => {
     vi.mocked(api.GET).mockImplementation(() =>
       ok(
         overview({
-          totali: { fatture: 0, imponibile: '0.00', rivalsa: '0.00', bollo: '0.00', totale: '0.00' },
-          regimi: [],
-          trattamenti: [],
-          registro: [],
+          total: { invoices: 0, taxable_amount: '0.00', social_security_surcharge: '0.00', stamp_duty: '0.00', total: '0.00' },
+          regimes: [],
+          treatments: [],
+          register: [],
         }),
       ),
     )
@@ -197,28 +197,28 @@ describe('YearTab', () => {
   })
 
   it('mentions the invoices struck from the register, which no figure counts', async () => {
-    vi.mocked(api.GET).mockImplementation(() => ok(overview({ annullate: 2 })))
+    vi.mocked(api.GET).mockImplementation(() => ok(overview({ cancelled: 2 })))
     renderTab()
 
     expect(await screen.findByText(/2 fatture annullate restano fuori dai totali/)).toBeInTheDocument()
   })
 
   it('draws one block, and one file, per azienda in «Tutte»', async () => {
-    const aziende = [
+    const legal_entities = [
       { id: 'a1', nome: 'Studio Rossi' },
       { id: 'a2', nome: 'Rossi Ltd' },
-    ] as LegalEntityValue['aziende']
-    vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query: { azienda_id?: string } } }) =>
+    ] as LegalEntityValue['legal_entities']
+    vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query: { legal_entity_id?: string } } }) =>
       ok(
-        init.params.query.azienda_id === 'a1'
+        init.params.query.legal_entity_id === 'a1'
           ? overview()
           : overview({
-              azienda_id: 'a2',
-              azienda_nome: 'Rossi Ltd',
-              registro: [{ ...overview().registro[1], invoice_id: 'i9' }],
+              legal_entity_id: 'a2',
+              legal_entity_name: 'Rossi Ltd',
+              register: [{ ...overview().register[1], invoice_id: 'i9' }],
             }),
       )) as never)
-    renderTab({ ...ONE, aziende, several: true, selected: null })
+    renderTab({ ...ONE, legal_entities, several: true, selected: null })
 
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: /scarica il csv/i })).toHaveLength(2),
@@ -227,29 +227,29 @@ describe('YearTab', () => {
       await userEvent.click(button)
     }
     expect(vi.mocked(downloadFromApi).mock.calls.map(([path]) => path)).toEqual([
-      '/api/analytics/year/csv?anno=2026&azienda_id=a1',
-      '/api/analytics/year/csv?anno=2026&azienda_id=a2',
+      '/api/analytics/year/csv?year=2026&legal_entity_id=a1',
+      '/api/analytics/year/csv?year=2026&legal_entity_id=a2',
     ])
     expect(screen.getByText('Studio Rossi')).toBeInTheDocument()
     expect(screen.getByText('Rossi Ltd')).toBeInTheDocument()
   })
 
   it('names an azienda with nothing issued instead of leaving the tab blank in «Tutte»', async () => {
-    const aziende = [
+    const legal_entities = [
       { id: 'a1', nome: 'Studio Rossi' },
       { id: 'a2', nome: 'Rossi Ltd' },
-    ] as LegalEntityValue['aziende']
+    ] as LegalEntityValue['legal_entities']
     vi.mocked(api.GET).mockImplementation(() =>
       ok(
         overview({
-          totali: { fatture: 0, imponibile: '0.00', rivalsa: '0.00', bollo: '0.00', totale: '0.00' },
-          regimi: [],
-          trattamenti: [],
-          registro: [],
+          total: { invoices: 0, taxable_amount: '0.00', social_security_surcharge: '0.00', stamp_duty: '0.00', total: '0.00' },
+          regimes: [],
+          treatments: [],
+          register: [],
         }),
       ),
     )
-    renderTab({ ...ONE, aziende, several: true, selected: null })
+    renderTab({ ...ONE, legal_entities, several: true, selected: null })
 
     await waitFor(() => expect(screen.getAllByText('Nessuna fattura emessa nel 2026.')).toHaveLength(2))
     expect(screen.getByText('Studio Rossi')).toBeInTheDocument()
@@ -261,7 +261,7 @@ describe('YearTab', () => {
     renderTab({ ...ONE, several: true, selected: 'a2' })
 
     await userEvent.click(await screen.findByRole('button', { name: /scarica il csv/i }))
-    expect(downloadFromApi).toHaveBeenCalledWith('/api/analytics/year/csv?anno=2026&azienda_id=a2')
+    expect(downloadFromApi).toHaveBeenCalledWith('/api/analytics/year/csv?year=2026&legal_entity_id=a2')
   })
 
   it('shows the server\'s own words when the year cannot be read', async () => {

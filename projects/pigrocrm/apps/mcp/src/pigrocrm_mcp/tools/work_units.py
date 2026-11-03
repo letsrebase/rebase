@@ -11,7 +11,7 @@ one», which is what these two do.
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.work_units.schemas import WorkUnitListQuery, WorkUnitStato
+from pigrocrm.core.work_units.schemas import WorkUnitListQuery, WorkUnitStatus
 from pigrocrm.core.work_units.service import WorkUnitService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.params import iso_date, literal_arg
@@ -28,16 +28,16 @@ def search(
     contract_id: str | None,
     da: str | None,
     a: str | None,
-    stato: str | None,
-    azienda_id: UUID | None,
+    status: str | None,
+    legal_entity_id: UUID | None,
     limit: int,
 ) -> dict[str, Any]:
     query = WorkUnitListQuery(
         contract_id=UUID(contract_id) if contract_id else None,
-        azienda_id=azienda_id,
+        legal_entity_id=legal_entity_id,
         da=iso_date(da, "da"),
         a=iso_date(a, "a"),
-        stato=literal_arg("stato", stato, WorkUnitStato),
+        status=literal_arg("status", status, WorkUnitStatus),
         limit=limit,
     )
     return WorkUnitService(context.session).list(query, context.actor).model_dump(mode="json")

@@ -58,7 +58,7 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
     at half the price, which `rebase cards-batch-poll` and the `cards` service carry on. A
     provider with no batch API falls back to the workers, and says so. `--admin` is the
     address of the administrator who asks, and is required: the start, each card and the end
-    are signed in the trail with it, `fonte` `cli`; with none, or one that is not an
+    are signed in the trail with it, `source` `cli`; with none, or one that is not an
     administrator's, nothing is started and the exit code is 2. A start while another is on
     writes nothing and says so."""
     from rebase_core.card_batch import CardBatches
@@ -106,7 +106,7 @@ def cards_regenerate(limit: int, batch: bool, admin_email: str | None) -> int:
         if writer.regeneration_running():
             print("Una rigenerazione è già in corso: nessuna scheda avviata.")
             return 0
-        result = writer.regenerate_stale(admin_id, limit, fonte="cli")
+        result = writer.regenerate_stale(admin_id, limit, source="cli")
     finally:
         session.close()
     if result.batched:

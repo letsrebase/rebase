@@ -88,9 +88,9 @@ export interface FilterOption<T extends string> {
  * undo exactly that. «Tutte» stays, on when nothing is selected, so the row also reads
  * as a statement of what is on screen and not only as a set of controls.
  *
- * `value === null` is "no filter", never a magic `'tutti'` string: the API filter is
+ * `value === null` is "no filter", never a magic `'all'` string: the API filter is
  * simply absent, and a sentinel value in the state is how a page ends up sending
- * `?stato=tutti` to a server that has no such state.
+ * `?status=all` to a server that has no such state.
  */
 export function FilterChips<T extends string>({
   label,

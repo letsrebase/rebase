@@ -44,24 +44,24 @@ const MATCH_A = {
   freelancer_id: 'f1',
   company_id: 'c1',
   company_deleted: false,
-  freelancer_nome: 'Ada',
-  freelancer_cognome: 'Lovelace',
+  freelancer_name: 'Ada',
+  freelancer_last_name: 'Lovelace',
   freelancer_email: 'ada@studio.it',
-  nome_azienda: 'ACME Srl',
-  figura_richiesta: 'Backend developer',
-  stato: 'bozza',
-  lettera_numero: '2026-001',
-  lettera_stato: 'in_attesa',
-  lettera_data_inizio: '1° ottobre 2026',
-  lettera_data_fine: null,
-  lettera_compenso: '450.00',
-  lettera_unita: 'a giornata',
+  company_name: 'ACME Srl',
+  requested_role: 'Backend developer',
+  status: 'draft',
+  number_letter: '2026-001',
+  status_letter: 'pending',
+  letter_start_date: '1° ottobre 2026',
+  letter_end_date: null,
+  letter_fee: '450.00',
+  unit_letter: 'to_work_unit',
   created_at: '2026-09-20T10:00:00Z',
-  created_by_nome: 'Ivan',
+  created_by_name: 'Ivan',
   created_by_email: 'ivan@rebase.it',
-  situazione: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
-  giorni_previsti: null,
-  pigro_stato: null,
+  situation: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
+  expected_days: null,
+  pigro_status: null,
   pigro_url: null,
   referrals: [],
 }
@@ -70,16 +70,16 @@ const MATCH_B = {
   ...MATCH_A,
   id: 'm2',
   company_id: 'c2',
-  freelancer_nome: 'Grace',
-  freelancer_cognome: 'Hopper',
+  freelancer_name: 'Grace',
+  freelancer_last_name: 'Hopper',
   freelancer_email: 'grace@studio.it',
-  nome_azienda: 'Bianchi Srl',
-  figura_richiesta: 'Designer',
-  stato: 'attivo',
-  lettera_numero: '2026-002',
-  lettera_stato: 'firmato',
+  company_name: 'Bianchi Srl',
+  requested_role: 'Designer',
+  status: 'active',
+  number_letter: '2026-002',
+  status_letter: 'signed',
   created_at: '2026-09-10T10:00:00Z',
-  situazione: 'Lettera n. 2026-002 firmata il 12 settembre 2026, dal 1° ottobre 2026.',
+  situation: 'Lettera n. 2026-002 firmata il 12 settembre 2026, dal 1° ottobre 2026.',
 }
 
 /** Mirrors `list-test-kit.tsx`'s own `mount`: a pathless `signedIn` id, `/admin/matches`
@@ -93,11 +93,11 @@ function mount(path: string) {
     path: '/admin/matches',
     component: AdminMatches,
     validateSearch: (search: Record<string, unknown>): MatchesFilters => ({
-      stato: strParam(search.stato),
+      status: strParam(search.status),
       q: strParam(search.q),
     }),
   })
-  const contratti = createRoute({
+  const contracts = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/freelance/$id/contracts',
     component: () => <p>contratti</p>,
@@ -121,7 +121,7 @@ function mount(path: string) {
     },
   })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([matches, contratti, talent, company, report])]),
+    routeTree: root.addChildren([signedIn.addChildren([matches, contracts, talent, company, report])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -144,7 +144,7 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('the Match list (REB-413)', () => {
   it('lists every match, newest first, and links the freelance name to «Match e contratti»', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, MATCH_B] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 2, items: [MATCH_A, MATCH_B] }))
     mount('/admin/matches')
 
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
@@ -158,16 +158,16 @@ describe('the Match list (REB-413)', () => {
   })
 
   it('says under each state pill where the match stands, in the core’s sentence (REB-477)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, MATCH_B] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 2, items: [MATCH_A, MATCH_B] }))
     mount('/admin/matches')
 
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
-    const stato = cellUnder(ada, 'Stato')
-    expect(within(stato).getByText('Da inviare')).toBeInTheDocument()
-    expect(within(stato).getByText(MATCH_A.situazione)).toBeInTheDocument()
+    const status = cellUnder(ada, 'Stato')
+    expect(within(status).getByText('Da inviare')).toBeInTheDocument()
+    expect(within(status).getByText(MATCH_A.situation)).toBeInTheDocument()
     const grace = screen.getByText('grace@studio.it').closest('tr')!
     expect(within(cellUnder(grace, 'Stato')).getByText('Attivo')).toBeInTheDocument()
-    expect(within(cellUnder(grace, 'Stato')).getByText(MATCH_B.situazione)).toBeInTheDocument()
+    expect(within(cellUnder(grace, 'Stato')).getByText(MATCH_B.situation)).toBeInTheDocument()
     // The letter's column keeps its number and period; where the letter stands is the sentence's.
     expect(cellUnder(ada, 'Lettera')).toHaveTextContent(/^n\. 2026-001\s*1° ottobre 2026$/)
   })
@@ -176,12 +176,12 @@ describe('the Match list (REB-413)', () => {
     const noLetter = {
       ...MATCH_A,
       id: 'm3',
-      lettera_numero: null,
-      lettera_stato: null,
-      lettera_data_inizio: null,
-      lettera_data_fine: null,
+      number_letter: null,
+      status_letter: null,
+      letter_start_date: null,
+      letter_end_date: null,
     }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [noLetter] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 1, items: [noLetter] }))
     mount('/admin/matches')
     const row = (await screen.findByText('ada@studio.it')).closest('tr')!
     // The letter's cell alone: «Pigro» has its own em dash for a match not active.
@@ -189,7 +189,7 @@ describe('the Match list (REB-413)', () => {
   })
 
   it('links the company to its page and «Dettaglio» to the match’s card on its freelancer’s contracts (REB-609)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, MATCH_B] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 2, items: [MATCH_A, MATCH_B] }))
     mount('/admin/matches')
 
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
@@ -209,7 +209,7 @@ describe('the Match list (REB-413)', () => {
 
   it('leaves a deleted request’s name unlinked and says so, since its page answers not found (REB-609)', async () => {
     const deleted = { ...MATCH_B, company_deleted: true }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, deleted] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 2, items: [MATCH_A, deleted] }))
     mount('/admin/matches')
 
     const grace = (await screen.findByText('grace@studio.it')).closest('tr')!
@@ -221,9 +221,9 @@ describe('the Match list (REB-413)', () => {
   })
 
   it('shows the letter’s fee, right-aligned, with its unit and the estimated days (REB-609)', async () => {
-    const lump = { ...MATCH_B, lettera_compenso: '12000.00', lettera_unita: 'a corpo', giorni_previsti: 40 }
-    const none = { ...MATCH_A, id: 'm9', freelancer_email: 'none@studio.it', lettera_compenso: null, lettera_unita: null }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 3, items: [MATCH_A, lump, none] }))
+    const lump = { ...MATCH_B, letter_fee: '12000.00', unit_letter: 'to_body', expected_days: 40 }
+    const none = { ...MATCH_A, id: 'm9', freelancer_email: 'none@studio.it', letter_fee: null, unit_letter: null }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 3, items: [MATCH_A, lump, none] }))
     mount('/admin/matches')
 
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
@@ -241,20 +241,20 @@ describe('the Match list (REB-413)', () => {
       referrals: [
         {
           kind: 'freelancer',
-          referrer_nome: 'Mario Rossi',
+          referrer_name: 'Mario Rossi',
           referrer_freelancer_id: 'f9',
           rate: '0.1000',
           amount: '700.00',
-          stato: 'previsto',
+          status: 'expected',
           reward_id: null,
         },
         {
           kind: 'company',
-          referrer_nome: 'Lia Neri',
+          referrer_name: 'Lia Neri',
           referrer_freelancer_id: null,
           rate: '0.3000',
           amount: null,
-          stato: 'previsto',
+          status: 'expected',
           reward_id: null,
         },
       ],
@@ -264,26 +264,26 @@ describe('the Match list (REB-413)', () => {
       referrals: [
         {
           kind: 'company',
-          referrer_nome: 'Mario Rossi',
+          referrer_name: 'Mario Rossi',
           referrer_freelancer_id: 'f9',
           rate: '0.3000',
           amount: '2100.00',
-          stato: 'confermato',
+          status: 'confirmed',
           reward_id: 'r1',
         },
         {
           kind: 'freelancer',
-          referrer_nome: 'Lia Neri',
+          referrer_name: 'Lia Neri',
           referrer_freelancer_id: null,
           rate: null,
           amount: null,
-          stato: 'gia_maturato',
+          status: 'already_accrued',
           reward_id: null,
         },
       ],
     }
     const plain = { ...MATCH_A, id: 'm7', freelancer_email: 'plain@studio.it' }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 3, items: [projected, real, plain] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 3, items: [projected, real, plain] }))
     mount('/admin/matches')
 
     const first = (await screen.findByText('ada@studio.it')).closest('tr')!
@@ -316,16 +316,16 @@ describe('the Match list (REB-413)', () => {
       referrals: [
         {
           kind: 'company',
-          referrer_nome: 'Lia Neri',
+          referrer_name: 'Lia Neri',
           referrer_freelancer_id: null,
           rate: null,
           amount: null,
-          stato: 'da_verificare',
+          status: 'to_verify',
           reward_id: null,
         },
       ],
     }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [waiting] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 1, items: [waiting] }))
     mount('/admin/matches')
 
     const row = (await screen.findByText('ada@studio.it')).closest('tr')!
@@ -338,14 +338,14 @@ describe('the Match list (REB-413)', () => {
 
   it('says in «Pigro» where each match’s link stands, and opens a linked one’s «Consuntivo» (REB-502, REB-503)', async () => {
     const url = 'https://pigro.letsrebase.com/grace/app/deal/6f1c2d3e-0000-4000-8000-000000000009'
-    const linked = { ...MATCH_B, giorni_previsti: 40, pigro_stato: 'collegato', pigro_url: url }
+    const linked = { ...MATCH_B, expected_days: 40, pigro_status: 'linked', pigro_url: url }
     const states = [
-      { ...MATCH_B, id: 'm4', freelancer_email: 'da-collegare@studio.it', pigro_stato: 'da_collegare' },
-      { ...MATCH_B, id: 'm5', freelancer_email: 'errore@studio.it', pigro_stato: 'errore' },
-      { ...MATCH_B, id: 'm6', freelancer_email: 'rifiutato@studio.it', pigro_stato: 'rifiutato' },
+      { ...MATCH_B, id: 'm4', freelancer_email: 'da-collegare@studio.it', pigro_status: 'to_link' },
+      { ...MATCH_B, id: 'm5', freelancer_email: 'errore@studio.it', pigro_status: 'error' },
+      { ...MATCH_B, id: 'm6', freelancer_email: 'rifiutato@studio.it', pigro_status: 'rejected' },
     ]
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { totale: 5, items: [MATCH_A, linked, ...states] }),
+      answer(200, { total: 5, items: [MATCH_A, linked, ...states] }),
     )
     mount('/admin/matches')
 
@@ -369,20 +369,20 @@ describe('the Match list (REB-413)', () => {
   it('filters by state through a chip, the URL and the request both carrying it', async () => {
     const spy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(answer(200, { totale: 0, items: [] }))
+      .mockResolvedValue(answer(200, { total: 0, items: [] }))
     const router = mount('/admin/matches')
     await screen.findByRole('heading', { name: 'Match' })
     spy.mockClear()
 
     await userEvent.click(screen.getByRole('button', { name: 'Da inviare' }))
 
-    await waitFor(() => expect(router.state.location.search).toMatchObject({ stato: 'bozza' }))
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ status: 'draft' }))
     const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/matches'))
     expect(calls.some((url) => url.includes('stato=bozza'))).toBe(true)
   })
 
   it('debounces the search box before it reaches the API and the URL', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [] }))
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [] }))
     const router = mount('/admin/matches')
     await screen.findByRole('heading', { name: 'Match' })
     spy.mockClear()
@@ -397,19 +397,19 @@ describe('the Match list (REB-413)', () => {
   })
 
   it('says the table is empty with no filter active, and names the filters once one narrows it to nothing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [] }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [] }))
     mount('/admin/matches')
     expect(await screen.findByText('Nessun match qui.')).toBeInTheDocument()
   })
 
   it('names the active filters when a state narrows the list to nothing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [] }))
-    mount('/admin/matches?stato=concluso')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [] }))
+    mount('/admin/matches?status=concluso')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 
   it('follows ?q= when the URL moves under the open page and never writes the old search back (Greptile 4092036048)', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, { totale: 0, items: [] }))
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, { total: 0, items: [] }))
     const router = mount('/admin/matches?q=ada')
     expect(await screen.findByLabelText('Cerca')).toHaveValue('ada')
 

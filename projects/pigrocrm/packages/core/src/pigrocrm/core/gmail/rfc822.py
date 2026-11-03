@@ -141,7 +141,7 @@ def build_rfc822(
     # itself, which is the other half of what the previous system got wrong -- its subjects were raw
     # UTF-8 in a header field.
     # `formataddr` and not an f-string, and this is not cosmetic. The display name is
-    # `emitter_profile.ragione_sociale`, which is somebody's own business name: an
+    # `legal_entities.legal_name`, which is somebody's own business name: an
     # unquoted `Bianchi, Rossi e Associati <io@example.it>` parses as **two** addresses
     # -- a bare `Bianchi` and then the real one -- because the comma is the address-list
     # separator. `formataddr` quotes the name when it has to, escapes an embedded quote,

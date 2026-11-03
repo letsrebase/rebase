@@ -14,9 +14,9 @@ const USER = '33333333-3333-7333-8333-333333333333'
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 
 const session = vi.hoisted(() => ({
-  user: { id: '33333333-3333-7333-8333-333333333333', ruolo: 'admin' } as {
+  user: { id: '33333333-3333-7333-8333-333333333333', role: 'admin' } as {
     id: string
-    ruolo: string
+    role: string
   } | null,
 }))
 
@@ -32,15 +32,15 @@ const deal = {
   nome: 'Progetto Alfa',
   customer_id: '11111111-1111-7111-8111-111111111111',
   pipeline_stage_id: '22222222-2222-7222-8222-222222222222',
-  valore_previsto: null,
-  probabilita: 10,
-  data_chiusura_prevista: null,
+  expected_value: null,
+  probability: 10,
+  expected_close_date: null,
   owner_id: null,
   note: null,
-  ore_preventivate: null,
-  valore_preventivato: null,
-  tariffa_oraria: null,
-  chiuso_il: null,
+  budgeted_hours: null,
+  budgeted_value: null,
+  hourly_rate: null,
+  closed_at: null,
   custom_fields: {},
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -51,15 +51,15 @@ const entry = {
   deal_id: DEAL,
   user_id: USER,
   data: '2026-03-09',
-  ore: '2.50',
-  descrizione: 'Analisi',
-  fatturabile: true,
-  tariffa_applicata: null,
-  costo_applicato: null,
-  tariffa_origine: 'assente',
-  costo_origine: 'assente',
-  valore_riga: null,
-  costo_riga: null,
+  hours: '2.50',
+  description: 'Analisi',
+  billable: true,
+  applied_rate: null,
+  applied_cost: null,
+  rate_source: 'absent',
+  cost_source: 'absent',
+  line_value: null,
+  line_cost: null,
   invoice_line_id: null,
   note_interne: null,
   custom_fields: {},
@@ -104,7 +104,7 @@ afterAll(() => vi.useRealTimers())
 const typist = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 
 beforeEach(() => {
-  session.user = { id: USER, ruolo: 'admin' }
+  session.user = { id: USER, role: 'admin' }
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
 })

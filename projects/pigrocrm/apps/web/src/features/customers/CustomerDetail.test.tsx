@@ -71,7 +71,7 @@ beforeEach(() => {
  *  typed in full: the fields this file asserts on are the tab strip, not the overview. */
 const CUSTOMER = {
   id: 'c1',
-  ragione_sociale: 'ACME Srl',
+  legal_name: 'ACME Srl',
   custom_fields: {},
 } as never
 
@@ -79,14 +79,14 @@ const NOTE = {
   id: 'n1',
   entity_type: 'customer',
   entity_id: 'c1',
-  testo: 'Richiamare a settembre.',
-  autore: 'Giulia Rossi',
-  autore_id: 'u1',
-  fonte: 'web',
+  text: 'Richiamare a settembre.',
+  author: 'Giulia Rossi',
+  author_id: 'u1',
+  source: 'web',
   created_at: '2026-10-01T09:00:00Z',
-  modificata_at: null,
-  modificata_da: null,
-  modificabile: true,
+  edited_at: null,
+  edited_by: null,
+  editable: true,
 } as never
 
 function renderWithClient(ui: ReactElement) {
@@ -120,14 +120,14 @@ describe('CustomerDetail', () => {
    *  from, stated on the card so a wrong one is seen before an emission prints it. */
   describe('the payment terms row', () => {
     it('states the agreed terms, end of month included', async () => {
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), giorni_pagamento: 30, pagamento_fine_mese: true }))
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), payment_days: 30, payment_end_of_month: true }))
       renderWithClient(<CustomerDetail />)
       expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
       expect(screen.getByText('30 giorni data fattura fine mese')).toBeInTheDocument()
     })
 
     it('says the profile decides when the customer has no days of its own', async () => {
-      mockCustomerFetch(ok({ ...(CUSTOMER as object), giorni_pagamento: null, pagamento_fine_mese: false }))
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), payment_days: null, payment_end_of_month: false }))
       renderWithClient(<CustomerDetail />)
       expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
       expect(screen.getByText('Dal profilo fiscale')).toBeInTheDocument()
@@ -165,7 +165,7 @@ describe('CustomerDetail', () => {
         if (path === '/api/customers/{customer_id}') {
           return ok({ ...(CUSTOMER as object), owner_id: 'u2' })
         }
-        if (path === '/api/users') return ok([{ id: 'u2', nome: 'Marco', attivo: true }])
+        if (path === '/api/users') return ok([{ id: 'u2', nome: 'Marco', active: true }])
         if (path === NOTES_PATH) return ok([])
         return ok({ items: [] })
       }) as never)
@@ -247,7 +247,7 @@ describe('CustomerDetail', () => {
    * with the record they came from.
    */
   describe('the Fatture tab', () => {
-    async function openFatture() {
+    async function openInvoices() {
       mockGet.mockImplementation(
         ((path: string) =>
           path === '/api/customers/{customer_id}'
@@ -262,12 +262,12 @@ describe('CustomerDetail', () => {
 
     it('offers a new invoice to whoever may create one', async () => {
       auth.canWrite = true
-      await openFatture()
+      await openInvoices()
       expect(await screen.findByRole('button', { name: 'Nuova fattura' })).toBeInTheDocument()
     })
 
     it('offers none to a reader', async () => {
-      await openFatture()
+      await openInvoices()
       expect(await screen.findByText('Nessuna fattura.')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Nuova fattura' })).not.toBeInTheDocument()
     })

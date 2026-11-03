@@ -54,11 +54,11 @@ describe('the Home’s way into recording a day', () => {
         </div>
       </>,
     )
-    await user.click(screen.getByLabelText('campo'))
+    await user.click(screen.getByLabelText('field'))
     await user.keyboard('n')
     await user.click(screen.getByRole('button', { name: 'dentro' }))
     await user.keyboard('n')
-    await user.click(screen.getByRole('menuitem', { name: 'voce' }))
+    await user.click(screen.getByRole('menuitem', { name: 'entry' }))
     await user.keyboard('n')
     await user.click(document.body)
     await user.keyboard('{Control>}n{/Control}')

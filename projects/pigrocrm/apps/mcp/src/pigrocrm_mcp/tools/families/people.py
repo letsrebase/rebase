@@ -23,10 +23,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def create_person(
         nome: str,
-        cognome: str | None = None,
+        last_name: str | None = None,
         email: str | None = None,
-        telefono: str | None = None,
-        ruolo: str | None = None,
+        phone: str | None = None,
+        role: str | None = None,
         linkedin: str | None = None,
         note: str | None = None,
         customer_id: str | None = None,
@@ -39,10 +39,10 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             {
                 "nome": nome,
-                "cognome": cognome,
+                "last_name": last_name,
                 "email": email,
-                "telefono": telefono,
-                "ruolo": ruolo,
+                "phone": phone,
+                "role": role,
                 "linkedin": linkedin,
                 "note": note,
                 "customer_id": UUID(customer_id) if customer_id else None,
@@ -79,7 +79,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         dir: str = "asc",
     ) -> dict[str, Any]:
         """Cerca persone per nome, cognome o email, anche entro un cliente. `sort`: `created_at`,
-        `updated_at`, `cognome`.
+        `updated_at`, `last_name`.
         """
         return people.search(
             context,

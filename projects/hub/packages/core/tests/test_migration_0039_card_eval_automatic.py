@@ -43,7 +43,7 @@ RESULT_COLUMNS = {
     "run_id",
     "freelancer_id",
     "label",
-    "anni_ok",
+    "experience_years_ok",
     "guard_clean",
     "failure",
     "latency_ms",
@@ -147,7 +147,7 @@ def test_the_people_and_the_earlier_results_stay_and_the_expected_cards_go(
                     "FROM card_eval_results"
                 )
             ).one()
-            assert (result.anni_ok, float(result.cost_eur)) == (True, 0.05)
+            assert (result.experience_years_ok, float(result.cost_eur)) == (True, 0.05)
             assert (result.checks, result.judgement, result.judge_cost_eur) == (None, None, None)
             assert connection.execute(text("SELECT count(*) FROM card_eval_runs")).scalar() == 1
         engine.dispose()

@@ -24,13 +24,13 @@ import { useEntitySchema } from '@/lib/schema'
  */
 const DRILL_THROUGHS = [
   {
-    key: 'fatturato_non_vinto',
+    key: 'invoiced_unwon',
     label: 'Fatturato ma non vinto',
     explanation:
       'Solo i deal con almeno una fattura emessa che non risultano vinti. Togli il filtro per vedere tutti i deal.',
   },
   {
-    key: 'da_fatturare',
+    key: 'to_invoice',
     label: 'Vinto ma da fatturare',
     explanation:
       'Solo i deal vinti con ore fatturabili non ancora fatturate. Togli il filtro per vedere tutti i deal.',
@@ -54,7 +54,7 @@ export function DealsList({
   filters,
 }: {
   initialSearch: string
-  filters: Pick<DealsListParams, 'fatturato_non_vinto' | 'da_fatturare'>
+  filters: Pick<DealsListParams, 'invoiced_unwon' | 'to_invoice'>
 }) {
   const navigate = useNavigate()
   const [search, setSearch] = useState(initialSearch)

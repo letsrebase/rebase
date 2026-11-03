@@ -20,28 +20,28 @@ import {
   team,
   type CloudTeamMember,
   type CloudTeamProposal,
-  type TeamEconomia,
+  type TeamEconomics,
   type TeamMember,
   type TeamProposal,
   type TeamProposalCreate,
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
 import { resolveReferral } from '@/lib/utm'
-import { REMOTO_LABELS, formatDaysPerWeek, formatLevel } from '@/lib/format'
+import { RemoteLabels, formatDaysPerWeek, formatLevel } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
  *  measures them, stripped: the page says so before the API has to. */
-const DESCRIZIONE_MIN = 40
-const DESCRIZIONE_MAX = 4000
-const NOTA_MAX = 500
-/** The number of people a company can ask for (`PERSONE_MAX` in `team_schemas.py`):
+const DescriptionMin = 40
+const DescriptionMax = 4000
+const NOTE_MAX = 500
+/** The number of people a company can ask for (`PEOPLE_MAX` in `team_schemas.py`):
  *  one by default, since most requests are for one person (REB-591). */
-const PERSONE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
-const PERSONE_DEFAULT = 1
-const PERSONE_MAX = 10
+const People = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
+const PeopleDefault = 1
+const PEOPLE_MAX = 10
 
-function personeLabel(persone: number): string {
-  return persone === 1 ? '1 persona' : `${persone} persone`
+function peopleLabel(people: number): string {
+  return people === 1 ? '1 persona' : `${people} persone`
 }
 
 /** Four projects a visitor can start from, each a description the API takes as it
@@ -53,22 +53,22 @@ const EXAMPLES = [
   {
     label: 'Web app per una fintech',
     text: 'Siamo una fintech e ci serve una web app per i nostri clienti: dashboard dei conti, pagamenti e collegamento alle API di open banking. React e TypeScript davanti, Python dietro. Sei mesi, da remoto.',
-    persone: 3,
+    people: 3,
   },
   {
     label: 'Pipeline dati in sede a Milano',
     text: 'Dobbiamo portare gli ordini di tre gestionali in un data warehouse su Google Cloud, con una pipeline affidabile e i report per la direzione. Quattro mesi, in sede a Milano tre giorni a settimana.',
-    persone: 2,
+    people: 2,
   },
   {
     label: 'App mobile con un designer',
     text: 'Vogliamo lanciare un’app per prenotare le lezioni in palestra, su iOS e Android: serve chi la sviluppa, in React Native o Flutter, e un designer che ne curi l’esperienza e l’interfaccia. Tre mesi, da remoto.',
-    persone: 2,
+    people: 2,
   },
   {
     label: 'Un FDE nel team di un cliente',
     text: 'Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, due giorni a settimana in sede dal cliente.',
-    persone: 1,
+    people: 1,
   },
 ]
 
@@ -84,16 +84,16 @@ const THANKS = 'Grazie: ti scriviamo entro due giorni lavorativi.'
 export type TeamBuilderProps =
   | {
       mode: 'public'
-      /** A proposal to open on (REB-675, `/hub/team?proposta=`, where the landing's
+      /** A proposal to open on (REB-675, `/hub/team?proposal=`, where the landing's
        *  hero sends a visitor for the whole team): the box holds its description, the
        *  selector its headcount, and the proposal is on screen as if just proposed. */
       proposal?: TeamProposal
-      /** What the box holds at first when there is no proposal: `?descrizione=`, the
+      /** What the box holds at first when there is no proposal: `?description=`, the
        *  landing's form without JavaScript. */
-      descrizione?: string
-      /** The headcount the selector starts at when there is no proposal: `?persone=`
+      description?: string
+      /** The headcount the selector starts at when there is no proposal: `?people=`
        *  from the same form, 1 to 10. */
-      persone?: number
+      people?: number
     }
   | {
       mode: 'cloud'
@@ -113,7 +113,7 @@ function sentence(error: unknown, fallback: string): string {
 /** «Nome Cognome» of a member the cloud's read names; `null` for anyone else. */
 function nameOf(member: TeamMember | CloudTeamMember): string | null {
   if (!('nome' in member) || !member.nome) return null
-  return `${member.nome} ${member.cognome}`.trim()
+  return `${member.nome} ${member.last_name}`.trim()
 }
 
 /**
@@ -128,29 +128,29 @@ export function TeamBuilder(props: TeamBuilderProps) {
   const ids = useId()
   const opened = props.mode === 'public' ? props.proposal : undefined
   // A proposal the landing let the API size from the description alone comes with
-  // `persone` null: the selector then says the size on screen, so «Rigenera» keeps the
+  // `people` null: the selector then says the size on screen, so «Rigenera» keeps the
   // team the visitor saw rather than shrinking it to one.
-  const askedPersone = props.mode === 'public' ? props.persone : undefined
-  const openedPersone = opened
-    ? (opened.persone ?? Math.min(PERSONE_MAX, Math.max(PERSONE_DEFAULT, opened.team.length)))
-    : askedPersone && Number.isInteger(askedPersone) && askedPersone >= PERSONE_DEFAULT && askedPersone <= PERSONE_MAX
-      ? askedPersone
-      : PERSONE_DEFAULT
-  const [descrizione, setDescrizione] = useState(
-    opened?.descrizione ?? (props.mode === 'public' ? (props.descrizione ?? '') : ''),
+  const askedPeople = props.mode === 'public' ? props.people : undefined
+  const openedPeople = opened
+    ? (opened.people ?? Math.min(PEOPLE_MAX, Math.max(PeopleDefault, opened.team.length)))
+    : askedPeople && Number.isInteger(askedPeople) && askedPeople >= PeopleDefault && askedPeople <= PEOPLE_MAX
+      ? askedPeople
+      : PeopleDefault
+  const [description, setDescription] = useState(
+    opened?.description ?? (props.mode === 'public' ? (props.description ?? '') : ''),
   )
-  const [descrizioneError, setDescrizioneError] = useState<string | null>(null)
-  const [persone, setPersone] = useState<number>(openedPersone)
+  const [descriptionError, setDescriptionError] = useState<string | null>(null)
+  const [people, setPeople] = useState<number>(openedPeople)
   // The description and the number the proposal on screen came from: «Rigenera» asks
   // again about those, with the note, whatever the box and the selector say by then.
   const [result, setResult] = useState<{
     proposal: TeamProposal | CloudTeamProposal
-    descrizione: string
-    persone: number
+    description: string
+    people: number
   } | null>(
-    opened ? { proposal: opened, descrizione: opened.descrizione, persone: openedPersone } : null,
+    opened ? { proposal: opened, description: opened.description, people: openedPeople } : null,
   )
-  const [nota, setNota] = useState('')
+  const [nota, setNote] = useState('')
   const [running, setRunning] = useState<Run | null>(null)
   const [runError, setRunError] = useState<{ from: Run; message: string } | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -166,31 +166,31 @@ export function TeamBuilder(props: TeamBuilderProps) {
   async function run(from: Run) {
     // The page always says how many: the API sizes from the description only when
     // the field is absent, which is the MCP tool's case, not this one.
-    let body: TeamProposalCreate & { persone: number }
+    let body: TeamProposalCreate & { people: number }
     if (from === 'proponi') {
-      const text = descrizione.trim()
-      if (text.length < DESCRIZIONE_MIN) {
-        setDescrizioneError(`Raccontaci qualcosa in più: servono almeno ${DESCRIZIONE_MIN} caratteri.`)
+      const text = description.trim()
+      if (text.length < DescriptionMin) {
+        setDescriptionError(`Raccontaci qualcosa in più: servono almeno ${DescriptionMin} caratteri.`)
         return
       }
-      body = { descrizione: text, persone }
+      body = { description: text, people }
     } else {
       if (!result) return
       const note = nota.trim()
       body = {
-        descrizione: result.descrizione,
-        persone: result.persone,
-        ...(note ? { nota: note } : {}),
+        description: result.description,
+        people: result.people,
+        ...(note ? { note: note } : {}),
         previous_id: result.proposal.id,
       }
     }
-    setDescrizioneError(null)
+    setDescriptionError(null)
     setRunError(null)
     setRunning(from)
     try {
       const proposal = await (props.mode === 'cloud' ? props.propose(body) : team.propose(body))
-      setResult({ proposal, descrizione: body.descrizione, persone: body.persone })
-      setNota('')
+      setResult({ proposal, description: body.description, people: body.people })
+      setNote('')
     } catch (error) {
       setRunError({ from, message: sentence(error, 'Non siamo riusciti a proporre un team. Riprova.') })
     } finally {
@@ -200,7 +200,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
 
   const proposal = result?.proposal
   const members: readonly (TeamMember | CloudTeamMember)[] = proposal?.team ?? []
-  const descrizioneErrorId = `${ids}-descrizione-error`
+  const descriptionErrorId = `${ids}-descrizione-error`
 
   return (
     <div className="space-y-10">
@@ -224,9 +224,9 @@ export function TeamBuilder(props: TeamBuilderProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setDescrizione(example.text)
-                  setPersone(example.persone)
-                  setDescrizioneError(null)
+                  setDescription(example.text)
+                  setPeople(example.people)
+                  setDescriptionError(null)
                 }}
               >
                 {example.label}
@@ -237,18 +237,18 @@ export function TeamBuilder(props: TeamBuilderProps) {
         <div className="space-y-2">
           <Textarea
             aria-label="Descrizione del progetto"
-            aria-invalid={descrizioneError !== null}
-            aria-describedby={descrizioneError ? descrizioneErrorId : undefined}
+            aria-invalid={descriptionError !== null}
+            aria-describedby={descriptionError ? descriptionErrorId : undefined}
             placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"
-            value={descrizione}
-            onChange={(event) => setDescrizione(event.target.value)}
-            maxLength={DESCRIZIONE_MAX}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            maxLength={DescriptionMax}
             rows={6}
             className="text-base md:text-base"
           />
-          {descrizioneError && (
-            <p role="alert" id={descrizioneErrorId} className="text-sm text-destructive">
-              {descrizioneError}
+          {descriptionError && (
+            <p role="alert" id={descriptionErrorId} className="text-sm text-destructive">
+              {descriptionError}
             </p>
           )}
         </div>
@@ -260,14 +260,14 @@ export function TeamBuilder(props: TeamBuilderProps) {
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-2">
             <Label htmlFor={`${ids}-persone`}>Quante persone</Label>
-            <Select value={String(persone)} onValueChange={(value) => setPersone(Number(value))}>
+            <Select value={String(people)} onValueChange={(value) => setPeople(Number(value))}>
               <SelectTrigger id={`${ids}-persone`} className="w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PERSONE.map((count) => (
+                {People.map((count) => (
                   <SelectItem key={count} value={String(count)}>
-                    {personeLabel(count)}
+                    {peopleLabel(count)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -290,7 +290,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             >
               La nostra proposta
             </h2>
-            <p>{proposal.riassunto}</p>
+            <p>{proposal.summary}</p>
           </div>
 
           {members.length > 0 && (
@@ -302,7 +302,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
                   </li>
                 ))}
               </ul>
-              <TeamCost economia={proposal.economia} />
+              <TeamCost economics={proposal.economics} />
             </>
           )}
 
@@ -320,8 +320,8 @@ export function TeamBuilder(props: TeamBuilderProps) {
                 id={`${ids}-nota`}
                 placeholder="Per esempio: togli il designer, serve più esperienza sul backend"
                 value={nota}
-                onChange={(event) => setNota(event.target.value)}
-                maxLength={NOTA_MAX}
+                onChange={(event) => setNote(event.target.value)}
+                maxLength={NOTE_MAX}
               />
               <Button type="submit" variant="outline" disabled={busy}>
                 {running === 'rigenera' ? PENDING : 'Rigenera'}
@@ -352,22 +352,22 @@ export function TeamBuilder(props: TeamBuilderProps) {
  *  heading and the role comes under it; without one (the public page) the role is the
  *  heading and nobody is named. */
 function MemberCard({ member, name }: { member: TeamMember; name: string | null }) {
-  const { scheda } = member
+  const { card } = member
   return (
     <Card className="h-full">
       <CardHeader>
         <CardTitle>
-          <h3>{name ?? member.ruolo}</h3>
+          <h3>{name ?? member.role}</h3>
         </CardTitle>
-        {name && <p className="font-medium">{member.ruolo}</p>}
-        <CardDescription>{`${scheda.ruolo}, ${formatLevel(scheda)}`}</CardDescription>
+        {name && <p className="font-medium">{member.role}</p>}
+        <CardDescription>{`${card.role}, ${formatLevel(card)}`}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
-        <p>{member.motivazione}</p>
-        <p className="text-muted-foreground">{scheda.sintesi}</p>
-        {scheda.competenze.length > 0 && (
+        <p>{member.reasoning}</p>
+        <p className="text-muted-foreground">{card.profile_summary}</p>
+        {card.skills.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {scheda.competenze.map((skill, index) => (
+            {card.skills.map((skill, index) => (
               <Badge key={`${index}-${skill}`} variant="outline">
                 {skill}
               </Badge>
@@ -376,12 +376,12 @@ function MemberCard({ member, name }: { member: TeamMember; name: string | null 
         )}
         <p className="mt-auto flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <span className="text-muted-foreground">
-            {[formatDaysPerWeek(member.giorni_settimana), member.modalita && REMOTO_LABELS[member.modalita]]
+            {[formatDaysPerWeek(member.week_days), member.mode && RemoteLabels[member.mode]]
               .filter(Boolean)
               .join(' · ')}
           </span>
           <span className="font-medium">
-            {member.fascia ? bandLabel(member.fascia) : 'Tariffa da definire'}
+            {member.band ? bandLabel(member.band) : 'Tariffa da definire'}
           </span>
         </p>
       </CardContent>
@@ -393,7 +393,7 @@ function MemberCard({ member, name }: { member: TeamMember; name: string | null 
  *  model's; «Tariffa da definire» when somebody has no band, since a sum that leaves a
  *  person out is a price nobody quoted. The month is 22 days for everyone, as the spec
  *  fixes it, so it says «a tempo pieno» beside each person's own days a week. */
-function TeamCost({ economia }: { economia: TeamEconomia }) {
+function TeamCost({ economics }: { economics: TeamEconomics }) {
   const id = useId()
   return (
     <section
@@ -403,13 +403,13 @@ function TeamCost({ economia }: { economia: TeamEconomia }) {
       <h3 id={id} className="font-medium">
         Quanto costa il team
       </h3>
-      {economia.giorno ? (
+      {economics.day ? (
         <>
-          <p>{bandLabel(economia.giorno)}</p>
-          {economia.mese && (
+          <p>{bandLabel(economics.day)}</p>
+          {economics.month && (
             <p>
-              {bandLabel(economia.mese, 'mese')}{' '}
-              <span className="text-muted-foreground">(a tempo pieno, {economia.giorni_mese} giorni al mese)</span>
+              {bandLabel(economics.month, 'month')}{' '}
+              <span className="text-muted-foreground">(a tempo pieno, {economics.days_month} giorni al mese)</span>
             </p>
           )}
         </>
@@ -420,7 +420,7 @@ function TeamCost({ economia }: { economia: TeamEconomia }) {
   )
 }
 
-type Contact = 'azienda' | 'email' | 'telefono'
+type Contact = 'company' | 'email' | 'phone'
 
 const CONTACTS: {
   key: Contact
@@ -430,18 +430,18 @@ const CONTACTS: {
   placeholder: string
   maxLength: number
 }[] = [
-  { key: 'azienda', label: 'Azienda', type: 'text', autoComplete: 'organization', placeholder: 'ACME Srl', maxLength: 200 },
+  { key: 'company', label: 'Azienda', type: 'text', autoComplete: 'organization', placeholder: 'ACME Srl', maxLength: 200 },
   { key: 'email', label: 'Email', type: 'email', autoComplete: 'email', placeholder: 'nome@azienda.it', maxLength: 254 },
-  { key: 'telefono', label: 'Telefono', type: 'tel', autoComplete: 'tel', placeholder: '+39 345 1234567', maxLength: 40 },
+  { key: 'phone', label: 'Telefono', type: 'tel', autoComplete: 'tel', placeholder: '+39 345 1234567', maxLength: 40 },
 ]
 
 /** The company wizard's rules and words for the same three answers: a name, an
  *  address, a number of six characters at least. */
 function check(value: Record<Contact, string>): Partial<Record<Contact, string>> {
   const problems: Partial<Record<Contact, string>> = {}
-  if (!value.azienda.trim()) problems.azienda = 'Serve il nome dell’azienda.'
+  if (!value.company.trim()) problems.company = 'Serve il nome dell’azienda.'
   if (!EMAIL.test(value.email.trim())) problems.email = 'Serve un indirizzo email valido.'
-  if (value.telefono.trim().length < 6) problems.telefono = 'Serve un numero di telefono.'
+  if (value.phone.trim().length < 6) problems.phone = 'Serve un numero di telefono.'
   return problems
 }
 
@@ -453,7 +453,7 @@ function check(value: Record<Contact, string>): Partial<Record<Contact, string>>
 function PublicHire({ proposalId }: { proposalId: string }) {
   const ids = useId()
   const [open, setOpen] = useState(false)
-  const [value, setValue] = useState<Record<Contact, string>>({ azienda: '', email: '', telefono: '' })
+  const [value, setValue] = useState<Record<Contact, string>>({ company: '', email: '', phone: '' })
   const [errors, setErrors] = useState<Partial<Record<Contact, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -489,16 +489,16 @@ function PublicHire({ proposalId }: { proposalId: string }) {
     }
     setSending(true)
     try {
-      const rif = resolveReferral(window.location.search)
+      const ref = resolveReferral(window.location.search)
       await team.request({
         proposal_id: proposalId,
-        azienda: value.azienda.trim(),
+        company: value.company.trim(),
         email: value.email.trim(),
-        telefono: value.telefono.trim(),
+        phone: value.phone.trim(),
         // The referral link the visitor arrived with, remembered by the tab like the
         // wizards' (REB-600): kept on the request and credited only once a company
         // exists for this contact.
-        ...(rif ? { rif } : {}),
+        ...(ref ? { ref } : {}),
       })
       setDone(true)
     } catch (error) {

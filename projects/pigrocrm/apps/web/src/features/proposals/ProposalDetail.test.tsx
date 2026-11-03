@@ -19,10 +19,10 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
 }))
 
-const auth = { ruolo: 'collaboratore' as 'readonly' | 'collaboratore' | 'admin', nome: 'Lorenzo Fiore' }
+const auth = { role: 'collaborator' as 'readonly' | 'collaborator' | 'admin', nome: 'Lorenzo Fiore' }
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: 'u1', email: 'lorenzo@example.it', nome: auth.nome, ruolo: auth.ruolo } }),
-  useCanWrite: () => auth.ruolo !== 'readonly',
+  useAuth: () => ({ user: { id: 'u1', email: 'lorenzo@example.it', nome: auth.nome, role: auth.role } }),
+  useCanWrite: () => auth.role !== 'readonly',
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -34,10 +34,10 @@ function serving(shown = proposal(), timeline: unknown[] = []) {
     if (path === '/api/proposals/{proposal_id}') return Promise.resolve(ok(shown))
     if (path === '/api/proposals/{proposal_id}/timeline') return Promise.resolve(ok(timeline))
     if (path === '/api/customers/{customer_id}') {
-      return Promise.resolve(ok({ id: CUSTOMER_ID, ragione_sociale: 'Studio Rossi & Associati' }))
+      return Promise.resolve(ok({ id: CUSTOMER_ID, legal_name: 'Studio Rossi & Associati' }))
     }
     if (path === '/api/contracts/{contract_id}') {
-      return Promise.resolve(ok({ id: CONTRACT_ID, titolo: 'Consulenza operativa 2026' }))
+      return Promise.resolve(ok({ id: CONTRACT_ID, title: 'Consulenza operativa 2026' }))
     }
     return Promise.resolve(ok(undefined))
   }) as never)
@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.mocked(api.POST).mockReset()
   vi.mocked(toast.success).mockReset()
   navigate.mockReset()
-  auth.ruolo = 'collaboratore'
+  auth.role = 'collaborator'
   auth.nome = 'Lorenzo Fiore'
 })
 
@@ -71,7 +71,7 @@ describe('a proposal waiting for a decision', () => {
   })
 
   it('does not call a transcription a quotation', async () => {
-    serving(proposal({ tipo_estratto: 'trascritto' }))
+    serving(proposal({ excerpt_type: 'transcribed' }))
     renderWithQuery(<ProposalDetail proposalId="p1" />)
     expect(await screen.findByText(/non è verificabile sul documento/)).toBeInTheDocument()
   })
@@ -85,7 +85,7 @@ describe('a proposal waiting for a decision', () => {
 
   it('accepts as proposed, in the reader’s name, and goes back to the queue', async () => {
     serving()
-    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ stato: 'accettata' })) as never)
+    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ status: 'accepted' })) as never)
     renderWithQuery(<ProposalDetail proposalId="p1" />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Accetta' }))
@@ -96,7 +96,7 @@ describe('a proposal waiting for a decision', () => {
       body: {},
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Proposta accettata: la giornata è registrata'))
-    expect(navigate).toHaveBeenCalledWith({ to: '/app/proposals', search: { stato: 'in_attesa' } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/proposals', search: { status: 'pending' } })
   })
 
   it('shows the server’s own refusal, stays on the proposal and does not leave the page', async () => {
@@ -124,7 +124,7 @@ describe('a proposal waiting for a decision', () => {
 
   it('rejects with the reason typed in the dialog', async () => {
     serving()
-    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ stato: 'rifiutata' })) as never)
+    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ status: 'rejected' })) as never)
     renderWithQuery(<ProposalDetail proposalId="p1" />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Rifiuta' }))
@@ -135,22 +135,22 @@ describe('a proposal waiting for a decision', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
     expect(api.POST).toHaveBeenCalledWith('/api/proposals/{proposal_id}/reject', {
       params: { path: { proposal_id: 'p1' } },
-      body: { motivo: 'La data non è quella della mail.' },
+      body: { reason: 'La data non è quella della mail.' },
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Proposta rifiutata'))
-    expect(navigate).toHaveBeenCalledWith({ to: '/app/proposals', search: { stato: 'in_attesa' } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/proposals', search: { status: 'pending' } })
   })
 
   it('rejects without a reason when none is given, sending null and not an empty string', async () => {
     serving()
-    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ stato: 'rifiutata' })) as never)
+    vi.mocked(api.POST).mockResolvedValue(ok(proposal({ status: 'rejected' })) as never)
     renderWithQuery(<ProposalDetail proposalId="p1" />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Rifiuta' }))
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Rifiuta la proposta' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({ body: { motivo: null } })
+    expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toMatchObject({ body: { reason: null } })
   })
 
   it('leaves the dialog without sending anything on Annulla', async () => {
@@ -163,7 +163,7 @@ describe('a proposal waiting for a decision', () => {
   })
 
   it('offers a readonly reader nothing to press', async () => {
-    auth.ruolo = 'readonly'
+    auth.role = 'readonly'
     serving()
     renderWithQuery(<ProposalDetail proposalId="p1" />)
     await screen.findByRole('heading', { level: 1 })
@@ -176,7 +176,7 @@ describe('a proposal waiting for a decision', () => {
     vi.mocked(api.GET).mockImplementation(((path: string) => {
       if (path === '/api/proposals/{proposal_id}') {
         return Promise.resolve(
-          ok(decided ? proposal({ stato: 'accettata', deciso_da: 'Ada', deciso_il: '2026-10-25T10:00:00Z' }) : proposal()),
+          ok(decided ? proposal({ status: 'accepted', decided_by: 'Ada', decided_at: '2026-10-25T10:00:00Z' }) : proposal()),
         )
       }
       return Promise.resolve(ok([]))
@@ -231,10 +231,10 @@ describe('a proposal already decided', () => {
   it('says who accepted it and when, and what it produced, with no buttons left', async () => {
     serving(
       proposal({
-        stato: 'accettata',
-        deciso_da: 'Ada Lovelace',
-        deciso_il: '2026-10-25T10:00:00Z',
-        id_risultato: 'w1',
+        status: 'accepted',
+        decided_by: 'Ada Lovelace',
+        decided_at: '2026-10-25T10:00:00Z',
+        result_id: 'w1',
       }),
     )
     renderWithQuery(<ProposalDetail proposalId="p1" />)
@@ -246,7 +246,7 @@ describe('a proposal already decided', () => {
   })
 
   it('links the customer of an accepted contract', async () => {
-    serving(proposal({ ...CONTRACT_PROPOSAL, stato: 'accettata', deciso_da: 'Ada', deciso_il: '2026-10-25T10:00:00Z' }))
+    serving(proposal({ ...CONTRACT_PROPOSAL, status: 'accepted', decided_by: 'Ada', decided_at: '2026-10-25T10:00:00Z' }))
     renderWithQuery(<ProposalDetail proposalId="p2" />)
     const outcome = await screen.findByRole('region', { name: 'Esito' })
     expect(within(outcome).getByRole('link', { name: 'Vai al cliente' })).toHaveAttribute(
@@ -256,8 +256,8 @@ describe('a proposal already decided', () => {
   })
 
   it('reads the reason of a rejection from the timeline, where the API keeps it', async () => {
-    serving(proposal({ stato: 'rifiutata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }), [
-      { id: 'a2', kind: 'rejected', payload: { deciso_da: 'Lorenzo Fiore', motivo: 'La data non è quella della mail.' } },
+    serving(proposal({ status: 'rejected', decided_by: 'Lorenzo Fiore', decided_at: '2026-10-25T10:00:00Z' }), [
+      { id: 'a2', kind: 'rejected', payload: { decided_by: 'Lorenzo Fiore', reason: 'La data non è quella della mail.' } },
       { id: 'a1', kind: 'created', payload: {} },
     ])
     renderWithQuery(<ProposalDetail proposalId="p1" />)
@@ -269,7 +269,7 @@ describe('a proposal already decided', () => {
     vi.mocked(api.GET).mockImplementation(((path: string) =>
       Promise.resolve(
         path === '/api/proposals/{proposal_id}'
-          ? ok(proposal({ stato: 'rifiutata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }))
+          ? ok(proposal({ status: 'rejected', decided_by: 'Lorenzo Fiore', decided_at: '2026-10-25T10:00:00Z' }))
           : refused(500, { title: 'x', status: 500, detail: 'Il database non risponde.', code: 'internal', instance: '/' }),
       )) as never)
     renderWithQuery(<ProposalDetail proposalId="p1" />)
@@ -279,8 +279,8 @@ describe('a proposal already decided', () => {
   })
 
   it('says nothing about a reason when a rejection had none', async () => {
-    serving(proposal({ stato: 'rifiutata', deciso_da: 'Lorenzo Fiore', deciso_il: '2026-10-25T10:00:00Z' }), [
-      { id: 'a2', kind: 'rejected', payload: { deciso_da: 'Lorenzo Fiore', motivo: null } },
+    serving(proposal({ status: 'rejected', decided_by: 'Lorenzo Fiore', decided_at: '2026-10-25T10:00:00Z' }), [
+      { id: 'a2', kind: 'rejected', payload: { decided_by: 'Lorenzo Fiore', reason: null } },
     ])
     renderWithQuery(<ProposalDetail proposalId="p1" />)
     await screen.findByRole('region', { name: 'Esito' })

@@ -69,7 +69,7 @@ indexes of the same table (and its partial `lower(email)` index) have been dropp
 With sequential scans disabled, every partial
 index on `deleted_at IS NULL` becomes a cheap way to enumerate the live rows, so the
 planner will scan an unrelated trigram index whole and filter -- on `people.email` it
-prefers `ix_people_cognome_trgm` at 653.12 to the correct index at 221.85, and on
+prefers `ix_people_last_name_trgm` at 653.12 to the correct index at 221.85, and on
 `customers` it prefers one full partial-index scan at 613.38 to a BitmapOr of the four.
 Neither is a statement about the column under test. Removing the siblings for the duration
 of one `EXPLAIN` removes the confound; `begin_nested()` puts them back.
@@ -97,15 +97,15 @@ from pigrocrm.core.people.models import Person
 # so that deleting one from `__table_args__` fails this file instead of quietly agreeing
 # with it.
 TRGM_INDEXES = (
-    "ix_customers_ragione_sociale_trgm",
-    "ix_customers_partita_iva_trgm",
-    "ix_customers_codice_fiscale_trgm",
+    "ix_customers_legal_name_trgm",
+    "ix_customers_vat_number_trgm",
+    "ix_customers_tax_code_trgm",
     "ix_customers_email_trgm",
-    "ix_people_nome_trgm",
-    "ix_people_cognome_trgm",
+    "ix_people_name_trgm",
+    "ix_people_last_name_trgm",
     "ix_people_email_trgm",
-    "ix_deals_nome_trgm",
-    "ix_documents_titolo_trgm",
+    "ix_deals_name_trgm",
+    "ix_documents_title_trgm",
 )
 
 # A term that matches nothing, used throughout: what is being measured is whether the
@@ -120,21 +120,21 @@ _NEEDLE = "zzqqxxww"
 _SEARCHED: tuple[tuple[str, tuple[InstrumentedAttribute[Any], ...], tuple[str, ...]], ...] = (
     (
         "customers",
-        (Customer.ragione_sociale, Customer.partita_iva, Customer.email, Customer.codice_fiscale),
+        (Customer.legal_name, Customer.vat_number, Customer.email, Customer.tax_code),
         (
-            "ix_customers_ragione_sociale_trgm",
-            "ix_customers_partita_iva_trgm",
+            "ix_customers_legal_name_trgm",
+            "ix_customers_vat_number_trgm",
             "ix_customers_email_trgm",
-            "ix_customers_codice_fiscale_trgm",
+            "ix_customers_tax_code_trgm",
         ),
     ),
     (
         "people",
-        (Person.nome, Person.cognome, Person.email),
-        ("ix_people_nome_trgm", "ix_people_cognome_trgm", "ix_people_email_trgm"),
+        (Person.nome, Person.last_name, Person.email),
+        ("ix_people_name_trgm", "ix_people_last_name_trgm", "ix_people_email_trgm"),
     ),
-    ("deals", (Deal.nome,), ("ix_deals_nome_trgm",)),
-    ("documents", (Document.titolo,), ("ix_documents_titolo_trgm",)),
+    ("deals", (Deal.nome,), ("ix_deals_name_trgm",)),
+    ("documents", (Document.title,), ("ix_documents_title_trgm",)),
 )
 
 _SIBLINGS: dict[str, tuple[str, ...]] = {
@@ -200,7 +200,7 @@ def test_ilike_with_an_explicit_escape_uses_the_trigram_index(db_session: Sessio
 
     plan = _isolated_plan(
         db_session,
-        "ix_customers_ragione_sociale_trgm",
+        "ix_customers_legal_name_trgm",
         rf"ragione_sociale ILIKE '%{_NEEDLE}%' ESCAPE '\'",
         "customers",
     )
@@ -218,7 +218,7 @@ def test_the_same_predicate_without_escape_also_uses_the_index(db_session: Sessi
 
     plan = _isolated_plan(
         db_session,
-        "ix_customers_ragione_sociale_trgm",
+        "ix_customers_legal_name_trgm",
         f"ragione_sociale ILIKE '%{_NEEDLE}%'",
         "customers",
     )
@@ -315,7 +315,7 @@ def test_a_lowered_column_cannot_use_the_index_even_with_seqscan_disabled(
 
     plan = _isolated_plan(
         db_session,
-        "ix_customers_ragione_sociale_trgm",
+        "ix_customers_legal_name_trgm",
         f"lower(ragione_sociale) LIKE '%{_NEEDLE}%'",
         "customers",
     )
@@ -345,7 +345,7 @@ def test_a_two_character_pattern_degrades_the_index_to_a_full_scan(db_session: S
     def _index_cost(pattern: str) -> float:
         plan = _isolated_plan(
             db_session,
-            "ix_customers_ragione_sociale_trgm",
+            "ix_customers_legal_name_trgm",
             f"ragione_sociale ILIKE '{pattern}'",
             "customers",
         )

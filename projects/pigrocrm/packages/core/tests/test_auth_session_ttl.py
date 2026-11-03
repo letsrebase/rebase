@@ -27,8 +27,8 @@ def admin_user(db_session: Session) -> User:
         email=f"session-ttl-{uuid4().hex[:8]}@example.it",
         nome="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     db_session.add(user)
     db_session.flush()

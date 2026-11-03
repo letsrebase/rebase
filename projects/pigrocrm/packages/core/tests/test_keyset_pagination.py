@@ -15,7 +15,7 @@ share a surname, three share a timestamp -- because a keyset over a non-unique c
 exactly what the composite cursor exists for, and a fixture whose values are all distinct
 cannot catch a tie-breaking bug: a bare-id cursor pages it correctly by accident. They are
 also deliberately *not* in insertion order, so an implementation that quietly ordered by
-`id` alone would be visible. And `people.cognome` is null on four of the nine rows, so a
+`id` alone would be visible. And `people.last_name` is null on four of the nine rows, so a
 one-row page has to cross the null boundary in both directions -- the boundary where
 `NULLS FIRST`/`NULLS LAST` and the descending expression disagree, and where task A3's
 `desc(nullslast(...))`/`nullslast(desc(...))` defect lived.
@@ -134,8 +134,25 @@ def _seed_customers(session: Session, storage: LocalFileStorage) -> list[Seeded]
     for index, nome in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Customer(
-            ragione_sociale=nome,
-            nazione="IT",
+            legal_name=nome,
+            country="IT",
+            custom_fields={},
+            created_at=created,
+            updated_at=updated,
+        )
+        session.add(row)
+        session.flush()
+        seeded.append((row.id, {"legal_name": nome, "created_at": created, "updated_at": updated}))
+    return seeded
+
+
+def _seed_people(session: Session, storage: LocalFileStorage) -> list[Seeded]:
+    seeded: list[Seeded] = []
+    for index, last_name in enumerate(_NULLABLE_VALUES):
+        created, updated = _stamps(index)
+        row = Person(
+            nome="Marco",
+            last_name=last_name,
             custom_fields={},
             created_at=created,
             updated_at=updated,
@@ -143,33 +160,14 @@ def _seed_customers(session: Session, storage: LocalFileStorage) -> list[Seeded]
         session.add(row)
         session.flush()
         seeded.append(
-            (row.id, {"ragione_sociale": nome, "created_at": created, "updated_at": updated})
+            (row.id, {"last_name": last_name, "created_at": created, "updated_at": updated})
         )
-    return seeded
-
-
-def _seed_people(session: Session, storage: LocalFileStorage) -> list[Seeded]:
-    seeded: list[Seeded] = []
-    for index, cognome in enumerate(_NULLABLE_VALUES):
-        created, updated = _stamps(index)
-        row = Person(
-            nome="Marco",
-            cognome=cognome,
-            custom_fields={},
-            created_at=created,
-            updated_at=updated,
-        )
-        session.add(row)
-        session.flush()
-        seeded.append((row.id, {"cognome": cognome, "created_at": created, "updated_at": updated}))
     return seeded
 
 
 def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
-    customer = Customer(ragione_sociale="Committente Srl", nazione="IT", custom_fields={})
-    stage = PipelineStage(
-        nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
-    )
+    customer = Customer(legal_name="Committente Srl", country="IT", custom_fields={})
+    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     session.add_all([customer, stage])
     session.flush()
 
@@ -180,7 +178,7 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
             nome=nome,
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
-            probabilita=10,
+            probability=10,
             created_at=created,
             updated_at=updated,
         )
@@ -191,25 +189,25 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
 
 
 def _seed_documents(session: Session, storage: LocalFileStorage) -> list[Seeded]:
-    customer = Customer(ragione_sociale="Committente Srl", nazione="IT", custom_fields={})
+    customer = Customer(legal_name="Committente Srl", country="IT", custom_fields={})
     session.add(customer)
     session.flush()
 
     seeded: list[Seeded] = []
-    for index, titolo in enumerate(_TEXT_VALUES):
+    for index, title in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Document(
             customer_id=customer.id,
-            tipo="documento",
-            titolo=titolo,
-            versione_corrente=0,
+            type="document",
+            title=title,
+            current_version=0,
             custom_fields={},
             created_at=created,
             updated_at=updated,
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"titolo": titolo, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"title": title, "created_at": created, "updated_at": updated}))
     return seeded
 
 
@@ -278,11 +276,11 @@ _ENTITIES: dict[
     "customers": (
         _seed_customers,
         _page_customers,
-        ("created_at", "updated_at", "ragione_sociale"),
+        ("created_at", "updated_at", "legal_name"),
     ),
-    "people": (_seed_people, _page_people, ("created_at", "updated_at", "cognome")),
+    "people": (_seed_people, _page_people, ("created_at", "updated_at", "last_name")),
     "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "nome")),
-    "documents": (_seed_documents, _page_documents, ("created_at", "updated_at", "titolo")),
+    "documents": (_seed_documents, _page_documents, ("created_at", "updated_at", "title")),
 }
 
 _CASES: tuple[tuple[str, str, SortDirection], ...] = tuple(
@@ -410,9 +408,7 @@ def committed_customers(db_engine: Engine) -> Iterator[set[UUID]]:
     created: set[UUID] = set()
     with factory() as session:
         for index in range(_INITIAL):
-            row = Customer(
-                ragione_sociale=f"KEYSET {index:05d} Srl", nazione="IT", custom_fields={}
-            )
+            row = Customer(legal_name=f"KEYSET {index:05d} Srl", country="IT", custom_fields={})
             session.add(row)
             session.flush()
             created.add(row.id)
@@ -421,13 +417,13 @@ def committed_customers(db_engine: Engine) -> Iterator[set[UUID]]:
         yield created
     finally:
         with factory() as session:
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like("KEYSET %")))
+            session.execute(delete(Customer).where(Customer.legal_name.like("KEYSET %")))
             session.commit()
 
 
 def _all_keyset_ids(session: Session) -> set[UUID]:
     return set(
-        session.scalars(select(Customer.id).where(Customer.ragione_sociale.like("KEYSET %"))).all()
+        session.scalars(select(Customer.id).where(Customer.legal_name.like("KEYSET %"))).all()
     )
 
 
@@ -458,7 +454,7 @@ def test_paging_under_concurrent_inserts_loses_nothing_and_repeats_nothing(
             page = service.list(
                 CustomerListQuery(
                     search="KEYSET",
-                    sort="ragione_sociale",
+                    sort="legal_name",
                     dir=direction,
                     limit=_PAGE,
                     cursor=cursor,
@@ -473,8 +469,8 @@ def test_paging_under_concurrent_inserts_loses_nothing_and_repeats_nothing(
                 prefix = "KEYSET 00000" if inserted % 2 == 0 else "KEYSET 99999"
                 writer.add(
                     Customer(
-                        ragione_sociale=f"{prefix} intruso {direction} {inserted} Srl",
-                        nazione="IT",
+                        legal_name=f"{prefix} intruso {direction} {inserted} Srl",
+                        country="IT",
                         custom_fields={},
                     )
                 )
@@ -517,9 +513,7 @@ def test_the_scan_terminates_rather_than_looping(
         cursor: str | None = None
         for _ in range(15):
             page = service.list(
-                CustomerListQuery(
-                    search=ten_of_them, sort="ragione_sociale", limit=1, cursor=cursor
-                ),
+                CustomerListQuery(search=ten_of_them, sort="legal_name", limit=1, cursor=cursor),
                 ADMIN,
             )
             if page.next_cursor is None:

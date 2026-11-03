@@ -49,54 +49,54 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     """Declares this family's tools on `mcp`."""
 
     @mcp.tool()
-    def list_aziende(
+    def list_companies(
         limit: int = LIST_LIMIT_DEFAULT,
-        stato: str | None = None,
+        status: str | None = None,
         q: str | None = None,
         cursor: str | None = None,
         budget_min: str | None = None,
         budget_max: str | None = None,
-        periodo_da: str | None = None,
-        origine: str | None = None,
-        creato_da: str | None = None,
-        creato_a: str | None = None,
+        period_from: str | None = None,
+        origin: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
     ) -> dict[str, Any]:
         """Le aziende che hanno descritto un progetto sull'hub, come la schermata
         «Aziende»: ogni riga porta azienda, referente, email, progetto, da quando e
         per quanto, budget a giornata e stato. Dal più recente, o dal più
         pertinente quando `q` restringe.
-        `q` cerca nome azienda, referente, email e progetto; `stato` filtra (nuovo,
-        contattato, in_corso, chiuso) e `per_stato` conta con ogni filtro tranne
-        `stato`; `budget_min` e `budget_max` sul budget a giornata (stringa, «500»,
-        «450.50» o all'italiana «1.500», «1.234,50»), `periodo_da` sull'inizio del progetto (ISO
-        8601), `origine` sulla pagina da cui è arrivata la richiesta, `creato_da` e
-        `creato_a` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
+        `q` cerca nome azienda, referente, email e progetto; `status` filtra (nuovo,
+        contattato, in_corso, chiuso) e `by_status` conta con ogni filtro tranne
+        `status`; `budget_min` e `budget_max` sul budget a giornata (stringa, «500»,
+        «450.50» o all'italiana «1.500», «1.234,50»), `period_from` sull'inizio del progetto (ISO
+        8601), `origin` sulla pagina da cui è arrivata la richiesta, `created_from` e
+        `created_to` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
         `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
         ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
         un'altra `q` è rifiutato. Ogni riga porta lo stato del collegamento al CRM
-        (`crm_stato`, `crm_situazione`, `crm_deal_url`). Solo lettura."""
+        (`crm_status`, `crm_situation`, `crm_deal_url`). Solo lettura."""
         term = search_term(q)
-        bounded(stato, "stato")
-        bounded(origine, "origine")
+        bounded(status, "status")
+        bounded(origin, "origin")
         bounded(cursor, "cursor")
         budget_from = number(budget_min, "budget_min")
         budget_to = number(budget_max, "budget_max")
-        period_from = day(periodo_da, "periodo_da")
-        created_from = moment(creato_da, "creato_da")
-        created_to = moment(creato_a, "creato_a")
+        period_from = day(period_from, "period_from")
+        created_from = moment(created_from, "created_from")
+        created_to = moment(created_to, "created_to")
 
         def call(session: Session) -> dict[str, Any]:
             page = CompanyService(session).list_recent(
                 limit=limit,
-                stato=stato,
+                status=status,
                 q=term,
                 cursor=cursor,
                 budget_min=budget_from,
                 budget_max=budget_to,
-                periodo_da=period_from,
-                origine=origine,
-                creato_da=created_from,
-                creato_a=created_to,
+                period_from=period_from,
+                origin=origin,
+                created_from=created_from,
+                created_to=created_to,
             )
             body = page.model_dump(mode="json")
             # Every row carries the referente's address: a list of them is a read of
@@ -104,9 +104,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             deps.record_read(
                 session,
                 READ_ENTITY,
-                read_entity_id("list_aziende"),
+                read_entity_id("list_companies"),
                 EMAILS_READ,
-                {"tool": "list_aziende", "righe": len(page.items)},
+                {"tool": "list_companies", "lines": len(page.items)},
             )
             return body
 
@@ -115,33 +115,33 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def get_company(company_id: str) -> dict[str, Any]:
         """Una richiesta di un'azienda, per id, con `note`: il thread di chi l'ha
-        seguita, dal più recente, ognuna con `id`, autore, data, `fonte` (`web`, `mcp`,
-        `persona`, `sistema`), l'ultima modifica e `modificabile`. Le note cancellate non
-        ci sono. Porta anche dove sta il collegamento al CRM di rebase: `crm_stato`
-        (`da_collegare`, `collegato`, `errore`, `rifiutato`; vuoto per una richiesta nata
-        prima del collegamento), `crm_situazione` con la frase del CRM quando non è
+        seguita, dal più recente, ognuna con `id`, autore, data, `source` (`web`, `mcp`,
+        `person`, `system`), l'ultima modifica e `editable`. Le note cancellate non
+        ci sono. Porta anche dove sta il collegamento al CRM di rebase: `crm_status`
+        (`to_link`, `linked`, `error`, `rejected`; vuoto per una richiesta nata
+        prima del collegamento), `crm_situation` con la frase del CRM quando non è
         collegata, `crm_deal_url` con l'indirizzo del deal e `crm_attempted_at`."""
         return deps.run(lambda s: CompanyService(s).get(to_uuid(company_id, "company_id")))
 
     @mcp.tool()
-    def set_company_status(company_id: str, stato: str) -> dict[str, Any]:
+    def set_company_status(company_id: str, status: str) -> dict[str, Any]:
         """Sposta una richiesta fra nuovo, contattato, in_corso e chiuso. Il cambio finisce
         nel registro di `get_company_audit` (`status_changed`, con prima e dopo): per il
         perché usa `add_company_note`."""
         return deps.run(
             lambda s: CompanyService(s).set_status(
                 to_uuid(company_id, "company_id"),
-                StatusChange(stato=stato),
+                StatusChange(status=status),
                 admin_id=deps.admin().id,
-                fonte=SOURCE,
+                source=SOURCE,
             )
         )
 
     @mcp.tool()
-    def add_company_note(company_id: str, testo: str) -> dict[str, Any]:
+    def add_company_note(company_id: str, text: str) -> dict[str, Any]:
         """Aggiunge una nota al thread di una richiesta di un'azienda, senza toccare lo
         stato: come è andata la call, cosa hanno chiesto, cosa resta da fare. La nota è già
-        firmata (l'admin dietro il token) e datata, con `fonte` `mcp`: il testo non deve
+        firmata (l'admin dietro il token) e datata, con `source` `mcp`: il testo non deve
         iniziare con una data o un'ora né nominare chi scrive. Fino a 4000 caratteri, anche
         su più righe. Si corregge con `update_note` e si cancella con `delete_note`, e ogni
         aggiunta finisce nel registro di `get_company_audit`."""
@@ -149,9 +149,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             lambda s: NoteService(s).add(
                 "company",
                 to_uuid(company_id, "company_id"),
-                testo,
-                autore_id=deps.admin().id,
-                fonte=SOURCE,
+                text,
+                author_id=deps.admin().id,
+                source=SOURCE,
             )
         )
 
@@ -159,18 +159,18 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def override_company(
         company_id: str,
         nome: str | None = None,
-        cognome: str | None = None,
+        last_name: str | None = None,
         linkedin_url: str | None = None,
-        nome_azienda: str | None = None,
-        figura_richiesta: str | None = None,
-        progetto: str | None = None,
-        periodo_da: str | None = None,
-        durata: str | None = None,
-        budget_giornaliero: str | None = None,
-        remoto: str | None = None,
-        giorni_presenza: str | None = None,
-        numero_risorse: str | None = None,
-        stato: str | None = None,
+        company_name: str | None = None,
+        requested_role: str | None = None,
+        project: str | None = None,
+        period_from: str | None = None,
+        duration: str | None = None,
+        daily_budget: str | None = None,
+        remote: str | None = None,
+        onsite_days: str | None = None,
+        headcount: str | None = None,
+        status: str | None = None,
     ) -> dict[str, Any]:
         """Scrive o svuota qualsiasi campo della richiesta: nome e
         cognome del referente e il suo profilo LinkedIn (sull'identità condivisa in
@@ -180,41 +180,39 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         (`add_company_note`, `update_note`). Ogni parametro omesso resta com'era; una
         stringa vuota svuota solo dove è ammesso (LinkedIn, giorni in sede),
         altrove è rifiutata perché il campo non può restare senza un valore.
-        `giorni_presenza` va indicato solo, e sempre, quando `remoto` è `ibrido` --
+        `onsite_days` va indicato solo, e sempre, quando `remote` è `hybrid` --
         rifiutato altrimenti, dallo stesso `CHECK` del database. Ogni modifica reale
         finisce nel registro di `get_company_audit`, con il valore prima e dopo; per
         annullarla c'è `revert_company_action`."""
         kwargs: dict[str, Any] = {}
         if nome is not None:
             kwargs["nome"] = supplied_text(nome)
-        if cognome is not None:
-            kwargs["cognome"] = supplied_text(cognome)
+        if last_name is not None:
+            kwargs["last_name"] = supplied_text(last_name)
         if linkedin_url is not None:
             kwargs["linkedin_url"] = supplied_text(linkedin_url)
-        if nome_azienda is not None:
-            kwargs["nome_azienda"] = supplied_text(nome_azienda)
-        if figura_richiesta is not None:
-            kwargs["figura_richiesta"] = supplied_text(figura_richiesta)
-        if progetto is not None:
-            kwargs["progetto"] = supplied_text(progetto)
-        if periodo_da is not None:
-            kwargs["periodo_da"] = None if periodo_da == "" else day(periodo_da, "periodo_da")
-        if durata is not None:
-            kwargs["durata"] = supplied_text(durata)
-        if budget_giornaliero is not None:
-            kwargs["budget_giornaliero"] = (
-                None
-                if budget_giornaliero == ""
-                else number(budget_giornaliero, "budget_giornaliero")
+        if company_name is not None:
+            kwargs["company_name"] = supplied_text(company_name)
+        if requested_role is not None:
+            kwargs["requested_role"] = supplied_text(requested_role)
+        if project is not None:
+            kwargs["project"] = supplied_text(project)
+        if period_from is not None:
+            kwargs["period_from"] = None if period_from == "" else day(period_from, "period_from")
+        if duration is not None:
+            kwargs["duration"] = supplied_text(duration)
+        if daily_budget is not None:
+            kwargs["daily_budget"] = (
+                None if daily_budget == "" else number(daily_budget, "daily_budget")
             )
-        if remoto is not None:
-            kwargs["remoto"] = supplied_text(remoto)
-        if giorni_presenza is not None:
-            kwargs["giorni_presenza"] = integer(giorni_presenza, "giorni_presenza")
-        if numero_risorse is not None:
-            kwargs["numero_risorse"] = integer(numero_risorse, "numero_risorse")
-        if stato is not None:
-            kwargs["stato"] = supplied_text(stato)
+        if remote is not None:
+            kwargs["remote"] = supplied_text(remote)
+        if onsite_days is not None:
+            kwargs["onsite_days"] = integer(onsite_days, "onsite_days")
+        if headcount is not None:
+            kwargs["headcount"] = integer(headcount, "headcount")
+        if status is not None:
+            kwargs["status"] = supplied_text(status)
         override = CompanyOverride(**kwargs)
         return deps.run(
             lambda s: CompanyService(s).override(
@@ -264,47 +262,47 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def create_company(
-        nome_azienda: str,
-        referente_nome: str,
-        referente_cognome: str,
+        company_name: str,
+        contact_first_name: str,
+        contact_last_name: str,
         email: str,
-        telefono: str,
-        figura_richiesta: str,
-        progetto: str,
-        periodo_da: str,
-        durata: str,
-        budget_giornaliero: str,
-        remoto: str,
-        numero_risorse: int = 1,
-        giorni_presenza: int | None = None,
+        phone: str,
+        requested_role: str,
+        project: str,
+        period_from: str,
+        duration: str,
+        daily_budget: str,
+        remote: str,
+        headcount: int = 1,
+        onsite_days: int | None = None,
         deal_id: str | None = None,
     ) -> dict[str, Any]:
         """Apre la richiesta di un'azienda a nome del referente, per un'azienda incontrata
-        direttamente: gli stessi campi del wizard e gli stessi controlli (`periodo_da` in
-        AAAA-MM-GG, `budget_giornaliero` in euro al giorno, `remoto` uno fra `remoto`,
-        `ibrido`, `in_sede`; `giorni_presenza` solo, e sempre, per l'ibrido). Il referente si
+        direttamente: gli stessi campi del wizard e gli stessi controlli (`period_from` in
+        AAAA-MM-GG, `daily_budget` in euro al giorno, `remote` uno fra `remote`,
+        `hybrid`, `on_site`; `onsite_days` solo, e sempre, per l'ibrido). Il referente si
         trova o si crea dall'email. Non parte nessuna mail, né al referente né a rebase. Senza
         `deal_id` è una richiesta come le altre: il CRM la registra come cliente e deal nuovi.
         Con `deal_id` (l'id del deal che il CRM ha già, o il suo indirizzo `.../app/deal/<id>`)
         il CRM collega quel deal e non crea nulla: né un secondo cliente né un secondo deal.
-        Risponde la richiesta com'è, con `crm_stato` (`collegato`, o `rifiutato`/`errore` con la
-        frase del CRM in `crm_situazione`, per esempio per un deal che il CRM non conosce) e
+        Risponde la richiesta com'è, con `crm_status` (`linked`, o `rejected`/`error` con la
+        frase del CRM in `crm_situation`, per esempio per un deal che il CRM non conosce) e
         `crm_deal_url`. Quando il CRM non è configurato su questo ambiente la richiesta si apre
-        comunque e resta `da_collegare`."""
+        comunque e resta `to_link`."""
         fields: dict[str, Any] = {
-            "nome_azienda": nome_azienda,
-            "referente_nome": referente_nome,
-            "referente_cognome": referente_cognome,
+            "company_name": company_name,
+            "contact_first_name": contact_first_name,
+            "contact_last_name": contact_last_name,
             "email": email,
-            "telefono": telefono,
-            "figura_richiesta": figura_richiesta,
-            "progetto": progetto,
-            "periodo_da": periodo_da,
-            "durata": durata,
-            "budget_giornaliero": budget_giornaliero,
-            "remoto": remoto,
-            "numero_risorse": numero_risorse,
-            "giorni_presenza": giorni_presenza,
+            "phone": phone,
+            "requested_role": requested_role,
+            "project": project,
+            "period_from": period_from,
+            "duration": duration,
+            "daily_budget": daily_budget,
+            "remote": remote,
+            "headcount": headcount,
+            "onsite_days": onsite_days,
             "deal_id": _deal_id(deal_id),
         }
         try:
@@ -323,7 +321,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
         def call(session: Session) -> dict[str, Any]:
             service = CompanyService(session)
-            created = service.create_by_admin(data, deps.admin().id, fonte=SOURCE)
+            created = service.create_by_admin(data, deps.admin().id, source=SOURCE)
             if crm_on and deps.crm_leads is not None:
                 deps.crm_leads(session).link(created.id, deps.admin().id)
             return service.get(created.id).model_dump(mode="json")
@@ -334,8 +332,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def link_company_to_pigro(company_id: str, deal_id: str | None = None) -> dict[str, Any]:
         """«Riprova» sulla richiesta di un'azienda: la registra ora nel CRM di rebase (cliente,
         contatto e deal con la bozza AI), a nome dell'admin dietro il token, e risponde la
-        richiesta com'è: `crm_stato` (`collegato`, o `errore`/`rifiutato` con la frase del
-        CRM in `crm_situazione`) e `crm_deal_url`. Registra anche una richiesta nata prima del
+        richiesta com'è: `crm_status` (`linked`, o `error`/`rejected` con la frase del
+        CRM in `crm_situation`) e `crm_deal_url`. Registra anche una richiesta nata prima del
         collegamento. Con `deal_id` (l'id di un deal che il CRM ha già) è «Collega a un altro
         deal»: il CRM collega quel deal e non crea nulla, e un rifiuto lascia il collegamento
         com'era. Rifiutato per una richiesta non trovata o cancellata e quando il CRM non è

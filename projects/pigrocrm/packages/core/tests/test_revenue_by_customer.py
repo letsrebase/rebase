@@ -22,35 +22,35 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLABORATORE = Actor(id=None, type="mcp", role="collaboratore")
+COLLABORATOR = Actor(id=None, type="mcp", role="collaborator")
 # A year no other fixture in this suite writes an invoice against.
-ANNO = 2031
+YEAR = 2031
 
 
-def _invoice(customer_id: UUID, numero: int, importo: str, *, anno: int = ANNO) -> Invoice:
+def _invoice(customer_id: UUID, number: int, amount: str, *, year: int = YEAR) -> Invoice:
     return Invoice(
         customer_id=customer_id,
-        tipo="fattura",
-        stato="emessa",
-        anno=anno,
-        numero=numero,
-        stato_pagamento="da_incassare",
-        imponibile=Decimal(importo),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("0.00"),
-        totale=Decimal(importo),
-        data_emissione=date(anno, 6, 1),
-        tipo_documento="TD01",
-        divisa="EUR",
+        type="invoice",
+        status="issued",
+        year=year,
+        number=number,
+        payment_status="unpaid",
+        taxable_amount=Decimal(amount),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal(amount),
+        issue_date=date(year, 6, 1),
+        sdi_document_type="TD01",
+        currency="EUR",
         custom_fields={},
     )
 
 
 def _corpus(session: Session) -> tuple[UUID, UUID, UUID]:
     """`grande` at 6000.00 over two invoices, `piccolo` at 3000.00 over one --
-    `annual_revenue(ANNO)` is exactly 9000.00, and neither share (2/3, 1/3) is a
-    round number the largest-row formula (`InvoiceRepository._quota`) would also
-    produce, so the two are not accidentally indistinguishable. `assente` has an
+    `annual_revenue(YEAR)` is exactly 9000.00, and neither share (2/3, 1/3) is a
+    round number the largest-row formula (`InvoiceRepository._share`) would also
+    produce, so the two are not accidentally indistinguishable. `absent` has an
     invoice only in the *previous* year: present in the register, absent from this
     method's result, the way `receivables_by_customer` omits a customer with
     nothing outstanding.
@@ -59,95 +59,95 @@ def _corpus(session: Session) -> tuple[UUID, UUID, UUID]:
     counted row: a `revenue_by_customer` that forgot `_revenue_filter()` would fail
     both the total and the ranking, not just an edge case nobody would notice.
     """
-    grande = Customer(ragione_sociale="Grande S.r.l.", nazione="IT", custom_fields={})
-    piccolo = Customer(ragione_sociale="Piccolo S.r.l.", nazione="IT", custom_fields={})
-    assente = Customer(ragione_sociale="Assente S.r.l.", nazione="IT", custom_fields={})
-    session.add_all([grande, piccolo, assente])
+    large = Customer(legal_name="Grande S.r.l.", country="IT", custom_fields={})
+    piccolo = Customer(legal_name="Piccolo S.r.l.", country="IT", custom_fields={})
+    absent = Customer(legal_name="Assente S.r.l.", country="IT", custom_fields={})
+    session.add_all([large, piccolo, absent])
     session.flush()
 
-    annullata = _invoice(grande.id, 4, "50000.00")
-    annullata.stato = "annullata"
-    annullata.annullata_il = date(ANNO, 6, 2)
-    annullata.motivo_annullamento = "storno di prova"
+    cancelled = _invoice(large.id, 4, "50000.00")
+    cancelled.status = "cancelled"
+    cancelled.cancelled_at = date(YEAR, 6, 2)
+    cancelled.cancellation_reason = "storno di prova"
 
     session.add_all(
         [
-            _invoice(grande.id, 1, "4000.00"),
-            _invoice(grande.id, 2, "2000.00"),
+            _invoice(large.id, 1, "4000.00"),
+            _invoice(large.id, 2, "2000.00"),
             _invoice(piccolo.id, 3, "3000.00"),
-            annullata,
-            _invoice(assente.id, 5, "9999.00", anno=ANNO - 1),
+            cancelled,
+            _invoice(absent.id, 5, "9999.00", year=YEAR - 1),
         ]
     )
     session.flush()
-    return grande.id, piccolo.id, assente.id
+    return large.id, piccolo.id, absent.id
 
 
 def test_revenue_by_customer_ranks_by_share_of_the_years_whole_revenue(
     db_session: Session,
 ) -> None:
-    grande_id, piccolo_id, assente_id = _corpus(db_session)
+    large_id, piccolo_id, absent_id = _corpus(db_session)
     repo = AnalyticsRepository(db_session)
 
-    rows = repo.revenue_by_customer(ANNO)
+    rows = repo.revenue_by_customer(YEAR)
 
     # Ranked, largest first -- the acceptance criterion's own word.
-    assert [row.customer_id for row in rows] == [grande_id, piccolo_id]
-    grande, piccolo = rows
-    assert grande.ricavi == Decimal("6000.00")
-    assert grande.fatture == 2
-    assert piccolo.ricavi == Decimal("3000.00")
-    assert piccolo.fatture == 1
+    assert [row.customer_id for row in rows] == [large_id, piccolo_id]
+    large, piccolo = rows
+    assert large.revenue == Decimal("6000.00")
+    assert large.invoices == 2
+    assert piccolo.revenue == Decimal("3000.00")
+    assert piccolo.invoices == 1
 
     # The share of the *whole year's* revenue (9000.00), never of the largest row:
-    # `InvoiceRepository._quota`'s formula on this same data would give the top row
+    # `InvoiceRepository._share`'s formula on this same data would give the top row
     # exactly 1.0, which is the bug this assertion is written to catch.
-    assert abs(grande.quota - 2 / 3) < 1e-9
-    assert abs(piccolo.quota - 1 / 3) < 1e-9
-    assert grande.quota != 1.0
-    assert abs(sum(row.quota for row in rows) - 1.0) < 1e-9
+    assert abs(large.share - 2 / 3) < 1e-9
+    assert abs(piccolo.share - 1 / 3) < 1e-9
+    assert large.share != 1.0
+    assert abs(sum(row.share for row in rows) - 1.0) < 1e-9
 
     # A customer with no invoice this year is simply absent from the result.
-    assert assente_id not in [row.customer_id for row in rows]
+    assert absent_id not in [row.customer_id for row in rows]
 
 
 def test_revenue_by_customer_excludes_an_annulled_invoice_from_both_total_and_count(
     db_session: Session,
 ) -> None:
-    grande_id, _piccolo_id, _assente_id = _corpus(db_session)
+    large_id, _piccolo_id, _absent_id = _corpus(db_session)
     repo = AnalyticsRepository(db_session)
 
-    grande = next(row for row in repo.revenue_by_customer(ANNO) if row.customer_id == grande_id)
+    large = next(row for row in repo.revenue_by_customer(YEAR) if row.customer_id == large_id)
 
     # The annulled 50000.00 invoice would dwarf every other row; its absence from
     # both the sum and the count is what proves `_revenue_filter()` was applied.
-    assert grande.ricavi == Decimal("6000.00")
-    assert grande.fatture == 2
+    assert large.revenue == Decimal("6000.00")
+    assert large.invoices == 2
 
 
 def test_revenue_by_customer_agrees_with_annual_revenue_to_the_cent(db_session: Session) -> None:
     _corpus(db_session)
     repo = AnalyticsRepository(db_session)
 
-    rows = repo.revenue_by_customer(ANNO)
+    rows = repo.revenue_by_customer(YEAR)
 
-    assert sum((row.ricavi for row in rows), Decimal("0.00")) == repo.annual_revenue(ANNO)
+    assert sum((row.revenue for row in rows), Decimal("0.00")) == repo.annual_revenue(YEAR)
 
 
 def test_economic_overview_carries_the_same_concentration_for_every_role(
     db_session: Session,
 ) -> None:
-    grande_id, piccolo_id, _assente_id = _corpus(db_session)
+    large_id, piccolo_id, _absent_id = _corpus(db_session)
     service = AnalyticsService(db_session)
 
-    for actor in (ADMIN, COLLABORATORE):
-        overview = service.economic_overview(ANNO, actor)
-        assert [row.customer_id for row in overview.concentrazione_clienti] == [
-            grande_id,
+    for actor in (ADMIN, COLLABORATOR):
+        overview = service.economic_overview(YEAR, actor)
+        assert [row.customer_id for row in overview.customer_concentration] == [
+            large_id,
             piccolo_id,
         ]
-        assert overview.concentrazione_clienti[0].ricavi == Decimal("6000.00")
-        assert overview.concentrazione_clienti[0].ragione_sociale == "Grande S.r.l."
+        assert overview.customer_concentration[0].revenue == Decimal("6000.00")
+        assert overview.customer_concentration[0].legal_name == "Grande S.r.l."
 
 
 # --- count_over_concentration_threshold (REB-371) --------------------------------------
@@ -163,8 +163,8 @@ def test_count_over_concentration_threshold_counts_customers_above_the_share(
     _corpus(db_session)
     repo = AnalyticsRepository(db_session)
 
-    assert repo.count_over_concentration_threshold(ANNO, 0.30) == 2
-    assert repo.count_over_concentration_threshold(ANNO, 0.50) == 1
+    assert repo.count_over_concentration_threshold(YEAR, 0.30) == 2
+    assert repo.count_over_concentration_threshold(YEAR, 0.50) == 1
 
 
 def test_count_over_concentration_threshold_is_strictly_above_not_at_it(
@@ -172,20 +172,20 @@ def test_count_over_concentration_threshold_is_strictly_above_not_at_it(
 ) -> None:
     """A customer sitting exactly on the configured share has not yet crossed it -- the
     boundary the signal's own name promises."""
-    pari_uno = Customer(ragione_sociale="Pari Uno S.r.l.", nazione="IT", custom_fields={})
-    pari_due = Customer(ragione_sociale="Pari Due S.r.l.", nazione="IT", custom_fields={})
+    pari_uno = Customer(legal_name="Pari Uno S.r.l.", country="IT", custom_fields={})
+    pari_due = Customer(legal_name="Pari Due S.r.l.", country="IT", custom_fields={})
     db_session.add_all([pari_uno, pari_due])
     db_session.flush()
     db_session.add_all(
         [
-            _invoice(pari_uno.id, 101, "5000.00", anno=ANNO + 1),
-            _invoice(pari_due.id, 102, "5000.00", anno=ANNO + 1),
+            _invoice(pari_uno.id, 101, "5000.00", year=YEAR + 1),
+            _invoice(pari_due.id, 102, "5000.00", year=YEAR + 1),
         ]
     )
     db_session.flush()
     repo = AnalyticsRepository(db_session)
 
-    assert repo.count_over_concentration_threshold(ANNO + 1, 0.5) == 0
+    assert repo.count_over_concentration_threshold(YEAR + 1, 0.5) == 0
 
 
 def test_count_over_concentration_threshold_is_zero_when_the_year_has_no_revenue(
@@ -195,4 +195,4 @@ def test_count_over_concentration_threshold_is_zero_when_the_year_has_no_revenue
     signal must read that as "nobody is over the threshold", not raise on an empty
     result."""
     repo = AnalyticsRepository(db_session)
-    assert repo.count_over_concentration_threshold(ANNO + 2, 0.30) == 0
+    assert repo.count_over_concentration_threshold(YEAR + 2, 0.30) == 0

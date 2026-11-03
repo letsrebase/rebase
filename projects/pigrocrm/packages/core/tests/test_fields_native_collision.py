@@ -1,8 +1,8 @@
 """A13. The residual document's 2026-08-20 update makes this blocking for slice 4
-because this slice's native columns are named `ore`, `data`, `importo` and
-`descrizione` -- the first labels anyone would type defining a custom field on an
+because this slice's native columns are named `hours`, `data`, `amount` and
+`description` -- the first labels anyone would type defining a custom field on an
 hours entry. Before this guard, a field labelled "Ore" on `time_entry` slugified to
-`ore`, the API answered 201, and every later write landed in `custom_fields.ore`
+`hours`, the API answered 201, and every later write landed in `custom_fields.hours`
 instead of the real column, silently.
 
 Every `FieldDefinitionCreate(...)` call below passes `key=label`: `key` has no
@@ -31,23 +31,23 @@ def admin() -> Actor:
 @pytest.mark.parametrize(
     ("entity_type", "label", "colliding_key"),
     [
-        ("time_entry", "Ore", "ore"),
+        ("time_entry", "Ore", "hours"),
         ("time_entry", "Data", "data"),
-        ("time_entry", "Descrizione", "descrizione"),
-        ("cost", "Importo", "importo"),
+        ("time_entry", "Descrizione", "description"),
+        ("cost", "Importo", "amount"),
         ("cost", "Data", "data"),
         ("deal", "Nome", "nome"),
-        ("customer", "Ragione sociale", "ragione_sociale"),
+        ("customer", "Ragione sociale", "legal_name"),
         # `note` is no column since the notes thread (REB-879), but a Create takes it as the
         # first note, so a custom field may not take the name.
         ("deal", "Note", "note"),
         ("customer", "Note", "note"),
         ("person", "Note", "note"),
         # Slugification is what makes this reachable by accident: nobody types
-        # `ore_preventivate`, they type "Ore preventivate".
-        ("deal", "Ore  preventivate", "ore_preventivate"),
+        # `budgeted_hours`, they type "Ore preventivate".
+        ("deal", "Ore  preventivate", "budgeted_hours"),
         # Accent folding too -- slugify_key transliterates before stripping.
-        ("deal", "Probabilità", "probabilita"),
+        ("deal", "Probabilità", "probability"),
     ],
 )
 def test_a_label_that_slugifies_onto_a_native_column_is_refused(
@@ -90,7 +90,7 @@ def test_nothing_is_written_when_the_guard_fires(db_session: Session, admin: Act
             admin,
         )
     db_session.rollback()
-    assert service.repo.get_by_key("cost", "importo") is None
+    assert service.repo.get_by_key("cost", "amount") is None
 
 
 def test_field_definition_update_has_no_key_to_collide(db_session: Session) -> None:

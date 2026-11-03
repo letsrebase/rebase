@@ -43,7 +43,7 @@ def _has_attempts(connection: Connection) -> bool:
 
 def _person(engine: Engine) -> Any:
     with Session(engine) as session:
-        user = User(email="a@x.it", nome="A", cognome="B")
+        user = User(email="a@x.it", nome="A", last_name="B")
         session.add(user)
         session.flush()
         row = Freelancer(user_id=user.id)

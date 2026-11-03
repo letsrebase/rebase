@@ -97,10 +97,10 @@ def createtoken(
     return 0
 
 
-def setrole(email: str | None, role: str | None, nome: str | None, cognome: str | None) -> int:
+def setrole(email: str | None, role: str | None, nome: str | None, last_name: str | None) -> int:
     """`rebase setrole --email a@b.it --role admin|member [--nome ...] [--cognome ...]`:
     admin creation from now on (REB-278), the shape of `createtoken`. Looks up `users`
-    by lowercased email, creates a minimal row when none exists (`nome`/`cognome`
+    by lowercased email, creates a minimal row when none exists (`nome`/`last_name`
     prompted at a terminal if not given, a refusal without one), sets `role`, and for a
     promotion of a brand-new row sends the same magic link everyone else gets rather than
     a password printed to a terminal. Demoting is `--role member`, fully reversible."""
@@ -123,11 +123,11 @@ def setrole(email: str | None, role: str | None, nome: str | None, cognome: str 
         users = UserService(session, settings)
         if users.by_email(email) is None:
             nome = _ask(nome, "Nome")
-            cognome = _ask(cognome, "Cognome")
-            if nome is None or cognome is None:
+            last_name = _ask(last_name, "Cognome")
+            if nome is None or last_name is None:
                 print("--nome e --cognome servono per un indirizzo nuovo.", file=sys.stderr)
                 return 2
-        user, created = users.set_role(email, asked_role, nome or "", cognome or "")
+        user, created = users.set_role(email, asked_role, nome or "", last_name or "")
         if created and asked_role == "admin":
             sender = sender_from_settings(settings)
             if sender is not None:
@@ -156,7 +156,7 @@ def talent_duplicates(
     """`rebase talent-duplicates`: the people who are on the list twice (REB-800).
 
     Without flags it only reads: every pair of live cards that share a LinkedIn profile
-    (`unibili`, with what a merge would move), every pair that only shares a name or a
+    (`mergeable`, with what a merge would move), every pair that only shares a name or a
     telephone number (`da rivedere`: never merged on its own), and the sign-ups that
     repeat a profile. It prints counts and internal ids, never a name, an address or a
     profile, so its output can go on a card. `--apply --admin EMAIL` merges every unibile
@@ -188,7 +188,7 @@ def talent_duplicates(
         moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items()))
         note = (
             " (il profilo LinkedIn resta alla scheda che l'ha tenuto: l'indice unico ne vuole uno)"
-            if done.lasciati.get("linkedin")
+            if done.left.get("linkedin")
             else ""
         )
         return 0, [
@@ -208,19 +208,19 @@ def talent_duplicates(
 
     report = find_duplicates(session)
     lines.append(
-        f"{len(report.unibili)} coppie unibili (stesso LinkedIn), "
-        f"{len(report.da_rivedere)} da rivedere (solo nome o telefono), "
-        f"{len(report.iscrizioni)} iscrizioni che ripetono un profilo"
+        f"{len(report.mergeable)} coppie unibili (stesso LinkedIn), "
+        f"{len(report.from_review)} da rivedere (solo nome o telefono), "
+        f"{len(report.signups)} iscrizioni che ripetono un profilo"
     )
     failed = 0
-    for number, pair in enumerate(report.unibili, 1):
+    for number, pair in enumerate(report.mergeable, 1):
         head = (
             f"coppia {number}: tieni {pair.survivor.freelancer_id} "
-            f"assorbi {pair.assorbito.freelancer_id} [{','.join(pair.segnali)}]"
+            f"assorbi {pair.absorbed.freelancer_id} [{','.join(pair.signals)}]"
         )
         if not apply:
             try:
-                plan = merges.plan(pair.survivor.freelancer_id, pair.assorbito.freelancer_id)
+                plan = merges.plan(pair.survivor.freelancer_id, pair.absorbed.freelancer_id)
             except DomainError as exc:
                 lines.append(f"{head} bloccata: {exc.message}")
                 continue
@@ -233,26 +233,26 @@ def talent_duplicates(
             if (
                 session.scalar(
                     select(Freelancer.deleted_at).where(
-                        Freelancer.id == pair.assorbito.freelancer_id
+                        Freelancer.id == pair.absorbed.freelancer_id
                     )
                 )
                 is not None
             ):
                 lines.append(f"{head} già assorbita")
                 continue
-            done = merges.merge(pair.survivor.freelancer_id, pair.assorbito.freelancer_id, admin_id)
+            done = merges.merge(pair.survivor.freelancer_id, pair.absorbed.freelancer_id, admin_id)
         except DomainError as exc:
             session.rollback()
             failed += 1
             lines.append(f"{head} bloccata: {exc.message}")
             continue
         lines.append(f"{head} {_merge_line(done, short=True)}")
-    for pair in report.da_rivedere:
+    for pair in report.from_review:
         lines.append(
-            f"da rivedere: {pair.survivor.freelancer_id} e {pair.assorbito.freelancer_id} "
-            f"[{','.join(pair.segnali)}]"
+            f"da rivedere: {pair.survivor.freelancer_id} e {pair.absorbed.freelancer_id} "
+            f"[{','.join(pair.signals)}]"
         )
-    for lead in report.iscrizioni:
+    for lead in report.signups:
         other = lead.card_user_id or lead.other_signup_id
         lines.append(
             f"iscrizione {lead.signup_id} ripete il profilo di "
@@ -286,7 +286,7 @@ def talent_duplicates(
 
 def _merge_line(done: "MergeRead", *, short: bool = False) -> str:
     moved = ", ".join(f"{key}={count}" for key, count in sorted(done.moved.items())) or "niente"
-    flag = ", scheda da rigenerare" if done.scheda_da_rigenerare else ""
+    flag = ", scheda da rigenerare" if done.card_from_regenerate else ""
     text_ = f"unite (azione {done.action_id}): cv {done.cv}, spostato {moved}{flag}"
     return (
         text_
@@ -328,7 +328,7 @@ def send_welcome(
     """One welcome mail per address the hub knows (ORB-157): every signup and every card,
     or the addresses given. The voice follows what we hold for the address: a card the
     person filled, a card we drafted from public sources, or no card at all (the wizard,
-    then). Answers one line per address -- `inviata` with the kind, or `rifiutata dal
+    then). Answers one line per address -- `sent` with the kind, or `rifiutata dal
     provider` -- which is the whole record of the mailing."""
     from rebase_core.freelancers import freelancer_read
     from rebase_core.mail_member import CardSummary, welcome_mail
@@ -351,19 +351,19 @@ def send_welcome(
     else:
         targets = list(dict.fromkeys([*signups, *cards]))
     base = settings.hub_url.rstrip("/")
-    accedi, wizard = f"{base}/accedi", f"{base}/freelance"
+    login, wizard = f"{base}/login", f"{base}/freelance"
     outcomes: list[tuple[str, str]] = []
     for email in targets:
         entry = cards.get(email)
         signup = signups.get(email)
         if entry is not None:
             card, user = entry
-            if card.compilata_da == "persona":
-                kind = "persona"
+            if card.compilata_da == "person":
+                kind = "person"
                 mail = welcome_mail(
                     user.email,
                     user.nome,
-                    accedi,
+                    login,
                     kind=kind,
                     posizione=card.posizione,
                     # Read through the schema so «completa» is the one definition the
@@ -372,18 +372,18 @@ def send_welcome(
                     # CV is the only thing that can be missing: the rate, the position
                     # and the remote option are steps of the wizard the person went
                     # through.
-                    completa=freelancer_read(card, user).completa,
+                    complete=freelancer_read(card, user).complete,
                 )
             else:
                 kind = "admin"
                 mail = welcome_mail(
                     user.email,
                     user.nome,
-                    accedi,
+                    login,
                     kind=kind,
                     summary=CardSummary(
                         nome=user.nome,
-                        cognome=user.cognome,
+                        last_name=user.last_name,
                         posizione=card.posizione,
                         linkedin_url=user.linkedin_url,
                         links=tuple(card.links),
@@ -391,7 +391,7 @@ def send_welcome(
                 )
         elif signup is not None:
             kind = "nessuna"
-            mail = welcome_mail(signup.email, signup.nome, accedi, kind=kind, wizard_link=wizard)
+            mail = welcome_mail(signup.email, signup.nome, login, kind=kind, wizard_link=wizard)
         else:
             outcomes.append((email, "indirizzo sconosciuto"))
             continue
@@ -419,12 +419,12 @@ def welcome(emails: Sequence[str], everyone: bool) -> int:
         session.close()
     for email, outcome in outcomes:
         print(f"{email}: {outcome}")
-    return 0 if all(outcome.startswith("inviata") for _, outcome in outcomes) else 1
+    return 0 if all(outcome.startswith("sent") for _, outcome in outcomes) else 1
 
 
 def _token_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--email")
-    parser.add_argument("--nome")
+    parser.add_argument("--name")
     parser.add_argument(
         "--expires-in-days", type=int, help="il token smette di funzionare dopo N giorni"
     )
@@ -437,8 +437,8 @@ def _token_arguments(parser: argparse.ArgumentParser) -> None:
 def _role_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--email")
     parser.add_argument("--role", choices=USER_ROLES)
-    parser.add_argument("--nome")
-    parser.add_argument("--cognome")
+    parser.add_argument("--name")
+    parser.add_argument("--last-name")
 
 
 def _welcome_arguments(parser: argparse.ArgumentParser) -> None:
@@ -465,7 +465,7 @@ COMMANDS = {
         ),
     ),
     "setrole": Command(
-        _role_arguments, lambda args: setrole(args.email, args.role, args.nome, args.cognome)
+        _role_arguments, lambda args: setrole(args.email, args.role, args.nome, args.last_name)
     ),
     "welcome": Command(_welcome_arguments, lambda args: welcome(args.email, args.all)),
     "talent-duplicates": Command(

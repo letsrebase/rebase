@@ -13,22 +13,22 @@ from rebase_core.config import Settings
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.mail import RESEND_URL
 
-# `fermati`: Resend refused the key or the domain (401/403), an answer every other
+# `stop`: Resend refused the key or the domain (401/403), an answer every other
 # mail of the list would get too, so the tick stops instead of burning the list.
 # `quota`: a 429 that names Resend's daily or monthly quota, not its request rate
 # (REB-779): every other mail of the day would get it too, and it is no attempt of the
 # row's. `dettaglio` keeps which quota, so the page can say when the rest leaves.
-Esito = Literal["accettata", "riprova", "rifiutata", "fermati", "quota"]
+Outcome = Literal["accepted", "retry", "rejected", "stop", "quota"]
 
-QUOTA_DAILY = "daily_quota_exceeded"
-QUOTA_MONTHLY = "monthly_quota_exceeded"
+SHARE_DAILY = "daily_quota_exceeded"
+SHARE_MONTHLY = "monthly_quota_exceeded"
 
 
 @dataclass(frozen=True)
 class SendOutcome:
-    esito: Esito
+    outcome: Outcome
     resend_id: str | None = None
-    dettaglio: str = ""
+    detail: str = ""
 
 
 class CampaignSender(Protocol):
@@ -67,21 +67,21 @@ class ResendCampaignSender:
         try:
             status, raw = self.http("POST", RESEND_URL, headers, json.dumps(body).encode())
         except Exception:  # noqa: BLE001 - the seam's contract is "never raises"
-            return SendOutcome("riprova", dettaglio="nessuna risposta da Resend")
+            return SendOutcome("retry", detail="nessuna risposta da Resend")
         if 200 <= status < 300:
-            return SendOutcome("accettata", _field(raw, "id") or None)
+            return SendOutcome("accepted", _field(raw, "id") or None)
         name = _field(raw, "name")
         if status == 409 and name == "concurrent_idempotent_requests":
-            return SendOutcome("riprova", dettaglio=name)
-        if status == 429 and name in (QUOTA_DAILY, QUOTA_MONTHLY):
-            return SendOutcome("quota", dettaglio=name)
+            return SendOutcome("retry", detail=name)
+        if status == 429 and name in (SHARE_DAILY, SHARE_MONTHLY):
+            return SendOutcome("quota", detail=name)
         if status == 429 or status >= 500:
-            return SendOutcome("riprova", dettaglio=f"Resend {status}")
+            return SendOutcome("retry", detail=f"Resend {status}")
         if status in (401, 403):
             # A revoked or restricted key, or a domain Resend no longer sends for: the
             # status alone, since the body may name the domain or the key's id.
-            return SendOutcome("fermati", dettaglio=f"Resend {status}")
-        return SendOutcome("rifiutata", dettaglio=f"Resend {status} {name}".strip())
+            return SendOutcome("stop", detail=f"Resend {status}")
+        return SendOutcome("rejected", detail=f"Resend {status} {name}".strip())
 
 
 class RecordingCampaignSender:
@@ -97,7 +97,7 @@ class RecordingCampaignSender:
         self.keys.append(idempotency_key)
         if self._outcomes:
             return self._outcomes.pop(0)
-        return SendOutcome("accettata", f"rec-{len(self.sent)}")
+        return SendOutcome("accepted", f"rec-{len(self.sent)}")
 
 
 def campaign_sender_from_settings(settings: Settings) -> CampaignSender | None:

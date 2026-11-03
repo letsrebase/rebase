@@ -182,7 +182,7 @@ describe('Timeline', () => {
   describe('payload detail', () => {
     it('lists the changed fields of an "updated" entry, humanized', async () => {
       mockGet.mockReturnValue(
-        ok([entry({ kind: 'updated', payload: { changed: ['note', 'telefono'] } })]),
+        ok([entry({ kind: 'updated', payload: { changed: ['note', 'phone'] } })]),
       )
       renderWithClient(<Timeline entityType="customer" entityId="c1" />)
       expect(await screen.findByText('Campi modificati: Note, Telefono')).toBeInTheDocument()
@@ -203,14 +203,14 @@ describe('Timeline', () => {
 
     it('falls back to a generic, humanized dump for a "created" entry\'s per-entity payload', async () => {
       mockGet.mockReturnValue(
-        ok([entry({ kind: 'created', payload: { ragione_sociale: 'ACME Srl' } })]),
+        ok([entry({ kind: 'created', payload: { legal_name: 'ACME Srl' } })]),
       )
       renderWithClient(<Timeline entityType="customer" entityId="c1" />)
       expect(await screen.findByText('Ragione sociale: ACME Srl')).toBeInTheDocument()
     })
 
     it('never echoes the import provenance, and still shows the rest of the payload', async () => {
-      // The live payload of an imported invoice: `importata_da` is provenance the CRM
+      // The live payload of an imported invoice: `imported_from` is provenance the CRM
       // keeps for itself (invoices/models.py), so the generic dump must drop it -- the
       // "Fattura importata" label above is the whole of what a reader needs -- while the
       // year, the number and the total, which are facts about the document, stay.
@@ -218,7 +218,7 @@ describe('Timeline', () => {
         ok([
           entry({
             kind: 'imported',
-            payload: { anno: 2026, numero: 2, totale: '3422.00', importata_da: 'esterno' },
+            payload: { year: 2026, number: 2, total: '3422.00', imported_from: 'external' },
           }),
         ]),
       )
@@ -229,7 +229,7 @@ describe('Timeline', () => {
     })
 
     it('adds no detail line when the payload holds nothing but the provenance', async () => {
-      mockGet.mockReturnValue(ok([entry({ kind: 'imported', payload: { importata_da: 'esterno' } })]))
+      mockGet.mockReturnValue(ok([entry({ kind: 'imported', payload: { imported_from: 'external' } })]))
       renderWithClient(<Timeline entityType="invoice" entityId="i1" />)
       const item = (await screen.findByText('Fattura importata')).closest('li')
       expect(item?.querySelectorAll('p')).toHaveLength(0)
@@ -282,7 +282,7 @@ describe('Timeline', () => {
             actor_type: 'system',
             actor_id: null,
             kind: 'automation.stage_moved',
-            payload: { regola: 'A1', attivata_da: crypto.randomUUID(), attivata_via: 'mcp' },
+            payload: { rule: 'A1', triggered_by: crypto.randomUUID(), triggered_via: 'mcp' },
             triggered_by_name: 'Marco Verdi',
           }),
         ]),
@@ -301,7 +301,7 @@ describe('Timeline', () => {
             kind: 'note_edited',
             actor_type: 'mcp',
             actor_name: 'Marco Verdi',
-            payload: { nota_id: crypto.randomUUID(), fonte: 'mcp' },
+            payload: { note_id: crypto.randomUUID(), source: 'mcp' },
           }),
         ]),
       )

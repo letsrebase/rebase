@@ -49,7 +49,7 @@ def _row(session: Session, job: str) -> ReminderJobRun:
 
 
 def _mailbox(session: Session, *, status: str = "active") -> None:
-    owner = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="P", ruolo="admin")
+    owner = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="P", role="admin")
     session.add(owner)
     session.flush()
     session.add(
@@ -195,14 +195,14 @@ def test_a_failure_outranks_lateness_and_says_what_it_was_and_when(
 ) -> None:
     clock = JobClock(db_session)
     clock.succeeded(DIGEST_JOB, NOW - timedelta(days=20))
-    clock.failed(DIGEST_JOB, "invio_rifiutato", NOW - timedelta(days=2))
+    clock.failed(DIGEST_JOB, "send_rejected", NOW - timedelta(days=2))
 
     described = _read(db_session)[DIGEST_JOB]
 
     assert described.state == "failed"
     assert described.last_run_at == NOW - timedelta(days=20), "the last success is still shown"
     assert described.last_failure_at == NOW - timedelta(days=2)
-    assert described.failure == "invio_rifiutato"
+    assert described.failure == "send_rejected"
 
 
 def test_a_job_that_only_ever_failed_is_failed_and_has_no_run_time(
@@ -233,7 +233,7 @@ def test_a_job_that_ran_a_moment_after_now_is_not_late(db_session: Session) -> N
     assert _read(db_session)[REMINDER_PASS_JOB].state == "ok"
 
 
-@pytest.mark.parametrize("role", ["collaboratore", "readonly"])
+@pytest.mark.parametrize("role", ["collaborator", "readonly"])
 def test_only_an_admin_may_read_it(db_session: Session, role: str) -> None:
     actor = Actor(id=uuid7(), type="user", role=role)  # type: ignore[arg-type]
 

@@ -25,7 +25,7 @@ def _ensure_admin(session: Session) -> UUID:
     """IVAN as a `users` row: a note and a trail entry name who wrote them, by foreign key."""
     if session.get(User, IVAN.id) is None:
         session.add(
-            User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="Sala", role="admin")
+            User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, last_name="Sala", role="admin")
         )
         session.commit()
     return IVAN.id
@@ -44,11 +44,11 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
         with_cv, _ = FreelancerService(session).apply(
             FreelancerCreate(
                 nome="Ada",
-                cognome="Lovelace",
+                last_name="Lovelace",
                 email="ada@studio.it",
-                tariffa_giornaliera=Decimal("450"),
+                daily_rate=Decimal("450"),
                 posizione="Backend developer",
-                remoto="remoto",
+                remote="remote",
             ),
             guide_bytes(),
             "cv.pdf",
@@ -64,9 +64,9 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
             signup_id,
             FreelancerDraft(
                 nome="Grace",
-                cognome="Hopper",
+                last_name="Hopper",
                 posizione="Compiler engineer",
-                fonti=["https://example.com/grace"],
+                sources=["https://example.com/grace"],
             ),
             _ensure_admin(session),
             "mcp",
@@ -80,7 +80,7 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
         )
         assert read["filename"] == "cv.pdf"
         assert read["pagine"] == 6
-        assert "prima fattura" in read["testo"]
+        assert "prima fattura" in read["text"]
         assert read["troncato"] is False
 
         refused = await client.call_tool(
@@ -89,8 +89,8 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
         assert refused.is_error
         assert "cv" in refused.content[0].text.lower()
 
-        listed = _payload(await client.call_tool("list_talenti", {}))
-        assert all("testo" not in item and "cv_bytes" not in item for item in listed["items"])
+        listed = _payload(await client.call_tool("list_talents", {}))
+        assert all("text" not in item and "cv_bytes" not in item for item in listed["items"])
     _wipe(factory)
 
 
@@ -113,7 +113,7 @@ async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
         written = _payload(
             await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         )
-        assert written["card"]["ruolo"] == CARD["ruolo"]
+        assert written["card"]["role"] == CARD["role"]
     # REB-861: signed in the talent's trail, as the admin behind the token, by the MCP door.
     with factory() as session:
         [action] = session.scalars(
@@ -124,8 +124,8 @@ async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
         freelancer_id,
         IVAN.id,
     )
-    assert action.payload["fonte"] == "mcp" and action.payload["bulk"] is False
-    assert (action.payload["esito"], action.payload["model"]) == ("scritta", MODEL)
+    assert action.payload["source"] == "mcp" and action.payload["bulk"] is False
+    assert (action.payload["outcome"], action.payload["model"]) == ("scritta", MODEL)
     assert "start_action_id" not in action.payload
     _wipe(factory)
 
@@ -141,7 +141,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
         )
         assert empty["card"] is None and empty["error"] is None
-        assert empty["modalita"] == "remoto"
+        assert empty["mode"] == "remote"
 
         off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         assert off.is_error
@@ -153,7 +153,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
         written = _payload(
             await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         )
-        assert written["card"]["ruolo"] == CARD["ruolo"]
+        assert written["card"]["role"] == CARD["role"]
         assert written["model"] == MODEL
         assert len(llm.requests) == 1
 
@@ -161,41 +161,44 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
         )
         assert read_back["card"] == written["card"]
-        assert (written["card"]["seniority"], written["card"]["anni"]) == ("senior", 9)
-        assert (written["seniority_admin"], written["anni_admin"]) == (None, None)
+        assert (written["card"]["seniority"], written["card"]["experience_years"]) == ("senior", 9)
+        assert (written["seniority_admin"], written["experience_years_admin"]) == (None, None)
 
         # REB-799: the admin's level beats Claude's in the card read and survives a
         # regenerate; an empty string takes it off again.
         await client.call_tool(
             "override_freelancer",
-            {"freelancer_id": freelancer_id, "seniority": "junior", "anni": "2"},
+            {"freelancer_id": freelancer_id, "seniority": "junior", "experience_years": "2"},
         )
         corrected = _payload(
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
         )
-        assert (corrected["card"]["seniority"], corrected["card"]["anni"]) == ("junior", 2)
-        assert (corrected["seniority_admin"], corrected["anni_admin"]) == ("junior", 2)
+        assert (corrected["card"]["seniority"], corrected["card"]["experience_years"]) == (
+            "junior",
+            2,
+        )
+        assert (corrected["seniority_admin"], corrected["experience_years_admin"]) == ("junior", 2)
         again = _payload(
             await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
         )
-        assert (again["card"]["seniority"], again["card"]["anni"]) == ("junior", 2)
+        assert (again["card"]["seniority"], again["card"]["experience_years"]) == ("junior", 2)
         await client.call_tool(
             "override_freelancer",
-            {"freelancer_id": freelancer_id, "seniority": "", "anni": ""},
+            {"freelancer_id": freelancer_id, "seniority": "", "experience_years": ""},
         )
         cleared = _payload(
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
         )
-        assert (cleared["card"]["seniority"], cleared["card"]["anni"]) == ("senior", 9)
+        assert (cleared["card"]["seniority"], cleared["card"]["experience_years"]) == ("senior", 9)
         refused = await client.call_tool(
-            "override_freelancer", {"freelancer_id": freelancer_id, "anni": "molti"}
+            "override_freelancer", {"freelancer_id": freelancer_id, "experience_years": "molti"}
         )
         assert refused.is_error
 
-        listed = _payload(await client.call_tool("list_talenti", {"campi": ["tutti"]}))
-        assert listed["items"][0]["ha_scheda_anonima"] is True
-        detail = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
-        assert detail["ha_scheda_anonima"] is True
+        listed = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))
+        assert listed["items"][0]["has_anonymous_card"] is True
+        detail = _payload(await client.call_tool("get_talent", {"talent_id": freelancer_id}))
+        assert detail["has_anonymous_card"] is True
 
         missing = await client.call_tool(
             "get_freelancer_card", {"freelancer_id": "01a00000-0000-7000-8000-0000000000fe"}

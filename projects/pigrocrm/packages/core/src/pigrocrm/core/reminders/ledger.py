@@ -12,7 +12,7 @@ write, never a missing one.
 `record` keeps the highest rank delivered (`GREATEST`) and the new delivery time. A
 delivery covers its rank and below, so a reminder delivered at `serious` is not sent
 again at `serious`, is sent again when it climbs to `critical`, and a threshold edit that
-lowers a severity does not resend. `attivita_overdue` is delivered once a day, through
+lowers a severity does not resend. `task_overdue` is delivered once a day, through
 `period`; every other type once per rank.
 
 **A cleared cause ends the occurrence** (`forget_unraised`): at the end of a pass, for

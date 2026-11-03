@@ -32,7 +32,7 @@ def seed_templates(settings: Settings) -> int:
     ):
         created = TemplateService(session).seed_defaults(Actor.system())
     for template in created:
-        print(f"creato: {template.nome} ({template.tipo})")
+        print(f"creato: {template.nome} ({template.type})")
     if not created:
         print("nessun template da creare: sono già presenti")
     return 0
@@ -117,7 +117,7 @@ def ensure_space_defaults(settings: Settings) -> int:
         if report.seeded:
             print(
                 f"{slug}: stati {report.stages}, template {report.templates}, "
-                f"categorie {report.categories}, aziende {report.aziende}"
+                f"categorie {report.categories}, aziende {report.legal_entities}"
             )
         else:
             print(f"{slug}: già a posto")

@@ -23,7 +23,7 @@ from rebase_core.models import (
     ADMIN_ACTION_KINDS,
     CAMPAIGN_ACTIONS,
     CAMPAIGN_DESTINATIONS,
-    CAMPAIGN_FONTI,
+    CAMPAIGN_SOURCES,
     CAMPAIGN_STATES,
     CARD_SENIORITIES,
     COMPANY_STATES,
@@ -41,7 +41,7 @@ from rebase_core.models import (
     REMOTE_OPTIONS,
     REWARD_STATES,
     TALENT_ANSWERS,
-    TALENTO_STATES,
+    TALENT_STATES,
     TEAM_PROPOSAL_ERRORS,
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
@@ -61,7 +61,7 @@ def enum_of(values: Sequence[str]) -> Callable[[dict[str, Any]], None]:
 
 RemoteOption = Annotated[str, Field(json_schema_extra=enum_of(REMOTE_OPTIONS))]
 FreelancerStatus = Annotated[str, Field(json_schema_extra=enum_of(FREELANCER_STATES))]
-TalentoStatus = Annotated[str, Field(json_schema_extra=enum_of(TALENTO_STATES))]
+TalentStatus = Annotated[str, Field(json_schema_extra=enum_of(TALENT_STATES))]
 CompanyStatus = Annotated[str, Field(json_schema_extra=enum_of(COMPANY_STATES))]
 # What a person or a company a member referred has reached: a freelancer's or a company's.
 ReferredStatus = Annotated[
@@ -89,7 +89,7 @@ UserRole = Annotated[str, Field(json_schema_extra=enum_of(USER_ROLES))]
 NoteSource = Annotated[str, Field(json_schema_extra=enum_of(NOTE_SOURCES))]
 AdminActionKind = Annotated[str, Field(json_schema_extra=enum_of(ADMIN_ACTION_KINDS))]
 AdminActionEntity = Annotated[str, Field(json_schema_extra=enum_of(ADMIN_ACTION_ENTITY_TYPES))]
-CampaignFonte = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_FONTI))]
+CampaignSource = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_SOURCES))]
 CampaignAction = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_ACTIONS))]
 CampaignDestination = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_DESTINATIONS))]
 RecipientKind = Annotated[str, Field(json_schema_extra=enum_of(RECIPIENT_KINDS))]

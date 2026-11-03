@@ -12,7 +12,7 @@ import { EXAMPLE, formatRate, rateWithArticle, referralExample } from '@/lib/ref
 
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
 
-/** The member's own link (P-REB-44): the chooser's own URL with `?rif=` appended, so a
+/** The member's own link (P-REB-44): the chooser's own URL with `?ref=` appended, so a
  *  detour through it into either wizard still carries the code -- the same persistence
  *  `da=`'s own UTM mechanism already gives a campaign (`resolveReferral`, `lib/utm.ts`). */
 function referralLink(code: string): string {
@@ -87,10 +87,10 @@ function Earnings({ rates }: { rates: Pick<MemberReferralData, 'rate_freelancer'
             </p>
             <p className="text-muted-foreground">
               Un incarico a giornata: il cliente paga {EXAMPLE.budget} € al giorno, il freelance ne
-              guadagna {EXAMPLE.compenso}, per {EXAMPLE.giorni} giorni.
+              guadagna {EXAMPLE.fee}, per {EXAMPLE.days} giorni.
             </p>
             <p>
-              Margine: ({EXAMPLE.budget} - {EXAMPLE.compenso}) × {EXAMPLE.giorni} ={' '}
+              Margine: ({EXAMPLE.budget} - {EXAMPLE.fee}) × {EXAMPLE.days} ={' '}
               <span className="font-medium tabular-nums">{formatMoney(example.margin)}</span>
             </p>
             {freelancer && example.freelancer && (

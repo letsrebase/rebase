@@ -283,9 +283,7 @@ def test_an_each_over_a_non_lists_field_is_its_own_path_not_the_generic_body() -
 
 
 def test_a_missing_required_declared_variable_fails_before_rendering() -> None:
-    declared = (
-        DeclaredVariable(nome="oggetto", etichetta="Oggetto", tipo="text", obbligatoria=True),
-    )
+    declared = (DeclaredVariable(nome="oggetto", label="Oggetto", type="text", required=True),)
     with pytest.raises(ValidationFailed) as excinfo:
         render_template("{{oggetto}}", {}, declared)
     assert excinfo.value.details["field"] == "oggetto"
@@ -299,9 +297,7 @@ def test_a_missing_required_declared_variable_fails_before_rendering() -> None:
 
 
 def test_a_missing_required_declared_variable_names_the_line_of_its_first_use() -> None:
-    declared = (
-        DeclaredVariable(nome="oggetto", etichetta="Oggetto", tipo="text", obbligatoria=True),
-    )
+    declared = (DeclaredVariable(nome="oggetto", label="Oggetto", type="text", required=True),)
     with pytest.raises(ValidationFailed) as excinfo:
         render_template("riga1\nriga2 {{oggetto}}\n", {}, declared)
     assert "riga 2" in excinfo.value.details["reason"]
@@ -311,9 +307,7 @@ def test_a_missing_required_variable_referenced_only_by_an_if_names_that_line() 
     # The spec's own motivating shape for declared_paths (parser.py): a
     # template's entire behaviour can depend on `{{#if x}}...{{/if}}` with no
     # bare `{{x}}` ever appearing. The line search must still find it.
-    declared = (
-        DeclaredVariable(nome="sconto", etichetta="Sconto", tipo="checkbox", obbligatoria=True),
-    )
+    declared = (DeclaredVariable(nome="sconto", label="Sconto", type="checkbox", required=True),)
     with pytest.raises(ValidationFailed) as excinfo:
         render_template("riga1\nriga2\n{{#if sconto}}s{{/if}}\n", {}, declared)
     assert "riga 3" in excinfo.value.details["reason"]
@@ -324,9 +318,7 @@ def test_a_missing_required_variable_referenced_only_inside_each_is_not_a_false_
     # item, a different name-space from a root-level declared variable of the
     # same spelling -- it must not be mistaken for the declared variable's own
     # first use, even though the name matches textually.
-    declared = (
-        DeclaredVariable(nome="sconto", etichetta="Sconto", tipo="checkbox", obbligatoria=True),
-    )
+    declared = (DeclaredVariable(nome="sconto", label="Sconto", type="checkbox", required=True),)
     with pytest.raises(ValidationFailed) as excinfo:
         render_template("riga1\n{{#each righe}}\n{{sconto}}\n{{/each}}\n", {"righe": []}, declared)
     # No root-level reference exists (the one inside #each does not count), so
@@ -338,9 +330,7 @@ def test_a_missing_required_variable_never_referenced_anywhere_omits_the_line() 
     # Declared, not deduced (spec 4.3): a required variable the template body
     # never actually mentions is a legitimate shape, not a bug -- and there is no
     # honest line to report for it, so none is fabricated.
-    declared = (
-        DeclaredVariable(nome="oggetto", etichetta="Oggetto", tipo="text", obbligatoria=True),
-    )
+    declared = (DeclaredVariable(nome="oggetto", label="Oggetto", type="text", required=True),)
     with pytest.raises(ValidationFailed) as excinfo:
         render_template("nessun placeholder qui\n", {}, declared)
     assert "riga" not in excinfo.value.details["reason"]
@@ -348,30 +338,26 @@ def test_a_missing_required_variable_never_referenced_anywhere_omits_the_line() 
 
 
 def test_a_missing_optional_declared_variable_renders_as_empty() -> None:
-    declared = (DeclaredVariable(nome="note", etichetta="Note", tipo="text", obbligatoria=False),)
+    declared = (DeclaredVariable(nome="note", label="Note", type="text", required=False),)
     assert render_template("[{{note}}]", {}, declared) == "[]"
 
 
 # --- Fix round 1, item 3: declaring a variable optional must never make a
 # template *more* likely to fail than leaving it undeclared. `optional_defaults`
-# used to seed `""` regardless of `tipo`, which broke exactly this for
-# `multiselect`: `{{#each righe}}` resolved `righe` to the string `""`, not a
+# used to seed `""` regardless of `type`, which broke exactly this for
+# `multiselect`: `{{#each righe}}` resolved `lines` to the string `""`, not a
 # list, and raised where the undeclared, unsupplied case renders nothing.
 
 
 def test_an_optional_declared_multiselect_left_unsupplied_renders_like_undeclared() -> None:
-    declared = (
-        DeclaredVariable(nome="righe", etichetta="Righe", tipo="multiselect", obbligatoria=False),
-    )
+    declared = (DeclaredVariable(nome="righe", label="Righe", type="multiselect", required=False),)
     with_declaration = render_template("a{{#each righe}}X{{/each}}b", {}, declared)
     without_declaration = render_template("a{{#each righe}}X{{/each}}b", {})
     assert with_declaration == without_declaration == "ab"
 
 
 def test_an_optional_declared_checkbox_left_unsupplied_takes_the_if_else_branch() -> None:
-    declared = (
-        DeclaredVariable(nome="attivo", etichetta="Attivo", tipo="checkbox", obbligatoria=False),
-    )
+    declared = (DeclaredVariable(nome="attivo", label="Attivo", type="checkbox", required=False),)
     out = render_template("{{#if attivo}}si{{else}}no{{/if}}", {}, declared)
     assert out == "no"
 
@@ -380,22 +366,20 @@ def test_an_optional_declared_variable_of_any_type_still_renders_blank_when_bare
     # format_value(None) == "" regardless of which of the nine field types
     # declared the variable -- the fix does not need a per-type table of empty
     # values to get every type right, only the one it actually breaks.
-    for tipo in ("text", "textarea", "number", "currency", "date", "select", "url"):
-        declared = (DeclaredVariable(nome="x", etichetta="X", tipo=tipo, obbligatoria=False),)
+    for type in ("text", "textarea", "number", "currency", "date", "select", "url"):
+        declared = (DeclaredVariable(nome="x", label="X", type=type, required=False),)
         assert render_template("[{{x}}]", {}, declared) == "[]"
 
 
 def test_a_blank_string_does_not_satisfy_a_required_variable() -> None:
-    declared = (
-        DeclaredVariable(nome="oggetto", etichetta="Oggetto", tipo="text", obbligatoria=True),
-    )
+    declared = (DeclaredVariable(nome="oggetto", label="Oggetto", type="text", required=True),)
     with pytest.raises(ValidationFailed):
         render_template("{{oggetto}}", {"oggetto": "   "}, declared)
 
 
 def test_false_and_zero_satisfy_a_required_variable() -> None:
     # Mirrors `is_blank` in fields/validator.py: False and 0 are values, not blanks.
-    declared = (DeclaredVariable(nome="x", etichetta="X", tipo="checkbox", obbligatoria=True),)
+    declared = (DeclaredVariable(nome="x", label="X", type="checkbox", required=True),)
     assert render_template("{{#if x}}s{{else}}n{{/if}}", {"x": False}, declared) == "n"
     assert render_template("{{x}}", {"x": 0}, declared) == "0"
 

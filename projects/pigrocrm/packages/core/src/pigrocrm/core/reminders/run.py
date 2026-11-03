@@ -3,7 +3,7 @@
 
 `ReminderRun.run_for_space` is the one place that answers «what does this pass do for this
 space», so the cron, a rehearsal (`--dry-run`) and a re-evaluation of another day
-(`--data`) are three calls to one decision and never three copies of it.
+(`--date`) are three calls to one decision and never three copies of it.
 
 **One pass per space at a time** (§9.2). The pass takes a Postgres advisory lock on the
 space's database, `pg_try_advisory_lock`, **before it reads any delivery state**, and holds
@@ -12,7 +12,7 @@ passes read the same undelivered list and send from it one after the other. The 
 held on a connection of its own, in autocommit, and released explicitly: a session-level
 lock belongs to the connection that took it, and the working session commits in the middle
 of a pass, which hands its connection back to the pool. A pass that does not get the lock
-answers `in_corso`, which is the system working as designed and not a failure.
+answers `in_progress`, which is the system working as designed and not a failure.
 
 **Reads first, then the network, then writes.** The detectors and the channels' plans read;
 the read transaction is then ended, and only after that do the other channels send (push,
@@ -57,7 +57,7 @@ ROOT_LABEL = "root"
 REMINDERS_LOCK_NAMESPACE = 0x7093
 _PASS_LOCK_KEY = 1
 
-Esito = Literal["eseguito", "in_corso"]
+Outcome = Literal["run", "in_progress"]
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ class ReminderOutcome:
     the host."""
 
     slug: str
-    esito: Esito
+    outcome: Outcome
     raised: int = 0
     delivered: int = 0
     ended: int = 0
@@ -109,7 +109,7 @@ class ReminderRun:
         `public_url` is the base of every link in a mail or a notification: the space's own
         address.
 
-        Raises whatever the database raises: the caller turns it into one `saltato` line,
+        Raises whatever the database raises: the caller turns it into one `skipped` line,
         the way the digest's does, so one space's failure is not the pass's.
         """
         with engine.connect() as lock:
@@ -119,7 +119,7 @@ class ReminderRun:
                 {"namespace": REMINDERS_LOCK_NAMESPACE, "key": _PASS_LOCK_KEY},
             ).scalar_one()
             if not held:
-                return ReminderOutcome(slug, "in_corso")
+                return ReminderOutcome(slug, "in_progress")
             try:
                 return self._pass(slug, engine, today, now, dry_run, public_url)
             finally:
@@ -167,7 +167,7 @@ class ReminderRun:
                 planned = {plan.channel: plan.planned for plan in prepared}
                 return ReminderOutcome(
                     slug,
-                    "eseguito",
+                    "run",
                     raised=len(evaluation.reminders),
                     delivered=len(due),
                     pushes=planned.get("push", 0),
@@ -182,7 +182,7 @@ class ReminderRun:
             )
             return ReminderOutcome(
                 slug,
-                "eseguito",
+                "run",
                 raised=result.raised,
                 delivered=result.delivered,
                 ended=result.ended,

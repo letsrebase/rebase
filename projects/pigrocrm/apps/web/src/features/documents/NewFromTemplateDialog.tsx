@@ -26,16 +26,16 @@ import {
 /**
  * A declared template variable, as the field renderer already understands it.
  *
- * `TemplateVariable.tipo` is deliberately one of the same nine `FieldType` values
+ * `TemplateVariable.type` is deliberately one of the same nine `FieldType` values
  * custom fields use (see `templates/schemas.py`), so this is a rename, not a
  * translation, and `DynamicFieldRenderer` covers every case with no new code.
  */
 export function variablesToFields(variables: TemplateVariable[]): FieldDefinition[] {
   return variables.map((variable) => ({
     key: variable.nome,
-    label: variable.etichetta,
-    type: variable.tipo as FieldType,
-    required: variable.obbligatoria,
+    label: variable.label,
+    type: variable.type as FieldType,
+    required: variable.required,
     options: [...(variable.options ?? [])],
   }))
 }
@@ -43,8 +43,8 @@ export function variablesToFields(variables: TemplateVariable[]): FieldDefinitio
 /**
  * The form's state, in the two namespaces it will be sent in -- and never flattened.
  *
- * `native` holds the document's own fields (only `titolo` here); `custom` holds the
- * template's declared variables, which travel inside `variabili`. The split is
+ * `native` holds the document's own fields (only `title` here); `custom` holds the
+ * template's declared variables, which travel inside `variables`. The split is
  * decided once, when the dialog seeds itself from the chosen template, and is never
  * re-derived at submit from the currently-described variable list. Re-deriving it is
  * the bug `CustomerFormValues` documents: a variable that disappears from the
@@ -56,7 +56,7 @@ export interface TemplateFormValues {
   custom: Record<string, unknown>
 }
 
-const TITLE_FIELD_KEY = 'titolo'
+const TITLE_FIELD_KEY = 'title'
 
 interface Props {
   open: boolean
@@ -75,7 +75,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [previewText, setPreviewText] = useState<string | null>(null)
 
-  const fields = description.data ? variablesToFields(description.data.variabili) : []
+  const fields = description.data ? variablesToFields(description.data.variables) : []
 
   /** A key present in `custom` stays custom for as long as the dialog is open, even
    *  if the description changes underneath it. Provenance is structural, never
@@ -98,21 +98,21 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
   }
 
   function collectVariables(): Record<string, unknown> {
-    const variabili: Record<string, unknown> = {}
+    const variables: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(values.custom)) {
       // `false` and `0` pass this check: only a genuine blank is dropped, and a
       // dropped key is what lets the server report "variabile obbligatoria mancante"
       // by name instead of rendering an empty hole.
-      if (!isBlank(value)) variabili[key] = value
+      if (!isBlank(value)) variables[key] = value
     }
-    return variabili
+    return variables
   }
 
   function runPreview() {
     if (!templateId) return
     setProblem(null)
     preview.mutate(
-      { templateId, variabili: collectVariables() },
+      { templateId, variables: collectVariables() },
       {
         onSuccess: (result) => setPreviewText(result.markdown),
         onError: (error: unknown) => {
@@ -129,8 +129,8 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
     create.mutate(
       {
         template_id: templateId,
-        titolo: String(values.native[TITLE_FIELD_KEY] ?? ''),
-        variabili: collectVariables(),
+        title: String(values.native[TITLE_FIELD_KEY] ?? ''),
+        variables: collectVariables(),
       },
       {
         onSuccess: () => {
@@ -163,7 +163,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
                   onClick={() => chooseTemplate(template.id)}
                 >
                   <span className="font-medium">{template.nome}</span>
-                  <span className="ml-2 text-sm text-muted-foreground">{template.tipo}</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{template.type}</span>
                 </button>
               </li>
             ))}

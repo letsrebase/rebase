@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # The CRM's door for rebase's engagements (REB-498): an active match is linked to a
     # deal in its freelancer's space, and the hub reads that deal's hours, with the
     # value PigroCRM reads as `PIGROCRM_ENGAGEMENTS_TOKEN`, never the registry's. Empty
-    # means the link is skipped (the match waits as `da_collegare`) and the report and
+    # means the link is skipped (the match waits as `to_link`) and the report and
     # «Riprova» answer 503 with a sentence, as signing does without Documenso.
     pigro_engagements_token: str = ""
 
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     # Mails Resend lets this key send in a day: 100 on the free plan (REB-779). The
     # campaigns tick counts the rows sent since midnight in Rome across every campaign
     # and holds the rest for the next day, so a long list never reaches Resend's 429.
-    resend_daily_quota: int = Field(default=100, ge=1)
+    resend_daily_share: int = Field(default=100, ge=1)
     # Of that quota, what a campaign never spends: the magic links, the member area's
     # mails and the campaign test mails (not rows, so not counted) all share the key. A
     # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
@@ -188,7 +188,7 @@ class Settings(BaseSettings):
     def _reserve_leaves_room(self) -> "Settings":
         # A reserve that eats the whole quota would hold every campaign for good while
         # the page kept promising tomorrow (REB-779).
-        if self.campaign_daily_reserve >= self.resend_daily_quota:
+        if self.campaign_daily_reserve >= self.resend_daily_share:
             raise ValueError(
                 "REBASE_CAMPAIGN_DAILY_RESERVE must be below REBASE_RESEND_DAILY_QUOTA"
             )

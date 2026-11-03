@@ -12,7 +12,7 @@ export function useDuplicates() {
 
 /** How many pairs an admin has to look at, the two groups together. */
 export function pairCount(list: DuplicateList): number {
-  return list.unibili.length + list.da_rivedere.length
+  return list.mergeable.length + list.from_review.length
 }
 
 function rows(count: number): string {
@@ -22,7 +22,7 @@ function rows(count: number): string {
 /** The line shown once a merge went through: what moved, and the one thing left to do. */
 export function mergeResultLine(result: MergeResult): string {
   const moved = Object.values(result.moved).reduce((total, count) => total + count, 0)
-  const stayed = Object.values(result.lasciati).reduce((total, count) => total + count, 0)
+  const stayed = Object.values(result.left).reduce((total, count) => total + count, 0)
   const parts = [`Unite: ${rows(moved)}.`]
   if (stayed > 0) {
     parts.push(
@@ -31,6 +31,6 @@ export function mergeResultLine(result: MergeResult): string {
         : `${stayed} righe sono rimaste dov’erano perché la scheda tenuta ne aveva già una uguale.`,
     )
   }
-  if (result.scheda_da_rigenerare) parts.push('La scheda anonima va riscritta.')
+  if (result.card_from_regenerate) parts.push('La scheda anonima va riscritta.')
   return parts.join(' ')
 }

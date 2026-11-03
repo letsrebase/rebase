@@ -169,8 +169,8 @@ export function useInviteUser() {
     mutationFn: (body: {
       email: string
       nome: string | null
-      ruolo: string
-      aziende?: string[] | null
+      role: string
+      legal_entities?: string[] | null
     }) =>
       unwrap(
         api.POST('/api/users/invites', {
@@ -327,7 +327,7 @@ export function useUpdateTemplate(templateId: string) {
 }
 
 /** `DELETE /api/templates/{id}` deactivates rather than deleting: it flips
- *  `attivo` and returns the row. Paired with `useActivateTemplate` deliberately
+ *  `active` and returns the row. Paired with `useActivateTemplate` deliberately
  *  -- an administrator who deactivates a template by mistake must have a way
  *  back, the same lesson `useUnarchiveFieldDefinition` exists for. A one-way
  *  door on a boolean column is a defect, not a simplification. */
@@ -370,33 +370,33 @@ type LegalEntityCreateBody = components['schemas']['LegalEntityCreate']
  */
 export function useLegalEntities() {
   return useQuery({
-    queryKey: queryKeys.aziende,
-    queryFn: () => unwrap(api.GET('/api/aziende')),
+    queryKey: queryKeys.legal_entities,
+    queryFn: () => unwrap(api.GET('/api/legal-entities')),
   })
 }
 
 /** `PUT`, not `PATCH`: `LegalEntityUpsert` is one shape for every write, because a
  *  write is always a whole row. Slice 3 builds FatturaPA on this row, so a partial
- *  save leaving `partita_iva` empty would surface much later as an invalid invoice.
+ *  save leaving `vat_number` empty would surface much later as an invalid invoice.
  *  The answer is the row as saved: written into the list at once, so the panel's row
  *  moves with the save and not one round trip later (REB-622: the form compares its
  *  version with the row's, and a prop that lagged the save read as another admin's
  *  older row), then the list is invalidated, which is where every reader gets it from. */
-export function useSaveLegalEntity(aziendaId: string) {
+export function useSaveLegalEntity(legalEntityId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
-        api.PUT('/api/aziende/{azienda_id}', {
-          params: { path: { azienda_id: aziendaId } },
+        api.PUT('/api/legal-entities/{legal_entity_id}', {
+          params: { path: { legal_entity_id: legalEntityId } },
           body: asBody<LegalEntityUpsertBody>(body),
         }),
       ),
     onSuccess: (saved) => {
-      queryClient.setQueryData<LegalEntityRecord[]>(queryKeys.aziende, (previous) =>
-        previous?.map((azienda) => (azienda.id === saved.id ? saved : azienda)),
+      queryClient.setQueryData<LegalEntityRecord[]>(queryKeys.legal_entities, (previous) =>
+        previous?.map((legal_entity) => (legal_entity.id === saved.id ? saved : legal_entity)),
       )
-      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
     },
   })
 }
@@ -413,9 +413,9 @@ export function useCreateLegalEntity() {
     // The same cast `useSaveLegalEntity` makes: the form sends the keys it asks for and the
     // server defaults the rest, while the generated type lists them all as present.
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/aziende', { body: asBody<LegalEntityCreateBody>(body) })),
+      unwrap(api.POST('/api/legal-entities', { body: asBody<LegalEntityCreateBody>(body) })),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
       // The Home's «tutte» is a different answer from the second azienda on (no
       // space-wide estimate, the concentration per azienda), and its key does not
       // change: dropped here so a sixty-second `staleTime` cannot keep the old shape.
@@ -427,7 +427,7 @@ export function useCreateLegalEntity() {
 
 // -- The logo and the signature of an azienda (REB-629) --------------------------------
 
-export type LegalEntityImageSlot = 'logo' | 'firma'
+export type LegalEntityImageSlot = 'logo' | 'signature'
 
 /**
  * The image's bytes, as a Blob the block turns into an object URL, or `null` when the
@@ -437,12 +437,12 @@ export type LegalEntityImageSlot = 'logo' | 'firma'
  * Outside the typed client for the response type, through `fetchWithRefresh` for the
  * session and the tenant prefix, like a document's download (`features/documents`).
  */
-export function useLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot, present: boolean) {
+export function useLegalEntityImage(legalEntityId: string, slot: LegalEntityImageSlot, present: boolean) {
   return useQuery({
-    queryKey: queryKeys.aziendaImage(aziendaId, slot),
+    queryKey: queryKeys.legalEntityImage(legalEntityId, slot),
     enabled: present,
     queryFn: async (): Promise<Blob | null> => {
-      const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`)
+      const response = await fetchWithRefresh(`/api/legal-entities/${legalEntityId}/${slot}`)
       if (response.status === 404) return null
       if (!response.ok) {
         const payload: unknown = await response.json().catch(() => null)
@@ -455,13 +455,13 @@ export function useLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlo
 
 /** Multipart, so outside the typed client, the same exception `putVersion` documents. */
 async function putLegalEntityImage(
-  aziendaId: string,
+  legalEntityId: string,
   slot: LegalEntityImageSlot,
   file: File,
 ): Promise<LegalEntityRecord> {
   const body = new FormData()
   body.append('file', file)
-  const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`, {
+  const response = await fetchWithRefresh(`/api/legal-entities/${legalEntityId}/${slot}`, {
     method: 'PUT',
     body,
   })
@@ -482,33 +482,33 @@ export function imageTooLarge(file: File): ProblemDetail | null {
   return file.size > IMAGE_MAX_BYTES ? toProblem({ detail: IMAGE_TOO_LARGE }, 413) : null
 }
 
-export function useUploadLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot) {
+export function useUploadLegalEntityImage(legalEntityId: string, slot: LegalEntityImageSlot) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => putLegalEntityImage(aziendaId, slot, file),
+    mutationFn: (file: File) => putLegalEntityImage(legalEntityId, slot, file),
     // The row (its key changed) and the bytes under the same prefix.
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities }),
   })
 }
 
-export function useRemoveLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot) {
+export function useRemoveLegalEntityImage(legalEntityId: string, slot: LegalEntityImageSlot) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () =>
       unwrap(
         slot === 'logo'
-          ? api.DELETE('/api/aziende/{azienda_id}/logo', {
-              params: { path: { azienda_id: aziendaId } },
+          ? api.DELETE('/api/legal-entities/{legal_entity_id}/logo', {
+              params: { path: { legal_entity_id: legalEntityId } },
             })
-          : api.DELETE('/api/aziende/{azienda_id}/firma', {
-              params: { path: { azienda_id: aziendaId } },
+          : api.DELETE('/api/legal-entities/{legal_entity_id}/signature', {
+              params: { path: { legal_entity_id: legalEntityId } },
             }),
       ),
     onSuccess: () => {
       // The bytes query is disabled once the row has no key, so its cached Blob would
       // otherwise outlive the removal and flash on the next upload: dropped outright.
-      queryClient.removeQueries({ queryKey: queryKeys.aziendaImage(aziendaId, slot) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      queryClient.removeQueries({ queryKey: queryKeys.legalEntityImage(legalEntityId, slot) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
     },
   })
 }

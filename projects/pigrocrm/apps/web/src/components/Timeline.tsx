@@ -104,11 +104,11 @@ function ActorLine({ entry }: { entry: ActivityEntry }) {
 
 /**
  * An automation's entry is the system's, and names the member whose action set it off in
- * `payload.attivata_da`, with the channel that member used in `attivata_via` (§9.5). Both
+ * `payload.triggered_by`, with the channel that member used in `triggered_via` (§9.5). Both
  * are read here and kept out of the generic dump, which would print an id.
  */
 function TriggeredBy({ entry }: { entry: ActivityEntry }) {
-  const { attivata_da: member, attivata_via: via } = entry.payload
+  const { triggered_by: member, triggered_via: via } = entry.payload
   if (member === undefined || member === null) return null
   const channel = typeof via === 'string' ? CHANNEL_LABEL[via] : undefined
   return (
@@ -136,7 +136,7 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
  *    for a payload the backend constructs as `{"from": ..., "to": ...}`), so
  *    anything that assumed the first key was always "from" would be reading the
  *    wrong side of the transition at random.
- *  - `created`'s payload is per-entity (`ragione_sociale` for a customer, `nome`
+ *  - `created`'s payload is per-entity (`legal_name` for a customer, `nome`
  *    for a person, `nome`+`stage` for a deal) and `deleted`/`restored` carry `{}`
  *    -- both land in the generic fallback, which is `null` for the empty case
  *    (the label above already says everything there is to say) and an
@@ -161,7 +161,7 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
     )
   }
 
-  // `importata_da` is dropped rather than dumped: the `imported` label already says the
+  // `imported_from` is dropped rather than dumped: the `imported` label already says the
   // invoice was issued elsewhere, and the column's value names the system it came from
   // -- provenance the CRM keeps for itself, never product copy (`invoices/models.py`).
   // The rest of that payload (anno, numero, totale) are facts about the document and
@@ -170,15 +170,15 @@ function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
   // The ids a payload carries to say which draft or which member it concerns are for the
   // machine: dumping a UUID tells a reader nothing the label does not.
   const hidden: Record<string, true> = {
-    importata_da: true,
-    attivata_da: true,
-    attivata_via: true,
+    imported_from: true,
+    triggered_by: true,
+    triggered_via: true,
     draft_id: true,
     user_id: true,
     // A note event's id and door: the label says what happened, the actor line says who and
     // how, and the text of a note is on the page, never repeated here.
-    nota_id: true,
-    fonte: true,
+    note_id: true,
+    source: true,
   }
   const rest = Object.entries(payload).filter(([key]) => hidden[key] !== true)
   if (rest.length === 0) return null

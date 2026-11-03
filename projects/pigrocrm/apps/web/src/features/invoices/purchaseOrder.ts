@@ -5,22 +5,22 @@ import type { Invoice } from './queries'
  * number, and optionally its date, CIG and CUP, as the four inputs hold them.
  */
 export interface PurchaseOrderDraft {
-  ordine_numero: string
-  ordine_data: string
-  ordine_cig: string
-  ordine_cup: string
+  purchase_order_number: string
+  purchase_order_date: string
+  purchase_order_tender_code: string
+  purchase_order_project_code: string
 }
 
-type PurchaseOrderFields = Pick<Invoice, 'ordine_numero' | 'ordine_data' | 'ordine_cig' | 'ordine_cup'>
+type PurchaseOrderFields = Pick<Invoice, 'purchase_order_number' | 'purchase_order_date' | 'purchase_order_tender_code' | 'purchase_order_project_code'>
 
 /** `?? ''`: a `null` from the API, and an absent key from an API that predates the
  * columns, both read as "not set". */
 export function purchaseOrderDraft(invoice: PurchaseOrderFields): PurchaseOrderDraft {
   return {
-    ordine_numero: invoice.ordine_numero ?? '',
-    ordine_data: invoice.ordine_data ?? '',
-    ordine_cig: invoice.ordine_cig ?? '',
-    ordine_cup: invoice.ordine_cup ?? '',
+    purchase_order_number: invoice.purchase_order_number ?? '',
+    purchase_order_date: invoice.purchase_order_date ?? '',
+    purchase_order_tender_code: invoice.purchase_order_tender_code ?? '',
+    purchase_order_project_code: invoice.purchase_order_project_code ?? '',
   }
 }
 
@@ -29,8 +29,8 @@ export function purchaseOrderDraft(invoice: PurchaseOrderFields): PurchaseOrderD
  * sentence is shown as it comes. */
 export function validatePurchaseOrder(draft: PurchaseOrderDraft): string | undefined {
   const hasRest =
-    draft.ordine_data !== '' || draft.ordine_cig.trim() !== '' || draft.ordine_cup.trim() !== ''
-  if (draft.ordine_numero.trim() === '' && hasRest) return 'Indica il numero dell’ordine.'
+    draft.purchase_order_date !== '' || draft.purchase_order_tender_code.trim() !== '' || draft.purchase_order_project_code.trim() !== ''
+  if (draft.purchase_order_number.trim() === '' && hasRest) return 'Indica il numero dell’ordine.'
   return undefined
 }
 

@@ -24,13 +24,13 @@ router = APIRouter(
 # CustomerCreate.RAGIONE_SOCIALE_MAX_LENGTH). `PatService.create` takes a bare `nome:
 # str`, not a packages/core schema of its own (see pat_service.py), so this router's
 # own request model is the only Pydantic layer standing between a caller and
-# `personal_access_tokens.nome` -- both the length bound and the SafeStr NUL guard
+# `personal_access_tokens.name` -- both the length bound and the SafeStr NUL guard
 # have to live here, not in packages/core.
-NOME_MAX_LENGTH = 120
+NAME_MAX_LENGTH = 120
 
 
 class CreateTokenRequest(BaseModel):
-    nome: SafeStr = Field(max_length=NOME_MAX_LENGTH)
+    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     # Closed unless asked for (REB-810): the invoice, rate and period-lock tools are a
     # decision about one agent, taken when its token is made.
     full_access: bool = False

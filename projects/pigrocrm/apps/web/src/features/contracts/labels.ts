@@ -10,57 +10,57 @@ import type { ContractExpense, ContractState, RateCardCreateBody } from './queri
  * here instead of a blank label.
  */
 export const STATE_LABELS: Record<ContractState, string> = {
-  bozza: 'Bozza',
-  attivo: 'Attivo',
-  terminato: 'Terminato',
-  scaduto: 'Scaduto',
+  draft: 'Bozza',
+  active: 'Attivo',
+  terminated: 'Terminato',
+  expired: 'Scaduto',
 }
 
 export const STATE_TONE: Record<ContractState, StatusTone> = {
-  bozza: 'muted',
-  attivo: 'ink',
-  terminato: 'danger',
-  scaduto: 'gold',
+  draft: 'muted',
+  active: 'ink',
+  terminated: 'danger',
+  expired: 'gold',
 }
 
 export const STATES = Object.keys(STATE_LABELS) as ContractState[]
 
-/** The states a contract can move to from `stato`: all but the one it is in. */
-export function nextStates(stato: string): ContractState[] {
-  return STATES.filter((state) => state !== stato)
+/** The states a contract can move to from `status`: all but the one it is in. */
+export function nextStates(status: string): ContractState[] {
+  return STATES.filter((state) => state !== status)
 }
 
-export function stateLabel(stato: string): string {
-  return stato in STATE_LABELS ? STATE_LABELS[stato as ContractState] : stato
+export function stateLabel(status: string): string {
+  return status in STATE_LABELS ? STATE_LABELS[status as ContractState] : status
 }
 
-export function stateTone(stato: string): StatusTone {
-  return stato in STATE_TONE ? STATE_TONE[stato as ContractState] : 'muted'
+export function stateTone(status: string): StatusTone {
+  return status in STATE_TONE ? STATE_TONE[status as ContractState] : 'muted'
 }
 
-export const RENEWAL_TYPES = ['nessuno', 'esplicito', 'opzione_controparte', 'tacito'] as const
+export const RENEWAL_TYPES = ['none', 'explicit', 'counterparty_option', 'tacit'] as const
 export type RenewalType = (typeof RENEWAL_TYPES)[number]
 
 export const RENEWAL_LABELS: Record<RenewalType, string> = {
-  nessuno: 'Nessun rinnovo',
-  esplicito: 'Rinnovo esplicito',
-  opzione_controparte: 'Opzione della controparte',
-  tacito: 'Rinnovo tacito',
+  none: 'Nessun rinnovo',
+  explicit: 'Rinnovo esplicito',
+  counterparty_option: 'Opzione della controparte',
+  tacit: 'Rinnovo tacito',
 }
 
 export function renewalLabel(value: string): string {
   return value in RENEWAL_LABELS ? RENEWAL_LABELS[value as RenewalType] : value
 }
 
-/** `cadenza_fatturazione` has no CHECK in the database (the value set is the
+/** `billing_cadence` has no CHECK in the database (the value set is the
  *  engagement's own to pin, `contracts/models.py`), so the form offers these four and
  *  keeps whatever else a contract already holds. */
-export const CADENCES = ['mensile', 'trimestrale', 'annuale', 'a_completamento'] as const
+export const CADENCES = ['monthly', 'quarterly', 'annual', 'a_completamento'] as const
 
 export const CADENCE_LABELS: Record<(typeof CADENCES)[number], string> = {
-  mensile: 'Mensile',
-  trimestrale: 'Trimestrale',
-  annuale: 'Annuale',
+  monthly: 'Mensile',
+  quarterly: 'Trimestrale',
+  annual: 'Annuale',
   a_completamento: 'A completamento',
 }
 
@@ -68,25 +68,25 @@ export function cadenceLabel(value: string): string {
   return value in CADENCE_LABELS ? CADENCE_LABELS[value as (typeof CADENCES)[number]] : value
 }
 
-/** The three shapes of `politica_spese`, tagged by `kind`
- *  (`contract_expenses/models.py`). `importo_tetto` rides only on the capped one;
+/** The three shapes of `expense_policy`, tagged by `kind`
+ *  (`contract_expenses/models.py`). `amount_cap` rides only on the capped one;
  *  `richiede_preautorizzazione` on the two that reimburse. */
 export const EXPENSE_POLICY_KINDS = [
-  'non_rimborsabile',
-  'rimborsabile',
-  'rimborsabile_con_tetto',
+  'not_reimbursable',
+  'reimbursable',
+  'reimbursable_with_cap',
 ] as const
 export type ExpensePolicyKind = (typeof EXPENSE_POLICY_KINDS)[number]
 
 export const EXPENSE_POLICY_LABELS: Record<ExpensePolicyKind, string> = {
-  non_rimborsabile: 'Non rimborsate',
-  rimborsabile: 'Rimborsate a costo',
-  rimborsabile_con_tetto: 'Rimborsate fino a un tetto',
+  not_reimbursable: 'Non rimborsate',
+  reimbursable: 'Rimborsate a costo',
+  reimbursable_with_cap: 'Rimborsate fino a un tetto',
 }
 
 export interface ExpensePolicy {
   kind: ExpensePolicyKind
-  importo_tetto?: string
+  amount_cap?: string
   richiede_preautorizzazione?: boolean
 }
 
@@ -97,9 +97,9 @@ export function readExpensePolicy(raw: Record<string, unknown>): ExpensePolicy |
   if (!EXPENSE_POLICY_KINDS.includes(kind as ExpensePolicyKind)) return null
   return {
     kind: kind as ExpensePolicyKind,
-    importo_tetto:
-      typeof raw.importo_tetto === 'string' || typeof raw.importo_tetto === 'number'
-        ? String(raw.importo_tetto)
+    amount_cap:
+      typeof raw.amount_cap === 'string' || typeof raw.amount_cap === 'number'
+        ? String(raw.amount_cap)
         : undefined,
     richiede_preautorizzazione:
       typeof raw.richiede_preautorizzazione === 'boolean' ? raw.richiede_preautorizzazione : undefined,
@@ -107,38 +107,38 @@ export function readExpensePolicy(raw: Record<string, unknown>): ExpensePolicy |
 }
 
 export function expensePolicyBody(policy: ExpensePolicy): Record<string, unknown> {
-  if (policy.kind === 'non_rimborsabile') return { kind: policy.kind }
+  if (policy.kind === 'not_reimbursable') return { kind: policy.kind }
   const body: Record<string, unknown> = {
     kind: policy.kind,
     richiede_preautorizzazione: policy.richiede_preautorizzazione === true,
   }
-  if (policy.kind === 'rimborsabile_con_tetto') body.importo_tetto = policy.importo_tetto
+  if (policy.kind === 'reimbursable_with_cap') body.amount_cap = policy.amount_cap
   return body
 }
 
-export const RATE_TIPI: Record<RateCardCreateBody['tipo'], string> = {
-  ricorrente_fisso: 'Canone ricorrente',
-  giornaliero: 'Giornaliera',
-  orario: 'Oraria',
-  una_tantum: 'Una tantum',
+export const RATE_TIPI: Record<RateCardCreateBody['type'], string> = {
+  fixed_recurring: 'Canone ricorrente',
+  daily: 'Giornaliera',
+  hourly: 'Oraria',
+  one_off: 'Una tantum',
 }
 
-export const RATE_UNITA: Record<RateCardCreateBody['unita'], string> = {
+export const RateUnit: Record<RateCardCreateBody['unit'], string> = {
   ora: 'ora',
-  giorno: 'giorno',
-  mese: 'mese',
-  anno: 'anno',
-  forfait: 'forfait',
+  day: 'day',
+  month: 'month',
+  year: 'year',
+  flat: 'flat',
 }
 
-export const RATE_PERIODI: Record<NonNullable<RateCardCreateBody['periodo_erogazione']>, string> = {
-  mensile: 'Mensile',
-  trimestrale: 'Trimestrale',
-  annuale: 'Annuale',
-  una_tantum: 'Una tantum',
+export const RatePeriods: Record<NonNullable<RateCardCreateBody['delivery_period']>, string> = {
+  monthly: 'Mensile',
+  quarterly: 'Trimestrale',
+  annual: 'Annuale',
+  one_off: 'Una tantum',
 }
 
-/** Where an expense stands in the cycle to the client. `rimborsabile` is the database's
+/** Where an expense stands in the cycle to the client. `reimbursable` is the database's
  *  own verdict (the contract's policy against this expense's authorisation), never
  *  recomputed here, and `invoice_line_id` is what says it already went out. */
 export function expenseStanding(expense: ContractExpense): {
@@ -146,19 +146,19 @@ export function expenseStanding(expense: ContractExpense): {
   label: string
 } {
   if (expense.invoice_line_id !== null) return { tone: 'ink', label: 'In fattura' }
-  if (expense.rimborsabile) return { tone: 'gold', label: 'Da fatturare' }
+  if (expense.reimbursable) return { tone: 'gold', label: 'Da fatturare' }
   return { tone: 'muted', label: 'Non rimborsabile' }
 }
 
 /** An amount in the contract's own currency. `formatMoney` is euro-only, and nothing
  *  here converts: another currency shows the API's decimal string and its code. */
-export function formatAmount(value: string, divisa: string): string {
-  return divisa === 'EUR' ? formatMoney(value) : `${value} ${divisa}`
+export function formatAmount(value: string, currency: string): string {
+  return currency === 'EUR' ? formatMoney(value) : `${value} ${currency}`
 }
 
 /** What an amount field's label shows: the euro sign, or the contract's own code. */
-export function currencySign(divisa: string): string {
-  return divisa === 'EUR' ? '€' : divisa
+export function currencySign(currency: string): string {
+  return currency === 'EUR' ? '€' : currency
 }
 
 const capPercent = new Intl.NumberFormat('it-IT', {

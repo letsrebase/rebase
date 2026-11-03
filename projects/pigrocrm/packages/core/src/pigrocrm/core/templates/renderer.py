@@ -50,21 +50,21 @@ ENTITY = "template"
 
 @dataclass(frozen=True)
 class DeclaredVariable:
-    """One entry of a template's `variabili_dichiarate`.
+    """One entry of a template's `declared_variables`.
 
     Declared, not deduced (spec 4.3): the compilation form shows label, type and
     whether it is required, and the render fails with a precise error if a required
     one is missing -- instead of producing a PDF with a hole in it.
 
-    `tipo` is one of the nine `FieldType` values in fields/types.py, so the frontend
+    `type` is one of the nine `FieldType` values in fields/types.py, so the frontend
     can render it with the existing `DynamicFieldRenderer` and nothing new has to
     learn a tenth type.
     """
 
     nome: str
-    etichetta: str
-    tipo: str
-    obbligatoria: bool
+    label: str
+    type: str
+    required: bool
 
 
 def _is_blank(value: Any) -> bool:
@@ -205,8 +205,8 @@ def _check_declared(
     to enrich a caught `ValidationFailed` with that fact, not this pure function.
     """
     for variable in declared:
-        if variable.obbligatoria and _is_blank(values.get(variable.nome)):
-            reason = f"variabile obbligatoria mancante: {variable.etichetta}"
+        if variable.required and _is_blank(values.get(variable.nome)):
+            reason = f"variabile obbligatoria mancante: {variable.label}"
             line = _first_root_line_referencing(nodes, variable.nome)
             if line is not None:
                 reason = f"riga {line}: {reason}"
@@ -250,12 +250,12 @@ def render_template(
     # always wins, so an actual (even falsy) value is never masked by this default.
     #
     # This used to seed `""` unconditionally, regardless of
-    # `tipo`. For a scalar type that is merely cosmetic -- `format_value("")` and
+    # `type`. For a scalar type that is merely cosmetic -- `format_value("")` and
     # `format_value(None)` are both `""`, and `bool("")`/`bool(None)` are both
     # falsy, so `{{note}}` and `{{#if note}}` behave identically either way -- but
-    # for `multiselect` it was a real bug: `{{#each righe}}` resolved `righe` to
+    # for `multiselect` it was a real bug: `{{#each righe}}` resolved `lines` to
     # the string `""`, which is not a list, and raised "'righe' non e' una lista"
-    # -- on the exact template that renders as nothing at all if `righe` is never
+    # -- on the exact template that renders as nothing at all if `lines` is never
     # declared. Declaring an optional variable must never make a template *more*
     # likely to fail than leaving it undeclared.
     #
@@ -268,9 +268,9 @@ def render_template(
     # treats `value is None` as "no rows" (the same branch a genuinely absent
     # path takes); plain Python truthiness already treats `None` as falsy for
     # `#if`, the same as `False`, `0` or `[]`; and `format_value(None)` is `""`
-    # for a bare substitution. `tipo` therefore still is not consulted here --
+    # for a bare substitution. `type` therefore still is not consulted here --
     # matching it correctly does not require branching on it.
-    optional_defaults: dict[str, Any] = {v.nome: None for v in declared if not v.obbligatoria}
+    optional_defaults: dict[str, Any] = {v.nome: None for v in declared if not v.required}
     scopes: list[dict[str, Any]] = [{**optional_defaults, **values}]
     out: list[str] = []
     _render_nodes(nodes, scopes, out, context)

@@ -39,7 +39,7 @@ def get_billable_days(
     a: Annotated[date | None, Query(description="Al giorno, incluso")] = None,
 ) -> BillableDays:
     """Le giornate pronte da fatturare di un contratto, come le righe che metterebbero in una
-    bozza: `lavorato` e non ancora su una riga di fattura. Sola lettura."""
+    bozza: `worked` e non ancora su una riga di fattura. Sola lettura."""
     return billable_days(session, contract_id, da, a)
 
 
@@ -54,7 +54,7 @@ def invoice_days(
     storage: StorageDep,
 ) -> InvoiceRead:
     """Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `da` e `a`),
-    alle tariffe del contratto, e le segna `fatturato`. Non emette niente. Solo un
+    alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
     amministratore e mai un agente: scegliere cosa finisce su una bozza decide cosa
     congelerà l'emissione."""
     return assemble_unbilled_work_units_into_new_invoice(

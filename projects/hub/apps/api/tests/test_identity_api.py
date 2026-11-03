@@ -3,7 +3,7 @@ hitting an admin route (403, not 401), and the promote/demote pair.
 
 Every address here carries a `.reb278` tag: `api_engine` is one Postgres container
 shared by every test file in this suite, and a plain `ada@studio.it` collides with the
-same address other files apply under, leaving stale rows (and a stale `completa`) a
+same address other files apply under, leaving stale rows (and a stale `complete`) a
 `clean` fixture scoped to this file alone cannot see coming.
 """
 
@@ -55,11 +55,11 @@ def _apply(client: TestClient, email: str) -> None:
         "/api/hub/freelancers",
         data={
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -78,17 +78,17 @@ def _enter(client: TestClient, sender: RecordingSender, email: str) -> dict:
 def _bootstrap_admin(api_session: Session, email: str = "ivan.reb278@rebase.it") -> None:
     """A `users` row already there, `role='admin'`: the shape migration A would leave
     behind for an admin who existed before REB-278 deployed."""
-    api_session.add(User(email=email, nome="Ivan", cognome="Fiore", role="admin"))
+    api_session.add(User(email=email, nome="Ivan", last_name="Fiore", role="admin"))
     api_session.commit()
 
 
-def test_me_widens_to_role_and_ha_scheda(
+def test_me_widens_to_role_and_has_card(
     client: TestClient, sender: RecordingSender, clean: None
 ) -> None:
     _apply(client, "ada.reb278@studio.it")
     entered = _enter(client, sender, "ada.reb278@studio.it")
-    assert entered["role"] == "member" and entered["ha_scheda"] is True
-    assert entered["completa"] is True and entered["nome"] == "Ada"
+    assert entered["role"] == "member" and entered["has_card"] is True
+    assert entered["complete"] is True and entered["nome"] == "Ada"
     assert client.get("/api/hub/me").json() == entered
 
 
@@ -113,8 +113,8 @@ def test_an_admin_gets_200_where_a_member_gets_403(
 ) -> None:
     _bootstrap_admin(api_session)
     entered = _enter(client, sender, "ivan.reb278@rebase.it")
-    assert entered["role"] == "admin" and entered["ha_scheda"] is False
-    assert (entered["cv_filename"], entered["tariffa_giornaliera"], entered["links"]) == (
+    assert entered["role"] == "admin" and entered["has_card"] is False
+    assert (entered["cv_filename"], entered["daily_rate"], entered["links"]) == (
         None,
         None,
         [],
@@ -156,12 +156,12 @@ def test_promote_and_demote_routes(
 
     promoted = client.post(
         "/api/hub/admins/promote",
-        json={"email": "Lorenzo.Reb278@Rebase.it", "nome": "Lorenzo", "cognome": "Fiore"},
+        json={"email": "Lorenzo.Reb278@Rebase.it", "nome": "Lorenzo", "last_name": "Fiore"},
     )
     assert promoted.status_code == 200, promoted.text
     body = promoted.json()
     assert body["email"] == "lorenzo.reb278@rebase.it" and body["nome"] == "Lorenzo"
-    assert sender.sent and "/entra?t=" in sender.sent[-1].text  # a brand-new row gets a link
+    assert sender.sent and "/verify?t=" in sender.sent[-1].text  # a brand-new row gets a link
 
     admins = {row["email"] for row in client.get("/api/hub/admins").json()["items"]}
     assert admins == {"ivan.reb278@rebase.it", "lorenzo.reb278@rebase.it"}
@@ -197,7 +197,7 @@ def test_the_last_admin_cannot_be_demoted_and_every_change_of_role_is_signed(
 
     promoted = client.post(
         "/api/hub/admins/promote",
-        json={"email": "lorenzo.reb278@rebase.it", "nome": "Lorenzo", "cognome": "Fiore"},
+        json={"email": "lorenzo.reb278@rebase.it", "nome": "Lorenzo", "last_name": "Fiore"},
     ).json()
     assert client.post(f"/api/hub/admins/{promoted['id']}/demote").status_code == 200
 

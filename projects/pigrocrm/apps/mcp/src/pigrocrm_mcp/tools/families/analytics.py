@@ -14,10 +14,10 @@ from pigrocrm_mcp.tools import (
     timetracking,
 )
 from pigrocrm_mcp.tools.params import (
-    Anno,
     BoundedLimit,
     IsoDateStr,
     OptionalFactor,
+    Year,
     iso_date,
     parse_legal_entity_id,
 )
@@ -37,22 +37,22 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def get_deal_pnl(deal_id: str) -> dict[str, Any]:
         """Conto economico di un deal: ricavi fatturati, costi diretti, costo del lavoro, margine e
-        stato. `margine_percentuale` è `null` se i ricavi sono zero: non è 0%, vuol dire che non
-        c'è ancora incasso. `valore_maturato` è una stima, non un ricavo.
+        stato. `percentage_margin` è `null` se i ricavi sono zero: non è 0%, vuol dire che non
+        c'è ancora incasso. `accrued_value` è una stima, non un ricavo.
         """
         return timetracking.get_deal_pnl(context, deal_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_period_pnl(
-        da: str, a: str, customer_id: str | None = None, base: str = "emissione"
+        da: str, a: str, customer_id: str | None = None, base: str = "issue"
     ) -> dict[str, Any]:
         """Conto economico di periodo in due colonne: deal chiusi e deal in corso; il numero
-        riportabile è il primo. `periodo_chiuso` e `voci_scritte_in_ritardo` dicono se la cifra
+        riportabile è il primo. `closed_period` e `written_entries_overdue` dicono se la cifra
         può ancora cambiare. Le spese generali sono in una riga a parte, non ripartite.
 
-        `base` sceglie la data che colloca il ricavo di una fattura nel periodo: `"emissione"`
-        (predefinita, come il fisco) o `"competenza"` (`competenza_da`, o l'emissione se manca; per
+        `base` sceglie la data che colloca il ricavo di una fattura nel periodo: `"issue"`
+        (predefinita, come il fisco) o `"accrual"` (`accrual_from`, o l'emissione se manca; per
         le fatture emesse in ritardo). Costi e ore restano alla propria data; una proforma non è
         mai ricavo.
         """
@@ -107,71 +107,73 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def get_ceiling_headroom(anno: Anno, azienda_id: str | None = None) -> dict[str, Any]:
+    def get_ceiling_headroom(year: Year, legal_entity_id: str | None = None) -> dict[str, Any]:
         """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale, sui ricavi
-        incassati e reali dell'anno: `residuo` è soglia meno ricavi. Non richiede `admin`. Di
-        una sola azienda: senza `azienda_id` è l'unica dello spazio, con più aziende va
+        incassati e reali dell'anno: `remaining` è soglia meno ricavi. Non richiede `admin`. Di
+        una sola azienda: senza `legal_entity_id` è l'unica dello spazio, con più aziende va
         indicata. Un'azienda estera non ha soglie.
         """
-        return timetracking.get_ceiling_headroom(context, anno, parse_legal_entity_id(azienda_id))
+        return timetracking.get_ceiling_headroom(
+            context, year, parse_legal_entity_id(legal_entity_id)
+        )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_days_analysis(
-        da: str | None = None, a: str | None = None, azienda_id: str | None = None
+        da: str | None = None, a: str | None = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Le giornate di un periodo: per mese e stato, tariffa reale contro listino, per cliente e
         contratto, e quante giornate sono finite in «lavorato senza approvazione» mese per mese.
         `da`/`a` (YYYY-MM-DD) vanno dati entrambi o nessuno (allora è il mese corrente).
-        `azienda_id` filtra per azienda; senza, tutte. Non richiede `admin`.
+        `legal_entity_id` filtra per azienda; senza, tutte. Non richiede `admin`.
         """
-        return timetracking.get_days_analysis(context, da, a, parse_legal_entity_id(azienda_id))
+        return timetracking.get_days_analysis(
+            context, da, a, parse_legal_entity_id(legal_entity_id)
+        )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def get_year_overview(anno: Anno, azienda_id: str | None = None) -> dict[str, Any]:
+    def get_year_overview(year: Year, legal_entity_id: str | None = None) -> dict[str, Any]:
         """L'anno di un'azienda come lo legge il commercialista: ricavi per regime e per
         trattamento fiscale, con riferimento normativo, e registro delle fatture emesse con
-        bollo e rivalsa INPS a parte. `totali.imponibile` è il ricavo dell'anno. Non richiede
-        `admin`. Senza `azienda_id` è l'unica dello spazio, con più aziende va indicata. Non
+        bollo e rivalsa INPS a parte. `totali.taxable_amount` è il ricavo dell'anno. Non richiede
+        `admin`. Senza `legal_entity_id` è l'unica dello spazio, con più aziende va indicata. Non
         restituisce file.
         """
-        return timetracking.get_year_overview(context, anno, parse_legal_entity_id(azienda_id))
+        return timetracking.get_year_overview(context, year, parse_legal_entity_id(legal_entity_id))
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def simulate_ceiling(
-        anno: Anno,
-        ore_preventivate: OptionalFactor = None,
-        valore_preventivato: OptionalFactor = None,
-        tariffa_oraria: OptionalFactor = None,
-        azienda_id: str | None = None,
+        year: Year,
+        budgeted_hours: OptionalFactor = None,
+        budgeted_value: OptionalFactor = None,
+        hourly_rate: OptionalFactor = None,
+        legal_entity_id: str | None = None,
         contract_id: str | None = None,
-        data_prevista: IsoDateStr = None,
+        expected_date: IsoDateStr = None,
     ) -> dict[str, Any]:
         """Il simulatore «ci sta?»: somma la stima di un deal non vinto ai ricavi reali dell'anno e
-        rivaluta ogni soglia attiva, senza salvare. Serve `valore_preventivato`, oppure
-        `ore_preventivate` con `tariffa_oraria`. `azienda_id` come in `get_ceiling_headroom`.
+        rivaluta ogni soglia attiva, senza salvare. Serve `budgeted_value`, oppure
+        `budgeted_hours` con `hourly_rate`. `legal_entity_id` come in `get_ceiling_headroom`.
         Con `contract_id` la stima è letta anche contro il tetto sulla quota del cliente
-        (`tetto_quota_cliente`) nell'anno di anniversario del contratto che contiene
-        `data_prevista` (YYYY-MM-DD, default oggi): `tetto_contratto` dà quota prima e dopo e se
+        (`customer_share_cap`) nell'anno di anniversario del contratto che contiene
+        `expected_date` (YYYY-MM-DD, default oggi): `contract_cap` dà quota prima e dopo e se
         `rientra`.
         """
         return timetracking.simulate_ceiling(
             context,
-            anno,
+            year,
             CeilingSimulationQuery(
-                ore_preventivate=cast(Decimal, ore_preventivate)
-                if ore_preventivate is not None
+                budgeted_hours=cast(Decimal, budgeted_hours)
+                if budgeted_hours is not None
                 else None,
-                valore_preventivato=cast(Decimal, valore_preventivato)
-                if valore_preventivato is not None
+                budgeted_value=cast(Decimal, budgeted_value)
+                if budgeted_value is not None
                 else None,
-                tariffa_oraria=cast(Decimal, tariffa_oraria)
-                if tariffa_oraria is not None
-                else None,
+                hourly_rate=cast(Decimal, hourly_rate) if hourly_rate is not None else None,
                 contract_id=UUID(contract_id) if contract_id else None,
-                data_prevista=iso_date(data_prevista),
+                expected_date=iso_date(expected_date),
             ),
-            parse_legal_entity_id(azienda_id),
+            parse_legal_entity_id(legal_entity_id),
         )

@@ -249,7 +249,7 @@ def validate_custom_fields(
 
     for key in values:
         if key not in by_key:
-            known = ", ".join(sorted(by_key)) or "nessuno"
+            known = ", ".join(sorted(by_key)) or "none"
             # key comes straight from the caller's payload and becomes this
             # exception's `field`; ValidationFailed.__init__ formats it into
             # `message` in errors.py, a different file a local grep cannot see.

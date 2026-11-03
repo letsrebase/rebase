@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 from api_responses import ok
-from fakes_cards import CARD, PERSONA, card_response, text_pdf
+from fakes_cards import CARD, PERSON, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -35,7 +35,7 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -58,11 +58,11 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> None:
         "/api/hub/freelancers",
         data={
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -96,11 +96,11 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     empty = client.get("/api/hub/perks/guide")
     assert empty.status_code == 200
     assert empty.json() == {
-        "totale": 0,
-        "membri": 0,
-        "membri_totali": 0,
-        "ultimi_7_giorni": 0,
-        "recenti": [],
+        "total": 0,
+        "members": 0,
+        "total_members": 0,
+        "last_7_days": 0,
+        "recent": [],
     }
 
     _apply(client, "ada@studio.it")
@@ -117,20 +117,20 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
         perks.record_guide_download(ada_user_id)
 
     stats = client.get("/api/hub/perks/guide").json()
-    assert (stats["totale"], stats["membri"], stats["membri_totali"]) == (3, 1, 2)
-    assert stats["ultimi_7_giorni"] == 3
-    assert len(stats["recenti"]) == 3
-    latest = stats["recenti"][0]
-    assert (latest["nome"], latest["cognome"]) == ("Ada", "Lovelace")
+    assert (stats["total"], stats["members"], stats["total_members"]) == (3, 1, 2)
+    assert stats["last_7_days"] == 3
+    assert len(stats["recent"]) == 3
+    latest = stats["recent"][0]
+    assert (latest["nome"], latest["last_name"]) == ("Ada", "Lovelace")
     assert latest["email"] == "ada@studio.it"
     assert latest["user_id"] == str(ada_user_id)
     assert people["ada@studio.it"] != str(ada_user_id)  # the freelancer id, not the user id
     assert latest["freelancer_id"] == people["ada@studio.it"]
     admin_user_id = api_session.scalar(select(User.id).where(User.role == "admin"))
     perks.record_guide_download(admin_user_id)  # a person with no card: nothing to link to
-    again = client.get("/api/hub/perks/guide").json()["recenti"][0]
+    again = client.get("/api/hub/perks/guide").json()["recent"][0]
     assert (again["user_id"], again["freelancer_id"]) == (str(admin_user_id), None)
-    moments = [item["downloaded_at"] for item in stats["recenti"]]
+    moments = [item["downloaded_at"] for item in stats["recent"]]
     assert moments == sorted(moments, reverse=True)
 
 
@@ -140,7 +140,7 @@ def test_an_admin_manages_a_freelancer_card_through_the_lists(
     _login(client, sender)
     _apply(client)
     listed = client.get("/api/hub/freelancers").json()
-    assert listed["totale"] == 1
+    assert listed["total"] == 1
     item = listed["items"][0]
     assert item["cv_filename"] == "Ada CV.pdf" and "cv_bytes" not in item
 
@@ -150,11 +150,11 @@ def test_an_admin_manages_a_freelancer_card_through_the_lists(
     assert cv.headers["content-type"].startswith("application/pdf")
     assert 'filename="Ada CV.pdf"' in cv.headers["content-disposition"]
 
-    moved = client.patch(f"/api/hub/freelancers/{item['id']}", json={"stato": "contattato"})
-    assert moved.status_code == 200 and moved.json()["stato"] == "contattato"
-    wrong = client.patch(f"/api/hub/freelancers/{item['id']}", json={"stato": "forse"})
+    moved = client.patch(f"/api/hub/freelancers/{item['id']}", json={"status": "contacted"})
+    assert moved.status_code == 200 and moved.json()["status"] == "contacted"
+    wrong = client.patch(f"/api/hub/freelancers/{item['id']}", json={"status": "forse"})
     assert wrong.status_code == 422
-    assert wrong.json()["detail"][0]["loc"][-1] == "stato"
+    assert wrong.json()["detail"][0]["loc"][-1] == "status"
     missing = client.get("/api/hub/companies/00000000-0000-7000-8000-000000000000")
     assert missing.status_code == 404
 
@@ -162,43 +162,43 @@ def test_an_admin_manages_a_freelancer_card_through_the_lists(
 # ---- talenti (REB-282): the freelancer cards and the bare sign-ups, as one list ------
 
 
-def test_talenti_merges_cards_and_leads_and_counts_per_state(
+def test_talents_merges_cards_and_leads_and_counts_by_state(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
-    """A card and a bare sign-up read as one list: the card carries its own `stato`
+    """A card and a bare sign-up read as one list: the card carries its own `status`
     and `origine == "wizard"`, the bare sign-up reads `stato == "lead"` and
-    `origine == "form"`, and `per_stato` counts both whatever `stato` was asked for."""
+    `origine == "form"`, and `by_status` counts both whatever `status` was asked for."""
     signup_id = _signup(client, sender, "lead@studio.it")
     _apply(client, "ada@studio.it")
 
     listed = client.get("/api/hub/talent").json()
-    assert listed["totale"] == 2
+    assert listed["total"] == 2
     by_email = {item["email"]: item for item in listed["items"]}
-    assert by_email["ada@studio.it"]["stato"] == "nuovo"
-    assert by_email["ada@studio.it"]["origine"] == "wizard"
-    assert by_email["lead@studio.it"]["stato"] == "lead"
-    assert by_email["lead@studio.it"]["origine"] == "form"
+    assert by_email["ada@studio.it"]["status"] == "new"
+    assert by_email["ada@studio.it"]["origin"] == "wizard"
+    assert by_email["lead@studio.it"]["status"] == "lead"
+    assert by_email["lead@studio.it"]["origin"] == "form"
     assert by_email["lead@studio.it"]["id"] == signup_id
-    assert listed["per_stato"] == {
-        "nuovo": 1,
-        "contattato": 0,
-        "attivo": 0,
-        "scartato": 0,
+    assert listed["by_status"] == {
+        "new": 1,
+        "contacted": 0,
+        "active": 0,
+        "discarded": 0,
         "lead": 1,
     }
 
-    only_leads = client.get("/api/hub/talent", params={"stato": "lead"}).json()
+    only_leads = client.get("/api/hub/talent", params={"status": "lead"}).json()
     assert [item["email"] for item in only_leads["items"]] == ["lead@studio.it"]
-    assert only_leads["totale"] == 1
-    # `per_stato` counts the whole list regardless of the filter asked for.
-    assert only_leads["per_stato"] == listed["per_stato"]
+    assert only_leads["total"] == 1
+    # `by_status` counts the whole list regardless of the filter asked for.
+    assert only_leads["by_status"] == listed["by_status"]
 
-    only_new = client.get("/api/hub/talent", params={"stato": "nuovo"}).json()
+    only_new = client.get("/api/hub/talent", params={"status": "new"}).json()
     assert [item["email"] for item in only_new["items"]] == ["ada@studio.it"]
-    assert only_new["totale"] == 1
+    assert only_new["total"] == 1
 
 
-def test_talenti_carries_the_cards_rate_and_mode_null_for_a_lead(
+def test_talents_carries_the_cards_rate_and_mode_null_for_to_lead(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     """REB-558: the list item the admin talent table reads carries a card's own day
@@ -207,13 +207,13 @@ def test_talenti_carries_the_cards_rate_and_mode_null_for_a_lead(
     _apply(client, "ada@studio.it")
 
     by_email = {item["email"]: item for item in client.get("/api/hub/talent").json()["items"]}
-    assert by_email["ada@studio.it"]["tariffa_giornaliera"] == "450.00"
-    assert by_email["ada@studio.it"]["remoto"] == "remoto"
-    assert by_email["lead@studio.it"]["tariffa_giornaliera"] is None
-    assert by_email["lead@studio.it"]["remoto"] is None
+    assert by_email["ada@studio.it"]["daily_rate"] == "450.00"
+    assert by_email["ada@studio.it"]["remote"] == "remote"
+    assert by_email["lead@studio.it"]["daily_rate"] is None
+    assert by_email["lead@studio.it"]["remote"] is None
 
 
-def test_a_card_drafted_from_research_reads_origine_admin_on_talenti(
+def test_to_card_drafted_from_research_reads_origin_admin_on_talents(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     signup_id = _signup(client, sender, "ricerca@studio.it")
@@ -224,14 +224,14 @@ def test_a_card_drafted_from_research_reads_origine_admin_on_talenti(
         for item in client.get("/api/hub/talent").json()["items"]
         if item["email"] == "ricerca@studio.it"
     )
-    assert item["origine"] == "admin" and item["stato"] == "nuovo"
+    assert item["origin"] == "admin" and item["status"] == "new"
 
 
-def test_talenti_origine_filters_the_row_channel_and_pagina_origine_the_page(
+def test_talents_origin_filters_the_row_channel_and_origin_page_the_page(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
-    """REB-798: `origine` selects what the row shows (`form`/`wizard`/`admin`), the
-    marketing page the admin screen filters on is `pagina_origine`, and a value `origine`
+    """REB-798: `origin` selects what the row shows (`form`/`wizard`/`admin`), the
+    marketing page the admin screen filters on is `origin_page`, and a value `origin`
     does not know is a 422 rather than an empty list."""
     _signup(client, sender, "lead@studio.it")
     _apply(client, "ada@studio.it")
@@ -241,16 +241,16 @@ def test_talenti_origine_filters_the_row_channel_and_pagina_origine_the_page(
             item["email"] for item in client.get("/api/hub/talent", params=params).json()["items"]
         ]
 
-    assert emails(origine="wizard") == ["ada@studio.it"]
-    assert emails(origine="form") == ["lead@studio.it"]
-    assert emails(origine="admin") == []
-    assert emails(pagina_origine="home") == []
-    refused = client.get("/api/hub/talent", params={"origine": "home"})
+    assert emails(origin="wizard") == ["ada@studio.it"]
+    assert emails(origin="form") == ["lead@studio.it"]
+    assert emails(origin="admin") == []
+    assert emails(origin_page="home") == []
+    refused = client.get("/api/hub/talent", params={"origin": "home"})
     assert refused.status_code == 422
-    assert refused.json()["detail"][0]["loc"][-1] == "origine"
+    assert refused.json()["detail"][0]["loc"][-1] == "origin"
 
 
-def test_a_signed_in_member_hitting_talenti_is_403_not_401(
+def test_to_signed_in_member_hitting_talents_is_403_not_401(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _apply(client, "membro@studio.it")
@@ -261,18 +261,18 @@ def test_a_signed_in_member_hitting_talenti_is_403_not_401(
 # ---- search, cursor pagination and filters over HTTP (REB-285) -----------------------
 
 
-def test_talenti_search_hits_a_partial_surname_and_an_email_domain_over_http(
+def test_talents_search_hits_to_partial_surname_and_an_email_domain_over_http(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
             "nome": "Bob",
-            "cognome": "Rossi",
+            "last_name": "Rossi",
             "email": "bob@rossilab.it",
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Bob CV.pdf", PDF, "application/pdf")},
     )
@@ -287,48 +287,48 @@ def test_talenti_search_hits_a_partial_surname_and_an_email_domain_over_http(
     assert [item["email"] for item in by_domain["items"]] == ["bob@rossilab.it"]
 
 
-def test_talenti_filters_are_wired_through_the_router(
+def test_talents_filters_are_wired_through_the_router(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    for email, remoto in (("remote@studio.it", "remoto"), ("onsite@studio.it", "in_sede")):
+    for email, remote in (("remote@studio.it", "remote"), ("onsite@studio.it", "on_site")):
         response = client.post(
             "/api/hub/freelancers",
             data={
                 "nome": "Worker",
-                "cognome": "Bee",
+                "last_name": "Bee",
                 "email": email,
-                "tariffa_giornaliera": "450",
+                "daily_rate": "450",
                 "posizione": "Backend developer",
-                "remoto": remoto,
+                "remote": remote,
             },
             files={"cv": ("cv.pdf", PDF, "application/pdf")},
         )
         assert response.status_code == 201, response.text
 
-    only_remote = client.get("/api/hub/talent", params={"remoto": "remoto"}).json()
+    only_remote = client.get("/api/hub/talent", params={"remote": "remote"}).json()
     assert [item["email"] for item in only_remote["items"]] == ["remote@studio.it"]
 
 
-def test_companies_search_hits_a_partial_referente_surname(
+def test_companies_search_hits_to_partial_contact_person_surname(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
     response = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": "Rossi Labs",
-            "referente_nome": "Wile",
-            "referente_cognome": "Rossi",
+            "company_name": "Rossi Labs",
+            "contact_first_name": "Wile",
+            "contact_last_name": "Rossi",
             "email": "wile@rossilab.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend developer.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Un backend developer.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
         },
     )
     assert response.status_code == 201, response.text
@@ -352,7 +352,7 @@ def test_admindep_is_enforced_before_the_new_search_params_are_even_read(
     """An unauthenticated request carrying every new REB-285 parameter, including a
     cursor that would otherwise be refused as malformed, still answers 401: `AdminDep`
     runs before the query is ever built."""
-    params = {"q": "ada", "cursor": "not-a-valid-cursor", "tariffa_min": "100"}
+    params = {"q": "ada", "cursor": "not-a-valid-cursor", "min_rate": "100"}
     assert client.get("/api/hub/talent", params=params).status_code == 401
     assert client.get("/api/hub/companies", params=params).status_code == 401
 
@@ -363,7 +363,7 @@ def test_admins_search_hits_a_partial_name(
     _login(client, sender)
     promoted = client.post(
         "/api/hub/admins/promote",
-        json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+        json={"email": "grace@rebase.it", "nome": "Grace", "last_name": "Hopper"},
     )
     assert promoted.status_code == 200, promoted.text
 
@@ -379,7 +379,7 @@ def test_admins_list_stays_oldest_first_with_no_term(
     ok(
         client.post(
             "/api/hub/admins/promote",
-            json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+            json={"email": "grace@rebase.it", "nome": "Grace", "last_name": "Hopper"},
         )
     )
     listed = client.get("/api/hub/admins").json()["items"]
@@ -400,10 +400,10 @@ def test_logins_search_hits_a_partial_name_and_keeps_the_counters(
     api_session.commit()
 
     by_name = client.get("/api/hub/logins", params={"q": "Ada"}).json()
-    assert [row["email"] for row in by_name["recenti"]] == ["ada@studio.it"]
+    assert [row["email"] for row in by_name["recent"]] == ["ada@studio.it"]
     # The aggregate counters read the whole table -- the admin's own sign-in above and
-    # Ada's -- unaffected by `q` narrowing `recenti` to Ada alone (REB-313).
-    assert by_name["totale"] == 2 and by_name["membri"] == 2
+    # Ada's -- unaffected by `q` narrowing `recent` to Ada alone (REB-313).
+    assert by_name["total"] == 2 and by_name["members"] == 2
 
 
 def test_a_malformed_cursor_is_a_422_on_admins_and_logins(
@@ -431,18 +431,18 @@ def _request_company(client: TestClient) -> None:
     response = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": "ACME Srl",
-            "referente_nome": "Wile",
-            "referente_cognome": "E.",
+            "company_name": "ACME Srl",
+            "contact_first_name": "Wile",
+            "contact_last_name": "E.",
             "email": "wile@acme.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend developer per tre mesi.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Un backend developer per tre mesi.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
         },
     )
     assert response.status_code == 201, response.text
@@ -452,9 +452,9 @@ def test_without_the_cookie_the_note_routes_are_a_401(client: TestClient, admin:
     for kind in ("freelancers", "companies"):
         assert client.get(f"/api/hub/{kind}/{MISSING}/notes").status_code == 401
         assert (
-            client.post(f"/api/hub/{kind}/{MISSING}/notes", json={"testo": "x"}).status_code == 401
+            client.post(f"/api/hub/{kind}/{MISSING}/notes", json={"text": "x"}).status_code == 401
         )
-    assert client.patch(f"/api/hub/notes/{MISSING}", json={"testo": "x"}).status_code == 401
+    assert client.patch(f"/api/hub/notes/{MISSING}", json={"text": "x"}).status_code == 401
     assert client.delete(f"/api/hub/notes/{MISSING}").status_code == 401
 
 
@@ -468,15 +468,15 @@ def test_a_note_is_signed_by_the_logged_in_admin_and_read_newest_first(
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/notes").json() == []
     first = client.post(
         f"/api/hub/freelancers/{freelancer_id}/notes",
-        json={"testo": "  Sentito al telefono.\nRichiamare lunedì.  "},
+        json={"text": "  Sentito al telefono.\nRichiamare lunedì.  "},
     )
     assert first.status_code == 201, first.text
     body = first.json()
-    assert body["testo"] == "Sentito al telefono.\nRichiamare lunedì."
-    assert (body["autore"], body["fonte"], body["modificabile"]) == ("Ivan", "web", True)
-    assert body["modificata_at"] is None and body["modificata_da"] is None
+    assert body["text"] == "Sentito al telefono.\nRichiamare lunedì."
+    assert (body["author"], body["source"], body["editable"]) == ("Ivan", "web", True)
+    assert body["edited_at"] is None and body["edited_by"] is None
     second = client.post(
-        f"/api/hub/freelancers/{freelancer_id}/notes", json={"testo": "Ha mandato il portfolio."}
+        f"/api/hub/freelancers/{freelancer_id}/notes", json={"text": "Ha mandato il portfolio."}
     )
     assert second.status_code == 201
 
@@ -495,28 +495,28 @@ def test_a_note_is_edited_and_deleted_and_the_trail_says_who_and_from_where(
     _apply(client)
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
     note = client.post(
-        f"/api/hub/freelancers/{freelancer_id}/notes", json={"testo": "Prima."}
+        f"/api/hub/freelancers/{freelancer_id}/notes", json={"text": "Prima."}
     ).json()
 
-    edited = client.patch(f"/api/hub/notes/{note['id']}", json={"testo": "Dopo."})
+    edited = client.patch(f"/api/hub/notes/{note['id']}", json={"text": "Dopo."})
     assert edited.status_code == 200, edited.text
-    assert edited.json()["testo"] == "Dopo."
-    assert edited.json()["modificata_da"] == "Ivan" and edited.json()["modificata_at"]
+    assert edited.json()["text"] == "Dopo."
+    assert edited.json()["edited_by"] == "Ivan" and edited.json()["edited_at"]
     assert client.delete(f"/api/hub/notes/{note['id']}").status_code == 204
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/notes").json() == []
     assert client.get(f"/api/hub/freelancers/{freelancer_id}").json()["note"] == []
     # Gone: neither edit nor delete finds it again.
-    assert client.patch(f"/api/hub/notes/{note['id']}", json={"testo": "x"}).status_code == 404
+    assert client.patch(f"/api/hub/notes/{note['id']}", json={"text": "x"}).status_code == 404
     assert client.delete(f"/api/hub/notes/{note['id']}").status_code == 404
 
     trail = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()
     by_kind = {entry["kind"]: entry for entry in reversed(trail)}
     assert list(by_kind) == ["note_added", "note_edited", "note_deleted"]
-    assert {e["admin_nome"] for e in by_kind.values()} == {"Ivan"}
-    assert by_kind["note_added"]["payload"]["fonte"] == "web"
+    assert {e["admin_name"] for e in by_kind.values()} == {"Ivan"}
+    assert by_kind["note_added"]["payload"]["source"] == "web"
     assert by_kind["note_edited"]["payload"]["before"] == "Prima."
     assert by_kind["note_edited"]["payload"]["after"] == "Dopo."
-    assert by_kind["note_deleted"]["payload"]["testo"] == "Dopo."
+    assert by_kind["note_deleted"]["payload"]["text"] == "Dopo."
 
 
 def test_a_status_change_is_in_the_trail_with_the_door(
@@ -527,18 +527,18 @@ def test_a_status_change_is_in_the_trail_with_the_door(
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
     assert (
         client.patch(
-            f"/api/hub/freelancers/{freelancer_id}", json={"stato": "contattato"}
+            f"/api/hub/freelancers/{freelancer_id}", json={"status": "contacted"}
         ).status_code
         == 200
     )
     # A stale client that still sends `note` is told, not silently dropped.
     stale = client.patch(
-        f"/api/hub/freelancers/{freelancer_id}", json={"stato": "attivo", "note": "x"}
+        f"/api/hub/freelancers/{freelancer_id}", json={"status": "active", "note": "x"}
     )
     assert stale.status_code == 422
     [entry] = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()
     assert entry["kind"] == "status_changed"
-    assert entry["payload"] == {"before": "nuovo", "after": "contattato", "fonte": "web"}
+    assert entry["payload"] == {"before": "new", "after": "contacted", "source": "web"}
 
 
 def test_a_company_gets_its_own_thread(
@@ -547,13 +547,13 @@ def test_a_company_gets_its_own_thread(
     _login(client, sender)
     _request_company(client)
     company_id = client.get("/api/hub/companies").json()["items"][0]["id"]
-    posted = client.post(f"/api/hub/companies/{company_id}/notes", json={"testo": "Budget ok."})
+    posted = client.post(f"/api/hub/companies/{company_id}/notes", json={"text": "Budget ok."})
     assert posted.status_code == 201, posted.text
-    assert posted.json()["autore"] == "Ivan"
-    assert [c["testo"] for c in client.get(f"/api/hub/companies/{company_id}/notes").json()] == [
+    assert posted.json()["author"] == "Ivan"
+    assert [c["text"] for c in client.get(f"/api/hub/companies/{company_id}/notes").json()] == [
         "Budget ok."
     ]
-    assert [c["testo"] for c in client.get(f"/api/hub/companies/{company_id}").json()["note"]] == [
+    assert [c["text"] for c in client.get(f"/api/hub/companies/{company_id}").json()["note"]] == [
         "Budget ok."
     ]
     assert client.delete(f"/api/hub/notes/{posted.json()['id']}").status_code == 204
@@ -571,19 +571,19 @@ def test_the_persons_own_events_cannot_be_edited_or_deleted(
         Note(
             entity_type="freelancer",
             entity_id=UUID(freelancer_id),
-            testo="CV caricato dalla persona",
-            autore="Ada Lovelace",
-            fonte="persona",
+            text="CV caricato dalla persona",
+            author="Ada Lovelace",
+            source="person",
         )
     )
     api_session.commit()
     event = client.get(f"/api/hub/freelancers/{freelancer_id}/notes").json()[0]
-    assert event["fonte"] == "persona" and event["modificabile"] is False
-    refused = client.patch(f"/api/hub/notes/{event['id']}", json={"testo": "Riscritta."})
+    assert event["source"] == "person" and event["editable"] is False
+    refused = client.patch(f"/api/hub/notes/{event['id']}", json={"text": "Riscritta."})
     assert refused.status_code == 422
     assert "non si modifica" in refused.text
     assert client.delete(f"/api/hub/notes/{event['id']}").status_code == 422
-    assert client.get(f"/api/hub/freelancers/{freelancer_id}/notes").json()[0]["testo"] == (
+    assert client.get(f"/api/hub/freelancers/{freelancer_id}/notes").json()[0]["text"] == (
         "CV caricato dalla persona"
     )
 
@@ -593,22 +593,20 @@ def test_a_note_on_a_missing_row_is_a_404_and_an_empty_one_a_422_naming_the_fiel
 ) -> None:
     _login(client, sender)
     assert client.get(f"/api/hub/freelancers/{MISSING}/notes").status_code == 200
-    missing = client.post(f"/api/hub/freelancers/{MISSING}/notes", json={"testo": "Nessuno."})
+    missing = client.post(f"/api/hub/freelancers/{MISSING}/notes", json={"text": "Nessuno."})
     assert missing.status_code == 404
     assert missing.json()["detail"] == f"freelancer {MISSING} non trovato"
-    assert (
-        client.post(f"/api/hub/companies/{MISSING}/notes", json={"testo": "x"}).status_code == 404
-    )
+    assert client.post(f"/api/hub/companies/{MISSING}/notes", json={"text": "x"}).status_code == 404
 
     _apply(client)
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
-    for testo in ("", "   ", "x" * 4001):
-        refused = client.post(f"/api/hub/freelancers/{freelancer_id}/notes", json={"testo": testo})
-        assert refused.status_code == 422, testo[:10]
-        assert refused.json()["detail"][0]["loc"][-1] == "testo"
+    for text in ("", "   ", "x" * 4001):
+        refused = client.post(f"/api/hub/freelancers/{freelancer_id}/notes", json={"text": text})
+        assert refused.status_code == 422, text[:10]
+        assert refused.json()["detail"][0]["loc"][-1] == "text"
     # The author is the session's, never the body's.
     forged = client.post(
-        f"/api/hub/freelancers/{freelancer_id}/notes", json={"testo": "ok", "autore": "Altro"}
+        f"/api/hub/freelancers/{freelancer_id}/notes", json={"text": "ok", "author": "Altro"}
     )
     assert forged.status_code == 422
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/notes").json() == []
@@ -695,20 +693,20 @@ def test_the_spaces_come_from_the_crm_with_the_token_and_name_the_member_who_own
     assert pigro.calls[0][2]["Authorization"] == f"Bearer {PIGRO_TOKEN}"
 
     body = response.json()
-    assert body["totale"] == 2
+    assert body["total"] == 2
     ada, bob = body["items"]
     assert ada["slug"] == "studio-ada"
     assert ada["url"] == "https://pigro.letsrebase.com/studio-ada/app/"
     assert ada["owner_email"] == "ada@studio.it"
     assert ada["created_at"].startswith("2026-09-10")
     # Ada filled in the wizard, so her space names her and points at her card.
-    assert ada["membro"]["nome"] == "Ada"
-    assert ada["membro"]["cognome"] == "Lovelace"
-    freelancer_id = ada["membro"]["id"]
+    assert ada["member"]["nome"] == "Ada"
+    assert ada["member"]["last_name"] == "Lovelace"
+    freelancer_id = ada["member"]["id"]
     assert client.get(f"/api/hub/freelancers/{freelancer_id}").json()["email"] == "ada@studio.it"
     # Bob never did: the address is all the hub knows, as the CRM wrote it.
     assert bob["slug"] == "bob-dev"
-    assert bob["membro"] is None
+    assert bob["member"] is None
 
 
 def test_a_member_is_matched_whatever_the_case_of_the_address(
@@ -718,7 +716,7 @@ def test_a_member_is_matched_whatever_the_case_of_the_address(
     _apply(client, email="bob@example.org")
     items = client.get("/api/hub/pigro/instances").json()["items"]
     assert items[1]["owner_email"] == "Bob@Example.org"
-    assert items[1]["membro"]["nome"] == "Ada"
+    assert items[1]["member"]["nome"] == "Ada"
 
 
 def test_q_searches_the_slug_and_the_owner_address(
@@ -730,7 +728,7 @@ def test_q_searches_the_slug_and_the_owner_address(
     by_email = client.get("/api/hub/pigro/instances", params={"q": "bob@"}).json()
     assert [item["slug"] for item in by_email["items"]] == ["bob-dev"]
     no_match = client.get("/api/hub/pigro/instances", params={"q": "nessuno"}).json()
-    assert no_match["items"] == [] and no_match["totale"] == 0
+    assert no_match["items"] == [] and no_match["total"] == 0
 
 
 def test_the_cursor_walks_every_space_once_with_no_gap_or_repeat(
@@ -809,7 +807,7 @@ def test_the_detail_shows_the_origin_signups_own_utm(
         json={
             "email": "ada@studio.it",
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "utm": {"utm_source": "newsletter", "utm_medium": "email"},
         },
     )
@@ -817,14 +815,14 @@ def test_the_detail_shows_the_origin_signups_own_utm(
     _apply(client, "ada@studio.it")
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
     detail = client.get(f"/api/hub/freelancers/{freelancer_id}").json()
-    assert detail["iscrizione_utm"] == {
+    assert detail["signup_utm"] == {
         "utm_source": "newsletter",
         "utm_medium": "email",
         "utm_campaign": None,
         "utm_content": None,
         "utm_term": None,
         "utm_id": None,
-        "origine": None,
+        "origin": None,
     }
 
 
@@ -848,10 +846,10 @@ def test_the_detail_shows_the_last_logins_and_guide_downloads(
     PerkService(api_session).record_guide_download(ada_user_id)
 
     detail = client.get(f"/api/hub/freelancers/{freelancer_id}").json()
-    assert len(detail["ultimi_accessi"]) == 1
-    assert len(detail["ultimi_download_guida"]) == 1
+    assert len(detail["last_logins"]) == 1
+    assert len(detail["last_download_guide"]) == 1
     # The field REB-278 already exposed keeps counting the same table.
-    assert detail["accessi"] == 1
+    assert detail["logins"] == 1
 
 
 def test_the_detail_shows_the_pigro_slug_only_with_a_configured_token(
@@ -873,9 +871,9 @@ def test_the_detail_has_sensible_empty_values_with_none_of_the_four_sources(
     _apply(client, "sola@studio.it")
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
     detail = client.get(f"/api/hub/freelancers/{freelancer_id}").json()
-    assert detail["iscrizione_utm"] is None
-    assert detail["ultimi_accessi"] == []
-    assert detail["ultimi_download_guida"] == []
+    assert detail["signup_utm"] is None
+    assert detail["last_logins"] == []
+    assert detail["last_download_guide"] == []
     assert detail["pigro_slug"] is None
 
 
@@ -884,21 +882,21 @@ def test_the_detail_has_sensible_empty_values_with_none_of_the_four_sources(
 
 def _signup(client: TestClient, sender: RecordingSender, email: str = "ada@studio.it") -> str:
     response = client.post(
-        "/api/community/signups", json={"email": email, "nome": "Ada", "cognome": "Lovelace"}
+        "/api/community/signups", json={"email": email, "nome": "Ada", "last_name": "Lovelace"}
     )
     assert response.status_code in (200, 201), response.text
     _login(client, sender)
-    listed = client.get("/api/hub/signups").json()["iscrizioni"]
+    listed = client.get("/api/hub/signups").json()["signups"]
     return next(item["id"] for item in listed if item["email"] == email)
 
 
 DRAFT = {
     "nome": "Ada",
-    "cognome": "Lovelace",
+    "last_name": "Lovelace",
     "linkedin_url": "https://www.linkedin.com/in/ada",
     "posizione": "Backend developer",
     "links": ["https://github.com/ada"],
-    "fonti": ["https://www.linkedin.com/in/ada"],
+    "sources": ["https://www.linkedin.com/in/ada"],
 }
 
 
@@ -919,8 +917,8 @@ def test_an_admin_reads_one_signup_as_the_row_the_talent_list_shows(
     assert found.status_code == 200, found.text
     body = found.json()
     assert body["id"] == signup_id
-    assert (body["nome"], body["cognome"], body["email"]) == ("Ada", "Lovelace", "ada@studio.it")
-    assert (body["stato"], body["origine"]) == ("lead", "form")
+    assert (body["nome"], body["last_name"], body["email"]) == ("Ada", "Lovelace", "ada@studio.it")
+    assert (body["status"], body["origin"]) == ("lead", "form")
     assert client.get(f"/api/hub/signups/{MISSING}").status_code == 404
 
 
@@ -944,29 +942,29 @@ def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at
     assert created.status_code == 201, created.text
     card = created.json()
     assert card["email"] == "ada@studio.it"
-    assert card["compilata_da"] == "admin" and card["completa"] is False
-    assert card["cv_filename"] is None and card["tariffa_giornaliera"] is None
-    assert card["note"][0]["autore"] == "Ivan"
-    assert "https://www.linkedin.com/in/ada" in card["note"][0]["testo"]
+    assert card["compilata_da"] == "admin" and card["complete"] is False
+    assert card["cv_filename"] is None and card["daily_rate"] is None
+    assert card["note"][0]["author"] == "Ivan"
+    assert "https://www.linkedin.com/in/ada" in card["note"][0]["text"]
 
-    items = client.get("/api/hub/signups").json()["iscrizioni"]
+    items = client.get("/api/hub/signups").json()["signups"]
     item = next(i for i in items if i["id"] == signup_id)
     assert item["freelancer_id"] == card["id"]
     assert client.get(f"/api/hub/freelancers/{card['id']}/cv").status_code == 404
     everything = client.get("/api/hub/freelancers").json()
     listed = everything["items"]
-    assert listed[0]["id"] == card["id"] and listed[0]["completa"] is False
+    assert listed[0]["id"] == card["id"] and listed[0]["complete"] is False
     # With a card, the signup is no longer a lead (ORB-163).
-    assert everything["lead"] == [] and everything["totale_lead"] == 0
+    assert everything["lead"] == [] and everything["total_lead"] == 0
     # Born from a signup, so it also signed up on the landing: «form» (ORB-161).
-    assert listed[0]["provenienza"] == "form"
-    assert client.get(f"/api/hub/freelancers/{card['id']}").json()["provenienza"] == "form"
+    assert listed[0]["provenance"] == "form"
+    assert client.get(f"/api/hub/freelancers/{card['id']}").json()["provenance"] == "form"
 
     # A wrong id is a 404, a bad body a 422 naming the field, as everywhere else.
     assert client.post(f"/api/hub/signups/{MISSING}/card", json=DRAFT).status_code == 404
-    bad = client.post(f"/api/hub/signups/{signup_id}/card", json={**DRAFT, "fonti": []})
+    bad = client.post(f"/api/hub/signups/{signup_id}/card", json={**DRAFT, "sources": []})
     assert bad.status_code == 422
-    assert bad.json()["detail"][0]["loc"][-1] == "fonti"
+    assert bad.json()["detail"][0]["loc"][-1] == "sources"
 
 
 def test_a_signup_without_a_card_is_a_lead_on_the_freelancer_list(
@@ -974,11 +972,11 @@ def test_a_signup_without_a_card_is_a_lead_on_the_freelancer_list(
 ) -> None:
     signup_id = _signup(client, sender, "lead@studio.it")
     everything = client.get("/api/hub/freelancers").json()
-    assert everything["items"] == [] and everything["totale_lead"] == 1
+    assert everything["items"] == [] and everything["total_lead"] == 1
     assert everything["lead"][0]["id"] == signup_id
     assert everything["lead"][0]["email"] == "lead@studio.it"
-    assert client.get("/api/hub/freelancers", params={"stato": "lead"}).json()["totale_lead"] == 1
-    assert client.get("/api/hub/freelancers", params={"stato": "nuovo"}).json()["lead"] == []
+    assert client.get("/api/hub/freelancers", params={"status": "lead"}).json()["total_lead"] == 1
+    assert client.get("/api/hub/freelancers", params={"status": "new"}).json()["lead"] == []
 
 
 def test_research_is_refused_on_a_card_the_person_filled(
@@ -1003,11 +1001,11 @@ def _apply_with_text(client: TestClient) -> str:
         "/api/hub/freelancers",
         data={
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "email": "ada@studio.it",
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", CV, "application/pdf")},
     )
@@ -1038,10 +1036,10 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert read.status_code == 200, read.text
     body = read.json()
     assert body["freelancer_id"] == freelancer_id
-    assert body["card"] == {**CARD, "seniority_incerta": False}
-    assert body["modalita"] == "remoto"
+    assert body["card"] == {**CARD, "seniority_uncertain": False}
+    assert body["mode"] == "remote"
     # The client's band from the rate (450 plus 40%), which the page shows as it is.
-    assert body["fascia"] == {"min": 500, "max": 650}
+    assert body["band"] == {"min": 500, "max": 650}
     assert body["cv_sha256"] == hashlib.sha256(CV).hexdigest()
     assert body["model"] == "claude-opus-5" and body["generated_at"] is not None
     assert body["error"] is None
@@ -1049,11 +1047,11 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     # supported each field, and no source and no conflict for a CV alone. Neither the
     # talent list nor the cloud carries any of it.
     assert body["provenance"]["prompt_version"] == 3
-    assert body["provenance"]["fonti"]["ruolo"] == ["cv"]
+    assert body["provenance"]["sources"]["role"] == ["cv"]
     assert (body["provenance"]["sources"], body["provenance"]["conflicts"]) == ([], [])
     assert body["provenance"]["stale"] is None
     talents = client.get("/api/hub/talent").text
-    for key in ("fonti", "source_hashes", "conflicts", "provenance", "prompt_version"):
+    for key in ("sources", "source_hashes", "conflicts", "provenance", "prompt_version"):
         assert f'"{key}"' not in talents
 
     # The wizard's own write was started by no person: nothing of it in the trail (REB-861).
@@ -1063,26 +1061,26 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     again = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
     assert again.status_code == 200, again.text
     assert len(llm.requests) == 2
-    assert again.json()["card"] == {**CARD, "seniority_incerta": False}
+    assert again.json()["card"] == {**CARD, "seniority_uncertain": False}
     assert again.json()["provenance"]["prompt_version"] == 3
     # Signed in the talent's trail, with the door (REB-861).
     [written] = _regenerations(client, freelancer_id)
-    assert written["admin_nome"]
-    assert (written["payload"]["fonte"], written["payload"]["bulk"]) == ("web", False)
-    assert (written["payload"]["esito"], written["payload"]["prompt_version"]) == ("scritta", 3)
+    assert written["admin_name"]
+    assert (written["payload"]["source"], written["payload"]["bulk"]) == ("web", False)
+    assert (written["payload"]["outcome"], written["payload"]["prompt_version"]) == ("scritta", 3)
     assert "start_action_id" not in written["payload"]
 
     # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
     refusing = RecordingCall([card_response(stop_reason="refusal"), card_response()])
     client.app.dependency_overrides[get_card_llm] = lambda: refusing  # type: ignore[attr-defined]
     refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
-    assert refused["card"] == {**CARD, "seniority_incerta": False} and refused["error"]
+    assert refused["card"] == {**CARD, "seniority_uncertain": False} and refused["error"]
     retried = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
     assert len(refusing.requests) == 2
-    assert retried["card"] == {**CARD, "seniority_incerta": False} and retried["error"] is None
+    assert retried["card"] == {**CARD, "seniority_uncertain": False} and retried["error"] is None
     # Newest first: the second try written, the refusal with its reason, the first write.
     outcomes = [
-        (a["payload"]["esito"], a["payload"].get("reason"))
+        (a["payload"]["outcome"], a["payload"].get("reason"))
         for a in _regenerations(client, freelancer_id)
     ]
     assert outcomes == [("scritta", None), ("non_scritta", "refusal"), ("scritta", None)]
@@ -1097,27 +1095,27 @@ def test_the_named_card_is_the_admins_alone(
     """REB-855: the card route answers what the CV says of the person and where it
     disagrees with the profile; the profile's phone is on the admin's card; and no other
     route carries the contacts the CV gave."""
-    named = RecordingCall([card_response(persona=PERSONA, employers=["Initech Labs"])])
+    named = RecordingCall([card_response(person=PERSON, employers=["Initech Labs"])])
     client.app.dependency_overrides[get_card_llm] = lambda: named  # type: ignore[attr-defined]
     _login(client, sender)
     freelancer_id = _apply_with_text(client)
     user = client.get(f"/api/hub/freelancers/{freelancer_id}").json()
-    assert user["telefono"] is None
+    assert user["phone"] is None
 
     body = client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()
 
-    assert body["persona"] == {
+    assert body["person"] == {
         "nome": "Ada",
-        "cognome": "Lovelace",
+        "last_name": "Lovelace",
         "email": "ada.lovelace@example.org",
-        "telefono": "+39 333 123 4567",
-        "citta": "Torino",
+        "phone": "+39 333 123 4567",
+        "city": "Torino",
         "linkedin_url": "https://www.linkedin.com/in/ada-lovelace",
-        "altri_link": ["https://ada.example.org", "https://github.com/ada"],
-        "aziende": ["Initech Labs"],
+        "other_links": ["https://ada.example.org", "https://github.com/ada"],
+        "companies": ["Initech Labs"],
     }
-    assert body["differenze"] == [
-        {"campo": "email", "cv": "ada.lovelace@example.org", "profilo": "ada@studio.it"}
+    assert body["differences"] == [
+        {"field": "email", "cv": "ada.lovelace@example.org", "profile": "ada@studio.it"}
     ]
     for url in ("/api/hub/talent", f"/api/hub/freelancers/{freelancer_id}", "/api/hub/freelancers"):
         response = client.get(url).text
@@ -1141,7 +1139,7 @@ def test_regenerating_without_a_key_is_the_team_builders_503(
     # Reading still works: the card written earlier is there.
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == {
         **CARD,
-        "seniority_incerta": False,
+        "seniority_uncertain": False,
     }
 
 
@@ -1156,7 +1154,7 @@ def test_clearing_the_cv_drops_the_anonymous_card(
     freelancer_id = _apply_with_text(client)
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == {
         **CARD,
-        "seniority_incerta": False,
+        "seniority_uncertain": False,
     }
 
     assert client.delete(f"/api/hub/freelancers/{freelancer_id}/cv").status_code == 200
@@ -1204,14 +1202,13 @@ def test_a_new_request_is_queued_in_its_transaction_and_filed_after_the_response
 
     company = client.get("/api/hub/companies").json()["items"][0]
     assert crm_filings == [UUID(company["id"])]
-    assert company["crm_stato"] == "da_collegare"
+    assert company["crm_status"] == "to_link"
     assert (
-        company["crm_situazione"]
-        == "Il CRM non ha ancora la richiesta: riprova o aspetta lo sweep."
+        company["crm_situation"] == "Il CRM non ha ancora la richiesta: riprova o aspetta lo sweep."
     )
 
 
-def test_riprova_files_the_request_and_the_page_reads_the_deal(
+def test_retry_files_the_request_and_the_page_reads_the_deal(
     client: TestClient, admin: None, sender: RecordingSender, crm: Any
 ) -> None:
     _login(client, sender)
@@ -1222,15 +1219,15 @@ def test_riprova_files_the_request_and_the_page_reads_the_deal(
 
     assert response.status_code == 200, response.text
     read = response.json()
-    assert read["crm_stato"] == "collegato"
+    assert read["crm_status"] == "linked"
     assert read["crm_deal_url"].endswith(CRM_DEAL)
-    assert read["crm_situazione"] is None
+    assert read["crm_situation"] is None
     assert crm.calls[0][1] == f"{CRM_URL}/api/rebase/leads/{company_id}"
     kinds = [e["kind"] for e in client.get(f"/api/hub/companies/{company_id}/audit").json()]
     assert kinds == ["crm_link"]
 
 
-def test_riprova_shows_the_crms_sentence_and_a_later_one_takes_it_to_collegato(
+def test_retry_shows_the_crms_sentence_and_to_later_one_takes_it_to_linked(
     client: TestClient, admin: None, sender: RecordingSender, crm: Any
 ) -> None:
     crm.answers[:] = [(503, b'{"detail": "Spazio dei lead non configurato"}'), (201, CRM_ANSWER)]
@@ -1239,11 +1236,11 @@ def test_riprova_shows_the_crms_sentence_and_a_later_one_takes_it_to_collegato(
     company_id = client.get("/api/hub/companies").json()["items"][0]["id"]
 
     failed = client.post(f"/api/hub/companies/{company_id}/crm/link").json()
-    assert failed["crm_stato"] == "errore"
-    assert failed["crm_situazione"] == "Il CRM non ha risposto: Spazio dei lead non configurato."
+    assert failed["crm_status"] == "error"
+    assert failed["crm_situation"] == "Il CRM non ha risposto: Spazio dei lead non configurato."
 
     fixed = client.post(f"/api/hub/companies/{company_id}/crm/link").json()
-    assert (fixed["crm_stato"], fixed["crm_situazione"]) == ("collegato", None)
+    assert (fixed["crm_status"], fixed["crm_situation"]) == ("linked", None)
 
 
 def test_linking_to_another_deal_sends_its_id_and_a_refusal_is_a_409(
@@ -1261,10 +1258,10 @@ def test_linking_to_another_deal_sends_its_id_and_a_refusal_is_a_409(
     refused = client.post(f"/api/hub/companies/{company_id}/crm/link", json={"deal_id": other})
     assert refused.status_code == 409
     assert "Il CRM ha rifiutato la richiesta: deal_id: non valido." in refused.text
-    assert client.get(f"/api/hub/companies/{company_id}").json()["crm_stato"] == "collegato"
+    assert client.get(f"/api/hub/companies/{company_id}").json()["crm_status"] == "linked"
 
 
-def test_riprova_needs_the_token_a_live_request_and_an_admin(
+def test_retry_needs_the_token_to_live_request_and_an_admin(
     client: TestClient, admin: None, sender: RecordingSender, api_session: Session
 ) -> None:
     missing = client.post(f"/api/hub/companies/{UUID(int=1)}/crm/link")
@@ -1286,18 +1283,18 @@ def test_riprova_needs_the_token_a_live_request_and_an_admin(
 # ---- REB-870: an admin opens a request for a company already in the CRM ---------------
 
 ADMIN_COMPANY = {
-    "nome_azienda": "Studio Rossi Srl",
-    "referente_nome": "Maria",
-    "referente_cognome": "Verdi",
+    "company_name": "Studio Rossi Srl",
+    "contact_first_name": "Maria",
+    "contact_last_name": "Verdi",
     "email": "maria@studiorossi.it",
-    "telefono": "+39 345 1234567",
-    "figura_richiesta": "Backend developer",
-    "progetto": "Un backend developer per tre mesi.",
-    "periodo_da": "2026-12-01",
-    "durata": "3 mesi",
-    "budget_giornaliero": "500",
-    "remoto": "remoto",
-    "numero_risorse": 1,
+    "phone": "+39 345 1234567",
+    "requested_role": "Backend developer",
+    "project": "Un backend developer per tre mesi.",
+    "period_from": "2026-12-01",
+    "duration": "3 mesi",
+    "daily_budget": "500",
+    "remote": "remote",
+    "headcount": 1,
 }
 KNOWN_DEAL = "0192e0a0-0000-7000-8000-0000000000bb"
 
@@ -1310,7 +1307,7 @@ def test_an_admin_opens_a_request_with_the_wizards_validation_and_no_mail(
     mails = len(sender.sent)
 
     bad = client.post(
-        "/api/hub/admin/companies", json={**ADMIN_COMPANY, "remoto": "ibrido"}
+        "/api/hub/admin/companies", json={**ADMIN_COMPANY, "remote": "hybrid"}
     )  # hybrid needs the days in the office
     assert bad.status_code == 422
     assert (
@@ -1324,10 +1321,10 @@ def test_an_admin_opens_a_request_with_the_wizards_validation_and_no_mail(
 
     assert response.status_code == 201, response.text
     made = response.json()
-    assert (made["nome_azienda"], made["email"], made["crm_stato"]) == (
+    assert (made["company_name"], made["email"], made["crm_status"]) == (
         "Studio Rossi Srl",
         "maria@studiorossi.it",
-        "da_collegare",
+        "to_link",
     )
     assert len(sender.sent) == mails
     assert crm_filings == [UUID(made["id"])]
@@ -1348,7 +1345,7 @@ def test_a_request_opened_for_a_deal_links_it_and_the_crm_creates_nothing(
 
     assert response.status_code == 201, response.text
     made = response.json()
-    assert (made["crm_stato"], made["crm_situazione"]) == ("collegato", None)
+    assert (made["crm_status"], made["crm_situation"]) == ("linked", None)
     assert made["crm_deal_url"].endswith(CRM_DEAL)
     assert json.loads(crm.calls[0][3])["deal_id"] == KNOWN_DEAL
     assert len(crm.calls) == 1
@@ -1356,7 +1353,7 @@ def test_a_request_opened_for_a_deal_links_it_and_the_crm_creates_nothing(
     assert len(sender.sent) == mails
 
 
-def test_an_unknown_deal_ends_rifiutato_with_the_sentence_and_is_not_filed_by_address(
+def test_an_unknown_deal_ends_rejected_with_the_sentence_and_is_not_filed_by_address(
     client: TestClient, admin: None, sender: RecordingSender, crm: Any, api_session: Session
 ) -> None:
     crm.answers[:] = [(422, b'{"detail": "deal_id: il deal non esiste"}'), (200, CRM_ANSWER)]
@@ -1366,11 +1363,9 @@ def test_an_unknown_deal_ends_rifiutato_with_the_sentence_and_is_not_filed_by_ad
         "/api/hub/admin/companies", json={**ADMIN_COMPANY, "deal_id": KNOWN_DEAL}
     ).json()
 
-    assert made["crm_stato"] == "rifiutato"
-    assert (
-        made["crm_situazione"] == "Il CRM ha rifiutato la richiesta: deal_id: il deal non esiste."
-    )
+    assert made["crm_status"] == "rejected"
+    assert made["crm_situation"] == "Il CRM ha rifiutato la richiesta: deal_id: il deal non esiste."
     # A later «Riprova» asks for the same deal, never for a new customer.
     retried = client.post(f"/api/hub/companies/{made['id']}/crm/link").json()
-    assert retried["crm_stato"] == "collegato"
+    assert retried["crm_status"] == "linked"
     assert json.loads(crm.calls[1][3])["deal_id"] == KNOWN_DEAL

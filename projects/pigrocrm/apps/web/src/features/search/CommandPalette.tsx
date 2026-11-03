@@ -90,9 +90,9 @@ export function CommandPalette({
       case 'invoice':
         return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
       // No page of its own: the attività opens in its dialog, over the Attività page
-      // (`?apri=`), which is where every other screen opens one from.
+      // (`?open=`), which is where every other screen opens one from.
       case 'attivita':
-        return void navigate({ to: '/app/activities', search: { apri: hit.id } })
+        return void navigate({ to: '/app/activities', search: { open: hit.id } })
     }
   }
 
@@ -129,13 +129,13 @@ export function CommandPalette({
   }
 
   const tooShort = search.debounced.length < MIN_TERM_LENGTH
-  const groups: SearchGroup[] = (search.data?.gruppi ?? []).filter(
+  const groups: SearchGroup[] = (search.data?.groups ?? []).filter(
     (group) => group.hits.length > 0,
   )
 
   /** "5 di 500" and "5 di 5" are different answers; «oltre» is how the ceiling is said. */
   function count(group: SearchGroup): string {
-    return group.totale_e_un_minimo ? `oltre ${group.totale}` : String(group.totale)
+    return group.total_and_a_minimum ? `oltre ${group.total}` : String(group.total)
   }
 
   return (
@@ -189,15 +189,15 @@ export function CommandPalette({
                     <CommandGroup heading={`${ENTITY_LABELS[group.entity]} · ${count(group)}`}>
                       {group.hits.map((hit) => (
                         <CommandItem key={hit.id} value={hit.id} onSelect={() => openHit(hit)}>
-                          <span className="truncate">{hit.etichetta}</span>
-                          {hit.sottotitolo && (
+                          <span className="truncate">{hit.label}</span>
+                          {hit.subtitle && (
                             <span className="ml-2 truncate text-xs text-muted-foreground">
-                              {hit.sottotitolo}
+                              {hit.subtitle}
                             </span>
                           )}
                         </CommandItem>
                       ))}
-                      {group.hits.length < group.totale && goToList !== null && (
+                      {group.hits.length < group.total && goToList !== null && (
                         <CommandItem
                           value={`vedi-tutti-${group.entity}`}
                           onSelect={() => {

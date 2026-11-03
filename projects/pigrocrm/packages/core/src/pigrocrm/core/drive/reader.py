@@ -158,7 +158,7 @@ class DriveEntry:
     """One child of a folder. Italian field names, like every other schema a person or
     an agent reads.
 
-    `dimensione` is `None` and not `0` for a folder or a native Google file: those have
+    `size` is `None` and not `0` for a folder or a native Google file: those have
     no bytes on Drive to measure, and `0` would say "an empty file", which is a
     different and false statement. Same for `modificato_il`, which Drive can omit.
     """
@@ -166,9 +166,9 @@ class DriveEntry:
     id: str
     nome: str
     mime: str
-    dimensione: int | None
+    size: int | None
     modificato_il: datetime | None
-    cartella: bool
+    folder: bool
 
 
 @dataclass(frozen=True)
@@ -656,9 +656,9 @@ def _entry(item: dict[str, Any]) -> DriveEntry:
         id=str(item.get("id") or ""),
         nome=str(item.get("name") or ""),
         mime=mime,
-        dimensione=_as_int(item.get("size")),
+        size=_as_int(item.get("size")),
         modificato_il=_moment(item.get("modifiedTime")),
-        cartella=mime == FOLDER_MIME,
+        folder=mime == FOLDER_MIME,
     )
 
 

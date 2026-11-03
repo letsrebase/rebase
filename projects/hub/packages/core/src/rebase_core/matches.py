@@ -1,17 +1,17 @@
 """Matches: a freelancer card paired with a company request, and the contracts they
 write (REB-387, phase 2: generate, never send).
 
-A match's regime is its letter's (REB-687), `partita_iva` or `occasionale`, chosen on
+A match's regime is its letter's (REB-687), `vat_number` or `occasional`, chosen on
 «Crea match» and proposed from the tax data: every framework lookup here takes it, so an
 ordinary framework agreement never stands in for an occasional one, nor the reverse. An
 ordinary letter needs a saved partita IVA (`require_regime_fits`).
 
-`create` writes in one transaction the match (`bozza`), the letter of engagement with
+`create` writes in one transaction the match (`draft`), the letter of engagement with
 the year's next number, and the framework agreement when the freelancer has none
-active. A letter whose framework agreement is not signed yet waits for it (`in_attesa`,
+active. A letter whose framework agreement is not signed yet waits for it (`pending`,
 spec § 1e) and prints its date as a blank line until phase 3 regenerates it on the
 signature. A framework agreement generated for an earlier draft and never sent is
-replaced, so the newest tax data win; one already out for signature (`inviato`, phase 3)
+replaced, so the newest tax data win; one already out for signature (`sent`, phase 3)
 is waited for instead. A render that fails rolls everything back, the number included.
 
 `MatchService` writes: `create`, `cancel`, `close`. What it is built from is split by
@@ -50,8 +50,8 @@ from rebase_core.match_reads import MatchReads
 from rebase_core.match_rows import (
     DOCUMENT_ENTITY,
     ENTITY,
-    LETTERA,
-    QUADRO,
+    FRAMEWORK,
+    LETTER,
     fiscal_row,
     freelancer_row,
     lock_freelancer,
@@ -61,7 +61,7 @@ from rebase_core.match_rows import (
     require_regime_fits,
 )
 from rebase_core.models import ContractDocument, Freelancer, Match
-from rebase_core.regimes import PARTITA_IVA
+from rebase_core.regimes import VAT_REGISTERED
 
 
 def require_live_freelancer(
@@ -109,7 +109,7 @@ def _request_fingerprint(data: MatchCreate) -> str:
     keys make the digest the same however Python happened to build the model. An
     ordinary letter leaves `regime` out (REB-687), so its digest is the one stored
     before the field existed and a retry across the release still finds its match."""
-    exclude = {"id", "regime"} if data.regime == PARTITA_IVA else {"id"}
+    exclude = {"id", "regime"} if data.regime == VAT_REGISTERED else {"id"}
     canonical = json.dumps(data.model_dump(mode="json", exclude=exclude), sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -137,22 +137,22 @@ class MatchService:
         signer: Mapping[str, Value] | None = None,
         today: Callable[[], date] = rome_today,
         *,
-        pigro_configurato: bool = True,
+        pigro_configured: bool = True,
     ) -> None:
         """`renderer` is needed only to write or preview a document; the reads never
         typeset anything. `signer` is `REBASE_SIGNER_JSON` as `signer_data` read it.
-        `pigro_configurato` is whether `REBASE_PIGRO_ENGAGEMENTS_TOKEN` is set: without
+        `pigro_configured` is whether `REBASE_PIGRO_ENGAGEMENTS_TOKEN` is set: without
         it an active match's card says so and offers no «Riprova su Pigro» (spec § 3.2);
         the API and the MCP server pass it, the tests may leave it on."""
         self.session = session
         self.documents = MatchDocuments(session, renderer, signer, today)
-        self.reads = MatchReads(session, today, pigro_configurato=pigro_configurato)
+        self.reads = MatchReads(session, today, pigro_configured=pigro_configured)
         self.drafts = MatchDrafts(session, self.documents)
 
     def create(self, freelancer_id: UUID, data: MatchCreate, admin_id: UUID) -> MatchRead:
         """Two admins racing to match the same freelancer (or one double click on «Salva
         senza inviare») must not both read "no active framework" and both write a fresh
-        `generato` one: the first statement of the transaction locks the freelancer's own
+        `generated` one: the first statement of the transaction locks the freelancer's own
         row (`SELECT ... FOR UPDATE`), so the second waits here, before it reads
         `active_framework`/`pending_framework`, for the first to commit or roll back.
         Everything the documents print is read after that lock, never before it: the card,
@@ -205,27 +205,27 @@ class MatchService:
                     self.session.rollback()
                     return self.reads.get(existing.id)
             freelancer, user = freelancer_row(self.session, freelancer_id)
-            company, _referente = matchable_company(self.session, data.company_id, lock=True)
+            company, _contact_person = matchable_company(self.session, data.company_id, lock=True)
             fiscal = fiscal_row(self.session, freelancer.id)
-            require_regime_fits(fiscal.partita_iva, data.regime)
+            require_regime_fits(fiscal.vat_number, data.regime)
             today = self.documents.today()
             active = active_framework(self.session, freelancer.id, data.regime)
             documents: list[ContractDocument] = []
             stale_ids: list[UUID] = []
             if active is None:
                 pending = pending_framework(self.session, freelancer.id, data.regime)
-                if pending is None or pending.stato != "inviato":
+                if pending is None or pending.status != "sent":
                     for stale in list(
                         self.session.scalars(
                             select(ContractDocument).where(
-                                ContractDocument.kind == QUADRO,
+                                ContractDocument.kind == FRAMEWORK,
                                 ContractDocument.freelancer_id == freelancer.id,
                                 ContractDocument.regime == data.regime,
-                                ContractDocument.stato == "generato",
+                                ContractDocument.status == "generated",
                             )
                         )
                     ):
-                        stale.stato = "annullato"
+                        stale.status = "cancelled"
                         stale_ids.append(stale.id)
                     # REB-406: the same write `write_framework` makes for a match whose
                     # letter waits on a cancelled or refused one -- `create` already
@@ -237,22 +237,22 @@ class MatchService:
                 **({"id": data.id} if data.id is not None else {}),
                 freelancer_id=freelancer.id,
                 company_id=company.id,
-                cliente_ragione_sociale=data.cliente.cliente_ragione_sociale,
-                cliente_piva=data.cliente.cliente_piva,
-                cliente_sede=data.cliente.cliente_sede,
-                stato="bozza",
+                customer_legal_name=data.customer.customer_legal_name,
+                customer_vat_number=data.customer.customer_vat_number,
+                customer_registered_office=data.customer.customer_registered_office,
+                status="draft",
                 created_by=admin_id,
                 request_fingerprint=fingerprint,
-                giorni_previsti=data.giorni_previsti,
-                lettera_data_inizio=data.lettera.data_inizio,
-                lettera_data_fine=data.lettera.data_fine,
-                lettera_compenso=data.lettera.compenso,
+                expected_days=data.expected_days,
+                letter_start_date=data.letter.start_date,
+                letter_end_date=data.letter.data_fine,
+                letter_fee=data.letter.fee,
                 # A referral reward reads this later, at signing, which can be weeks
                 # after the request the budget belonged to (P-REB-44); snapshotted
-                # here for the same reason `lettera_compenso` already is, so an edit
+                # here for the same reason `letter_fee` already is, so an edit
                 # to the company's own request afterward never changes what a reward
                 # already promised.
-                company_budget_giornaliero=company.budget_giornaliero,
+                company_daily_budget=company.daily_budget,
             )
             self.session.add(match)
             try:
@@ -268,17 +268,17 @@ class MatchService:
                 raise InvalidState(
                     "Questo id di match appartiene già a un altro freelance."
                 ) from exc
-            numero = next_letter_number(self.session, today.year)
+            number = next_letter_number(self.session, today.year)
             documents.append(
                 self.documents.document(
                     renderer,
-                    LETTERA,
+                    LETTER,
                     data.regime,
-                    self.documents.lettera_data(user, fiscal, data, numero, active, today),
+                    self.documents.lettera_data(user, fiscal, data, number, active, today),
                     freelancer.id,
                     match.id,
-                    numero,
-                    "generato" if active is not None else "in_attesa",
+                    number,
+                    "generated" if active is not None else "pending",
                     admin_id,
                 )
             )
@@ -294,63 +294,63 @@ class MatchService:
             admin_id,
             {
                 "company_id": company.id,
-                "numero": numero,
-                "documenti": [d.id for d in documents],
-                "quadri_annullati": stale_ids,
+                "number": number,
+                "documents": [d.id for d in documents],
+                "cancelled_frameworks": stale_ids,
             },
         )
         return self.reads.get(match.id)
 
     def cancel(self, match_id: UUID, admin_id: UUID) -> MatchRead:
-        """A draft and its letter become `annullato`; the framework agreement, which is
+        """A draft and its letter become `cancelled`; the framework agreement, which is
         the freelancer's and not the match's, stays as it is. `SigningService.
         cancel_match` extends this to a match in signature, which also has an envelope
         to cancel.
 
         The freelancer's row locks first, then the match, then its letters (the global
         lock order): a cancel racing a send for the same match must not read a stale
-        `bozza` and overwrite a letter the send already put out for signature with
-        `annullato` while its envelope is still live on Documenso."""
+        `draft` and overwrite a letter the send already put out for signature with
+        `cancelled` while its envelope is still live on Documenso."""
         lock_freelancer(self.session, match_freelancer(self.session, match_id))
         match = lock_match(self.session, match_id)
-        if match.stato != "bozza":
+        if match.status != "draft":
             self.session.rollback()
             raise InvalidState(
-                f"Si annulla solo un match in bozza: questo è {match.stato}.", stato=match.stato
+                f"Si annulla solo un match in bozza: questo è {match.status}.", status=match.status
             )
         letters = list(
             self.session.scalars(
                 select(ContractDocument)
                 .where(
                     ContractDocument.match_id == match.id,
-                    ContractDocument.stato.in_(("generato", "in_attesa")),
+                    ContractDocument.status.in_(("generated", "pending")),
                 )
                 .with_for_update()
                 .execution_options(populate_existing=True)
             )
         )
-        match.stato = "annullato"
+        match.status = "cancelled"
         match.cancelled_at = utcnow()
         for letter in letters:
-            letter.stato = "annullato"
+            letter.status = "cancelled"
         self.session.commit()
         AdminActionService(self.session).record(
-            ENTITY, match.id, "match_cancelled", admin_id, {"documenti": [d.id for d in letters]}
+            ENTITY, match.id, "match_cancelled", admin_id, {"documents": [d.id for d in letters]}
         )
         return self.reads.get(match.id)
 
     def close(self, match_id: UUID, admin_id: UUID) -> MatchRead:
         """The freelancer's row locks first, then the match, the same order `cancel`
-        takes: a close racing a webhook that just turned this match `attivo` (or
-        `concluso` again) must re-check its state under the lock, not before it."""
+        takes: a close racing a webhook that just turned this match `active` (or
+        `concluded` again) must re-check its state under the lock, not before it."""
         lock_freelancer(self.session, match_freelancer(self.session, match_id))
         match = lock_match(self.session, match_id)
-        if match.stato != "attivo":
+        if match.status != "active":
             self.session.rollback()
             raise InvalidState(
-                f"Si chiude solo un match attivo: questo è {match.stato}.", stato=match.stato
+                f"Si chiude solo un match attivo: questo è {match.status}.", status=match.status
             )
-        match.stato = "concluso"
+        match.status = "concluded"
         self.session.commit()
         AdminActionService(self.session).record(ENTITY, match.id, "match_closed", admin_id, {})
         return self.reads.get(match.id)

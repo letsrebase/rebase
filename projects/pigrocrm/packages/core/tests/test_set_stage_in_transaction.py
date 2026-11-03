@@ -35,14 +35,14 @@ def stages(db_session: Session) -> dict[str, PipelineStageRead]:
 
 @pytest.fixture
 def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
-    customer = Customer(ragione_sociale="Cliente Srl", nazione="IT", custom_fields={})
+    customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     row = Deal(
         nome="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
-        probabilita=50,
+        probability=50,
         custom_fields={},
     )
     db_session.add(row)
@@ -56,14 +56,14 @@ def test_it_moves_the_deal_and_settles_the_probability(
     DealService(db_session).set_stage_in_transaction(deal, stages["vinto"])
     assert deal.pipeline_stage_id == stages["vinto"].id
     # "Won at 60%" stays unreachable through this path too.
-    assert deal.probabilita == 100
+    assert deal.probability == 100
 
 
 def test_it_settles_the_closure_date(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
     DealService(db_session).set_stage_in_transaction(deal, stages["vinto"])
-    assert deal.chiuso_il == today_local()
+    assert deal.closed_at == today_local()
 
 
 def test_it_records_nothing(
@@ -115,7 +115,7 @@ def test_moving_back_to_an_open_stage_clears_the_closure_date(
     service = DealService(db_session)
     service.set_stage_in_transaction(deal, stages["vinto"])
     service.set_stage_in_transaction(deal, stages["negoziazione"])
-    assert deal.chiuso_il is None
+    assert deal.closed_at is None
 
 
 def test_a_correction_between_two_terminal_stages_keeps_the_original_closure_date(
@@ -123,17 +123,17 @@ def test_a_correction_between_two_terminal_stages_keeps_the_original_closure_dat
 ) -> None:
     """The case that catches reading the previous stage *after* the assignment.
 
-    `_settle_closure_date` decides on `previous.tipo`, so if `pipeline_stage_id` is
+    `_settle_closure_date` decides on `previous.type`, so if `pipeline_stage_id` is
     written before the previous stage is looked up, `previous` is the target and every
     move looks like a correction between two terminal stages -- which silently stops
-    stamping `chiuso_il` at all. Here the previous stage really is terminal, so the stamp
+    stamping `closed_at` at all. Here the previous stage really is terminal, so the stamp
     must survive `vinto -> perso` untouched: it is a correction of *which* outcome, not a
     second closure.
     """
     service = DealService(db_session)
     service.set_stage_in_transaction(deal, stages["vinto"])
-    stamped = deal.chiuso_il
+    stamped = deal.closed_at
     assert stamped is not None
     service.set_stage_in_transaction(deal, stages["perso"])
-    assert deal.chiuso_il == stamped
-    assert deal.probabilita == 0
+    assert deal.closed_at == stamped
+    assert deal.probability == 0

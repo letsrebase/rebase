@@ -42,7 +42,7 @@ export function useSpaceSwitcher(go: (url: string) => void) {
     const slug = space.slug
     setEnteringSlug(slug)
     try {
-      if (space.invito) {
+      if (space.invitation) {
         const door = await unwrap(
           api.POST('/api/identity/invite/{slug}', { params: { path: { slug } } }),
         )

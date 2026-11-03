@@ -22,13 +22,13 @@ const DESKTOP = { width: 1440, height: 900 }
 // today), and which no other spec writes to: `calendario.spec.ts` and `days.spec.ts` work
 // on the current month, and a day panel with a dozen days on it no longer fits a dialog.
 const QUINDICI_SCORSO = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
-const MESE = `${QUINDICI_SCORSO.getFullYear()}-${String(QUINDICI_SCORSO.getMonth() + 1).padStart(2, '0')}`
-const QUINDICI = `${MESE}-15`
+const Month = `${QUINDICI_SCORSO.getFullYear()}-${String(QUINDICI_SCORSO.getMonth() + 1).padStart(2, '0')}`
+const QUINDICI = `${Month}-15`
 
 /** A contract with a rate, a worked day in the month before this one and a draft invoice. */
 async function seedPages(request: APIRequestContext): Promise<{ contractId: string; invoiceId: string }> {
   const customer = await request.post('/api/customers', {
-    data: { ragione_sociale: `Layout E2E ${Date.now()} Srl` },
+    data: { legal_name: `Layout E2E ${Date.now()} Srl` },
   })
   expect(customer.status(), await customer.text()).toBe(201)
   const customerId = ((await customer.json()) as { id: string }).id
@@ -36,41 +36,41 @@ async function seedPages(request: APIRequestContext): Promise<{ contractId: stri
   const contract = await request.post('/api/contracts', {
     data: {
       customer_id: customerId,
-      titolo: 'Consulenza con un titolo abbastanza lungo da andare a capo su un telefono',
-      inizio: '2020-01-01',
-      tipo_rinnovo: 'nessuno',
-      preavviso_disdetta_giorni: 30,
-      cadenza_fatturazione: 'mensile',
-      politica_spese: { kind: 'non_rimborsabile' },
+      title: 'Consulenza con un titolo abbastanza lungo da andare a capo su un telefono',
+      start: '2020-01-01',
+      renewal_type: 'none',
+      termination_notice_days: 30,
+      billing_cadence: 'monthly',
+      expense_policy: { kind: 'not_reimbursable' },
     },
   })
   expect(contract.status(), await contract.text()).toBe(201)
   const contractId = ((await contract.json()) as { id: string }).id
   const card = await request.post(`/api/contracts/${contractId}/rate-cards`, {
     data: {
-      valido_da: '2020-01-01',
-      tipo: 'giornaliero',
-      importo: '450.00',
-      unita: 'giorno',
-      frazioni_ammesse: ['1.00', '0.50'],
+      valid_from: '2020-01-01',
+      type: 'daily',
+      amount: '450.00',
+      unit: 'day',
+      allowed_fractions: ['1.00', '0.50'],
     },
   })
   expect(card.status(), await card.text()).toBe(201)
-  const activate = await request.post(`/api/contracts/${contractId}/state`, { data: { stato: 'attivo' } })
+  const activate = await request.post(`/api/contracts/${contractId}/state`, { data: { status: 'active' } })
   expect(activate.status(), await activate.text()).toBe(200)
 
   const day = await request.post('/api/work-units', {
     data: {
       contract_id: contractId,
       data: QUINDICI,
-      quantita: '1.00',
-      descrizione: 'Attività di consulenza',
-      stato: 'lavorato',
+      quantity: '1.00',
+      description: 'Attività di consulenza',
+      status: 'worked',
     },
   })
   expect(day.status(), await day.text()).toBe(201)
 
-  const invoice = await request.post('/api/invoices', { data: { customer_id: customerId, tipo: 'fattura' } })
+  const invoice = await request.post('/api/invoices', { data: { customer_id: customerId, type: 'invoice' } })
   expect(invoice.status(), await invoice.text()).toBe(201)
   return { contractId, invoiceId: ((await invoice.json()) as { id: string }).id }
 }
@@ -134,15 +134,15 @@ test.describe('the calendar', () => {
     const { contractId } = await seedPages(page.request)
     expect(contractId).not.toBe('')
     await page.setViewportSize(PHONE)
-    await page.goto(`/app/calendar?mese=${MESE}`)
+    await page.goto(`/app/calendar?month=${Month}`)
 
-    const giorno = page.getByRole('button', { name: new RegExp(`^15/${MESE.slice(5)}/${MESE.slice(0, 4)}: .*giornat`) })
-    await expect(giorno).toBeVisible()
+    const day = page.getByRole('button', { name: new RegExp(`^15/${Month.slice(5)}/${Month.slice(0, 4)}: .*giornat`) })
+    await expect(day).toBeVisible()
     // The cell is a row of a list, not a 36px column: wide, and the day's line (the
     // quantity and the customer) is wide too, where in a column it wrapped one letter a line.
-    const box = await giorno.boundingBox()
+    const box = await day.boundingBox()
     expect(box?.width ?? 0).toBeGreaterThan(200)
-    const customer = await giorno.getByText(/Layout E2E/).first().boundingBox()
+    const customer = await day.getByText(/Layout E2E/).first().boundingBox()
     expect(customer?.width ?? 0).toBeGreaterThan(60)
   })
 })

@@ -7,7 +7,7 @@ import { queryKeys } from '@/lib/query'
  *  `packages/core/src/pigrocrm/core/notes/schemas.py` is the one source. */
 export type Note = components['schemas']['NoteRead']
 export type NoteEntityType = Note['entity_type']
-export type NoteSource = NonNullable<Note['fonte']>
+export type NoteSource = NonNullable<Note['source']>
 
 /** The collection the URL spells for each entity type a note can hang on. */
 const COLLECTIONS = { deal: 'deals', customer: 'customers', person: 'people' } as const
@@ -34,11 +34,11 @@ function invalidateNotes(client: QueryClient, entityType: NoteEntityType, entity
 export function useAddNote(entityType: NoteEntityType, entityId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (testo: string) =>
+    mutationFn: (text: string) =>
       unwrap(
         api.POST('/api/{collection}/{entity_id}/notes', {
           params: { path: { collection: COLLECTIONS[entityType], entity_id: entityId } },
-          body: { testo },
+          body: { text },
         }),
       ),
     onSuccess: () => invalidateNotes(queryClient, entityType, entityId),
@@ -48,11 +48,11 @@ export function useAddNote(entityType: NoteEntityType, entityId: string) {
 export function useUpdateNote(entityType: NoteEntityType, entityId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ noteId, testo }: { noteId: string; testo: string }) =>
+    mutationFn: ({ noteId, text }: { noteId: string; text: string }) =>
       unwrap(
         api.PATCH('/api/notes/{note_id}', {
           params: { path: { note_id: noteId } },
-          body: { testo },
+          body: { text },
         }),
       ),
     onSuccess: () => invalidateNotes(queryClient, entityType, entityId),

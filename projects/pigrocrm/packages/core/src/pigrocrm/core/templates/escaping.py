@@ -199,7 +199,7 @@ def _is_trustworthy_absolute_url(value: str) -> bool:
     treat as opaque data.
 
     Deliberately narrow: `http`/`https` scheme, a non-empty host, and no whitespace
-    or control character anywhere in the value. A customer's own `sito_web` field is
+    or control character anywhere in the value. A customer's own `website` field is
     the case this exists for; a scheme this module has never seen (`javascript:`,
     `data:`, a bare `esempio.it` with no scheme at all) or a value carrying a
     character that has no business in a URL falls through to the opaque path below
@@ -215,7 +215,7 @@ def _is_trustworthy_absolute_url(value: str) -> bool:
 def escape_url(value: str) -> str:
     r"""For a placeholder that lands in a link or image destination.
 
-    A customer's own URL -- `cliente.sito_web`, the case the spec names -- is meant
+    A customer's own URL -- `customer.website`, the case the spec names -- is meant
     to end up as a *working* link, not as inert text: the whole point of putting it
     in `[il sito]({{cliente.sito_web}})` is that "il sito" is clickable. This
     function used to `quote(value, safe="")` unconditionally, which percent-encodes

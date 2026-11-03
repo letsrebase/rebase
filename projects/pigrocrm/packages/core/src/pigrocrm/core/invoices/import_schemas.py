@@ -2,13 +2,13 @@
 `src/lib/server/import/invoice.ts`.
 
 Every structured invoice format an adapter parses maps onto `ParsedInvoice` --
-translated into PigroCRM's own vocabulary (`imponibile`/`imposta` where mastro says
-`taxableAmount`/`taxAmount`, `fornitore`/`cliente` where it says
+translated into PigroCRM's own vocabulary (`taxable_amount`/`vat_amount` where mastro says
+`taxableAmount`/`taxAmount`, `supplier`/`customer` where it says
 `supplier`/`customer`), never the other way around: a second format adapter is a
 translation into this shape, not a change to it.
 
 Deliberately not `InvoiceImport` (`invoices/schemas.py`): that schema is "what a
-caller declares" (`extra="forbid"`, hand-typed totals, a fixed `Literal["esterno"]`
+caller declares" (`extra="forbid"`, hand-typed totals, a fixed `Literal["external"]`
 provenance); this one is "what a structured document itself states". Collapsing the
 two would force every future parser to also satisfy `InvoiceImport`'s
 hand-declaration contract, which has nothing to do with parsing. The design record is
@@ -29,19 +29,19 @@ from pydantic import BaseModel, ConfigDict
 from pigrocrm.core.validation import SafeStr
 
 ParsedInvoiceDocumentType = Literal[
-    "fattura",
-    "acconto_fattura",
-    "acconto_parcella",
-    "nota_credito",
-    "nota_debito",
-    "parcella",
+    "invoice",
+    "invoice_advance",
+    "fee_advance",
+    "note_credit",
+    "note_debit",
+    "fee_note",
 ]
 """What kind of document this is, named after what the FatturaPA `TipoDocumento`
 code means (TD01..TD06) rather than after the code itself -- mirroring mastro's own
 `InvoiceDocumentType`, named after the concept rather than one format's code list,
 so a second format adapter maps its own codes onto the same six names."""
 
-ParsedInvoiceDueDateSource = Literal["documento", "calcolata"]
+ParsedInvoiceDueDateSource = Literal["document", "calculated"]
 """Mirrors mastro's `InvoiceDueDateSource`: whether a payment instalment's due date
 was read verbatim from the document, or computed here from a relative term (a
 reference date plus a day count) the document expressed instead -- never invented
@@ -55,11 +55,11 @@ class ParsedInvoiceParty(BaseModel):
     the document itself claims about whoever issued it or whoever it was issued to,
     before any matching against the register has happened.
 
-    `partita_iva`/`codice_fiscale` are two first-class, independently optional
+    `vat_number`/`tax_code` are two first-class, independently optional
     fields rather than mastro's single `taxId` (which changes shape depending on
     which identifier the source document happened to carry): PigroCRM already
     treats both as first-class columns on a customer and on an azienda, so there is
-    no "whichever one" concept to port here. `partita_iva` carries `IdPaese` +
+    no "whichever one" concept to port here. `vat_number` carries `IdPaese` +
     `IdCodice` concatenated (e.g. `"IT01234567890"`) exactly as mastro's
     `fiscalIdString` does, since a later direction-detection step needs the
     identifier a FatturaPA document actually guarantees. A concrete adapter
@@ -71,14 +71,14 @@ class ParsedInvoiceParty(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    ragione_sociale: SafeStr
-    partita_iva: SafeStr | None = None
-    codice_fiscale: SafeStr | None = None
-    indirizzo: SafeStr
+    legal_name: SafeStr
+    vat_number: SafeStr | None = None
+    tax_code: SafeStr | None = None
+    address: SafeStr
     cap: SafeStr
-    comune: SafeStr
-    provincia: SafeStr | None = None
-    nazione: SafeStr
+    city: SafeStr
+    province: SafeStr | None = None
+    country: SafeStr
 
 
 class ParsedInvoiceLine(BaseModel):
@@ -86,27 +86,27 @@ class ParsedInvoiceLine(BaseModel):
     the same field names `InvoiceLineImport` already uses for a hand-declared line
     -- it is the same fact, read two different ways.
 
-    `aliquota_iva` is the line's own VAT rate. `natura`, when the rate is zero,
+    `vat_rate` is the line's own VAT rate. `vat_nature`, when the rate is zero,
     is the line's *own* declared exemption code (FatturaPA's `DettaglioLinee/
     Natura`) -- read directly from the line, never reconstructed from a
     `ParsedInvoiceTaxSummary` block matched by rate alone: a document can carry
-    more than one `riepiloghi` entry at the same zero rate with a *different*
-    `natura` each (mixed-exemption invoices are routine, and this codebase's own
+    more than one `recaps` entry at the same zero rate with a *different*
+    `vat_nature` each (mixed-exemption invoices are routine, and this codebase's own
     export side already treats `(aliquota_iva, natura)` as the real grouping key
-    -- `totals.RiepilogoGroup`'s own docstring), so a rate-only lookup would
+    -- `totals.RecapGroup`'s own docstring), so a rate-only lookup would
     silently mistag a line that belongs to the other group. `riferimento_
     normativo`, which FatturaPA never repeats at the line level, is still the
-    matching `riepiloghi` entry's own field, looked up by the pair.
+    matching `recaps` entry's own field, looked up by the pair.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    descrizione: SafeStr
-    quantita: Decimal
-    prezzo_unitario: Decimal
-    prezzo_totale: Decimal
-    aliquota_iva: Decimal
-    natura: SafeStr | None = None
+    description: SafeStr
+    quantity: Decimal
+    unit_price: Decimal
+    total_price: Decimal
+    vat_rate: Decimal
+    vat_nature: SafeStr | None = None
 
 
 class ParsedInvoiceTaxSummary(BaseModel):
@@ -114,20 +114,20 @@ class ParsedInvoiceTaxSummary(BaseModel):
     carry more than one -- mixed-rate invoices are routine -- which is why this is
     a list on `ParsedInvoice` rather than a single flat pair.
 
-    `riferimento_normativo` is the literal wording the issuing document carries,
+    `legal_reference` is the literal wording the issuing document carries,
     already in the language it was written in -- never translated, never replaced
-    by a jurisdiction's own wording for the same `natura` code: this is what a
+    by a jurisdiction's own wording for the same `vat_nature` code: this is what a
     specific document actually said, which can legitimately disagree with what the
     code should say (a supplier's software using outdated wording).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    aliquota_iva: Decimal
-    natura: SafeStr | None = None
-    riferimento_normativo: SafeStr | None = None
-    imponibile: Decimal
-    imposta: Decimal
+    vat_rate: Decimal
+    vat_nature: SafeStr | None = None
+    legal_reference: SafeStr | None = None
+    taxable_amount: Decimal
+    vat_amount: Decimal
 
 
 class ParsedInvoiceSocialCharge(BaseModel):
@@ -139,27 +139,27 @@ class ParsedInvoiceSocialCharge(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    tipo_cassa: SafeStr
-    aliquota_cassa: Decimal
-    importo_contributo_cassa: Decimal
-    imponibile_cassa: Decimal | None = None
-    aliquota_iva: Decimal
+    pension_fund_type: SafeStr
+    pension_fund_rate: Decimal
+    pension_fund_contribution_amount: Decimal
+    pension_fund_taxable_amount: Decimal | None = None
+    vat_rate: Decimal
 
 
 class ParsedInvoicePaymentInstallment(BaseModel):
-    """One instalment of a payment plan. `data_scadenza` is either read verbatim
+    """One instalment of a payment plan. `due_date` is either read verbatim
     from the document (FatturaPA's `DataScadenzaPagamento`) or computed from a
     relative term the document expresses instead (`DataRiferimentoTerminiPagamento`
     plus `GiorniTerminiPagamento`) -- never invented from anything outside the
-    document itself. `origine_scadenza` tells a reader which case produced it.
+    document itself. `due_date_origin` tells a reader which case produced it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    data_scadenza: date
-    origine_scadenza: ParsedInvoiceDueDateSource
-    importo: Decimal
-    modalita_pagamento: SafeStr
+    due_date: date
+    due_date_origin: ParsedInvoiceDueDateSource
+    amount: Decimal
+    payment_method: SafeStr
     iban: SafeStr | None = None
 
 
@@ -167,12 +167,12 @@ class ParsedInvoicePaymentTerms(BaseModel):
     """One payment-terms block: a condition code plus the instalments it governs.
     FatturaPA allows more than one block when a document mixes payment
     conditions; kept as a list on `ParsedInvoice` for the same reason as
-    `riepiloghi`.
+    `recaps`.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    condizioni_pagamento: SafeStr
+    payment_terms: SafeStr
     rate: list[ParsedInvoicePaymentInstallment]
 
 
@@ -180,24 +180,24 @@ class ParsedInvoiceTransmission(BaseModel):
     """Who actually sent this document to the Sistema di Interscambio, and that
     transmission's own sequence number. Deliberately not where direction detection
     looks: when an invoicing service files on the account holder's behalf,
-    `id_trasmittente` is the *service*, and the account holder appears only as
-    `fornitore`. Reading this field for direction would misclassify every invoice a
+    `id_transmitter` is the *service*, and the account holder appears only as
+    `supplier`. Reading this field for direction would misclassify every invoice a
     service transmits on someone else's behalf.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id_trasmittente: SafeStr
-    progressivo_invio: SafeStr
+    id_transmitter: SafeStr
+    send_sequential: SafeStr
 
 
 class ParsedInvoice(BaseModel):
     """A single invoice, exactly as a structured document states it -- mastro's
     `Invoice` (`invoice.ts:169-196`), translated into PigroCRM's own vocabulary.
 
-    `imponibile`/`imposta` are the sums of `riepiloghi[].imponibile`/`.imposta`,
+    `taxable_amount`/`vat_amount` are the sums of `recaps[].taxable_amount`/`.vat_amount`,
     kept as their own fields because the fiscal domain already names them at the
-    invoice level (mirrors `InvoiceImport`). `totale` is the document's own stated
+    invoice level (mirrors `InvoiceImport`). `total` is the document's own stated
     total, never derived by summing the fields above -- a document is free to
     round or add charges this shape does not model, and the total it declares is
     the one that must reconcile with what was actually paid.
@@ -205,18 +205,18 @@ class ParsedInvoice(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    numero: SafeStr
-    data_emissione: date
-    tipo_documento: ParsedInvoiceDocumentType
-    divisa: SafeStr
-    fornitore: ParsedInvoiceParty
-    cliente: ParsedInvoiceParty
-    righe: list[ParsedInvoiceLine]
-    riepiloghi: list[ParsedInvoiceTaxSummary]
-    imponibile: Decimal
-    imposta: Decimal
-    totale: Decimal
-    bollo: Decimal | None = None
-    cassa_previdenziale: list[ParsedInvoiceSocialCharge]
-    termini_pagamento: list[ParsedInvoicePaymentTerms]
-    trasmissione: ParsedInvoiceTransmission
+    number: SafeStr
+    issue_date: date
+    sdi_document_type: ParsedInvoiceDocumentType
+    currency: SafeStr
+    supplier: ParsedInvoiceParty
+    customer: ParsedInvoiceParty
+    lines: list[ParsedInvoiceLine]
+    recaps: list[ParsedInvoiceTaxSummary]
+    taxable_amount: Decimal
+    vat_amount: Decimal
+    total: Decimal
+    stamp_duty: Decimal | None = None
+    social_security_pension_fund: list[ParsedInvoiceSocialCharge]
+    termini_payment: list[ParsedInvoicePaymentTerms]
+    transmission: ParsedInvoiceTransmission

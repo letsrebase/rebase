@@ -12,12 +12,12 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const AZIENDA = {
+const LEGAL_ENTITY = {
   id: 'a-1',
   nome: 'humancraft',
-  ragione_sociale: 'Humancraft S.r.l.',
+  legal_name: 'Humancraft S.r.l.',
   logo_key: null,
-  firma_key: null,
+  signature_key: null,
 } as LegalEntityRecord
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -33,11 +33,11 @@ function problemResponse(detail: string) {
   )
 }
 
-function renderImages(azienda: LegalEntityRecord = AZIENDA) {
+function renderImages(legal_entity: LegalEntityRecord = LEGAL_ENTITY) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <LegalEntityImages azienda={azienda} />
+      <LegalEntityImages legal_entity={legal_entity} />
     </QueryClientProvider>,
   )
 }
@@ -62,10 +62,10 @@ describe('LegalEntityImages', () => {
 
   it('reads the logo the row says is there and shows it, with «Sostituisci» and «Rimuovi»', async () => {
     vi.mocked(fetchWithRefresh).mockResolvedValue(imageResponse())
-    renderImages({ ...AZIENDA, logo_key: 'aziende/a-1/logo.png' })
+    renderImages({ ...LEGAL_ENTITY, logo_key: 'aziende/a-1/logo.png' })
     const img = await screen.findByRole('img', { name: 'Logo di humancraft' })
     expect(img).toHaveAttribute('src', 'blob:image-1')
-    expect(fetchWithRefresh).toHaveBeenCalledWith('/api/aziende/a-1/logo')
+    expect(fetchWithRefresh).toHaveBeenCalledWith('/api/legal-entities/a-1/logo')
     expect(screen.getByRole('button', { name: 'Sostituisci' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rimuovi' })).toBeInTheDocument()
     // The signature block is untouched: nothing was asked for it.
@@ -74,7 +74,7 @@ describe('LegalEntityImages', () => {
 
   it('uploads the chosen file as multipart to the azienda\'s own route', async () => {
     vi.mocked(fetchWithRefresh).mockResolvedValue(
-      new Response(JSON.stringify({ ...AZIENDA, logo_key: 'aziende/a-1/logo.png' }), {
+      new Response(JSON.stringify({ ...LEGAL_ENTITY, logo_key: 'aziende/a-1/logo.png' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -84,7 +84,7 @@ describe('LegalEntityImages', () => {
     await userEvent.upload(screen.getByLabelText('Carica logo'), file)
     await waitFor(() => expect(fetchWithRefresh).toHaveBeenCalledTimes(1))
     const [path, init] = vi.mocked(fetchWithRefresh).mock.calls[0] as [string, RequestInit]
-    expect(path).toBe('/api/aziende/a-1/logo')
+    expect(path).toBe('/api/legal-entities/a-1/logo')
     expect(init.method).toBe('PUT')
     expect((init.body as FormData).get('file')).toBe(file)
   })
@@ -105,19 +105,19 @@ describe('LegalEntityImages', () => {
   it('removes through the typed client and the azienda\'s id', async () => {
     vi.mocked(fetchWithRefresh).mockResolvedValue(imageResponse())
     vi.mocked(api.DELETE).mockResolvedValue({
-      data: { ...AZIENDA, firma_key: null },
+      data: { ...LEGAL_ENTITY, signature_key: null },
       response: new Response(null, { status: 200 }),
     } as never)
-    renderImages({ ...AZIENDA, firma_key: 'aziende/a-1/firma.png' })
+    renderImages({ ...LEGAL_ENTITY, signature_key: 'aziende/a-1/firma.png' })
     await screen.findByRole('img', { name: 'Firma di humancraft' })
     await userEvent.click(screen.getByRole('button', { name: 'Rimuovi' }))
     await waitFor(() => expect(api.DELETE).toHaveBeenCalledTimes(1))
     const [path, options] = vi.mocked(api.DELETE).mock.calls[0] as unknown as [
       string,
-      { params: { path: { azienda_id: string } } },
+      { params: { path: { legal_entity_id: string } } },
     ]
-    expect(path).toBe('/api/aziende/{azienda_id}/firma')
-    expect(options.params.path.azienda_id).toBe('a-1')
+    expect(path).toBe('/api/legal-entities/{legal_entity_id}/signature')
+    expect(options.params.path.legal_entity_id).toBe('a-1')
   })
 
   it("refuses a file over 1 MiB before it travels, with the server's own sentence", async () => {
@@ -135,7 +135,7 @@ describe('LegalEntityImages', () => {
         { status: 503, headers: { 'content-type': 'application/problem+json' } },
       ),
     )
-    renderImages({ ...AZIENDA, logo_key: 'aziende/a-1/logo.png' })
+    renderImages({ ...LEGAL_ENTITY, logo_key: 'aziende/a-1/logo.png' })
     expect(await screen.findByRole('alert')).toHaveTextContent('archivio non raggiungibile')
   })
 })

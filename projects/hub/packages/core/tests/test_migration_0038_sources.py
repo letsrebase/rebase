@@ -23,7 +23,7 @@ REVISION = "0038"
 CARD_COLUMNS = {
     "prompt_version": "integer",
     "provider": "character varying",
-    "fonti": "jsonb",
+    "sources": "jsonb",
     "source_hashes": "jsonb",
     "conflicts": "jsonb",
     "thinking_tokens": "integer",
@@ -156,7 +156,7 @@ def test_constraints_hold(hub_postgres: Any) -> None:
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
         with Session(engine) as session:
-            user = User(email="a@x.it", nome="A", cognome="B")
+            user = User(email="a@x.it", nome="A", last_name="B")
             session.add(user)
             session.flush()
             row = Freelancer(user_id=user.id)

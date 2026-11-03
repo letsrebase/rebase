@@ -17,37 +17,37 @@ import { simulatorRequest, yearOfIso, type SimulatorFields } from './simulatorIn
 /** The estimate a deal carries, if it carries one: the same two shapes the simulator takes. */
 function hasEstimate(deal: Deal): boolean {
   return (
-    deal.valore_preventivato !== null ||
-    (deal.ore_preventivate !== null && deal.tariffa_oraria !== null)
+    deal.budgeted_value !== null ||
+    (deal.budgeted_hours !== null && deal.hourly_rate !== null)
   )
 }
 
 function estimateOf(deal: Deal): string {
-  if (deal.valore_preventivato !== null) return money(deal.valore_preventivato)
-  return `${deal.ore_preventivate?.replace('.', ',')} ore a ${money(deal.tariffa_oraria ?? '0')}`
+  if (deal.budgeted_value !== null) return money(deal.budgeted_value)
+  return `${deal.budgeted_hours?.replace('.', ',')} ore a ${money(deal.hourly_rate ?? '0')}`
 }
 
 /**
  * The open deals of the azienda, to pick one from. «Open» by the pipeline stage's own
- * `tipo`, never by its name: a space renames its stages. A won deal is already revenue
+ * `type`, never by its name: a space renames its stages. A won deal is already revenue
  * (or about to be invoiced) and a lost one will never be, so neither is a «what if».
  */
 function DealPicker({
   id,
-  aziendaId,
+  legalEntityId,
   selectedId,
   onSelect,
   onCurrent,
 }: {
   id: string
-  aziendaId?: string
+  legalEntityId?: string
   selectedId: string
   onSelect: (id: string) => void
   /** Told the deal as the list has it now, so that «Simula» sends the estimate the picker
    *  shows and not the one it had when the deal was chosen. */
   onCurrent: (deal: Deal | null) => void
 }) {
-  const deals = useDeals(aziendaId ? { azienda_id: aziendaId } : {})
+  const deals = useDeals(legalEntityId ? { legal_entity_id: legalEntityId } : {})
   const stages = useStages()
   const current = deals.data?.items.find((deal) => deal.id === selectedId) ?? null
   useEffect(() => {
@@ -58,7 +58,7 @@ function DealPicker({
   if (deals.isPending || stages.isPending || !deals.data || !stages.data) {
     return <Skeleton className="h-9 w-full" />
   }
-  const open = new Set(stages.data.filter((stage) => stage.tipo === 'open').map((stage) => stage.id))
+  const open = new Set(stages.data.filter((stage) => stage.type === 'open').map((stage) => stage.id))
   const candidates = deals.data.items.filter((deal) => open.has(deal.pipeline_stage_id))
   if (candidates.length === 0) {
     return (
@@ -81,7 +81,7 @@ function DealPicker({
           {candidates.map((deal) => (
             <SelectItem key={deal.id} value={deal.id} disabled={!hasEstimate(deal)}>
               {deal.nome}
-              {deal.customer_ragione_sociale ? ` · ${deal.customer_ragione_sociale}` : ''}
+              {deal.customer_legal_name ? ` · ${deal.customer_legal_name}` : ''}
               {hasEstimate(deal) ? '' : ' (senza stima)'}
             </SelectItem>
           ))}
@@ -128,10 +128,10 @@ function ContractPicker({
           {required ? null : <SelectItem value={NO_CONTRACT}>Nessun contratto</SelectItem>}
           {contracts.map((contract) => (
             <SelectItem key={contract.id} value={contract.id}>
-              {contract.titolo}
-              {contract.tetto_quota_cliente === null
+              {contract.title}
+              {contract.customer_share_cap === null
                 ? ''
-                : ` · tetto ${formatCapPercent(contract.tetto_quota_cliente)}`}
+                : ` · tetto ${formatCapPercent(contract.customer_share_cap)}`}
             </SelectItem>
           ))}
         </SelectContent>
@@ -147,7 +147,7 @@ function ContractPicker({
 
 const SOURCES = [
   { id: 'deal', label: 'Un deal' },
-  { id: 'importo', label: 'Un importo' },
+  { id: 'amount', label: 'Un importo' },
 ] as const
 
 /**
@@ -166,17 +166,17 @@ const SOURCES = [
  * keyboard produces into the decimal the API reads and prints what comes back.
  */
 export function Simulator({
-  anno,
-  aziendaId,
+  year: anno,
+  legalEntityId,
   hasCeilings,
   contracts,
 }: {
-  anno: number
-  aziendaId?: string
+  year: number
+  legalEntityId?: string
   hasCeilings: boolean
   contracts: Contract[]
 }) {
-  const [source, setSource] = useState<SimulatorFields['source']>('importo')
+  const [source, setSource] = useState<SimulatorFields['source']>('amount')
   const [dealId, setDealId] = useState('')
   const [contractId, setContractId] = useState('')
   const attempts = useRef(0)
@@ -184,22 +184,22 @@ export function Simulator({
   const trackDeal = useCallback((current: Deal | null) => {
     latestDeal.current = current
   }, [])
-  const [valore, setValore] = useState('')
-  const [ore, setOre] = useState('')
-  const [tariffa, setTariffa] = useState('')
+  const [valore, setValue] = useState('')
+  const [hours, setHours] = useState('')
+  const [rate, setRate] = useState('')
   const [data, setData] = useState(`${anno}-12-31`)
   const uid = useId()
   const [asked, setAsked] = useState<{
-    anno: number
+    year: number
     input: NonNullable<Parameters<typeof useCeilingSimulation>[1]>
     attempt: number
   } | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const simulation = useCeilingSimulation(
-    asked?.anno ?? anno,
+    asked?.year ?? anno,
     asked?.input ?? null,
-    aziendaId,
+    legalEntityId,
     asked?.attempt,
   )
 
@@ -214,9 +214,9 @@ export function Simulator({
     event.preventDefault()
     const request = simulatorRequest({
       source,
-      valore,
-      ore,
-      tariffa,
+      value: valore,
+      hours,
+      rate,
       deal: dealId === '' ? null : latestDeal.current,
       data,
       contractId,
@@ -227,14 +227,14 @@ export function Simulator({
       setErrors({
         ...(request.ok ? {} : request.errors),
         ...(year === null ? { data: 'Scegli una data tra il 2000 e il 2200.' } : {}),
-        ...(missingContract ? { contratto: 'Scegli un contratto con un tetto.' } : {}),
+        ...(missingContract ? { contract: 'Scegli un contratto con un tetto.' } : {}),
       })
       setAsked(null)
       return
     }
     setErrors({})
     attempts.current += 1
-    setAsked({ anno: year, input: request.input, attempt: attempts.current })
+    setAsked({ year: year, input: request.input, attempt: attempts.current })
   }
 
   return (
@@ -272,7 +272,7 @@ export function Simulator({
           <Label htmlFor={`${uid}-deal`}>Deal</Label>
           <DealPicker
             id={`${uid}-deal`}
-            aziendaId={aziendaId}
+            legalEntityId={legalEntityId}
             selectedId={dealId}
             onSelect={edit(setDealId)}
             onCurrent={trackDeal}
@@ -288,10 +288,10 @@ export function Simulator({
               inputMode="decimal"
               placeholder="12.000,00"
               value={valore}
-              onChange={(event) => edit(setValore)(event.target.value)}
-              aria-invalid={errors.valore ? true : undefined}
+              onChange={(event) => edit(setValue)(event.target.value)}
+              aria-invalid={errors.value ? true : undefined}
             />
-            {errors.valore ? <FieldError>{errors.valore}</FieldError> : null}
+            {errors.value ? <FieldError>{errors.value}</FieldError> : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor={`${uid}-ore`}>oppure Ore</Label>
@@ -299,11 +299,11 @@ export function Simulator({
               id={`${uid}-ore`}
               inputMode="decimal"
               placeholder="100"
-              value={ore}
-              onChange={(event) => edit(setOre)(event.target.value)}
-              aria-invalid={errors.ore ? true : undefined}
+              value={hours}
+              onChange={(event) => edit(setHours)(event.target.value)}
+              aria-invalid={errors.hours ? true : undefined}
             />
-            {errors.ore ? <FieldError>{errors.ore}</FieldError> : null}
+            {errors.hours ? <FieldError>{errors.hours}</FieldError> : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor={`${uid}-tariffa`}>per Tariffa oraria</Label>
@@ -311,11 +311,11 @@ export function Simulator({
               id={`${uid}-tariffa`}
               inputMode="decimal"
               placeholder="80,00"
-              value={tariffa}
-              onChange={(event) => edit(setTariffa)(event.target.value)}
-              aria-invalid={errors.tariffa ? true : undefined}
+              value={rate}
+              onChange={(event) => edit(setRate)(event.target.value)}
+              aria-invalid={errors.rate ? true : undefined}
             />
-            {errors.tariffa ? <FieldError>{errors.tariffa}</FieldError> : null}
+            {errors.rate ? <FieldError>{errors.rate}</FieldError> : null}
           </div>
           {errors.form ? (
             <div className="sm:col-span-3">
@@ -335,7 +335,7 @@ export function Simulator({
             required={!hasCeilings}
             onSelect={edit(setContractId)}
           />
-          {errors.contratto ? <FieldError>{errors.contratto}</FieldError> : null}
+          {errors.contract ? <FieldError>{errors.contract}</FieldError> : null}
         </div>
       ) : null}
 

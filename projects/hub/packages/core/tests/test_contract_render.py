@@ -31,7 +31,7 @@ from rebase_core.contracts.render import (
     text_version,
 )
 
-EXAMPLE = Path(__file__).resolve().parents[3] / "content" / "contratti" / "incarico.esempio.json"
+EXAMPLE = Path(__file__).resolve().parents[3] / "content" / "contratti" / "engagement.example.json"
 # 55 mm, the room a pen needs, in points.
 SIGNATURE_WIDTH_PT = 155.0
 LETTER_BLANKS = {
@@ -59,11 +59,11 @@ def test_both_contracts_typeset_into_a_pdf_that_carries_its_version() -> None:
 
 
 def test_a_filled_letter_leaves_blank_only_what_nobody_typed_ahead() -> None:
-    assert set(render("lettera-di-incarico", _example()).blank) == LETTER_BLANKS
+    assert set(render("engagement-letter", _example()).blank) == LETTER_BLANKS
 
 
 def test_the_framework_marks_two_signatures_and_one_date_for_the_freelancer() -> None:
-    blanks = signature_blanks("contratto-quadro", _example())
+    blanks = signature_blanks("framework-agreement", _example())
     names = [blank.name for blank in blanks]
     # The contract's own signature and the specific approval of the onerous clauses.
     assert names.count("firma professionista") == 2
@@ -79,7 +79,7 @@ def test_the_framework_marks_two_signatures_and_one_date_for_the_freelancer() ->
 
 
 def test_a_letter_marks_one_signature_and_one_date() -> None:
-    names = [blank.name for blank in signature_blanks("lettera-di-incarico", _example())]
+    names = [blank.name for blank in signature_blanks("engagement-letter", _example())]
     assert names.count("firma professionista") == 1
     assert names.count("data firma") == 1
 
@@ -90,7 +90,7 @@ def test_a_blank_the_data_fill_is_not_marked() -> None:
         "firma-rebase": "Documento emesso da rebase il 1° ottobre 2026",
         "rebase-rappresentante": "Nome Cognome",
     }
-    names = [blank.name for blank in signature_blanks("lettera-di-incarico", data)]
+    names = [blank.name for blank in signature_blanks("engagement-letter", data)]
     assert "firma rebase" not in names
     assert names.count("firma professionista") == 1
 
@@ -99,20 +99,20 @@ def test_a_value_full_of_typst_syntax_prints_as_text() -> None:
     """A value is a Typst string, so markup inside it is inert, and it is
     inserted after the markers are counted, so a `[[` or a `{{...}}` in it is neither a
     proposal nor a field."""
-    cliente = 'Rossi & "Figli" #1 $x$ *uno* _due_ <tre> @quattro \\ S.r.l.'
-    attivita = "Correzioni [[in corso]] e {{non-un-campo}} al 10% // senza /* commenti */"
+    customer = 'Rossi & "Figli" #1 $x$ *uno* _due_ <tre> @quattro \\ S.r.l.'
+    activities = "Correzioni [[in corso]] e {{non-un-campo}} al 10% // senza /* commenti */"
     data = {
         **_example(),
-        "cliente-ragione-sociale": cliente,
-        "attivita": attivita,
+        "cliente-ragione-sociale": customer,
+        "attivita": activities,
     }
     rendered = render("lettera-di-incarico", data)
     assert rendered.pdf.startswith(b"%PDF-")
     assert set(rendered.blank) == LETTER_BLANKS
     reader = PdfReader(BytesIO(rendered.pdf))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert cliente in text
-    assert attivita in text
+    assert customer in text
+    assert activities in text
 
 
 def test_the_contracts_check_command_typesets_both_texts(
@@ -138,12 +138,12 @@ def test_the_copy_for_signing_leaves_the_signing_blanks_labels_undrawn() -> None
     the signature and the date. The copy that goes out lays it out and does not draw it,
     so every blank stays exactly where the plain copy has it."""
     data = _example()
-    plain = _words(render("lettera-di-incarico", data).pdf)
-    signing = _words(render("lettera-di-incarico", data, signing=True).pdf)
+    plain = _words(render("engagement-letter", data).pdf)
+    signing = _words(render("engagement-letter", data, signing=True).pdf)
     assert "firmaprofessionista" in plain and "datafirma" in plain
     assert "firmaprofessionista" not in signing and "datafirma" not in signing
-    assert signature_blanks("lettera-di-incarico", data, signing=True) == signature_blanks(
-        "lettera-di-incarico", data
+    assert signature_blanks("engagement-letter", data, signing=True) == signature_blanks(
+        "engagement-letter", data
     )
 
 
@@ -188,7 +188,7 @@ def test_the_echo_heads_the_first_page_and_no_other() -> None:
 
 
 def test_the_occasional_framework_marks_two_signatures_and_one_date() -> None:
-    names = [blank.name for blank in signature_blanks("contratto-quadro-occasionale", _example())]
+    names = [blank.name for blank in signature_blanks("framework-agreement-occasional", _example())]
     assert names.count("firma professionista") == 2
     assert names.count("data firma") == 1
 
@@ -198,9 +198,9 @@ def test_an_occasional_letter_marks_one_signature_and_prints_its_term_from_the_r
     leaves blank what the filled ordinary one does, the codice fiscale included in the
     example."""
     data = _example()
-    names = [blank.name for blank in signature_blanks("lettera-di-incarico-occasionale", data)]
+    names = [blank.name for blank in signature_blanks("engagement-letter-occasional", data)]
     assert names.count("firma professionista") == 1
     assert names.count("data firma") == 1
-    rendered = render("lettera-di-incarico-occasionale", data)
+    rendered = render("engagement-letter-occasional", data)
     assert set(rendered.blank) == LETTER_BLANKS
     assert "30giornidataricevutafinemese" in _words(rendered.pdf)

@@ -3,7 +3,7 @@
 An agent reads the whole tool list before its first call. Pydantic's JSON schema spends a
 fifth of it on two things nobody reads:
 
-  * `title`, which repeats the property name in Title Case (`"ragione_sociale"` becomes
+  * `title`, which repeats the property name in Title Case (`"legal_name"` becomes
     `"Ragione Sociale"`) and the tool name again on the argument and output wrappers
     (`"get_customerArguments"`, `"get_customerDictOutput"`);
   * `"default": null` on every optional property, which `required` already says: a property

@@ -1,7 +1,7 @@
 """The reminders surface on the default MCP tools (spec 2026-10-26, REB-732).
 
 The tools are named for the feature the way the product names it, `promemoria`, as
-`create_attivita` is for attività: a name with `reminder` in it would also trip
+`create_task` is for attività: a name with `reminder` in it would also trip
 `test_gmail_tools.py::test_no_tool_prepares_a_payment_reminder`, the guard on the one
 thing that is not this feature, the sollecito.
 
@@ -47,10 +47,10 @@ def register(
 ) -> None:
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_promemoria() -> list[dict[str, Any]]:
+    def list_reminders() -> list[dict[str, Any]]:
         """I promemoria di chi chiede, ricalcolati adesso, i più gravi per primi. Ogni voce ha
         `status` (`open`, `acknowledged`, `snoozed`), `entity`, `entity_id` e `key`, che serve a
-        `acknowledge_promemoria` e `snooze_promemoria`. Sparisce da solo quando la causa si
+        `acknowledge_reminder` e `snooze_reminder`. Sparisce da solo quando la causa si
         risolve.
         """
         reminders = ReminderService(context.session, settings).list(context.actor)
@@ -58,7 +58,7 @@ def register(
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_promemoria_types() -> list[dict[str, Any]]:
+    def list_reminder_types() -> list[dict[str, Any]]:
         """I tipi di promemoria che il CRM alza da solo, con le soglie predefinite. Ogni tipo ha
         una scala di gravità (`warning`, `serious`, `critical`) che sale con giorni o ore.
         """
@@ -66,7 +66,7 @@ def register(
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def get_promemoria_preferences() -> dict[str, Any]:
+    def get_reminder_preferences() -> dict[str, Any]:
         """Le preferenze sui promemoria: valori dello spazio, della persona che chiede e
         `effective` (sua scelta, poi spazio, poi predefinito).
         """
@@ -74,7 +74,7 @@ def register(
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def set_promemoria_preference(scope: str, type: str, changes: dict[str, Any]) -> dict[str, Any]:
+    def set_reminder_preference(scope: str, type: str, changes: dict[str, Any]) -> dict[str, Any]:
         """Imposta le preferenze di un tipo di promemoria, o con `type` = `general` ore di silenzio
         e ora del riepilogo.
 
@@ -91,7 +91,7 @@ def register(
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def reset_promemoria_preference(scope: str, type: str) -> dict[str, str]:
+    def reset_reminder_preference(scope: str, type: str) -> dict[str, str]:
         """Torna al valore predefinito di un tipo (o di `general`): cancella la scelta, così le
         modifiche future del predefinito arrivano ancora.
         """
@@ -100,9 +100,9 @@ def register(
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def acknowledge_promemoria(key: str, severity: str) -> dict[str, Any]:
+    def acknowledge_reminder(key: str, severity: str) -> dict[str, Any]:
         """Segna un promemoria come visto per chi chiede, alla gravità vista (`warning`, `serious`,
-        `critical`). Torna a comparire se sale di gravità. `key` è `tipo:identificativo`.
+        `critical`). Torna a comparire se sale di gravità. `key` è `type:identificativo`.
         """
         data = AcknowledgeRequest(key=key, severity=literal_arg("severity", severity, Severity))
         return (
@@ -113,7 +113,7 @@ def register(
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def snooze_promemoria(key: str, severity: str, until: str) -> dict[str, Any]:
+    def snooze_reminder(key: str, severity: str, until: str) -> dict[str, Any]:
         """Rimanda un promemoria per chi chiede. `until` è `tomorrow`, `next_monday`, `in_a_week` o
         `in_a_month`, mai una data libera. Torna a comparire quel giorno, o prima se sale di
         gravità.
@@ -131,7 +131,7 @@ def register(
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_my_promemoria_state() -> list[dict[str, Any]]:
+    def list_my_reminder_state() -> list[dict[str, Any]]:
         """I promemoria che chi chiede ha già chiuso o rimandato."""
         return [item.model_dump(mode="json") for item in _state(context).mine(context.actor)]
 

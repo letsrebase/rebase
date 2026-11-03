@@ -1,7 +1,7 @@
 """The client's price band (REB-511, spec § 3.3): what a company is told a talent costs,
 never the talent's own rate.
 
-The client pays the freelancer's `tariffa_giornaliera` plus 40% (Ivan: «tariffa del
+The client pays the freelancer's `daily_rate` plus 40% (Ivan: «tariffa del
 cliente che di base sarà quella del freelancer +40%»), shown as a band rather than a
 figure («meglio fascia»): one of six bands of euro per day, each closed at its bottom
 and open at its top, the last with no top at all. A team's band per day is the sum of
@@ -58,7 +58,7 @@ class Band(ResponseModel):
             return f"fino a {_euro(self.max)}"
         return f"{_euro(self.min)}–{_euro(self.max)}"
 
-    def label(self, per: Literal["giorno", "mese"] = "giorno") -> str:
+    def label(self, per: Literal["day", "month"] = "day") -> str:
         """«400–500 € al giorno», «oltre 800 € al giorno», «fino a 6.600 € al mese»,
         with a non-breaking space before «€»."""
         return f"{self.bounds()}{_NBSP}€ al {per}"

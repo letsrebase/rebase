@@ -27,7 +27,7 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
 
 def _bootstrap_admin(session: Session, email: str, nome: str) -> None:
     """The users row migration A would have backfilled for a pre-existing admin."""
-    session.add(User(email=email, nome=nome, cognome="", role="admin"))
+    session.add(User(email=email, nome=nome, last_name="", role="admin"))
     session.commit()
 
 
@@ -54,11 +54,11 @@ def _apply(client: TestClient, email: str) -> None:
         "/api/hub/freelancers",
         data={
             "nome": "Ada",
-            "cognome": "Lovelace",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
+            "daily_rate": "450",
             "posizione": "Backend developer",
-            "remoto": "remoto",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )

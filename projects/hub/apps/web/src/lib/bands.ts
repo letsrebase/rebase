@@ -36,6 +36,6 @@ function bounds(band: Band): string {
  *  spec § 3.3): «400–500 € al giorno», «oltre 800 € al giorno», «8.800–11.000 € al
  *  mese». The web cannot import Python, so `bands.test.ts` holds the same cases as core's
  *  `test_bands.py`. */
-export function bandLabel(band: Band, per: 'giorno' | 'mese' = 'giorno'): string {
+export function bandLabel(band: Band, per: 'day' | 'month' = 'day'): string {
   return `${bounds(band)}${NBSP}€ al ${per}`
 }

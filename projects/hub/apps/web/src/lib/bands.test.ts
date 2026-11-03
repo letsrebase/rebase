@@ -11,12 +11,12 @@ const DASH = '\u2013'
  *  `Band.label()` does, so an admin and a visitor read the same words. */
 describe('bandLabel', () => {
   it.each(CASES.bandLabel)('writes $band.min to $band.max per $unit as «$label»', ({ band, unit, label }) => {
-    expect(bandLabel(band, unit as 'giorno' | 'mese')).toBe(label)
+    expect(bandLabel(band, unit as 'day' | 'month')).toBe(label)
   })
 
   it('writes a band per day with its two bounds and an en dash', () => {
     expect(bandLabel({ min: 400, max: 500 })).toBe(`400${DASH}500${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 650, max: 800 }, 'giorno')).toBe(`650${DASH}800${NBSP}€ al giorno`)
+    expect(bandLabel({ min: 650, max: 800 }, 'day')).toBe(`650${DASH}800${NBSP}€ al giorno`)
   })
 
   it('says «fino a» for a band from nothing and «oltre» for one with no top', () => {
@@ -25,10 +25,10 @@ describe('bandLabel', () => {
   })
 
   it('writes a month with a dot between the thousands', () => {
-    expect(bandLabel({ min: 8800, max: 11000 }, 'mese')).toBe(`8.800${DASH}11.000${NBSP}€ al mese`)
-    expect(bandLabel({ min: 17600, max: 23100 }, 'mese')).toBe(`17.600${DASH}23.100${NBSP}€ al mese`)
-    expect(bandLabel({ min: 0, max: 6600 }, 'mese')).toBe(`fino a 6.600${NBSP}€ al mese`)
-    expect(bandLabel({ min: 1_100_000, max: null }, 'mese')).toBe(`oltre 1.100.000${NBSP}€ al mese`)
+    expect(bandLabel({ min: 8800, max: 11000 }, 'month')).toBe(`8.800${DASH}11.000${NBSP}€ al mese`)
+    expect(bandLabel({ min: 17600, max: 23100 }, 'month')).toBe(`17.600${DASH}23.100${NBSP}€ al mese`)
+    expect(bandLabel({ min: 0, max: 6600 }, 'month')).toBe(`fino a 6.600${NBSP}€ al mese`)
+    expect(bandLabel({ min: 1_100_000, max: null }, 'month')).toBe(`oltre 1.100.000${NBSP}€ al mese`)
   })
 
   it('never breaks a line before «€», with the same space formatMoney writes', () => {

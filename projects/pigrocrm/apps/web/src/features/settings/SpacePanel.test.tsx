@@ -21,24 +21,24 @@ const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const PUT = api.PUT as unknown as ReturnType<typeof vi.fn>
 
 const SETTINGS: components['schemas']['SpaceSettingsRead'] = {
-  spazio: 'studio',
+  space: 'studio',
   public_url: 'https://pigro.example/studio',
   google_client_id: '',
-  google_client_secret_impostato: false,
-  google_token_key_impostata: false,
+  google_client_secret_set: false,
+  google_token_key_set: false,
   google_app_unverified: false,
-  gmail_configurato: false,
-  google_client_condiviso: false,
+  gmail_configured: false,
+  google_client_shared: false,
   redirect_uri_gmail: 'https://pigro.example/studio/api/gmail/oauth/callback',
   redirect_uri_drive: 'https://pigro.example/studio/api/drive/oauth/callback',
   storage_backend: 'local',
   mcp_full_access: false,
-  solleciti_grace_days: 7,
-  solleciti_min_interval_days: 14,
-  solleciti_max_reminders: 3,
+  payment_reminders_grace_days: 7,
+  payment_reminders_min_interval_days: 14,
+  payment_reminders_max_reminders: 3,
   gmail_backfill_days: 90,
-  concentrazione_soglia_preferita: 0.3,
-  sovrascritte: [],
+  preferred_concentration_threshold: 0.3,
+  overwritten: [],
   updated_at: null,
 }
 
@@ -79,10 +79,10 @@ describe('changesBetween, while the space borrows the platform client', () => {
   const BORROWING = {
     ...SETTINGS,
     google_client_id: 'platform.apps',
-    google_client_secret_impostato: true,
+    google_client_secret_set: true,
     google_app_unverified: true,
-    gmail_configurato: true,
-    google_client_condiviso: true,
+    gmail_configured: true,
+    google_client_shared: true,
   }
 
   it('declares Testing in the same save that brings a client of the space’s own', () => {
@@ -115,10 +115,10 @@ describe('the space panel', () => {
       data: {
         ...SETTINGS,
         google_client_id: 'platform.apps',
-        google_client_secret_impostato: true,
-        google_token_key_impostata: true,
-        gmail_configurato: true,
-        google_client_condiviso: true,
+        google_client_secret_set: true,
+        google_token_key_set: true,
+        gmail_configured: true,
+        google_client_shared: true,
       },
     })
     renderPanel()
@@ -140,7 +140,7 @@ describe('the space panel', () => {
 
   it('saves the changed keys and adopts the answer', async () => {
     PUT.mockResolvedValue({
-      data: { ...SETTINGS, gmail_backfill_days: 21, sovrascritte: ['gmail_backfill_days'] },
+      data: { ...SETTINGS, gmail_backfill_days: 21, overwritten: ['gmail_backfill_days'] },
     })
     const user = userEvent.setup()
     renderPanel()
@@ -223,7 +223,7 @@ describe('the space panel', () => {
     const theirs = {
       ...SETTINGS,
       mcp_full_access: true,
-      sovrascritte: ['mcp_full_access'],
+      overwritten: ['mcp_full_access'],
       updated_at: '2026-08-21T09:00:00Z',
     }
     GET.mockResolvedValueOnce({ data: SETTINGS }).mockResolvedValue({ data: theirs })
@@ -242,7 +242,7 @@ describe('the space panel', () => {
       data: {
         ...theirs,
         gmail_backfill_days: 21,
-        sovrascritte: ['gmail_backfill_days', 'mcp_full_access'],
+        overwritten: ['gmail_backfill_days', 'mcp_full_access'],
         updated_at: '2026-08-22T09:00:00Z',
       },
     })

@@ -58,7 +58,7 @@ LegalEntityFilter = Annotated[
     Query(
         description=(
             "Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. "
-            "La risposta lo riporta in `azienda_id`."
+            "La risposta lo riporta in `legal_entity_id`."
         )
     ),
 ]
@@ -67,7 +67,7 @@ LegalEntityRequired = Annotated[
     Query(
         description=(
             "L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una "
-            "(una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere."
+            "(una risposta 422 nomina `legal_entity_id`), altrimenti è l'unica e si può omettere."
         )
     ),
 ]
@@ -80,7 +80,7 @@ def period_pnl(
     da: FromDate,
     a: ToDate,
     customer_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: LegalEntityFilter = None,
+    legal_entity_id: LegalEntityFilter = None,
     base: Annotated[
         RevenueBase,
         Query(
@@ -91,14 +91,16 @@ def period_pnl(
                 "lo dichiara). Costi e ore restano attribuiti alla propria data."
             )
         ),
-    ] = "emissione",
+    ] = "issue",
 ) -> PeriodPnl:
     """Two columns, closed deals and deals in progress. There is deliberately no combined
     total: adding a finished job's margin to a half-done one produces a figure that is
     neither. `base` picks which of the two readings of revenue the report gives
     (ORB-61); everything else about it is the same."""
     return AnalyticsService(session).period_pnl(
-        PeriodPnlQuery(da=da, a=a, customer_id=customer_id, base=base, azienda_id=azienda_id),
+        PeriodPnlQuery(
+            da=da, a=a, customer_id=customer_id, base=base, legal_entity_id=legal_entity_id
+        ),
         actor,
     )
 
@@ -123,8 +125,8 @@ def budget_vs_actual(
 def economic_overview(
     session: SessionDep,
     actor: ActorDep,
-    anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: LegalEntityFilter = None,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    legal_entity_id: LegalEntityFilter = None,
     base: Annotated[
         CashBase,
         Query(
@@ -138,7 +140,7 @@ def economic_overview(
                 "sull'incassato dell'anno."
             )
         ),
-    ] = "competenza",
+    ] = "accrual",
 ) -> EconomicOverview:
     """The dashboard's economic tab: the year as cash for everyone, plus the fiscal
     estimate on collected and projected revenue for an admin with a profile. No MCP
@@ -146,20 +148,22 @@ def economic_overview(
     between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
     on a space with several aziende the fiscal block is empty and the page asks
     `/fiscal` once per azienda (REB-630)."""
-    return AnalyticsService(session).economic_overview(anno, actor, base, azienda_id)
+    return AnalyticsService(session).economic_overview(year, actor, base, legal_entity_id)
 
 
 @router.get("/fiscal", response_model=FiscalEstimate)
 def fiscal_estimate(
     session: SessionDep,
     actor: ActorDep,
-    anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: LegalEntityRequired = None,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    legal_entity_id: LegalEntityRequired = None,
 ) -> FiscalEstimate:
     """`admin` -- enforced by the service, not here. A router containing an authorisation
     `if` is a router the MCP adapter cannot reuse, and this figure has no MCP tool at all
     (§11's exclusion list), so the check has to live where both adapters share it."""
-    return AnalyticsService(session).get_fiscal_estimate(anno, actor, azienda_id=azienda_id)
+    return AnalyticsService(session).get_fiscal_estimate(
+        year, actor, legal_entity_id=legal_entity_id
+    )
 
 
 @router.get("/backlog", response_model=UnbilledBacklog)
@@ -177,56 +181,56 @@ def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
 def ceiling_headroom(
     session: SessionDep,
     actor: ActorDep,
-    anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: LegalEntityRequired = None,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    legal_entity_id: LegalEntityRequired = None,
 ) -> CeilingHeadroom:
     """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
     ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
     solo `get_fiscal_estimate`. Le soglie sono quelle del regime forfettario: un'azienda
-    in un altro regime riceve `soglie` vuoto."""
-    return AnalyticsService(session).ceiling_headroom(anno, actor, azienda_id)
+    in un altro regime riceve `thresholds` vuoto."""
+    return AnalyticsService(session).ceiling_headroom(year, actor, legal_entity_id)
 
 
 @router.get("/ceilings/simulate", response_model=CeilingSimulation)
 def simulate_ceiling(
     session: SessionDep,
     actor: ActorDep,
-    anno: Annotated[int, Query(ge=2000, le=2200)],
-    ore_preventivate: Annotated[Decimal | None, Query(ge=0)] = None,
-    valore_preventivato: Annotated[Decimal | None, Query(ge=0)] = None,
-    tariffa_oraria: Annotated[Decimal | None, Query(ge=0)] = None,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    budgeted_hours: Annotated[Decimal | None, Query(ge=0)] = None,
+    budgeted_value: Annotated[Decimal | None, Query(ge=0)] = None,
+    hourly_rate: Annotated[Decimal | None, Query(ge=0)] = None,
     contract_id: Annotated[
         UUID | None,
         Query(
             description=(
                 "Un contratto con un tetto sulla quota del cliente (REB-761): la stessa "
                 "aggiunta è letta anche contro il suo tetto, sull'anno di anniversario "
-                "del contratto che contiene `data_prevista`, in `tetto_contratto`."
+                "del contratto che contiene `expected_date`, in `contract_cap`."
             )
         ),
     ] = None,
-    data_prevista: Annotated[
+    expected_date: Annotated[
         date | None,
         Query(description="Il giorno in cui arriva il ricavo, YYYY-MM-DD; assente, oggi."),
     ] = None,
-    azienda_id: LegalEntityRequired = None,
+    legal_entity_id: LegalEntityRequired = None,
 ) -> CeilingSimulation:
     """Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
-    nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme a
-    `tariffa_oraria`. Con `contract_id` risponde anche sul tetto di quel contratto."""
+    nulla. Serve `budgeted_value`, oppure `budgeted_hours` insieme a
+    `hourly_rate`. Con `contract_id` risponde anche sul tetto di quel contratto."""
     return AnalyticsService(session).simulate_ceiling(
-        anno,
+        year,
         CeilingSimulationQuery(
-            ore_preventivate=ore_preventivate,
-            valore_preventivato=valore_preventivato,
-            tariffa_oraria=tariffa_oraria,
+            budgeted_hours=budgeted_hours,
+            budgeted_value=budgeted_value,
+            hourly_rate=hourly_rate,
             contract_id=contract_id,
-            data_prevista=data_prevista,
+            expected_date=expected_date,
         ),
         actor,
-        azienda_id,
+        legal_entity_id,
     )
 
 
@@ -236,27 +240,27 @@ def days_analysis(
     actor: ActorDep,
     da: Annotated[date | None, Query(description="Inizio del periodo, YYYY-MM-DD")] = None,
     a: Annotated[date | None, Query(description="Fine del periodo, YYYY-MM-DD")] = None,
-    azienda_id: LegalEntityFilter = None,
+    legal_entity_id: LegalEntityFilter = None,
 ) -> DaysAnalysis:
     """Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
     contro il listino per cliente e per contratto, e l'andamento delle giornate
     lavorate senza l'approvazione che il contratto chiede. Entrambe le date o nessuna
     (il mese corrente). Aperto a ogni ruolo, come le giornate."""
-    return AnalyticsService(session).days_analysis(actor, da, a, azienda_id)
+    return AnalyticsService(session).days_analysis(actor, da, a, legal_entity_id)
 
 
 @router.get("/year", response_model=YearOverview)
 def year_overview(
     session: SessionDep,
     actor: ActorDep,
-    anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: LegalEntityRequired = None,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    legal_entity_id: LegalEntityRequired = None,
 ) -> YearOverview:
     """L'anno di un'azienda come lo legge il commercialista (REB-757): i ricavi per
     regime e per trattamento fiscale e il registro delle fatture emesse, con bollo e
-    rivalsa a parte. Lo stesso universo di `annual_revenue`: `totali.imponibile` è il
+    rivalsa a parte. Lo stesso universo di `annual_revenue`: `totali.taxable_amount` è il
     ricavo dell'anno. Aperto a ogni ruolo, come il registro."""
-    return AnalyticsService(session).year_overview(anno, actor, azienda_id)
+    return AnalyticsService(session).year_overview(year, actor, legal_entity_id)
 
 
 @router.get(
@@ -267,11 +271,11 @@ def year_overview(
 def year_csv(
     session: SessionDep,
     actor: ActorDep,
-    anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: LegalEntityRequired = None,
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    legal_entity_id: LegalEntityRequired = None,
 ) -> Response:
     """Il CSV dell'anno per il commercialista (REB-757): una riga per ogni riga di
     fattura e poi il registro, con i due totali. UTF-8 con BOM, punto e virgola e
     virgola decimale, il formato che Excel italiano apre senza conversioni."""
-    filename, content = AnalyticsService(session).build_year_csv(anno, actor, azienda_id)
+    filename, content = AnalyticsService(session).build_year_csv(year, actor, legal_entity_id)
     return attachment_response(content, "text/csv; charset=utf-8", filename)

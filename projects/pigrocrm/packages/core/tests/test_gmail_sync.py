@@ -98,8 +98,8 @@ def _noise(fake: FakeGmail, count: int) -> None:
         )
 
 
-def _customer(session: Session, email: str, ragione_sociale: str = "Acme") -> Customer:
-    customer = Customer(ragione_sociale=ragione_sociale, email=email)
+def _customer(session: Session, email: str, legal_name: str = "Acme") -> Customer:
+    customer = Customer(legal_name=legal_name, email=email)
     session.add(customer)
     session.flush()
     return customer
@@ -123,7 +123,7 @@ def test_a_thousand_irrelevant_messages_and_two_known_addresses(db_session: Sess
     account = connected_account(db_session)
     customer = _customer(db_session, "info@acme.it")
     db_session.add(
-        Person(nome="Ada", cognome="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     )
     db_session.flush()
 
@@ -153,7 +153,7 @@ def test_no_messages_list_is_ever_issued_without_an_address_filter(db_session: S
     account = connected_account(db_session)
     customer = _customer(db_session, "info@acme.it")
     db_session.add(
-        Person(nome="Ada", cognome="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     )
     db_session.flush()
     known = set(AddressRoster(db_session).known_addresses())
@@ -527,9 +527,9 @@ def _row(account_id: UUID, gmail_id: str, thread: str = "t1") -> GmailMessage:
         to_addresses=[MAILBOX],
         cc_addresses=[],
         subject="Oggetto",
-        snippet="corpo",
+        snippet="body",
         internal_date=datetime.now(UTC),
-        body_text="corpo",
+        body_text="body",
         attachments=[],
     )
 
@@ -670,8 +670,8 @@ def test_syncing_without_a_connected_mailbox_is_a_refusal_not_a_silent_success(
         email=f"solo-{uuid4().hex[:8]}@example.it",
         nome="Solo",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     db_session.add(user)
     db_session.flush()

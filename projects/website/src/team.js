@@ -33,9 +33,9 @@
 ;(function () {
   var API = '/api/hub/team/proposals'
   var PAGE = '/hub/team'
-  var DESCRIZIONE_MIN = 40
+  var DescriptionMin = 40
   var PENDING = 'Sto leggendo i profili…'
-  var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DESCRIZIONE_MIN + ' caratteri.'
+  var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DescriptionMin + ' caratteri.'
   var FAILED = 'Non siamo riusciti a proporre un team. Riprova.'
   // The model call takes up to about 90 s (the host vhost's proxy_read_timeout); a few
   // seconds past it the request is given up as a failure rather than left spinning.
@@ -68,16 +68,16 @@
   }
 
   /** «Senior, 9 anni di esperienza», from the card, as the hub's `format.ts` says it. */
-  function experience(scheda) {
+  function experience(card) {
     var parts = []
-    if (scheda && scheda.seniority) parts.push(SENIORITY[scheda.seniority] || scheda.seniority)
-    if (scheda && typeof scheda.anni === 'number') {
+    if (card && card.seniority) parts.push(SENIORITY[card.seniority] || card.seniority)
+    if (card && typeof card.experience_years === 'number') {
       parts.push(
-        scheda.anni === 0
+        card.experience_years === 0
           ? 'meno di un anno di esperienza'
-          : scheda.anni === 1
+          : card.experience_years === 1
             ? '1 anno di esperienza'
-            : scheda.anni + ' anni di esperienza',
+            : card.experience_years + ' anni di esperienza',
       )
     }
     return parts.join(', ')
@@ -119,22 +119,22 @@
     var title = el('h2', 'team-title', 'La nostra proposta')
     title.tabIndex = -1
     result.appendChild(title)
-    result.appendChild(el('p', 'team-summary', proposal.riassunto))
+    result.appendChild(el('p', 'team-summary', proposal.summary))
     var members = Array.isArray(proposal.team) ? proposal.team : []
     if (members.length) {
       var list = el('ul', 'team-roles')
       list.setAttribute('aria-label', 'Il team')
       members.forEach(function (member) {
         var item = el('li', 'team-member')
-        item.appendChild(el('strong', 'team-role', member.ruolo))
-        var meta = experience(member.scheda)
+        item.appendChild(el('strong', 'team-role', member.role))
+        var meta = experience(member.card)
         if (meta) item.appendChild(el('span', 'team-meta', meta))
-        item.appendChild(el('span', 'team-band', bandLabel(member.fascia)))
+        item.appendChild(el('span', 'team-band', bandLabel(member.band)))
         list.appendChild(item)
       })
       result.appendChild(list)
-      var giorno = proposal.economia && proposal.economia.giorno
-      var total = giorno ? bandLabel(giorno) : NO_BAND
+      var day = proposal.economics && proposal.economics.day
+      var total = day ? bandLabel(day) : NO_BAND
       result.appendChild(
         el('p', 'team-total', 'Tutto il team: ' + (total === NO_BAND ? NO_BAND.toLowerCase() : total)),
       )
@@ -153,9 +153,9 @@
 
   /** A 200 whose body is a proposal: an id to link and a summary to show. Anything
    *  else (no JSON, an empty object) is treated as no answer at all, so the region is
-   *  never a door to `?proposta=undefined`. */
+   *  never a door to `?proposal=undefined`. */
   function isProposal(body) {
-    return Boolean(body) && typeof body.id === 'string' && typeof body.riassunto === 'string'
+    return Boolean(body) && typeof body.id === 'string' && typeof body.summary === 'string'
   }
 
   /** Mounts the builder on `form`: the examples fill the box, the submit asks the hub.
@@ -210,7 +210,7 @@
       chip.addEventListener('click', function () {
         box.value = chip.getAttribute('data-example')
         // The example's own headcount, so the selector agrees with the text.
-        if (count && chip.getAttribute('data-persone')) count.value = chip.getAttribute('data-persone')
+        if (count && chip.getAttribute('data-people')) count.value = chip.getAttribute('data-people')
         say('')
         box.focus()
       })
@@ -231,8 +231,8 @@
       event.preventDefault()
       if (busy) return
       var text = box.value.trim()
-      var persone = count ? parseInt(count.value, 10) : NaN
-      if (text.length < DESCRIZIONE_MIN) {
+      var people = count ? parseInt(count.value, 10) : NaN
+      if (text.length < DescriptionMin) {
         say(TOO_SHORT, true)
         box.focus()
         return
@@ -256,7 +256,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify(persone >= 1 ? { descrizione: text, persone: persone } : { descrizione: text }),
+        body: JSON.stringify(people >= 1 ? { description: text, people: people } : { description: text }),
       })
         .then(function (response) {
           return response

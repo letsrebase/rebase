@@ -23,28 +23,28 @@ import type { FieldDefinition } from '@/lib/schema'
 import type { Customer } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'ragione_sociale', label: 'Ragione sociale', type: 'text', required: true, options: [] },
-  { key: 'partita_iva', label: 'P.IVA', type: 'text', required: false, options: [] },
-  { key: 'codice_fiscale', label: 'Codice fiscale', type: 'text', required: false, options: [] },
-  { key: 'codice_sdi', label: 'Codice SDI', type: 'text', required: false, options: [] },
-  { key: 'pec', label: 'PEC', type: 'text', required: false, options: [] },
-  { key: 'indirizzo', label: 'Indirizzo', type: 'text', required: false, options: [] },
+  { key: 'legal_name', label: 'Ragione sociale', type: 'text', required: true, options: [] },
+  { key: 'vat_number', label: 'P.IVA', type: 'text', required: false, options: [] },
+  { key: 'tax_code', label: 'Codice fiscale', type: 'text', required: false, options: [] },
+  { key: 'sdi_code', label: 'Codice SDI', type: 'text', required: false, options: [] },
+  { key: 'certified_email', label: 'PEC', type: 'text', required: false, options: [] },
+  { key: 'address', label: 'Indirizzo', type: 'text', required: false, options: [] },
   { key: 'cap', label: 'CAP', type: 'text', required: false, options: [] },
-  { key: 'comune', label: 'Comune', type: 'text', required: false, options: [] },
-  { key: 'provincia', label: 'Provincia', type: 'text', required: false, options: [] },
+  { key: 'city', label: 'Comune', type: 'text', required: false, options: [] },
+  { key: 'province', label: 'Provincia', type: 'text', required: false, options: [] },
   // Freeform text, not a `select`: CustomerCreate/Update place no enum on either
   // field (plain `SafeStr`, max_length only) -- offering a client-side dropdown of
   // guessed options would let the UI reject a value the backend, and an MCP agent
   // writing through the same service, both accept without complaint.
-  { key: 'nazione', label: 'Nazione', type: 'text', required: false, options: [] },
+  { key: 'country', label: 'Nazione', type: 'text', required: false, options: [] },
   { key: 'email', label: 'Email', type: 'text', required: false, options: [] },
-  { key: 'telefono', label: 'Telefono', type: 'text', required: false, options: [] },
-  { key: 'sito_web', label: 'Sito web', type: 'url', required: false, options: [] },
-  { key: 'stato', label: 'Stato', type: 'text', required: false, options: [] },
+  { key: 'phone', label: 'Telefono', type: 'text', required: false, options: [] },
+  { key: 'website', label: 'Sito web', type: 'url', required: false, options: [] },
+  { key: 'status', label: 'Stato', type: 'text', required: false, options: [] },
   // The payment terms (REB-326): what `InvoiceService.issue` computes every due date
   // to this customer from. Days empty means the fiscal profile's apply.
-  { key: 'giorni_pagamento', label: 'Giorni di pagamento', type: 'number', required: false, options: [] },
-  { key: 'pagamento_fine_mese', label: 'Scadenza a fine mese', type: 'checkbox', required: false, options: [] },
+  { key: 'payment_days', label: 'Giorni di pagamento', type: 'number', required: false, options: [] },
+  { key: 'payment_end_of_month', label: 'Scadenza a fine mese', type: 'checkbox', required: false, options: [] },
 ]
 
 /**
@@ -62,12 +62,12 @@ const FIRST_NOTE_FIELD: FieldDefinition = {
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
 
-// `azienda_id` is seeded and sent like a native column but drawn by its own picker below
+// `legal_entity_id` is seeded and sent like a native column but drawn by its own picker below
 // `DynamicForm`, the way the cost form draws `category_id`: the value is an id, and a
 // `select` field would submit the option's label (REB-626).
 // `owner_id` (REB-773) is the same kind of key: an id drawn by its own picker, only for the
 // admin who may change it.
-const SEEDED_KEYS = [...NATIVE_FIELD_KEYS, 'azienda_id', 'owner_id']
+const SEEDED_KEYS = [...NATIVE_FIELD_KEYS, 'legal_entity_id', 'owner_id']
 
 /** What the owner picker's «nessuno» option submits as: a `Select` item cannot hold `null`. */
 const NO_OWNER = '__nessuno'
@@ -85,11 +85,11 @@ export interface OwnerOption {
  */
 export type CustomerFormValues = FormValues
 
-// `nazione` pre-filled to match `CustomerCreate.nazione`'s own server-side default
+// `country` pre-filled to match `CustomerCreate.country`'s own server-side default
 // (customers/schemas.py: `Field(default="IT", ...)`) -- a convenience, not a rule:
 // leaving it blank omits the key from the payload entirely (see `submit` below) and
 // the server fills in the exact same default either way.
-const DEFAULT_CREATE_VALUES: CustomerFormValues = { native: { nazione: 'IT' }, custom: {} }
+const DEFAULT_CREATE_VALUES: CustomerFormValues = { native: { country: 'IT' }, custom: {} }
 
 /**
  * Builds the form's starting state from a real, already-saved customer.
@@ -133,31 +133,31 @@ export function CustomerForm({
   // the nation proposes is shown live until the person picks one by hand, and what the
   // form shows is what is sent, so the saved customer carries it. While editing the
   // stored one is shown and sent only if changed.
-  const azienda = useLegalEntity()
-  const chosenAzienda = values.native.azienda_id as string | null | undefined
-  const nazione = typeof values.native.nazione === 'string' ? values.native.nazione : ''
-  const proposta = useLegalEntityProposal(
-    nazione,
-    azienda.several && isCreate && (chosenAzienda === undefined || chosenAzienda === null),
+  const legal_entity = useLegalEntity()
+  const chosenLegalEntity = values.native.legal_entity_id as string | null | undefined
+  const country = typeof values.native.country === 'string' ? values.native.country : ''
+  const proposal = useLegalEntityProposal(
+    country,
+    legal_entity.several && isCreate && (chosenLegalEntity === undefined || chosenLegalEntity === null),
   )
-  const shownAzienda = chosenAzienda ?? (isCreate ? (proposta.data?.id ?? '') : '')
+  const shownLegalEntity = chosenLegalEntity ?? (isCreate ? (proposal.data?.id ?? '') : '')
   // A customer whose azienda has since been deactivated is stranded: nothing new can
   // be created under it until it moves (spec §3), so the picker is drawn for it even
   // when one active azienda is left and the selector elsewhere has gone (Greptile, PR
   // #509). It then offers the active aziende and shows no current value, since the
   // deactivated one is not among them.
-  const initialAzienda = initial?.native.azienda_id
+  const initialLegalEntity = initial?.native.legal_entity_id
   const stranded =
     !isCreate &&
-    typeof initialAzienda === 'string' &&
-    azienda.aziende.length > 0 &&
-    azienda.byId(initialAzienda) === undefined
-  const showAziendaPicker = azienda.several || stranded
-  // `azienda_id` has its own picker below and no control in `DynamicForm`, so it is kept
+    typeof initialLegalEntity === 'string' &&
+    legal_entity.legal_entities.length > 0 &&
+    legal_entity.byId(initialLegalEntity) === undefined
+  const showLegalEntityPicker = legal_entity.several || stranded
+  // `legal_entity_id` has its own picker below and no control in `DynamicForm`, so it is kept
   // out of the flattened values: a tenant's custom field of the same name would
   // otherwise display the chosen azienda's id as if it were its own value (Greptile,
   // PR #509).
-  const { azienda_id: _pickedElsewhere, owner_id: _ownerElsewhere, ...nativeForForm } = values.native
+  const { legal_entity_id: _pickedElsewhere, owner_id: _ownerElsewhere, ...nativeForForm } = values.native
   void _pickedElsewhere
   void _ownerElsewhere
   const chosenOwner = values.native.owner_id as string | null | undefined
@@ -204,14 +204,14 @@ export function CustomerForm({
   }
 
   function submit() {
-    // `azienda_id` and `owner_id` are decided below from what their pickers show, not
+    // `legal_entity_id` and `owner_id` are decided below from what their pickers show, not
     // from the seeded value: re-sending an unchanged id would be refused the day that
     // azienda is deactivated.
     const body = toRequestBody(values, {
       fields: NATIVE_FIELDS,
       initial,
       isRenderedCustomKey,
-      skipNative: (key) => key === 'azienda_id' || key === 'owner_id',
+      skipNative: (key) => key === 'legal_entity_id' || key === 'owner_id',
       // A number control hands back its text (`DynamicFieldRenderer` reads
       // `event.target.value`); the column is an integer and `CustomerUpdate` is typed
       // `int | None`, so the digits are sent as the number they are.
@@ -222,10 +222,10 @@ export function CustomerForm({
           : value,
     })
 
-    if (showAziendaPicker) {
-      if (isCreate && shownAzienda !== '') body.azienda_id = shownAzienda
-      if (!isCreate && !isBlank(chosenAzienda) && chosenAzienda !== initial?.native.azienda_id) {
-        body.azienda_id = chosenAzienda
+    if (showLegalEntityPicker) {
+      if (isCreate && shownLegalEntity !== '') body.legal_entity_id = shownLegalEntity
+      if (!isCreate && !isBlank(chosenLegalEntity) && chosenLegalEntity !== initial?.native.legal_entity_id) {
+        body.legal_entity_id = chosenLegalEntity
       }
     }
 
@@ -238,8 +238,8 @@ export function CustomerForm({
     onSubmit(body)
   }
 
-  const aziendaError = problem ? fieldErrorFrom(problem) : null
-  const aziendaRefused = aziendaError?.field === 'azienda_id' ? aziendaError.message : null
+  const legalEntityError = problem ? fieldErrorFrom(problem) : null
+  const legalEntityRefused = legalEntityError?.field === 'legal_entity_id' ? legalEntityError.message : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -260,10 +260,10 @@ export function CustomerForm({
           // must at least be the same one.
           values={{ ...nativeForForm, ...values.custom }}
           onChange={change}
-          // Withheld when the server blamed `azienda_id`: that key has no control inside
+          // Withheld when the server blamed `legal_entity_id`: that key has no control inside
           // `DynamicForm`, so it would render the message a second time as a raw banner
           // next to the line shown under the picker below.
-          problem={aziendaRefused ? null : problem}
+          problem={legalEntityRefused ? null : problem}
           // `initial` is not a prefill, it *is* the record being edited
           // (`customerToFormValues(customer)`, from the detail route); its absence is
           // what "Nuovo cliente" means, and the list route passes none. Deriving the
@@ -277,18 +277,18 @@ export function CustomerForm({
           mode={isCreate ? 'create' : 'edit'}
         />
 
-        {showAziendaPicker ? (
+        {showLegalEntityPicker ? (
           <div className="space-y-2">
             <Label htmlFor="customer-azienda">Azienda</Label>
             {/* Straight into `native`, not through `change`: that routes a key the
                 active schema lists as a custom field into `custom`, and a tenant may
                 well have named one `azienda_id` (CodeRabbit, PR #509). */}
             <Select
-              value={shownAzienda}
+              value={shownLegalEntity}
               onValueChange={(value) =>
                 setValues((previous) => ({
                   ...previous,
-                  native: { ...previous.native, azienda_id: value },
+                  native: { ...previous.native, legal_entity_id: value },
                 }))
               }
             >
@@ -296,21 +296,21 @@ export function CustomerForm({
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>
               <SelectContent>
-                {azienda.aziende.map((item) => (
+                {legal_entity.legal_entities.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
                     {item.nome}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {aziendaRefused ? (
-              <p className="text-sm text-destructive">{aziendaRefused}</p>
-            ) : stranded && chosenAzienda === initialAzienda ? (
+            {legalEntityRefused ? (
+              <p className="text-sm text-destructive">{legalEntityRefused}</p>
+            ) : stranded && chosenLegalEntity === initialLegalEntity ? (
               <p className="text-sm text-muted-foreground">
                 L’azienda di questo cliente non è più attiva: scegline una attiva per poter
                 creare nuovi deal, documenti e fatture.
               </p>
-            ) : isCreate && (chosenAzienda === undefined || chosenAzienda === null) ? (
+            ) : isCreate && (chosenLegalEntity === undefined || chosenLegalEntity === null) ? (
               <p className="text-sm text-muted-foreground">
                 Proposta dalla nazione del cliente: la fattura questa azienda, salvo tua scelta.
               </p>

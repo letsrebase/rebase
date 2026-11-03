@@ -26,9 +26,9 @@ function failed(error: unknown, status: number) {
 const STAGE = {
   id: 's1',
   nome: 'Lead',
-  posizione: 0,
-  probabilita_default: 10,
-  tipo: 'open' as const,
+  position: 0,
+  default_probability: 10,
+  type: 'open' as const,
   code: 'lead',
 }
 
@@ -94,7 +94,7 @@ describe('PipelinePanel', () => {
   it('reports the stage type as a pill, tinted by the type the backend guarantees', async () => {
     vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([STAGE])))
     renderPanel()
-    // `DEAL_STAGE_TONE` keys on `tipo`, not on the (renameable) name, so this stays
+    // `DEAL_STAGE_TONE` keys on `type`, not on the (renameable) name, so this stays
     // right for a tenant that calls its open stage anything at all.
     expect(await screen.findByText('Aperto')).toHaveAttribute('data-tone', 'muted')
   })
@@ -184,7 +184,7 @@ describe('PipelinePanel', () => {
       expect(api.POST).toHaveBeenCalledWith(
         '/api/pipeline-stages',
         expect.objectContaining({
-          body: expect.objectContaining({ nome: 'Trattativa', tipo: 'open' }),
+          body: expect.objectContaining({ nome: 'Trattativa', type: 'open' }),
         }),
       ),
     )

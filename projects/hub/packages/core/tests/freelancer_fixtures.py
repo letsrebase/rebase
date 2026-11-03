@@ -42,8 +42,8 @@ IDENTIFYING = "La scheda cita la persona o un indirizzo."
 # A card that gives the person's gender away ("sviluppatrice"): the guard asks again once.
 SVILUPPATRICE: dict[str, Any] = {
     **CARD,
-    "ruolo": "Sviluppatrice backend",
-    "sintesi": "Specializzata in API Python e infrastruttura AWS per il fintech.",
+    "role": "Sviluppatrice backend",
+    "profile_summary": "Specializzata in API Python e infrastruttura AWS per il fintech.",
 }
 LINKS = ["https://github.com/adadev", "https://ada.example/portfolio"]
 # The moment `written_cards` writes its cards at, when the caller gives none.
@@ -73,28 +73,28 @@ def apply_freelancer(
     session: Session,
     email: str = "ada@studio.it",
     cv: bytes | None = CV,
-    cognome: str = "Lovelace",
+    last_name: str = "Lovelace",
     nome: str = "Ada",
     *,
     links: list[str] | None = None,
-    telefono: str | None = None,
+    phone: str | None = None,
 ) -> UUID:
     """A freelancer through the wizard's own service, with a CV (`None`: without one) and
-    no links unless given; `telefono` is written on the person afterwards."""
+    no links unless given; `phone` is written on the person afterwards."""
     data = FreelancerCreate(
         nome=nome,
-        cognome=cognome,
+        last_name=last_name,
         email=email,
-        tariffa_giornaliera=Decimal("450.00"),
+        daily_rate=Decimal("450.00"),
         posizione="Backend developer",
-        remoto="remoto",
+        remote="remote",
         links=links or [],
     )
     service = FreelancerService(session)
     read, _ = service.apply(data) if cv is None else service.apply(data, cv, "cv.pdf", "")
-    if telefono is not None:
+    if phone is not None:
         session.execute(
-            text("UPDATE users SET telefono = :t WHERE email = :e"), {"t": telefono, "e": email}
+            text("UPDATE users SET telefono = :t WHERE email = :e"), {"t": phone, "e": email}
         )
         session.commit()
     return read.id

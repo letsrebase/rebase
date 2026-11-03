@@ -19,11 +19,11 @@ function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
 }
 
-function renderActions(stato: string) {
+function renderActions(status: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <ContractStateActions contract={{ id: 'c1', titolo: 'Sviluppo', stato } as Contract} />
+      <ContractStateActions contract={{ id: 'c1', title: 'Sviluppo', status } as Contract} />
     </QueryClientProvider>,
   )
 }
@@ -36,16 +36,16 @@ beforeEach(() => {
 
 describe('ContractStateActions', () => {
   it('activates a bozza with one press', async () => {
-    renderActions('bozza')
+    renderActions('draft')
     await userEvent.click(screen.getByRole('button', { name: 'Attiva' }))
     expect(api.POST).toHaveBeenCalledWith('/api/contracts/{contract_id}/state', {
       params: { path: { contract_id: 'c1' } },
-      body: { stato: 'attivo' },
+      body: { status: 'active' },
     })
   })
 
   it('offers no Attiva on a contract that is not a bozza, only the other states in the menu', async () => {
-    renderActions('attivo')
+    renderActions('active')
     expect(screen.queryByRole('button', { name: 'Attiva' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Stato' }))
     expect(await screen.findByRole('menuitem', { name: 'Segna come «terminato»' })).toBeInTheDocument()
@@ -54,7 +54,7 @@ describe('ContractStateActions', () => {
 
   it('asks before ending a contract and does nothing when the answer is no', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    renderActions('attivo')
+    renderActions('active')
     await userEvent.click(screen.getByRole('button', { name: 'Stato' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Segna come «terminato»' }))
     expect(confirm).toHaveBeenCalled()
@@ -64,7 +64,7 @@ describe('ContractStateActions', () => {
 
   it('renders nothing for someone who cannot change a state', () => {
     canChange = false
-    const { container } = renderActions('bozza')
+    const { container } = renderActions('draft')
     expect(container).toBeEmptyDOMElement()
   })
 })

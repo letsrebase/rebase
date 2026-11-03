@@ -42,14 +42,14 @@ def slack_client(fake: FakeSlack) -> SlackClient:
 
 
 def make_user(
-    session: Session, *, email: str | None = None, nome: str = "Mario Rossi", ruolo: str = "admin"
+    session: Session, *, email: str | None = None, nome: str = "Mario Rossi", role: str = "admin"
 ) -> User:
     user = User(
         email=email or f"user-{uuid4().hex[:8]}@example.it",
         nome=nome,
         password_hash="x",
-        ruolo=ruolo,
-        attivo=True,
+        role=role,
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -57,7 +57,7 @@ def make_user(
 
 
 def actor_of(user: User) -> Actor:
-    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+    return Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
 
 
 def connect(
