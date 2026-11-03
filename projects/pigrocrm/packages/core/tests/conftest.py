@@ -346,7 +346,7 @@ def draft_invoice_line_id(db_session: Session, local_storage: LocalFileStorage) 
         Actor(id=None, type="system", role="admin"),
     )
     line_id: UUID = db_session.execute(
-        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY numero_linea LIMIT 1"),
+        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY line_number LIMIT 1"),
         {"inv": invoice.id},
     ).scalar_one()
     return line_id
@@ -376,7 +376,7 @@ def proforma_invoice_line_id(db_session: Session, local_storage: LocalFileStorag
     )
     service.confirm_proforma(invoice.id, admin)
     line_id: UUID = db_session.execute(
-        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY numero_linea LIMIT 1"),
+        text("SELECT id FROM invoice_lines WHERE invoice_id = :inv ORDER BY line_number LIMIT 1"),
         {"inv": invoice.id},
     ).scalar_one()
     return line_id

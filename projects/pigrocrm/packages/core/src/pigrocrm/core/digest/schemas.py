@@ -174,7 +174,7 @@ class WeeklyDigest(BaseModel):
 
     # 2. Da emettere.
     won_to_invoice: int
-    hours_uninvoiced: Decimal = Field(max_digits=8, decimal_places=2)
+    unbilled_hours: Decimal = Field(max_digits=8, decimal_places=2)
     # `AnalyticsService`'s accrued value. Never revenue, never added to one: the revenue
     # is the invoice, and this is what has not been invoiced yet.
     accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
@@ -240,7 +240,7 @@ class WeeklyDigest(BaseModel):
             and self.tasks.empty
             and self.hours is None
             and self.won_to_invoice == 0
-            and self.hours_uninvoiced == 0
+            and self.unbilled_hours == 0
             and self.accrued_value == 0
             and self.total_month_current == 0
             and self.total_month_previous == 0

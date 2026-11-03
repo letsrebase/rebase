@@ -300,7 +300,7 @@ def test_to_missing_legal_entity_id_is_not_found_under_the_table_label(db_sessio
 
     with pytest.raises(NotFound) as excinfo:
         LegalEntityService(db_session).get(ADMIN, uuid4())
-    assert excinfo.value.details["entity"] == "legal_entities"
+    assert excinfo.value.details["entity"] == "legal_entity"
 
 
 def test_a_foreign_vat_number_fits_the_column_and_one_beyond_it_is_refused_not_a_500(
@@ -476,7 +476,7 @@ def test_an_update_built_on_the_current_row_is_accepted_and_moves_the_version(
     with pytest.raises(StaleRow) as excinfo:
         service.update(first.id, _upsert(city="Genova", updated_at=first.updated_at), ADMIN)
     assert excinfo.value.code == "stale_row"
-    assert excinfo.value.details == {"entity": "legal_entities", "updated_at": second.updated_at}
+    assert excinfo.value.details == {"entity": "legal_entity", "updated_at": second.updated_at}
     assert service.get(ADMIN).city == "Torino"
 
 

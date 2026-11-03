@@ -105,9 +105,9 @@ def _upsert(**parts: dict[str, Any]) -> EngagementUpsert:
         "letter": {
             "number": "3/2026",
             "role": "Backend developer",
-            "legal_entity": "Acme S.r.l.",
+            "company_name": "Acme S.r.l.",
             "start_date": "2026-10-01",
-            "data_fine": "2026-12-31",
+            "end_date": "2026-12-31",
             "fee": "400.00",
             "expected_days": 40,
         },
@@ -779,7 +779,7 @@ def test_longest_role_and_company_still_make_a_valid_name(door: Door) -> None:
 
     match_id = uuid4()
     answer = door.service().ensure(
-        match_id, _upsert(letter={"number": number, "role": role, "legal_entity": legal_entity})
+        match_id, _upsert(letter={"number": number, "role": role, "company_name": legal_entity})
     )
 
     with _space(door, answer.slug) as space:
@@ -1008,7 +1008,7 @@ def test_report_lists_entries_with_their_invoice(
     # The wire shape the hub reads (spec § 2.4): hours at two places, the rate at six,
     # and no hours on an entry's own invoice.
     wire = report.model_dump(mode="json")
-    assert (wire["hours_total"], wire["invoiced_hours"], wire["hours_uninvoiced"]) == (
+    assert (wire["total_hours"], wire["billed_hours"], wire["unbilled_hours"]) == (
         "24.00",
         "16.00",
         "8.00",
@@ -1074,7 +1074,7 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
         None,
         None,
     )
-    assert (report.hours_total, report.invoiced_hours, report.hours_uninvoiced) == (
+    assert (report.total_hours, report.billed_hours, report.unbilled_hours) == (
         Decimal("32.00"),
         Decimal("8.00"),
         Decimal("24.00"),
@@ -1140,7 +1140,7 @@ def test_report_accepts_exactly_800_days(door: Door) -> None:
     report = door.service().report(match_id, date_from=date_from, date_to=date_to)
 
     assert [g.description for g in report.days] == ["Il primo giorno", "L'ultimo giorno"]
-    assert report.hours_total == Decimal("16.00")
+    assert report.total_hours == Decimal("16.00")
 
 
 def test_report_of_unknown_match_is_not_found(door: Door) -> None:

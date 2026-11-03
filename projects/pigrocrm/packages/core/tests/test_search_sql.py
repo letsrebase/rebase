@@ -115,6 +115,6 @@ def test_a_count_past_the_ceiling_is_the_ceiling_and_says_so(db_session: Session
     )
 
     assert group.total == COUNT_CEILING, group
-    assert group.total_and_a_minimum is True, group
+    assert group.total_is_minimum is True, group
     assert len(group.hits) == PER_CLASS_LIMIT
     assert max(counts) <= PER_CLASS_LIMIT, counts

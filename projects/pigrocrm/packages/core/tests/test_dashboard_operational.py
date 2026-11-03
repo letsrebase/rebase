@@ -627,5 +627,5 @@ def test_the_concentration_signal_link_is_the_economic_tab(seeded: Seeded) -> No
     signal = next(
         s for s in _dashboard(seeded.engine).signals if s.code == "concentrazione_sopra_soglia"
     )
-    assert signal.link == "/app/?tab=economica"
+    assert signal.link == "/app?tab=economic"
     assert signal.label

@@ -120,7 +120,7 @@ class ApprovalCreate(BaseModel):
     message_id: SafeStr | None = None
     document_id: UUID
     excerpt: SafeStr = Field(min_length=1)
-    # `{"kind": "manuale"}` / `{"kind": "agente", "proposal_id": ...}` -- spec §6,
+    # `{"kind": "manual"}` / `{"kind": "agent", "proposal_id": ...}` -- spec §6,
     # trimmed to the two kinds this slice needs (`carried_forward` is a
     # renewal-automation feature this spike leaves out).
     origin: dict[str, Any] = Field(default_factory=lambda: {"kind": "manual"})

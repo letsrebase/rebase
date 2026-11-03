@@ -277,12 +277,12 @@ class ContractEmailService:
         date_from, date_to, quantity = self._days_of(contract_id, invoice)
         values = self._values(contract, invoice, date_from, date_to, quantity, actor)
         attachments = [
-            ContractEmailAttachment(type="invoice_pdf", name=f"Fattura {values['invoice_number']}")
+            ContractEmailAttachment(type="invoice_pdf", name=f"Fattura {values['numero_fattura']}")
             for kind in template.attachments
             if kind == "invoice_pdf"
         ] + [
             ContractEmailAttachment(
-                type="register_pdf", name=f"Registro giornate {values['period']}"
+                type="register_pdf", name=f"Registro giornate {values['periodo']}"
             )
             for kind in template.attachments
             if kind == "register_pdf"

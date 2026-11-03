@@ -148,14 +148,14 @@ def unbilled_work_unit_lines(
     the order `lines` was built in. `da`/`a` (inclusive) take only the days of a period.
 
     Raises `ValidationFailed` if any gathered day has no rate card covering its own
-    `data` -- inventing a price here would be a commercial decision this step does
+    `date` -- inventing a price here would be a commercial decision this step does
     not own, the same refusal `bind_to_invoice` gives an unpriced `TimeEntry`.
     """
     grouped, uncovered, cards = _gather(session, contract_id, date_from, date_to)
     if uncovered:
         raise ValidationFailed(
             ENTITY,
-            "data",
+            "date",
             f"{len(uncovered)} giornate non hanno una rate_card in vigore alla propria data",
             expected="una rate_card del contratto valida su ogni data selezionata: "
             + ", ".join(str(w.id) for w in uncovered),

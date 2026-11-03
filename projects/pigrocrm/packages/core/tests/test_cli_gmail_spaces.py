@@ -303,7 +303,7 @@ def test_a_revoked_mailbox_is_its_own_line_and_the_next_space_still_runs(
 
     captured = capsys.readouterr()
     assert _line(ONE, ONE) in captured.err
-    assert "revoked" in captured.err
+    assert "revocato" in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, ONE) is None
     assert _watermark(settings, TWO) is not None

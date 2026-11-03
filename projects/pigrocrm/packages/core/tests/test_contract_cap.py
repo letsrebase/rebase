@@ -278,8 +278,8 @@ def test_the_ceiling_simulator_answers_the_contracts_cap_beside_the_packs_ceilin
     )
 
     assert [s.id for s in simulation.thresholds] == [
-        "soglia_ricavi",
-        "soglia_fuoriuscita_immediata",
+        "revenue_ceiling",
+        "immediate_exit_ceiling",
     ]
     assert simulation.contract_cap is not None
     assert simulation.contract_cap.falls_within is False

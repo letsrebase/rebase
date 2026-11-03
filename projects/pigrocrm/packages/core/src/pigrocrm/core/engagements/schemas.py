@@ -129,18 +129,18 @@ class ReportDeal(BaseModel):
 
 
 class EngagementReport(BaseModel):
-    """The answer of `GET /api/rebase/engagements/{match_id}/report`. `invoiced_hours` is
+    """The answer of `GET /api/rebase/engagements/{match_id}/report`. `billed_hours` is
     the CRM's own billed (`billed_entry_ids`: on a line of an issued `invoice`), so it
-    agrees with the deal's summary; `hours_uninvoiced` is every other hour of the
+    agrees with the deal's summary; `unbilled_hours` is every other hour of the
     period; `invoices` has one row per invoice among the entries, newest first."""
 
     slug: str
     deal_url: str
     deal: ReportDeal
     days: list[ReportEntry]
-    hours_total: Decimal
-    invoiced_hours: Decimal
-    hours_uninvoiced: Decimal
+    total_hours: Decimal
+    billed_hours: Decimal
+    unbilled_hours: Decimal
     invoices: list[ReportInvoice]
 
 

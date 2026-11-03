@@ -230,7 +230,7 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
             {
                 "id": uuid7(),
                 "customer_id": customer_ids[index % len(customer_ids)],
-                "nome": rng.choice(_FIRST_NAMES),
+                "first_name": rng.choice(_FIRST_NAMES),
                 "last_name": last_name,
                 "email": f"persona{index}@example.it",
                 "custom_fields": {},
@@ -253,7 +253,7 @@ def build_corpus(session: Session, scale: CorpusScale, *, seed: int = 20260821) 
         deal_rows.append(
             {
                 "id": did,
-                "nome": f"{rng.choice(_DEAL_WORDS)} {rng.choice(_SECTORS)} {index}",
+                "name": f"{rng.choice(_DEAL_WORDS)} {rng.choice(_SECTORS)} {index}",
                 "customer_id": customer_ids[index % len(customer_ids)],
                 "pipeline_stage_id": stage,
                 "expected_value": value,

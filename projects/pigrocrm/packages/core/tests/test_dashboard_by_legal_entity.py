@@ -494,10 +494,10 @@ def test_the_operational_dashboard_narrows_the_week_the_backlog_and_the_signals(
         Decimal("150.00"),
     )
     assert all.backlog.accrued_value == Decimal("250.00")
-    assert [_signal(r, "scaduto_non_incassato") for r in (all, studio, foreign)] == [1, 1, 0]
+    assert [_signal(r, "overdue_unpaid") for r in (all, studio, foreign)] == [1, 1, 0]
     # Each customer is the whole of its own azienda, so above a 50% threshold in both;
     # «tutte» counts the two of them, never a space-wide 1/6 that would hide the studio's.
-    assert [_signal(r, "concentrazione_sopra_soglia") for r in (all, studio, foreign)] == [
+    assert [_signal(r, "concentration_above_threshold") for r in (all, studio, foreign)] == [
         2,
         1,
         1,
@@ -580,7 +580,7 @@ def test_the_concentration_signal_counts_to_customer_billed_by_two_legal_entitie
             # The foreign company's own customer fell under the threshold: 5000 of 11000.
             assert AnalyticsRepository(session).count_over_concentration_threshold(YEAR, 0.5) == 1
         all_legal_entities = _operational(corpus.engine, None)
-        assert _signal(all_legal_entities, "concentrazione_sopra_soglia") == 1
+        assert _signal(all_legal_entities, "concentration_above_threshold") == 1
     finally:
         with factory() as session:
             session.execute(delete(Invoice).where(Invoice.id == extra_id))

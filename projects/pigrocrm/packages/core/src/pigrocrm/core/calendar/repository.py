@@ -131,7 +131,7 @@ class CalendarRepository:
         still counts, oldest first.
 
         `rejected` and `revoked` are left out: those two are exactly the outcomes that
-        free the date for a fresh day (`uq_work_units_contract_data_live`), so a cell that
+        free the date for a fresh day (`uq_work_units_contract_date_live`), so a cell that
         drew them would show a date as taken that nothing holds. They stay in the register
         (`WorkUnitService.list`). The customer is joined with no `deleted_at` filter, for
         the reason `deal_labels` records. Through the contract for the legal entity, the way

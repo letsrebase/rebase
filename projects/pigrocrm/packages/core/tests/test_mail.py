@@ -210,7 +210,7 @@ def digest_with(
     number: str | None = None,
     paid: int = 0,
     won_to_invoice: int = 0,
-    hours_uninvoiced: Decimal = Decimal("0"),
+    unbilled_hours: Decimal = Decimal("0"),
     accrued_value: Decimal = Decimal("0"),
     total_hours: Decimal | None = None,
     days_without_hours: int = 0,
@@ -256,7 +256,7 @@ def digest_with(
         overdue=overdue,
         in_due_date=[],
         won_to_invoice=won_to_invoice,
-        hours_uninvoiced=hours_uninvoiced,
+        unbilled_hours=unbilled_hours,
         accrued_value=accrued_value,
         issued=[_invoice(customer=customer or "Cliente Prova") for _ in range(issued)],
         total_month_current=Decimal("0"),
@@ -308,16 +308,16 @@ def test_the_subject_uses_the_singular_for_one_of_a_kind() -> None:
     assert digest_subject(digest_with(issued=1)) == "La tua settimana: 1 fattura emessa"
 
 
-def test_only_sections_with_rows_appear_and_every_link_says_da_digest() -> None:
+def test_only_sections_with_rows_appear_and_every_link_says_from_digest() -> None:
     mail = digest_mail(
         "ada@example.it", digest_with(issued=1), public_url="https://pigro.letsrebase.com/ada"
     )
     assert "Emesse questa settimana" in mail.html and "Da incassare" not in mail.html
-    assert "da=digest" in mail.html and "Non inviarmi più il resoconto" in mail.html
+    assert "from=digest" in mail.html and "Non inviarmi più il resoconto" in mail.html
     # The switch lives in the profile tab every user can reach (spec §3.6), not the
     # admin-only users panel -- the opt-out link must land somewhere a non-admin
     # recipient can actually open.
-    assert "https://pigro.letsrebase.com/ada/app/settings/profile?da=digest" in mail.html
+    assert "https://pigro.letsrebase.com/ada/app/settings/profile?from=digest" in mail.html
     assert "Emesse questa settimana" in mail.text
     # §3.1 item 3: «Numero, cliente, importo, stato» -- the number is part of the row.
     assert "2026/1" in mail.text and "2026/1" in mail.html
@@ -379,7 +379,7 @@ def test_the_overdue_list_links_to_the_full_list() -> None:
         "a@b.it", digest_with(expired=Decimal("100")), public_url="https://pigro.test/ada"
     )
     assert mail.html is not None
-    assert "https://pigro.test/ada/app/invoices?overdue=true&da=digest" in mail.text
+    assert "https://pigro.test/ada/app/invoices?overdue=true&from=digest" in mail.text
 
 
 def test_a_quiet_week_offers_the_assistant() -> None:
@@ -398,18 +398,18 @@ def test_the_hours_section_only_appears_with_hours() -> None:
     assert "Le ore" in worked.html and "12,50" in worked.text and "5 giorni su 7" in worked.text
 
 
-def test_every_link_carries_da_digest_including_signals() -> None:
+def test_every_link_carries_from_digest_including_signals() -> None:
     # `link` is space-relative, the same shape `dashboard/service.py` builds it
     # in; the mail must still resolve it against `public_url`, not hand it out bare.
     mail = digest_mail("a@b.it", digest_with(signals=1), public_url="https://pigro.test/ada")
     assert mail.html is not None
-    assert "https://pigro.test/ada/app/dashboard?da=digest" in mail.html
+    assert "https://pigro.test/ada/app/dashboard?from=digest" in mail.html
 
 
 def test_the_pipeline_section_links_to_the_pipeline() -> None:
     mail = digest_mail("a@b.it", digest_with(pipeline=1), public_url="https://pigro.test/ada")
     assert mail.html is not None and "In pipeline" in mail.html
-    assert "https://pigro.test/ada/app/deal?da=digest" in mail.html
+    assert "https://pigro.test/ada/app/deal?from=digest" in mail.html
 
 
 def test_to_issue_only_appears_with_something_to_bill() -> None:
@@ -417,15 +417,13 @@ def test_to_issue_only_appears_with_something_to_bill() -> None:
     assert "Da emettere" not in still.html
     mail = digest_mail("a@b.it", digest_with(won_to_invoice=2), public_url="https://x")
     assert "Da emettere" in mail.html and "2 deal vinti da fatturare" in mail.text
-    assert "https://x/app/deal/list?to_invoice=true&da=digest" in mail.text
+    assert "https://x/app/deal/list?to_invoice=true&from=digest" in mail.text
     # The hours link is `/app/hours` bare: `routes/app/hours.tsx` declares no `validateSearch`,
     # so a `?invoiced=false` would be dropped on arrival and the link would promise a
-    # filtered list nobody ever sees. Only `da=digest` survives the trip.
-    hours = digest_mail(
-        "a@b.it", digest_with(hours_uninvoiced=Decimal("8")), public_url="https://x"
-    )
+    # filtered list nobody ever sees. Only `from=digest` survives the trip.
+    hours = digest_mail("a@b.it", digest_with(unbilled_hours=Decimal("8")), public_url="https://x")
     assert "8 ore fatturabili non fatturate" in hours.text
-    assert "https://x/app/hours?da=digest" in hours.text
+    assert "https://x/app/hours?from=digest" in hours.text
     assert "invoiced=false" not in hours.text
 
 

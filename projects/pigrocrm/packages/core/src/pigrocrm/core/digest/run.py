@@ -142,7 +142,7 @@ def sections_with_lines(digest: WeeklyDigest) -> int:
     return sum(
         [
             bool(digest.overdue or digest.in_due_date),
-            bool(digest.won_to_invoice or digest.hours_uninvoiced or digest.accrued_value),
+            bool(digest.won_to_invoice or digest.unbilled_hours or digest.accrued_value),
             bool(digest.issued),
             bool(digest.paid),
             digest.hours is not None,

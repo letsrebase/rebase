@@ -83,7 +83,12 @@ def _setup(db_session: Session) -> Contract:
     db_session.add(customer)
     db_session.flush()
     db_session.add(
-        Person(customer_id=customer.id, name="Mario", last_name="Verdi", email="mario@acme.example")
+        Person(
+            customer_id=customer.id,
+            first_name="Mario",
+            last_name="Verdi",
+            email="mario@acme.example",
+        )
     )
     contract = Contract(
         customer_id=customer.id,

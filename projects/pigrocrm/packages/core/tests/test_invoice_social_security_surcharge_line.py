@@ -144,7 +144,7 @@ def test_the_social_security_surcharge_line_passes_fatturapa_export_unchanged(
     assert social_security_surcharge_line.findtext("AliquotaIVA") == "0.00"
     assert social_security_surcharge_line.findtext("PrezzoTotale") == "40.00"
     assert (
-        "social_security_surcharge"
+        "rivalsa contributiva"
         in (social_security_surcharge_line.findtext("Descrizione") or "").lower()
     )
 

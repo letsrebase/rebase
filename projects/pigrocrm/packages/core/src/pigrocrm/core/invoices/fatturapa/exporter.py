@@ -102,7 +102,7 @@ class InvoicePaExporter:
         if not invoice.lines:
             raise ValidationFailed(
                 "invoice",
-                "righe",
+                "lines",
                 "una fattura senza righe non e' esportabile",
                 expected="almeno una riga",
             )

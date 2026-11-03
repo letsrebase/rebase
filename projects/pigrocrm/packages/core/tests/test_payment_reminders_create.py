@@ -528,7 +528,7 @@ def test_a_second_reminder_inside_the_minimum_interval_is_refused(
         )
     )
     db_session.commit()
-    with pytest.raises(Conflict, match="days"):
+    with pytest.raises(Conflict, match="giorni"):
         _service(db_session).create_reminder(invoice.id, actor_for(account))
 
 
@@ -544,7 +544,7 @@ def test_an_invoice_that_is_not_a_candidate_is_not_a_reminder_either(
     invoice.cancelled_at = _days_ago(1)
     invoice.cancellation_reason = "errore di emissione"
     db_session.commit()
-    with pytest.raises(Conflict, match="cancelled"):
+    with pytest.raises(Conflict, match="annullata"):
         _service(db_session).create_reminder(invoice.id, actor_for(account))
 
 

@@ -191,7 +191,7 @@ def test_gmail_sync_on_a_revoked_credential_exits_one(
     _connect(db_engine, email_address="cron@example.it", status="revoked")
 
     assert _run() == 1
-    assert "revoked" in capsys.readouterr().err
+    assert "revocato" in capsys.readouterr().err
 
 
 def test_gmail_sync_picks_the_mailbox_named_on_the_command_line(

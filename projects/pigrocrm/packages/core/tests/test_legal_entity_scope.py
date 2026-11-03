@@ -166,7 +166,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.add(customer)
             session.flush()
             person = Person(
-                name=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={}
+                first_name=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={}
             )
             session.add(person)
             deal = Deal(
@@ -1202,7 +1202,7 @@ def test_the_through_the_parent_policies_put_the_all_fast_path_first(db_engine: 
     for table in POLICIED - FAST_PATH:
         assert not "".join(policies[table][0].split()).startswith(fast), table
     assert set(bodies) == set(THROUGH_THE_PARENT)
-    spelled_out = "current_setting('pigrocrm.legal entities', true) = '*' OR "
+    spelled_out = "current_setting('pigrocrm.legal_entities', true) = '*' OR "
     for name, body in bodies.items():
         if name == "entity_visible":
             # Inside each branch, so an unknown type still answers the third argument.

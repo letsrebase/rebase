@@ -241,7 +241,7 @@ class DigestService:
             overdue=overdue,
             in_due_date=self._lines(in_due_date_rows, names, lambda row: row.due_date),
             won_to_invoice=won_to_invoice,
-            hours_uninvoiced=backlog.billable_uninvoiced_hours,
+            unbilled_hours=backlog.billable_uninvoiced_hours,
             accrued_value=backlog.accrued_value,
             issued=self._lines(issued_rows, names, lambda row: row.issue_date),
             total_month_current=invoices.sum_issued_in_period(month_from, month_to),

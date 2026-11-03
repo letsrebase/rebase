@@ -266,8 +266,8 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
     assert entries["day_state_changed"].actor_type == "mcp"
     assert entries["day_state_changed"].payload == {
         "work_unit": "2026-03-01",
-        "da": "worked_without_approval",
-        "a": "disputed",
+        "from": "worked_without_approval",
+        "to": "disputed",
     }
 
 

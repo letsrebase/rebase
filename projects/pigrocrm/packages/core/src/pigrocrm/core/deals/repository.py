@@ -165,15 +165,15 @@ class DealRepository:
                 PipelineStage.type,
                 PipelineStage.position,
                 func.count(Deal.id).label("number"),
-                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("valore"),
+                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("value"),
                 # `Deal.id IS NOT NULL` is load-bearing and not defensive: under the outer
                 # join a stage with no deals still yields one row whose `deals` columns are
                 # all NULL, so a bare `valore_previsto IS NULL` would count that phantom
                 # row and report one value-less deal in a stage that has none.
                 func.count(
                     case((and_(Deal.id.is_not(None), Deal.expected_value.is_(None)), 1))
-                ).label("senza"),
-                func.coalesce(func.sum(rounded_weight), literal(0)).label("ponderato"),
+                ).label("without"),
+                func.coalesce(func.sum(rounded_weight), literal(0)).label("weighted"),
             )
             .select_from(PipelineStage)
             .outerjoin(
@@ -231,7 +231,7 @@ class DealRepository:
             select(
                 PipelineStage.type,
                 func.count(Deal.id).label("number"),
-                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("valore"),
+                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("value"),
             )
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .where(

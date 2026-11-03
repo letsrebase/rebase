@@ -342,7 +342,7 @@ class ProposalService:
                 "work_unit",
                 "esiste già un day non concluso per questo contratto in questa data",
                 contract_id=str(fields.contract_id),
-                data=str(fields.date),
+                date=str(fields.date),
             ),
         ):
             approval = Approval(
@@ -361,7 +361,7 @@ class ProposalService:
             set_transition_context(self.session, actor, f"proposta {proposal.id} accettata")
             work_unit = WorkUnit(
                 contract_id=fields.contract_id,
-                data=fields.date,
+                date=fields.date,
                 quantity=fields.quantity,
                 description=fields.description,
                 status="approved",

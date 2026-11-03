@@ -27,7 +27,7 @@ _PATHS: dict[str, Callable[[UUID], str]] = {
     # A proforma is an invoice row of type `proforma`, opened by the same page.
     "proforma": lambda id_: f"/app/invoices/{id_}",
     "contract": lambda id_: f"/app/contracts/{id_}",
-    "fiscal": lambda _: "/app?tab=anno",
+    "fiscal": lambda _: "/app?tab=year",
     "proposal": lambda id_: f"/app/proposals/{id_}",
     # The timer is the caller's own and lives in the hours page, which has no id to open.
     "timer": lambda _: "/app/hours",

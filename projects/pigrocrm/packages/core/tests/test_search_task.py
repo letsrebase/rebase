@@ -100,7 +100,7 @@ def test_the_group_is_there_when_nothing_matches_and_counts_past_the_limit(
     for index in range(8):
         _add(db_session, f"Sollecito cliente {index}")
 
-    group = _group(db_session, "payment_reminder")
+    group = _group(db_session, "sollecito")
     assert len(group.hits) == 5
     assert group.total == 8
-    assert group.total_and_a_minimum is False
+    assert group.total_is_minimum is False

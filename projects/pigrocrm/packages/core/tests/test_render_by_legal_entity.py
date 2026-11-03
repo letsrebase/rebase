@@ -204,8 +204,8 @@ def test_to_mail_speaks_for_the_legal_entity_of_its_record(
         ),
         ADMIN,
     )
-    person = Person(name="Ada", last_name="Lovelace", customer_id=customer_id)
-    loose = Person(name="Nessuno", last_name="Di Nessuno")
+    person = Person(first_name="Ada", last_name="Lovelace", customer_id=customer_id)
+    loose = Person(first_name="Nessuno", last_name="Di Nessuno")
     db_session.add_all([person, loose])
     db_session.flush()
     repo = GmailRepository(db_session)

@@ -165,7 +165,7 @@ class PeriodLockService:
         Variadic because an update has to pass both the stored date and the new one:
         moving a row *out* of a closed month is still a write into it, and checking
         only the destination would let somebody empty a reported month one row at a
-        time. `None` days are skipped -- an update that does not touch `data` supplies
+        time. `None` days are skipped -- an update that does not touch `date` supplies
         `None`, meaning "unchanged", not "the epoch".
 
         Takes `entity` and `field` rather than hard-coding them so the `Conflict` names

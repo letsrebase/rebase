@@ -515,7 +515,7 @@ def test_the_projected_figure_combines_the_schedule_and_the_renewal_assumption(
     result = projections.project(
         contract.id,
         ContractProjectionQuery(
-            date_from=date(2026, 1, 1), date_to=date(2027, 6, 1), come_di=date(2026, 6, 1)
+            date_from=date(2026, 1, 1), date_to=date(2027, 6, 1), as_of=date(2026, 6, 1)
         ),
         ADMIN,
     )
@@ -560,7 +560,7 @@ def test_the_projected_figure_is_independent_of_cash_overviews_own_projected(
     result = projections.project(
         contract.id,
         ContractProjectionQuery(
-            date_from=date(2026, 1, 1), date_to=date(2027, 6, 1), come_di=date(2026, 6, 1)
+            date_from=date(2026, 1, 1), date_to=date(2027, 6, 1), as_of=date(2026, 6, 1)
         ),
         ADMIN,
     )

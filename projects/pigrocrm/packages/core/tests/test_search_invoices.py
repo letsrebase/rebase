@@ -150,7 +150,7 @@ def test_the_invoice_group_is_always_present_and_fifth(
 def test_the_memo_is_searchable_by_to_fragment(db_session: Session, invoices: Customer) -> None:
     group = _group(db_session, "impianti")
     assert group.total == 1
-    assert group.total_and_a_minimum is False
+    assert group.total_is_minimum is False
     assert group.hits[0].label == "2026/7 — Progettazione impianti elettrici"
     assert group.hits[0].field == "memo"
 
@@ -339,7 +339,7 @@ def test_the_group_is_truncated_to_the_limit_and_reports_the_real_count(
     group = next(g for g in results.groups if g.entity == "invoice")
     assert len(group.hits) == 3
     assert group.total == 12
-    assert group.total_and_a_minimum is False
+    assert group.total_is_minimum is False
 
 
 def test_the_order_is_total_so_two_identical_searches_agree(

@@ -287,9 +287,9 @@ class EngagementService:
                 status=status,
             ),
             days=days,
-            hours_total=total,
-            invoiced_hours=invoiced,
-            hours_uninvoiced=total - invoiced,
+            total_hours=total,
+            billed_hours=invoiced,
+            unbilled_hours=total - invoiced,
             invoices=[
                 invoice.model_copy(update={"hours": sum_hours(on_invoice[invoice.id])})
                 for invoice, _ in newest_first

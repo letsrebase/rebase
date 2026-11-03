@@ -134,7 +134,7 @@ def test_the_root_slug_is_stripped_but_stays_the_root_for_every_segment_set() ->
 
 def test_mcp_is_a_reserved_name() -> None:
     assert "mcp" in RESERVED_SLUGS
-    assert validate_slug("mcp") == "questo name è riservato"
+    assert validate_slug("mcp") == "questo nome è riservato"
 
 
 # --- the provisioning --------------------------------------------------------------

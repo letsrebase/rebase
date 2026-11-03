@@ -109,7 +109,7 @@ def test_a_group_is_truncated_to_the_limit_and_reports_the_real_count(
     customers = _search(db_session, "Vulcano")["customer"]
     assert len(customers.hits) == 5
     assert customers.total == 40
-    assert customers.total_and_a_minimum is False
+    assert customers.total_is_minimum is False
 
 
 def test_the_count_is_the_same_predicate_as_the_hits(db_session: Session) -> None:
@@ -145,7 +145,7 @@ def test_the_count_is_the_same_predicate_as_the_hits(db_session: Session) -> Non
         "the count and the hits disagree, so one of them applies a filter the other does not"
     )
     assert customers.total == 15
-    assert customers.total_and_a_minimum is False
+    assert customers.total_is_minimum is False
 
 
 def test_beyond_the_ceiling_the_count_is_declared_as_a_minimum(
@@ -164,7 +164,7 @@ def test_beyond_the_ceiling_the_count_is_declared_as_a_minimum(
 
     customers = _search(db_session, "Quadrifoglio")["customer"]
     assert customers.total == COUNT_CEILING
-    assert customers.total_and_a_minimum is True
+    assert customers.total_is_minimum is True
 
 
 def test_every_returned_hit_is_above_the_floor(db_session: Session) -> None:
@@ -251,7 +251,12 @@ def test_people_are_found_by_first_name_by_surname_and_by_email(
     db_session: Session,
 ) -> None:
     db_session.add(
-        Person(name="Ludovica", last_name="Ferraresi", email="lf@studio.example", custom_fields={})
+        Person(
+            first_name="Ludovica",
+            last_name="Ferraresi",
+            email="lf@studio.example",
+            custom_fields={},
+        )
     )
     db_session.flush()
 
@@ -264,7 +269,7 @@ def test_people_are_found_by_first_name_by_surname_and_by_email(
 def test_a_person_without_a_surname_has_a_label_and_no_trailing_space(
     db_session: Session,
 ) -> None:
-    db_session.add(Person(name="Ludovica", last_name=None, custom_fields={}))
+    db_session.add(Person(first_name="Ludovica", last_name=None, custom_fields={}))
     db_session.flush()
     group = _search(db_session, "Ludovi")["person"]
     assert group.hits[0].label == "Ludovica"

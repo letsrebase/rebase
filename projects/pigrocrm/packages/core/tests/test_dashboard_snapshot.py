@@ -189,7 +189,7 @@ def _intruder_invoice(seeded: Seeded) -> Invoice:
     It is what a deal cannot be: a row the *economic* and *operational* dashboards would
     each report from more than one query. Issued today, so it falls in the current month
     (`issued_invoices`, `pnl.in_progress.revenue`); unpaid (`unpaid`); due yesterday, so
-    `_overdue_predicate`'s strict `<` catches it (`expired`, `scaduto_non_incassato`); and
+    `_overdue_predicate`'s strict `<` catches it (`expired`, `overdue_unpaid`); and
     attached to the base deal, which sits on an `open` stage (`invoiced_unwon`) and
     gives `revenue_in_range` -- which groups by `deal_id` and skips nulls -- something to
     group by.
@@ -442,7 +442,7 @@ def _operational_figures(result: OperationalDashboard) -> dict[str, object]:
     counts = {signal.code: signal.count for signal in result.signals}
     return {
         "invoiced_unwon": counts["invoiced_unwon"],
-        "scaduto_non_incassato": counts["scaduto_non_incassato"],
+        "overdue_unpaid": counts["overdue_unpaid"],
     }
 
 

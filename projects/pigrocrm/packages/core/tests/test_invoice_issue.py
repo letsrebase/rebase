@@ -483,9 +483,9 @@ def test_the_snapshot_freezes_both_parties_and_the_fiscal_parameters(
     stored = db_session.execute(
         text("SELECT snapshot FROM invoices WHERE id = :id"), {"id": invoice_id}
     ).scalar_one()
-    assert stored["versione"] == SNAPSHOT_VERSION
+    assert stored["version"] == SNAPSHOT_VERSION
     assert stored["customer"]["legal_name"] == "Acme S.r.l."
-    assert stored["emittente"]["legal_name"] == "Studio Rossi"
+    assert stored["legal_entity"]["legal_name"] == "Studio Rossi"
     assert stored["tax"]["regime_code"] == "RF19"
 
 

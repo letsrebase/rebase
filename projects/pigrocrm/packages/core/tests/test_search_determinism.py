@@ -136,7 +136,7 @@ def _reshuffle(session: Session) -> int:
     moved = 0
     for table, column in (
         ("customers", "country"),
-        ("people", "name"),
+        ("people", "first_name"),
         ("deals", "name"),
         ("documents", "title"),
     ):

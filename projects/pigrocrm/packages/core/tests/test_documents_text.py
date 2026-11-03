@@ -93,7 +93,7 @@ def test_an_explicit_number_reads_that_version(
     read = service.extract_text(document.id, 1, ADMIN)
 
     assert read.number == 1
-    assert "before" in read.text
+    assert "prima" in read.text
 
 
 def test_a_version_nobody_uploaded_is_not_found(

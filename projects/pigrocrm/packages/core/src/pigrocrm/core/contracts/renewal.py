@@ -100,24 +100,26 @@ def _renewed_term(
             "un contratto senza scadenza non ha un termine da rinnovare",
             "un contratto con una data di fine",
         )
-    start = new_start if new_start is not None else end + timedelta(days=1)
-    if start <= end:
+    renewed_start = new_start if new_start is not None else end + timedelta(days=1)
+    if renewed_start <= end:
         raise RenewalRefused(
             "start",
             "il contratto rinnovato deve cominciare dopo la fine di quello che rinnova",
             f"> {end.isoformat()}",
         )
     if new_end is not None:
-        if new_end < start:
-            raise RenewalRefused("end", "non può precedere inizio", f">= {start.isoformat()}")
-        return start, new_end
+        if new_end < renewed_start:
+            raise RenewalRefused(
+                "end", "non può precedere inizio", f">= {renewed_start.isoformat()}"
+            )
+        return renewed_start, new_end
     if duration is not None:
         count, unit = duration
-        return start, _span(start, count, unit)
+        return renewed_start, _span(renewed_start, count, unit)
     months = _whole_months(start, end)
-    if months is not None and start.day == 1:
-        return start, _span(start, months, "months")
-    return start, start + (end - start)
+    if months is not None and renewed_start.day == 1:
+        return renewed_start, _span(renewed_start, months, "months")
+    return renewed_start, renewed_start + (end - start)
 
 
 class _Period(Protocol):

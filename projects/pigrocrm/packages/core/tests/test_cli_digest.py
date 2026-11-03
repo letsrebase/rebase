@@ -591,7 +591,7 @@ def test_every_space_the_command_walked_has_its_clock_moved_whatever_the_outcome
 
     for slug in (*SPACES, None):
         assert _clock(settings, slug) == (True, None), slug
-    assert "frozen_clock non scritto" not in capsys.readouterr().err
+    assert "orologio non scritto" not in capsys.readouterr().err
 
 
 def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
@@ -699,6 +699,6 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_the_digest_still_exits_zer
     assert cli.main(["digest", "--slug", UNO]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: frozen_clock non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
     assert f"{UNO}: inviato a 1" in captured.out
     assert _clock(settings, UNO) is None

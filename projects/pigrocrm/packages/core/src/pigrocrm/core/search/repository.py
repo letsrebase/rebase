@@ -6,7 +6,7 @@ the weight set as parameters, which is five dictionaries keyed by entity plus a 
 strictly more code than five explicit methods, and unreadable at the point where a plan
 goes wrong.
 
-`label` and `sottotitolo` are built **here**, from the entity's own columns. Not in
+`label` and `subtitle` are built **here**, from the entity's own columns. Not in
 the browser: composing "nome cognome" client-side is business logic in the frontend, and
 the whole point of the two-adapter architecture is that an MCP agent sees the same label a
 human does.
@@ -79,6 +79,9 @@ DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("name", Deal.name, WEIGHT_ID
 DOCUMENT_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("title", Document.title, WEIGHT_IDENTIFYING),
 )
+# What a person reads in place of the number of an invoice that has none yet.
+DRAFT_LABEL = "bozza"
+
 # One field, and `number` is deliberately not a second one: a fiscal number is matched by
 # equality, not by trigram, and a `ScoredField` is by definition the trigram surface. The
 # equality path is `_invoices_by_number` below.
@@ -230,7 +233,7 @@ class SearchRepository:
             )
             for row in rows
         ]
-        return SearchGroup(entity=entity, hits=hits, total=total, total_and_a_minimum=is_minimum)
+        return SearchGroup(entity=entity, hits=hits, total=total, total_is_minimum=is_minimum)
 
     # -- one branch per entity -------------------------------------------------
 
@@ -284,7 +287,7 @@ class SearchRepository:
             entity=group.entity,
             hits=self._with_customer_names(Deal, group.hits),
             total=group.total,
-            total_and_a_minimum=group.total_and_a_minimum,
+            total_is_minimum=group.total_is_minimum,
         )
 
     def _with_customer_names(self, model: _Model, hits: list[SearchHit]) -> list[SearchHit]:
@@ -311,7 +314,7 @@ class SearchRepository:
             .where(model.id.in_(row_ids))
         ).all()
         names: dict[UUID, str] = {row[0]: row[1] for row in pairs}
-        return [hit.model_copy(update={"sottotitolo": names.get(hit.id)}) for hit in hits]
+        return [hit.model_copy(update={"subtitle": names.get(hit.id)}) for hit in hits]
 
     def documents(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
         return self._group(
@@ -358,7 +361,7 @@ class SearchRepository:
             entity=group.entity,
             hits=self._with_customer_names(Invoice, group.hits),
             total=group.total,
-            total_and_a_minimum=group.total_and_a_minimum,
+            total_is_minimum=group.total_is_minimum,
         )
 
     def tasks(self, term: str, limit: int) -> SearchGroup:
@@ -401,7 +404,7 @@ class SearchRepository:
         prefix = (
             f"{row.year}/{row.number}"
             if row.year is not None and row.number is not None
-            else row.status
+            else DRAFT_LABEL
         )
         return f"{prefix} — {row.memo}" if row.memo else prefix
 
@@ -480,5 +483,5 @@ class SearchRepository:
             entity="invoice",
             hits=self._with_customer_names(Invoice, hits),
             total=min(found, COUNT_CEILING),
-            total_and_a_minimum=found > COUNT_CEILING,
+            total_is_minimum=found > COUNT_CEILING,
         )

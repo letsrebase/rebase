@@ -59,7 +59,9 @@ def test_resolving_returns_every_entity_the_address_touches(
     db_session: Session, seeded_open_stage_id: UUID
 ) -> None:
     customer = _customer(db_session, legal_name="Acme", email="info@acme.it")
-    person = Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+    person = Person(
+        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id
+    )
     db_session.add(person)
     db_session.flush()
     deal = Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
@@ -211,7 +213,9 @@ def test_resolving_nothing_runs_no_query(db_session: Session) -> None:
 
 def test_known_among_answers_only_for_the_candidates_it_is_given(db_session: Session) -> None:
     customer = _customer(db_session, legal_name="Acme", email="Info@Acme.it")
-    db_session.add(Person(first_name="Ada", last_name="B", email="ada@acme.it", customer_id=customer.id))
+    db_session.add(
+        Person(first_name="Ada", last_name="B", email="ada@acme.it", customer_id=customer.id)
+    )
     gone = _customer(db_session, legal_name="Gone", email="gone@acme.it")
     gone.deleted_at = datetime.now(UTC)
     db_session.flush()
@@ -234,7 +238,9 @@ def test_domains_taken_are_the_domains_the_crm_files_under_a_customer(
     db_session.add(
         Person(first_name="Ada", last_name="B", email="ada@studio-rossi.it", customer_id=acme.id)
     )
-    db_session.add(Person(first_name="Bob", last_name="B", email="bob@gmail.com", customer_id=acme.id))
+    db_session.add(
+        Person(first_name="Bob", last_name="B", email="bob@gmail.com", customer_id=acme.id)
+    )
     orphan = Person(first_name="Zed", last_name="Z", email="zed@senza-cliente.it")
     db_session.add(orphan)
     gone = _customer(db_session, legal_name="Gone", email="gone@archiviata.it")

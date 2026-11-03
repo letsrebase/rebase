@@ -274,7 +274,7 @@ def test_project_combines_the_schedule_and_the_renewal_assumption() -> None:
         contract,
         [card],
         assumption,
-        come_di=date(2026, 6, 1),
+        as_of=date(2026, 6, 1),
         date_from=date(2026, 1, 1),
         date_to=date(2027, 6, 1),
     )
@@ -298,7 +298,7 @@ def test_project_with_no_renewal_assumption_is_the_schedule_alone() -> None:
         contract,
         [card],
         None,
-        come_di=date(2026, 6, 1),
+        as_of=date(2026, 6, 1),
         date_from=date(2026, 1, 1),
         date_to=date(2027, 6, 1),
     )
@@ -314,7 +314,7 @@ def test_project_with_no_rate_cards_and_no_assumption_is_zero() -> None:
         contract,
         [],
         None,
-        come_di=date(2026, 6, 1),
+        as_of=date(2026, 6, 1),
         date_from=date(2026, 1, 1),
         date_to=date(2027, 6, 1),
     )
@@ -330,7 +330,7 @@ def test_an_open_ended_contracts_projection_does_not_depend_on_where_the_window_
     contract = _contract(end=None, termination_notice_days=30)
     card = _rate_card(valid_from=date(2026, 1, 1), delivery_period="monthly")
     assumption = _assumption(probability=50, expected_volume=Decimal("36500.00"))
-    kwargs = {"come_di": date(2026, 6, 1)}
+    kwargs = {"as_of": date(2026, 6, 1)}
 
     whole = project(
         contract, [card], assumption, date_from=date(2026, 8, 1), date_to=date(2028, 1, 1), **kwargs

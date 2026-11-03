@@ -180,13 +180,13 @@ def test_describe_reports_the_compilation_form_and_the_root_paths_needed(
 ) -> None:
     # `righe`/`nome`/`prezzo` are loop-relative (inside the `#each` body): describe
     # answers "what must the caller supply at the root", so only `sconto`, `righe`
-    # itself (the array a caller supplies) and `cliente.name` -- all root-level --
+    # itself (the array a caller supplies) and `cliente.nome` -- all root-level --
     # should appear in `used_journeys`; `nome`/`prezzo` describe the shape of each
     # element of `righe`, never something a caller provides directly.
     body = (
         "{{#if sconto}}Sconto applicato{{/if}}\n"
         "{{#each righe}}- {{nome}}: {{prezzo}}\n{{/each}}\n"
-        "Cliente: {{cliente.name}}"
+        "Cliente: {{cliente.nome}}"
     )
     service = TemplateService(db_session)
     created = service.create(

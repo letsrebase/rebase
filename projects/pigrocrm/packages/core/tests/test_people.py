@@ -597,7 +597,7 @@ def test_restoring_a_person_whose_customer_is_now_archived_is_refused(
     with pytest.raises(Conflict) as exc:
         service.restore(person.id, ADMIN)
     assert exc.value.details["entity"] == "person"
-    assert "customer" in exc.value.message
+    assert "cliente" in exc.value.message
 
 
 def test_restoring_the_customer_first_then_the_person_works(db_session: Session) -> None:
