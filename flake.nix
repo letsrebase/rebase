@@ -369,7 +369,7 @@
                   settings = {
                     timezone = "Europe/Rome";
                     mcp_full_access = false;
-                    solleciti_grace_days = 7;
+                    payment_reminders_grace_days = 7;
                   };
                   # A throwaway secret for a throwaway VM; in the store on purpose,
                   # where a real one must never be.
@@ -389,7 +389,7 @@
                 machine.succeed("curl -fsS http://localhost/health | grep -F '\"status\":\"ok\"'")
                 # The SPA shell, on its prefix and on a deep link a refresh would hit.
                 machine.succeed("curl -fsS http://localhost/app/ | grep -F '/app/assets/'")
-                machine.succeed("curl -fsS http://localhost/app/clienti/some-uuid | grep -F '/app/assets/'")
+                machine.succeed("curl -fsS http://localhost/app/customers/some-uuid | grep -F '/app/assets/'")
                 machine.succeed("curl -fsS http://localhost/app/mark.svg >/dev/null")
                 # The magic link: the shell on /app/verify, the old /app/entra sent
                 # there with its query string, on the root and under a space, and the
@@ -455,26 +455,26 @@
               let
                 # A minimal document the sweep has work on (REB-403, Greptile's review
                 # of the first cut): one user, one freelancer, one framework agreement
-                # `inviato` with an envelope, every NOT NULL column filled, every check
+                # `sent` with an envelope, every NOT NULL column filled, every check
                 # constraint satisfied (`ck_contract_documents_envelope_item` wants
-                # `documenso_item_id` set alongside `documenso_id`; `kind = 'quadro'`
-                # wants `match_id`/`numero` both null). Verified by hand first against a
+                # `documenso_item_id` set alongside `documenso_id`; `kind = 'framework'`
+                # wants `match_id`/`number` both null). Verified by hand first against a
                 # throwaway Postgres with the same migrations (see the report).
                 sweepFixtureSql = pkgs.writeText "rebase-hub-sweep-fixture.sql" ''
                   WITH u AS (
-                    INSERT INTO users (id, email, nome, cognome, role, attivo)
+                    INSERT INTO users (id, email, first_name, last_name, role, active)
                     VALUES (gen_random_uuid(), 'sweep-test@example.com', 'Test', 'Sweep', 'member', true)
                     RETURNING id
                   ), f AS (
-                    INSERT INTO freelancers (id, user_id, links, stato, compilata_da)
-                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'nuovo', 'persona' FROM u
+                    INSERT INTO freelancers (id, user_id, links, status, filled_by)
+                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'new', 'person' FROM u
                     RETURNING id
                   )
                   INSERT INTO contract_documents
-                    (id, kind, freelancer_id, text_version, testo_bozza, data, pdf, stato,
+                    (id, kind, freelancer_id, text_version, draft_text, data, pdf, status,
                      documenso_id, documenso_item_id, created_by)
-                  SELECT gen_random_uuid(), 'quadro', f.id, '1.0', false, '{}'::jsonb,
-                         '\x255044462d312e34'::bytea, 'inviato',
+                  SELECT gen_random_uuid(), 'framework', f.id, '1.0', false, '{}'::jsonb,
+                         '\x255044462d312e34'::bytea, 'sent',
                          'env_test_sweep', 'item_test_sweep', u.id
                   FROM f, u;
                 '';

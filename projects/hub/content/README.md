@@ -3,14 +3,14 @@
 Source text for the perks a member downloads and the contracts a member signs, kept
 apart from the apps because it is prose reviewed on its own terms, not markup or code.
 
-- `guida-primi-passi-freelance.md`: the guide to the first steps as a freelancer, the
+- `guide-first-steps-freelance.md`: the guide to the first steps as a freelancer, the
   community's second perk (ORB-69). Italian, because it is what a member reads, not what
   the repository says about itself. Approved by Lorenzo on 2026-09-10 (PR #8).
-- `contratti/`: the example data and the ignored local files for the contract between
+- `contracts/`: the example data and the ignored local files for the contract between
   rebase and a freelancer (roadmap #285, REB-386). The two texts moved to
   `../packages/core/src/rebase_core/contracts/texts/` in REB-387, because the hub
   typesets them at request time and the API image carries only `packages/`:
-  `contratto-quadro.md` is signed once and holds every rule; `lettera-di-incarico.md` is
+  `framework-agreement.md` is signed once and holds every rule; `engagement-letter.md` is
   signed per engagement and holds the client, the work, the dates and the numbers.
   Italian for the same reason. Final since 2026-09-24, see [The contracts](#the-contracts)
   below.
@@ -18,7 +18,7 @@ apart from the apps because it is prose reviewed on its own terms, not markup or
 ## How a file here becomes something a member downloads
 
 `../tools/build_guide_pdf.py` typesets this Markdown with pandoc and Typst into
-`../packages/core/src/rebase_core/perks/`, from where `GET /api/hub/me/guida` hands it
+`../packages/core/src/rebase_core/perks/`, from where `GET /api/hub/me/guide` hands it
 to a resolved member session and 401s everybody else. It is a perk, so there is no public
 URL for it: the landing on `letsrebase.com` announces it and links to the wizard.
 
@@ -65,30 +65,30 @@ Two markers, both handled by `rebase_core.contracts.fields` (`../tools/build_con
 
 ```
 uv run python projects/hub/tools/build_contract_pdf.py                       # every text, blank
-uv run python projects/hub/tools/build_contract_pdf.py lettera-di-incarico \
-  --data projects/hub/content/contratti/incarico.esempio.json               # one, filled
+uv run python projects/hub/tools/build_contract_pdf.py engagement-letter \
+  --data projects/hub/content/contracts/engagement.example.json               # one, filled
 ```
 
-The laptop's PDFs land in `contratti/dist/`, which git ignores; the hub stores its own per
+The laptop's PDFs land in `contracts/dist/`, which git ignores; the hub stores its own per
 document, in its database (REB-387). Unlike the guide, nothing is committed or locked.
 `texts/rebase.json`, package data beside the texts, holds rebase's company data
 and the defaults every letter starts from (the payment term: 30 days from the end of the
 invoice's month); its `null`s wait for the SRL (roadmap #284). Until then the data of
-whoever signs for rebase goes in `contratti/rebase.local.json`, which git ignores and the
+whoever signs for rebase goes in `contracts/rebase.local.json`, which git ignores and the
 build reads over `rebase.json` when it is there: this repository is public. `compenso` is
 a JSON number, and the build refuses one given as text, not above zero, or with more than
 two decimals. The payment term is written by the build from `giorni-pagamento` and
 `fine-mese`, at most 30 days from the end of the month or 60 from the invoice, so no letter
 can print a term that article 7.1 and law 81/2017 forbid.
-`incarico.esempio.json` is fiction and names every field either letter asks for, which
+`engagement.example.json` is fiction and names every field either letter asks for, which
 `packages/core/tests/test_contract_pdf.py` checks. Real data names a real person and a
 real client: keep it outside the repository or in a `*.local.json`, which git ignores.
 
 Since REB-687 the package holds four texts: the two above and their occasional twins for
-a member who works without a partita IVA. `contratto-quadro-occasionale.md` is the
+a member who works without a partita IVA. `framework-agreement-occasional.md` is the
 ordinary framework agreement with the Collaboratore in place of the Professionista, the
 ricevuta in place of the fattura and the new article 5.7 on the 5.000 euro threshold;
-`lettera-di-incarico-occasionale.md` names its collaborator by the codice fiscale, and the
+`engagement-letter-occasional.md` names its collaborator by the codice fiscale, and the
 build counts its payment term from the receipt. Both are `status: final` at version 1.0.
 The points left for the accountant before the first occasional letter leaves are in the
 design record's «Outside the code».

@@ -4,6 +4,8 @@ The code of this repository is English in every identifier: database tables, col
 
 This file is the single mapping from the Italian word to the English identifier. One Italian term has one English identifier everywhere; the few exceptions are listed under "Terms that need context" and are decided by project or by whether the record is a person. The tables below list every renamed name. The source locations that the first version of this file carried were those of the tree at the time (origin/main e9074163) and went stale when modules were split, so they are not kept.
 
+`tooling/english-lint` holds the rule: it fails a pull request on an Italian word in an identifier, a file name, a comment or a docstring (string literals are never read). Its vocabulary is the Italian side of this file and its exceptions, each with a reason, are `tooling/english-lint/allowlist.py`.
+
 ## How names are built
 
 - Python, SQL and JSON use `snake_case`; TypeScript uses `camelCase` for values and `PascalCase` for components and types; URLs and file names under `routes/` use `kebab-case`.

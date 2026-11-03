@@ -103,7 +103,7 @@ jobs:
       # Deliberately not /api/tenants/root: that one answers from settings alone and
       # would report a healthy deploy with the database on the floor. This one reads
       # the registry, so it fails when Postgres does.
-      health-url: http://127.0.0.1:8081/api/tenants/zzz-healthcheck/disponibile
+      health-url: http://127.0.0.1:8081/api/tenants/zzz-healthcheck/available
       url: https://preview.pigro.letsrebase.com
       # The role password the API connects as (REB-634): a secret the compose file
       # requires, templated into the host `.env` from the environment secret of the
@@ -131,7 +131,7 @@ jobs:
       environment: pigrocrm-production
       compose-dir: projects/pigrocrm
       compose-project: pigrocrm
-      health-url: http://127.0.0.1:8080/api/tenants/zzz-healthcheck/disponibile
+      health-url: http://127.0.0.1:8080/api/tenants/zzz-healthcheck/available
       url: https://pigro.letsrebase.com
       # Same managed secrets as the preview, from production's own environment
       # (REB-650). Every name must be in the `S_*` union of `_deploy-compose.yml`.

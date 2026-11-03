@@ -112,12 +112,14 @@ class PathsAndAllowlist(Tree):
         path = self.write("projects/pigrocrm/apps/web/src/routes/app/clienti.tsx", "export {}\n")
         self.assertEqual([f for f in self.lint(path) if f.kind == "path"], [])
 
-    def test_allowlist_is_limited_to_its_words(self) -> None:
-        path = self.write(
-            "projects/pigrocrm/packages/core/src/pigrocrm/core/invoices/fatturapa/x.py",
-            "cedente = 1\nannullata = 2\n",
-        )
-        self.assertEqual({w for _, w in self.words(path)}, {"annullata"})
+    def test_allowlist_is_limited_to_its_words_and_kinds(self) -> None:
+        directory = "projects/pigrocrm/packages/core/src/pigrocrm/core/invoices/fatturapa"
+        tags = self.write(f"{directory}/a.py", "x = 1  # Sequence: Anagrafica, Divisa, Natura, Imposta\n")
+        other = self.write(f"{directory}/b.py", "x = 1  # Sequence: Anagrafica, Divisa, annullata, emessa\n")
+        name = self.write(f"{directory}/c.py", "cedente = 1\n")
+        self.assertEqual(self.lint(tags), [])
+        self.assertEqual({w for _, w in self.words(other)}, {"Anagrafica"})
+        self.assertIn(("identifier", "cedente"), self.words(name))
 
     def test_proper_noun_is_not_an_italian_word(self) -> None:
         path = self.write("a/proper.py", "class FatturaPAExporter:\n    fatturapa_version = 1\n")

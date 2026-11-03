@@ -359,8 +359,8 @@ psql_hub -c 'CREATE DATABASE pigro_t_alpha' >/dev/null
 psql_hub -c 'CREATE DATABASE pigro_t_beta' >/dev/null
 for space in alpha beta; do
   docker exec -i "$hubdb" psql -v ON_ERROR_STOP=1 -U rebase -d "pigro_t_$space" -At <<SQL >/dev/null
-CREATE TABLE fatture (id serial PRIMARY KEY, numero text NOT NULL);
-INSERT INTO fatture (numero) SELECT '$space-' || i FROM generate_series(1, 5) AS i;
+CREATE TABLE invoices (id serial PRIMARY KEY, number text NOT NULL);
+INSERT INTO invoices (number) SELECT '$space-' || i FROM generate_series(1, 5) AS i;
 SQL
 done
 crm_log=$(compose run --rm --no-deps -T --entrypoint /bin/bash -e BACKUP_NAME=pigrocrm -e BACKUP_ALL_DATABASES=true hub-backup /scripts/backup.sh)
@@ -380,7 +380,7 @@ grep -q 'CREATE ROLE rebase' "$tmp/crm-restored/globals.sql" || { echo "FAIL: gl
 for space in alpha beta; do
   scratch_psql -d restored -c "CREATE DATABASE pigro_t_$space" >/dev/null
   docker exec -i "$scratch_name" pg_restore --exit-on-error --no-owner --no-acl -U documenso -d "pigro_t_$space" < "$tmp/crm-restored/pigro_t_$space.dump"
-  [ "$(docker exec -i "$scratch_name" psql -U documenso -d "pigro_t_$space" -At -c 'SELECT count(*) FROM fatture')" = 5 ] \
+  [ "$(docker exec -i "$scratch_name" psql -U documenso -d "pigro_t_$space" -At -c 'SELECT count(*) FROM invoices')" = 5 ] \
     || { echo "FAIL: the restored space $space lacks its rows" >&2; exit 1; }
 done
 # A file that does not match its checksum is refused, and so is a bundle with one missing from the sums.

@@ -67,7 +67,7 @@ PUBLISHING_DECORATORS = {
 }  # fmt: skip
 
 _WORD_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
-_QUOTED_RE = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|«[^»\n]*»|“[^”\n]*”|'[^'\n]{2,}'")
+_QUOTED_RE = re.compile(r"`[^`\n]*`|\"[^\"]{0,400}\"|«[^»]{0,400}»|“[^”]{0,400}”|'[^'\n]{2,}'")
 _URL_RE = re.compile(r"\S+://\S+")
 _CODEISH_RE = re.compile(r"\S*[_/\\.:()\[\]{}=<>$#@]\S*")
 _ACCENT_RE = re.compile(r"[àèéìíòóùú]")
@@ -176,7 +176,7 @@ def _check_name(path: str, line: int, name: str, kind: str, out: list[Finding]) 
 
 def _check_comment(path: str, line: int, text: str, what: str, out: list[Finding]) -> None:
     flagged, hits = comment_is_italian(text)
-    if flagged and not any(allowed(path, "comment", _fold(h)) for h in hits):
+    if flagged and not all(allowed(path, "comment", _fold(h)) for h in hits):
         sample = " ".join(text.split())[:70]
         out.append(Finding(path, line, "comment", hits[0], f"Italian {what}: \"{sample}\" ({', '.join(hits[:4])})"))
 
