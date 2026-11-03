@@ -34,7 +34,7 @@ function renderWithClient(ui: ReactElement) {
 const BASE_DEAL: Deal = {
   id: 'd1',
   legal_entity_id: 'a-1',
-  nome: 'Sito vetrina',
+  name: 'Sito vetrina',
   customer_id: 'cust-1',
   pipeline_stage_id: 's1',
   expected_value: null,
@@ -96,7 +96,7 @@ describe('DealForm', () => {
     // resent unchanged, not stripped out -- the same "idempotent resend" this
     // form gives every other already-set field (see `submit`'s own comment).
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Sito vetrina',
+      name: 'Sito vetrina',
       probability: 10,
       custom_fields: { source: 'referral' },
     })
@@ -105,7 +105,7 @@ describe('DealForm', () => {
   /**
    * The defect this guards, identical in shape to `CustomerForm`/`PersonForm`'s
    * own (reproduced live there first): archive a field definition while a
-   * record still carries a value for it, open Modifica, press Salva with
+   * record still carries a value for it, open Edit, press Save with
    * nothing else changed. A flat form state would re-derive "is this key
    * custom?" from the *active* schema, reclassify the value as native, and
    * 422 on `DealUpdate`'s `extra="forbid"`.
@@ -128,7 +128,7 @@ describe('DealForm', () => {
     const payload = submitted(onSubmit)
     expect(payload).not.toHaveProperty('source')
     expect(payload.custom_fields).toEqual({})
-    expect(payload).toEqual({ nome: 'Sito vetrina', probability: 10, custom_fields: {} })
+    expect(payload).toEqual({ name: 'Sito vetrina', probability: 10, custom_fields: {} })
   })
 
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
@@ -141,7 +141,7 @@ describe('DealForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Progetto nuovo',
+      name: 'Progetto nuovo',
       custom_fields: { urgent: false },
     })
   })
@@ -159,7 +159,7 @@ describe('DealForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Progetto nuovo',
+      name: 'Progetto nuovo',
       note: 'Contatto arrivato dal sito',
       custom_fields: {},
     })
@@ -206,7 +206,7 @@ describe('DealForm', () => {
     const payload = submitted(onSubmit)
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({
-      nome: 'Sito vetrina 2',
+      name: 'Sito vetrina 2',
       probability: 10,
       custom_fields: {},
     })
@@ -235,7 +235,7 @@ describe('DealForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: '',
+      name: '',
       probability: 10,
       custom_fields: { source: null },
     })
@@ -246,7 +246,7 @@ describe('DealForm', () => {
     // decimal and not a date, so before this these three keys came back as a 422 from
     // Pydantic and the estimate the user was trying to take back stayed put -- reading,
     // in the budget report, as an infinite overrun. `null` is what clears them now, and
-    // `nome` in the same payload proves the text spelling did not move.
+    // `name` in the same payload proves the text spelling did not move.
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,
@@ -272,7 +272,7 @@ describe('DealForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: '',
+      name: '',
       probability: 10,
       budgeted_hours: null,
       budgeted_value: null,
@@ -365,7 +365,7 @@ describe('DealForm', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       expect(submitted(onSubmit)).toEqual({
-        nome: 'Progetto ACME',
+        name: 'Progetto ACME',
         customer_id: 'cust-1',
         custom_fields: {},
       })
@@ -393,8 +393,8 @@ describe('DealForm', () => {
 
 describe('the «Responsabile» picker (REB-780)', () => {
   const OWNERS = [
-    { id: 'u-1', nome: 'Giulia' },
-    { id: 'u-2', nome: 'Marco' },
+    { id: 'u-1', name: 'Giulia' },
+    { id: 'u-2', name: 'Marco' },
   ]
 
   it('shows the stored owner and sends nothing while it is unchanged', async () => {
@@ -456,7 +456,7 @@ describe('the «Responsabile» picker (REB-780)', () => {
 describe('«Nessuno» on the owner picker (REB-780)', () => {
   it('clears the owner of an existing deal, and is not offered on a new one', async () => {
     const onSubmit = vi.fn()
-    const owners = [{ id: 'u-1', nome: 'Giulia' }]
+    const owners = [{ id: 'u-1', name: 'Giulia' }]
     const { unmount } = renderWithClient(
       <DealForm
         title="Modifica deal"

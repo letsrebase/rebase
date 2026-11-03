@@ -23,7 +23,7 @@ function cellValue(column: ReturnType<typeof buildPersonColumns>[number], person
 
 const BASE_PERSON: Person = {
   id: 'p1',
-  nome: 'Mario',
+  first_name: 'Mario',
   last_name: null,
   email: null,
   phone: null,
@@ -100,14 +100,14 @@ describe('buildPersonColumns', () => {
   })
 
   it('keeps zero and false as real custom-field values, not a dash', () => {
-    const punteggio: FieldDefinition = {
+    const scoreField: FieldDefinition = {
       key: 'score',
       label: 'Punteggio',
       type: 'number',
       required: false,
       options: [],
     }
-    const [, , , , , score] = buildPersonColumns([punteggio])
+    const [, , , , , score] = buildPersonColumns([scoreField])
     expect(cellValue(score!, { ...BASE_PERSON, custom_fields: { score: 0 } })).toBe('0')
   })
 })
@@ -195,7 +195,7 @@ describe('displayNative', () => {
 
 /**
  * The first cell of a person's row: initials, the full name, and the company under it
- * when the row brought one (design spec §4). The accessor stays the bare `nome`, which
+ * when the row brought one (design spec §4). The accessor stays the bare `first_name`, which
  * is what the tests above read; this is the other half.
  */
 describe('the person as an entity in the first cell', () => {
@@ -208,30 +208,30 @@ describe('the person as an entity in the first cell', () => {
   }
 
   it('shows the whole name, not only the first name the accessor carries', () => {
-    renderName({ ...BASE_PERSON, nome: 'Mario', last_name: 'Rossi' })
+    renderName({ ...BASE_PERSON, first_name: 'Mario', last_name: 'Rossi' })
     expect(screen.getByText('Mario Rossi')).toBeInTheDocument()
   })
 
   it('takes the initials from both names, which is the whole point of a chip', () => {
-    renderName({ ...BASE_PERSON, nome: 'Mario', last_name: 'Rossi' })
+    renderName({ ...BASE_PERSON, first_name: 'Mario', last_name: 'Rossi' })
     expect(screen.getByText('MR')).toBeInTheDocument()
   })
 
   /** A surname that is `null` or the explicit `""` a cleared column leaves behind must
    *  not produce a trailing space, nor a second initial taken from nothing. */
   it('reads a person with no surname as just their name, with one initial', () => {
-    renderName({ ...BASE_PERSON, nome: 'Mario', last_name: '' })
+    renderName({ ...BASE_PERSON, first_name: 'Mario', last_name: '' })
     expect(screen.getByText('Mario')).toBeInTheDocument()
     expect(screen.getByText('M')).toBeInTheDocument()
   })
 
   it('puts the company on the quiet second line when the row carries one', () => {
-    renderName({ ...BASE_PERSON, nome: 'Mario', last_name: 'Rossi', customer_legal_name: 'ACME Srl' })
+    renderName({ ...BASE_PERSON, first_name: 'Mario', last_name: 'Rossi', customer_legal_name: 'ACME Srl' })
     expect(screen.getByText('ACME Srl')).toBeInTheDocument()
   })
 
   it('shows no second line, and no dash standing in for one, when there is no company', () => {
-    renderName({ ...BASE_PERSON, nome: 'Mario', last_name: 'Rossi' })
+    renderName({ ...BASE_PERSON, first_name: 'Mario', last_name: 'Rossi' })
     expect(screen.queryByText('—')).not.toBeInTheDocument()
   })
 })

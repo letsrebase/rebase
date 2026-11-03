@@ -106,7 +106,7 @@ describe('toContractBody', () => {
 
   it('clears both payment terms when the contract goes back to the customer’s', () => {
     const initial = contractToFormValues(CONTRACT)
-    const body = toContractBody({ ...initial, payment_proprio: false }, initial, nothingRendered)
+    const body = toContractBody({ ...initial, payment_custom: false }, initial, nothingRendered)
     expect(body).toEqual({ payment_days: null, payment_end_of_month: null })
   })
 
@@ -119,12 +119,12 @@ describe('toContractBody', () => {
   it('writes the expense policy as the tagged shape the trigger reads', () => {
     const initial = contractToFormValues(CONTRACT)
     const body = toContractBody(
-      { ...initial, expenses_kind: 'reimbursable', expenses_preautorizzazione: true },
+      { ...initial, expenses_kind: 'reimbursable', expenses_preauthorization: true },
       initial,
       nothingRendered,
     )
     expect(body).toEqual({
-      expense_policy: { kind: 'reimbursable', richiede_preautorizzazione: true },
+      expense_policy: { kind: 'reimbursable', requires_pre_authorization: true },
     })
   })
 
@@ -134,7 +134,7 @@ describe('toContractBody', () => {
   })
 
   it('leaves a stored custom value whose definition is archived out of the body', () => {
-    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { vecchio: 'x' } })
+    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { legacy: 'x' } })
     expect(toContractBody(initial, initial, nothingRendered)).toEqual({})
   })
 
@@ -154,7 +154,7 @@ describe('toContractBody review fixes', () => {
     const initial = contractToFormValues(CONTRACT)
     const body = toContractBody({ ...initial, expenses_cap: '600,50' }, initial, () => false)
     expect(body).toEqual({
-      expense_policy: { kind: 'reimbursable_with_cap', richiede_preautorizzazione: false, amount_cap: '600.50' },
+      expense_policy: { kind: 'reimbursable_with_cap', requires_pre_authorization: false, amount_cap: '600.50' },
     })
   })
 

@@ -38,15 +38,15 @@ function failed(error: unknown, status: number) {
 const CUSTOMER_ID = '0192f3b2-8c1a-7c3d-9f4e-1a2b3c4d5e6f'
 
 function results(
-  overrides: Partial<{ total: number; total_and_a_minimum: boolean }> = {},
+  overrides: Partial<{ total: number; total_is_minimum: boolean }> = {},
 ): SearchResults {
   return {
-    deadline: 'rossi',
+    term: 'rossi',
     groups: [
       {
         entity: 'customer',
         total: overrides.total ?? 1,
-        total_and_a_minimum: overrides.total_and_a_minimum ?? false,
+        total_is_minimum: overrides.total_is_minimum ?? false,
         hits: [
           {
             entity: 'customer',
@@ -58,9 +58,9 @@ function results(
           },
         ],
       },
-      { entity: 'person', total: 0, total_and_a_minimum: false, hits: [] },
-      { entity: 'deal', total: 0, total_and_a_minimum: false, hits: [] },
-      { entity: 'document', total: 0, total_and_a_minimum: false, hits: [] },
+      { entity: 'person', total: 0, total_is_minimum: false, hits: [] },
+      { entity: 'deal', total: 0, total_is_minimum: false, hits: [] },
+      { entity: 'document', total: 0, total_is_minimum: false, hits: [] },
     ],
   }
 }
@@ -150,12 +150,12 @@ describe('CommandPalette', () => {
         deadline: 'proposte',
         groups: [
           {
-            entity: 'attivita',
+            entity: 'task',
             total: 1,
-            total_and_a_minimum: false,
+            total_is_minimum: false,
             hits: [
               {
-                entity: 'attivita',
+                entity: 'task',
                 id: TASK_ID,
                 label: 'Preparare le proposte',
                 subtitle: '30/10/2026',
@@ -214,7 +214,7 @@ describe('CommandPalette', () => {
 
   it('says "oltre 200" rather than "200" when the count is a minimum', async () => {
     vi.mocked(api.GET).mockResolvedValue(
-      ok(results({ total: 200, total_and_a_minimum: true })),
+      ok(results({ total: 200, total_is_minimum: true })),
     )
     renderPalette()
     await type('rossi')
@@ -226,7 +226,7 @@ describe('CommandPalette', () => {
 
   it('says there is nothing, naming the term, when every group is empty', async () => {
     const empty: SearchResults = {
-      deadline: 'zzzqqq',
+      term: 'zzzqqq',
       groups: results().groups.map((group) => ({ ...group, hits: [], total: 0 })),
     }
     vi.mocked(api.GET).mockResolvedValue(ok(empty))

@@ -31,14 +31,14 @@ import {
 const DRIVE_ID_PATTERN = /^[A-Za-z0-9_-]{10,128}$/
 
 const STATUS_LABEL: Record<string, string> = {
-  active: 'active',
+  active: 'attiva',
   expired: 'consenso scaduto',
   revoked: 'consenso revocato',
   disconnected: 'scollegata',
 }
 
 /**
- * Impostazioni → Google Drive.
+ * Settings → Google Drive.
  *
  * The same four-screen order as `GmailPanel`, for the same reason -- a control
  * rendered from a health response that never arrived would offer to change (or delete)
@@ -57,13 +57,13 @@ const STATUS_LABEL: Record<string, string> = {
  *    and `expiring` is a working credential with a date attached, where hiding the
  *    editor would remove a control over a warning about next week.
  *
- * **Open to a collaboratore, one field short (REB-457).** The credential on this page
+ * **Open to a collaborator, one field short (REB-457).** The credential on this page
  * is the viewer's own (`google_drive_accounts.user_id`), and connecting, disconnecting
- * and the read roots all act on that row alone, under `require_write`: a collaboratore
+ * and the read roots all act on that row alone, under `require_write`: a collaborator
  * gets them as an admin does. The write folder is different. `DriveRepository.
  * storage_account` picks the space's one place for generated documents from the rows of
  * the users who are admins now, so it is the space's setting, and `set_roots` refuses
- * `storage_folder_id` from anyone else (`require_admin`). A collaboratore therefore does
+ * `storage_folder_id` from anyone else (`require_admin`). A collaborator therefore does
  * not see that field, is told who chooses it, and their «Salva» omits
  * `storage_folder_id`, which the `PATCH` reads as "leave it alone" (`DriveRootsUpdate`).
  * Their own row never supplies the space's storage, so their disconnect confirmation has
@@ -231,8 +231,8 @@ function ActionError({ error }: { error: unknown }) {
 }
 
 /**
- * REB-562. What `DriveHealth.space_storage` answers, read as it comes -- the id of
- * which admin's row is not derived here, only what the server already resolved
+ * REB-562. What `DriveHealth.space_storage` answers, read as it comes: which
+ * admin's row it is is not derived here, only what the server already resolved
  * (`GoogleDriveAccountService.space_storage`, from `DriveRepository.storage_holder`).
  * Rendered only when `DrivePanel` finds the field present at all (never `null` in
  * practice for the admin actor this component is reached for; see that field's own
@@ -242,8 +242,7 @@ function ActionError({ error }: { error: unknown }) {
  * land there: `storage_holder`'s own query proves the row is `active` and names a
  * folder, not that the holder's credential still carries `drive.file` -- a re-consent
  * that dropped the scope leaves a working, `active` credential that cannot actually
- * write. So the sentence names the folder as configured ("cartella di scrittura dei
- * documenti: quella di ...") and only *adds* "al momento non raggiungibile" when
+ * write. So the sentence names the folder as configured («cartella di scrittura dei documenti: quella di ...») and only *adds* «al momento non raggiungibile» when
  * `holder.reachable` says the write itself would fail. And when nothing is in effect,
  * the sentence does not claim no admin ever chose one -- the row could be sitting on a
  * revoked or expired account, chosen once and then broken -- only that no write is

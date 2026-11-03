@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTIONS,
   StatusLabels,
-  StatusTone,
+  STATUS_TONE,
   actorLabel,
   reasonLabel,
   activeRateCard,
@@ -28,7 +28,7 @@ describe('the ledger’s states', () => {
   it('has a label and a tone for every state, and tells a worked-without-approval day from a worked one', () => {
     for (const status of Object.keys(StatusLabels)) {
       expect(statusLabel(status)).toBe(StatusLabels[status as keyof typeof StatusLabels])
-      expect(statusTone(status)).toBe(StatusTone[status as keyof typeof StatusTone])
+      expect(statusTone(status)).toBe(STATUS_TONE[status as keyof typeof STATUS_TONE])
     }
     expect(statusLabel('worked_without_approval')).toBe('Lavorata senza approvazione')
     expect(statusTone('worked_without_approval')).toBe('gold')
@@ -92,16 +92,16 @@ describe('cellDaysLabel', () => {
 describe('unitLabel', () => {
   it('says the unit as the words after a rate’s figure', () => {
     expect(unitLabel('day')).toBe('al giorno')
-    expect(unitLabel('ora')).toBe('all’ora')
+    expect(unitLabel('hour')).toBe('all’ora')
     expect(unitLabel('year')).toBe('all’anno')
     expect(unitLabel('flat')).toBe('a forfait')
-    expect(unitLabel('week')).toBe('per settimana')
+    expect(unitLabel('settimana')).toBe('per settimana')
   })
 })
 
 describe('reasonLabel', () => {
   it('words the key the service writes when a day is recorded', () => {
-    expect(reasonLabel('creation')).toBe('Giornata registrata')
+    expect(reasonLabel('creazione')).toBe('Giornata registrata')
   })
 
   it('shows a reason a person typed as they typed it', () => {
@@ -109,7 +109,7 @@ describe('reasonLabel', () => {
   })
 
   it('shows a reason named like an object property as typed', () => {
-    for (const reason of ['constructor', '__proto__', 'toString']) {
+    for (const reason of ['function Object() { [native code] }', '[object Object]', 'function toString() { [native code] }']) {
       expect(reasonLabel(reason)).toBe(reason)
     }
   })

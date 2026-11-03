@@ -164,7 +164,7 @@ test('archiving a field a record still holds a value for does not lock that reco
   expect(response.ok()).toBe(true)
   const customer = await response.json()
   expect(customer.city).toBe('Milano')
-  expect(customer.custom_fields.code_interno).toBe('RIS-042')
+  expect(customer.custom_fields['codice_interno']).toBe('RIS-042')
 })
 
 /**

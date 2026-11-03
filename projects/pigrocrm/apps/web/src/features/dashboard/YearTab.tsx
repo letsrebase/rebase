@@ -23,7 +23,7 @@ import type { Period } from './period'
 /** The year the picker's start date names, the same reading the economic tab has: a
  *  date, not an amount, so going through `Date` is not the coercion criterion 14 bans. */
 function yearOf(period: Period): number {
-  return new Date(`${period.da}T00:00:00`).getFullYear()
+  return new Date(`${period.from}T00:00:00`).getFullYear()
 }
 
 /** The regime an invoice froze at issue, in the words the settings screen uses. A code
@@ -53,7 +53,7 @@ function stampDutyDeclarations(register: YearRegisterRow[]): { sentence: string;
 }
 
 function Register({ overview }: { overview: YearOverview }) {
-  const { register, total } = overview
+  const { register = [], total } = overview
   if (register.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">Nessuna fattura emessa nel {overview.year}.</p>
@@ -117,7 +117,7 @@ function Register({ overview }: { overview: YearOverview }) {
         <TableFooter>
           <TableRow>
             <TableCell colSpan={3} className="font-semibold">
-              Totale registro · {total.invoices} {total.invoices === 1 ? 'invoice' : 'invoices'}
+              Totale registro · {total.invoices} {total.invoices === 1 ? 'fattura' : 'fatture'}
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
               {money(total.taxable_amount)}
@@ -143,7 +143,7 @@ function Register({ overview }: { overview: YearOverview }) {
               <li key={declaration.sentence}>
                 «{declaration.sentence}»{' '}
                 <span className="tabular-nums">
-                  ({declaration.invoices} {declaration.invoices === 1 ? 'invoice' : 'invoices'})
+                  ({declaration.invoices} {declaration.invoices === 1 ? 'fattura' : 'fatture'})
                 </span>
               </li>
             ))}
@@ -155,8 +155,8 @@ function Register({ overview }: { overview: YearOverview }) {
 }
 
 /**
- * One azienda's year as the accountant reads it (REB-757): the revenue by regime and by
- * tax treatment, the register of the issued invoices with the stamp duty and the rivalsa
+ * One legal entity's year as the accountant reads it (REB-757): the revenue by regime and by
+ * tax treatment, the register of the issued invoices with the stamp duty and the surcharge
  * apart, and the CSV of the same lines.
  *
  * The register year is the year the invoices were numbered in (`year`), the universe the
@@ -165,7 +165,7 @@ function Register({ overview }: { overview: YearOverview }) {
  * invoices' own words, printed as stored: rewording them here would put on a page the
  * accountant reads a sentence no document ever carried.
  *
- * `quiet` is «tutte» with several aziende, where the tab draws one block per azienda: one
+ * `quiet` is «tutte» with several legal entities, where the tab draws one block per legal entity: one
  * the API has no register for (404) draws nothing, and one with nothing issued says so
  * under its own name, so the tab is never blank.
  */
@@ -197,7 +197,7 @@ export function YearPanel({
   }
   const overview = query.data
   // The azienda the file is of: the block's own, else the one the sidebar selected. The
-  // server resolves the only azienda of a one-azienda space by itself, so nothing is sent.
+  // server resolves the only legal entity of a one-legal-entity space by itself, so nothing is sent.
   const csvLegalEntity = legalEntityId ?? selected
 
   return (
@@ -307,9 +307,9 @@ export function YearPanel({
 }
 
 /**
- * The «Anno» tab: the year of the period picker, one block per azienda when the sidebar
- * says «Tutte» on a space with several (a register is numbered per azienda, and two
- * aziende's invoices are never in one file).
+ * The «Anno» tab: the year of the period picker, one block per legal entity when the sidebar
+ * says «Tutte» on a space with several (a register is numbered per legal entity, and two
+ * legal entities' invoices are never in one file).
  */
 export function YearTab({ period }: { period: Period }) {
   const year = yearOf(period)
@@ -324,7 +324,7 @@ export function YearTab({ period }: { period: Period }) {
             key={legal_entity.id}
             year={year}
             legalEntityId={legal_entity.id}
-            title={legal_entity.nome}
+            title={legal_entity.name}
             quiet
           />
         ))

@@ -64,11 +64,11 @@ describe('the customer as an entity in the first cell', () => {
 
 describe('the «Azienda» column (REB-625)', () => {
   const LEGAL_ENTITIES = [
-    { id: 'a-1', nome: 'humancraft' },
-    { id: 'a-2', nome: 'rebase' },
+    { id: 'a-1', name: 'humancraft' },
+    { id: 'a-2', name: 'rebase' },
   ] as NonNullable<Parameters<typeof buildCustomerColumns>[1]>['legal_entities']
 
-  it('is absent without the option, so a one-azienda space keeps its five columns', () => {
+  it('is absent without the option, so a one-legal-entity space keeps its five columns', () => {
     const headers = buildCustomerColumns([]).map((column) => column.header)
     expect(headers).not.toContain('Azienda')
   })

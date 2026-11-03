@@ -64,7 +64,7 @@ const TIPI_VARIABLE = [
  *  while being typed, because a user editing a list wants to type commas, not
  *  press a button per entry. It becomes an array only on submit. */
 interface VariableDraft {
-  nome: string
+  name: string
   label: string
   type: string
   required: boolean
@@ -73,7 +73,7 @@ interface VariableDraft {
 
 function draftFrom(variable: TemplateVariable): VariableDraft {
   return {
-    nome: variable.nome,
+    name: variable.name,
     label: variable.label,
     type: variable.type,
     required: variable.required,
@@ -82,7 +82,7 @@ function draftFrom(variable: TemplateVariable): VariableDraft {
 }
 
 function emptyDraft(): VariableDraft {
-  return { nome: '', label: '', type: 'text', required: false, options: '' }
+  return { name: '', label: '', type: 'text', required: false, options: '' }
 }
 
 /** Splits on commas and drops blanks, so a trailing comma while typing does not
@@ -103,9 +103,9 @@ export function TemplatesPanel() {
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Template | null>(null)
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [type, setType] = useState<string>('offer')
-  const [corpo, setBody] = useState('')
+  const [bodyText, setBody] = useState('')
   const [variables, setVariables] = useState<VariableDraft[]>([])
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [previewText, setPreviewText] = useState<string | null>(null)
@@ -127,7 +127,7 @@ export function TemplatesPanel() {
 
   function openEdit(template: Template) {
     setEditing(template)
-    setName(template.nome)
+    setName(template.name)
     setType(template.type)
     setBody(template.body_markdown)
     setVariables((template.declared_variables ?? []).map(draftFrom))
@@ -138,11 +138,11 @@ export function TemplatesPanel() {
 
   function body() {
     return {
-      nome,
+      name,
       type,
-      body_markdown: corpo,
+      body_markdown: bodyText,
       declared_variables: variables.map((variable) => ({
-        nome: variable.nome,
+        name: variable.name,
         label: variable.label,
         type: variable.type,
         required: variable.required,
@@ -181,7 +181,7 @@ export function TemplatesPanel() {
       {
         templateId: editing.id,
         variables: Object.fromEntries(
-          variables.map((variable) => [variable.nome, variable.label || variable.nome]),
+          variables.map((variable) => [variable.name, variable.label || variable.name]),
         ),
       },
       {
@@ -204,7 +204,7 @@ export function TemplatesPanel() {
   }
 
   const columns: ColumnDef<DataTableFeatures, Template>[] = [
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     {
       header: 'Tipo',
       id: 'type',
@@ -239,7 +239,7 @@ export function TemplatesPanel() {
       // deactivating a template has «Riattiva» one click away in the same menu.
       cell: ({ row }) => (
         <RowActions
-          label={`Azioni per ${row.original.nome}`}
+          label={`Azioni per ${row.original.name}`}
           items={[
             { label: 'Modifica', onSelect: () => openEdit(row.original) },
             {
@@ -296,18 +296,18 @@ export function TemplatesPanel() {
                 <Label htmlFor="template-nome">Nome</Label>
                 <Input
                   id="template-nome"
-                  value={nome}
-                  aria-invalid={fieldError?.field === 'nome' ? true : undefined}
+                  value={name}
+                  aria-invalid={fieldError?.field === 'name' ? true : undefined}
                   onChange={(event) => setName(event.target.value)}
                 />
-                {fieldError?.field === 'nome' ? (
+                {fieldError?.field === 'name' ? (
                   <p className="text-destructive text-sm">{fieldError.message}</p>
                 ) : null}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="template-tipo">Tipo</Label>
+                <Label htmlFor="template-type">Tipo</Label>
                 <Select value={type} onValueChange={setType}>
-                  <SelectTrigger id="template-tipo">
+                  <SelectTrigger id="template-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -322,10 +322,10 @@ export function TemplatesPanel() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="template-corpo">Corpo Markdown</Label>
+              <Label htmlFor="template-body">Corpo Markdown</Label>
               <Textarea
-                id="template-corpo"
-                value={corpo}
+                id="template-body"
+                value={bodyText}
                 rows={14}
                 className="font-mono text-sm"
                 aria-invalid={fieldError?.field === 'body_markdown' ? true : undefined}
@@ -364,11 +364,11 @@ export function TemplatesPanel() {
                     </Label>
                     <Input
                       id={`variabile-nome-${index}`}
-                      value={variable.nome}
+                      value={variable.name}
                       onChange={(event) =>
                         setVariables((previous) =>
                           previous.map((entry, position) =>
-                            position === index ? { ...entry, nome: event.target.value } : entry,
+                            position === index ? { ...entry, name: event.target.value } : entry,
                           ),
                         )
                       }
@@ -437,7 +437,7 @@ export function TemplatesPanel() {
                   <div className="flex items-center gap-2 sm:col-span-2">
                     <label className="flex items-center gap-2 text-xs">
                       <Checkbox
-                        aria-label={`Obbligatoria ${variable.nome || index + 1}`}
+                        aria-label={`Obbligatoria ${variable.name || index + 1}`}
                         checked={variable.required}
                         onCheckedChange={(checked) =>
                           setVariables((previous) =>
@@ -454,7 +454,7 @@ export function TemplatesPanel() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      aria-label={`Rimuovi variabile ${variable.nome || index + 1}`}
+                      aria-label={`Rimuovi variabile ${variable.name || index + 1}`}
                       onClick={() =>
                         setVariables((previous) =>
                           previous.filter((_, position) => position !== index),

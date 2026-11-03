@@ -40,14 +40,14 @@ export function TimePage() {
   const days = useMemo(() => weekDays(anchor), [anchor])
 
   const entries = useTimeEntries(
-    { user_id: userId, da: days[0]?.iso, a: days[6]?.iso },
+    { user_id: userId, from: days[0]?.iso, to: days[6]?.iso },
     // See `useTimeEntries`' own docstring: an unfiltered list is answered, for an admin,
     // with the whole team's hours, so this must not fire before the session is known.
     { enabled: userId !== undefined },
   )
   const deals = useDeals()
   const dealNames = useMemo(
-    () => new Map((deals.data?.items ?? []).map((deal) => [deal.id, deal.nome])),
+    () => new Map((deals.data?.items ?? []).map((deal) => [deal.id, deal.name])),
     [deals.data],
   )
 

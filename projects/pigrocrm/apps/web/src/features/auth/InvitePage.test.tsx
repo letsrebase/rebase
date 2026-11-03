@@ -28,8 +28,8 @@ function dead(status: number, code: string, detail: string) {
   return { error: { code, detail }, response: { status } }
 }
 
-const PEEK = { space: 'Studio Bianchi', invited_from: 'Ada Admin', nome: 'Luca' }
-const PEEK_NO_NOME = { ...PEEK, nome: null }
+const PEEK = { space: 'Studio Bianchi', invited_from: 'Ada Admin', name: 'Luca' }
+const PEEK_NO_NOME = { ...PEEK, name: null }
 
 /** GET routed the way the page uses it: the peek on `/api/auth/invite`, the bare
  *  page's `/api/tenants/root` answering "this installation has no name". */

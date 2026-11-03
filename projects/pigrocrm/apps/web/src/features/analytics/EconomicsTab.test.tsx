@@ -60,8 +60,8 @@ const totals = (overrides: Record<string, unknown> = {}) => ({
 })
 
 const periodPnl = (overrides: Record<string, unknown> = {}) => ({
-  da: '2026-01-01',
-  a: '2026-12-31',
+  from: '2026-01-01',
+  to: '2026-12-31',
   customer_id: CUSTOMER,
   closed: totals({
     revenue: '10000.00',
@@ -81,7 +81,7 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
   id: ENTRY_A,
   deal_id: DEAL,
   user_id: '33333333-3333-7333-8333-333333333333',
-  data: '2026-03-10',
+  date: '2026-03-10',
   hours: '10.00',
   description: 'Analisi',
   billable: true,

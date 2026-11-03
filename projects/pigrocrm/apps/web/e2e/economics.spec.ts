@@ -38,9 +38,9 @@ import { ensureSpaceHasWork, loginAsAdmin, seedDealWithRate } from './helpers'
  * non-breaking space, so everything that is not a digit, a dot or a comma goes first.
  */
 function centesimi(text: string): number {
-  const pulito = text.replace(/[^\d.,-]/g, '')
-  const negativo = pulito.startsWith('-')
-  const [whole = '0', decimali = ''] = pulito.replace('-', '').replace(/\./g, '').split(',')
+  const cleaned = text.replace(/[^\d.,-]/g, '')
+  const negativo = cleaned.startsWith('-')
+  const [whole = '0', decimali = ''] = cleaned.replace('-', '').replace(/\./g, '').split(',')
   const value = Number(whole) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
   return negativo ? -value : value
 }
@@ -133,7 +133,7 @@ test.describe('economics', () => {
     // therefore inside the year the annual estimate is read for.
     const today = new Date()
     const days = daysOfMonth(today, 3)
-    const monthByEsteso = `${Months[today.getMonth()]} ${today.getFullYear()}`
+    const monthByLongName = `${Months[today.getMonth()]} ${today.getFullYear()}`
 
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
@@ -146,7 +146,7 @@ test.describe('economics', () => {
     // the next person who runs the suite twice by hand against a stack they kept alive.
     // The per-deal assertions further down need no such care: they are scoped to a deal
     // whose name carries this run's own timestamp.
-    await page.goto('/app/?tab=economica')
+    await page.goto('/app/?tab=economic')
     const revenueTaxBefore = await amount(riga(page, 'Ricavi incassabili'))
 
     // 2. A deal that can actually be invoiced.
@@ -157,9 +157,9 @@ test.describe('economics', () => {
     // the `sdi_code` because `check_party_exportable`/`check_recipient_routing` run
     // inside `issue`, *before* a register number is consumed, and refuse a recipient
     // missing any of them.
-    const nome = `Progetto Economia ${Date.now()}`
+    const name = `Progetto Economia ${Date.now()}`
     const { dealId } = await seedDealWithRate(page.request, {
-      nome,
+      name,
       rate: '100.000000',
       customer: {
         vat_number: '12345678901',
@@ -188,7 +188,7 @@ test.describe('economics', () => {
         data: {
           deal_id: dealId,
           user_id: me.id,
-          data: day,
+          date: day,
           hours: '8.00',
           description: 'Sviluppo',
           applied_cost: '25.000000',
@@ -259,7 +259,7 @@ test.describe('economics', () => {
     // names the month it covers, which is what makes it legible beside a timesheet.
     const lineInvoice = page.getByRole('row').filter({ hasText: 'Attività' })
     await expect(lineInvoice).toHaveCount(1)
-    await expect(lineInvoice).toContainText(monthByEsteso)
+    await expect(lineInvoice).toContainText(monthByLongName)
     await expect(lineInvoice).toContainText('24.00')
     await expect(lineInvoice).toContainText('2.400,00 €')
 
@@ -302,7 +302,7 @@ test.describe('economics', () => {
     // In Home → Economica, under the cards: the estimate is a card of the dashboard since
     // the Analisi section left the interface, read for the year the period on screen
     // names, which for a bare `/app/?tab=economic` is the current one.
-    await page.goto('/app/?tab=economica')
+    await page.goto('/app/?tab=economic')
     await expect(page.getByRole('note')).toContainText(/stima/i)
     await expect
       .poll(async () => amount(riga(page, 'Ricavi incassabili')))
@@ -326,7 +326,7 @@ test.describe('economics', () => {
   test('a failed request never looks like a zero margin', async ({ page }) => {
     await loginAsAdmin(page)
     const { dealId } = await seedDealWithRate(page.request, {
-      nome: `Progetto Errore ${Date.now()}`,
+      name: `Progetto Errore ${Date.now()}`,
       rate: '100.000000',
     })
     await page.route('**/api/deals/*/pnl', (route) => route.abort('failed'))

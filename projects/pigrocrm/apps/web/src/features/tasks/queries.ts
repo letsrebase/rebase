@@ -13,7 +13,7 @@ import type { LinkKind, LinkValue } from './links'
 import { queryKeys } from '@/lib/query'
 
 /**
- * The name of the record an attività hangs from, read by id.
+ * The name of the record a task hangs from, read by id.
  *
  * Four reads behind one hook, three of them switched off: a hook cannot be called
  * conditionally, so each is `enabled` only for its own kind and an empty id never reaches
@@ -33,9 +33,9 @@ export function useRecordLabel(link: LinkValue | null): string | undefined {
     case 'customer':
       return customer.data?.legal_name
     case 'person':
-      return person.data ? [person.data.nome, person.data.last_name].filter(Boolean).join(' ') : undefined
+      return person.data ? [person.data.first_name, person.data.last_name].filter(Boolean).join(' ') : undefined
     case 'deal':
-      return deal.data?.nome
+      return deal.data?.name
     case 'invoice': {
       const data = invoice.data
       if (!data) return undefined
@@ -49,11 +49,11 @@ export function useRecordLabel(link: LinkValue | null): string | undefined {
 
 export interface Assignee {
   id: string
-  nome: string
+  name: string
 }
 
 /**
- * The people an attività can be given to, and how to name whoever it already is.
+ * The people a task can be given to, and how to name whoever it already is.
  *
  * `GET /api/users` is the administrators' (`UserService.list`), so for anyone else the
  * list is the person themselves and a colleague is named «Un collega»: the API accepts
@@ -67,17 +67,17 @@ export function useAssignees() {
 
   const options = useMemo<Assignee[]>(() => {
     if (admin) {
-      return (users.data ?? []).filter((item) => item.active).map(({ id, nome }) => ({ id, nome }))
+      return (users.data ?? []).filter((item) => item.active).map(({ id, name: name }) => ({ id, name }))
     }
-    return user ? [{ id: user.id, nome: user.nome }] : []
+    return user ? [{ id: user.id, name: user.name }] : []
   }, [admin, users.data, user])
 
   const nameOf = useCallback(
     (id: string | null): string | null => {
       if (id === null) return null
       const known = (admin ? users.data : undefined)?.find((item) => item.id === id)
-      if (known) return known.nome
-      return user?.id === id ? user.nome : 'Un collega'
+      if (known) return known.name
+      return user?.id === id ? user.name : 'Un collega'
     },
     [admin, users.data, user],
   )
@@ -103,7 +103,7 @@ export interface TaskFilters {
 }
 
 /**
- * One page of the attività list, under the `queryKeys.activitiesAll` prefix every attività write
+ * One page of the tasks list, under the `queryKeys.activitiesAll` prefix every task write
  * invalidates (`invalidateAfterWrite`): a task created from the calendar shows on the
  * record's tab and on the page without anybody refetching by hand.
  */
@@ -150,7 +150,7 @@ export type TaskToday = components['schemas']['TaskToday']
 /**
  * The four sections of the Oggi panel, cut by the server on the emitter's own «oggi» so
  * the sidebar count and the page can never disagree with the digest about what is late.
- * Under the `queryKeys.activitiesAll` prefix every attività write invalidates: completing the last
+ * Under the `queryKeys.activitiesAll` prefix every task write invalidates: completing the last
  * overdue one empties the section and the sidebar count in the same refetch.
  *
  * `assigned_to` undefined is the whole space; `enabled` is how a caller waits for the
@@ -167,7 +167,7 @@ export function useTaskToday(
   })
 }
 
-/** How many open attività assigned to the signed-in user are past their deadline: the
+/** How many open tasks assigned to the signed-in user are past their deadline: the
  *  number the sidebar shows next to «Attività». `undefined` until it is known or when there
  *  is nothing to count, so the badge is drawn only for a real figure. */
 export function useOverdueCount(): number | undefined {
@@ -180,7 +180,7 @@ export function useOverdueCount(): number | undefined {
   return total ? total : undefined
 }
 
-/** One attività by id, for a screen that arrives holding only the id (the global search). */
+/** One tasks by id, for a screen that arrives holding only the id (the global search). */
 export function useTask(id: string | undefined) {
   return useQuery({
     // An absent id must never produce a request (residuo B1).

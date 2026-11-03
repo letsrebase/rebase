@@ -30,7 +30,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-// The tabs link out (the fiscal card points at Impostazioni → Aziende when a parameter is
+// The tabs link out (the fiscal card points at Settings → Legal entities when a parameter is
 // missing), and a `<Link>` outside a router throws. What those destinations are is asserted
 // in each tab's own file; here the only question is which tab got mounted.
 vi.mock('@tanstack/react-router', () => ({
@@ -38,7 +38,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const EMPTY_DASHBOARD = {
-  period: { da: '2026-03-01', a: '2026-03-31' },
+  period: { from: '2026-03-01', to: '2026-03-31' },
   calculated_at: '2026-03-15T10:00:00Z',
   pipeline: [],
   closings: { won: 0, lost: 0, won_value: '0.00', conversion_rate: null },
@@ -134,8 +134,8 @@ const BY_PATH: Record<string, unknown> = {
 
 const SEARCH: DashboardSearch = {
   tab: 'commercial',
-  da: '2026-03-01',
-  a: '2026-03-31',
+  from: '2026-03-01',
+  to: '2026-03-31',
   base: 'accrual',
 }
 
@@ -182,10 +182,10 @@ describe('DashboardPage', () => {
   })
 
   it('passes the period from the URL through to the request', async () => {
-    renderPage({ tab: 'commercial', da: '2024-06-01', a: '2024-06-30', base: 'accrual' })
+    renderPage({ tab: 'commercial', from: '2024-06-01', to: '2024-06-30', base: 'accrual' })
     expect(await screen.findByText(/nessun dato nel periodo/i)).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
-      params: { query: { da: '2024-06-01', a: '2024-06-30' } },
+      params: { query: { from: '2024-06-01', to: '2024-06-30' } },
     })
   })
 
@@ -194,8 +194,8 @@ describe('DashboardPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Anno' }))
     expect(onSearchChange).toHaveBeenCalledTimes(1)
     const [next] = onSearchChange.mock.calls[0]!
-    expect(next.da).toMatch(/^\d{4}-01-01$/)
-    expect(next.a).toMatch(/^\d{4}-12-31$/)
+    expect(next.from).toMatch(/^\d{4}-01-01$/)
+    expect(next.to).toMatch(/^\d{4}-12-31$/)
   })
 
   it('draws the three period presets as controls and not as bare text', () => {
@@ -245,7 +245,7 @@ describe('DashboardPage', () => {
     // keystrokes the way a text input does, and a typing simulation would assert nothing.
     const { onSearchChange } = renderPage()
     fireEvent.change(screen.getByLabelText('Dal'), { target: { value: '2025-02-01' } })
-    expect(onSearchChange).toHaveBeenLastCalledWith({ da: '2025-02-01', a: '2026-03-31' })
+    expect(onSearchChange).toHaveBeenLastCalledWith({ from: '2025-02-01', to: '2026-03-31' })
   })
 
 })
@@ -253,8 +253,7 @@ describe('DashboardPage', () => {
 describe('DashboardPage, the page intestazione', () => {
   /**
    * Since the 2026-09-08 revision the dashboard owns its own header rather than being
-   * given one by the route: the tabs are part of the intestazione (§4, «Sotto, quando
-   * servono, le tab»), and the period picker is this screen's one header control. A
+   * given one by the route: the tabs are part of the intestazione (§4: the tabs sit under it, when there are any), and the period picker is this screen's one header control. A
    * route that kept drawing its own `PageHeader` above this one would put two `<h1>`s
    * on the home page.
    */

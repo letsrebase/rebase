@@ -10,14 +10,14 @@ import { useUsers } from './queries'
 import { useClosePeriod, usePeriodLocks, useReopenPeriod } from './queries.timetracking'
 
 const Months = [
-  'january',
-  'february',
+  'gennaio',
+  'febbraio',
   'marzo',
   'aprile',
   'maggio',
-  'june',
+  'giugno',
   'luglio',
-  'august',
+  'agosto',
   'settembre',
   'ottobre',
   'novembre',
@@ -49,7 +49,7 @@ export function PeriodsPanel() {
 
   // Resolved from the users list rather than from a name embedded in the lock: the lock
   // stores an id, and a renamed user must show its current name here.
-  const names = new Map((users.data ?? []).map((user) => [user.id, user.nome]))
+  const names = new Map((users.data ?? []).map((user) => [user.id, user.name]))
 
   return (
     <div className="space-y-6">
@@ -74,9 +74,9 @@ export function PeriodsPanel() {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
-          <Label htmlFor="periodo-da-chiudere">Chiudi il mese</Label>
+          <Label htmlFor="period-from-to-close">Chiudi il mese</Label>
           <Input
-            id="periodo-da-chiudere"
+            id="period-from-to-close"
             type="month"
             value={month}
             onChange={(event) => setMonth(event.target.value)}

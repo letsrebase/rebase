@@ -46,7 +46,7 @@ describe('TimeReportButtons', () => {
     renderButtons()
     await userEvent.click(screen.getByRole('button', { name: /XLSX/ }))
     expect(downloadFromApi).toHaveBeenCalledWith(
-      expect.stringMatching(/^\/api\/deals\/d-1\/time-report\?mese=/),
+      expect.stringMatching(/^\/api\/deals\/d-1\/time-report\?month=/),
     )
   })
 

@@ -136,12 +136,12 @@ describe('FiscalPanel', () => {
    * The blank form is pre-filled with the same values `FiscalProfileUpsert` defaults
    * to, and that is not decoration: the panel sends every key on every save, so the
    * server's own defaults never apply. If these drifted apart, a first save would
-   * quietly store something nobody chose -- an RF19 forfettario with no natura is
+   * quietly store something nobody chose -- an RF19 flat-rate regime with no natura is
    * refused by the SdI on the first invoice, not here.
    *
    * Every field on the form is pinned here, `legal_reference` now included: it
    * was the one left unasserted, because the panel seeded it blank while the server
-   * defaulted it to the forfettario sentence. That was the drift this test exists to
+   * defaulted it to the flat-rate regime sentence. That was the drift this test exists to
    * catch, so the panel was changed to offer the sentence rather than the test taught
    * to tolerate the gap.
    */
@@ -284,7 +284,7 @@ describe('FiscalPanel', () => {
       'stamp_duty_threshold',
       // The version the form was seeded from (REB-622), beside the fifteen fields.
       'updated_at',
-    ])
+    ].sort())
     expect(body).toHaveProperty('pack_id', 'it-flat-rate')
     expect(body).toHaveProperty('regime_code', 'RF19')
   })
@@ -298,7 +298,7 @@ describe('FiscalPanel', () => {
     await userEvent.selectOptions(screen.getByLabelText('Regime'), 'foreign')
     expect(screen.getByLabelText('Regime')).toHaveValue('foreign')
     // The fields an Italian regime reads leave the form; the ones a foreign company
-    // still has stay, natura and riferimento included, emptied of the forfettario's.
+    // still has stay, VAT nature and legal reference included, emptied of the flat-rate regime's.
     expect(screen.getByLabelText('Natura')).toHaveValue('')
     expect(screen.getByLabelText('Riferimento normativo')).toHaveValue('')
     expect(screen.queryByLabelText('Soglia bollo')).not.toBeInTheDocument()
@@ -391,7 +391,7 @@ describe('FiscalPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
     // The ordinary regime is a pack of its own (REB-760), with the standard rate proposed
-    // in place of the forfettario's zero and nothing only the forfettario carries.
+    // in place of the flat-rate regime's zero and nothing only the flat-rate regime carries.
     expect(bodyOfSave()).toMatchObject({
       pack_id: 'it-standard',
       regime_code: 'RF01',
@@ -426,7 +426,7 @@ describe('FiscalPanel', () => {
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF01'))
     expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('22.00')
     expect(screen.getByLabelText('IBAN')).toBeInTheDocument()
-    // No natura, no declaration, no bollo and none of the forfettario's estimate.
+    // No VAT nature, no declaration, no stamp duty and none of the flat-rate regime's estimate.
     for (const label of [
       'Natura',
       'Riferimento normativo',
@@ -455,8 +455,8 @@ describe('FiscalPanel', () => {
   })
 
   /**
-   * `FiscalProfileService._check` refuses a zero default rate with no natura, naming
-   * the field. That message belongs on the natura input: the screen has ten of them,
+   * `FiscalProfileService._check` refuses a zero default rate with no VAT nature, naming
+   * the field. That message belongs on the VAT nature input: the screen has ten of them,
    * and a banner at the top never says which one to fix.
    */
   it('attaches a 422 that names a field to that field', async () => {

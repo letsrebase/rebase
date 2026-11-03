@@ -10,7 +10,7 @@ export function scopeLabel(
   byId: (id: string) => LegalEntityRecord | undefined,
 ): string {
   if (!Array.isArray(legal_entities)) return 'Tutte'
-  const names = legal_entities.map((id) => byId(id)?.nome).filter((nome): nome is string => !!nome)
+  const names = legal_entities.map((id) => byId(id)?.name).filter((name): name is string => !!name)
   return names.length > 0 ? names.join(', ') : 'nessuna azienda attiva'
 }
 

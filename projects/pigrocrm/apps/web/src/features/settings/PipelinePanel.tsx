@@ -32,7 +32,7 @@ const TYPES = [
   { value: 'lost', label: 'Perso' },
 ] as const
 
-const KNOWN_FIELDS = ['nome', 'position', 'default_probability', 'type', 'code']
+const KNOWN_FIELDS = ['name', 'position', 'default_probability', 'type', 'code']
 
 function unattributed(problem: ProblemDetail | null): string | null {
   if (!problem) return null
@@ -43,9 +43,9 @@ function unattributed(problem: ProblemDetail | null): string | null {
 
 export function PipelinePanel() {
   const [open, setOpen] = useState(false)
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [probability, setProbability] = useState('0')
-  const [tipo, setType] = useState<'open' | 'won' | 'lost'>('open')
+  const [typeValue, setType] = useState<'open' | 'won' | 'lost'>('open')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
   const stages = useStages()
@@ -68,10 +68,10 @@ export function PipelinePanel() {
     setProblem(null)
     create.mutate(
       {
-        nome,
+        name,
         position: stages.data?.length ?? 0,
         default_probability: Number(probability),
-        type: tipo,
+        type: typeValue,
       },
       {
         onSuccess: () => {
@@ -92,7 +92,7 @@ export function PipelinePanel() {
     // their own (reversible) archive -- here it matters even more, since this one
     // truly cannot be undone from the UI.
     const confirmed = window.confirm(
-      `Eliminare definitivamente lo stato "${stage.nome}"? L'operazione non è reversibile.`,
+      `Eliminare definitivamente lo stato "${stage.name}"? L'operazione non è reversibile.`,
     )
     if (!confirmed) return
 
@@ -101,8 +101,8 @@ export function PipelinePanel() {
       onError: (error) => {
         // Refused (409) if any deal, archived included, still points at this
         // stage -- `PipelineService.delete`'s own docstring. The server's
-        // sentence already says what to do about it ("spostali in un altro
-        // stato prima di eliminarlo"); the count riding along in `deals` is
+        // sentence already says what to do about it (move them to another
+        // stage before deleting it); the count riding along in `deals` is
         // appended the same way `CustomerDetail.archive` appends its own
         // `active_deals`, rather than left to disappear even though the server
         // reported it.
@@ -115,7 +115,7 @@ export function PipelinePanel() {
 
   const columns: ColumnDef<DataTableFeatures, Stage>[] = [
     { header: 'Posizione', accessorKey: 'position' },
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Probabilità', id: 'probability', accessorFn: (row) => `${row.default_probability}%` },
     {
       header: 'Tipo',
@@ -138,7 +138,7 @@ export function PipelinePanel() {
       // server (409), but a stage without them goes for good.
       cell: (info) => (
         <RowActions
-          label={`Azioni per ${info.row.original.nome}`}
+          label={`Azioni per ${info.row.original.name}`}
           items={[
             {
               label: 'Elimina',
@@ -211,11 +211,11 @@ export function PipelinePanel() {
               <Label htmlFor="stage-nome">Nome</Label>
               <Input
                 id="stage-nome"
-                aria-invalid={fieldError?.field === 'nome'}
-                value={nome}
+                aria-invalid={fieldError?.field === 'name'}
+                value={name}
                 onChange={(event) => setName(event.target.value)}
               />
-              {fieldError?.field === 'nome' && (
+              {fieldError?.field === 'name' && (
                 <p className="text-sm text-destructive">{fieldError.message}</p>
               )}
             </div>
@@ -235,9 +235,9 @@ export function PipelinePanel() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="stage-tipo">Tipo</Label>
-              <Select value={tipo} onValueChange={(value) => setType(value as typeof tipo)}>
-                <SelectTrigger id="stage-tipo" className="w-full">
+              <Label htmlFor="stage-type">Tipo</Label>
+              <Select value={typeValue} onValueChange={(value) => setType(value as typeof typeValue)}>
+                <SelectTrigger id="stage-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

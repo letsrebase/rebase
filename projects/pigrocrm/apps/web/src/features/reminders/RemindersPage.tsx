@@ -27,14 +27,14 @@ import { recordLink } from './links'
 import { useAcknowledge, useReminders, useSnooze } from './queries'
 
 /**
- * The Avvisi page (REB-734): what needs the caller's attention, by severity.
+ * The Reminders page (REB-734): what needs the caller's attention, by severity.
  *
  * The list is the API's own, recomputed from the data on every read, so a reminder whose
  * cause was fixed is simply not in it. What the page decides is only what to show of the
  * ones that are: those still `open` sit in a section per severity, severest first, each
  * row opening the record it is about and offering «Visto» and a postponement; those the
- * caller already acknowledged or snoozed leave the list and wait, collapsed, in «Già
- * gestiti», with what was done, so a snoozed reminder is never lost, only out of the way
+ * caller already acknowledged or snoozed leave the list and wait, collapsed, in «already
+ * handled», with what was done, so a snoozed reminder is never lost, only out of the way
  * until its day. They come back on their own: by the API's rule (a higher severity) or by
  * the clock, and the next read says so.
  */
@@ -97,14 +97,14 @@ export function RemindersPage() {
             )}
 
             {handled.length > 0 && (
-              <section aria-labelledby="avvisi-gestiti">
-                <h2 id="avvisi-gestiti" className="text-sm font-semibold">
+              <section aria-labelledby="reminders-handled">
+                <h2 id="reminders-handled" className="text-sm font-semibold">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="-ml-2.5"
                     aria-expanded={showHandled}
-                    aria-controls="avvisi-gestiti-elenco"
+                    aria-controls="reminders-handled-list"
                     onClick={() => setShowHandled((value) => !value)}
                   >
                     <ChevronDown
@@ -118,7 +118,7 @@ export function RemindersPage() {
                   </Button>
                 </h2>
                 {showHandled && (
-                  <ul id="avvisi-gestiti-elenco" className="mt-2 border-t">
+                  <ul id="reminders-handled-list" className="mt-2 border-t">
                     {handled.map((reminder) => (
                       <ReminderRow key={reminder.key} reminder={reminder} />
                     ))}

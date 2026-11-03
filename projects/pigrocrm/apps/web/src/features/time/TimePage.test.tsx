@@ -29,7 +29,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), 
 
 const deal = {
   id: DEAL,
-  nome: 'Progetto Alfa',
+  name: 'Progetto Alfa',
   customer_id: '11111111-1111-7111-8111-111111111111',
   pipeline_stage_id: '22222222-2222-7222-8222-222222222222',
   expected_value: null,
@@ -50,7 +50,7 @@ const entry = {
   id: 'e1',
   deal_id: DEAL,
   user_id: USER,
-  data: '2026-03-09',
+  date: '2026-03-09',
   hours: '2.50',
   description: 'Analisi',
   billable: true,
@@ -149,8 +149,8 @@ describe('TimePage', () => {
     const call = getCalls().find(([path]) => path === '/api/time-entries')
     expect(call?.[1].params.query).toMatchObject({
       user_id: USER,
-      da: '2026-03-09',
-      a: '2026-03-15',
+      from: '2026-03-09',
+      to: '2026-03-15',
     })
   })
 

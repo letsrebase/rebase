@@ -29,7 +29,7 @@ export function WeekGrid({
   deals: Deal[]
 }) {
   const grid = useMemo(() => buildGrid(entries, days), [entries, days])
-  const dealNames = useMemo(() => new Map(deals.map((deal) => [deal.id, deal.nome])), [deals])
+  const dealNames = useMemo(() => new Map(deals.map((deal) => [deal.id, deal.name])), [deals])
   // Rows: every deal with an entry this week, plus every deal that exists, so a week can
   // be started from nothing rather than only continued. Deduplicated by id; ordered by
   // name through `localeCompare(..., 'it')`, so the row a person is looking for is where

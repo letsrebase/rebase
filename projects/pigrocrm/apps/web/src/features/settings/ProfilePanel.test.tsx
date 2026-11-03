@@ -16,7 +16,7 @@ vi.mock('@/lib/auth', () => ({ useAuth: vi.fn() }))
 const USER = {
   id: 'u1',
   email: 'collab@pigro.it',
-  nome: 'Cora Collaboratrice',
+  name: 'Cora Collaboratrice',
   role: 'collaborator' as const,
   active: true,
   weekly_digest: true,
@@ -50,7 +50,7 @@ describe('ProfilePanel', () => {
 
     expect(screen.getByText('Cora Collaboratrice')).toBeInTheDocument()
     expect(screen.getByText('collab@pigro.it')).toBeInTheDocument()
-    expect(screen.getByText('collaborator')).toBeInTheDocument()
+    expect(screen.getByText('collaboratore')).toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })

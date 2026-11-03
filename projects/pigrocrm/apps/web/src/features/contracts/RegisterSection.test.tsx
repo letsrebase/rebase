@@ -27,12 +27,12 @@ const REGISTER = {
   contract_id: 'c1',
   title: 'Consulenza',
   customer: 'ACME Srl',
-  da: '2026-10-01',
-  a: '2026-10-31',
+  from: '2026-10-01',
+  to: '2026-10-31',
   entries: [
     {
       work_unit_id: 'w1',
-      data: '2026-10-07',
+      date: '2026-10-07',
       quantity: '1.00',
       description: 'Giornata',
       status: 'invoiced',
@@ -46,7 +46,7 @@ const REGISTER = {
     },
     {
       work_unit_id: 'w2',
-      data: '2026-10-08',
+      date: '2026-10-08',
       quantity: '0.50',
       description: 'Mezza giornata',
       status: 'invoiced',
@@ -84,13 +84,13 @@ describe('RegisterSection', () => {
     expect(api.GET).toHaveBeenCalledWith(
       '/api/contracts/{contract_id}/register',
       expect.objectContaining({
-        params: { path: { contract_id: 'c1' }, query: { da: '2026-10-01', a: '2026-10-31' } },
+        params: { path: { contract_id: 'c1' }, query: { from: '2026-10-01', to: '2026-10-31' } },
       }),
     )
     expect(screen.getAllByText('Fatturato')).toHaveLength(2)
     expect(screen.getByText('2026/12')).toBeInTheDocument()
     expect(screen.getByText('Bozza')).toBeInTheDocument()
-    expect(screen.getByText('email · mario@cliente.example')).toBeInTheDocument()
+    expect(screen.getByText('Email · mario@cliente.example')).toBeInTheDocument()
     expect(screen.getByText('Totale: 1,5')).toBeInTheDocument()
     expect(screen.getByText(/1 giornata è nel registro senza approvazione/)).toBeInTheDocument()
   })
@@ -110,7 +110,7 @@ describe('RegisterSection', () => {
     expect(api.POST).toHaveBeenCalledWith(
       '/api/contracts/{contract_id}/register/pdf',
       expect.objectContaining({
-        params: { path: { contract_id: 'c1' }, query: { da: '2026-10-01', a: '2026-10-31' } },
+        params: { path: { contract_id: 'c1' }, query: { from: '2026-10-01', to: '2026-10-31' } },
       }),
     )
     await waitFor(() => expect(download).toHaveBeenCalledWith('doc-1'))

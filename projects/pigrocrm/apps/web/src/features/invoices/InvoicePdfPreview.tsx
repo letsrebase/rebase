@@ -63,7 +63,7 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
       ) : !isPdf(blob) ? (
         <NotPdf invoice={invoice} />
       ) : (
-        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.type === 'proforma' ? 'proforma' : 'invoice'}`} />
+        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.type === 'proforma' ? 'proforma' : 'fattura'}`} />
       )}
     </aside>
   )
@@ -118,7 +118,7 @@ function Empty({ invoice }: { invoice: Invoice }) {
  * version, or its stored file is gone. The server's detail for either is a log line
  * (`invoice_artifact <uuid>#pdf not found`, `document_blob <key> not found`), so this says
  * it in Italian instead (REB-168), in the same voice as `Empty`, and names «Rigenera
- * documenti» only where it is on the page: an issued fattura of ours, since that button
+ * documents» only where it is on the page: an issued invoice of ours, since that button
  * repairs a lost file with identical bytes, and only to a role that has it (REB-294
  * hides it from a readonly one, and `InvoiceActions` words it the same way). A
  * proforma's «Genera PDF proforma» is not shown while the row carries an id, and an

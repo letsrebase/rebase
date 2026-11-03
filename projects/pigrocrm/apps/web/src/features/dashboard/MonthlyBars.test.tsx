@@ -11,14 +11,14 @@ import { MonthlyBars } from './MonthlyBars'
 import type { CashMonth } from './queries'
 
 function month(
-  mese: number,
+  yearMonth: number,
   amounts: Partial<Record<'paid' | 'unpaid' | 'drafts' | 'costs', string>>,
   shares: Record<string, number>,
   stack: { trend?: string; projection?: string } = {},
 ): CashMonth {
   return {
     year: 2026,
-    month: mese,
+    month: yearMonth,
     paid: amounts.paid ?? '0.00',
     unpaid: amounts.unpaid ?? '0.00',
     drafts: amounts.drafts ?? '0.00',

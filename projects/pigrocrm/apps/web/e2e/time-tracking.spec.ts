@@ -84,11 +84,11 @@ test.describe('time tracking', () => {
     // deal, so a fixed name would collide with a previous run's row on any database
     // that outlives one -- and the row it addresses by `aria-label` would then be
     // ambiguous rather than merely duplicated.
-    const nome = `Progetto E2E ${Date.now()}`
+    const name = `Progetto E2E ${Date.now()}`
     // `page.request`, never the top-level `request` fixture -- see `seedDealWithRate`'s
     // own docstring: the fixture's cookie jar is a separate one and every call here
     // would come back 401.
-    const { dealId } = await seedDealWithRate(page.request, { nome, rate: '80.000000' })
+    const { dealId } = await seedDealWithRate(page.request, { name, rate: '80.000000' })
 
     // Both days this test writes into have to be real, writable days, and in the *same*
     // calendar month. Writable: the API refuses a day after today (`422 data futura`),
@@ -124,7 +124,7 @@ test.describe('time tracking', () => {
     const month = `${year}-${String(lunedi.getMonth() + 1).padStart(2, '0')}`
     // `agosto 2026` -- `period_label`'s own long form, which is what both the closed-
     // periods list and the archived report's title read.
-    const monthByEsteso = `${Months[lunedi.getMonth()]} ${year}`
+    const monthByLongName = `${Months[lunedi.getMonth()]} ${year}`
 
     async function openTheWeek(): Promise<void> {
       await page.goto('/app/hours')
@@ -139,15 +139,15 @@ test.describe('time tracking', () => {
       }
     }
 
-    const cellaDi = (day: Date) =>
-      page.getByLabel(`${nome}, ${DAY_LONG.format(day)}`, { exact: true })
+    const cellOf = (day: Date) =>
+      page.getByLabel(`${name}, ${DAY_LONG.format(day)}`, { exact: true })
 
     // 1. The weekly grid writes an hour, in the shape an Italian keyboard produces.
     await openTheWeek()
-    const cella = cellaDi(lunedi)
+    const cell = cellOf(lunedi)
     const totalBefore = await page.getByTestId('grid-total').innerText()
-    await cella.fill('3,5')
-    await cella.blur()
+    await cell.fill('3,5')
+    await cell.blur()
     await expect(page.getByTestId(`row-total-${dealId}`)).toHaveText('3,5')
     // The footer too: the row total and the grid total are computed by two different
     // functions over the same cells, and this is the only place they are ever asked to
@@ -181,7 +181,7 @@ test.describe('time tracking', () => {
     // 3. Raising the deal rate must not move the hour already written (criterion 2,
     //    first half): the rate is copied onto the row when the row is created.
     await page.goto('/app/settings/rates')
-    const fieldRate = page.getByLabel(`Tariffa oraria del deal ${nome}`)
+    const fieldRate = page.getByLabel(`Tariffa oraria del deal ${name}`)
     const lineRate = page.getByRole('row').filter({ has: fieldRate })
     await fieldRate.fill('150')
     // Scoped to the row: this screen renders one «Salva» per person and one per deal,
@@ -225,7 +225,7 @@ test.describe('time tracking', () => {
     expect(pdfBytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
 
     await page.getByRole('tab', { name: 'Documenti' }).click()
-    await expect(page.getByText(`Rapporto ore ${monthByEsteso}`)).toBeVisible()
+    await expect(page.getByText(`Rapporto ore ${monthByLongName}`)).toBeVisible()
 
     // 5. A closed month refuses the next write, in the server's own words (criterion 2,
     //    second half). The refusal asserted below is the *API's* -- there is no
@@ -235,10 +235,10 @@ test.describe('time tracking', () => {
     await page.goto('/app/settings/periods')
     await page.getByLabel(/chiudi il mese/i).fill(month)
     await page.getByRole('button', { name: 'Chiudi periodo' }).click()
-    await expect(page.getByText(monthByEsteso, { exact: true })).toBeVisible()
+    await expect(page.getByText(monthByLongName, { exact: true })).toBeVisible()
 
     await openTheWeek()
-    const bloccata = cellaDi(martedi)
+    const bloccata = cellOf(martedi)
     await bloccata.fill('2')
     await bloccata.blur()
     await expect(
@@ -262,11 +262,11 @@ test.describe('time tracking', () => {
     page.once('dialog', (dialog) => {
       void dialog.accept()
     })
-    await rowAction(page, monthByEsteso, 'Riapri')
+    await rowAction(page, monthByLongName, 'Riapri')
     await expect(page.getByText('Nessun periodo chiuso.')).toBeVisible()
 
     await openTheWeek()
-    const riaperta = cellaDi(martedi)
+    const riaperta = cellOf(martedi)
     await riaperta.fill('2')
     await riaperta.blur()
     await expect(page.getByTestId(`row-total-${dealId}`)).toHaveText('5,5')

@@ -12,8 +12,8 @@ import {
 } from './queries'
 
 /**
- * The two images an azienda owns (REB-629, spec 2026-10-03 §5): the logo every PDF of
- * this azienda draws in its header, the signature the offers draw at their foot. Each
+ * The two images an legal entity owns (REB-629, spec 2026-10-03 §5): the logo every PDF of
+ * this legal entity draws in its header, the signature the offers draw at their foot. Each
  * block shows the current image, read from the API as the PDF reads it, offers «Carica»
  * and, once there is one, «Rimuovi», and shows the server's refusal under the control.
  * The server decides what a file is from its bytes; the `accept` here is a hint for the
@@ -102,7 +102,7 @@ function ImageBlock({
       <p className="text-sm font-medium">{title}</p>
       <p className="text-muted-foreground text-xs">{copy}</p>
       {present && image.data ? (
-        <Preview blob={image.data} alt={`${title} di ${legal_entity.nome}`} />
+        <Preview blob={image.data} alt={`${title} di ${legal_entity.name}`} />
       ) : (
         <div className="text-muted-foreground flex h-20 items-center border border-dashed px-3 text-sm">
           {present && image.isLoading ? 'Caricamento…' : empty}

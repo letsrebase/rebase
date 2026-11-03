@@ -55,7 +55,7 @@ export function DayForm({
   const contracts = useDayContractOptions(initialContractId)
   const record = useRecordDay()
   const [contractId, setContractId] = useState(initialContractId ?? '')
-  const [data, setData] = useState(initialDate ?? toIsoDate(new Date()))
+  const [date, setDate] = useState(initialDate ?? toIsoDate(new Date()))
   const [quantity, setQuantity] = useState(FULL_DAY)
   const [description, setDescription] = useState('')
 
@@ -67,15 +67,15 @@ export function DayForm({
   const contract = options.find((candidate) => candidate.id === effectiveContractId)
 
   const rateCards = useDayRateCards(effectiveContractId)
-  const card = activeRateCard(rateCards.data ?? [], data)
+  const card = activeRateCard(rateCards.data ?? [], date)
   // Half a day on a contract whose rate allows only whole ones is a day the invoice cannot
   // price: `allowed_fractions` is what the rate card says it accepts.
   const halfAllowed = allowsFraction(card, HALF_DAY)
   const effectiveQuantity = quantity === HALF_DAY && !halfAllowed ? FULL_DAY : quantity
 
   const sameDate = useWorkUnits(
-    { contractId: effectiveContractId, da: data, a: data },
-    { enabled: effectiveContractId !== '' && data !== '' },
+    { contractId: effectiveContractId, from: date, to: date },
+    { enabled: effectiveContractId !== '' && date !== '' },
   )
   const taken = (sameDate.data?.items ?? []).find((day) => !FREES_THE_DATE.has(day.status))
 
@@ -91,8 +91,8 @@ export function DayForm({
   }
 
   const outsideTerm =
-    contract !== undefined && data !== '' && (data < contract.start || (contract.end !== null && data > contract.end))
-  const ready = effectiveContractId !== '' && data !== '' && description.trim() !== '' && taken === undefined
+    contract !== undefined && date !== '' && (date < contract.start || (contract.end !== null && date > contract.end))
+  const ready = effectiveContractId !== '' && date !== '' && description.trim() !== '' && taken === undefined
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -100,7 +100,7 @@ export function DayForm({
     record.mutate(
       {
         contract_id: effectiveContractId,
-        data,
+        date,
         quantity: effectiveQuantity,
         description: description.trim(),
         status: 'worked',
@@ -147,7 +147,7 @@ export function DayForm({
 
         <div className="space-y-2">
           <Label htmlFor="day-date">Data</Label>
-          <Input id="day-date" type="date" value={data} onChange={(event) => setData(event.target.value)} required />
+          <Input id="day-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         </div>
 
         <fieldset className="space-y-2">
@@ -187,7 +187,7 @@ export function DayForm({
           />
         </div>
 
-        <RateLine contractChosen={effectiveContractId !== ''} loading={rateCards.isPending && effectiveContractId !== ''} card={card} data={data} />
+        <RateLine contractChosen={effectiveContractId !== ''} loading={rateCards.isPending && effectiveContractId !== ''} card={card} date={date} />
 
         {contract?.requires_prior_approval ? (
           <Notice>
@@ -203,7 +203,7 @@ export function DayForm({
         ) : null}
         {taken ? (
           <Notice>
-            Questo contratto ha già una giornata il {formatIsoDateItalian(taken.data)} ({quantityLabel(taken.quantity).toLowerCase()},{' '}
+            Questo contratto ha già una giornata il {formatIsoDateItalian(taken.date)} ({quantityLabel(taken.quantity).toLowerCase()},{' '}
             {statusLabel(taken.status).toLowerCase()}).{' '}
             <Link to="/app/days/$workUnitId" params={{ workUnitId: taken.id }} className="underline underline-offset-4">
               Aprila
@@ -231,19 +231,19 @@ function RateLine({
   contractChosen,
   loading,
   card,
-  data,
+  date,
 }: {
   contractChosen: boolean
   loading: boolean
   card: ReturnType<typeof activeRateCard>
-  data: string
+  date: string
 }) {
   if (!contractChosen) return null
   if (loading) return <p className="text-sm text-muted-foreground">Cerco la tariffa…</p>
   if (card === null) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nessuna tariffa in vigore il {formatIsoDateItalian(data)}: la giornata si registra e si prezza quando ce n’è una.
+        Nessuna tariffa in vigore il {formatIsoDateItalian(date)}: la giornata si registra e si prezza quando ce n’è una.
       </p>
     )
   }

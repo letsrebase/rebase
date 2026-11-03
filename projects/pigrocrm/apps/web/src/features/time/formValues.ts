@@ -15,7 +15,7 @@ import type { TimeEntry } from './queries'
  * it is an admin operation with no picker control (`FieldType` has no user type).
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
+  { key: 'date', label: 'Data', type: 'date', required: true, options: [] },
   { key: 'hours', label: 'Ore', type: 'number', required: true, options: [] },
   { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
   { key: 'billable', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
@@ -26,7 +26,7 @@ export const NATIVE_FIELDS: FieldDefinition[] = [
     required: false,
     options: [],
   },
-  { key: 'note_interne', label: 'Note interne', type: 'textarea', required: false, options: [] },
+  { key: 'internal_notes', label: 'Note interne', type: 'textarea', required: false, options: [] },
 ]
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
@@ -37,7 +37,7 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
  *  `ImmutableField` after pressing Salva is a worse explanation than a field that is
  *  simply not there. */
 export const LOCKED_KEYS = new Set([
-  'data',
+  'date',
   'hours',
   'description',
   'billable',
@@ -57,7 +57,7 @@ export type TimeEntryFormValues = FormValues
  * `formatIsoDateItalian` (@/lib/dates) closes.
  */
 export function defaultFormValues(today: Date = new Date()): TimeEntryFormValues {
-  return { native: { billable: true, data: toIsoDate(today) }, custom: {} }
+  return { native: { billable: true, date: toIsoDate(today) }, custom: {} }
 }
 
 /**
@@ -92,7 +92,7 @@ export function toRequestBody(
   const { initial, locked, isRenderedCustomKey } = options
   // Clearing a rate is the one native clear that matters most here: it is a deliberate
   // "this hour has no price", and `TimeEntryService.update` records it as
-  // `origine = "assente"` rather than letting the deal's rate quietly take over.
+  // `origine = "absent"` rather than letting the deal's rate quietly take over.
   return buildRequestBody(values, {
     fields: NATIVE_FIELDS,
     initial,

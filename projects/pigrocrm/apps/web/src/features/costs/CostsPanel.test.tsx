@@ -36,7 +36,7 @@ const cost = (overrides: Record<string, unknown> = {}) => ({
   id: 'c1',
   deal_id: DEAL,
   category_id: 'cat1',
-  data: '2026-03-05',
+  date: '2026-03-05',
   amount: '2500.50',
   description: 'Licenza',
   supplier: 'ACME',
@@ -49,9 +49,9 @@ const cost = (overrides: Record<string, unknown> = {}) => ({
 
 const CATEGORY = {
   id: 'cat1',
-  nome: 'Software e licenze',
+  name: 'Software e licenze',
   position: 1,
-  code: 'software_licenze',
+  code: 'software_licenses',
   archived: false,
   created_at: 'x',
   updated_at: 'x',
@@ -170,8 +170,8 @@ describe('CostsPanel', () => {
 })
 
 describe('the «Azienda» picker of a general expense (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -202,7 +202,7 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
     ])
   })
 
-  it('draws nothing for a cost on a deal, nor in a one-azienda space', async () => {
+  it('draws nothing for a cost on a deal, nor in a one-legal-entity space', async () => {
     serveEmpty()
     renderPanel(DEAL, TWO)
     await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))
@@ -210,7 +210,7 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })
 
-  it('draws nothing for a general expense in a one-azienda space', async () => {
+  it('draws nothing for a general expense in a one-legal-entity space', async () => {
     serveEmpty()
     renderPanel(null)
     await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))
@@ -220,8 +220,8 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
 })
 
 describe('a custom cost field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,

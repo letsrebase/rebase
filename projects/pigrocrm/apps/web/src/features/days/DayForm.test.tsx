@@ -61,7 +61,7 @@ describe('recording a day', () => {
     expect(vi.mocked(api.POST).mock.calls[0]?.[1]).toEqual({
       body: {
         contract_id: CONTRACT_ID,
-        data: '2026-03-02',
+        date: '2026-03-02',
         quantity: '0.50',
         description: 'Revisione architettura servizi',
         status: 'worked',

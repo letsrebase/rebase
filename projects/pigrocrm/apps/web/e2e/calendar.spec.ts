@@ -43,14 +43,14 @@ const Month = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2,
 // «1», so `/^1: /` matched both 1 September and 1 October. The label is
 // `gg/mm/aaaa: …`, the same `formatIsoDateItalian` the cell builds it with.
 const FIRST = `01/${String(TODAY.getMonth() + 1).padStart(2, '0')}/${TODAY.getFullYear()}`
-const CELLA_FIRST = new RegExp(`^${FIRST.replace(/\//g, '\\/')}: `)
+const FIRST_CELL = new RegExp(`^${FIRST.replace(/\//g, '\\/')}: `)
 
 test.describe('il calendario', () => {
   test('è nel menu, tra le voci di «Da fare», e apre sul mese corrente', async ({ page }) => {
     await loginAsAdmin(page)
 
-    // The sidebar entry, which is where the request started («lo voglio sotto alla home
-    // nel menu laterale», 2026-09-09); since REB-873 it sits in «Da fare», after Attività.
+    // The sidebar entry, which is where the request started (2026-09-09: put it under
+    // the home in the sidebar); since REB-873 it sits in «Da fare», after Tasks.
     const link = page.getByRole('link', { name: 'Calendario' })
     await expect(link).toBeVisible()
     await link.click()
@@ -67,29 +67,29 @@ test.describe('il calendario', () => {
     await expect(page.getByRole('grid')).toBeVisible()
     await page.getByRole('button', { name: 'Mese precedente' }).click()
     // The URL carries the month, so the back button and a pasted link both work.
-    await expect(page).toHaveURL(/mese=\d{4}-\d{2}/)
+    await expect(page).toHaveURL(/month=\d{4}-\d{2}/)
   })
 
   test('una giornata loggata dal calendario è una voce di ore come le altre', async ({
     page,
   }) => {
     await loginAsAdmin(page)
-    const nome = `Calendario E2E ${Date.now()}`
+    const name = `Calendario E2E ${Date.now()}`
     // `page.request`, never the top-level `request` fixture: the second is its own
     // APIRequestContext and carries none of the page's cookies, so every seeding call
     // through it answers 401. `seedDealWithRate`'s own callers all use `page.request`
     // for that reason, and this spec's first run learned it the hard way.
-    await seedDealWithRate(page.request, { nome, rate: '80.00' })
+    await seedDealWithRate(page.request, { name, rate: '80.00' })
 
     await page.goto(`/app/calendar?month=${Month}`)
     // The cell is addressed by the label the component builds ("1: … ore"), not by a
     // loose substring: every cell contains a number.
-    await page.getByRole('button', { name: CELLA_FIRST }).click()
+    await page.getByRole('button', { name: FIRST_CELL }).click()
 
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
     await dialog.getByRole('combobox', { name: 'Deal' }).click()
-    await page.getByRole('option', { name: nome }).click()
+    await page.getByRole('option', { name: name }).click()
     await dialog.getByRole('button', { name: 'Giornata (8h)' }).click()
 
     // The calendar itself shows it, which is the read the page just invalidated.
@@ -130,7 +130,7 @@ test.describe('il calendario', () => {
       }
 
       await page.goto(`/app/calendar?month=${Month}`)
-      await page.getByRole('button', { name: CELLA_FIRST }).click()
+      await page.getByRole('button', { name: FIRST_CELL }).click()
       const dialog = page.getByRole('dialog')
       const box = await dialog.boundingBox()
       expect(box!.y).toBeGreaterThanOrEqual(0)
@@ -148,7 +148,7 @@ test.describe('il calendario', () => {
     const title = `Scadenza E2E ${Date.now()}`
 
     await page.goto(`/app/calendar?month=${Month}`)
-    await page.getByRole('button', { name: CELLA_FIRST }).click()
+    await page.getByRole('button', { name: FIRST_CELL }).click()
 
     const dialog = page.getByRole('dialog')
     await addCommitmentFromDay(page, dialog, title)
@@ -158,7 +158,7 @@ test.describe('il calendario', () => {
     // The reload is the point: the month is read again from three tables, and the
     // commitment has to come back on the same day.
     await page.reload()
-    await page.getByRole('button', { name: CELLA_FIRST }).click()
+    await page.getByRole('button', { name: FIRST_CELL }).click()
     await expect(page.getByRole('dialog').getByText(title)).toBeVisible()
   })
 
@@ -167,7 +167,7 @@ test.describe('il calendario', () => {
     const title = `Da chiudere E2E ${Date.now()}`
 
     await page.goto(`/app/calendar?month=${Month}`)
-    await page.getByRole('button', { name: CELLA_FIRST }).click()
+    await page.getByRole('button', { name: FIRST_CELL }).click()
     const dialog = page.getByRole('dialog')
     await addCommitmentFromDay(page, dialog, title)
     await expect(dialog.getByText(title)).toBeVisible()

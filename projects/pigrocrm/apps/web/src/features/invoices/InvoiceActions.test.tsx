@@ -164,7 +164,7 @@ describe('InvoiceActions', () => {
     await userEvent.click(screen.getByRole('button', { name: /emetti/i }))
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
-    expect(String(vi.mocked(toast.success).mock.calls[0]?.[0])).toContain('issued')
+    expect(String(vi.mocked(toast.success).mock.calls[0]?.[0])).toContain('emessa')
     await waitFor(() => expect(toast.warning).toHaveBeenCalled())
     const warning = String(vi.mocked(toast.warning).mock.calls[0]?.[0])
     expect(warning).toContain('emesso correttamente')
@@ -389,7 +389,7 @@ describe('InvoiceActions', () => {
       { body: unknown },
     ]
     expect(path).toContain('/transmitted')
-    expect(options.body).toEqual({ data: '2026-09-02' })
+    expect(options.body).toEqual({ date: '2026-09-02' })
 
   })
 
@@ -596,9 +596,9 @@ describe('InvoiceStateBadge', () => {
     expect(screen.queryByText(/qualcosaltro/i)).toBeNull()
   })
 
-  // REB-368: the two import kinds get two distinct, honest badges -- "esterno" names
+  // REB-368: the two import kinds get two distinct, honest badges -- "external" names
   // no source (assertion above), "fatturapa" names the transmission standard itself,
-  // because unlike a hand-typed "esterno" row this one's original file is on record
+  // because unlike a hand-typed "external" row this one's original file is on record
   // and `export_xml` can hand it back.
   it('shows a distinct "FatturaPA" badge for a fatturapa-imported invoice', () => {
     const imported = { ...ISSUED, imported_from: 'fatturapa' } as Invoice
@@ -607,8 +607,8 @@ describe('InvoiceStateBadge', () => {
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 
-  /** Unlike the "esterno" pill (test above), the "fatturapa" badge ignores the list's
-   *  own suppression flag: a bulk "esterno" migration explains nothing most rows can
+  /** Unlike the "external" pill (test above), the "fatturapa" badge ignores the list's
+   *  own suppression flag: a bulk "external" migration explains nothing most rows can
    *  act on (ORB-130), but a "fatturapa" row names a fact the list can act on -- the
    *  original file is on record and downloadable. */
   it('keeps the "FatturaPA" badge even where the list suppresses the generic one', () => {

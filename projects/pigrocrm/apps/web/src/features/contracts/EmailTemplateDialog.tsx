@@ -25,7 +25,7 @@ const STARTING_BODY =
   'e il registro delle giornate di {{periodo}}.\n\nCordiali saluti\n{{emittente.ragione_sociale}}'
 
 interface Values {
-  nome: string
+  name: string
   subject: string
   body: string
   attachments: AttachmentKind[]
@@ -34,13 +34,13 @@ interface Values {
 function startingValues(template: EmailTemplate | undefined): Values {
   return template === undefined
     ? {
-        nome: '',
+        name: '',
         subject: 'Fattura {{numero_fattura}} - {{contratto}}',
         body: STARTING_BODY,
         attachments: ['invoice_pdf', 'register_pdf'],
       }
     : {
-        nome: template.nome,
+        name: template.name,
         subject: template.subject,
         body: template.body,
         attachments: template.attachments,
@@ -100,35 +100,35 @@ export function EmailTemplateDialog({ contractId, template, open, onOpenChange }
           <Label htmlFor="email-template-nome">Nome</Label>
           <Input
             id="email-template-nome"
-            value={values.nome}
-            onChange={(event) => set('nome', event.target.value)}
+            value={values.name}
+            onChange={(event) => set('name', event.target.value)}
           />
-          {errorOn('nome')}
+          {errorOn('name')}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email-template-oggetto">Oggetto</Label>
+          <Label htmlFor="email-template-subject">Oggetto</Label>
           <Input
-            id="email-template-oggetto"
+            id="email-template-subject"
             value={values.subject}
             onChange={(event) => set('subject', event.target.value)}
           />
           {errorOn('subject')}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email-template-corpo">Testo</Label>
+          <Label htmlFor="email-template-body">Testo</Label>
           <Textarea
-            id="email-template-corpo"
+            id="email-template-body"
             rows={9}
             value={values.body}
             onChange={(event) => set('body', event.target.value)}
           />
           {errorOn('body')}
-          {fieldError !== null && fieldError.field !== 'nome' && fieldError.field !== 'subject' && fieldError.field !== 'body' && (
+          {fieldError !== null && fieldError.field !== 'name' && fieldError.field !== 'subject' && fieldError.field !== 'body' && (
             <p className="text-sm text-destructive">{fieldError.message}</p>
           )}
           <p className="text-xs text-muted-foreground">
             Variabili:{' '}
-            {(variables.data ?? []).map((variable) => `{{${variable.nome}}}`).join(' ')}
+            {(variables.data ?? []).map((variable) => `{{${variable.name}}}`).join(' ')}
           </p>
         </div>
         <fieldset className="space-y-2">

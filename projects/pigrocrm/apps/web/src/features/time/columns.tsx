@@ -49,10 +49,10 @@ export function formatRateValue(value: string | null): string {
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
-  manual: 'manual',
+  manual: 'manuale',
   deal: 'dal deal',
   user: "dall'utente",
-  absent: 'absent',
+  absent: 'assente',
 }
 
 /**
@@ -110,9 +110,9 @@ export function buildTimeEntryColumns(
   const native: ColumnDef<DataTableFeatures, TimeEntry>[] = [
     {
       header: 'Data',
-      id: 'data',
-      accessorFn: (row) => formatIsoDateItalian(row.data),
-      cell: ({ row }) => <DateCell value={row.original.data} />,
+      id: 'date',
+      accessorFn: (row) => formatIsoDateItalian(row.date),
+      cell: ({ row }) => <DateCell value={row.original.date} />,
     },
     {
       header: 'Ore',

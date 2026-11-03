@@ -44,11 +44,11 @@ function DocumentDetail() {
     <EntityDetailLayout
       icon={FileText}
       title={record.title}
-      // The type, and from the second azienda on the azienda the document belongs to
+      // The type, and from the second legal entity on the legal entity the document belongs to
       // (REB-626), the one its owner had when it was created.
       subtitle={[
         DOCUMENT_TYPE_LABELS[record.type] ?? record.type,
-        legal_entity.several ? legal_entity.byId(record.legal_entity_id)?.nome : undefined,
+        legal_entity.several ? legal_entity.byId(record.legal_entity_id)?.name : undefined,
       ]
         .filter((part): part is string => typeof part === 'string' && part !== '')
         .join(' · ')}

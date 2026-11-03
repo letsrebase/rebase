@@ -31,7 +31,7 @@ export function DaysPage({
   const contracts = useDayContractOptions(search.contract)
   const month = search.month ?? (search.contract === undefined ? defaultMonth() : undefined)
   const window = month === undefined ? undefined : monthWindow(month)
-  const days = useWorkUnits({ contractId: search.contract, da: window?.da, a: window?.a })
+  const days = useWorkUnits({ contractId: search.contract, from: window?.from, to: window?.to })
 
   return (
     <>

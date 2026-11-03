@@ -1,6 +1,6 @@
 /**
- * The addresses that open the Attività page keep answering after «Oggi» became its first
- * view (REB-873): the old `/app/tasks?view=today`, the `?open=` of a search hit, a reminder or a mail,
+ * The addresses that open the Tasks page keep answering after «Oggi» became its first
+ * view (REB-873): the old `/app/oggi`, the `?open=` of a search hit, a reminder or a mail,
  * and the `?assigned=` the Oggi view sends the rows it left out with.
  */
 import { isRedirect } from '@tanstack/react-router'
@@ -13,31 +13,41 @@ const validate = ActivitiesRoute.options.validateSearch as (search: Record<strin
   open?: string
   assigned?: string
   view?: string
-  da?: string
+  from?: string
 }
 
 describe('the /app/activities route', () => {
-  it('keeps `?apri=` and `?assegnata=` as before', () => {
+  it('reads the Italian parameters of links sent before the rename as their English words', () => {
+    expect(validate({ 'apri': ID, 'assegnata': 'tutte', 'vista': 'tutte', 'da': 'digest' })).toEqual({
+      open: ID,
+      assigned: 'all',
+      view: 'all',
+      from: 'digest',
+    })
+    expect(validate({ 'assegnata': 'io', 'vista': 'oggi' })).toMatchObject({ assigned: 'me', view: 'today' })
+  })
+
+  it('keeps `?open=` and `?assigned=`', () => {
     expect(validate({ open: ID, assigned: 'all' })).toEqual({
       open: ID,
       assigned: 'all',
       view: undefined,
-      da: undefined,
+      from: undefined,
     })
     expect(validate({ assigned: ID }).assigned).toBe(ID)
-    expect(validate({ assigned: 'io' }).assigned).toBe('io')
+    expect(validate({ assigned: 'me' }).assigned).toBe('me')
   })
 
-  it('drops an `apri` that is not an id and an assignee that is none of the three', () => {
+  it('drops an `open` that is not an id and an assignee that is none of the three', () => {
     expect(validate({ open: 'drop table', assigned: 'Mario' })).toEqual({
       open: undefined,
       assigned: undefined,
       view: undefined,
-      da: undefined,
+      from: undefined,
     })
   })
 
-  it('reads `?vista=` as one of the two views and drops the rest', () => {
+  it('reads `?view=` as one of the two views and drops the rest', () => {
     expect(validate({ view: 'today' }).view).toBe('today')
     expect(validate({ view: 'all' }).view).toBe('all')
     expect(validate({ view: 'tomorrow' }).view).toBeUndefined()
@@ -45,9 +55,9 @@ describe('the /app/activities route', () => {
 })
 
 describe('the /app/oggi route', () => {
-  const beforeLoad = TodayRoute.options.beforeLoad as (context: { search: { da?: string } }) => void
+  const beforeLoad = TodayRoute.options.beforeLoad as (context: { search: { from?: string } }) => void
 
-  function redirected(search: { da?: string }) {
+  function redirected(search: { from?: string }) {
     try {
       beforeLoad({ search })
     } catch (thrown) {
@@ -60,16 +70,21 @@ describe('the /app/oggi route', () => {
     expect(redirected({})).toMatchObject({ to: '/app/activities', search: { view: 'today' } })
   })
 
-  it('takes the digest mail\'s `?da=digest` along, which is how PostHog sees the return', () => {
-    expect(redirected({ da: 'digest' })).toMatchObject({
+  it('takes the digest mail\'s `?from=digest` along, which is how PostHog sees the return', () => {
+    expect(redirected({ from: 'digest' })).toMatchObject({
       to: '/app/activities',
-      search: { view: 'today', da: 'digest' },
+      search: { view: 'today', from: 'digest' },
     })
   })
 
-  it('reads `da` as a string and nothing else', () => {
-    const validate = TodayRoute.options.validateSearch as (search: Record<string, unknown>) => { da?: string }
-    expect(validate({ da: 'digest' })).toEqual({ da: 'digest' })
-    expect(validate({ da: ['digest'] })).toEqual({ da: undefined })
+  it('reads `from` as a string and nothing else', () => {
+    const validate = TodayRoute.options.validateSearch as (search: Record<string, unknown>) => { from?: string }
+    expect(validate({ from: 'digest' })).toEqual({ from: 'digest' })
+    expect(validate({ from: ['digest'] })).toEqual({ from: undefined })
+  })
+
+  it('still reads `?da=digest` of the mails sent before the English rename', () => {
+    const validate = TodayRoute.options.validateSearch as (search: Record<string, unknown>) => { from?: string }
+    expect(validate({ from: 'digest' })).toEqual({ from: 'digest' })
   })
 })

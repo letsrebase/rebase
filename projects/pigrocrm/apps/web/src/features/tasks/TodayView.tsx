@@ -18,9 +18,9 @@ type Group = TaskToday['overdue']
 
 /**
  * One of the four sections of the panel (spec 2026-09-03 §5): a heading with the real
- * count, the rows the server sent, and a line pointing at the Attività page when the
+ * count, the rows the server sent, and a line pointing at the Tasks page when the
  * section holds more than it shows. Every row is `TaskItem`, the row the record tabs
- * and the Attività page already use, so «Fatto», «Annulla», «Modifica» and the link to
+ * and the Tasks page already use, so «Fatto», «Annulla», «Modifica» and the link to
  * the record behave here exactly as there.
  *
  * `showDueDate` is on wherever the section does not already say the day: «Oggi» is
@@ -45,7 +45,7 @@ function Section({
    *  so it is the one heading drawn in the danger tint. */
   tone?: 'danger'
   foldable?: boolean
-  /** The select's value, carried to the Attività page so the rows left out are listed
+  /** The select's value, carried to the Tasks page so the rows left out are listed
    *  for the same person and not for the page's own default. */
   assignee: string
 }) {
@@ -65,7 +65,7 @@ function Section({
       <>
         <ul className="space-y-3 text-sm">
           {group.items.map((item) => (
-            <TaskItem key={item.id} attivita={item} showDueDate={showDueDate} />
+            <TaskItem key={item.id} task={item} showDueDate={showDueDate} />
           ))}
         </ul>
         {group.total > group.items.length && (
@@ -107,12 +107,12 @@ function Section({
 }
 
 /**
- * The «Oggi» view of the Attività page, and the first one a person sees: what is late,
+ * The «Oggi» view of the Tasks page, and the first one a person sees: what is late,
  * what falls today, what comes in the next seven days and what has no date at all, in that
- * order (spec 2026-09-03 §5; REB-725). It was the page at `/app/tasks?view=today`, which now redirects
+ * order (spec 2026-09-03 §5; REB-725). It was the page at `/app/oggi`, which now redirects
  * here (REB-873).
  *
- * Opens on the signed-in person's own attività and says so in the select; «Di chiunque»
+ * Opens on the signed-in person's own tasks and says so in the select; «Di chiunque»
  * is one press away. The day is the server's `today` and is printed in the header, so
  * the page reads the same for somebody working in another time zone.
  *
@@ -127,7 +127,7 @@ export function TodayView({
 }: {
   tabs: ReactNode
   notice?: ReactNode
-  /** Whose attività the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
+  /** Whose tasks the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
    *  the choice survives a switch between its two views. */
   assignee: string
   onAssigneeChange: (next: string) => void
@@ -180,7 +180,7 @@ export function TodayView({
         ) : (
           <>
             <Section
-              id="oggi-in-ritardo"
+              id="today-in-late"
               title="In ritardo"
               group={panel.data.overdue}
               empty="Niente in ritardo."
@@ -189,7 +189,7 @@ export function TodayView({
               tone="danger"
             />
             <Section
-              id="oggi-oggi"
+              id="today-today"
               title="Oggi"
               group={panel.data.today_due}
               empty="Niente in scadenza oggi."
@@ -197,7 +197,7 @@ export function TodayView({
               showDueDate={false}
             />
             <Section
-              id="oggi-prossimi"
+              id="today-upcoming"
               title="Prossimi sette giorni"
               group={panel.data.next_seven_days}
               empty="Niente nei prossimi sette giorni."
@@ -205,7 +205,7 @@ export function TodayView({
               showDueDate
             />
             <Section
-              id="oggi-senza-scadenza"
+              id="today-no-due-date"
               title="Senza scadenza"
               group={panel.data.without_due_date}
               empty="Niente senza scadenza."

@@ -19,6 +19,7 @@ import {
 } from '@rebase/ui/table'
 import { formatDate } from '@/features/invoices/format'
 import { useCan } from '@/lib/auth'
+import { channelLabel } from '@/features/days/approvals'
 import { toIsoMonth } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import {
@@ -43,7 +44,7 @@ const STATE_LABEL: Record<string, string> = {
 function proof(entry: RegisterEntry): string {
   return entry.approval === null || entry.approval === undefined
     ? '—'
-    : `${entry.approval.channel} · ${entry.approval.sender}`
+    : `${channelLabel(entry.approval.channel)} · ${entry.approval.sender}`
 }
 
 /**
@@ -127,7 +128,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
               <TableBody>
                 {register.data.entries.map((entry) => (
                   <TableRow key={entry.work_unit_id}>
-                    <TableCell>{formatDate(entry.data)}</TableCell>
+                    <TableCell>{formatDate(entry.date)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatItalianQuantity(entry.quantity)}</TableCell>
                     <TableCell>{entry.description}</TableCell>
                     <TableCell>{STATE_LABEL[entry.status] ?? entry.status}</TableCell>

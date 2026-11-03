@@ -129,11 +129,11 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
                     onCheckedChange={() => toggle(item.id)}
                     // The date and the description, because that is what tells two
                     // entries of the same deal apart when they are read out one by one.
-                    aria-label={`${formatIsoDateItalian(item.data)} — ${item.description}`}
+                    aria-label={`${formatIsoDateItalian(item.date)} — ${item.description}`}
                   />
                   <Label htmlFor={`voce-${item.id}`} className="flex-1 font-normal">
                     <span className="text-muted-foreground">
-                      {formatIsoDateItalian(item.data)}
+                      {formatIsoDateItalian(item.date)}
                     </span>{' '}
                     {item.description}
                   </Label>
@@ -150,14 +150,14 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
 
             <div className="flex items-center gap-2">
               <Checkbox
-                id="raggruppa-per-mese"
+                id="group-by-month"
                 checked={grouped}
                 onCheckedChange={(checked) => {
                   setProblem(null)
                   setGrouped(checked === true)
                 }}
               />
-              <Label htmlFor="raggruppa-per-mese" className="font-normal">
+              <Label htmlFor="group-by-month" className="font-normal">
                 Raggruppa per mese
               </Label>
             </div>

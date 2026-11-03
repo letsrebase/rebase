@@ -19,7 +19,7 @@ const role = vi.hoisted(() => ({ canWrite: true }))
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => role.canWrite,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Lorenzo', role: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, name: 'Lorenzo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -29,9 +29,9 @@ function ok(data: unknown) {
 }
 
 const users = [
-  { id: ME, nome: 'Lorenzo', active: true },
-  { id: COLLEAGUE, nome: 'Ivan', active: true },
-  { id: '55555555-5555-7555-8555-555555555555', nome: 'Ex collega', active: false },
+  { id: ME, name: 'Lorenzo', active: true },
+  { id: COLLEAGUE, name: 'Ivan', active: true },
+  { id: '55555555-5555-7555-8555-555555555555', name: 'Ex collega', active: false },
 ]
 
 const search = {
@@ -47,7 +47,7 @@ const search = {
           label: 'Acme sito',
           subtitle: 'Acme',
           score: '1.0000',
-          field: 'nome',
+          field: 'name',
         },
       ],
       total: 1,
@@ -64,7 +64,7 @@ beforeEach(() => {
     if (path === '/api/users') return ok(users)
     if (path === '/api/search') return ok(search)
     if (path === '/api/deals/{deal_id}')
-      return ok({ id: DEAL, nome: 'Acme sito', customer_id: null })
+      return ok({ id: DEAL, name: 'Acme sito', customer_id: null })
     throw new Error(`unexpected GET ${path}`)
   }) as never)
   vi.mocked(api.POST).mockImplementation((() => ok({ id: 'new' })) as never)
@@ -176,7 +176,7 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('sends only what changed: the new deadline, nothing else', async () => {
-    renderDialog({ attivita: existing })
+    renderDialog({ task: existing })
 
     expect(screen.getByLabelText('Titolo')).toHaveValue('Sollecitare Rossi')
     fireEvent.change(screen.getByLabelText('Scadenza'), { target: { value: '2026-11-06' } })
@@ -197,7 +197,7 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('takes a deadline off with null, and moves the link as four columns', async () => {
-    renderDialog({ attivita: existing })
+    renderDialog({ task: existing })
 
     fireEvent.change(screen.getByLabelText('Scadenza'), { target: { value: '' } })
     await userEvent.click(screen.getByRole('button', { name: 'Scollega' }))
@@ -219,11 +219,11 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('reopens a completed one, and offers no «Riapri» on an open one', async () => {
-    const { unmount } = renderDialog({ attivita: existing })
+    const { unmount } = renderDialog({ task: existing })
     expect(screen.queryByRole('button', { name: 'Riapri' })).not.toBeInTheDocument()
     unmount()
 
-    renderDialog({ attivita: { ...existing, status: 'completed', completed_at: '2026-10-20' } })
+    renderDialog({ task: { ...existing, status: 'completed', completed_at: '2026-10-20' } })
     await userEvent.click(screen.getByRole('button', { name: 'Riapri' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
@@ -231,13 +231,13 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('archives with DELETE, and an archived one offers «Ripristina» instead', async () => {
-    const { unmount } = renderDialog({ attivita: existing })
+    const { unmount } = renderDialog({ task: existing })
     await userEvent.click(screen.getByRole('button', { name: 'Archivia' }))
     await waitFor(() => expect(api.DELETE).toHaveBeenCalled())
     expect(vi.mocked(api.DELETE).mock.calls[0]?.[0]).toBe('/api/activities/{task_id}')
     unmount()
 
-    renderDialog({ attivita: existing, archived: true })
+    renderDialog({ task: existing, archived: true })
     expect(screen.queryByRole('button', { name: 'Archivia' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
@@ -248,7 +248,7 @@ describe('AttivitaDialog on an existing attività', () => {
 describe('AttivitaDialog for a reader', () => {
   it('opens to read: every field disabled and nothing that writes', () => {
     role.canWrite = false
-    renderDialog({ attivita: existing })
+    renderDialog({ task: existing })
 
     expect(screen.getByLabelText('Titolo')).toBeDisabled()
     expect(screen.getByLabelText('Scadenza')).toBeDisabled()

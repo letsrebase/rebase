@@ -1,7 +1,7 @@
 /**
- * Impostazioni → Aziende with «Nuova azienda» (REB-632, spec 2026-10-03 §5): the one
+ * Settings → Legal entities with «Nuova azienda» (REB-632, spec 2026-10-03 §5): the one
  * button, the form it opens, the single request the form sends (the row and its fiscal
- * profile together), and the page landing on the new azienda once the list has two.
+ * profile together), and the page landing on the new legal entity once the list has two.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -25,13 +25,13 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-function legal_entity(id: string, nome: string, overrides: Partial<LegalEntityRecord> = {}): LegalEntityRecord {
+function legal_entity(id: string, name: string, overrides: Partial<LegalEntityRecord> = {}): LegalEntityRecord {
   return {
     id,
-    nome,
-    predefinita: false,
+    name,
+    is_default: false,
     active: true,
-    legal_name: `${nome} S.r.l.`,
+    legal_name: `${name} S.r.l.`,
     vat_number: null,
     tax_code: null,
     address: null,
@@ -54,7 +54,7 @@ function legal_entity(id: string, nome: string, overrides: Partial<LegalEntityRe
   }
 }
 
-const STUDIO = legal_entity('a-1', 'Studio Rossi', { predefinita: true })
+const STUDIO = legal_entity('a-1', 'Studio Rossi', { is_default: true })
 const LTD = legal_entity('a-2', 'rebase ltd', { country: 'GB', legal_name: 'Rebase Ltd' })
 
 /** The list the page reads, as the server would answer it after each write. */
@@ -125,7 +125,7 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
     ]
     expect(path).toBe('/api/legal-entities')
     expect(init.body).toMatchObject({
-      nome: 'rebase ltd',
+      name: 'rebase ltd',
       legal_name: 'Rebase Ltd',
       country: 'GB',
       vat_number: null,

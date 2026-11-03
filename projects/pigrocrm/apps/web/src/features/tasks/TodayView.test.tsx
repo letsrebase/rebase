@@ -17,7 +17,7 @@ const ME = '33333333-3333-7333-8333-333333333333'
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Lorenzo', role: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, name: 'Lorenzo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -70,7 +70,7 @@ let panel: {
 function serve() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/activities/today') return ok(panel)
-    if (path === '/api/users') return ok([{ id: ME, nome: 'Lorenzo', active: true }])
+    if (path === '/api/users') return ok([{ id: ME, name: 'Lorenzo', active: true }])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
   vi.mocked(api.POST).mockImplementation(((path: string) => {
@@ -92,7 +92,7 @@ function Held({ initial }: { initial: string }) {
   return <TodayView tabs={null} assignee={assignee} onAssigneeChange={setAssignee} />
 }
 
-function renderPage(initialAssignee = 'io') {
+function renderPage(initialAssignee = 'me') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
@@ -192,10 +192,10 @@ describe('TodayView', () => {
 
     expect(await screen.findByText(/Ne sono mostrate 1 su 120/)).toBeInTheDocument()
     // The rows left out are listed for the person this page is showing, not for the
-    // Attività page's own default.
+    // Tasks page's own default.
     expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
       'data-search',
-      JSON.stringify({ view: 'all', assigned: 'io' }),
+      JSON.stringify({ view: 'all', assigned: 'me' }),
     )
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))

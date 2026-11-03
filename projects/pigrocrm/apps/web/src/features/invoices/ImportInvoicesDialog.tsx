@@ -276,7 +276,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
               <Button onClick={() => void confirm()} disabled={countWrites(rows, declined) === 0}>
                 {countWrites(rows, declined) === 0
                   ? 'Niente da importare'
-                  : `Importa ${plural(countWrites(rows, declined), 'invoice', 'invoices')}`}
+                  : `Importa ${plural(countWrites(rows, declined), 'fattura', 'fatture')}`}
               </Button>
             </>
           ) : stage.kind === 'done' ? (
@@ -361,7 +361,7 @@ function ReviewPanel({
                 <span className="font-medium">{party.name}</span>
                 <span className="text-muted-foreground">
                   {party.taxId !== '' ? `${party.taxId} · ` : ''}
-                  {plural(party.invoices, 'invoice', 'invoices')}
+                  {plural(party.invoices, 'fattura', 'fatture')}
                 </span>
               </label>
               <ExistingCustomerPicker
@@ -409,8 +409,8 @@ function ReviewPanel({
  * an Italian VAT number or tax code, so a customer without one (a foreign customer, a
  * private person with no tax code stated) is offered for creation on every import; this is
  * the way to say it is somebody already known. It is the app's customer search
- * (`CustomerPicker`), limited to the azienda the invoice is written on: the server takes
- * any `customer_id` it is sent, and an invoice on one azienda's register for another's
+ * (`CustomerPicker`), limited to the legal entity the invoice is written on: the server takes
+ * any `customer_id` it is sent, and an invoice on one legal entity's register for another's
  * customer is a state nothing else in the product can produce. Left empty, the party is
  * created as a new customer, which is the default and the old behaviour.
  */
@@ -594,9 +594,9 @@ function ResultPanel({
 }
 
 /**
- * The entry point on the Fatture page, next to «Nuova fattura». Mounted only while open,
+ * The entry point on the Invoices page, next to «Nuova fattura». Mounted only while open,
  * like `NewProformaButton`'s dialog. Asks for the admin action the service asks for: the
- * review and the write are both admin-only, and a collaboratore who pressed it would get
+ * review and the write are both admin-only, and a collaborator who pressed it would get
  * a 403 for a screen they were offered.
  */
 export function ImportInvoicesButton() {

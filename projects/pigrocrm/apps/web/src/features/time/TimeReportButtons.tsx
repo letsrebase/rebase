@@ -31,9 +31,9 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
-          <Label htmlFor="time-report-mese">Rapporto ore del mese</Label>
+          <Label htmlFor="time-report-month">Rapporto ore del mese</Label>
           <Input
-            id="time-report-mese"
+            id="time-report-month"
             type="month"
             value={month}
             onChange={(event) => setMonth(event.target.value)}

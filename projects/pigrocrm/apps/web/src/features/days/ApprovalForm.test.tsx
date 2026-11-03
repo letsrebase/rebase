@@ -47,9 +47,9 @@ function serving(messages: unknown[] = [MESSAGE]) {
     if (path === '/api/contracts') return Promise.resolve(ok({ items: [contract({ customer_id: CUSTOMER_ID })], next_cursor: null }))
     if (path === '/api/work-units') {
       const all = [
-        row({ id: 'd1', data: '2026-03-02', status: 'proposed', description: 'Workshop' }),
-        row({ id: 'd2', data: '2026-03-03', status: 'worked_without_approval', description: 'Review' }),
-        row({ id: 'd3', data: '2026-03-04', status: 'worked', description: 'Già a posto' }),
+        row({ id: 'd1', date: '2026-03-02', status: 'proposed', description: 'Workshop' }),
+        row({ id: 'd2', date: '2026-03-03', status: 'worked_without_approval', description: 'Review' }),
+        row({ id: 'd3', date: '2026-03-04', status: 'worked', description: 'Già a posto' }),
       ]
       // The API filters by state: the form asks for the two states that can use an approval.
       const wanted = (init as { params: { query: { status?: string } } }).params.query.status

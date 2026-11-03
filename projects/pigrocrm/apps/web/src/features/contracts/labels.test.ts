@@ -24,8 +24,8 @@ describe('the expense policy', () => {
   it('round-trips the three tagged shapes', () => {
     for (const policy of [
       { kind: 'not_reimbursable' },
-      { kind: 'reimbursable', richiede_preautorizzazione: true },
-      { kind: 'reimbursable_with_cap', amount_cap: '500.00', richiede_preautorizzazione: false },
+      { kind: 'reimbursable', requires_pre_authorization: true },
+      { kind: 'reimbursable_with_cap', amount_cap: '500.00', requires_pre_authorization: false },
     ] as const) {
       const body = expensePolicyBody(policy)
       expect(body).toEqual(policy)
@@ -35,7 +35,7 @@ describe('the expense policy', () => {
 
   it('does not write a cap or an authorisation flag on a policy that has none', () => {
     expect(
-      expensePolicyBody({ kind: 'not_reimbursable', amount_cap: '9', richiede_preautorizzazione: true }),
+      expensePolicyBody({ kind: 'not_reimbursable', amount_cap: '9', requires_pre_authorization: true }),
     ).toEqual({ kind: 'not_reimbursable' })
   })
 

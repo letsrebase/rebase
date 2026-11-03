@@ -107,14 +107,14 @@ export function buildDealColumns(
   const native: ColumnDef<DataTableFeatures, Deal>[] = [
     {
       header: 'Nome',
-      accessorKey: 'nome',
+      accessorKey: 'name',
       // The first cell carries the deal's identity as a chip, with the customer on the
       // line under it (design spec §4) -- which is what turns a list of project names
       // into a list of work. It costs no request per row: `DealRead` carries
       // `customer_legal_name`, filled by one batched lookup per page, precisely so
       // this cell could exist (see `DealService._reads`).
       cell: ({ row }) => (
-        <EntityCell name={row.original.nome} sub={row.original.customer_legal_name ?? null} />
+        <EntityCell name={row.original.name} sub={row.original.customer_legal_name ?? null} />
       ),
     },
     {

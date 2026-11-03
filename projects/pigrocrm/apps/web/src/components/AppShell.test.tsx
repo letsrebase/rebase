@@ -65,7 +65,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() 
 
 const mockAuth = vi.hoisted(() => ({ role: 'admin' as string, id: undefined as string | undefined }))
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: mockAuth.id, nome: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
+  useAuth: () => ({ user: { id: mockAuth.id, name: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
   useIsAdmin: () => mockAuth.role === 'admin',
 }))
 
@@ -98,7 +98,7 @@ function renderShell(children: React.ReactNode = <div />, legal_entity?: LegalEn
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
-  // Without `legal_entity` the shell runs on the context's default, a one-azienda space.
+  // Without `legal_entity` the shell runs on the context's default, a one-legal-entity space.
   const tree = () => (
     <QueryClientProvider client={client}>
       {legal_entity ? (
@@ -208,7 +208,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
     ])
-    // Agenti and Impostazioni come after every section, Impostazioni last.
+    // Agents and Settings come after every section, Settings last.
     const lastLink = nav.getByRole('link', { name: 'Agenti' })
     const settings = nav.getByRole('button', { name: 'Impostazioni' })
     expect(lastLink.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -260,8 +260,8 @@ describe('AppShell', () => {
     )
     renderShell()
 
-    const attivita = await sidebar().findByRole('link', { name: /^Attività\s*3 in ritardo$/ })
-    expect(attivita).toBeInTheDocument()
+    const tasksLink = await sidebar().findByRole('link', { name: /^Attività\s*3 in ritardo$/ })
+    expect(tasksLink).toBeInTheDocument()
     // Asked for the signed-in user's own, a single row: the sidebar wants the number.
     expect(GET).toHaveBeenCalledWith('/api/activities/today', {
       params: { query: { assigned_to: 'u-1', include_unassigned: true, limit: 1 } },
@@ -484,8 +484,8 @@ describe('AppShell', () => {
   })
 
   /**
-   * The Avvisi page (REB-734) is every role's own list, so it sits outside any gate: in
-   * «Da fare», right after the calendar and right before Proposte, which stays the last
+   * The Reminders page (REB-734) is every role's own list, so it sits outside any gate: in
+   * «Da fare», right after the calendar and right before Proposals, which stays the last
    * entry of the section (REB-750) and opens `/app/proposals`.
    */
   it.each(['admin', 'collaborator', 'readonly'])('shows Avvisi to a %s, between Calendario and Proposte', (role) => {
@@ -509,14 +509,14 @@ describe('AppShell', () => {
   /** What the API answers for the list: two open, one snoozed and one acknowledged. */
   function answerReminders(statuses: Array<'open' | 'snoozed' | 'acknowledged'>) {
     const list = statuses.map((status, index) => ({
-      key: `attivita_due:${index}`,
+      key: `task_due:${index}`,
       type: 'task_due',
       label: 'Attività in scadenza',
       severity: 'warning',
       measure: 0,
       title: `Attività ${index}`,
       detail: '',
-      entity: 'attivita',
+      entity: 'task',
       entity_id: `3f0c2a10-0000-4000-8000-00000000000${index}`,
       customer_id: null,
       status,
@@ -664,7 +664,7 @@ describe('AppShell', () => {
 
   it('renders its children in the page area', () => {
     renderShell(<p>contenuto</p>)
-    expect(within(screen.getByRole('main')).getByText('content')).toBeInTheDocument()
+    expect(within(screen.getByRole('main')).getByText('contenuto')).toBeInTheDocument()
   })
 
   it('makes the page itself the one scroller, with no inset frame around it', () => {
@@ -840,7 +840,7 @@ describe('the space switcher', () => {
     GET.mockResolvedValue({
       data: [
         { slug: 'studio', role: 'admin' },
-        { slug: 'other', role: 'collaborator' },
+        { slug: 'altro', role: 'collaborator' },
       ],
       response: { status: 200 },
     })
@@ -852,9 +852,9 @@ describe('the space switcher', () => {
   })
 
   it('enters another space on click and navigates to its own basepath', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'other', role: 'collaborator' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'altro', role: 'collaborator' }], response: { status: 200 } })
     POST.mockResolvedValue({
-      data: { id: 'u1', email: 'ada@altro.it', nome: 'Ada', role: 'collaborator' },
+      data: { id: 'u1', email: 'ada@altro.it', name: 'Ada', role: 'collaborator' },
       response: { status: 200 },
     })
     renderShell()
@@ -863,14 +863,14 @@ describe('the space switcher', () => {
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/identity/enter/{slug}', {
-        params: { path: { slug: 'other' } },
+        params: { path: { slug: 'altro' } },
       }),
     )
     await waitFor(() => expect(mockGo).toHaveBeenCalledWith('/altro/app/'))
   })
 
   it('reports the API sentence when entering another space fails', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'other', role: 'admin' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'altro', role: 'admin' }], response: { status: 200 } })
     POST.mockResolvedValue({
       error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
       response: { status: 404 },
@@ -904,7 +904,7 @@ describe('the space switcher', () => {
       if (path === '/api/identity/spaces') {
         spacesCalls += 1
         return Promise.resolve({
-          data: spacesCalls === 1 ? [] : [{ slug: 'other', role: 'collaborator' }],
+          data: spacesCalls === 1 ? [] : [{ slug: 'altro', role: 'collaborator' }],
           response: { status: 200 },
         })
       }
@@ -954,8 +954,8 @@ describe('the space switcher', () => {
 })
 
 describe('the azienda selector (REB-625)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
 
   function twoLegalEntities(selected: string | null): LegalEntityValue {
     return {
@@ -969,7 +969,7 @@ describe('the azienda selector (REB-625)', () => {
     }
   }
 
-  it('is not drawn in a one-azienda space, which is every space until milestone 5', () => {
+  it('is not drawn in a one-legal-entity space, which is every space until milestone 5', () => {
     renderShell()
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })

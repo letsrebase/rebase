@@ -102,7 +102,7 @@ export function DaysToInvoiceSection({ contractId, currency }: { contractId: str
                       <div className="min-w-0">
                         <p className="font-medium">{italianiseDecimals(riga.description)}</p>
                         <p className="text-sm text-muted-foreground">
-                          {plural(riga.work_units, 'work_unit', 'work_units')} a{' '}
+                          {plural(riga.work_units, 'giornata', 'giornate')} a{' '}
                           {formatAmount(riga.unit_price, currency)} per {riga.unit_of_measure}
                         </p>
                       </div>

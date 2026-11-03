@@ -72,7 +72,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   const [emailState, setEmail] = useState('')
   const [member, setMember] = useState<Member | null>(null)
   const [linkSent, setLinkSent] = useState(false)
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [editingSlug, setEditingSlug] = useState(false)
@@ -218,7 +218,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
     try {
       const tenant = await unwrap(
         api.POST('/api/tenants/', {
-          body: { slug, nome: nome.trim(), email, member: member?.member ?? false },
+          body: { slug, name: name.trim(), email, member: member?.member ?? false },
         }),
       )
       // The 201 set the space's cookies: a different basepath is a different application
@@ -242,7 +242,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   // Outside the fast path `memberSettled` never matters (`!fastPathActive` alone
   // clears the gate): the ordinary flow already awaits the member lookup before the
   // name screen ever shows.
-  const canCreate = !busy && (isFree || failed) && nome.trim() !== '' && (memberSettled || !fastPathActive)
+  const canCreate = !busy && (isFree || failed) && name.trim() !== '' && (memberSettled || !fastPathActive)
 
   const hasSpaces = screen === 'owner'
 
@@ -349,12 +349,12 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
           ) : (
             <form onSubmit={onCreate} className="space-y-4" noValidate>
               <div className="space-y-2">
-                <Label htmlFor="nome">Come si chiama il tuo spazio?</Label>
+                <Label htmlFor="name">Come si chiama il tuo spazio?</Label>
                 <Input
-                  id="nome"
+                  id="name"
                   autoComplete="name"
                   required
-                  value={nome}
+                  value={name}
                   onChange={(event) => onNameChange(event.target.value)}
                 />
                 {editingSlug ? (

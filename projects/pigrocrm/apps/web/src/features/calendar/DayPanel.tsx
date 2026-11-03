@@ -97,8 +97,8 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
   const lines = data?.per_deal ?? []
   if (lines.length === 0) return <p className="text-sm text-muted-foreground">Nessuna ora.</p>
   return (
-    <section aria-labelledby="ore-del-giorno" className="space-y-1">
-      <h3 id="ore-del-giorno" className="text-sm font-medium">
+    <section aria-labelledby="hours-of-day" className="space-y-1">
+      <h3 id="hours-of-day" className="text-sm font-medium">
         Ore ({data ? formatItalianQuantity(data.hours) : ''})
       </h3>
       <ul className="space-y-1 text-sm">
@@ -119,18 +119,18 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
 /** The day's deadlines: commitments, which can be closed from here, and invoices, which
  *  cannot be touched from here at all. */
 function Due({ data }: { data: CalendarDay | undefined }) {
-  const attivita = data?.attivita ?? []
+  const tasks = data?.tasks ?? []
   const invoices = data?.invoices ?? []
-  if (attivita.length === 0 && invoices.length === 0) return null
+  if (tasks.length === 0 && invoices.length === 0) return null
 
   return (
-    <section aria-labelledby="scadenze-del-giorno" className="space-y-2">
-      <h3 id="scadenze-del-giorno" className="text-sm font-medium">
+    <section aria-labelledby="due-on-day" className="space-y-2">
+      <h3 id="due-on-day" className="text-sm font-medium">
         Scadenze
       </h3>
       <ul className="space-y-2 text-sm">
-        {attivita.map((item) => (
-          <TaskItem key={item.id} attivita={item} />
+        {tasks.map((item) => (
+          <TaskItem key={item.id} task={item} />
         ))}
         {invoices.map((invoice) => (
           <li key={invoice.id} className="flex items-center justify-between gap-3">
@@ -182,7 +182,7 @@ function LogHours({
       {
         deal_id: dealId,
         user_id: user.id,
-        data: day,
+        date: day,
         hours: hours,
         description: description.trim() === '' ? 'Ore' : description.trim(),
       },
@@ -197,21 +197,21 @@ function LogHours({
   }
 
   return (
-    <section aria-labelledby="registra-ore" className="space-y-2 border-t pt-4">
-      <h3 id="registra-ore" className="text-sm font-medium">
+    <section aria-labelledby="log-hours" className="space-y-2 border-t pt-4">
+      <h3 id="log-hours" className="text-sm font-medium">
         Registra ore
       </h3>
       <div className="grid gap-3 sm:grid-cols-[1fr_6rem]">
         <div className="space-y-1">
-          <Label htmlFor="deal-del-giorno">Deal</Label>
+          <Label htmlFor="deal-of-day">Deal</Label>
           <Select value={dealId} onValueChange={setDealId}>
-            <SelectTrigger id="deal-del-giorno">
+            <SelectTrigger id="deal-of-day">
               <SelectValue placeholder="Scegli il deal" />
             </SelectTrigger>
             <SelectContent>
               {(deals.data?.items ?? []).map((deal) => (
                 <SelectItem key={deal.id} value={deal.id}>
-                  {deal.nome}
+                  {deal.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -221,9 +221,9 @@ function LogHours({
           {/* A visible label, not a screen-reader-only one: this field is half the
               point of the panel -- «oltre alla giornata piena, dammi modo di mettere le
               ore» -- and a bare box next to a Deal picker reads as part of it. */}
-          <Label htmlFor="ore-del-giorno-input">Ore</Label>
+          <Label htmlFor="hours-of-day-input">Ore</Label>
           <Input
-            id="ore-del-giorno-input"
+            id="hours-of-day-input"
             inputMode="decimal"
             value={ore}
             onChange={(event) => setHours(event.target.value)}
@@ -289,8 +289,8 @@ function LogHours({
 function NewCommitment({ day }: { day: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <section aria-labelledby="nuova-scadenza" className="space-y-2 border-t pt-4">
-      <h3 id="nuova-scadenza" className="text-sm font-medium">
+    <section aria-labelledby="new-due-date" className="space-y-2 border-t pt-4">
+      <h3 id="new-due-date" className="text-sm font-medium">
         Nuova attività
       </h3>
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>

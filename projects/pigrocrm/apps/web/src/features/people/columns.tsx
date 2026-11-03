@@ -46,14 +46,14 @@ export function displayNative(value: string | null): string {
 /**
  * «Mario Rossi», or «Mario» for a person whose surname nobody filled in.
  *
- * Not `${nome} ${cognome}`: `last_name` is nullable *and* can hold the explicit `""` a
+ * Not `${first_name} ${last_name}`: `last_name` is nullable *and* can hold the explicit `""` a
  * cleared native column leaves behind (see `displayNative` above), either of which
  * would otherwise produce a trailing space and, worse, a second initial taken from
  * nothing.
  */
 function fullName(person: Person): string {
   const last_name = person.last_name === null || person.last_name === '' ? '' : ` ${person.last_name}`
-  return `${person.nome}${last_name}`
+  return `${person.first_name}${last_name}`
 }
 
 /**
@@ -64,7 +64,7 @@ function fullName(person: Person): string {
  * `DataTableFeatures` (`DataTable.tsx`'s own export) is the same `TFeatures`
  * every table in this product is instantiated with.
  *
- * Order -- Nome, Azienda, Ruolo, Email, Telefono -- is "the columns you
+ * Order -- Nome, Legal entity, Role, Email, Phone -- is "the columns you
  * need to call someone", not alphabetical or wire order: who they are, where they
  * work, what they do there, then how to reach them. «Azienda» sits immediately
  * after the name because it is read as part of the identity ("Mario Rossi, ACME
@@ -81,10 +81,10 @@ export function buildPersonColumns(
   const native: ColumnDef<DataTableFeatures, Person>[] = [
     {
       header: 'Nome',
-      accessorKey: 'nome',
+      accessorKey: 'first_name',
       // The row *is* a person, so the first cell carries their identity (design spec
       // §4): initials, the full name, and the company underneath when the row brought
-      // one. The accessor stays the bare `nome` -- it is what this column's own tests
+      // one. The accessor stays the bare `first_name` -- it is what this column's own tests
       // read and what a future sort or export would use -- while `cell` shows the whole
       // name, because initials taken from a first name alone say almost nothing.
       cell: ({ row }) => (

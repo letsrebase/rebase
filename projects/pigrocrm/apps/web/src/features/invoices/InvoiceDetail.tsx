@@ -40,7 +40,7 @@ export function InvoiceDetail() {
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
   const legal_entity = useLegalEntity()
-  const issuedFrom = legal_entity.several ? legal_entity.byId(invoice.data?.legal_entity_id)?.nome : undefined
+  const issuedFrom = legal_entity.several ? legal_entity.byId(invoice.data?.legal_entity_id)?.name : undefined
   if (invoice.isLoading) {
     return (
       <p className="flex items-center gap-2 p-8">
@@ -75,7 +75,7 @@ export function InvoiceDetail() {
     <EntityDetailLayout
       icon={Receipt}
       title={formatInvoiceHeading(row)}
-      // The causale, and from the second azienda on who issued it (REB-626).
+      // The reason line, and from the second legal entity on who issued it (REB-626).
       subtitle={
         [row.memo, issuedFrom ? `Emessa da ${issuedFrom}` : undefined]
           .filter((part): part is string => typeof part === 'string' && part !== '')

@@ -24,8 +24,8 @@ export function purchaseOrderDraft(invoice: PurchaseOrderFields): PurchaseOrderD
   }
 }
 
-/** The one mistake worth catching before the request: a date, a CIG or a CUP with no
- * order to belong to. The CIG's and CUP's own shape is the server's to judge, and its
+/** The one mistake worth catching before the request: a date, a tender code or a CUP with no
+ * order to belong to. The tender code's and CUP's own shape is the server's to judge, and its
  * sentence is shown as it comes. */
 export function validatePurchaseOrder(draft: PurchaseOrderDraft): string | undefined {
   const hasRest =

@@ -46,7 +46,7 @@ const EVENTS: ReadonlyArray<readonly [string, string]> = [
   ['POST /api/time-entries', 'hours_logged'],
   ['POST /api/invoices/{invoice_id}/issue', 'invoice_issued'],
   ['POST /api/tokens', 'assistant_connected'],
-  ['PUT /api/aziende/{azienda_id}', 'legal_entity_profile_saved'],
+  ['PUT /api/legal-entities/{legal_entity_id}', 'legal_entity_profile_saved'],
 ]
 
 /**
@@ -105,10 +105,10 @@ export function spaceKey(prefix: string): string {
 /** The person and the space they are in. Email and name are sent on purpose: Ivan
  *  chose to see who a session belongs to (design, «What was decided»). */
 export function identifySession(
-  user: Pick<SessionUser, 'id' | 'email' | 'nome' | 'role'>,
+  user: Pick<SessionUser, 'id' | 'email' | 'name' | 'role'>,
   prefix: string = tenantPrefix,
 ): void {
-  identifyUser(user.id, { email: user.email, nome: user.nome, role: user.role })
+  identifyUser(user.id, { email: user.email, name: user.name, role: user.role })
   identifyGroup('space', spaceKey(prefix))
 }
 

@@ -93,8 +93,8 @@ describe('toProblem', () => {
   })
 
   it('leaves the agent refusal in the server’s Italian, untouched', () => {
-    // `agent_forbidden`'s detail is already written to be read out ("... è un atto che
-    // richiede una persona"); rewriting it would replace the one message the backend
+    // `agent_forbidden`'s detail is already written to be read out (an act that
+    // needs a person); rewriting it would replace the one message the backend
     // worded for this exact screen.
     const problem = toProblem(
       {
@@ -379,7 +379,7 @@ describe('the typed client', () => {
   const ME = {
     id: '11111111-1111-1111-1111-111111111111',
     email: 'titolare@studio.it',
-    nome: 'Titolare',
+    name: 'Titolare',
     role: 'admin',
     active: true,
   }

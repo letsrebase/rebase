@@ -10,7 +10,7 @@ import { EmailTemplateDialog } from './EmailTemplateDialog'
 import { SendInvoiceDialog } from './SendInvoiceDialog'
 import { useEmailTemplates, useUpdateEmailTemplate, type EmailTemplate } from './emailQueries'
 
-const ATTACHMENT_LABEL = { invoice_pdf: 'invoice', register_pdf: 'register' } as const
+const ATTACHMENT_LABEL = { invoice_pdf: 'fattura', register_pdf: 'registro' } as const
 
 function Archive({ contractId, template }: { contractId: string; template: EmailTemplate }) {
   const update = useUpdateEmailTemplate(contractId, template.id)
@@ -82,7 +82,7 @@ export function ContractEmailSection({
               <li key={template.id} className="flex items-center gap-4 py-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="font-medium">{template.nome}</span>
+                    <span className="font-medium">{template.name}</span>
                     {!template.active && <StatusPill tone="muted">Archiviato</StatusPill>}
                   </div>
                   <p className="truncate text-sm text-muted-foreground">
@@ -96,7 +96,7 @@ export function ContractEmailSection({
                     <Button
                       size="icon"
                       variant="ghost"
-                      aria-label={`Modifica il modello ${template.nome}`}
+                      aria-label={`Modifica il modello ${template.name}`}
                       onClick={() => setEditing({ open: true, template })}
                     >
                       <Pencil className="size-4" />

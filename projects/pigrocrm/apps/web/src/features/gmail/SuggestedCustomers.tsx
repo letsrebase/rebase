@@ -22,13 +22,13 @@ import { useCustomerSuggestions, useImportSuggestions, type SuggestedCustomer } 
 
 /** What the person decided about one ticked proposal. */
 interface Choice {
-  nome: string
+  name: string
   people: Record<string, boolean>
 }
 
 function firstChoice(proposal: SuggestedCustomer): Choice {
   return {
-    nome: proposal.nome,
+    name: proposal.name,
     people: Object.fromEntries(
       proposal.people.filter((person) => !person.already_in_directory).map((person) => [person.address, true]),
     ),
@@ -74,7 +74,7 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
   }
 
   const picked = proposals.filter((proposal) => chosen[proposal.domain] !== undefined)
-  const unnamed = picked.some((proposal) => (chosen[proposal.domain]?.nome ?? '').trim() === '')
+  const unnamed = picked.some((proposal) => (chosen[proposal.domain]?.name ?? '').trim() === '')
 
   function toggle(proposal: SuggestedCustomer) {
     setChosen((current) => {
@@ -99,10 +99,10 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
           const choice = chosen[proposal.domain] ?? firstChoice(proposal)
           return {
             domain: proposal.domain,
-            legal_name: choice.nome.trim(),
+            legal_name: choice.name.trim(),
             people: proposal.people
               .filter((person) => choice.people[person.address])
-              .map((person) => ({ address: person.address, nome: person.nome })),
+              .map((person) => ({ address: person.address, name: person.name })),
           }
         }),
       },
@@ -133,7 +133,7 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
                 <Checkbox id={id} checked={choice !== undefined} onCheckedChange={() => toggle(proposal)} />
                 <div className="min-w-0 flex-1 space-y-1">
                   <Label htmlFor={id} className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="font-medium">{proposal.nome}</span>
+                    <span className="font-medium">{proposal.name}</span>
                     <span className="text-muted-foreground text-xs">{proposal.domain}</span>
                   </Label>
                   <p className="text-muted-foreground text-xs">
@@ -143,17 +143,17 @@ export function SuggestedCustomers({ onImported }: { onImported?: (count: number
                   {choice ? (
                     <Input
                       aria-label={`Nome del cliente per ${proposal.domain}`}
-                      value={choice.nome}
+                      value={choice.name}
                       onChange={(event) => {
-                        const nome = event.target.value
-                        update(proposal.domain, (current) => ({ ...current, nome }))
+                        const name = event.target.value
+                        update(proposal.domain, (current) => ({ ...current, name }))
                       }}
                     />
                   ) : null}
                   <ul aria-label={`Persone di ${proposal.domain}`} className="space-y-1 text-sm">
                     {proposal.people.map((person) => {
                       const personId = `${id}-${person.address}`
-                      const label = person.nome ? `${person.nome} <${person.address}>` : person.address
+                      const label = person.name ? `${person.name} <${person.address}>` : person.address
                       return (
                         <li key={person.address} className="flex items-center gap-2">
                           {choice && !person.already_in_directory ? (

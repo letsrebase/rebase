@@ -98,8 +98,8 @@ describe('CustomerForm', () => {
 
   /**
    * The defect this guards, reproduced live before the fix: archive a field
-   * definition while a record still carries a value for it, open Modifica, press
-   * Salva with nothing else changed. A flat form state has to re-derive "is this key
+   * definition while a record still carries a value for it, open Edit, press
+   * Save with nothing else changed. A flat form state has to re-derive "is this key
    * custom?" from the *active* schema, which no longer lists the archived key, so the
    * value was reclassified as a native column and sent as a top-level key --
    * `CustomerUpdate` is `extra="forbid"`, so the PATCH came back 422
@@ -281,8 +281,8 @@ describe('CustomerForm', () => {
 })
 
 describe('the «Azienda» picker (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a-2', nome: 'rebase ltd', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a-1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a-2', name: 'rebase ltd', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -379,7 +379,7 @@ describe('the «Azienda» picker (REB-626)', () => {
     expect(submitted(onSubmit)).toMatchObject({ legal_entity_id: 'a-2' })
   })
 
-  it('is not drawn in a one-azienda space, and the body carries no azienda', async () => {
+  it('is not drawn in a one-legal-entity space, and the body carries no azienda', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
       <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
@@ -393,7 +393,7 @@ describe('the «Azienda» picker (REB-626)', () => {
 })
 
 describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR #509)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a-1', name: 'humancraft', active: true } as LegalEntityRecord
   const ONE_LEFT: LegalEntityValue = {
     legal_entities: [HUMANCRAFT],
     selected: null,
@@ -450,8 +450,8 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
 })
 
 describe('the picker beside a custom field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a-2', nome: 'rebase ltd', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a-1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a-2', name: 'rebase ltd', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -498,8 +498,8 @@ describe('the picker beside a custom field that happens to be named azienda_id (
 
 describe('the «Responsabile» picker (REB-773)', () => {
   const OWNERS = [
-    { id: 'u-1', nome: 'Giulia' },
-    { id: 'u-2', nome: 'Marco' },
+    { id: 'u-1', name: 'Giulia' },
+    { id: 'u-2', name: 'Marco' },
   ]
 
   it('is not drawn without the people to choose from, and the body carries no owner', async () => {

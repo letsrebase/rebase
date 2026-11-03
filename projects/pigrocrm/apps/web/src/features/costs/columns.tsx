@@ -13,15 +13,15 @@ export function buildCostColumns(
   categories: CostCategory[],
   customFields: FieldDefinition[],
 ): ColumnDef<DataTableFeatures, Cost>[] {
-  const names = new Map(categories.map((category) => [category.id, category.nome]))
+  const names = new Map(categories.map((category) => [category.id, category.name]))
   const native: ColumnDef<DataTableFeatures, Cost>[] = [
     {
       header: 'Data',
-      id: 'data',
-      accessorFn: (row) => formatIsoDateItalian(row.data),
+      id: 'date',
+      accessorFn: (row) => formatIsoDateItalian(row.date),
       // `DateCell` formats the raw ISO value through the same `lib/dates.ts` this
       // accessor uses, and adds the calendar icon (design spec §4).
-      cell: ({ row }) => <DateCell value={row.original.data} />,
+      cell: ({ row }) => <DateCell value={row.original.date} />,
     },
     {
       header: 'Categoria',

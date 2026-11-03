@@ -54,7 +54,7 @@ export function UsersPanel() {
   const revoke = useRevokeInvite()
   const update = useUpdateUser()
   // The scope column and the row action are drawn from the second azienda on, and
-  // also in a one-azienda space while somebody still carries a scope: a member whose
+  // also in a one-legal-entity space while somebody still carries a scope: a member whose
   // aziende were all deactivated sees nothing, and this is where an admin reads
   // «nessuna azienda attiva» and widens them back.
   const showScope =
@@ -63,7 +63,7 @@ export function UsersPanel() {
     (invites.data ?? []).some((i) => Array.isArray(i.legal_entities))
 
   const columns: ColumnDef<DataTableFeatures, UserRecord>[] = [
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Email', accessorKey: 'email' },
     {
       header: 'Ruolo',
@@ -92,7 +92,7 @@ export function UsersPanel() {
           >
             <SelectTrigger
               className="w-40"
-              aria-label={`Ruolo di ${user.nome}`}
+              aria-label={`Ruolo di ${user.name}`}
               title={isSelf ? 'Non puoi cambiare il ruolo del tuo stesso account.' : undefined}
             >
               <SelectValue />
@@ -131,7 +131,7 @@ export function UsersPanel() {
     },
     {
       header: 'Ultimo accesso',
-      id: 'ultimo_accesso',
+      id: 'last_login',
       // `None` until the account's first session -- a password login or an accepted
       // invitation (REB-297) -- so an em dash reads as "never", not as a blank cell
       // that looks like a loading state.
@@ -153,7 +153,7 @@ export function UsersPanel() {
         // CLI), and an item that disappears from one row is a menu nobody learns.
         return (
           <RowActions
-            label={`Azioni per ${user.nome}`}
+            label={`Azioni per ${user.name}`}
             items={[
               {
                 label: 'Rinomina…',
@@ -195,7 +195,7 @@ export function UsersPanel() {
       id: 'persona',
       // The name the admin carried, when they knew one; the acceptance page asks for
       // the rest (spec §1), so an address alone is a normal row here.
-      cell: (info) => info.row.original.nome ?? info.row.original.email,
+      cell: (info) => info.row.original.name ?? info.row.original.email,
     },
     { header: 'Email', accessorKey: 'email' },
     {
@@ -241,7 +241,7 @@ export function UsersPanel() {
       meta: { align: 'right' },
       cell: (info) => {
         const row = info.row.original
-        const label = row.nome ?? row.email
+        const label = row.name ?? row.email
         return (
           <RowActions
             label={`Azioni per ${label}`}

@@ -37,7 +37,7 @@ export const StatusLabels: Record<WorkUnitStatus, string> = {
  * are a fact still to be settled), danger the ones that went the other way, ink the
  * settled ones.
  */
-export const StatusTone: Record<WorkUnitStatus, StatusTone> = {
+export const STATUS_TONE: Record<WorkUnitStatus, StatusTone> = {
   proposed: 'gold',
   approved: 'ink',
   worked: 'ink',
@@ -59,7 +59,7 @@ export function statusLabel(value: string): string {
 }
 
 export function statusTone(value: string): StatusTone {
-  return isStatus(value) ? StatusTone[value] : 'muted'
+  return isStatus(value) ? STATUS_TONE[value] : 'muted'
 }
 
 /**
@@ -130,7 +130,7 @@ export const ACTIONS: Partial<Record<WorkUnitStatus, ActionSpec>> = {
  * a sentence, so it has its words here.
  */
 const REASON_LABELS: Record<string, string> = {
-  creation: 'Giornata registrata',
+  'creazione': 'Giornata registrata',
 }
 
 export function reasonLabel(reason: string): string {
@@ -178,7 +178,7 @@ export function allowsFraction(card: RateCard | null, quantity: string): boolean
 }
 
 const UnitPhrases: Record<string, string> = {
-  ora: 'all’ora',
+  hour: 'all’ora',
   day: 'al giorno',
   month: 'al mese',
   year: 'all’anno',

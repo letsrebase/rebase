@@ -8,8 +8,8 @@ import type { WorkUnitCreateBody, WorkUnitRow, WorkUnitStatus } from './labels'
 
 export interface DaysListParams {
   contractId?: string
-  da?: string
-  a?: string
+  from?: string
+  to?: string
   status?: WorkUnitStatus
 }
 
@@ -20,7 +20,7 @@ export interface DaysListParams {
  */
 export function useWorkUnits(params: DaysListParams, options: { enabled?: boolean } = {}) {
   const { selected } = useLegalEntity()
-  const bounded = params.contractId !== undefined || params.da !== undefined || params.a !== undefined
+  const bounded = params.contractId !== undefined || params.from !== undefined || params.to !== undefined
   return useQuery({
     enabled: (options.enabled ?? true) && bounded,
     queryKey: queryKeys.workUnits({ ...params, legal_entity: selected }),
@@ -30,8 +30,8 @@ export function useWorkUnits(params: DaysListParams, options: { enabled?: boolea
           params: {
             query: {
               contract_id: params.contractId,
-              da: params.da,
-              a: params.a,
+              from: params.from,
+              to: params.to,
               status: params.status,
               // A contract names its own azienda: the sidebar's only narrows a read that does
               // not, and both together would answer nothing for a contract of the other one.
@@ -157,7 +157,7 @@ export function useApprovalCandidates(contractId: string, openedFor: readonly st
   ]) {
     byId.set(day.id, day)
   }
-  const days = [...byId.values()].sort((a, b) => b.data.localeCompare(a.data))
+  const days = [...byId.values()].sort((a, b) => b.date.localeCompare(a.date))
   return {
     days,
     isPending: proposed.isPending || flagged.isPending,

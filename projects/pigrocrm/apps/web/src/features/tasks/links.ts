@@ -1,8 +1,8 @@
 import type { Task } from '@/features/calendar/queries'
 
 /**
- * The four records an attività may hang from, as the API spells them
- * (`attivita/schemas.py`, `REFERENCES`): at most one at a time, which is why the dialog
+ * The four records a task may hang from, as the API spells them
+ * (`tasks/schemas.py`, `REFERENCES`): at most one at a time, which is why the dialog
  * holds one `LinkValue` and never four ids.
  */
 export type LinkKind = 'customer' | 'person' | 'deal' | 'invoice'
@@ -30,12 +30,12 @@ export const LINK_COLUMN = {
 
 type LinkColumns = Pick<Task, 'customer_id' | 'person_id' | 'deal_id' | 'invoice_id'>
 
-/** The record an attività hangs from, or `null` for one that hangs from none. */
-export function linkOf(attivita: LinkColumns): LinkValue | null {
-  if (attivita.customer_id) return { kind: 'customer', id: attivita.customer_id }
-  if (attivita.person_id) return { kind: 'person', id: attivita.person_id }
-  if (attivita.deal_id) return { kind: 'deal', id: attivita.deal_id }
-  if (attivita.invoice_id) return { kind: 'invoice', id: attivita.invoice_id }
+/** The record a task hangs from, or `null` for one that hangs from none. */
+export function linkOf(task: LinkColumns): LinkValue | null {
+  if (task.customer_id) return { kind: 'customer', id: task.customer_id }
+  if (task.person_id) return { kind: 'person', id: task.person_id }
+  if (task.deal_id) return { kind: 'deal', id: task.deal_id }
+  if (task.invoice_id) return { kind: 'invoice', id: task.invoice_id }
   return null
 }
 

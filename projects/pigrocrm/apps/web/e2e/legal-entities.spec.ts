@@ -2,16 +2,16 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { login, loginAsAdmin } from './helpers'
 
 /**
- * A member scoped to one azienda sees that azienda and nothing else (REB-635, spec
+ * A member scoped to one legal entity sees that legal entity and nothing else (REB-635, spec
  * 2026-10-03 §1.11, §4, §5). The stack runs the API as the application role
  * (`scripts/e2e-env.sh`), so what B does not see here is what Postgres refuses to show,
  * not what a `WHERE` left out.
  *
- * A, the space's admin, opens a second azienda and one customer under each; B is created
+ * A, the space's admin, opens a second legal entity and one customer under each; B is created
  * and then scoped from the Team panel, through the UI this card adds. B signs in on a
  * second browser context, so A's session stays alive for the clean-up at the end: the
- * second azienda is deactivated again, since another spec's «Analisi › Fiscale» expects
- * one active azienda and the files of this suite share the stack.
+ * second legal entity is deactivated again, since another spec's «Analisi › Fiscale» expects
+ * one active legal entity and the files of this suite share the stack.
  */
 
 const STAMP = Date.now()
@@ -22,7 +22,7 @@ const B_PASSWORD = 'collabora123'
 async function createLegalEntity(request: APIRequestContext): Promise<string> {
   const created = await request.post('/api/legal-entities', {
     data: {
-      nome: LTD,
+      name: LTD,
       legal_name: LTD,
       country: 'GB',
       // A foreign company: no Italian regime, a VAT rate and no natura, the body
@@ -46,24 +46,24 @@ async function createLegalEntity(request: APIRequestContext): Promise<string> {
 
 async function createCustomer(
   request: APIRequestContext,
-  nome: string,
+  name: string,
   legalEntityId: string,
 ): Promise<string> {
   const created = await request.post('/api/customers', {
-    data: { legal_name: nome, legal_entity_id: legalEntityId },
+    data: { legal_name: name, legal_entity_id: legalEntityId },
   })
   expect(created.status(), await created.text()).toBe(201)
   return ((await created.json()) as { id: string }).id
 }
 
-async function scopeFromTheTeamPanel(page: Page, nome: string, keep: string): Promise<void> {
+async function scopeFromTheTeamPanel(page: Page, name: string, keep: string): Promise<void> {
   await page.goto('/app/settings/users')
-  const row = page.getByRole('row', { name: new RegExp(nome) })
+  const row = page.getByRole('row', { name: new RegExp(name) })
   await expect(row).toContainText('Tutte')
-  await row.getByRole('button', { name: `Azioni per ${nome}` }).click()
+  await row.getByRole('button', { name: `Azioni per ${name}` }).click()
   await page.getByRole('menuitem', { name: 'Aziende…' }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText(`Aziende di ${nome}`)
+  await expect(dialog).toContainText(`Aziende di ${name}`)
   // Every azienda but `keep` unchecked: a stack kept alive between runs may hold more
   // active aziende than the two this spec makes, and B must end up with exactly one.
   for (const box of await dialog.getByRole('checkbox').all()) {
@@ -85,10 +85,10 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
   await loginAsAdmin(page)
   const legal_entities = (await (await page.request.get('/api/legal-entities')).json()) as {
     id: string
-    nome: string
-    predefinita: boolean
+    name: string
+    is_default: boolean
   }[]
-  const studio = legal_entities.find((a) => a.predefinita)
+  const studio = legal_entities.find((a) => a.is_default)
   expect(studio).toBeDefined()
   const ltdId = await createLegalEntity(page.request)
   const studioCustomer = await createCustomer(page.request, `Studio Cliente ${STAMP}`, studio!.id)
@@ -97,7 +97,7 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
   // B, created by A with a password (no mail leaves the e2e stack), then scoped to
   // «Scope Ltd» from the Team panel: the row said «Tutte», it says the azienda now.
   const created = await page.request.post('/api/users', {
-    data: { email: B_EMAIL, password: B_PASSWORD, nome: `Bea ${STAMP}`, role: 'collaborator' },
+    data: { email: B_EMAIL, password: B_PASSWORD, name: `Bea ${STAMP}`, role: 'collaborator' },
   })
   expect(created.status(), await created.text()).toBe(201)
   await scopeFromTheTeamPanel(page, `Bea ${STAMP}`, LTD)

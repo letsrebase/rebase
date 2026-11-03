@@ -20,13 +20,13 @@ interface Errors {
  * the accrual period (ORB-61). The detail page renders this in place of the read-only
  * rows while the document can change, so a date is either stated or asked, never both.
  *
- * A draft fattura has no date to edit here: `issue_date` is assigned at emission
- * (`InvoiceService.issue`) and `InvoiceUpdate` refuses it on a fattura, so the input
+ * A draft invoice has no date to edit here: `issue_date` is assigned at emission
+ * (`InvoiceService.issue`) and `InvoiceUpdate` refuses it on a invoice, so the input
  * exists only on a proforma. The period is asked on both.
  *
  * Saved through `PATCH /api/invoices/{id}`, the call `memo` and `note_interne`
  * already travel on. The freeze is the server's, not a prop: a consumed proforma or an
- * issued fattura answers 409, and the banner shows it as it comes.
+ * issued invoice answers 409, and the banner shows it as it comes.
  */
 export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
   const update = useUpdateInvoice(invoice.id)
@@ -78,9 +78,9 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
       <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
         {isProforma ? (
           <div className="space-y-2">
-            <Label htmlFor="fattura-data">Data</Label>
+            <Label htmlFor="invoice-date">Data</Label>
             <Input
-              id="fattura-data"
+              id="invoice-date"
               type="date"
               required
               value={issueDate}
@@ -90,9 +90,9 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
         ) : null}
         <AccrualPeriodFields idPrefix="invoice" value={accrual} onChange={setAccrual} />
         <div className="space-y-2">
-          <Label htmlFor="fattura-scadenza">Scadenza</Label>
+          <Label htmlFor="invoice-due-date">Scadenza</Label>
           <Input
-            id="fattura-scadenza"
+            id="invoice-due-date"
             type="date"
             value={dueDate}
             onChange={(event) => setDueDate(event.target.value)}

@@ -16,7 +16,7 @@ import { useCreateLegalEntity, type LegalEntityRecord } from './queries'
  */
 interface IdentityField {
   name:
-    | 'nome'
+    | 'name'
     | 'legal_name'
     | 'vat_number'
     | 'tax_code'
@@ -34,7 +34,7 @@ interface IdentityField {
 }
 
 const IDENTITY: readonly IdentityField[] = [
-  { name: 'nome', label: 'Nome breve', required: true, hint: 'Come compare nel selettore e nelle liste' },
+  { name: 'name', label: 'Nome breve', required: true, hint: 'Come compare nel selettore e nelle liste' },
   { name: 'legal_name', label: 'Ragione sociale', required: true },
   { name: 'vat_number', label: 'Partita IVA', hint: '11 cifre per un’azienda italiana' },
   { name: 'tax_code', label: 'Codice fiscale' },
@@ -52,8 +52,8 @@ type IdentityName = IdentityField['name']
 
 /**
  * The three regimes the settings' fiscal panel offers (REB-621), with the one VAT rate
- * each is usually opened with: the forfettario issues at zero with the server's own
- * natura and declaration, the ordinary regime at the standard rate and no natura, a
+ * each is usually opened with: the flat-rate regime issues at zero with the server's own
+ * VAT nature and declaration, the ordinary regime at the standard rate and no VAT nature, a
  * foreign company at its own country's rate. Everything else on the profile keeps
  * `FiscalProfileUpsert`'s defaults and is edited on the panel the page lands on.
  */
@@ -91,11 +91,11 @@ function emptyValues(): Values {
 
 /**
  * The fiscal half of the body. A key left out takes `FiscalProfileUpsert`'s default,
- * which is the forfettario's, so the two other regimes say explicitly what they do not
+ * which is the flat-rate regime's, so the two other regimes say explicitly what they do not
  * carry: no declaration of their own, and none of the three income parameters, which
- * are the forfettario's arithmetic and would otherwise make the estimate compute a
- * substitute tax for an SRL or a foreign company; abroad also no code and no bollo, as
- * the settings panel sends them. The natura is the person's, empty for «nothing»: the
+ * are the flat-rate regime's arithmetic and would otherwise make the estimate compute a
+ * substitute tax for an SRL or a foreign company; abroad also no code and no stamp duty, as
+ * the settings panel sends them. The VAT nature is the person's, empty for «nothing»: the
  * server requires one beside a zero rate and discards one beside a non-zero rate, and
  * names the field either way.
  */
@@ -152,7 +152,7 @@ function bodyFrom(values: Values): Record<string, unknown> {
   ) as Record<IdentityName, string | null>
   return {
     ...identity,
-    nome: values.identity.nome.trim(),
+    name: values.identity.name.trim(),
     legal_name: values.identity.legal_name.trim(),
     country: values.identity.country.trim().toUpperCase() || 'IT',
     fiscal_profile: fiscalBody(values),
@@ -161,8 +161,8 @@ function bodyFrom(values: Values): Record<string, unknown> {
 
 /**
  * «Nuova azienda» (REB-632): one form, one request, the row and its fiscal profile
- * together, as `POST /api/aziende` takes them (spec §3), so no azienda is ever born
- * that could not issue. On success the page lands on the new azienda's own panels,
+ * together, as `POST /api/aziende` takes them (spec §3), so no legal entity is ever born
+ * that could not issue. On success the page lands on the new legal entity's own panels,
  * where everything this form leaves at its default can be completed.
  */
 export function NewLegalEntityForm({
@@ -180,7 +180,7 @@ export function NewLegalEntityForm({
     setProblem(null)
     create.mutate(bodyFrom(values), {
       onSuccess: (created) => {
-        toast.success(`Azienda «${created.nome}» creata`)
+        toast.success(`Azienda «${created.name}» creata`)
         onCreated(created)
       },
       onError: (error) => setProblem(toProblem(error)),
@@ -214,7 +214,7 @@ export function NewLegalEntityForm({
       ? fieldError.message
       : null
   const incomplete =
-    values.identity.nome.trim() === '' ||
+    values.identity.name.trim() === '' ||
     values.identity.legal_name.trim() === '' ||
     values.default_vat_rate.trim() === ''
 
@@ -275,9 +275,9 @@ export function NewLegalEntityForm({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="nuova-regime">Regime</Label>
+          <Label htmlFor="new-regime">Regime</Label>
           <select
-            id="nuova-regime"
+            id="new-regime"
             className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
             value={values.regime}
             disabled={create.isPending}
@@ -301,9 +301,9 @@ export function NewLegalEntityForm({
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="nuova-aliquota_iva_default">Aliquota IVA predefinita</Label>
+          <Label htmlFor="new-default-vat-rate">Aliquota IVA predefinita</Label>
           <Input
-            id="nuova-aliquota_iva_default"
+            id="new-default-vat-rate"
             value={values.default_vat_rate}
             disabled={create.isPending}
             aria-invalid={fieldError?.field === 'default_vat_rate' ? true : undefined}
@@ -323,9 +323,9 @@ export function NewLegalEntityForm({
         </div>
         {values.regime === 'RF01' ? null : (
           <div className="space-y-2">
-            <Label htmlFor="nuova-natura_default">Natura</Label>
+            <Label htmlFor="new-default-vat-nature">Natura</Label>
             <Input
-              id="nuova-natura_default"
+              id="new-default-vat-nature"
               value={values.default_vat_nature}
               disabled={create.isPending}
               aria-invalid={fieldError?.field === 'default_vat_nature' ? true : undefined}
@@ -343,9 +343,9 @@ export function NewLegalEntityForm({
           </div>
         )}
         <div className="space-y-2">
-          <Label htmlFor="nuova-iban">IBAN</Label>
+          <Label htmlFor="new-iban">IBAN</Label>
           <Input
-            id="nuova-iban"
+            id="new-iban"
             value={values.iban}
             disabled={create.isPending}
             aria-invalid={fieldError?.field === 'iban' ? true : undefined}

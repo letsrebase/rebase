@@ -1,5 +1,5 @@
 /**
- * Impostazioni → Spazio, driven as an admin drives it. The API is stubbed at
+ * Settings → Spazio, driven as an admin drives it. The API is stubbed at
  * `api.GET`/`api.PUT`, the same seam the other settings panels use.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

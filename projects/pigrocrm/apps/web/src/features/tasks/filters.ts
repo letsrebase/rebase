@@ -8,7 +8,7 @@ export type DueDate = 'overdue' | 'week' | 'without'
 
 /** The assignee select's own words for «no filter» and «me»: neither is a user id. */
 export const EVERYONE = 'all'
-export const ME = 'io'
+export const ME = 'me'
 
 /** `days` from today, in the browser's calendar, as the API's `AAAA-MM-GG`. The server's
  *  own «oggi» is the emitter's zone; the two agree except in the hours around midnight

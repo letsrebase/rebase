@@ -7,6 +7,7 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { useIsAdmin } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
+import { dealStatusLabel } from '@/lib/dealStatus'
 import { PeriodTotals, PnlRows } from './PnlRows'
 import { ToInvoiceDialog } from './ToInvoiceDialog'
 import { PNL_BASE_LABELS, PNL_BASES, useDealPnl, usePeriodPnl, type PnlBase } from './queries'
@@ -43,7 +44,7 @@ function DealEconomics({ dealId }: { dealId: string }) {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Conto economico</h2>
             <Badge variant={pnl.data.status === 'closed' ? 'default' : 'secondary'}>
-              {pnl.data.status}
+              {dealStatusLabel(pnl.data.status)}
             </Badge>
           </div>
           <PnlRows pnl={pnl.data} />

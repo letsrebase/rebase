@@ -44,7 +44,7 @@ export function row(overrides: Partial<WorkUnitRow> = {}): WorkUnitRow {
   return {
     id: DAY_ID,
     contract_id: CONTRACT_ID,
-    data: '2026-03-02',
+    date: '2026-03-02',
     quantity: '0.50',
     description: 'Revisione architettura servizi',
     status: 'worked',
@@ -75,7 +75,7 @@ export function detail(overrides: Partial<WorkUnitDetail> = {}): WorkUnitDetail 
         previous_status: null,
         new_status: 'approved',
         actor: { kind: 'human', id: 'u1' },
-        reason: 'creation',
+        reason: 'creazione',
         created_at: '2026-03-01T09:00:00Z',
         seq: 1,
       },

@@ -13,7 +13,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: 'me', nome: 'Lorenzo', role: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: 'me', name: 'Lorenzo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -96,7 +96,7 @@ describe('EntityTask', () => {
     vi.mocked(api.GET).mockImplementation(((path: string) => {
       if (path === '/api/activities') return ok({ items: [], next_cursor: null })
       if (path === '/api/users') return ok([])
-      if (path === '/api/deals/{deal_id}') return ok({ id: DEAL, nome: 'Acme sito' })
+      if (path === '/api/deals/{deal_id}') return ok({ id: DEAL, name: 'Acme sito' })
       throw new Error(`unexpected GET ${path}`)
     }) as never)
     vi.mocked(api.POST).mockImplementation((() => ok(row({}))) as never)

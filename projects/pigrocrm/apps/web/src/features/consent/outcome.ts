@@ -48,7 +48,7 @@ const PROVIDERS: Record<ConsentProvider, ProviderOutcomes> = {
       // The browser came back from Google with no live session (REB-446): nothing was
       // redeemed, and the SPA's login has just brought the person to «Primi passi».
       // Followed by «Riprova», since starting again is the whole of what is left.
-      session:
+      session_expired:
         'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.',
     },
   },
@@ -60,7 +60,7 @@ const PROVIDERS: Record<ConsentProvider, ProviderOutcomes> = {
       error:
         'Il collegamento non è andato a buon fine. Controlla qui sotto lo stato di Drive e ' +
         'riprova.',
-      session: 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.',
+      session_expired: 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.',
     },
   },
   slack: {
@@ -70,7 +70,7 @@ const PROVIDERS: Record<ConsentProvider, ProviderOutcomes> = {
       denied: 'Autorizzazione negata: Slack non è stato collegato.',
       error:
         'Il collegamento non è andato a buon fine. Controlla qui sotto lo stato di Slack e riprova.',
-      session: 'La sessione è scaduta mentre eri su Slack, quindi Slack non è stato collegato.',
+      session_expired: 'La sessione è scaduta mentre eri su Slack, quindi Slack non è stato collegato.',
     },
   },
 }

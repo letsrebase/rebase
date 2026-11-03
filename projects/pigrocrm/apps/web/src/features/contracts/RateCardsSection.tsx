@@ -268,9 +268,9 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="rate-tipo">Tipo</Label>
+            <Label htmlFor="rate-type">Tipo</Label>
             <Select value={values.type} onValueChange={(value) => set('type', value as Type)}>
-              <SelectTrigger id="rate-tipo" className="w-full">
+              <SelectTrigger id="rate-type" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -284,9 +284,9 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
             {errorOn('type')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="rate-unita">Unità</Label>
+            <Label htmlFor="rate-unit">Unità</Label>
             <Select value={values.unit} onValueChange={(value) => set('unit', value as Unit)}>
-              <SelectTrigger id="rate-unita" className="w-full">
+              <SelectTrigger id="rate-unit" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -303,9 +303,9 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="rate-importo">Importo ({currencySign(currency)})</Label>
+            <Label htmlFor="rate-amount">Importo ({currencySign(currency)})</Label>
             <Input
-              id="rate-importo"
+              id="rate-amount"
               inputMode="decimal"
               placeholder="400.00"
               value={values.amount}
@@ -315,9 +315,9 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
             {errorOn('amount')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="rate-frazioni">Frazioni ammesse</Label>
+            <Label htmlFor="rate-fractions">Frazioni ammesse</Label>
             <Input
-              id="rate-frazioni"
+              id="rate-fractions"
               value={values.fractions}
               onChange={(event) => set('fractions', event.target.value)}
               aria-invalid={fieldError?.field === 'allowed_fractions'}
@@ -329,9 +329,9 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
 
         {values.type === 'hourly' && (
           <div className="space-y-2">
-            <Label htmlFor="rate-ore-minime">Ore minime</Label>
+            <Label htmlFor="rate-hours-min">Ore minime</Label>
             <Input
-              id="rate-ore-minime"
+              id="rate-hours-min"
               inputMode="decimal"
               value={values.minimum_hours}
               onChange={(event) => set('minimum_hours', event.target.value)}
@@ -342,12 +342,12 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
         )}
         {values.type === 'fixed_recurring' && (
           <div className="space-y-2">
-            <Label htmlFor="rate-periodo">Erogazione del canone</Label>
+            <Label htmlFor="rate-period">Erogazione del canone</Label>
             <Select
               value={values.delivery_period}
               onValueChange={(value) => set('delivery_period', value as Period)}
             >
-              <SelectTrigger id="rate-periodo" className="w-full">
+              <SelectTrigger id="rate-period" className="w-full">
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>
               <SelectContent>

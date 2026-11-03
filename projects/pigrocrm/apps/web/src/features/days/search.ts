@@ -1,4 +1,5 @@
 import { toIsoMonth } from '@/lib/dates'
+import { legacyParam } from '@/lib/legacySearch'
 
 export interface DaysSearch {
   /** One contract's days; omitted, every contract's. */
@@ -9,11 +10,11 @@ export interface DaysSearch {
 
 export interface NewDaySearch {
   contract?: string
-  data?: string
+  date?: string
 }
 
 const Month = /^\d{4}-(?:0[1-9]|1[0-2])$/
-const DATA = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
+const DatePattern = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function text(value: unknown, pattern: RegExp): string | undefined {
@@ -26,18 +27,19 @@ function text(value: unknown, pattern: RegExp): string | undefined {
  * pasted URL with a bad month opens the page's default instead of an error.
  */
 export function validateDaysSearch(search: Record<string, unknown>): DaysSearch {
-  return { contract: text(search.contract, UUID), month: text(search.month, Month) }
+  return { contract: text(search.contract, UUID), month: text(legacyParam(search, 'month', 'mese'), Month) }
 }
 
 export function validateNewDaySearch(search: Record<string, unknown>): NewDaySearch {
-  return { contract: text(search.contract, UUID), data: text(search.data, DATA) }
+  // Links written before the English rename say `data` for the date.
+  return { contract: text(search.contract, UUID), date: text(legacyParam(search, 'date', 'data'), DatePattern) }
 }
 
 /** The first and last day of `AAAA-MM`, as the API's `da` and `a`. */
-export function monthWindow(mese: string): { da: string; a: string } {
-  const [year = 0, month = 1] = mese.split('-').map(Number)
+export function monthWindow(yearMonth: string): { from: string; to: string } {
+  const [year = 0, month = 1] = yearMonth.split('-').map(Number)
   const last = new Date(year, month, 0).getDate()
-  return { da: `${mese}-01`, a: `${mese}-${String(last).padStart(2, '0')}` }
+  return { from: `${yearMonth}-01`, to: `${yearMonth}-${String(last).padStart(2, '0')}` }
 }
 
 /** The month to open on when the URL names none and no contract narrows the list. */

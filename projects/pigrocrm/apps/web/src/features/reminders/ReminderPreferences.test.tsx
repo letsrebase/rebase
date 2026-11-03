@@ -30,7 +30,7 @@ const TYPES: Types = [
     key: 'task_due',
     label: 'Attività in scadenza',
     description: "Un'attività aperta scade oggi.",
-    subject: 'attivita',
+    subject: 'task',
     audience: 'subject',
     direction: 'until',
     unit: 'days',
@@ -189,7 +189,7 @@ describe('the reminder settings', () => {
     const invoice = rowOf('Fattura scaduta')
     expect(invoice.getByLabelText('Grave')).toHaveValue('8')
     expect(invoice.getAllByText('da')).toHaveLength(3)
-    expect(invoice.getAllByText('days')).toHaveLength(3)
+    expect(invoice.getAllByText('giorni')).toHaveLength(3)
     expect(rowOf('Attività in scadenza').getAllByText('giorni prima')).toHaveLength(3)
     expect(rowOf('Tetto dei ricavi vicino').getAllByText('%')).toHaveLength(3)
   })

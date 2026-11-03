@@ -70,9 +70,9 @@ export function CollectDialog({
           in cui cade. Si può tornare indietro.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="data-incasso">Data incasso</Label>
+          <Label htmlFor="date-payment">Data incasso</Label>
           <Input
-            id="data-incasso"
+            id="date-payment"
             type="date"
             required
             value={paymentDate}
@@ -125,9 +125,9 @@ export function TransmitDialog({
           PigroCRM. Non si può annullare.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="data-trasmissione">Data di trasmissione</Label>
+          <Label htmlFor="date-transmission">Data di trasmissione</Label>
           <Input
-            id="data-trasmissione"
+            id="date-transmission"
             type="date"
             required
             value={dateTransmission}
@@ -185,9 +185,9 @@ export function AnnulDialog({
           un errore si emette un nuovo documento, non si modifica questo.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="motivo-annullamento">Motivo</Label>
+          <Label htmlFor="reason-cancellation">Motivo</Label>
           <Textarea
-            id="motivo-annullamento"
+            id="reason-cancellation"
             value={reason}
             rows={3}
             onChange={(event) => setReason(event.target.value)}

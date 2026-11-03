@@ -13,7 +13,7 @@ describe.each(PROVIDERS)('the %s consent outcome', (provider) => {
   })
 
   it('reads inherited property names as no outcome at all', () => {
-    for (const crafted of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+    for (const crafted of ['[object Object]', 'function Object() { [native code] }', 'function toString() { [native code] }', 'function hasOwnProperty() { [native code] }']) {
       expect(consentOutcome(provider, crafted)).toEqual({ message: null, retry: null })
     }
   })

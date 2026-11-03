@@ -18,14 +18,14 @@ import { useProposalContract } from './queries'
  * on somebody», and a proposal in the queue is exactly that. An accepted one is the
  * settled, ordinary outcome (`ink`), a refused one the one that went the other way.
  */
-const StatusTone: Record<string, StatusTone> = {
+const STATUS_TONE: Record<string, StatusTone> = {
   pending: 'gold',
   accepted: 'ink',
   rejected: 'danger',
 }
 
 export function ProposalStatusPill({ status }: { status: string }) {
-  return <StatusPill tone={StatusTone[status] ?? 'muted'}>{StatusLabels[status] ?? status}</StatusPill>
+  return <StatusPill tone={STATUS_TONE[status] ?? 'muted'}>{StatusLabels[status] ?? status}</StatusPill>
 }
 
 export function TargetBadge({ targetType }: { targetType: string }) {

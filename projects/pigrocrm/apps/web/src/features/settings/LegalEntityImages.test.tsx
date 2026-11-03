@@ -14,7 +14,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() 
 
 const LEGAL_ENTITY = {
   id: 'a-1',
-  nome: 'humancraft',
+  name: 'humancraft',
   legal_name: 'Humancraft S.r.l.',
   logo_key: null,
   signature_key: null,

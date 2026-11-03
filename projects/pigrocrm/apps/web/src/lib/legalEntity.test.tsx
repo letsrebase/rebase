@@ -38,9 +38,9 @@ import { api } from '@/lib/api'
 
 const GET = api.GET as unknown as Mock
 
-const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, active: true } as LegalEntityRecord
-const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, active: true } as LegalEntityRecord
-const CLOSED = { id: 'a3', nome: 'closed', predefinita: false, active: false } as LegalEntityRecord
+const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
+const CLOSED = { id: 'a3', name: 'closed', is_default: false, active: false } as LegalEntityRecord
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: { status: 200 } })
@@ -71,7 +71,7 @@ beforeEach(() => {
 })
 
 describe('LegalEntityProvider', () => {
-  it('is a one-azienda space until the second azienda: nothing selected, nothing several', async () => {
+  it('is a one-legal-entity space until the second azienda: nothing selected, nothing several', async () => {
     localStorage.setItem(legalEntityKey('u1'), 'a1')
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.legal_entities).toHaveLength(1))
@@ -83,17 +83,17 @@ describe('LegalEntityProvider', () => {
     serve([HUMANCRAFT, REBASE, CLOSED])
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.several).toBe(true))
-    expect(result.current.legal_entities.map((a) => a.nome)).toEqual(['humancraft', 'rebase'])
+    expect(result.current.legal_entities.map((a) => a.name)).toEqual(['humancraft', 'rebase'])
     expect(result.current.selected).toBeNull()
 
     act(() => result.current.select('a2'))
     expect(result.current.selected).toBe('a2')
-    expect(localStorage.getItem('pigrocrm.azienda:/studio:u1')).toBe('a2')
-    expect(result.current.byId('a2')?.nome).toBe('rebase')
+    expect(localStorage.getItem('pigrocrm.legal-entity:/studio:u1')).toBe('a2')
+    expect(result.current.byId('a2')?.name).toBe('rebase')
 
     act(() => result.current.select(null))
     expect(result.current.selected).toBeNull()
-    expect(localStorage.getItem('pigrocrm.azienda:/studio:u1')).toBeNull()
+    expect(localStorage.getItem('pigrocrm.legal-entity:/studio:u1')).toBeNull()
   })
 
   it('reads the stored choice back, and drops one that names no active azienda any more', async () => {

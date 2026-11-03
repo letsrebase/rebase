@@ -24,7 +24,7 @@ function Column({
     <div className="flex w-72 shrink-0 flex-col">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold">{stage.nome}</h2>
+          <h2 className="font-semibold">{stage.name}</h2>
           <Badge variant="secondary">{deals.length}</Badge>
         </div>
         <span className="text-xs text-muted-foreground">{sumExpectedValue(deals)}</span>

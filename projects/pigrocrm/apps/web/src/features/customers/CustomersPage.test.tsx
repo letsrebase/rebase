@@ -1,6 +1,6 @@
 /**
- * The customer list's header and filter row (design spec §4): the title and «Nuovo
- * cliente» come from `PageHeader`, and the search box lives in the filter row above the
+ * The customer list's header and filter row (design spec §4): the title and «New
+ * customer» come from `PageHeader`, and the search box lives in the filter row above the
  * table rather than floating between a local `<header>` and the rows.
  *
  * `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`.
@@ -28,7 +28,7 @@ const PAGE = { items: [], next_cursor: null, custom_fields: [] }
 const NO_MAILBOX = { account: null, banner: null, banner_text: null, missing_scopes: [], configured: true }
 const MAILBOX = { ...NO_MAILBOX, account: { email_address: 'ada@studio.it', status: 'active' } }
 const PROPOSALS = [
-  { domain: 'acme.it', nome: 'Acme', conversations: 2, last_message: null, people: [] },
+  { domain: 'acme.it', name: 'Acme', conversations: 2, last_message: null, people: [] },
 ]
 
 function answering(gmail: unknown) {

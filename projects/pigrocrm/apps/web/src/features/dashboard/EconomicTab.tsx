@@ -25,7 +25,7 @@ import { CASH_BASES, type CashBase } from './search'
 /** The year the picker's start date names: cash and taxes are told by the year. A date,
  *  not an amount, so reading it through `Date` is not the coercion criterion 14 bans. */
 function yearOf(period: Period): number {
-  return new Date(`${period.da}T00:00:00`).getFullYear()
+  return new Date(`${period.from}T00:00:00`).getFullYear()
 }
 
 function due(estimate: FiscalEstimate | null): string {
@@ -35,9 +35,9 @@ function due(estimate: FiscalEstimate | null): string {
 type ConcentrationRow = EconomicOverview['customer_concentration'][number]
 
 /**
- * The rows grouped by the azienda whose revenue each share is of (REB-632, spec §1.9),
+ * The rows grouped by the legal entity whose revenue each share is of (REB-632, spec §1.9),
  * in the order the server sent them, which is the selector's: the default first. A
- * customer billed by two aziende appears in both groups, once per share.
+ * customer billed by two legal entities appears in both groups, once per share.
  */
 function byLegalEntity(rows: ConcentrationRow[]): { legalEntityId: string; rows: ConcentrationRow[] }[] {
   const groups: { legalEntityId: string; rows: ConcentrationRow[] }[] = []
@@ -142,10 +142,10 @@ export function EconomicTab({
   const query = useEconomicOverview(year, base)
   // «Tutte» on a space with several aziende (REB-632, spec §1.9): the cash adds up on
   // the server, the taxes do not, so the tab draws the estimate once per azienda and
-  // names which azienda each concentration share belongs to. With one azienda, or one
+  // names which legal entity each concentration share belongs to. With one legal entity, or one
   // selected, the page reads as it always did.
   const { legal_entities, selected, several, byId } = useLegalEntity()
-  const perAzienda = several && selected === null
+  const perLegalEntity = several && selected === null
 
   if (query.isError) return <QueryErrorBanner error={query.error} />
   if (query.isPending || !query.data) {
@@ -258,7 +258,7 @@ export function EconomicTab({
               hint="proiettato meno costi e tasse stimate, su base incasso"
             />
           </>
-        ) : perAzienda ? (
+        ) : perLegalEntity ? (
           <div className="border bg-card p-4 sm:col-span-2">
             <p className="text-sm text-muted-foreground">Stima fiscale</p>
             {/* Two regimes' taxes do not add (spec §1.9): the server sends no estimate in
@@ -287,13 +287,13 @@ export function EconomicTab({
           (REB-755), right under the figures they bound: the cards above say how much was
           collected, this says how much more can be before the regime ends. It draws
           nothing for an azienda those ceilings do not apply to. */}
-      {perAzienda ? (
+      {perLegalEntity ? (
         legal_entities.map((legal_entity) => (
           <CeilingPanel
             key={legal_entity.id}
             year={year}
             legalEntityId={legal_entity.id}
-            title={legal_entity.nome}
+            title={legal_entity.name}
           />
         ))
       ) : (
@@ -316,20 +316,20 @@ export function EconomicTab({
         </p>
         {customer_concentration.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura emessa nell’anno.</p>
-        ) : perAzienda ? (
-          // One table per azienda, each share of that azienda's own revenue: a
-          // customer who is a third of one azienda reads as a third, never as a tenth
-          // of the whole (spec §1.9). An azienda deactivated meanwhile still owns its
+        ) : perLegalEntity ? (
+          // One table per legal entity, each share of that legal entity's own revenue: a
+          // customer who is a third of one legal entity reads as a third, never as a tenth
+          // of the whole (spec §1.9). An legal entity deactivated meanwhile still owns its
           // year's invoices and is named as such.
           byLegalEntity(customer_concentration).map((group) => (
             <div key={group.legalEntityId} className="space-y-1">
               <h3 className="text-sm font-medium text-muted-foreground">
-                {byId(group.legalEntityId)?.nome ?? 'Azienda non più attiva'}
+                {byId(group.legalEntityId)?.name ?? 'Azienda non più attiva'}
               </h3>
               <ConcentrationTable
                 rows={group.rows}
                 label={`Concentrazione dei ricavi per cliente, ${
-                  byId(group.legalEntityId)?.nome ?? 'Azienda non più attiva'
+                  byId(group.legalEntityId)?.name ?? 'Azienda non più attiva'
                 }`}
               />
             </div>
@@ -348,13 +348,13 @@ export function EconomicTab({
           one request, its own loading and error branches -- rather than taking the excerpt
           `panoramica` already carries, because a card that renders half of itself while the
           other half loads is worse than a card that arrives whole. */}
-      {perAzienda ? (
+      {perLegalEntity ? (
         legal_entities.map((legal_entity) => (
           <FiscalPanel
             key={legal_entity.id}
             year={year}
             legalEntityId={legal_entity.id}
-            title={legal_entity.nome}
+            title={legal_entity.name}
             quiet
           />
         ))

@@ -178,7 +178,7 @@ export function CostForm({
             <SelectContent>
               {categories.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
-                  {category.nome}
+                  {category.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -190,7 +190,7 @@ export function CostForm({
 
         {dealId === undefined && legal_entity.several ? (
           <div className="space-y-2">
-            <Label htmlFor="cost-azienda">Azienda</Label>
+            <Label htmlFor="cost-legal-entity">Azienda</Label>
             <Select
               value={legalEntityId}
               // Straight into `native`, not through `change`, which would route a key a
@@ -202,14 +202,14 @@ export function CostForm({
                 }))
               }
             >
-              <SelectTrigger id="cost-azienda" className="w-full">
+              <SelectTrigger id="cost-legal-entity" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={SHARED}>Condivisa</SelectItem>
                 {legal_entity.legal_entities.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    {item.nome}
+                    {item.name}
                   </SelectItem>
                 ))}
               </SelectContent>

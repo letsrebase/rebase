@@ -20,7 +20,7 @@ import { formatOccurredAt } from '@/components/activityLabels'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { canReceiveApproval } from './approvals'
+import { canReceiveApproval, channelLabel } from './approvals'
 import { DayStatePill } from './DayStatePill'
 import {
   ACTIONS,
@@ -84,10 +84,10 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
 
   function confirm() {
     if (pending === null || spec === undefined) return
-    const motivo = reason.trim() !== '' ? reason.trim() : spec.defaultReason
-    if (motivo === null) return
+    const reasonText = reason.trim() !== '' ? reason.trim() : spec.defaultReason
+    if (reasonText === null) return
     move.mutate(
-      { status: pending, reason: motivo },
+      { status: pending, reason: reasonText },
       {
         onSuccess: (next) => {
           toast.success(`Giornata: ${statusLabel(next.status).toLowerCase()}`)
@@ -102,7 +102,7 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
     <>
       <PageHeader
         icon={CalendarCheck}
-        title={`Giornata del ${formatIsoDateItalian(day.data)}`}
+        title={`Giornata del ${formatIsoDateItalian(day.date)}`}
         description={`${day.contract_title}, ${day.customer_name}`}
         actions={
           canWrite && offered.length > 0 ? (
@@ -261,7 +261,7 @@ function Approval({ day }: { day: WorkUnitDetail }) {
         <>
           <p className="text-sm text-muted-foreground">
             Ricevuta il {formatOccurredAt(approval.received_at)} da {approval.sender}, per{' '}
-            {approval.channel.replace('_', ' ')}.
+            {channelLabel(approval.channel).toLowerCase()}.
           </p>
           <blockquote className="whitespace-pre-line border-l-2 border-foreground pl-4 text-sm">
             {approval.excerpt}

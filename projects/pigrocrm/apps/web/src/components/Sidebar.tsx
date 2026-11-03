@@ -52,7 +52,7 @@ export function Sidebar({
   // Avvisi page reads the same query, so a snooze there moves this number at once.
   const unread = useUnreadCount()
   // The one number of the product that asks for an action (slice 7 §5): how many of my
-  // attività are past their deadline, drawn beside «Attività» (REB-873: it sat beside «Oggi»
+  // tasks are past their deadline, drawn beside «Attività» (REB-873: it sat beside «Oggi»
   // while that was an entry) and only when it is above zero.
   const overdue = useOverdueCount()
 

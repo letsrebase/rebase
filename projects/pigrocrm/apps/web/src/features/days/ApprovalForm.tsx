@@ -246,9 +246,9 @@ export function ApprovalForm({
                     <Checkbox
                       checked={picked.has(day.id)}
                       onCheckedChange={(on) => toggle(day.id, on === true)}
-                      aria-label={`${formatIsoDateItalian(day.data)}, ${day.description}`}
+                      aria-label={`${formatIsoDateItalian(day.date)}, ${day.description}`}
                     />
-                    <span className="w-24 shrink-0 font-medium tabular-nums">{formatIsoDateItalian(day.data)}</span>
+                    <span className="w-24 shrink-0 font-medium tabular-nums">{formatIsoDateItalian(day.date)}</span>
                     <span className="min-w-0 flex-1 truncate">{day.description}</span>
                     <span className="shrink-0 text-muted-foreground">
                       {quantityLabel(day.quantity)} · {statusLabel(day.status).toLowerCase()}

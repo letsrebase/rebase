@@ -70,7 +70,7 @@ const DESCRIPTION = {
   ],
   runs: [
     {
-      kind: 'automazione.stage_spostato',
+      kind: 'automation.stage_moved',
       occurred_at: '2026-03-10T09:00:00Z',
       deal_id: 'd1',
       rule: 'A1',
@@ -78,7 +78,7 @@ const DESCRIPTION = {
       payload: { a: 'Vinto' },
     },
     {
-      kind: 'automazione.non_eseguita',
+      kind: 'automation.not_executed',
       occurred_at: '2026-03-09T09:00:00Z',
       deal_id: 'd2',
       rule: 'A1',
@@ -197,7 +197,7 @@ describe('AutomationsPanel', () => {
         ...DESCRIPTION,
         runs: [
           {
-            kind: 'automazione.attivita_aperta',
+            kind: 'automation.task_opened',
             occurred_at: '2026-03-12T09:00:00Z',
             deal_id: null,
             rule: 'overdue_invoice',
@@ -245,7 +245,7 @@ describe('AutomationsPanel', () => {
         ...DESCRIPTION,
         runs: [
           {
-            kind: 'automazione.configurazione_modificata',
+            kind: 'automation.config_changed',
             occurred_at: '2026-03-11T09:00:00Z',
             deal_id: null,
             rule: null,

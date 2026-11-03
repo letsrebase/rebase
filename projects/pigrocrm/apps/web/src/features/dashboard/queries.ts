@@ -35,9 +35,9 @@ export type AutomationConfigUpdate = components['schemas']['AutomationConfigUpda
 export const DASHBOARD_STALE_MS = 60_000
 
 /**
- * The sidebar's azienda as the parameter every dashboard read takes (REB-632, spec
+ * The sidebar's legal entity as the parameter every dashboard read takes (REB-632, spec
  * 2026-10-03 §5): `legal_entity_id` when one is selected, nothing in «tutte», where the
- * server adds every azienda up. It is spread into the request and into the key alike,
+ * server adds every legal entity up. It is spread into the request and into the key alike,
  * so a switch of the sidebar is a new cache entry and a fresh request, with no
  * invalidation to forget. Not in the URL: the selection is a session choice (§5).
  */
@@ -104,10 +104,10 @@ export function useEconomicOverview(year: number, base: CashBase) {
  * No `staleTime` override: unlike the aggregates above, this one is read once per visit
  * under the cards and the default in `lib/query.ts` is the right answer for it.
  *
- * One azienda's (REB-632): the one `legalEntityId` names, or the sidebar's when the caller
- * names none. In «tutte» on a space with several aziende the economic tab asks once
- * per azienda, by id, because the server has no space-wide estimate to give (spec
- * §1.9); with one azienda nothing is sent and the server resolves it alone.
+ * One legal entity's (REB-632): the one `legalEntityId` names, or the sidebar's when the caller
+ * names none. In «tutte» on a space with several legal entities the economic tab asks once
+ * per legal entity, by id, because the server has no space-wide estimate to give (spec
+ * §1.9); with one legal entity nothing is sent and the server resolves it alone.
  *
  * `enabled` false sends nothing at all (REB-788): the estimate is an administrator's
  * read, and a role the table in `lib/permissions.ts` refuses it must not ask and take
@@ -125,9 +125,9 @@ export function useFiscalEstimate(year: number, legalEntityId?: string | null, e
 }
 
 /**
- * How much room is left under each of an azienda's ceilings in `year` (REB-755). One
- * azienda's, like the estimate: the one `legalEntityId` names, or the sidebar's when the
- * caller names none. `thresholds` comes back empty for an azienda the forfettario's
+ * How much room is left under each of an legal entity's ceilings in `year` (REB-755). One
+ * legal entity's, like the estimate: the one `legalEntityId` names, or the sidebar's when the
+ * caller names none. `thresholds` comes back empty for an legal entity the flat-rate regime's
  * thresholds do not apply to, and the panel then draws nothing.
  */
 export function useCeilingHeadroom(year: number, legalEntityId?: string | null) {
@@ -186,8 +186,8 @@ export function useCeilingSimulation(
   })
 }
 
-/** One azienda's register for `year` (REB-757): revenue by regime and tax treatment and
- *  the issued invoices, with the stamp duty and the rivalsa apart. */
+/** One legal entity's register for `year` (REB-757): revenue by regime and tax treatment and
+ *  the issued invoices, with the stamp duty and the surcharge apart. */
 export function useYearOverview(year: number, legalEntityId?: string | null) {
   const { selected } = useLegalEntity()
   const legal_entity = legalEntityId === undefined ? selected : legalEntityId

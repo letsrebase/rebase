@@ -18,8 +18,8 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-const auth: { user: { id: string; email: string; nome: string; role: string; active: boolean } | null } = {
-  user: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin', active: true },
+const auth: { user: { id: string; email: string; name: string; role: string; active: boolean } | null } = {
+  user: { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true },
 }
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
@@ -115,7 +115,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin', active: true }
+  auth.user = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true }
 })
 
 describe('the start page', () => {
@@ -176,7 +176,7 @@ describe('the Gmail door', () => {
     answers({
       '/api/gmail/account': { ...GMAIL_READY, account: ACCOUNT },
       '/api/gmail/customer-suggestions': [
-        { domain: 'acme.it', nome: 'Acme', conversations: 3, last_message: null, people: [] },
+        { domain: 'acme.it', name: 'Acme', conversations: 3, last_message: null, people: [] },
       ],
     })
     renderPage()
@@ -262,7 +262,7 @@ describe('the assistant block', () => {
       return Promise.resolve({
         data: {
           id: 't2',
-          nome: 'Claude Code',
+          name: 'Claude Code',
           prefix: 'pgc_zzzz9999',
           last_used_at: null,
           revoked_at: null,
@@ -303,7 +303,7 @@ describe('the assistant block, once the token is copied', () => {
     vi.mocked(api.POST).mockImplementation((() => {
       tokens = [{ id: 't2' }]
       return Promise.resolve({
-        data: { id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
+        data: { id: 't2', name: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
         response: new Response(null, { status: 201 }),
       })
     }) as never)

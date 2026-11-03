@@ -4,11 +4,11 @@
  * Each of these is a closed set the backend owns (`TemplateType`, `TaskRule`, the seeded
  * cost categories), written as a key because a key is what code and reports match on. A
  * person reads the Italian name, never the key. A key this file has not heard of, because
- * the backend grew one before the client did, is shown humanised (`software_licenze` as
+ * the backend grew one before the client did, is shown humanised (`software_licenses` as
  * «Software licenze») and not blank, which would hide the row.
  */
 
-/** `travel_trips` as «Viaggi trasferte»: the fallback for a key with no entry. */
+/** `travel` as «Viaggi trasferte»: the fallback for a key with no entry. */
 export function humaniseKey(key: string): string {
   const spaced = key.replace(/_/g, ' ').trim()
   return spaced.charAt(0).toLocaleUpperCase('it-IT') + spaced.slice(1)
@@ -44,9 +44,9 @@ export function templateTypeLabel(type: string): string {
 
 /** The `code` of a seeded cost category (`SEED_CATEGORIES`), which reports match on. */
 export const COST_CATEGORY_CODE_LABELS: Record<string, string> = {
-  consulting_esterna: 'Consulenza esterna',
-  software_licenze: 'Software e licenze',
-  travel_trips: 'Viaggi e trasferte',
+  external_consulting: 'Consulenza esterna',
+  software_licenses: 'Software e licenze',
+  travel: 'Viaggi e trasferte',
   materials: 'Materiali',
   other: 'Altro',
 }

@@ -13,7 +13,7 @@ describe('toRequestBody', () => {
     // kinds of column. `applied_rate` is a `numeric` -- `""` is not a decimal, so
     // before this it came back as a 422 and the rate the user was trying to remove
     // stayed in force. `null` clears it, and `TimeEntryService.update` records the
-    // clearing as `origine = "assente"` rather than silently re-resolving the deal's
+    // clearing as `origine = "absent"` rather than silently re-resolving the deal's
     // rate underneath it.
     const initial = values({ description: 'Analisi', applied_rate: '80.000000' })
     const body = toRequestBody(values({ description: '', applied_rate: '' }), {

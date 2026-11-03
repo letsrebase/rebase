@@ -7,7 +7,7 @@ import type { FieldDefinition } from '@/lib/schema'
 
 const FIELDS: FieldDefinition[] = [
   { key: 'vat_number', label: 'Partita IVA', type: 'text', required: false, options: [] },
-  { key: 'note_interne', label: 'Note interne', type: 'textarea', required: false, options: [] },
+  { key: 'internal_notes', label: 'Note interne', type: 'textarea', required: false, options: [] },
 ]
 
 const CHECKBOX: FieldDefinition = {
@@ -125,7 +125,7 @@ describe('DynamicForm', () => {
         onChange={vi.fn()}
         problem={{
           ...VALIDATION_PROBLEM,
-          field: 'industry',
+          field: 'settore',
           reason: 'campo non definito (campi disponibili: nessuno)',
           expected: undefined,
         }}

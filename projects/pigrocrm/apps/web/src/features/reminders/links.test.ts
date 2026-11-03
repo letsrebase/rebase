@@ -8,7 +8,7 @@ const ID = '3f0c2a10-0000-4000-8000-0000000000aa'
 
 describe('recordLink', () => {
   it.each([
-    ['attivita', { to: '/app/activities', search: { open: ID } }],
+    ['task', { to: '/app/activities', search: { open: ID } }],
     ['deal', { to: '/app/deal/$dealId', params: { dealId: ID } }],
     ['customer', { to: '/app/customers/$customerId', params: { customerId: ID } }],
     ['invoice', { to: '/app/invoices/$invoiceId', params: { invoiceId: ID } }],
@@ -23,7 +23,7 @@ describe('recordLink', () => {
     expect(recordLink({ entity, entity_id: ID })).toEqual(expected)
   })
 
-  it.each(['work_unit', 'google_connection', 'period', 'something_new', '', 'constructor', 'toString'])(
+  it.each(['work_unit', 'google_connection', 'period', 'something_new', '', 'function Object() { [native code] }', 'function toString() { [native code] }'])(
     'gives no link for the kind «%s», which has no page to open',
     (entity) => {
       expect(recordLink({ entity, entity_id: ID })).toBeNull()

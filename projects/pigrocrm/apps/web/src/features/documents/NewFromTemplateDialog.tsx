@@ -15,6 +15,7 @@ import { toProblem, type ProblemDetail } from '@/lib/api'
 import { isBlank } from '@/lib/formValues'
 import type { FieldDefinition, FieldType } from '@/lib/schema'
 import {
+  DOCUMENT_TYPE_LABELS,
   useCreateFromTemplate,
   useTemplateDescription,
   useTemplatePreview,
@@ -32,7 +33,7 @@ import {
  */
 export function variablesToFields(variables: TemplateVariable[]): FieldDefinition[] {
   return variables.map((variable) => ({
-    key: variable.nome,
+    key: variable.name,
     label: variable.label,
     type: variable.type as FieldType,
     required: variable.required,
@@ -162,8 +163,8 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
                   className="w-full px-4 py-3 text-left hover:bg-muted"
                   onClick={() => chooseTemplate(template.id)}
                 >
-                  <span className="font-medium">{template.nome}</span>
-                  <span className="ml-2 text-sm text-muted-foreground">{template.type}</span>
+                  <span className="font-medium">{template.name}</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{DOCUMENT_TYPE_LABELS[template.type] ?? template.type}</span>
                 </button>
               </li>
             ))}
@@ -180,9 +181,9 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
             {description.isError && <QueryErrorBanner error={description.error} />}
 
             <div className="space-y-1">
-              <Label htmlFor="document-titolo">Titolo</Label>
+              <Label htmlFor="document-title">Titolo</Label>
               <Input
-                id="document-titolo"
+                id="document-title"
                 value={String(values.native[TITLE_FIELD_KEY] ?? '')}
                 onChange={(event) => change(TITLE_FIELD_KEY, event.target.value)}
               />

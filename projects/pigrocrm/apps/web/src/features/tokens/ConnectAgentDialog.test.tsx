@@ -61,7 +61,7 @@ beforeEach(() => {
     user: {
       id: 'u1',
       email: 'admin@pigro.it',
-      nome: 'Admin',
+      name: 'Admin',
       role: 'admin',
       active: true,
       default_hourly_rate: null,
@@ -104,7 +104,7 @@ describe('ConnectAgentDialog', () => {
       Promise.resolve(
         ok({
           id: 't2',
-          nome: 'Claude Code',
+          name: 'Claude Code',
           prefix: 'pgc_zzzz9999',
           full_access: false,
           last_used_at: null,
@@ -120,7 +120,7 @@ describe('ConnectAgentDialog', () => {
     expect(await screen.findByDisplayValue('pgc_il-valore-intero')).toBeInTheDocument()
     expect(textareaValue('Comando per Claude Code')).toContain('Bearer pgc_il-valore-intero')
     expect(textareaValue('Configurazione JSON')).toContain('Bearer pgc_il-valore-intero')
-    expect(vi.mocked(api.POST)).toHaveBeenCalledWith('/api/tokens', { body: { nome: 'Claude Code', full_access: false } })
+    expect(vi.mocked(api.POST)).toHaveBeenCalledWith('/api/tokens', { body: { name: 'Claude Code', full_access: false } })
     // The name field and the button are gone: the token is minted exactly once per dialog.
     expect(screen.queryByRole('button', { name: 'Crea il token' })).not.toBeInTheDocument()
   })
@@ -133,7 +133,7 @@ describe('ConnectAgentDialog', () => {
 
   it('asks before closing while a token is on screen, and closes only on yes', async () => {
     vi.mocked(api.POST).mockReturnValueOnce(
-      Promise.resolve(ok({ id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', full_access: false, last_used_at: null, revoked_at: null, created_at: '2026-09-12T10:00:00Z', token: 'pgc_x' })),
+      Promise.resolve(ok({ id: 't2', name: 'Claude Code', prefix: 'pgc_zzzz9999', full_access: false, last_used_at: null, revoked_at: null, created_at: '2026-09-12T10:00:00Z', token: 'pgc_x' })),
     )
     const onOpenChange = renderDialog()
     await userEvent.click(screen.getByRole('button', { name: 'Crea il token' }))

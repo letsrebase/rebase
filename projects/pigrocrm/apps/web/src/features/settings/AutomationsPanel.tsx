@@ -27,10 +27,10 @@ const REASONS: Record<string, string> = {
 }
 
 const KINDS: Record<string, string> = {
-  'automazione.stage_spostato': 'Deal spostato',
-  'automazione.non_eseguita': 'Non eseguita',
-  'automazione.configurazione_modificata': 'Configurazione modificata',
-  'automazione.attivita_aperta': 'Attività aperta',
+  'automation.stage_moved': 'Deal spostato',
+  'automation.not_executed': 'Non eseguita',
+  'automation.config_changed': 'Configurazione modificata',
+  'automation.task_opened': 'Attività aperta',
 }
 
 const FIELD_BY_RULE: Record<string, keyof AutomationConfigUpdate> = {

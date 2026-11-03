@@ -8,6 +8,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { CostsPanel } from '@/features/costs/CostsPanel'
 import { useCanWrite } from '@/lib/auth'
+import { dealStatusLabel } from '@/lib/dealStatus'
 import { useEntitySchema } from '@/lib/schema'
 import { TimeEntryForm } from './TimeEntryForm'
 import { TimeReportButtons } from './TimeReportButtons'
@@ -66,12 +67,12 @@ export function TimeEntriesTab({ dealId }: { dealId: string }) {
             <div className="flex flex-col items-start gap-2">
               <p className="text-sm text-muted-foreground">Stato</p>
               <Badge variant={summary.data.status === 'closed' ? 'default' : 'secondary'}>
-                {summary.data.status}
+                {dealStatusLabel(summary.data.status)}
               </Badge>
               {summary.data.hours_without_rate > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {summary.data.hours_without_rate}{' '}
-                  {summary.data.hours_without_rate === 1 ? 'entry' : 'entries'} senza tariffa,
+                  {summary.data.hours_without_rate === 1 ? 'voce' : 'voci'} senza tariffa,
                   esclusa dal valore maturato
                 </p>
               )}

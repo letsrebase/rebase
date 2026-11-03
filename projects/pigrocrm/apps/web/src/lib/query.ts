@@ -68,8 +68,8 @@ export const queryKeys = {
   proposal: (id: string) => ['proposal', id] as const,
   proposalTimeline: (id: string) => ['proposal-timeline', id] as const,
   proposalContract: (id: string) => ['proposal-contract', id] as const,
-  // The aziende of the space (REB-617): the list every selector and Impostazioni →
-  // Aziende read; a single azienda is read from the list, so there is no per-id key.
+  // The legal entities of the space (REB-617): the list every selector and Settings →
+  // Legal entities read; a single legal entity is read from the list, so there is no per-id key.
   legal_entities: ['legal_entities'] as const,
   // One azienda's logo or signature bytes (REB-629), under the `legal_entities` prefix so the
   // save's invalidation refreshes the preview with the row.
@@ -125,8 +125,8 @@ export const queryKeys = {
   // different periods is two different answers, and a key that dropped the dates would
   // serve January's report for December's.
   periodPnl: (params?: unknown) => ['period-pnl', params ?? {}] as const,
-  // The azienda is part of the key since REB-632: an estimate is one azienda's, and in
-  // «tutte» the economic tab holds one entry per azienda at once.
+  // The legal entity is part of the key since REB-632: an estimate is one legal entity's, and in
+  // «tutte» the economic tab holds one entry per legal entity at once.
   fiscalEstimate: (year: number, legalEntityId: string | null = null) =>
     ['fiscal-estimate', year, legalEntityId] as const,
   // The ceilings and the year register are one azienda's as well (REB-755, REB-757), and

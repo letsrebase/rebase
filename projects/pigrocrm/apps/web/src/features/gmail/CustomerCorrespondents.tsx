@@ -41,11 +41,11 @@ export function CustomerCorrespondents({
   // A readonly person would get a refusal for a read that spends the owner's quota.
   if (!mayDiscover) return null
 
-  function add(address: string, nome: string) {
+  function add(address: string, name: string) {
     adding.mutate(
-      { address, nome },
+      { address, name },
       {
-        onSuccess: () => toast.success(`${nome || address} aggiunto alle persone`),
+        onSuccess: () => toast.success(`${name || address} aggiunto alle persone`),
         onError: (error) => toast.error(toProblem(error).detail),
       },
     )
@@ -90,8 +90,8 @@ export function CustomerCorrespondents({
             <li key={person.address} className="flex flex-wrap items-center gap-3 p-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm">
-                  {person.nome ? <span className="font-medium">{person.nome} </span> : null}
-                  <span className={person.nome ? 'text-muted-foreground' : 'font-medium'}>
+                  {person.name ? <span className="font-medium">{person.name} </span> : null}
+                  <span className={person.name ? 'text-muted-foreground' : 'font-medium'}>
                     {person.address}
                   </span>
                 </p>
@@ -109,8 +109,8 @@ export function CustomerCorrespondents({
                   variant="outline"
                   size="sm"
                   disabled={adding.isPending}
-                  aria-label={`Aggiungi come persona: ${person.nome || person.address}`}
-                  onClick={() => add(person.address, person.nome)}
+                  aria-label={`Aggiungi come persona: ${person.name || person.address}`}
+                  onClick={() => add(person.address, person.name)}
                 >
                   Aggiungi come persona
                 </Button>

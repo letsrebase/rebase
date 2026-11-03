@@ -3,7 +3,7 @@ import type { FieldDefinition } from './schema'
 import { asBody, isBlank, toFormValues, toRequestBody, type FormValues } from './formValues'
 
 const FIELDS: FieldDefinition[] = [
-  { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
+  { key: 'name', label: 'Nome', type: 'text', required: true, options: [] },
   { key: 'value', label: 'Valore', type: 'currency', required: false, options: [] },
   { key: 'days', label: 'Giorni', type: 'number', required: false, options: [] },
 ]
@@ -28,52 +28,52 @@ describe('toFormValues', () => {
   const entity = {
     id: 'e-1',
     created_at: '2026-01-01',
-    nome: 'Acme',
+    name: 'Acme',
     value: '10.00',
-    custom_fields: { industry: 'PMI', vecchio: 'x' },
+    custom_fields: { industry: 'PMI', legacy: 'x' },
   }
 
   it('seeds exactly the listed native keys, never the rest of the row', () => {
-    const result = toFormValues(entity, ['nome', 'value', 'days'])
+    const result = toFormValues(entity, ['name', 'value', 'days'])
 
-    expect(result.native).toEqual({ nome: 'Acme', value: '10.00', days: undefined })
+    expect(result.native).toEqual({ name: 'Acme', value: '10.00', days: undefined })
     expect(result.native).not.toHaveProperty('id')
     expect(result.native).not.toHaveProperty('created_at')
   })
 
   it('copies custom_fields whole into its own namespace, detached from the row', () => {
-    const result = toFormValues(entity, ['nome'])
+    const result = toFormValues(entity, ['name'])
 
-    expect(result.custom).toEqual({ industry: 'PMI', vecchio: 'x' })
+    expect(result.custom).toEqual({ industry: 'PMI', legacy: 'x' })
     result.custom.industry = 'changed'
     expect(entity.custom_fields.industry).toBe('PMI')
   })
 
   it('answers an empty custom namespace for an entity without custom_fields', () => {
-    expect(toFormValues({}, ['nome']).custom).toEqual({})
+    expect(toFormValues({}, ['name']).custom).toEqual({})
   })
 })
 
 describe('toRequestBody', () => {
   it('sends non-blank natives and always carries custom_fields', () => {
-    const body = toRequestBody(values({ nome: 'Acme', value: '' }), {
+    const body = toRequestBody(values({ name: 'Acme', value: '' }), {
       fields: FIELDS,
       isRenderedCustomKey: rendersEverything,
     })
 
-    expect(body).toEqual({ nome: 'Acme', custom_fields: {} })
+    expect(body).toEqual({ name: 'Acme', custom_fields: {} })
   })
 
   it('spells a cleared native column by its type, and says nothing about one that was never set', () => {
-    const initial = values({ nome: 'Acme', value: '10.00', days: 30 })
+    const initial = values({ name: 'Acme', value: '10.00', days: 30 })
 
-    const body = toRequestBody(values({ nome: '', value: '', days: null, extra: '' }), {
+    const body = toRequestBody(values({ name: '', value: '', days: null, extra: '' }), {
       fields: FIELDS,
       initial,
       isRenderedCustomKey: rendersEverything,
     })
 
-    expect(body).toEqual({ nome: '', value: null, days: null, custom_fields: {} })
+    expect(body).toEqual({ name: '', value: null, days: null, custom_fields: {} })
   })
 
   it('clears a custom field only with null, and only when it used to hold a value', () => {
@@ -99,7 +99,7 @@ describe('toRequestBody', () => {
   })
 
   it('honours skipNative and coerceNative', () => {
-    const body = toRequestBody(values({ nome: 'Acme', days: '30', customer_id: 'c-1' }), {
+    const body = toRequestBody(values({ name: 'Acme', days: '30', customer_id: 'c-1' }), {
       fields: FIELDS,
       initial: values({ customer_id: 'c-0' }),
       isRenderedCustomKey: rendersEverything,
@@ -107,14 +107,14 @@ describe('toRequestBody', () => {
       coerceNative: (key, value) => (key === 'days' ? Number(value) : value),
     })
 
-    expect(body).toEqual({ nome: 'Acme', days: 30, custom_fields: {} })
+    expect(body).toEqual({ name: 'Acme', days: 30, custom_fields: {} })
   })
 })
 
 describe('asBody', () => {
   it('hands the same object back, typed as the endpoint body', () => {
-    const body = { nome: 'Acme' }
+    const body = { name: 'Acme' }
 
-    expect(asBody<{ nome: string }>(body)).toBe(body)
+    expect(asBody<{ name: string }>(body)).toBe(body)
   })
 })

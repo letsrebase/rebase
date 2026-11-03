@@ -282,8 +282,8 @@ function DraftCard({
 
       {/* The server's own sentence about the last attempt, read off the row, so it goes
           away when the fact does rather than when a component remembers to reset it. Not
-          for `incerto`, whose stored sentence is always the unanswered send's and says
-          what `STATE_HELP.incerto` below already says. */}
+          for `uncertain`, whose stored sentence is always the unanswered send's and says
+          what `STATE_HELP.uncertain` below already says. */}
       {draft.last_error && state !== 'uncertain' ? (
         <p role="status" className="border bg-muted px-3 py-2 text-sm">
           {draft.last_error}
@@ -314,7 +314,7 @@ function DraftCard({
 
       <footer className="flex flex-wrap gap-2">
         {/* No «Invia» while the outcome is unknown, and no "riprova" either: `isSendable`
-            is false for `incerto` and `in_invio`, so this condition is the whole rule.
+            is false for `uncertain` and `sending`, so this condition is the whole rule.
             The only way out of «esito da verificare» is to ask. */}
         {sendable && maySend ? (
           <Button
@@ -374,7 +374,7 @@ function DraftCard({
             <dt className="text-muted-foreground">Allegati</dt>
             <dd className="wrap-anywhere">
               {draft.attachments.length === 0
-                ? 'none'
+                ? 'nessuno'
                 : draft.attachments.map((attachment) => attachment.filename).join(', ')}
             </dd>
           </dl>

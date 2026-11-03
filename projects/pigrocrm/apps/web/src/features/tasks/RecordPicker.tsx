@@ -6,7 +6,7 @@ import { MIN_TERM_LENGTH, useGlobalSearch, type SearchEntity } from '@/features/
 import { LINK_KIND_LABELS, type LinkKind, type LinkValue } from './links'
 import { useRecordLabel } from './queries'
 
-/** The four kinds an attività can be linked to, out of the five the global search knows:
+/** The four kinds a task can be linked to, out of the five the global search knows:
  *  a document belongs to a customer or a deal and is not a thing a task hangs from. */
 const LINKABLE: readonly SearchEntity[] = ['customer', 'person', 'deal', 'invoice']
 
@@ -15,13 +15,13 @@ function isLinkable(entity: SearchEntity): entity is LinkKind {
 }
 
 /**
- * Picks at most one record out of the four kinds an attività may hang from.
+ * Picks at most one record out of the four kinds a task may hang from.
  *
  * Built on the global search rather than on four dropdowns: a space has thousands of
  * customers and invoices, and «scegli dall'elenco» over `limit: 200` is a list that
  * silently stops at the 200th. Typing three letters is the same gesture as the palette's.
  * What is chosen is shown by name (`useRecordLabel`), with a button to take it off: a link
- * is optional, and an attività with none is a valid one.
+ * is optional, and a task with none is a valid one.
  */
 export function RecordPicker({
   id,

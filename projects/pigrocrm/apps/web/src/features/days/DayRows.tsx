@@ -69,7 +69,7 @@ function DayRow({ day, showContract }: { day: WorkUnitRow; showContract: boolean
         params={{ workUnitId: day.id }}
         className="group flex items-center gap-4 px-2 py-3 outline-none hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
-        <div className="w-24 shrink-0 text-sm font-medium tabular-nums">{formatIsoDateItalian(day.data)}</div>
+        <div className="w-24 shrink-0 text-sm font-medium tabular-nums">{formatIsoDateItalian(day.date)}</div>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">{day.description}</p>
           <p className="truncate text-sm text-muted-foreground">

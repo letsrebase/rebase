@@ -75,7 +75,7 @@ const NO_OWNER = '__nessuno'
 /** The people an admin may hand a customer to (REB-773), as the detail page draws them. */
 export interface OwnerOption {
   id: string
-  nome: string
+  name: string
 }
 
 /**
@@ -279,7 +279,7 @@ export function CustomerForm({
 
         {showLegalEntityPicker ? (
           <div className="space-y-2">
-            <Label htmlFor="customer-azienda">Azienda</Label>
+            <Label htmlFor="customer-legal-entity">Azienda</Label>
             {/* Straight into `native`, not through `change`: that routes a key the
                 active schema lists as a custom field into `custom`, and a tenant may
                 well have named one `azienda_id` (CodeRabbit, PR #509). */}
@@ -292,13 +292,13 @@ export function CustomerForm({
                 }))
               }
             >
-              <SelectTrigger id="customer-azienda" className="w-full">
+              <SelectTrigger id="customer-legal-entity" className="w-full">
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>
               <SelectContent>
                 {legal_entity.legal_entities.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    {item.nome}
+                    {item.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -339,7 +339,7 @@ export function CustomerForm({
                 <SelectItem value={NO_OWNER}>Nessuno</SelectItem>
                 {owners.map((person) => (
                   <SelectItem key={person.id} value={person.id}>
-                    {person.nome}
+                    {person.name}
                   </SelectItem>
                 ))}
               </SelectContent>

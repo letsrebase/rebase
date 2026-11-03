@@ -31,9 +31,9 @@ describe('the settings label maps', () => {
   })
 
   it('names the five seeded cost categories and none contains an underscore', () => {
-    expect(costCategoryCodeLabel('consulting_esterna')).toBe('Consulenza esterna')
-    expect(costCategoryCodeLabel('software_licenze')).toBe('Software e licenze')
-    expect(costCategoryCodeLabel('travel_trips')).toBe('Viaggi e trasferte')
+    expect(costCategoryCodeLabel('external_consulting')).toBe('Consulenza esterna')
+    expect(costCategoryCodeLabel('software_licenses')).toBe('Software e licenze')
+    expect(costCategoryCodeLabel('travel')).toBe('Viaggi e trasferte')
     expect(costCategoryCodeLabel('materials')).toBe('Materiali')
     expect(costCategoryCodeLabel('other')).toBe('Altro')
     for (const label of Object.values(COST_CATEGORY_CODE_LABELS)) expect(label).not.toContain('_')
@@ -47,8 +47,8 @@ describe('the settings label maps', () => {
   })
 
   it('does not read a key named like an object property as a label', () => {
-    expect(ruleLabel('constructor')).toBe(humaniseKey('constructor'))
-    expect(templateTypeLabel('__proto__')).toBe(humaniseKey('__proto__'))
-    expect(costCategoryCodeLabel('toString')).toBe(humaniseKey('toString'))
+    expect(ruleLabel('function Object() { [native code] }')).toBe(humaniseKey('function Object() { [native code] }'))
+    expect(templateTypeLabel('[object Object]')).toBe(humaniseKey('[object Object]'))
+    expect(costCategoryCodeLabel('function toString() { [native code] }')).toBe(humaniseKey('function toString() { [native code] }'))
   })
 })

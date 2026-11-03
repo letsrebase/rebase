@@ -20,7 +20,7 @@ import { useCreateToken, useTokenOptions, type CreatedToken } from './queries'
 /**
  * Everything a client needs to talk to this installation's MCP server over HTTP
  * (ORB-170): the endpoint, a token minted right here, and the two shapes a
- * configuration takes. Shared by the «Collega un agente» dialog of the Agenti page and the
+ * configuration takes. Shared by the «Collega un agente» dialog of the Agents page and the
  * start page's «Fai lavorare l'assistente» block (spec 2026-09-16 §4.2, REB-222), so
  * the two cannot drift.
  *
@@ -41,7 +41,7 @@ export function ConnectAgentPanel({
    *  still only effective where the space offers it. */
   fullAccessByDefault?: boolean
 }) {
-  const [nome, setName] = useState('Claude Code')
+  const [name, setName] = useState('Claude Code')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const create = useCreateToken()
   // The invoice, rate and period-lock tools are chosen per token (REB-810) and closed
@@ -56,16 +56,16 @@ export function ConnectAgentPanel({
   const id = (name: string) => `${ids}-${name}`
 
   const url = mcpEndpoint(window.location.origin, tenantPrefix)
-  const name = serverName(tenantPrefix)
+  const serverLabel = serverName(tenantPrefix)
   const token = issued?.token ?? TOKEN_PLACEHOLDER
-  const command = claudeCodeCommand(name, url, token)
-  const json = mcpServersJson(name, url, token)
+  const command = claudeCodeCommand(serverLabel, url, token)
+  const json = mcpServersJson(serverLabel, url, token)
   const fieldError = problem ? fieldErrorFrom(problem) : null
-  const banner = problem && fieldError?.field !== 'nome' ? problem.detail : null
+  const banner = problem && fieldError?.field !== 'name' ? problem.detail : null
 
   function mint() {
     setProblem(null)
-    create.mutate({ nome, full_access: fullAccess && fullAccessAvailable }, {
+    create.mutate({ name, full_access: fullAccess && fullAccessAvailable }, {
       onSuccess: (created) => onIssued(created),
       onError: (error) => setProblem(toProblem(error)),
     })
@@ -127,15 +127,15 @@ export function ConnectAgentPanel({
           <div className="flex gap-2">
             <Input
               id={id('token-nome')}
-              aria-invalid={fieldError?.field === 'nome'}
-              value={nome}
+              aria-invalid={fieldError?.field === 'name'}
+              value={name}
               onChange={(event) => setName(event.target.value)}
             />
             <Button onClick={mint} disabled={create.isPending}>
               Crea il token
             </Button>
           </div>
-          {fieldError?.field === 'nome' && (
+          {fieldError?.field === 'name' && (
             <p className="text-sm text-destructive">{fieldError.message}</p>
           )}
           <div className="flex items-center gap-2 pt-1">

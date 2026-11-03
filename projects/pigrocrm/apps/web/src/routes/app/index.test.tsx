@@ -35,6 +35,6 @@ describe('the /app/ route', () => {
     const validate = Route.options.validateSearch as typeof validateHomeSearch
     const search = validate({})
     expect(search.tab).toBe('economic')
-    expect(search.da).toMatch(/^\d{4}-\d{2}-01$/)
+    expect(search.from).toMatch(/^\d{4}-\d{2}-01$/)
   })
 })

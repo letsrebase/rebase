@@ -43,7 +43,7 @@ export async function login(page: Page, email: string, password: string): Promis
   // And not the `/\/app\/?$/` that replaced it either, which anchored on the end of the
   // string and therefore stopped being true the moment `/app/` grew a `validateSearch`
   // (slice 6: the dashboard's period is in the URL, §4). The landing URL is now
-  // `/app?tab=commercial&da=…&a=…`, so an end-anchored pattern fails for every spec in
+  // `/app?tab=commercial&from=…&to=…`, so an end-anchored pattern fails for every spec in
   // this suite while the login it is checking has actually succeeded. `(\?|$)` is what
   // admits the search string without re-admitting `/app/login`: after `/app` the next
   // character has to be `?` or nothing, and in `/app/login` it is `l`.
@@ -322,10 +322,10 @@ export async function relaunchApi(): Promise<void> {
 export async function seedDealWithRate(
   request: APIRequestContext,
   {
-    nome,
-    rate: tariffa,
-    customer: cliente,
-  }: { nome: string; rate: string; customer?: Record<string, string> },
+    name,
+    rate: rateValue,
+    customer: customerOverrides,
+  }: { name: string; rate: string; customer?: Record<string, string> },
 ): Promise<{ dealId: string; customerId: string }> {
   const customerResponse = await request.post('/api/customers', {
     // Merged over the default, never replacing it: `time-tracking.spec.ts` needs
@@ -335,13 +335,13 @@ export async function seedDealWithRate(
     // recipient with no address, no P.IVA or no `sdi_code`. A second seeding helper
     // for that one difference would be two fixtures to keep in step; an override on the
     // one that exists is the same fixture with more of the record filled in.
-    data: { legal_name: `${nome} SRL`, ...cliente },
+    data: { legal_name: `${name} SRL`, ...customerOverrides },
   })
   expect(customerResponse.status(), await customerResponse.text()).toBe(201)
   const customer = (await customerResponse.json()) as { id: string }
 
   const dealResponse = await request.post('/api/deals', {
-    data: { nome, customer_id: customer.id },
+    data: { name, customer_id: customer.id },
   })
   expect(dealResponse.status(), await dealResponse.text()).toBe(201)
   const deal = (await dealResponse.json()) as { id: string }
@@ -351,7 +351,7 @@ export async function seedDealWithRate(
   // the Tariffe screen itself calls, so seeding through it means the fixture and the
   // screen under test are writing the same column the same way.
   const rate = await request.put(`/api/deals/${deal.id}/rate`, {
-    data: { hourly_rate: tariffa },
+    data: { hourly_rate: rateValue },
   })
   expect(rate.status(), await rate.text()).toBe(204)
 
@@ -464,7 +464,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
 
   const deal = await page.request.post('/api/deals', {
     data: {
-      nome: dealName,
+      name: dealName,
       customer_id: customerId,
       pipeline_stage_id: openStage.id,
       // A string, never a JSON number: `expected_value` is `Numeric(12,2)`, and a float

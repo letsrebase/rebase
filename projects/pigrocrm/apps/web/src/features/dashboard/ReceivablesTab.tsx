@@ -32,7 +32,7 @@ function bandBar(row: BandDueDate, index: number): BarRow {
 }
 
 function payment_reminders(sent: number, last: string | null): string {
-  if (sent === 0) return 'none'
+  if (sent === 0) return 'nessuno'
   const how_many = sent === 1 ? '1 sollecito' : `${sent} solleciti`
   return last ? `${how_many}, ultimo il ${formatIsoDateItalian(last)}` : how_many
 }

@@ -105,7 +105,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
                   <SelectContent>
                     {templates.map((template) => (
                       <SelectItem key={template.id} value={template.id}>
-                        {template.nome}
+                        {template.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -137,7 +137,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
                     {preview.data.attachments.map((attachment) => (
                       <li key={attachment.type} className="flex items-center gap-2">
                         <Paperclip className="size-4" aria-hidden="true" />
-                        {attachment.nome}
+                        {attachment.name}
                       </li>
                     ))}
                   </ul>

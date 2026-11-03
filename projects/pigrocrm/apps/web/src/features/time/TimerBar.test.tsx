@@ -14,7 +14,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), 
 
 const USER = '33333333-3333-7333-8333-333333333333'
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
-const deal = { id: DEAL, nome: 'Progetto Alfa' } as never
+const deal = { id: DEAL, name: 'Progetto Alfa' } as never
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
@@ -95,7 +95,7 @@ describe('TimerBar', () => {
     expect(path).toBe('/api/time-entries/timer/stop')
     expect(init.body).toMatchObject({ deal_id: DEAL, description: 'Call con il cliente' })
     // The day is the browser's own calendar day.
-    expect((init.body as { data: string }).data).toMatch(/^2026-03-12$/)
+    expect((init.body as { date: string }).date).toMatch(/^2026-03-12$/)
   })
 
   it('opens on the manual line and refuses to log without a deal', async () => {

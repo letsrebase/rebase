@@ -89,9 +89,9 @@ export function CommandPalette({
         return void navigate({ to: '/app/documents/$documentId', params: { documentId: hit.id } })
       case 'invoice':
         return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
-      // No page of its own: the attività opens in its dialog, over the Attività page
+      // No page of its own: the tasks opens in its dialog, over the Tasks page
       // (`?open=`), which is where every other screen opens one from.
-      case 'attivita':
+      case 'task':
         return void navigate({ to: '/app/activities', search: { open: hit.id } })
     }
   }
@@ -121,9 +121,9 @@ export function CommandPalette({
       // question from the one the palette was asked.
       case 'invoice':
         return null
-      // An attività has no list of its own to filter by a term: the page has its own
+      // A task has no list of its own to filter by a term: the page has its own
       // filters, not a free-text one, so «vedi tutti» would land on a different question.
-      case 'attivita':
+      case 'task':
         return null
     }
   }
@@ -135,7 +135,7 @@ export function CommandPalette({
 
   /** "5 di 500" and "5 di 5" are different answers; «oltre» is how the ceiling is said. */
   function count(group: SearchGroup): string {
-    return group.total_and_a_minimum ? `oltre ${group.total}` : String(group.total)
+    return group.total_is_minimum ? `oltre ${group.total}` : String(group.total)
   }
 
   return (

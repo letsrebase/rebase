@@ -4,7 +4,7 @@ import { ReminderPreferences } from '@/features/reminders/ReminderPreferences'
  * Promemoria (REB-735), the space's own: the defaults every person starts from, which each
  * of them may override in Notifiche. Admin only, like every section but the two personal
  * ones (`SETTINGS_TAB_MIN_ROLE`); the writes are `require_unscoped_admin` in the service.
- * A type switched off here is raised for nobody, Avvisi included.
+ * A type switched off here is raised for nobody, Reminders included.
  */
 export function RemindersPanel() {
   return (

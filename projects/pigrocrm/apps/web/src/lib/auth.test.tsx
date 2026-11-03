@@ -21,7 +21,7 @@ function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
 }
 
-const ADMIN = { id: 'u1', email: 'a@p.it', nome: 'Admin', role: 'admin', active: true }
+const ADMIN = { id: 'u1', email: 'a@p.it', name: 'Admin', role: 'admin', active: true }
 const DEMOTED = { ...ADMIN, role: 'collaborator' }
 
 function Probe() {
@@ -167,7 +167,7 @@ describe('AuthProvider — who PostHog sees', () => {
     expect(await screen.findByText('admin')).toBeInTheDocument()
 
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('u1', { email: 'a@p.it', nome: 'Admin', role: 'admin' })
+    expect(identifyUser).toHaveBeenCalledWith('u1', { email: 'a@p.it', name: 'Admin', role: 'admin' })
     // jsdom's page lives at `/`, which is the root installation, not a space.
     expect(identifyGroup).toHaveBeenCalledTimes(1)
     expect(identifyGroup).toHaveBeenCalledWith('space', 'root')

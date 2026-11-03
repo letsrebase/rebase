@@ -38,7 +38,7 @@ describe('a day’s page', () => {
         status: 'disputed',
         actions: ['worked'],
         transitions: [
-          { id: 't1', work_unit_id: DAY_ID, previous_status: null, new_status: 'approved', actor: { kind: 'human', id: 'u1' }, reason: 'creation', created_at: '2026-03-01T09:00:00Z', seq: 1 },
+          { id: 't1', work_unit_id: DAY_ID, previous_status: null, new_status: 'approved', actor: { kind: 'human', id: 'u1' }, reason: 'creazione', created_at: '2026-03-01T09:00:00Z', seq: 1 },
           { id: 't2', work_unit_id: DAY_ID, previous_status: 'approved', new_status: 'worked', actor: { kind: 'human', id: 'u1' }, reason: 'Giornata svolta', created_at: '2026-03-02T17:00:00Z', seq: 2 },
           { id: 't3', work_unit_id: DAY_ID, previous_status: 'worked', new_status: 'disputed', actor: { kind: 'human', id: 'u1' }, reason: 'Il cliente contesta le ore', created_at: '2026-03-09T10:00:00Z', seq: 3 },
         ],

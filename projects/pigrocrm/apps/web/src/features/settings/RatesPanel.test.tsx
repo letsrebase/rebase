@@ -27,7 +27,7 @@ function failed(error: unknown, status: number) {
 
 const IVAN = {
   id: 'u1',
-  nome: 'Ivan',
+  name: 'Ivan',
   email: 'ivan@x.test',
   role: 'admin',
   active: true,
@@ -39,7 +39,7 @@ const IVAN = {
 }
 const MARA = {
   id: 'u2',
-  nome: 'Mara',
+  name: 'Mara',
   email: 'mara@x.test',
   role: 'collaborator',
   active: true,
@@ -62,10 +62,10 @@ const DEAL_BASE = {
   custom_fields: {},
   ...DEAL_TIMES,
 }
-const ACME = { ...DEAL_BASE, id: 'd1', nome: 'Sito Acme', hourly_rate: '120.000000' }
+const ACME = { ...DEAL_BASE, id: 'd1', name: 'Sito Acme', hourly_rate: '120.000000' }
 /** A real rate meaning "these hours are not billed", not the absence of one. */
-const PRO_BONO = { ...DEAL_BASE, id: 'd2', nome: 'Pro bono ONLUS', hourly_rate: '0.000000' }
-const WITHOUT = { ...DEAL_BASE, id: 'd3', nome: 'Restyling Bianchi', hourly_rate: null }
+const PRO_BONO = { ...DEAL_BASE, id: 'd2', name: 'Pro bono ONLUS', hourly_rate: '0.000000' }
+const WITHOUT = { ...DEAL_BASE, id: 'd3', name: 'Restyling Bianchi', hourly_rate: null }
 
 function respond(users: unknown[], deals: unknown[]) {
   vi.mocked(api.GET).mockImplementation((path: string) => {
@@ -149,9 +149,9 @@ describe('RatesPanel', () => {
     vi.mocked(api.PUT).mockImplementation(() => ok(undefined, 204))
     renderPanel()
 
-    const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    await userEvent.clear(tariffa)
-    await userEvent.click(within(rowOf(tariffa)).getByRole('button', { name: 'Salva' }))
+    const rateValue = await screen.findByLabelText('Tariffa oraria di Ivan')
+    await userEvent.clear(rateValue)
+    await userEvent.click(within(rowOf(rateValue)).getByRole('button', { name: 'Salva' }))
 
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
     expect(api.PUT).toHaveBeenCalledWith('/api/users/{user_id}/rates', {
@@ -295,11 +295,11 @@ describe('RatesPanel', () => {
     )
     renderPanel()
 
-    const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    await userEvent.click(within(rowOf(tariffa)).getByRole('button', { name: 'Salva' }))
+    const rateValue = await screen.findByLabelText('Tariffa oraria di Ivan')
+    await userEvent.click(within(rowOf(rateValue)).getByRole('button', { name: 'Salva' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/requires one of \[admin\]/)
-    expect(tariffa).toHaveAttribute('aria-invalid', 'false')
+    expect(rateValue).toHaveAttribute('aria-invalid', 'false')
   })
 
   /**
@@ -314,8 +314,8 @@ describe('RatesPanel', () => {
     )
     renderPanel()
 
-    const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    const save = within(rowOf(tariffa)).getByRole('button', { name: 'Salva' })
+    const rateValue = await screen.findByLabelText('Tariffa oraria di Ivan')
+    const save = within(rowOf(rateValue)).getByRole('button', { name: 'Salva' })
     await userEvent.click(save)
     expect(await screen.findByRole('alert')).toHaveTextContent('periodo chiuso')
 

@@ -13,7 +13,7 @@ import { TaskDialog } from './TaskDialog'
 import { TaskMeta } from './TaskMeta'
 
 /**
- * One attività as a list shows it, wherever the list is: the title (struck through once
+ * One tasks as a list shows it, wherever the list is: the title (struck through once
  * it is closed), what it is for and about, its deadline when the list does not already
  * say it, and the three things a person does to it without opening anything: «Fatto»,
  * «Annulla» and «Modifica».
@@ -26,11 +26,11 @@ import { TaskMeta } from './TaskMeta'
  * to know which of its rows is being edited.
  */
 export function TaskItem({
-  attivita,
+  task,
   showDueDate = false,
   hideLink = false,
 }: {
-  attivita: Task
+  task: Task
   showDueDate?: boolean
   hideLink?: boolean
 }) {
@@ -38,13 +38,13 @@ export function TaskItem({
   const complete = useCompleteTask()
   const cancel = useCancelTask()
   const [editing, setEditing] = useState(false)
-  const open = attivita.status === 'open'
+  const open = task.status === 'open'
   // One closure at a time: «Fatto» then «Annulla» in quick succession would race two writes
   // on the same row, and the second would answer with the first one's state.
   const pending = complete.isPending || cancel.isPending
 
   function close(mutation: typeof complete, done: string) {
-    mutation.mutate(attivita.id, {
+    mutation.mutate(task.id, {
       onSuccess: () => toast.success(done),
       onError: (error) => toast.error(toProblem(error).detail),
     })
@@ -55,13 +55,13 @@ export function TaskItem({
     // column a word wide at 390px once the sidebar is the rail (the Home's band shows it).
     <li className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className={open ? undefined : 'line-through opacity-60'}>{attivita.title}</span>
+        <span className={open ? undefined : 'line-through opacity-60'}>{task.title}</span>
         {showDueDate && (
           <span className="text-xs text-muted-foreground">
-            {attivita.due_date ? `Entro il ${formatIsoDateItalian(attivita.due_date)}` : 'Senza scadenza'}
+            {task.due_date ? `Entro il ${formatIsoDateItalian(task.due_date)}` : 'Senza scadenza'}
           </span>
         )}
-        <TaskMeta attivita={attivita} hideLink={hideLink} />
+        <TaskMeta task={task} hideLink={hideLink} />
       </span>
       {canWrite && (
         <span className="flex shrink-0 gap-2">
@@ -80,7 +80,7 @@ export function TaskItem({
           </Button>
         </span>
       )}
-      {editing && <TaskDialog open onOpenChange={setEditing} attivita={attivita} />}
+      {editing && <TaskDialog open onOpenChange={setEditing} task={task} />}
     </li>
   )
 }

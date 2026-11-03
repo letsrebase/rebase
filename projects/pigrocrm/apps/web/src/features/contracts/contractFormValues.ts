@@ -20,7 +20,7 @@ export interface ContractFormValues {
   renewal_notice_days: string
   termination_notice_days: string
   /** `false` means «come il cliente»: both payment-term columns stay null. */
-  payment_proprio: boolean
+  payment_custom: boolean
   payment_days: string
   payment_end_of_month: boolean
   billing_cadence: string
@@ -32,7 +32,7 @@ export interface ContractFormValues {
   customer_share_cap: string
   expenses_kind: ExpensePolicyKind
   expenses_cap: string
-  expenses_preautorizzazione: boolean
+  expenses_preauthorization: boolean
   note: string
   custom: Record<string, unknown>
 }
@@ -45,7 +45,7 @@ export function defaultContractFormValues(): ContractFormValues {
     renewal_type: 'none',
     renewal_notice_days: '',
     termination_notice_days: '30',
-    payment_proprio: false,
+    payment_custom: false,
     payment_days: '',
     payment_end_of_month: false,
     billing_cadence: 'monthly',
@@ -55,7 +55,7 @@ export function defaultContractFormValues(): ContractFormValues {
     customer_share_cap: '',
     expenses_kind: 'not_reimbursable',
     expenses_cap: '',
-    expenses_preautorizzazione: false,
+    expenses_preauthorization: false,
     note: '',
     custom: {},
   }
@@ -70,7 +70,7 @@ export function contractToFormValues(contract: Contract): ContractFormValues {
     renewal_type: contract.renewal_type as RenewalType,
     renewal_notice_days: contract.renewal_notice_days?.toString() ?? '',
     termination_notice_days: contract.termination_notice_days.toString(),
-    payment_proprio: contract.payment_days !== null,
+    payment_custom: contract.payment_days !== null,
     payment_days: contract.payment_days?.toString() ?? '',
     payment_end_of_month: contract.payment_end_of_month ?? false,
     billing_cadence: contract.billing_cadence,
@@ -80,7 +80,7 @@ export function contractToFormValues(contract: Contract): ContractFormValues {
     customer_share_cap: contract.customer_share_cap ?? '',
     expenses_kind: policy?.kind ?? 'not_reimbursable',
     expenses_cap: policy?.amount_cap ?? '',
-    expenses_preautorizzazione: policy?.richiede_preautorizzazione ?? false,
+    expenses_preauthorization: policy?.requires_pre_authorization ?? false,
     note: contract.note ?? '',
     custom: { ...contract.custom_fields },
   }
@@ -109,7 +109,7 @@ export function toContractBody(
   const policy = expensePolicyBody({
     kind: values.expenses_kind,
     amount_cap: values.expenses_cap.trim().replace(',', '.'),
-    richiede_preautorizzazione: values.expenses_preautorizzazione,
+    requires_pre_authorization: values.expenses_preauthorization,
   })
   const full: ContractUpdateBody = {
     title: values.title.trim(),
@@ -119,8 +119,8 @@ export function toContractBody(
     renewal_notice_days:
       values.renewal_type === 'none' ? null : asInt(values.renewal_notice_days),
     termination_notice_days: asInt(values.termination_notice_days),
-    payment_days: values.payment_proprio ? asInt(values.payment_days) : null,
-    payment_end_of_month: values.payment_proprio ? values.payment_end_of_month : null,
+    payment_days: values.payment_custom ? asInt(values.payment_days) : null,
+    payment_end_of_month: values.payment_custom ? values.payment_end_of_month : null,
     billing_cadence: values.billing_cadence,
     currency: values.currency.trim().toUpperCase(),
     requires_prior_approval: values.requires_prior_approval,

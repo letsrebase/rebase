@@ -46,8 +46,8 @@ const Statuses = Object.entries(INVOICE_STATE_LABELS).map(([value, label]) => ({
   label,
 }))
 
-/** The two payment states, as a second chip row (REB-325: «aggiungi un filtro per le
- *  fatture da incassare»). Built from the same map the `Pagamento` column's pill reads,
+/** The two payment states, as a second chip row (REB-325: a filter for the unpaid
+ *  invoices). Built from the same map the `Pagamento` column's pill reads,
  *  so the chip and the pill can never spell a state two ways. */
 const Receipts = Object.entries(PAYMENT_STATE_LABELS).map(([value, label]) => ({
   value: value as PaymentStatus,

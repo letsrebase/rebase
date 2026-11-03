@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth'
 
 export interface Member {
   id: string
-  nome: string
+  name: string
 }
 
 /**
@@ -22,7 +22,7 @@ export function useMemberDirectory() {
   })
 
   const members = useMemo<Member[]>(
-    () => (directory.data ?? []).map(({ id, nome }) => ({ id, nome })),
+    () => (directory.data ?? []).map(({ id, name: name }) => ({ id, name })),
     [directory.data],
   )
 
@@ -32,8 +32,8 @@ export function useMemberDirectory() {
     (id: string | null | undefined): string | null => {
       if (id === null || id === undefined) return null
       const known = members.find((member) => member.id === id)
-      if (id === user?.id) return `${known?.nome ?? user.nome} (tu)`
-      return known ? known.nome : 'Un collega'
+      if (id === user?.id) return `${known?.name ?? user.name} (tu)`
+      return known ? known.name : 'Un collega'
     },
     [members, user],
   )

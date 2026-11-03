@@ -2,13 +2,13 @@ import { expect, test } from '@playwright/test'
 import { loginAsAdmin } from './helpers'
 
 /**
- * REB-725's definition of done, driven the way a person drives it: an attività due
+ * REB-725's definition of done, driven the way a person drives it: a task due
  * yesterday is under «In ritardo» and counted beside «Attività» in the sidebar, and
  * completing it takes it out of both. Since REB-873 «Oggi» is the first view of the
- * Attività page, so `/app/tasks?view=today` has to land there.
+ * Tasks page, so `/app/oggi` has to land there.
  *
  * The count is compared before and after rather than against a literal, because the
- * other specs of this suite leave their own attività in the same space.
+ * other specs of this suite leave their own tasks in the same space.
  */
 test.describe('Oggi', () => {
   test('an attività due yesterday is overdue, and Fatto takes it out of the section and the count', async ({
@@ -28,8 +28,8 @@ test.describe('Oggi', () => {
     })
     expect(created.status(), await created.text()).toBe(201)
 
-    await page.goto('/app/tasks?view=today')
-    await expect(page).toHaveURL(/\/app\/activities\?vista=oggi/)
+    await page.goto('/app/oggi')
+    await expect(page).toHaveURL(/\/app\/activities\?view=today/)
     await expect(page.getByRole('tab', { name: 'Oggi' })).toHaveAttribute('aria-selected', 'true')
     const overdue = page
       .getByRole('heading', { name: /In ritardo/ })

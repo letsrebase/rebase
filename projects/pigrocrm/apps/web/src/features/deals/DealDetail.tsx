@@ -172,7 +172,7 @@ export function DealDetail() {
     // re-implementation of any server rule. Mirrors `CustomerDetail`/
     // `PersonDetail`'s own `archive`.
     const confirmed = window.confirm(
-      `Archiviare ${deal.nome}? Il deal non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
+      `Archiviare ${deal.name}? Il deal non comparirà più negli elenchi, ma i dati restano e l'operazione è reversibile.`,
     )
     if (!confirmed) return
 
@@ -194,12 +194,12 @@ export function DealDetail() {
   // The header's second line: whose deal, and for how much. `customer_legal_name`
   // rides on `DealRead` so this costs no request; the Collegamenti tab keeps the full
   // customer card.
-  // And, from the second azienda on, whose azienda it is (REB-626): the deal keeps the
+  // And, from the second legal entity on, whose legal entity it is (REB-626): the deal keeps the
   // one its customer had when it was created (spec §1.7), so the header says it.
   const subtitle = [
     deal.customer_legal_name,
     formatMoney(deal.expected_value),
-    legal_entity.several ? legal_entity.byId(deal.legal_entity_id)?.nome : undefined,
+    legal_entity.several ? legal_entity.byId(deal.legal_entity_id)?.name : undefined,
   ]
     .filter((part): part is string => typeof part === 'string' && part !== '' && part !== '—')
     .join(' · ')
@@ -208,7 +208,7 @@ export function DealDetail() {
     <>
       <EntityDetailLayout
         icon={Handshake}
-        title={deal.nome}
+        title={deal.name}
         subtitle={subtitle === '' ? 'Deal' : subtitle}
         entityType="deal"
         entityId={dealId}
@@ -216,7 +216,7 @@ export function DealDetail() {
         invoices={<InvoicesTab owner={{ dealId }} />}
         hours={<TimeEntriesTab dealId={dealId} />}
         economics={<EconomicsTab dealId={dealId} />}
-        attivita={<EntityTask link={{ kind: 'deal', id: dealId }} />}
+        tasks={<EntityTask link={{ kind: 'deal', id: dealId }} />}
         emails={gmailConfigured ? <EmailTab entityType="deal" entityId={dealId} /> : undefined}
         actions={
           canWrite && (
@@ -231,7 +231,7 @@ export function DealDetail() {
               <NewProformaButton
                 customerId={deal.customer_id}
                 dealId={deal.id}
-                prefill={{ description: deal.nome, amount: deal.expected_value ?? '' }}
+                prefill={{ description: deal.name, amount: deal.expected_value ?? '' }}
               />
               {/* Two outcomes, top right, only while the deal is still open: closing it
                   is the decision this page exists for, but «una sola cosa forte per

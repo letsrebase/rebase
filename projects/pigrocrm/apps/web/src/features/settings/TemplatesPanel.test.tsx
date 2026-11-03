@@ -23,18 +23,18 @@ function failed(error: unknown, status: number) {
 
 const TEMPLATE = {
   id: 't-1',
-  nome: 'Consulenza CTO',
+  name: 'Consulenza CTO',
   type: 'offer',
   body_markdown: 'Oggetto: {{oggetto}}',
   declared_variables: [
-    { nome: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
+    { name: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
   ],
   active: true,
   created_at: '2026-08-20T09:00:00Z',
   updated_at: '2026-08-20T09:00:00Z',
 }
 
-const BARE = { ...TEMPLATE, id: 't-2', nome: 'Verbale vuoto', declared_variables: [] }
+const BARE = { ...TEMPLATE, id: 't-2', name: 'Verbale vuoto', declared_variables: [] }
 
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -54,8 +54,8 @@ beforeEach(() => {
 
 /** The row's actions live behind the «⋯» menu since the 2026-09-08 revision (design
  *  spec §4); the trigger is labelled per row so a table of them stays unambiguous. */
-async function openRowMenu(nome: string) {
-  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${nome}` }))
+async function openRowMenu(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${name}` }))
 }
 
 describe('TemplatesPanel', () => {
@@ -98,10 +98,10 @@ describe('TemplatesPanel', () => {
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [string, { body: Record<string, unknown> }]
-    expect(options.body.nome).toBe('Consulenza CTO')
+    expect(options.body.name).toBe('Consulenza CTO')
     expect(options.body.type).toBe('offer')
     expect(options.body.declared_variables).toEqual([
-      { nome: 'subject', label: '', type: 'text', required: false, options: [] },
+      { name: 'subject', label: '', type: 'text', required: false, options: [] },
     ])
   })
 
@@ -129,7 +129,7 @@ describe('TemplatesPanel', () => {
         {
           code: 'validation_failed',
           entity: 'template',
-          field: 'nome',
+          field: 'name',
           reason: 'non può essere vuoto',
           detail: 'non può essere vuoto',
         },
@@ -169,7 +169,7 @@ describe('TemplatesPanel', () => {
 
   it('reports the state as a pill, on the one component every state in the product uses', async () => {
     vi.mocked(api.GET).mockResolvedValue(
-      ok({ items: [TEMPLATE, { ...TEMPLATE, id: 't2', nome: 'Spenta', active: false }], next_cursor: null }),
+      ok({ items: [TEMPLATE, { ...TEMPLATE, id: 't2', name: 'Spenta', active: false }], next_cursor: null }),
     )
     renderPanel()
     expect(await screen.findByText('Attivo')).toHaveAttribute('data-tone', 'ink')

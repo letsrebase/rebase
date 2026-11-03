@@ -68,11 +68,11 @@ export function InvoiceDoor({ assistantConnected }: { assistantConnected: boolea
   }
 
   return (
-    <section aria-labelledby="porta-fattura" className="space-y-3 border p-4">
+    <section aria-labelledby="door-invoice" className="space-y-3 border p-4">
       <header className="flex items-start gap-3">
         <FileText className="mt-0.5 size-5 shrink-0" aria-hidden />
         <div className="space-y-1">
-          <h3 id="porta-fattura" className="font-medium">
+          <h3 id="door-invoice" className="font-medium">
             Carica l’ultima fattura che hai emesso
           </h3>
           <p className="text-muted-foreground text-sm">
@@ -108,13 +108,13 @@ function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void 
   )
 }
 
-/** Every customer whose name is exactly `nome`, read through the whole search rather
+/** Every customer whose name is exactly `name`, read through the whole search rather
  *  than its first page: the search is a substring match over several fields, oldest
  *  first, so an exact name can sit behind any number of partial ones. */
-async function customerNamed(nome: string): Promise<{ id: string; legal_name: string } | null> {
-  const wanted = nome.toLowerCase()
+async function customerNamed(name: string): Promise<{ id: string; legal_name: string } | null> {
+  const wanted = name.toLowerCase()
   const { items } = await fetchAllPages((cursor) =>
-    unwrap(api.GET('/api/customers', { params: { query: { search: nome, limit: 200, cursor } } })),
+    unwrap(api.GET('/api/customers', { params: { query: { search: name, limit: 200, cursor } } })),
   )
   return items.find((item) => item.legal_name.trim().toLowerCase() === wanted) ?? null
 }
@@ -128,8 +128,8 @@ async function customerNamed(nome: string): Promise<{ id: string; legal_name: st
  * created. Nothing is created while the search for the typed name is still on its way.
  */
 function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
-  const [nome, setName] = useState('')
-  const typed = nome.trim()
+  const [name, setName] = useState('')
+  const typed = name.trim()
   const query = useDebounced(typed, SEARCH_DEBOUNCE_MS)
   const searchable = query.length >= 2
   const matches = useQuery({
@@ -178,7 +178,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
         <Label htmlFor={`${ids}-nome`}>Ragione sociale del cliente</Label>
         <Input
           id={`${ids}-nome`}
-          value={nome}
+          value={name}
           maxLength={255}
           autoComplete="off"
           // Held while the name is being looked up or created: the customer that comes

@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DataTable, type DataTableFeatures } from './DataTable'
 import type { ColumnDef } from '@tanstack/react-table'
 
-interface Riga {
+interface Row {
   id: string
-  nome: string
+  name: string
 }
 
 // Two columns on purpose: a plain `accessorKey` (the default "just call
@@ -14,14 +14,14 @@ interface Riga {
 // exercise both branches of `table.FlexRender` (v9's replacement for calling
 // `flexRender` by hand -- see DataTable.tsx's own comment on why v9's `useTable`
 // is used at all here), not only the simpler of the two.
-const COLUMNS: ColumnDef<DataTableFeatures, Riga>[] = [
+const COLUMNS: ColumnDef<DataTableFeatures, Row>[] = [
   { accessorKey: 'id', header: 'ID', cell: (info) => `#${info.getValue()}` },
-  { accessorKey: 'nome', header: 'Nome' },
+  { accessorKey: 'name', header: 'Nome' },
 ]
 
-const ACME: Riga = { id: '1', nome: 'ACME Srl' }
-const BETA: Riga = { id: '2', nome: 'Beta SpA' }
-const DATA: Riga[] = [ACME, BETA]
+const ACME: Row = { id: '1', name: 'ACME Srl' }
+const BETA: Row = { id: '2', name: 'Beta SpA' }
+const DATA: Row[] = [ACME, BETA]
 
 function rowFor(text: string): HTMLElement {
   const cell = screen.getByText(text)
@@ -70,7 +70,7 @@ describe('DataTable', () => {
   })
 
   /**
-   * The defect a fix round caught live on Clienti, Persone and Deal alike: a
+   * The defect a fix round caught live on Customers, People and Deal alike: a
    * failed list request rendered the exact same "Nessun risultato." row an
    * honestly-empty result gets, with nothing on screen distinguishing "you
    * have none" from "we could not ask". `isError`/`error` exist to make the
@@ -192,8 +192,8 @@ describe('DataTable', () => {
  * through `tableFeatures({ columnMeta })` rather than by global declaration merging.
  */
 describe('DataTable column meta', () => {
-  const ALIGNED: ColumnDef<DataTableFeatures, Riga>[] = [
-    { accessorKey: 'nome', header: 'Nome' },
+  const ALIGNED: ColumnDef<DataTableFeatures, Row>[] = [
+    { accessorKey: 'name', header: 'Nome' },
     { accessorKey: 'id', header: 'Totale', meta: { align: 'right' } },
   ]
 
@@ -211,8 +211,8 @@ describe('DataTable column meta', () => {
   })
 
   it('passes a column width through to the header, so the «⋯» column can stay narrow', () => {
-    const sized: ColumnDef<DataTableFeatures, Riga>[] = [
-      { accessorKey: 'nome', header: 'Nome' },
+    const sized: ColumnDef<DataTableFeatures, Row>[] = [
+      { accessorKey: 'name', header: 'Nome' },
       { id: 'actions', header: '', meta: { width: '3rem' } /* jsdom resolves rem against a 16px root */, cell: () => null },
     ]
     render(<DataTable label="Clienti" columns={sized} data={DATA} />)

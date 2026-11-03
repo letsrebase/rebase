@@ -20,7 +20,7 @@ import { isStaleRow, type StalePhase } from './staleRow'
  */
 interface LegalEntityField {
   name:
-    | 'nome'
+    | 'name'
     | 'legal_name'
     | 'vat_number'
     | 'tax_code'
@@ -41,7 +41,7 @@ interface LegalEntityField {
 }
 
 const FIELDS: readonly LegalEntityField[] = [
-  { name: 'nome', label: 'Nome breve', hint: 'Come compare nelle liste; vuoto, è la ragione sociale' },
+  { name: 'name', label: 'Nome breve', hint: 'Come compare nelle liste; vuoto, è la ragione sociale' },
   { name: 'legal_name', label: 'Ragione sociale', required: true },
   { name: 'vat_number', label: 'Partita IVA', hint: '11 cifre' },
   { name: 'tax_code', label: 'Codice fiscale' },
@@ -84,8 +84,8 @@ function valuesFrom(profile: LegalEntityRecord): Record<FieldName, string> {
 }
 
 /**
- * One azienda's identity: who issues, where it is, how to reach it, how it is taxed
- * in words. The row always exists (a space is born with its default azienda, REB-615),
+ * One legal entity's identity: who issues, where it is, how to reach it, how it is taxed
+ * in words. The row always exists (a space is born with its default legal entity, REB-615),
  * so there is no «not configured yet» state any more: a fresh space shows the name it
  * signed up with and empty fiscal fields, which is the state to fill in.
  */

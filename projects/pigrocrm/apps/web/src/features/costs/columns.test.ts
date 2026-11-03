@@ -6,11 +6,11 @@ import type { Cost, CostCategory } from './queries'
 
 /* Written out in full rather than cast: a double cast switches the type check off, so
    the day `CostCategory` grows a required field this fixture would keep compiling and
-   say nothing. The column reads only `id` and `nome`; the rest costs four lines. */
+   say nothing. The column reads only `id` and `name`; the rest costs four lines. */
 const CATEGORIES: CostCategory[] = [
   {
     id: 'cat-1',
-    nome: 'Consulenze',
+    name: 'Consulenze',
     position: 0,
     code: null,
     archived: false,
@@ -24,7 +24,7 @@ const COST: Cost = {
   legal_entity_id: null,
   deal_id: null,
   category_id: 'cat-1',
-  data: '2026-03-05',
+  date: '2026-03-05',
   amount: '2500.50',
   description: 'Consulenza fiscale',
   supplier: 'Studio Rossi',
@@ -50,7 +50,7 @@ function renderCell(id: string, cost: Cost) {
 
 describe('how a cost row reads', () => {
   it('puts a calendar icon before the date, in Italian day/month/year order', () => {
-    const { container } = renderCell('data', COST)
+    const { container } = renderCell('date', COST)
     expect(screen.getByText('05/03/2026')).toBeInTheDocument()
     expect(container.querySelector('svg')).not.toBeNull()
   })

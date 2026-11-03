@@ -80,7 +80,7 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
       {
         deal_id: dealId,
         user_id: userId,
-        data: day.iso,
+        date: day.iso,
         hours: value,
         // A grid cell has no description field: typing a number is the whole point of
         // the screen, and a required text box in each of thirty-five cells would be the

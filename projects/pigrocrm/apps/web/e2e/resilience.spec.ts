@@ -67,7 +67,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
 /**
  * Fix round 1's Critical finding: `routes/app/deal/index.tsx` has its own,
  * *separate* implementation of the identical guard the test above exercises
- * for Clienti -- `KanbanBoard` has no `DataTable` underneath it to inherit
+ * for Customers -- `KanbanBoard` has no `DataTable` underneath it to inherit
  * that coverage from, so `DealsKanban` hand-rolls `boardUnavailable` itself
  * (`stagesUnavailable || dealsUnavailable`, each `isError && data.length ===
  * 0`). No spec ever visited the Kanban board with the API down, and a
@@ -76,7 +76,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
  * this whole task exists to prevent.
  *
  * The Kanban page has no search box or other filter to force a brand-new,
- * never-cached query the way the Clienti test above does, so this test uses a
+ * never-cached query the way the Customers test above does, so this test uses a
  * different lever to the same end: kill the API *before* this browser session
  * has ever visited `/app/deal` at all, then navigate there with an in-app
  * (client-side) link click, not `page.goto`. A client-side transition does not

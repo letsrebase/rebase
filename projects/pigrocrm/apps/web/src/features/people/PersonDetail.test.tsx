@@ -94,7 +94,7 @@ describe('PersonDetail', () => {
     mockGet.mockImplementation(
       ((path: string) =>
         path === '/api/people/{person_id}'
-          ? ok({ id: 'p1', nome: 'Giulia', last_name: 'Rossi', custom_fields: {} })
+          ? ok({ id: 'p1', first_name: 'Giulia', last_name: 'Rossi', custom_fields: {} })
           : path === '/api/{collection}/{entity_id}/notes'
             ? ok([NOTE])
             : ok({ items: [] })) as never,

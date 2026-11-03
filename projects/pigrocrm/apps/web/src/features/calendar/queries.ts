@@ -6,7 +6,7 @@ import { queryKeys } from '@/lib/query'
 
 /**
  * Wire shapes from the generated OpenAPI schema, never hand-declared: the source of
- * truth is `calendario/schemas.py` and `attivita/schemas.py`, and `pnpm generate:api`
+ * truth is `calendar/schemas.py` and `tasks/schemas.py`, and `pnpm generate:api`
  * tracks them. Every `Decimal` -- `hours`, `total` -- arrives as a `string`, which is
  * what lets `lib/decimal.ts` read it digit by digit instead of through a float.
  */

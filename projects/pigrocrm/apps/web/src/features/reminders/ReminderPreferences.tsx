@@ -64,8 +64,8 @@ interface Refusal {
  *
  * Every control saves as it changes (the thresholds, which are one ladder, save together
  * with their own button) and shows whose value it holds: the person's own, the space's or
- * the built-in one. The way back is a delete of the layer's row (`Torna al valore dello
- * spazio` for a person, `Torna al predefinito` for the space), never a copy of the default
+ * the built-in one. The way back is a delete of the layer's row («back to the space's value»
+ * for a person, «back to the default» for the space), never a copy of the default
  * into the override, so a later change of the default still reaches who never overrode it.
  * The API's own sentences, in Italian, are what a refused save shows under its control.
  */

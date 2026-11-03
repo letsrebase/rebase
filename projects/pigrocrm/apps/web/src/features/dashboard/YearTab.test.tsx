@@ -102,7 +102,7 @@ function renderTab(legalEntity: LegalEntityValue = ONE) {
   return render(
     <QueryClientProvider client={client}>
       <LegalEntityContext value={legalEntity}>
-        <YearTab period={{ da: '2026-01-01', a: '2026-12-31' }} />
+        <YearTab period={{ from: '2026-01-01', to: '2026-12-31' }} />
       </LegalEntityContext>
     </QueryClientProvider>,
   )
@@ -205,8 +205,8 @@ describe('YearTab', () => {
 
   it('draws one block, and one file, per azienda in «Tutte»', async () => {
     const legal_entities = [
-      { id: 'a1', nome: 'Studio Rossi' },
-      { id: 'a2', nome: 'Rossi Ltd' },
+      { id: 'a1', name: 'Studio Rossi' },
+      { id: 'a2', name: 'Rossi Ltd' },
     ] as LegalEntityValue['legal_entities']
     vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query: { legal_entity_id?: string } } }) =>
       ok(
@@ -236,8 +236,8 @@ describe('YearTab', () => {
 
   it('names an azienda with nothing issued instead of leaving the tab blank in «Tutte»', async () => {
     const legal_entities = [
-      { id: 'a1', nome: 'Studio Rossi' },
-      { id: 'a2', nome: 'Rossi Ltd' },
+      { id: 'a1', name: 'Studio Rossi' },
+      { id: 'a2', name: 'Rossi Ltd' },
     ] as LegalEntityValue['legal_entities']
     vi.mocked(api.GET).mockImplementation(() =>
       ok(

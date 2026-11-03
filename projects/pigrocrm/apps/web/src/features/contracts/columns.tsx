@@ -28,10 +28,10 @@ export function buildContractColumns(): ColumnDef<DataTableFeatures, Contract>[]
       accessorFn: (row) => row.end,
       cell: ({ row }) => <DateCell value={row.original.end} absent="senza scadenza" />,
     },
-    { header: 'Rinnovo', id: 'rinnovo', accessorFn: (row) => renewalLabel(row.renewal_type) },
+    { header: 'Rinnovo', id: 'renewal', accessorFn: (row) => renewalLabel(row.renewal_type) },
     {
       header: 'Fatturazione',
-      id: 'fatturazione',
+      id: 'billing',
       accessorFn: (row) => cadenceLabel(row.billing_cadence),
     },
   ]

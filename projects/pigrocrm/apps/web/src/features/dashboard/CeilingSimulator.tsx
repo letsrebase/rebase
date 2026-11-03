@@ -80,7 +80,7 @@ function DealPicker({
         <SelectContent>
           {candidates.map((deal) => (
             <SelectItem key={deal.id} value={deal.id} disabled={!hasEstimate(deal)}>
-              {deal.nome}
+              {deal.name}
               {deal.customer_legal_name ? ` · ${deal.customer_legal_name}` : ''}
               {hasEstimate(deal) ? '' : ' (senza stima)'}
             </SelectItem>
@@ -97,8 +97,8 @@ function DealPicker({
 const NO_CONTRACT = '__nessuno__'
 
 /**
- * The active contracts of the azienda that cap the customer's share, to read the same
- * addition against. Optional beside the ceilings; the only thing to ask when the azienda
+ * The active contracts of the legal entity that cap the customer's share, to read the same
+ * addition against. Optional beside the ceilings; the only thing to ask when the legal entity
  * has none (`required`).
  */
 function ContractPicker({
@@ -166,7 +166,7 @@ const SOURCES = [
  * keyboard produces into the decimal the API reads and prints what comes back.
  */
 export function Simulator({
-  year: anno,
+  year: defaultYear,
   legalEntityId,
   hasCeilings,
   contracts,
@@ -184,10 +184,10 @@ export function Simulator({
   const trackDeal = useCallback((current: Deal | null) => {
     latestDeal.current = current
   }, [])
-  const [valore, setValue] = useState('')
+  const [amountText, setValue] = useState('')
   const [hours, setHours] = useState('')
   const [rate, setRate] = useState('')
-  const [data, setData] = useState(`${anno}-12-31`)
+  const [date, setDate] = useState(`${defaultYear}-12-31`)
   const uid = useId()
   const [asked, setAsked] = useState<{
     year: number
@@ -197,7 +197,7 @@ export function Simulator({
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const simulation = useCeilingSimulation(
-    asked?.year ?? anno,
+    asked?.year ?? defaultYear,
     asked?.input ?? null,
     legalEntityId,
     asked?.attempt,
@@ -214,19 +214,19 @@ export function Simulator({
     event.preventDefault()
     const request = simulatorRequest({
       source,
-      value: valore,
+      value: amountText,
       hours,
       rate,
       deal: dealId === '' ? null : latestDeal.current,
-      data,
+      date,
       contractId,
     })
     const missingContract = !hasCeilings && contractId === ''
-    const year = yearOfIso(data)
+    const year = yearOfIso(date)
     if (!request.ok || year === null || missingContract) {
       setErrors({
         ...(request.ok ? {} : request.errors),
-        ...(year === null ? { data: 'Scegli una data tra il 2000 e il 2200.' } : {}),
+        ...(year === null ? { date: 'Scegli una data tra il 2000 e il 2200.' } : {}),
         ...(missingContract ? { contract: 'Scegli un contratto con un tetto.' } : {}),
       })
       setAsked(null)
@@ -287,7 +287,7 @@ export function Simulator({
               id={`${uid}-valore`}
               inputMode="decimal"
               placeholder="12.000,00"
-              value={valore}
+              value={amountText}
               onChange={(event) => edit(setValue)(event.target.value)}
               aria-invalid={errors.value ? true : undefined}
             />
@@ -341,21 +341,21 @@ export function Simulator({
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
-          <Label htmlFor={`${uid}-data`}>Incasso previsto il</Label>
+          <Label htmlFor={`${uid}-date`}>Incasso previsto il</Label>
           <Input
-            id={`${uid}-data`}
+            id={`${uid}-date`}
             type="date"
-            value={data}
-            onChange={(event) => edit(setData)(event.target.value)}
+            value={date}
+            onChange={(event) => edit(setDate)(event.target.value)}
             className="w-44"
-            aria-invalid={errors.data ? true : undefined}
+            aria-invalid={errors.date ? true : undefined}
           />
           <p className="text-xs text-muted-foreground">
             {hasCeilings
               ? 'Conta l’anno solare dell’incasso.'
               : 'Conta l’anno di anniversario del contratto che contiene questa data.'}
           </p>
-          {errors.data ? <FieldError>{errors.data}</FieldError> : null}
+          {errors.date ? <FieldError>{errors.date}</FieldError> : null}
         </div>
         <Button type="submit" disabled={simulation.isFetching}>
           Simula

@@ -111,7 +111,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
   })
 
   /**
-   * REB-735: Notifiche is a person's own, every role's, like Profilo; Promemoria, the space's
+   * REB-735: Notifiche is a person's own, every role's, like Profile; Promemoria, the space's
    * defaults, is an admin's, and a member who types its path meets the gate.
    */
   it.each([false, true])('opens Notifiche to a person whose readonly flag is %s, with no gate', (readonly) => {

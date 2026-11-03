@@ -16,7 +16,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 const auth = vi.hoisted(() => ({
   canWrite: false,
   admin: false,
-  user: null as { id: string; nome: string } | null,
+  user: null as { id: string; name: string } | null,
 }))
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => auth.canWrite,
@@ -144,14 +144,14 @@ describe('CustomerDetail', () => {
     })
 
     it('names the signed-in person when the customer is theirs', async () => {
-      auth.user = { id: 'u1', nome: 'Giulia' }
+      auth.user = { id: 'u1', name: 'Giulia' }
       mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: 'u1' }))
       renderWithClient(<CustomerDetail />)
       expect(await screen.findByText('Giulia (tu)')).toBeInTheDocument()
     })
 
     it('does not name a colleague to someone who cannot list the space', async () => {
-      auth.user = { id: 'u1', nome: 'Giulia' }
+      auth.user = { id: 'u1', name: 'Giulia' }
       mockCustomerFetch(ok({ ...(CUSTOMER as object), owner_id: 'u2' }))
       renderWithClient(<CustomerDetail />)
       expect(await screen.findByText('Un collega')).toBeInTheDocument()
@@ -160,12 +160,12 @@ describe('CustomerDetail', () => {
     it('names the owner to an admin, who can list the users', async () => {
       auth.admin = true
       auth.canWrite = true
-      auth.user = { id: 'u1', nome: 'Giulia' }
+      auth.user = { id: 'u1', name: 'Giulia' }
       mockGet.mockImplementation(((path: string) => {
         if (path === '/api/customers/{customer_id}') {
           return ok({ ...(CUSTOMER as object), owner_id: 'u2' })
         }
-        if (path === '/api/users') return ok([{ id: 'u2', nome: 'Marco', active: true }])
+        if (path === '/api/users') return ok([{ id: 'u2', name: 'Marco', active: true }])
         if (path === NOTES_PATH) return ok([])
         return ok({ items: [] })
       }) as never)

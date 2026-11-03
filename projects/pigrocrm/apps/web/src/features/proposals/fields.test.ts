@@ -16,7 +16,7 @@ const CUSTOMER_ID = '5b0d7190-0000-4000-8000-000000000002'
 
 const DAY = {
   contract_id: CONTRACT_ID,
-  data: '2026-11-05',
+  date: '2026-11-05',
   quantity: 1,
   description: 'Sopralluogo al magazzino di Verona',
   approval: {
@@ -81,11 +81,11 @@ describe('describeProposal, a day', () => {
     expect(rowsOf(description, 'Giornata')).toEqual({
       Data: '05/11/2026',
       Quantità: '1 giorno',
-      Description: 'Sopralluogo al magazzino di Verona',
+      'Descrizione': 'Sopralluogo al magazzino di Verona',
     })
     expect(rowsOf(description, 'Approvazione del cliente')).toEqual({
-      Channel: 'Email',
-      Sender: 'giulia.bianchi@nordwind.example',
+      'Canale': 'Email',
+      'Mittente': 'giulia.bianchi@nordwind.example',
       'Ricevuta il': '21/10/2026',
     })
   })
@@ -94,7 +94,7 @@ describe('describeProposal, a day', () => {
     const withMessage = describeProposal(
       waiting('work_unit', { ...DAY, approval: { ...DAY.approval, message_id: '<abc@mail>' } }),
     )
-    expect(rowsOf(withMessage, 'Approvazione del cliente').Message).toBe('<abc@mail>')
+    expect(rowsOf(withMessage, 'Approvazione del cliente')['Messaggio']).toBe('<abc@mail>')
   })
 
   it('reads a quantity sent as a decimal string and one sent as a JSON number the same way', () => {
@@ -117,11 +117,11 @@ describe('describeProposal, a contract', () => {
 
   it('words the terms in the vocabulary of the contract page', () => {
     expect(rowsOf(description, 'Contratto')).toMatchObject({
-      Period: '01/01/2027 – 31/12/2027',
-      Renewal: 'Tacito rinnovo',
+      'Periodo': '01/01/2027 – 31/12/2027',
+      'Rinnovo': 'Tacito rinnovo',
       'Preavviso di rinnovo': '90 giorni',
       'Preavviso di disdetta': '60 giorni',
-      Payment: '30 giorni data fattura fine mese',
+      'Pagamento': '30 giorni data fattura fine mese',
       'Approvazione preventiva': 'No',
       'Rivalsa INPS': 'Sì',
     })
@@ -141,7 +141,7 @@ describe('describeProposal, a contract', () => {
       }),
     )
     expect(rowsOf(asStrings, 'Contratto')).toMatchObject({
-      Payment: '30 giorni data fattura fine mese',
+      'Pagamento': '30 giorni data fattura fine mese',
       'Preavviso di disdetta': '60 giorni',
       'Approvazione preventiva': 'Sì',
     })
@@ -156,8 +156,8 @@ describe('describeProposal, a contract', () => {
 
   it('words the first rate card with its amount in the contract currency', () => {
     const rate = rowsOf(description, 'Prima scheda tariffaria')
-    expect(rate.Type).toBe('Canone ricorrente')
-    expect(rate.Amount?.replace(/\s/g, ' ')).toBe('1.800,00 € / mese')
+    expect(rate['Tipo']).toBe('Canone ricorrente')
+    expect(rate['Importo']?.replace(/\s/g, ' ')).toBe('1.800,00 € / mese')
     expect(rate.Validità).toBe('dal 01/01/2027')
   })
 
@@ -165,7 +165,7 @@ describe('describeProposal, a contract', () => {
     const flat = describeProposal(
       waiting('contract', { ...CONTRACT, rate_card: { ...CONTRACT.rate_card, type: 'one_off', unit: 'flat' } }),
     )
-    expect(rowsOf(flat, 'Prima scheda tariffaria').Amount?.replace(/\s/g, ' ')).toBe('1.800,00 € (forfait)')
+    expect(rowsOf(flat, 'Prima scheda tariffaria')['Importo']?.replace(/\s/g, ' ')).toBe('1.800,00 € (forfait)')
   })
 
   it('shows what the accept would write even when no label exists for it', () => {
@@ -174,13 +174,13 @@ describe('describeProposal, a contract', () => {
         ...CONTRACT,
         contract: {
           ...CONTRACT.contract,
-          expense_policy: { kind: 'reimbursable_with_cap', cap: '500.00' },
-          custom_fields: { tender_code: 'Z123' },
+          expense_policy: { kind: 'reimbursable_with_cap', amount_cap: '500.00' },
+          custom_fields: { 'cig': 'Z123' },
         },
         rate_card: { ...CONTRACT.rate_card, allowed_fractions: [1, 0.5] },
       }),
     )
-    expect(rowsOf(full, 'Contratto')['Politica spese']).toBe('rimborsabile con tetto · tetto: 500.00')
+    expect(rowsOf(full, 'Contratto')['Politica spese']).toBe('rimborsabile con tetto · importo tetto: 500.00')
     expect(rowsOf(full, 'Contratto')['Campi personalizzati']).toBe('cig: Z123')
     expect(rowsOf(full, 'Prima scheda tariffaria')['Frazioni ammesse']).toBe('1, 0,5')
   })
@@ -192,14 +192,14 @@ describe('describeProposal, a contract', () => {
         contract: { ...CONTRACT.contract, payment_days: null, payment_end_of_month: null },
       }),
     )
-    expect(rowsOf(inherited, 'Contratto').Payment).toBe('Come da condizioni del cliente')
+    expect(rowsOf(inherited, 'Contratto')['Pagamento']).toBe('Come da condizioni del cliente')
   })
 
   it('says an open-ended contract is open-ended instead of dropping the end', () => {
     const open = describeProposal(
       waiting('contract', { ...CONTRACT, contract: { ...CONTRACT.contract, end: null } }),
     )
-    expect(rowsOf(open, 'Contratto').Period).toBe('01/01/2027 – a tempo indeterminato')
+    expect(rowsOf(open, 'Contratto')['Periodo']).toBe('01/01/2027 – a tempo indeterminato')
   })
 })
 

@@ -83,7 +83,7 @@ export function PersonDetail() {
   if (!person) return <p className="p-8">Persona non trovata.</p>
 
   const custom = schema.data?.custom_fields ?? []
-  const fullName = `${person.nome} ${person.last_name ?? ''}`.trim()
+  const fullName = `${person.first_name} ${person.last_name ?? ''}`.trim()
 
   function archive() {
     if (!person) return
@@ -116,7 +116,7 @@ export function PersonDetail() {
         subtitle={person.role ?? 'Persona'}
         entityType="person"
         entityId={personId}
-        attivita={<EntityTask link={{ kind: 'person', id: personId }} />}
+        tasks={<EntityTask link={{ kind: 'person', id: personId }} />}
         emails={gmailConfigured ? <EmailTab entityType="person" entityId={personId} /> : undefined}
         actions={
           canWrite && (

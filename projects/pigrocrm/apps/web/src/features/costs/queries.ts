@@ -18,8 +18,8 @@ export interface CostsListParams {
   legal_entity_id?: string
   only_general?: boolean
   category_id?: string
-  da?: string
-  a?: string
+  from?: string
+  to?: string
 }
 
 export function useCosts(params: CostsListParams = {}) {

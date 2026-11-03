@@ -24,19 +24,19 @@ describe('RowActions', () => {
 
   it('opens the menu with one item per action and runs the one that is chosen', async () => {
     const open = vi.fn()
-    const elimina = vi.fn()
+    const remove = vi.fn()
     render(
       <RowActions
         items={[
           { label: 'Apri', onSelect: open },
-          { label: 'Elimina', onSelect: elimina, destructive: true },
+          { label: 'Elimina', onSelect: remove, destructive: true },
         ]}
       />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Azioni' }))
     expect(screen.getByRole('menuitem', { name: 'Apri' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Elimina' }))
-    expect(elimina).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledOnce()
     expect(open).not.toHaveBeenCalled()
   })
 

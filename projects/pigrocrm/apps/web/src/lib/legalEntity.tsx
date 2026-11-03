@@ -1,22 +1,22 @@
 /**
- * The azienda the sidebar has selected (REB-625, spec 2026-10-03 §1.10, §5).
+ * The legal entity the sidebar has selected (REB-625, spec 2026-10-03 §1.10, §5).
  *
- * One space may run several aziende, and from the second one on the sidebar offers a
+ * One space may run several legal entities, and from the second one on the sidebar offers a
  * choice: «Tutte le aziende», or one of them. The choice is a session preference, like
  * the collapsed groups of the sidebar and unlike a filter a link should fix, so it lives
  * here and in this browser (per space and per user, the key shape
  * `features/get-started/invoiceHandoff.ts` uses) and never in the URL.
  *
  * What reads it: the list hooks, through `useLegalEntityScope`, and the two lists that name
- * the azienda on a row in «tutte» (the invoice number, the customer column). What never
+ * the legal entity on a row in «tutte» (the invoice number, the customer column). What never
  * reads it: a list that already has an owner. A customer's or a deal's tab shows that
- * owner's rows whatever the sidebar says, otherwise opening a deal of azienda A with B
+ * owner's rows whatever the sidebar says, otherwise opening a deal of legal entity A with B
  * selected would show an empty tab and read as a loss of data.
  *
- * With one azienda, which is every space until milestone 5 opens creation, `several` is
+ * With one legal entity, which is every space until milestone 5 opens creation, `several` is
  * false, the selection is `null`, and every request is the one the space sent before
  * this file existed. The default value of the context is that same state, so a page or a
- * test mounted without the provider behaves as a one-azienda space.
+ * test mounted without the provider behaves as a one-legal-entity space.
  */
 import { useQuery } from '@tanstack/react-query'
 import { createContext, use, useCallback, useMemo, useState, type ReactNode } from 'react'
@@ -59,7 +59,7 @@ const OneLegalEntity: LegalEntityValue = {
 export const LegalEntityContext = createContext<LegalEntityValue>(OneLegalEntity)
 
 export function legalEntityKey(userId: string): string {
-  return `pigrocrm.azienda:${tenantPrefix || '/'}:${userId}`
+  return `pigrocrm.legal-entity:${tenantPrefix || '/'}:${userId}`
 }
 
 /** Every access is guarded: a browser that refuses storage simply forgets the choice. */
@@ -155,8 +155,8 @@ export function useLegalEntityScope<P extends object>(params: P): P & { legal_en
 }
 
 /**
- * The aziende to name on the rows of a list, or `undefined` when a row needs no name:
- * with one azienda, and with one selected, every row is that azienda's and a name on
+ * The legal entities to name on the rows of a list, or `undefined` when a row needs no name:
+ * with one legal entity, and with one selected, every row is that legal entity's and a name on
  * each line would only repeat the sidebar.
  */
 export function useLegalEntitiesToName(): LegalEntityRecord[] | undefined {
@@ -165,19 +165,19 @@ export function useLegalEntitiesToName(): LegalEntityRecord[] | undefined {
 }
 
 /**
- * The azienda `country` proposes for a new customer (REB-626, spec 2026-10-03 §1.6), read
+ * The legal entity `country` proposes for a new customer (REB-626, spec 2026-10-03 §1.6), read
  * from the server so the form shows what `POST /api/customers` would pick: the rule lives
  * in `LegalEntityService.propose` once. `enabled` is the caller's: the customer form asks only
- * from the second azienda on, while creating, and until the person picks one by hand. A
+ * from the second legal entity on, while creating, and until the person picks one by hand. A
  * nation is two letters, so a half-typed one asks nothing rather than flipping the picker
  * to the default between the first letter and the second.
  */
 export function useLegalEntityProposal(country: string, enabled: boolean) {
-  const paese = country.trim().toUpperCase() || 'IT'
+  const countryCode = country.trim().toUpperCase() || 'IT'
   return useQuery({
-    queryKey: queryKeys.legalEntityProposal(paese),
+    queryKey: queryKeys.legalEntityProposal(countryCode),
     queryFn: () =>
-      unwrap(api.GET('/api/legal-entities/suggestion', { params: { query: { country: paese } } })),
-    enabled: enabled && paese.length === 2,
+      unwrap(api.GET('/api/legal-entities/suggestion', { params: { query: { country: countryCode } } })),
+    enabled: enabled && countryCode.length === 2,
   })
 }

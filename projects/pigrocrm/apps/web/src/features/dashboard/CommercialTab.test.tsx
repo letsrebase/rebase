@@ -27,7 +27,7 @@ function failed(error: unknown, status: number) {
 }
 
 const RESPONSE = {
-  period: { da: '2026-03-01', a: '2026-03-31' },
+  period: { from: '2026-03-01', to: '2026-03-31' },
   calculated_at: '2026-03-15T10:00:00Z',
   pipeline: [
     {
@@ -92,7 +92,7 @@ const RESPONSE = {
   accepted_offers_deal_not_won: 2,
 }
 
-const PERIOD = { da: '2026-03-01', a: '2026-03-31' }
+const PERIOD = { from: '2026-03-01', to: '2026-03-31' }
 
 function renderTab(period = PERIOD) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -112,10 +112,10 @@ describe('CommercialTab', () => {
     // The other half of the URL round trip: `period.test.ts` proves the search params are
     // read back, this proves they reach the request instead of being decoration.
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    renderTab({ da: '2025-01-01', a: '2025-12-31' })
+    renderTab({ from: '2025-01-01', to: '2025-12-31' })
     await screen.findByRole('table', { name: /pipeline per stato/i })
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
-      params: { query: { da: '2025-01-01', a: '2025-12-31' } },
+      params: { query: { from: '2025-01-01', to: '2025-12-31' } },
     })
   })
 

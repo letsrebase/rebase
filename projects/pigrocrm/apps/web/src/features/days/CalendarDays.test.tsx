@@ -48,14 +48,14 @@ describe('the day panel’s days', () => {
       'href',
       '/app/days/d1',
     )
-    expect(screen.getByRole('link', { name: /Registra una giornata/ })).toHaveAttribute('href', '/app/days/new?data=2026-03-02')
+    expect(screen.getByRole('link', { name: /Registra una giornata/ })).toHaveAttribute('href', '/app/days/new?date=2026-03-02')
   })
 
   it('offers an empty date a day to record, and a reader only the reading', () => {
     canWrite = true
     const { unmount } = render(<PanelDays day="2026-03-03" days={[]} />)
     expect(screen.getByText('Nessuna giornata di contratto.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Registra una giornata/ })).toHaveAttribute('href', '/app/days/new?data=2026-03-03')
+    expect(screen.getByRole('link', { name: /Registra una giornata/ })).toHaveAttribute('href', '/app/days/new?date=2026-03-03')
     unmount()
     canWrite = false
     render(<PanelDays day="2026-03-03" days={[]} />)

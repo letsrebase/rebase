@@ -14,7 +14,7 @@ export type SearchEntity = SearchGroup['entity']
  * Below this the palette issues no request at all. Spec §8.3: a trigram index cannot
  * serve a pattern from which no trigram can be extracted, and a two-character term on
  * 50 000 customers returns thousands of rows, which is not an answer either. The API
- * enforces the same bound (`SearchQuery.deadline` has `min_length=3`, and the router
+ * enforces the same bound (`SearchQuery.term` has `min_length=3`, and the router
  * repeats it so a direct HTTP client gets a 422); this is the half that stops the
  * request being made.
  */
@@ -44,7 +44,7 @@ export const SEARCH_DEBOUNCE_MS = 250
  */
 export function useGlobalSearch(term: string) {
   const debounced = useDebounced(term.trim(), SEARCH_DEBOUNCE_MS)
-  // The sidebar's azienda narrows the palette too (REB-625): under azienda A, «brief»
+  // The sidebar's legal entity narrows the palette too (REB-625): under legal entity A, «brief»
   // finds A's documents and A's customers' people, and nothing of B's.
   const { selected } = useLegalEntity()
   const query = useQuery({
@@ -70,5 +70,5 @@ export const ENTITY_LABELS: Record<SearchEntity, string> = {
   deal: 'Deal',
   document: 'Documenti',
   invoice: 'Fatture',
-  attivita: 'Attività',
+  task: 'Attività',
 }

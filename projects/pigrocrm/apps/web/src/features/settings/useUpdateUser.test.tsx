@@ -21,7 +21,7 @@ function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
 }
 
-const FOUNDER = { id: 'u1', email: 'a@p.it', nome: 'rebase', role: 'admin', active: true }
+const FOUNDER = { id: 'u1', email: 'a@p.it', name: 'rebase', role: 'admin', active: true }
 
 /** Shows the name the shell would show, and renames the signed-in user through the hook. */
 function Probe() {
@@ -29,8 +29,8 @@ function Probe() {
   const update = useUpdateUser()
   return (
     <div>
-      <p>{user?.nome ?? 'none'}</p>
-      <button onClick={() => update.mutate({ userId: FOUNDER.id, body: { nome: 'Ivan Sala' } })}>
+      <p>{user?.name ?? 'none'}</p>
+      <button onClick={() => update.mutate({ userId: FOUNDER.id, body: { name: 'Ivan Sala' } })}>
         Rinomina
       </button>
     </div>
@@ -44,11 +44,11 @@ describe('useUpdateUser (REB-796)', () => {
   })
 
   it('renames the signed-in user in what useAuth reads, without a reload', async () => {
-    let name = FOUNDER.nome
-    vi.mocked(api.GET).mockImplementation(() => Promise.resolve(ok({ ...FOUNDER, nome: name })))
+    let name = FOUNDER.name
+    vi.mocked(api.GET).mockImplementation(() => Promise.resolve(ok({ ...FOUNDER, name: name })))
     vi.mocked(api.PATCH).mockImplementation(() => {
       name = 'Ivan Sala'
-      return Promise.resolve(ok({ ...FOUNDER, nome: name }))
+      return Promise.resolve(ok({ ...FOUNDER, name: name }))
     })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(

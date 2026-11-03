@@ -57,24 +57,24 @@ describe('clickTarget', () => {
   it('opens a path under the space', () => {
     expect(clickTarget({ url: '/acme/app/invoices/1' }, SCOPE)).toBe('https://pigro.example/acme/app/invoices/1')
     expect(clickTarget({ url: '/acme/app/activities?open=3' }, SCOPE)).toBe(
-      'https://pigro.example/acme/app/activities?apri=3',
+      'https://pigro.example/acme/app/activities?open=3',
     )
   })
 
   it("never leaves the origin: another one opens the space's list of reminders", () => {
-    expect(clickTarget({ url: 'https://evil.example/phish' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
-    expect(clickTarget({ url: '//evil.example/phish' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
+    expect(clickTarget({ url: 'https://evil.example/phish' }, SCOPE)).toBe(`${SCOPE}/reminders`)
+    expect(clickTarget({ url: '//evil.example/phish' }, SCOPE)).toBe(`${SCOPE}/reminders`)
   })
 
   it("stays inside the space: another space's path opens the list of reminders", () => {
-    expect(clickTarget({ url: '/other/app/invoices/1' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
-    expect(clickTarget({ url: '/acme/api/auth/me' }, SCOPE)).toBe(`${SCOPE}/avvisi`)
+    expect(clickTarget({ url: '/other/app/invoices/1' }, SCOPE)).toBe(`${SCOPE}/reminders`)
+    expect(clickTarget({ url: '/acme/api/auth/me' }, SCOPE)).toBe(`${SCOPE}/reminders`)
   })
 
   it.each([undefined, null, {}, { url: 7 }, { url: 'http://[::bad' }])(
     'opens the list of reminders for %j',
     (data) => {
-      expect(clickTarget(data, SCOPE)).toBe(`${SCOPE}/avvisi`)
+      expect(clickTarget(data, SCOPE)).toBe(`${SCOPE}/reminders`)
     },
   )
 })

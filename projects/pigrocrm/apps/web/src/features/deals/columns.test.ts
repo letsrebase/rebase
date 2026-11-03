@@ -27,7 +27,7 @@ function cellValue(column: ReturnType<typeof buildDealColumns>[number], deal: De
 const BASE_DEAL: Deal = {
   id: 'd1',
   legal_entity_id: 'a-1',
-  nome: 'Sito vetrina',
+  name: 'Sito vetrina',
   customer_id: 'c1',
   pipeline_stage_id: 's1',
   expected_value: null,
@@ -111,14 +111,14 @@ describe('buildDealColumns', () => {
   })
 
   it('keeps zero and false as real custom-field values, not a dash', () => {
-    const punteggio: FieldDefinition = {
+    const scoreField: FieldDefinition = {
       key: 'score',
       label: 'Punteggio',
       type: 'number',
       required: false,
       options: [],
     }
-    const [, , , , score] = buildDealColumns([punteggio])
+    const [, , , , score] = buildDealColumns([scoreField])
     expect(cellValue(score!, { ...BASE_DEAL, custom_fields: { score: 0 } })).toBe('0')
   })
 })
@@ -252,7 +252,7 @@ function renderCell(index: number, deal: Deal) {
 
 describe('how a deal row reads', () => {
   it('carries the deal name beside a chip of its initials', () => {
-    renderCell(0, { ...BASE_DEAL, nome: 'Sito vetrina' })
+    renderCell(0, { ...BASE_DEAL, name: 'Sito vetrina' })
     expect(screen.getByText('Sito vetrina')).toBeInTheDocument()
     expect(screen.getByText('SV')).toBeInTheDocument()
   })
@@ -260,7 +260,7 @@ describe('how a deal row reads', () => {
   /**
    * The line under the deal's name is who the work is for -- what turns a list of
    * project names into a list of work (design spec §4). It has to be asserted on the
-   * *rendered* cell: the column's `accessorFn` is still the bare `nome`, so a
+   * *rendered* cell: the column's `accessorFn` is still the bare `name`, so a
    * misspelled `customer_legal_name` here would leave every `cellValue` assertion
    * in this file green.
    */

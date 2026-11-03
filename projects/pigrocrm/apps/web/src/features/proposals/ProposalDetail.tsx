@@ -152,8 +152,8 @@ function Loaded({ proposal }: { proposal: Proposal }) {
 
         {pending ? null : <Outcome proposal={proposal} customerId={description.customerId} />}
 
-        <section aria-labelledby="proposta-origine" className="space-y-3">
-          <h2 id="proposta-origine" className="font-semibold">
+        <section aria-labelledby="proposal-origin" className="space-y-3">
+          <h2 id="proposal-origin" className="font-semibold">
             Da dove arriva
           </h2>
           <blockquote className="whitespace-pre-line border-l-2 border-foreground pl-4 text-sm">
@@ -175,9 +175,9 @@ function Loaded({ proposal }: { proposal: Proposal }) {
           </Button>
         </section>
 
-        <section aria-labelledby="proposta-campi" className="space-y-6">
+        <section aria-labelledby="proposal-fields" className="space-y-6">
           <div className="space-y-1">
-            <h2 id="proposta-campi" className="font-semibold">
+            <h2 id="proposal-fields" className="font-semibold">
               Cosa propone
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -227,9 +227,9 @@ function Loaded({ proposal }: { proposal: Proposal }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="proposta-motivo">Motivo (facoltativo)</Label>
+            <Label htmlFor="proposal-reason">Motivo (facoltativo)</Label>
             <Textarea
-              id="proposta-motivo"
+              id="proposal-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="Per esempio: la data non è quella della mail."

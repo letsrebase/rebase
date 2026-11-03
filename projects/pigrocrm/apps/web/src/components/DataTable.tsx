@@ -90,7 +90,7 @@ interface DataTableProps<T extends RowData> {
 const LOADING_ROW_COUNT = 5
 
 /**
- * One table for every list this product shows -- Clienti, Persone, Deal today,
+ * One table for every list this product shows -- Customers, People, Deal today,
  * whatever a later slice adds tomorrow.
  *
  * `isLoading`, "zero rows", and a failed request render as three deliberately
@@ -101,7 +101,7 @@ const LOADING_ROW_COUNT = 5
  * all). Collapsing any two of these into one state would let a slow network, or
  * a failed one, masquerade as "there is nothing here", which is a different
  * claim and not this component's to make on the caller's behalf -- confirmed as
- * a real, live defect on Clienti/Persone/Deal alike before this fix: every
+ * a real, live defect on Customers/People/Deal alike before this fix: every
  * column reading zero and "Nessun ..." is indistinguishable from a tenant that
  * genuinely has nothing, when the true state was "the request failed".
  *

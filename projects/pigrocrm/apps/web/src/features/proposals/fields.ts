@@ -55,11 +55,11 @@ const RATE_KIND_LABELS: Record<string, string> = {
 }
 
 const RATE_UNIT_LABELS: Record<string, string> = {
-  ora: 'ora',
-  day: 'day',
-  month: 'month',
-  year: 'year',
-  flat: 'flat',
+  hour: 'ora',
+  day: 'giorno',
+  month: 'mese',
+  year: 'anno',
+  flat: 'forfait',
 }
 
 const PERIOD_LABELS: Record<string, string> = {
@@ -193,17 +193,28 @@ function wholeNumber(value: unknown): string | null {
 
 function days(value: unknown): string | null {
   const count = wholeNumber(value)
-  return count === null ? null : `${count} ${count === '1' ? 'day' : 'days'}`
+  return count === null ? null : `${count} ${count === '1' ? 'giorno' : 'giorni'}`
 }
 
 /** «1 giorno», «0,5 giorni»: the singular is the quantity written exactly «1». */
 function quantityInDays(quantity: string | null): string | null {
-  return quantity === null ? null : `${quantity} ${quantity === '1' ? 'day' : 'days'}`
+  return quantity === null ? null : `${quantity} ${quantity === '1' ? 'giorno' : 'giorni'}`
 }
 
 /** A value the screen has no word for, as the JSON it is. */
 function raw(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+/** The policy's codes in the words the screen printed before the English rename. */
+const POLICY_KIND_WORDS: Record<string, string> = {
+  not_reimbursable: 'non rimborsabile',
+  reimbursable: 'rimborsabile',
+  reimbursable_with_cap: 'rimborsabile con tetto',
+}
+const POLICY_KEY_WORDS: Record<string, string> = {
+  amount_cap: 'importo tetto',
+  requires_pre_authorization: 'richiede preautorizzazione',
 }
 
 /**
@@ -215,8 +226,10 @@ function expensePolicy(value: unknown): string | null {
   if (!isRecord(value)) return null
   const { kind, ...payload } = value
   return [
-    typeof kind === 'string' ? kind.replace(/_/g, ' ') : null,
-    ...Object.entries(payload).map(([key, item]) => `${key.replace(/_/g, ' ')}: ${raw(item)}`),
+    typeof kind === 'string' ? (POLICY_KIND_WORDS[kind] ?? kind.replace(/_/g, ' ')) : null,
+    ...Object.entries(payload).map(
+      ([key, item]) => `${POLICY_KEY_WORDS[key] ?? key.replace(/_/g, ' ')}: ${raw(item)}`,
+    ),
   ]
     .filter((part) => part !== null)
     .join(' · ')
@@ -294,7 +307,7 @@ function contractGroups(fields: Record<string, unknown>): { title: string; group
 
 function dayGroups(fields: Record<string, unknown>): { title: string; groups: FieldGroup[]; contractId: string | null } {
   const approval = isRecord(fields.approval) ? fields.approval : {}
-  const date = isoDate(fields.data)
+  const date = isoDate(fields.date)
   const quantity = formatQuantity(fields.quantity)
   return {
     title: [date === null ? 'Giornata' : `Giornata del ${date}`, quantity === null ? null : `${quantity} gg`]

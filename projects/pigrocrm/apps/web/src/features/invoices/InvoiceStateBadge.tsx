@@ -29,7 +29,7 @@ import {
  *  `"external"` row never can. An unrecognised value (there is only ever one column to
  *  misread) falls back to the same generic pill the old single-value check rendered. */
 const IMPORTED_BADGE_LABELS: Record<string, string> = {
-  external: 'imported',
+  external: 'importata',
   fatturapa: 'FatturaPA',
 }
 
@@ -57,7 +57,7 @@ export function InvoiceStateBadge({
         {INVOICE_STATE_LABELS[status]}
       </StatusPill>
       {/* The column's value is never printed verbatim -- what a reader of the register
-          needs for `"esterno"` is that this invoice was issued elsewhere, so it carries
+          needs for `"external"` is that this invoice was issued elsewhere, so it carries
           no XML and no PDF pigroCRM produced, and not the name of the tool it came out
           of, which is the owner's business and no part of the CRM's copy. `"fatturapa"`
           is different: it is the name of the transmission standard, not a product, and
@@ -67,7 +67,7 @@ export function InvoiceStateBadge({
           states and must not read as a sixth one sitting in the same row. */}
       {showImportedBadge && provenance != null ? (
         <Badge variant="pill" className="text-muted-foreground">
-          {IMPORTED_BADGE_LABELS[provenance] ?? 'imported'}
+          {IMPORTED_BADGE_LABELS[provenance] ?? 'importata'}
         </Badge>
       ) : null}
     </span>

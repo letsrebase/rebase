@@ -69,6 +69,8 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   contract: 'Contratto',
   minutes: 'Verbale',
   document: 'Documento',
+  hours_report: 'Rapporto ore',
+  payment_reminder: 'Sollecito',
 }
 
 function ownerQuery(owner: DocumentOwner): { customer_id?: string; deal_id?: string } {
@@ -299,7 +301,7 @@ export function useTemplatePreview() {
  * storage backend. The `Content-Disposition` the server sets is what names the file.
  */
 export function downloadDocument(documentId: string, number?: number): Promise<void> {
-  const search = number === undefined ? '' : `?numero=${number}`
+  const search = number === undefined ? '' : `?number=${number}`
   return downloadFromApi(`/api/documents/${documentId}/download${search}`)
 }
 

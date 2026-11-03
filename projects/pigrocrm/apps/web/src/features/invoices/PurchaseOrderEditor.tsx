@@ -15,13 +15,13 @@ import { useUpdateInvoice, type Invoice } from './queries'
 
 /**
  * The customer's purchase order on a document that is still editable (REB-693): the
- * number, its date, the CIG and the CUP, which the XML writes as `DatiOrdineAcquisto`
+ * number, its date, the tender code and the CUP, which the XML writes as `DatiOrdineAcquisto`
  * and the PDF prints under the accrual period. Its own section and button, beside
  * `InvoiceHeaderEditor`, whose section is the document's dates.
  *
  * Saved through `PATCH /api/invoices/{id}` with only the fields the person edited,
- * `null` for an empty one; the rest follows the stored order, so a CIG added elsewhere
- * (MCP, another tab) is shown and never erased by saving another field. The freeze is the server's: an issued fattura or a consumed proforma answers 409,
+ * `null` for an empty one; the rest follows the stored order, so a tender code added elsewhere
+ * (MCP, another tab) is shown and never erased by saving another field. The freeze is the server's: an issued invoice or a consumed proforma answers 409,
  * and the banner shows it as it comes.
  */
 export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
@@ -83,18 +83,18 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
 
       <div className="grid max-w-2xl gap-4 sm:grid-cols-4">
         <div className="space-y-2">
-          <Label htmlFor="ordine-numero">Numero ordine</Label>
+          <Label htmlFor="purchase-order-number">Numero ordine</Label>
           <Input
-            id="ordine-numero"
+            id="purchase-order-number"
             value={draft.purchase_order_number}
             disabled={update.isPending}
             onChange={(event) => set('purchase_order_number', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-data">Data ordine</Label>
+          <Label htmlFor="purchase-order-date">Data ordine</Label>
           <Input
-            id="ordine-data"
+            id="purchase-order-date"
             type="date"
             value={draft.purchase_order_date}
             disabled={update.isPending}
@@ -102,18 +102,18 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-cig">CIG</Label>
+          <Label htmlFor="purchase-order-tender-code">CIG</Label>
           <Input
-            id="ordine-cig"
+            id="purchase-order-tender-code"
             value={draft.purchase_order_tender_code}
             disabled={update.isPending}
             onChange={(event) => set('purchase_order_tender_code', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-cup">CUP</Label>
+          <Label htmlFor="purchase-order-project-code">CUP</Label>
           <Input
-            id="ordine-cup"
+            id="purchase-order-project-code"
             value={draft.purchase_order_project_code}
             disabled={update.isPending}
             onChange={(event) => set('purchase_order_project_code', event.target.value)}

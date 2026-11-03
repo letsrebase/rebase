@@ -18,8 +18,8 @@ import type { Reminder } from './fields'
  * rather than with a guessed one.
  */
 const RECORD_LINKS: Record<string, (id: string) => LinkProps> = {
-  // An attività has no page of its own: the list opens it in a dialog (`?open=`).
-  attivita: (id: string) => linkOptions({ to: '/app/activities', search: { open: id } }),
+  // A task has no page of its own: the list opens it in a dialog (`?open=`).
+  task: (id: string) => linkOptions({ to: '/app/activities', search: { open: id } }),
   deal: (id: string) => linkOptions({ to: '/app/deal/$dealId', params: { dealId: id } }),
   customer: (id: string) =>
     linkOptions({ to: '/app/customers/$customerId', params: { customerId: id } }),

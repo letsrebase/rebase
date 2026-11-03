@@ -25,9 +25,9 @@ const EMPTY = '—'
 export interface InvoiceColumnOptions {
   customer?: boolean
   /**
-   * The aziende to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
-   * only under «Tutte le aziende» from the second azienda on (`useLegalEntitiesToName`): with one
-   * azienda, or with one selected, every row is that azienda's and the name would repeat
+   * The legal entities to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
+   * only under «Tutte le aziende» from the second legal entity on (`useLegalEntitiesToName`): with one
+   * legal entity, or with one selected, every row is that legal entity's and the name would repeat
    * the sidebar on each line. The accessor stays the bare number, so sorting and the
    * export see one value; the name is drawn by the cell, muted, after a middle dot.
    */
@@ -89,7 +89,7 @@ export function buildInvoiceColumns(
       ]
     : []
 
-  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.nome]))
+  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
 
   return [
     {
@@ -101,12 +101,12 @@ export function buildInvoiceColumns(
       accessorFn: (row) => formatInvoiceNumber(row),
       cell: ({ row }) => {
         const number = formatInvoiceNumber(row.original)
-        const nome = legalEntityName.get(row.original.legal_entity_id)
-        if (nome === undefined) return number
+        const name = legalEntityName.get(row.original.legal_entity_id)
+        if (name === undefined) return number
         return (
           <>
             {number}
-            <span className="text-muted-foreground"> · {nome}</span>
+            <span className="text-muted-foreground"> · {name}</span>
           </>
         )
       },
@@ -152,7 +152,7 @@ export function buildInvoiceColumns(
       header: 'Stato',
       id: 'status',
       // `importata={false}` suppresses only the uninformative «importata» pill an
-      // "esterno" row would otherwise get (ORB-130: in a register where most rows came
+      // "external" row would otherwise get (ORB-130: in a register where most rows came
       // from the previous system the word explains nothing a reader of the list can act
       // on -- the detail page keeps it, as the reason its XML actions are missing). A
       // "fatturapa" row's own badge ignores the flag and still shows here: it names a
