@@ -609,7 +609,7 @@ export interface paths {
          *     page and the report start showing different variances.
          *
          *     `limit=200` -- the schema's own ceiling -- rather than a paged scan: `deals_in_range`
-         *     orders by `(nome, id)`, so the row wanted here can sit anywhere in that order, and one
+         *     orders by `(name, id)`, so the row wanted here can sit anywhere in that order, and one
          *     page at the maximum is the widest single window this query is allowed to open. Above
          *     that the answer is a 404 the caller can act on (narrow the window) instead of a page
          *     walk hidden behind a detail endpoint.
@@ -3138,10 +3138,10 @@ export interface paths {
          * @description No period parameter, and not an optional one either.
          *
          *     §6: its figures are the current week and a backlog, which are the two things that make
-         *     no sense in the past. An optional `da`/`a` that the service ignored would be a
+         *     no sense in the past. An optional `from`/`to` that the service ignored would be a
          *     parameter the API advertises and does not honour -- worse than not having it, because
          *     the generated client would offer it and a caller would believe it worked. FastAPI
-         *     ignores undeclared query parameters, so `?da=2020-01-01` is answered with the current
+         *     ignores undeclared query parameters, so `?from=2020-01-01` is answered with the current
          *     week rather than with a period nobody can supply.
          *
          *     `settings` is this request's own effective `Settings` -- the environment with any
@@ -4013,8 +4013,8 @@ export interface paths {
         put?: never;
         /**
          * Invoice Days
-         * @description Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `da` e `a`),
-         *     alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
+         * @description Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `date_from` e
+         *     `date_to`), alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
          *     amministratore e mai un agente: scegliere cosa finisce su una bozza decide cosa
          *     congelerà l'emissione.
          */
@@ -4290,7 +4290,7 @@ export interface paths {
         };
         /**
          * List Work Units
-         * @description Le giornate, dalla più recente. Serve almeno un contratto o una data (`da`, `a`):
+         * @description Le giornate, dalla più recente. Serve almeno un contratto o una data (`from`, `to`):
          *     il registro intero di uno spazio non è una domanda che una schermata faccia.
          */
         get: operations["list_work_units_api_work_units_get"];
@@ -4949,7 +4949,7 @@ export interface components {
              * Channel
              * @enum {string}
              */
-            channel: "email" | "certified_mail" | "registered_mail" | "courier" | "altro";
+            channel: "email" | "certified_mail" | "registered_mail" | "courier" | "other";
             /** Sender */
             sender: string;
             /**
@@ -4987,10 +4987,10 @@ export interface components {
          */
         ApprovalRequestDay: {
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Quantity */
             quantity: number | string;
             /** Description */
@@ -5126,10 +5126,10 @@ export interface components {
             code: string;
             /** Label */
             label: string;
-            /** Da */
-            da: string | null;
-            /** A */
-            a: string | null;
+            /** Date From */
+            date_from: string | null;
+            /** Date To */
+            date_to: string | null;
             /** Amount */
             amount: string;
             /** Number */
@@ -5248,8 +5248,8 @@ export interface components {
              * Format: uuid
              */
             deal_id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Budgeted Hours */
             budgeted_hours: string | null;
             /** Actuals Hours */
@@ -5293,8 +5293,8 @@ export interface components {
             hours: string;
             /** Per Deal */
             per_deal?: components["schemas"]["DayDealHours"][];
-            /** Attivita */
-            attivita?: components["schemas"]["TaskRead"][];
+            /** Tasks */
+            tasks?: components["schemas"]["TaskRead"][];
             /** Invoices */
             invoices?: components["schemas"]["DueInvoice"][];
             /** Work Units */
@@ -5317,15 +5317,15 @@ export interface components {
             /** Month */
             month: string;
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
             /**
              * Today
              * Format: date
@@ -5637,7 +5637,7 @@ export interface components {
         /**
          * ConcentrationFigures
          * @description One currency's side of a concentration cap: the customer's invoiced revenue and
-         *     the azienda's total, both in `currency` and never converted, with the share one is of
+         *     the legal entity's total, both in `currency` and never converted, with the share one is of
          *     the other. A customer billed in euros on a USD contract is a `EUR` row, not a figure
          *     labelled with the contract's own currency (REB-776).
          */
@@ -5686,7 +5686,7 @@ export interface components {
         /**
          * ContractCapSimulation
          * @description REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
-         *     share of the azienda's invoiced revenue over the contract's own anniversary year
+         *     share of the legal entity's invoiced revenue over the contract's own anniversary year
          *     containing `expected_date`, before and after a synthetic addition that goes entirely
          *     to this customer: both the customer's revenue and the total grow by it, which is why
          *     the share moves less than the addition. In the contract's own currency, since a cap
@@ -5884,10 +5884,10 @@ export interface components {
              */
             type: "irrevocability_end" | "renewal_due";
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
         };
         /**
          * ContractDetail
@@ -5979,8 +5979,8 @@ export interface components {
              * @enum {string}
              */
             type: "invoice_pdf" | "register_pdf";
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
         };
         /** ContractEmailPrepare */
         ContractEmailPrepare: {
@@ -6012,15 +6012,15 @@ export interface components {
             /** Attachments */
             attachments: components["schemas"]["ContractEmailAttachment"][];
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
         };
         /**
          * ContractEmailRequest
@@ -6041,8 +6041,8 @@ export interface components {
         };
         /** ContractEmailTemplateCreate */
         ContractEmailTemplateCreate: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Subject */
             subject: string;
             /** Body */
@@ -6065,8 +6065,8 @@ export interface components {
              * Format: uuid
              */
             contract_id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Subject */
             subject: string;
             /** Body */
@@ -6088,8 +6088,8 @@ export interface components {
         };
         /** ContractEmailTemplateUpdate */
         ContractEmailTemplateUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Subject */
             subject?: string | null;
             /** Body */
@@ -6101,8 +6101,8 @@ export interface components {
         };
         /** ContractEmailVariable */
         ContractEmailVariable: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Label */
             label: string;
         };
@@ -6121,10 +6121,10 @@ export interface components {
              */
             category_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Amount */
             amount: number | string;
             /** Description */
@@ -6157,10 +6157,10 @@ export interface components {
              */
             category_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Amount */
             amount: string;
             /** Description */
@@ -6196,8 +6196,8 @@ export interface components {
         ContractExpenseUpdate: {
             /** Category Id */
             category_id?: string | null;
-            /** Data */
-            data?: string | null;
+            /** Date */
+            date?: string | null;
             /** Amount */
             amount?: number | string | null;
             /** Description */
@@ -6231,20 +6231,20 @@ export interface components {
              */
             contract_id: string;
             /**
-             * Come Di
+             * As Of
              * Format: date
              */
-            come_di: string;
+            as_of: string;
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
             /** Irrevocability Window Until To */
             irrevocability_window_until_to: string | null;
             /** Scheduled */
@@ -6337,15 +6337,15 @@ export interface components {
             /** Customer */
             customer: string;
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
             /** Entries */
             entries: components["schemas"]["RegisterEntry"][];
             /** Quantity Total */
@@ -6432,8 +6432,8 @@ export interface components {
         };
         /** CostCategoryCreate */
         CostCategoryCreate: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Position
              * @default 0
@@ -6447,8 +6447,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Position */
             position: number;
             /** Code */
@@ -6468,8 +6468,8 @@ export interface components {
         };
         /** CostCategoryUpdate */
         CostCategoryUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Position */
             position?: number | null;
         };
@@ -6485,10 +6485,10 @@ export interface components {
              */
             category_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Amount */
             amount: number | string;
             /** Description */
@@ -6529,10 +6529,10 @@ export interface components {
              */
             category_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Amount */
             amount: string;
             /** Description */
@@ -6564,8 +6564,8 @@ export interface components {
             legal_entity_id?: string | null;
             /** Category Id */
             category_id?: string | null;
-            /** Data */
-            data?: string | null;
+            /** Date */
+            date?: string | null;
             /** Amount */
             amount?: number | string | null;
             /** Description */
@@ -6581,8 +6581,8 @@ export interface components {
         };
         /** CreateTokenRequest */
         CreateTokenRequest: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Full Access
              * @default false
@@ -6600,8 +6600,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Prefix */
             prefix: string;
             /** Full Access */
@@ -6876,15 +6876,15 @@ export interface components {
          */
         DaysAnalysis: {
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
             /** Legal Entity Id */
             legal_entity_id: string | null;
             /**
@@ -6988,8 +6988,8 @@ export interface components {
         };
         /** DealCreate */
         DealCreate: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Customer Id
              * Format: uuid
@@ -7088,8 +7088,8 @@ export interface components {
              * Format: uuid
              */
             legal_entity_id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Customer Id
              * Format: uuid
@@ -7169,8 +7169,8 @@ export interface components {
         };
         /** DealUpdate */
         DealUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Expected Value */
             expected_value?: number | string | null;
             /** Probability */
@@ -7199,8 +7199,8 @@ export interface components {
         DiscoveredCorrespondent: {
             /** Address */
             address: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Messages */
             messages: number;
             /** Conversations */
@@ -7575,10 +7575,10 @@ export interface components {
         };
         /**
          * EconomicOverview
-         * @description Impostazioni economiche della dashboard: la cassa dell'anno e, per un admin con
-         *     un profilo fiscale configurato, la stima fiscale calcolata due volte -- sui ricavi
-         *     incassati e sui ricavi proiettati -- con i netti che ne seguono. Per chi non e'
-         *     admin, o senza profilo, la parte fiscale e' `None` e la pagina mostra solo la cassa.
+         * @description Economic settings of the dashboard: the year's cash and, for an admin with a
+         *     configured fiscal profile, the tax estimate computed twice -- on collected revenue
+         *     and on projected revenue -- with the nets that follow. For anyone who is not an
+         *     admin, or has no profile, the fiscal part is `None` and the page shows only the cash.
          */
         EconomicOverview: {
             /**
@@ -7801,8 +7801,8 @@ export interface components {
              * Format: email
              */
             email: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string;
         };
@@ -7812,15 +7812,15 @@ export interface components {
             number: string;
             /** Role */
             role: string;
-            /** Legal Entity */
-            legal_entity: string;
+            /** Company Name */
+            company_name: string;
             /**
              * Start Date
              * Format: date
              */
             start_date: string;
-            /** Data Fine */
-            data_fine?: string | null;
+            /** End Date */
+            end_date?: string | null;
             /** Fee */
             fee: number | string;
             /** Expected Days */
@@ -7876,9 +7876,9 @@ export interface components {
         };
         /**
          * EngagementReport
-         * @description The answer of `GET /api/rebase/engagements/{match_id}/report`. `invoiced_hours` is
+         * @description The answer of `GET /api/rebase/engagements/{match_id}/report`. `billed_hours` is
          *     the CRM's own billed (`billed_entry_ids`: on a line of an issued `invoice`), so it
-         *     agrees with the deal's summary; `hours_uninvoiced` is every other hour of the
+         *     agrees with the deal's summary; `unbilled_hours` is every other hour of the
          *     period; `invoices` has one row per invoice among the entries, newest first.
          */
         EngagementReport: {
@@ -7889,12 +7889,12 @@ export interface components {
             deal: components["schemas"]["ReportDeal"];
             /** Days */
             days: components["schemas"]["ReportEntry"][];
-            /** Hours Total */
-            hours_total: string;
-            /** Invoiced Hours */
-            invoiced_hours: string;
-            /** Hours Uninvoiced */
-            hours_uninvoiced: string;
+            /** Total Hours */
+            total_hours: string;
+            /** Billed Hours */
+            billed_hours: string;
+            /** Unbilled Hours */
+            unbilled_hours: string;
             /** Invoices */
             invoices: components["schemas"]["ReportInvoice"][];
         };
@@ -7945,7 +7945,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "attivita" | "contract";
+            entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
             /** Key */
             key: string;
             /** Label */
@@ -7982,7 +7982,7 @@ export interface components {
              * Entity Type
              * @enum {string}
              */
-            entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "attivita" | "contract";
+            entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
             /** Key */
             key: string;
             /** Label */
@@ -8111,7 +8111,7 @@ export interface components {
          * FiscalProfileUpsert
          * @description One shape for create and update: there is only ever one row, so "create" and
          *     "update" are the same operation with the same required fields -- the same decision
-         *     the azienda's own upsert already made.
+         *     the legal entity's own upsert already made.
          *
          *     `regime_code` carries `max_length` because the column is `String(4)` and the
          *     service's own `.fullmatch` check is *not* a length check on its own for a value
@@ -8415,11 +8415,11 @@ export interface components {
          *
          *     Always a concrete answer for an admin, never `None`: `in_effect` is whether
          *     `DriveRepository.storage_account` currently finds a row (an admin's, active, naming
-         *     a folder), and `holder` is set if and only if `in_effect` is `True`. A collaboratore
+         *     a folder), and `holder` is set if and only if `in_effect` is `True`. A collaborator
          *     gets neither -- `GoogleDriveAccountService.space_storage` returns `None` for them,
          *     and `DriveHealth.space_storage`'s own docstring is where that `None` actually goes:
          *     the field is left **unset** on the wire, not carried as `null`, which is what fix
-         *     round 1 replaced a genuinely ambiguous `None` with (Greptile: a collaboratore's
+         *     round 1 replaced a genuinely ambiguous `None` with (Greptile: a collaborator's
          *     absence and "no admin has chosen a folder yet" must never be the same value).
          *
          *     `holder`'s own default exists only so `in_effect=True`'s branch can omit it in
@@ -8470,7 +8470,7 @@ export interface components {
          *     `invitation` is on the rows of a different kind (REB-678), and on no other: a space where
          *     this address holds an open invitation and no account yet, so a mail that never
          *     arrived does not leave the invitation unfindable. `role` is then the role it
-         *     carries, `invited_from` who sent it and `nome` the name it holds (absent when the
+         *     carries, `invited_from` who sent it and `name` the name it holds (absent when the
          *     acceptance page will ask). The route leaves out whatever is still its default.
          */
         IdentitySpace: {
@@ -8482,12 +8482,12 @@ export interface components {
             invitation?: true | null;
             /** Invited From */
             invited_from?: string | null;
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
         };
         /**
          * InvitationCreate
-         * @description The body of `POST /api/users/invites` (spec 2026-09-17 §3). `nome` is optional:
+         * @description The body of `POST /api/users/invites` (spec 2026-09-17 §3). `name` is optional:
          *     the acceptance page asks for one when the invitation carried none, so an address
          *     the admin knows only as an address is invitable. `email` is an `EmailStr` and not
          *     a `SafeStr` here: like `UserCreate`'s, email-validator refuses a NUL byte (and
@@ -8501,8 +8501,8 @@ export interface components {
              * Format: email
              */
             email: string;
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /**
              * Role
              * @default collaborator
@@ -8533,8 +8533,8 @@ export interface components {
             space: string;
             /** Invited From */
             invited_from: string;
-            /** Nome */
-            nome: string | null;
+            /** Name */
+            name: string | null;
         };
         /**
          * InvitationRead
@@ -8557,8 +8557,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
-            /** Nome */
-            nome: string | null;
+            /** Name */
+            name: string | null;
             /**
              * Role
              * @enum {string}
@@ -8588,15 +8588,15 @@ export interface components {
         };
         /**
          * InviteAccept
-         * @description The token, plus `nome` when the peek answered none. Whether a name is needed
+         * @description The token, plus `name` when the peek answered none. Whether a name is needed
          *     is the service's knowledge (it reads the row), so that is where it is enforced --
          *     a schema constraint here could only duplicate the check or get it wrong.
          */
         InviteAccept: {
             /** T */
             t: string;
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
         };
         /** InvoiceAnnul */
         InvoiceAnnul: {
@@ -8689,8 +8689,8 @@ export interface components {
             type: "invoice" | "proforma";
             /** Memo */
             memo?: string | null;
-            /** Note Interne */
-            note_interne?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /** Issue Date */
             issue_date?: string | null;
             /** Accrual From */
@@ -8721,14 +8721,14 @@ export interface components {
          *     inclusive. A month is `da` the first and `a` the last.
          */
         InvoiceDaysRequest: {
-            /** Da */
-            da?: string | null;
-            /** A */
-            a?: string | null;
+            /** Date From */
+            date_from?: string | null;
+            /** Date To */
+            date_to?: string | null;
         };
         /**
          * InvoiceImport
-         * @description A fattura issued by the previous system, declared field by field (spec 9 §3.3).
+         * @description An invoice issued by the previous system, declared field by field (spec 9 §3.3).
          *
          *     `year`/`number` come from the caller because they are facts about a document that
          *     exists; the counter follows them (§3.2 rule 3). Totals are declared **and** verified,
@@ -8792,8 +8792,8 @@ export interface components {
             /** Transmitted Externally At */
             transmitted_externally_at?: string | null;
             pdf_source?: components["schemas"]["PdfSource"] | null;
-            /** Note Interne */
-            note_interne?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /**
              * Imported From
              * @default external
@@ -8858,7 +8858,7 @@ export interface components {
          *     `RegimeStrategy`'s answer, and accepting them here would put the table constraint
          *     `(aliquota_iva = 0) = (natura IS NOT NULL)` within reach of a request body.
          *     `vat_rate` is optional and means "use the regime's default"; under the
-         *     forfettario the regime refuses anything but zero anyway.
+         *     flat-rate regime the regime refuses anything but zero anyway.
          */
         InvoiceLineIn: {
             /** Description */
@@ -9012,8 +9012,8 @@ export interface components {
             cancelled_at: string | null;
             /** Cancellation Reason */
             cancellation_reason: string | null;
-            /** Note Interne */
-            note_interne: string | null;
+            /** Internal Notes */
+            internal_notes: string | null;
             /** Snapshot Version */
             snapshot_version: number | null;
             /** Expected Due Date */
@@ -9040,7 +9040,7 @@ export interface components {
          * @description One or more `document_id`s, never raw bytes -- the MCP rule
          *     (`tools/families/documents.py`'s own "the download of bytes never goes through MCP")
          *     applied symmetrically to the *input* side, and the same shape `InvoiceImport.
-         *     pdf_sorgente` already uses for a `documents` row that is already on file.
+         *     pdf_source` already uses for a `documents` row that is already on file.
          */
         InvoiceReviewRequest: {
             /** Document Ids */
@@ -9054,10 +9054,10 @@ export interface components {
         /** InvoiceTransmitted */
         InvoiceTransmitted: {
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
         };
         /**
          * InvoiceUpdate
@@ -9074,13 +9074,13 @@ export interface components {
          *     they are frozen afterwards by `InvoiceService.update`, which raises `ImmutableField`
          *     -- not by leaving them off the schema, which would have made a draft's own subject line
          *     unfixable. The period is cleared as a pair and a proforma's date is never cleared;
-         *     a fattura's `issue_date` is refused here outright, since `issue` owns it.
+         *     an invoice's `issue_date` is refused here outright, since `issue` owns it.
          */
         InvoiceUpdate: {
             /** Memo */
             memo?: string | null;
-            /** Note Interne */
-            note_interne?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /** Issue Date */
             issue_date?: string | null;
             /** Due Date */
@@ -9107,8 +9107,8 @@ export interface components {
          * @description The company's contact person, as the wizard collected them.
          */
         LeadContactPerson: {
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name?: string | null;
             /**
@@ -9128,14 +9128,14 @@ export interface components {
          *     on a deal, and a prospect's typed budget is not that.
          */
         LeadDeal: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Expected Value */
             expected_value?: number | string | null;
             /** Expected Close Date */
             expected_close_date?: string | null;
-            /** Note */
-            note?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /**
          * LeadRead
@@ -9168,28 +9168,28 @@ export interface components {
          *     links the request to a deal the CRM already has and creates nothing else.
          */
         LeadUpsert: {
-            /** Legal Entity */
-            legal_entity: string;
-            contact_person: components["schemas"]["LeadContactPerson"];
+            /** Company */
+            company: string;
+            contact: components["schemas"]["LeadContactPerson"];
             deal: components["schemas"]["LeadDeal"];
             /** Deal Id */
             deal_id?: string | null;
         };
         /**
          * LegalEntityCreate
-         * @description A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
+         * @description A second legal entity, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
          *     milestone 5): the upsert's fields, a required short name, and the profile body
          *     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
-         *     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
+         *     legal entity ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
          *
-         *     `nome` is required here where the whole-row upsert derives it: the first azienda of a
+         *     `name` is required here where the whole-row upsert derives it: the first legal entity of a
          *     space was never named, but the second is created to be told apart from the first,
-         *     in the sidebar and on every list, and a derived name is a ragione sociale cut to
+         *     in the sidebar and on every list, and a derived name is a legal name cut to
          *     eighty characters.
          */
         LegalEntityCreate: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Legal Name */
             legal_name: string;
             /** Vat Number */
@@ -9238,10 +9238,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
-            /** Predefinita */
-            predefinita: boolean;
+            /** Name */
+            name: string;
+            /** Is Default */
+            is_default: boolean;
             /** Active */
             active: boolean;
             /** Legal Name */
@@ -9298,10 +9298,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
-            /** Predefinita */
-            predefinita: boolean;
+            /** Name */
+            name: string;
+            /** Is Default */
+            is_default: boolean;
             /** Active */
             active: boolean;
             /** Legal Name */
@@ -9360,8 +9360,8 @@ export interface components {
          *     exists, refuses.
          */
         LegalEntityUpsert: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Legal Name */
             legal_name: string;
             /** Vat Number */
@@ -9466,8 +9466,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
         };
         /** MoveStageRequest */
         MoveStageRequest: {
@@ -9580,7 +9580,7 @@ export interface components {
          *     **No new economic total.** The only money here is `backlog.accrued_value`, which
          *     belongs to `AnalyticsService` and is labelled accrued value, never revenue.
          *
-         *     Four signals now: REB-371 adds `concentrazione_sopra_soglia` beside the original
+         *     Four signals now: REB-371 adds `concentration_above_threshold` beside the original
          *     three, once `AnalyticsRepository.revenue_by_customer` (REB-370) existed and a
          *     preferred-share threshold could be configured for it
          *     (`Settings.preferred_concentration_threshold`). §6.2's own *fourth* signal is a
@@ -9600,8 +9600,8 @@ export interface components {
             backlog: components["schemas"]["UnbilledBacklog"];
             /** Signals */
             signals: components["schemas"]["Signal"][];
-            /** Recent Task */
-            recent_task: components["schemas"]["ActivityRead"][];
+            /** Recent Activity */
+            recent_activity: components["schemas"]["ActivityRead"][];
         };
         /**
          * OverdueInvoice
@@ -9681,8 +9681,8 @@ export interface components {
             stamp_duty?: string | null;
             /** Social Security Pension Fund */
             social_security_pension_fund: components["schemas"]["ParsedInvoiceSocialCharge"][];
-            /** Termini Payment */
-            termini_payment: components["schemas"]["ParsedInvoicePaymentTerms"][];
+            /** Payment Terms */
+            payment_terms: components["schemas"]["ParsedInvoicePaymentTerms"][];
             transmission: components["schemas"]["ParsedInvoiceTransmission"];
         };
         /**
@@ -9728,7 +9728,7 @@ export interface components {
          *     `vat_number`/`tax_code` are two first-class, independently optional
          *     fields rather than mastro's single `taxId` (which changes shape depending on
          *     which identifier the source document happened to carry): PigroCRM already
-         *     treats both as first-class columns on a customer and on an azienda, so there is
+         *     treats both as first-class columns on a customer and on a legal entity, so there is
          *     no "whichever one" concept to port here. `vat_number` carries `IdPaese` +
          *     `IdCodice` concatenated (e.g. `"IT01234567890"`) exactly as mastro's
          *     `fiscalIdString` does, since a later direction-detection step needs the
@@ -9860,8 +9860,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Prefix */
             prefix: string;
             /** Full Access */
@@ -10006,12 +10006,12 @@ export interface components {
         /**
          * PdfSource
          * @description Where the original PDF already is: a `documents` row with an uploaded version
-         *     (9A), or a file on the titolare's Drive (9C).
+         *     (9A), or a file on the owner's Drive (9C).
          *
          *     Exactly one of the two, and the `model_validator` is what says so rather than a
          *     check in the service: two sources would leave "which one is the original?" to be
          *     answered by whichever branch the service happened to test first, and none would
-         *     make `pdf_sorgente: {}` mean "no PDF" -- which already has a spelling, omitting the
+         *     make `pdf_source: {}` mean "no PDF" -- which already has a spelling, omitting the
          *     field entirely.
          *
          *     `drive_file_id` is held to `drive/query.py`'s strict pattern here, at the edge,
@@ -10065,15 +10065,15 @@ export interface components {
          */
         Period: {
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
         };
         /** PeriodLockCreate */
         PeriodLockCreate: {
@@ -10106,15 +10106,15 @@ export interface components {
          */
         PeriodPnl: {
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
             /** Customer Id */
             customer_id: string | null;
             /**
@@ -10141,8 +10141,8 @@ export interface components {
         };
         /** PersonCreate */
         PersonCreate: {
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name?: string | null;
             /** Email */
@@ -10173,10 +10173,10 @@ export interface components {
             /** Address */
             address: string;
             /**
-             * Nome
+             * Name
              * @default
              */
-            nome: string;
+            name: string;
         };
         /** PersonPage */
         PersonPage: {
@@ -10192,8 +10192,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** First Name */
+            first_name: string;
             /** Last Name */
             last_name: string | null;
             /** Email */
@@ -10225,8 +10225,8 @@ export interface components {
         };
         /** PersonUpdate */
         PersonUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** First Name */
+            first_name?: string | null;
             /** Last Name */
             last_name?: string | null;
             /** Email */
@@ -10252,8 +10252,8 @@ export interface components {
         };
         /** PipelineStageCreate */
         PipelineStageCreate: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Position */
             position: number;
             /**
@@ -10277,8 +10277,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Position */
             position: number;
             /** Default Probability */
@@ -10323,8 +10323,8 @@ export interface components {
          *     depends on `code` never moving once set.
          */
         PipelineStageUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Position */
             position?: number | null;
             /** Default Probability */
@@ -10591,7 +10591,7 @@ export interface components {
              * Unit
              * @enum {string}
              */
-            unit: "ora" | "day" | "month" | "year" | "flat";
+            unit: "hour" | "day" | "month" | "year" | "flat";
             /** Allowed Fractions */
             allowed_fractions?: (number | string)[];
             /** Minimum Hours */
@@ -10658,7 +10658,7 @@ export interface components {
             /** Amount */
             amount?: number | string | null;
             /** Unit */
-            unit?: ("ora" | "day" | "month" | "year" | "flat") | null;
+            unit?: ("hour" | "day" | "month" | "year" | "flat") | null;
             /** Allowed Fractions */
             allowed_fractions?: (number | string)[] | null;
             /** Minimum Hours */
@@ -10703,15 +10703,15 @@ export interface components {
         /** RecalculateRatesRequest */
         RecalculateRatesRequest: {
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
         };
         /**
          * RecalculateResponse
@@ -10781,10 +10781,10 @@ export interface components {
              */
             work_unit_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Quantity */
             quantity: string;
             /** Description */
@@ -11084,8 +11084,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Hourly Rate */
             hourly_rate: string | null;
             /** Budgeted Hours */
@@ -11099,10 +11099,10 @@ export interface components {
          */
         ReportEntry: {
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Hours */
             hours: string;
             /** Description */
@@ -11133,8 +11133,8 @@ export interface components {
             status: string;
             /** Payment Status */
             payment_status: string;
-            /** Data */
-            data: string | null;
+            /** Date */
+            date: string | null;
             /** Hours */
             hours?: string | null;
         };
@@ -11267,13 +11267,13 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice" | "attivita";
+            entity: "customer" | "person" | "deal" | "document" | "invoice" | "task";
             /** Hits */
             hits: components["schemas"]["SearchHit"][];
             /** Total */
             total: number;
-            /** Total And A Minimum */
-            total_and_a_minimum: boolean;
+            /** Total Is Minimum */
+            total_is_minimum: boolean;
         };
         /** SearchHit */
         SearchHit: {
@@ -11281,7 +11281,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "customer" | "person" | "deal" | "document" | "invoice" | "attivita";
+            entity: "customer" | "person" | "deal" | "document" | "invoice" | "task";
             /**
              * Id
              * Format: uuid
@@ -11298,8 +11298,8 @@ export interface components {
         };
         /** SearchResults */
         SearchResults: {
-            /** Deadline */
-            deadline: string;
+            /** Term */
+            term: string;
             /** Groups */
             groups: components["schemas"]["SearchGroup"][];
         };
@@ -11379,8 +11379,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Email */
             email: string;
             /**
@@ -11535,8 +11535,8 @@ export interface components {
         SuggestedCustomer: {
             /** Domain */
             domain: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Conversations */
             conversations: number;
             /** Last Message */
@@ -11552,8 +11552,8 @@ export interface components {
         SuggestedPerson: {
             /** Address */
             address: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Already In Directory */
             already_in_directory: boolean;
         };
@@ -11773,8 +11773,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Prefix */
             prefix: string;
             /** Full Access */
@@ -11798,8 +11798,8 @@ export interface components {
         };
         /** TemplateCreate */
         TemplateCreate: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Type
              * @default offer
@@ -11836,8 +11836,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Type */
             type: string;
             /** Variables */
@@ -11861,8 +11861,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Type */
             type: string;
             /** Body Markdown */
@@ -11884,8 +11884,8 @@ export interface components {
         };
         /** TemplateUpdate */
         TemplateUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Type */
             type?: ("offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder") | null;
             /** Body Markdown */
@@ -11899,7 +11899,7 @@ export interface components {
          * TemplateVariable
          * @description One entry of `declared_variables`: a variable the compilation form asks the
          *     user to fill in before rendering (spec 4.3) -- declared, not deduced. Shaped to
-         *     match `templates.renderer.DeclaredVariable` field-for-field (`nome`, `label`,
+         *     match `templates.renderer.DeclaredVariable` field-for-field (`name`, `label`,
          *     `type`, `required`), which is what `TemplateService.preview` builds from this
          *     on its way into `render_template`; `options` is the one addition, carrying a
          *     `select`/`multiselect` variable's own choices for the form to render, the same
@@ -11907,8 +11907,8 @@ export interface components {
          *     renderer itself has no use for it and `DeclaredVariable` does not carry it.
          */
         TemplateVariable: {
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /** Label */
             label: string;
             /**
@@ -11954,8 +11954,8 @@ export interface components {
         TenantSignup: {
             /** Slug */
             slug: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Email
              * Format: email
@@ -11980,10 +11980,10 @@ export interface components {
              */
             user_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Hours */
             hours: number | string;
             /** Description */
@@ -11997,8 +11997,8 @@ export interface components {
             applied_rate?: number | string | null;
             /** Applied Cost */
             applied_cost?: number | string | null;
-            /** Note Interne */
-            note_interne?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /**
              * Custom Fields
              * @default {}
@@ -12032,10 +12032,10 @@ export interface components {
              */
             user_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Hours */
             hours: string;
             /** Description */
@@ -12062,8 +12062,8 @@ export interface components {
             line_cost?: string | null;
             /** Invoice Line Id */
             invoice_line_id: string | null;
-            /** Note Interne */
-            note_interne: string | null;
+            /** Internal Notes */
+            internal_notes: string | null;
             /** Custom Fields */
             custom_fields: {
                 [key: string]: unknown;
@@ -12085,8 +12085,8 @@ export interface components {
             deal_id?: string | null;
             /** User Id */
             user_id?: string | null;
-            /** Data */
-            data?: string | null;
+            /** Date */
+            date?: string | null;
             /** Hours */
             hours?: number | string | null;
             /** Description */
@@ -12097,8 +12097,8 @@ export interface components {
             applied_rate?: number | string | null;
             /** Applied Cost */
             applied_cost?: number | string | null;
-            /** Note Interne */
-            note_interne?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;
@@ -12160,8 +12160,8 @@ export interface components {
             deal_id?: string | null;
             /** Description */
             description?: string | null;
-            /** Data */
-            data?: string | null;
+            /** Date */
+            date?: string | null;
         };
         /**
          * TimerUpdate
@@ -12289,8 +12289,8 @@ export interface components {
             legal_entities?: string[] | null;
             /** Password */
             password?: string | null;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Role
              * @default collaborator
@@ -12318,8 +12318,8 @@ export interface components {
             id: string;
             /** Email */
             email: string;
-            /** Nome */
-            nome: string;
+            /** Name */
+            name: string;
             /**
              * Role
              * @enum {string}
@@ -12345,8 +12345,8 @@ export interface components {
         };
         /** UserUpdate */
         UserUpdate: {
-            /** Nome */
-            nome?: string | null;
+            /** Name */
+            name?: string | null;
             /** Role */
             role?: ("admin" | "collaborator" | "readonly") | null;
             /** Active */
@@ -12382,15 +12382,15 @@ export interface components {
          */
         WeekHours: {
             /**
-             * Da
+             * Date From
              * Format: date
              */
-            da: string;
+            date_from: string;
             /**
-             * A
+             * Date To
              * Format: date
              */
-            a: string;
+            date_to: string;
             /** Days */
             days: components["schemas"]["DayHours"][];
             /** Days Without Hours */
@@ -12452,10 +12452,10 @@ export interface components {
              */
             contract_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Quantity */
             quantity: string;
             /** Description */
@@ -12527,10 +12527,10 @@ export interface components {
              */
             contract_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Quantity */
             quantity: string;
             /** Description */
@@ -12569,10 +12569,10 @@ export interface components {
              */
             contract_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Quantity */
             quantity: number | string;
             /** Description */
@@ -12605,10 +12605,10 @@ export interface components {
              */
             contract_id: string;
             /**
-             * Data
+             * Date
              * Format: date
              */
-            data: string;
+            date: string;
             /** Quantity */
             quantity: string;
             /** Description */
@@ -12687,8 +12687,8 @@ export interface components {
         };
         /**
          * YearOverview
-         * @description The year of one azienda as the accountant reads it: what was issued, under which
-         *     regime and tax treatment, with the stamp duty and the rivalsa kept apart.
+         * @description The year of one legal entity as the accountant reads it: what was issued, under which
+         *     regime and tax treatment, with the stamp duty and the social security surcharge kept apart.
          *
          *     Scoped by the register year (`Invoice.year`), the same `invoice`/`issued` universe
          *     `annual_revenue` sums, so `totali.taxable_amount` is the revenue figure of the year and
@@ -12718,7 +12718,7 @@ export interface components {
         /**
          * YearRegime
          * @description Revenue of the year under one regime, read from what each invoice froze at issue
-         *     (`snapshot.tax`), never from today's profile: an azienda that changed regime in
+         *     (`snapshot.tax`), never from today's profile: a legal entity that changed regime in
          *     the year has two rows, and each invoice is counted under the one it was issued in.
          */
         YearRegime: {
@@ -12779,8 +12779,9 @@ export interface components {
         };
         /**
          * YearTotals
-         * @description The register of one azienda's year, summed. `taxable_amount` is `annual_revenue`'s
-         *     figure over the same invoices, and `social_security_surcharge` is already inside it: the rivalsa line
+         * @description The register of one legal entity's year, summed. `taxable_amount` is `annual_revenue`'s
+         *     figure over the same invoices, and `social_security_surcharge` is already inside it: the social
+         *     security surcharge line
          *     is a line of the invoice like any other (REB-352 §2).
          */
         YearTotals: {
@@ -16041,7 +16042,7 @@ export interface operations {
                 search?: string | null;
                 limit?: number;
                 cursor?: string | null;
-                /** @description created_at | updated_at | nome */
+                /** @description created_at | updated_at | name */
                 sort?: string | null;
                 dir?: "asc" | "desc";
                 customer_id?: string | null;
@@ -17013,8 +17014,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string | null;
-                da?: string | null;
-                a?: string | null;
+                from?: string | null;
+                to?: string | null;
             };
             header?: never;
             path: {
@@ -18229,7 +18230,7 @@ export interface operations {
     list_fields_api_field_definitions_get: {
         parameters: {
             query: {
-                entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "attivita" | "contract";
+                entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
                 include_archived?: boolean;
             };
             header?: never;
@@ -21576,7 +21577,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "attivita" | "contract";
+                entity_type: "customer" | "person" | "deal" | "document" | "invoice" | "time_entry" | "cost" | "task" | "contract";
             };
             cookie?: never;
         };
@@ -27301,9 +27302,9 @@ export interface operations {
                 legal_entity_id?: string | null;
                 user_id?: string | null;
                 /** @description Data minima, YYYY-MM-DD */
-                da?: string | null;
+                from?: string | null;
                 /** @description Data massima, YYYY-MM-DD */
-                a?: string | null;
+                to?: string | null;
                 billable?: boolean | null;
                 /** @description true = già su una riga di fattura; false = da fatturare */
                 invoiced?: boolean | null;
@@ -28629,8 +28630,8 @@ export interface operations {
                 /** @description Solo spese generali, cioè senza deal (§7.4) */
                 only_general?: boolean;
                 category_id?: string | null;
-                da?: string | null;
-                a?: string | null;
+                from?: string | null;
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -30431,7 +30432,7 @@ export interface operations {
                 customer_id?: string | null;
                 /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
                 legal_entity_id?: string | null;
-                /** @description Quale data colloca il ricavo di una fattura nel periodo: 'emissione' (la data del documento, predefinita) oppure 'competenza' (il periodo di competenza dichiarato sulla fattura, con la data di emissione per chi non lo dichiara). Costi e ore restano attribuiti alla propria data. */
+                /** @description Quale data colloca il ricavo di una fattura nel periodo: 'issue' (la data del documento, predefinita) oppure 'accrual' (il periodo di competenza dichiarato sulla fattura, con la data di emissione per chi non lo dichiara). Costi e ore restano attribuiti alla propria data. */
                 base?: "issue" | "accrual";
             };
             header?: never;
@@ -30679,7 +30680,7 @@ export interface operations {
                 year: number;
                 /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
                 legal_entity_id?: string | null;
-                /** @description In quale mese cade il denaro di ogni documento: 'competenza' (il periodo di competenza dichiarato sulla fattura o sulla proforma, con la data del documento per chi non lo dichiara; predefinito) oppure 'incasso' (la data di incasso per le fatture pagate, la scadenza per quelle da incassare, la data del documento, o di creazione, per bozze e proforma). La stima fiscale resta sempre sull'incassato dell'anno. */
+                /** @description In quale mese cade il denaro di ogni documento: 'accrual' (il periodo di competenza dichiarato sulla fattura o sulla proforma, con la data del documento per chi non lo dichiara; predefinito) oppure 'collection' (la data di incasso per le fatture pagate, la scadenza per quelle da incassare, la data del documento, o di creazione, per bozze e proforma). La stima fiscale resta sempre sull'incassato dell'anno. */
                 base?: "accrual" | "collection";
             };
             header?: never;
@@ -31287,9 +31288,9 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Inizio del periodo, YYYY-MM-DD */
-                da?: string | null;
+                from?: string | null;
                 /** @description Fine del periodo, YYYY-MM-DD */
-                a?: string | null;
+                to?: string | null;
                 /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
@@ -37519,8 +37520,8 @@ export interface operations {
     commercial_api_dashboard_sales_get: {
         parameters: {
             query?: {
-                da?: string | null;
-                a?: string | null;
+                from?: string | null;
+                to?: string | null;
                 /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
@@ -37641,8 +37642,8 @@ export interface operations {
     economic_api_dashboard_economic_get: {
         parameters: {
             query?: {
-                da?: string | null;
-                a?: string | null;
+                from?: string | null;
+                to?: string | null;
                 /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `legal_entity_id`. */
                 legal_entity_id?: string | null;
             };
@@ -39256,8 +39257,8 @@ export interface operations {
     engagement_report_api_rebase_engagements__match_id__report_get: {
         parameters: {
             query?: {
-                da?: string | null;
-                a?: string | null;
+                from?: string | null;
+                to?: string | null;
             };
             header?: {
                 authorization?: string | null;
@@ -43407,11 +43408,11 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Inizio della finestra, YYYY-MM-DD, inclusa */
-                da: string;
+                from: string;
                 /** @description Fine della finestra, YYYY-MM-DD, esclusa */
-                a: string;
+                to: string;
                 /** @description Data di riferimento per la finestra di irrevocabilità; default oggi */
-                come_di?: string | null;
+                as_of?: string | null;
             };
             header?: never;
             path: {
@@ -43899,9 +43900,9 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Dal giorno, incluso */
-                da?: string | null;
+                from?: string | null;
                 /** @description Al giorno, incluso */
-                a?: string | null;
+                to?: string | null;
             };
             header?: never;
             path: {
@@ -44146,9 +44147,9 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Dal giorno, YYYY-MM-DD, incluso */
-                da: string;
+                from: string;
                 /** @description Al giorno, YYYY-MM-DD, incluso */
-                a: string;
+                to: string;
             };
             header?: never;
             path: {
@@ -44270,9 +44271,9 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Dal giorno, YYYY-MM-DD, incluso */
-                da: string;
+                from: string;
                 /** @description Al giorno, YYYY-MM-DD, incluso */
-                a: string;
+                to: string;
             };
             header?: never;
             path: {
@@ -44394,9 +44395,9 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Dal giorno, YYYY-MM-DD, incluso */
-                da: string;
+                from: string;
                 /** @description Al giorno, YYYY-MM-DD, incluso */
-                a: string;
+                to: string;
             };
             header?: never;
             path: {
@@ -45983,9 +45984,9 @@ export interface operations {
                 /** @description Solo i contratti di questa azienda; omesso, tutte */
                 legal_entity_id?: string | null;
                 /** @description Dal giorno, YYYY-MM-DD, incluso */
-                da?: string | null;
+                from?: string | null;
                 /** @description Al giorno, YYYY-MM-DD, incluso */
-                a?: string | null;
+                to?: string | null;
                 status?: ("proposed" | "approved" | "worked" | "worked_without_approval" | "invoiced" | "paid" | "disputed" | "revoked" | "rejected" | "non_billable") | null;
                 limit?: number;
             };
