@@ -71,7 +71,7 @@ class Seeded(NamedTuple):
     stage_ids: dict[str, UUID]
 
 
-def _cancellato() -> datetime:
+def _cancelled() -> datetime:
     return datetime.now(UTC)
 
 
@@ -104,7 +104,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             deal(f"contattato {index}", "contacted")
         # Soft-deleted, in `lead`. Counted by neither side; counted by a side that forgot
         # `deleted_at IS NULL`.
-        removed = deal("aperto cancellato", "lead", deleted_at=_cancellato())
+        removed = deal("aperto cancellato", "lead", deleted_at=_cancelled())
         won = deal("won", "won", closed_at=today_local())
         lost = deal("lost", "lost", closed_at=today_local())
         session.flush()
@@ -125,7 +125,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         for index in range(3):
             document(f"inviata {index}", customer_id=customer.id, status="sent")
         document(
-            "inviata cancellata", customer_id=customer.id, status="sent", deleted_at=_cancellato()
+            "inviata cancellata", customer_id=customer.id, status="sent", deleted_at=_cancelled()
         )
         # Differs from the wanted set in `status` only, and the next one in `type` only:
         # each exists so that dropping one filter on one side shows up as a divergence
@@ -147,7 +147,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             "accettata cancellata",
             deal_id=open[2].id,
             status="accepted",
-            deleted_at=_cancellato(),
+            deleted_at=_cancelled(),
         )
         document("accettata deal cancellato", deal_id=removed.id, status="accepted")
         session.commit()
@@ -264,7 +264,7 @@ def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> No
 
 
 @pytest.mark.parametrize(
-    ("escluso", "perche"),
+    ("excluded", "why"),
     [
         ("accettata ok", "il deal è vinto"),
         ("accettata su cliente", "non ha un deal"),

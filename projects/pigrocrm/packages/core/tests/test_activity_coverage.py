@@ -104,7 +104,7 @@ _GATES = frozenset({"require_write", "require_admin", "require_unscoped_admin"})
 
 # 1. It looks like a write and is a read: a role check on a path that only looks, or a
 #    commit that settles a lazy refresh (a token, a cached figure).
-_LETTURE: dict[Method, str] = {
+_READS: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
     ("AutomationConfigService", "describe_automations"): "reads the rules",
@@ -128,7 +128,7 @@ _LETTURE: dict[Method, str] = {
 # 2. It writes, through a service that records. The sweep follows `self.` helpers only,
 #    and these reach the record through another class, which that class's own methods
 #    are swept for.
-_DELEGA: dict[Method, str] = {
+_DELEGATION: dict[Method, str] = {
     ("ApprovalRequestService", "prepare"): (
         "creates the days (`WorkUnitService.create` records on the contract) and the draft "
         "(`EmailDraftService.create` records on the record it is about)"
@@ -185,14 +185,14 @@ _PERSONAL: dict[Method, str] = {
 }
 
 # 4. Machinery with no member behind it, whose outcome is recorded where it matters.
-_MACCHINERIA: dict[Method, str] = {
+_MACHINERY: dict[Method, str] = {
     ("SlackOAuthService", "start"): "builds a consent URL; `complete` records",
     ("InvitationService", "record_mail"): "delivery status of a mail already recorded as sent",
     ("InvitationService", "refresh_mail_status"): "delivery status of a mail already recorded",
     ("TenantService", "provision"): "creates a space in the registry; the space has no history yet",
 }
 
-ESCLUSIONI: dict[Method, str] = {**_LETTURE, **_DELEGA, **_PERSONAL, **_MACCHINERIA}
+EXCLUSIONS: dict[Method, str] = {**_READS, **_DELEGATION, **_PERSONAL, **_MACHINERY}
 
 
 # --- the sweep ---------------------------------------------------------------------
@@ -264,13 +264,13 @@ def test_the_sweep_finds_writers_that_record_and_writers_that_do_not() -> None:
 
 @pytest.mark.parametrize(("service", "method"), UNRECORDED_WRITERS)
 def test_every_writer_records_or_is_a_named_exclusion(service: str, method: str) -> None:
-    assert (service, method) in ESCLUSIONI, (
+    assert (service, method) in EXCLUSIONS, (
         f"{service}.{method} writes and reaches no ActivityService.record. Record who did it "
         "(REB-781), or add it to ESCLUSIONI in this file with the reason it need not."
     )
 
 
-@pytest.mark.parametrize(("service", "method"), sorted(ESCLUSIONI))
+@pytest.mark.parametrize(("service", "method"), sorted(EXCLUSIONS))
 def test_every_exclusion_is_still_a_writer_that_does_not_record(service: str, method: str) -> None:
     """A stale entry is a hole with a reason attached: the method was renamed, now
     records, or never wrote at all."""
@@ -282,8 +282,8 @@ def test_every_exclusion_is_still_a_writer_that_does_not_record(service: str, me
 
 def test_no_exclusion_hides_in_two_blocks() -> None:
     """Four blocks, one reason each: a method in two is a method nobody decided about."""
-    blocks = (_LETTURE, _DELEGA, _PERSONAL, _MACCHINERIA)
-    assert sum(len(b) for b in blocks) == len(ESCLUSIONI)
+    blocks = (_READS, _DELEGATION, _PERSONAL, _MACHINERY)
+    assert sum(len(b) for b in blocks) == len(EXCLUSIONS)
 
 
 # --- the attribution ---------------------------------------------------------------

@@ -276,14 +276,14 @@ def test_the_due_date_follows_the_customer_terms(
     """REB-326: the profile's days are the default, the customer's terms win. Issued on
     22/09 to a customer at «30 giorni fine mese», 2026/21 was due 17/10 (the profile's
     25 days) and the scadenziario, the digest and the reminders all read that date."""
-    emisfera = _customer(db_session, payment_days=30, payment_end_of_month=True)
-    invoice = service.issue(_draft(service, emisfera), InvoiceIssue(), ADMIN)
+    hemisphere = _customer(db_session, payment_days=30, payment_end_of_month=True)
+    invoice = service.issue(_draft(service, hemisphere), InvoiceIssue(), ADMIN)
     assert invoice.due_date == due_date_from_terms(TODAY, 30, month_end=True)
     assert invoice.due_date != TODAY + timedelta(days=30)
 
     # Days without the switch: the profile's rule with the customer's number.
-    a_sessanta = _customer(db_session, vat_number="12345678902", payment_days=60)
-    invoice = service.issue(_draft(service, a_sessanta), InvoiceIssue(), ADMIN)
+    a_sixty = _customer(db_session, vat_number="12345678902", payment_days=60)
+    invoice = service.issue(_draft(service, a_sixty), InvoiceIssue(), ADMIN)
     assert invoice.due_date == TODAY + timedelta(days=60)
 
 
@@ -292,10 +292,10 @@ def test_a_due_date_written_on_the_draft_wins_over_the_terms(
 ) -> None:
     """A person who typed a date meant it. On a proforma it travels to the invoice born
     from it; on a draft invoice it stays on the row. Cleared, the terms decide again."""
-    emisfera = _customer(db_session, payment_days=30, payment_end_of_month=True)
+    hemisphere = _customer(db_session, payment_days=30, payment_end_of_month=True)
     proforma = service.create(
         InvoiceCreate(
-            customer_id=emisfera,
+            customer_id=hemisphere,
             type="proforma",
             lines=[InvoiceLineIn(description="Saldo", unit_price=Decimal("4400.00"))],
         ),
@@ -306,7 +306,7 @@ def test_a_due_date_written_on_the_draft_wins_over_the_terms(
     issued = service.issue(proforma.id, InvoiceIssue(), ADMIN)
     assert issued.due_date == date(2026, 11, 15)
 
-    draft = _draft(service, emisfera)
+    draft = _draft(service, hemisphere)
     service.update(draft, InvoiceUpdate(due_date=date(2026, 12, 1)), ADMIN)
     service.update(draft, InvoiceUpdate(due_date=None), ADMIN)
     issued = service.issue(draft, InvoiceIssue(), ADMIN)
@@ -323,8 +323,8 @@ def test_an_editable_document_says_when_it_would_be_due(
     """`expected_due_date`: the date «Emetti» would print if pressed today, so a wrong
     term is caught on the page before the XML leaves. An issued row has `due_date`
     and no forecast."""
-    emisfera = _customer(db_session, payment_days=30, payment_end_of_month=True)
-    draft = service.get(_draft(service, emisfera), ADMIN)
+    hemisphere = _customer(db_session, payment_days=30, payment_end_of_month=True)
+    draft = service.get(_draft(service, hemisphere), ADMIN)
     assert draft.due_date is None
     assert draft.expected_due_date == due_date_from_terms(TODAY, 30, month_end=True)
 

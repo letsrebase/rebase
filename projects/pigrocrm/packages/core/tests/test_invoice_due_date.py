@@ -12,7 +12,7 @@ from pigrocrm.core.invoices.due_date import due_date_from_terms
 
 
 @pytest.mark.parametrize(
-    ("issue", "days", "month_end", "attesa"),
+    ("issue", "days", "month_end", "expected"),
     [
         # Plain days: the profile's rule until now, unchanged.
         (date(2026, 9, 22), 25, False, date(2026, 10, 17)),
@@ -32,6 +32,6 @@ from pigrocrm.core.invoices.due_date import due_date_from_terms
     ],
 )
 def test_the_due_date_follows_the_terms(
-    issue: date, days: int, month_end: bool, pending: date
+    issue: date, days: int, month_end: bool, expected: date
 ) -> None:
-    assert due_date_from_terms(issue, days, month_end=month_end) == pending
+    assert due_date_from_terms(issue, days, month_end=month_end) == expected

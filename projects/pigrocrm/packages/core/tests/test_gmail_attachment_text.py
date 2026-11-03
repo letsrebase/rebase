@@ -294,7 +294,7 @@ def test_an_unknown_message_is_not_found(
         _service(db_session, fake).attachment_text(uuid4(), ORDER, actor)
 
 
-def test_to_readonly_actor_cannot_spend_the_titolares_share(
+def test_to_readonly_actor_cannot_spend_the_owners_share(
     db_session: Session, admin: tuple[Actor, GoogleAccount]
 ) -> None:
     """The same gate `discover_gmail_correspondents` applies. This changes nothing in the

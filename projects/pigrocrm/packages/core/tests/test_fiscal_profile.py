@@ -219,7 +219,7 @@ def test_a_foreign_profile_leaves_the_italian_fields_empty_unless_told_otherwise
     assert FiscalProfileUpsert(regime_code="RF19").default_vat_nature == "N2.2"
 
 
-def test_to_foreign_profile_refuses_the_stamp_duty_and_the_forfettarios_parameters(
+def test_to_foreign_profile_refuses_the_stamp_duty_and_the_flat_rate_parameters(
     db_session: Session,
 ) -> None:
     service = FiscalProfileService(db_session)

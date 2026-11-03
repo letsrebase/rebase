@@ -30,8 +30,8 @@ READER = Actor(id=None, type="user", role="readonly")
 
 REVENUE_CEILING = IT_FLAT_RATE_PACK.ceilings[0]
 IMMEDIATE_EXIT_CEILING = IT_FLAT_RATE_PACK.ceilings[1]
-assert REVENUE_CEILING.id == "soglia_ricavi"
-assert IMMEDIATE_EXIT_CEILING.id == "soglia_fuoriuscita_immediata"
+assert REVENUE_CEILING.id == "revenue_ceiling"
+assert IMMEDIATE_EXIT_CEILING.id == "immediate_exit_ceiling"
 
 YEAR = 2024
 
@@ -87,11 +87,11 @@ def test_headroom_reports_room_remaining_before_each_active_ceiling(db_session: 
     assert headroom.year == YEAR
     assert headroom.pack_id == IT_FLAT_RATE_PACK.id
     assert headroom.pack_version == IT_FLAT_RATE_PACK.version
-    revenue_threshold = next(s for s in headroom.thresholds if s.id == "soglia_ricavi")
+    revenue_threshold = next(s for s in headroom.thresholds if s.id == "revenue_ceiling")
     assert revenue_threshold.revenue == Decimal("60000.00")
     assert revenue_threshold.remaining == Decimal("25000.00")
     assert revenue_threshold.exceeded is False
-    immediate_exit = next(s for s in headroom.thresholds if s.id == "soglia_fuoriuscita_immediata")
+    immediate_exit = next(s for s in headroom.thresholds if s.id == "immediate_exit_ceiling")
     assert immediate_exit.remaining == Decimal("40000.00")
 
 
@@ -104,7 +104,7 @@ def test_headroom_states_how_much_of_each_ceiling_is_used(db_session: Session) -
     headroom = AnalyticsService(db_session).ceiling_headroom(YEAR, READER)
 
     by_id = {s.id: s.usage for s in headroom.thresholds}
-    assert by_id == {"soglia_ricavi": 0.7059, "soglia_fuoriuscita_immediata": 0.6}
+    assert by_id == {"revenue_ceiling": 0.7059, "immediate_exit_ceiling": 0.6}
 
 
 def test_an_ordinary_regime_legal_entity_has_no_flat_rate_ceiling(db_session: Session) -> None:
@@ -132,7 +132,7 @@ def test_headroom_marks_a_crossed_ceiling(db_session: Session) -> None:
 
     headroom = AnalyticsService(db_session).ceiling_headroom(YEAR, READER)
 
-    revenue_threshold = next(s for s in headroom.thresholds if s.id == "soglia_ricavi")
+    revenue_threshold = next(s for s in headroom.thresholds if s.id == "revenue_ceiling")
     assert revenue_threshold.exceeded is True
     assert revenue_threshold.remaining == Decimal("-35000.00")
 
@@ -167,7 +167,7 @@ def test_simulate_adds_the_deals_own_value_estimate_directly(db_session: Session
     simulation = AnalyticsService(db_session).simulate_ceiling(YEAR, query, READER)
 
     assert simulation.brief_addition == Decimal("20000.00")
-    revenue_threshold = next(s for s in simulation.thresholds if s.id == "soglia_ricavi")
+    revenue_threshold = next(s for s in simulation.thresholds if s.id == "revenue_ceiling")
     assert revenue_threshold.current_revenue == Decimal("60000.00")
     assert revenue_threshold.current_remaining == Decimal("25000.00")
     assert revenue_threshold.simulated_revenue == Decimal("80000.00")
@@ -217,7 +217,7 @@ def test_simulate_shows_a_ceiling_that_would_not_fit(db_session: Session) -> Non
 
     simulation = AnalyticsService(db_session).simulate_ceiling(YEAR, query, READER)
 
-    revenue_threshold = next(s for s in simulation.thresholds if s.id == "soglia_ricavi")
+    revenue_threshold = next(s for s in simulation.thresholds if s.id == "revenue_ceiling")
     assert revenue_threshold.simulated_revenue == Decimal("90000.00")
     assert revenue_threshold.falls_within is False
     assert revenue_threshold.alert_level_simulated == "Soglia di ricavi raggiunta"
@@ -246,7 +246,7 @@ def test_simulate_never_persists_anything(db_session: Session) -> None:
     AnalyticsService(db_session).simulate_ceiling(YEAR, query, READER)
 
     again = AnalyticsService(db_session).ceiling_headroom(YEAR, READER)
-    revenue_threshold = next(s for s in again.thresholds if s.id == "soglia_ricavi")
+    revenue_threshold = next(s for s in again.thresholds if s.id == "revenue_ceiling")
     assert revenue_threshold.revenue == Decimal("60000.00")
 
 

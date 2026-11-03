@@ -70,7 +70,9 @@ NOT_FORWARDED: dict[str, str] = {
     # grace period is asking for a product decision rather than an environment variable.
     "payment_reminders_grace_days": "quando un sollecito e' legittimo: non una scelta di deploy",
     "payment_reminders_min_interval_days": "come sopra",
-    "payment_reminders_max_reminders": "come sopra, e il tetto e' il numero di registri del template",
+    "payment_reminders_max_reminders": (
+        "come sopra, e il tetto e' il numero di registri del template"
+    ),
     # The preferred-share concentration threshold (REB-371): a practitioner's own
     # preference about their client mix, not a deployment choice, exactly the same
     # reasoning as the three `payment_reminders_*` thresholds just above -- and, like them,

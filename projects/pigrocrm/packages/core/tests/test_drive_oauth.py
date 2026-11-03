@@ -726,7 +726,7 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
     assert health.space_storage.holder.reachable is False
 
 
-def test_health_says_no_space_storage_when_only_a_collaboratores_row_names_one(
+def test_health_says_no_space_storage_when_only_a_collaborators_row_names_one(
     db_session: Session, admin_user: User
 ) -> None:
     """The behaviour `DriveRepository.storage_account` already settled on (REB-457):

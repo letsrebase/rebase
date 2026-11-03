@@ -144,16 +144,16 @@ def test_revenue_is_grouped_by_the_regime_and_the_treatment_the_invoices_carry(
     assert [(r.regime_code, r.pack_id, r.invoices, r.revenue) for r in overview.regimes] == [
         ("RF19", "it-flat-rate", 1, Decimal("1500.00"))
     ]
-    [trattamento] = overview.treatments
-    assert (trattamento.vat_rate, trattamento.vat_nature, trattamento.lines) == (
+    [treatment] = overview.treatments
+    assert (treatment.vat_rate, treatment.vat_nature, treatment.lines) == (
         Decimal("0.00"),
         "N2.2",
         2,
     )
     # The legal reference as the lines print it, character for character.
-    assert trattamento.legal_reference is not None
-    assert "L. 190/2014" in trattamento.legal_reference
-    assert trattamento.revenue == Decimal("1500.00")
+    assert treatment.legal_reference is not None
+    assert "L. 190/2014" in treatment.legal_reference
+    assert treatment.revenue == Decimal("1500.00")
 
 
 def test_an_annulled_invoice_and_another_year_stay_out_of_the_figures(

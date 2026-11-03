@@ -386,9 +386,9 @@ def test_the_signals_are_present_in_order_with_their_links(seeded: Seeded) -> No
     result = _dashboard(seeded.engine)
     assert [signal.code for signal in result.signals] == [
         "invoiced_unwon",
-        "vinto_da_fatturare",
-        "scaduto_non_incassato",
-        "concentrazione_sopra_soglia",
+        "won_to_invoice",
+        "overdue_unpaid",
+        "concentration_above_threshold",
     ]
     # Every signal has a drill-through, because a count with no way to see the rows behind
     # it is a number nobody can act on (§6.2, §7.2).
@@ -411,9 +411,9 @@ def test_no_signal_is_stored_anywhere() -> None:
     columns = {column.name for table in Base.metadata.tables.values() for column in table.columns}
     for forbidden in (
         "invoiced_unwon",
-        "vinto_da_fatturare",
-        "scaduto_non_incassato",
-        "concentrazione_sopra_soglia",
+        "won_to_invoice",
+        "overdue_unpaid",
+        "concentration_above_threshold",
         "segnale",
         "signals",
     ):
@@ -469,7 +469,7 @@ def test_the_invoiced_but_not_won_card_equals_its_drill_through(seeded: Seeded) 
 
 
 @pytest.mark.parametrize(
-    ("escluso", "perche"),
+    ("excluded", "why"),
     [
         ("fatturato vinto", "il deal è già vinto, che è lo stato che il segnale cerca"),
         ("fatturato perso", "a lost and invoiced deal is a different problem: type == 'open'"),
@@ -505,18 +505,18 @@ def test_the_won_but_to_invoice_signal_counts_deals_with_unbilled_billable_hours
 ) -> None:
     """The `to_invoice` state slice 4 §7.3 already defines, counted here rather than
     redefined. One deal although it carries two unbilled entries."""
-    assert _signal(seeded.engine, "vinto_da_fatturare") == 1
+    assert _signal(seeded.engine, "won_to_invoice") == 1
 
 
 def test_the_won_but_to_invoice_card_equals_its_drill_through(seeded: Seeded) -> None:
-    count = _signal(seeded.engine, "vinto_da_fatturare")
+    count = _signal(seeded.engine, "won_to_invoice")
     rows = _deals(seeded.engine, DealListQuery(to_invoice=True, limit=_ALL))
     assert count == len(rows)
     assert {row.name for row in rows} == {f"{_PREFIX} vinto arretrato"}
 
 
 @pytest.mark.parametrize(
-    ("escluso", "perche"),
+    ("excluded", "why"),
     [
         ("vinto gia fatturato", "le sue ore sono già su una riga di fattura"),
         ("vinto non fatturabile", "le ore non sono fatturabili"),
@@ -547,13 +547,13 @@ def test_the_overdue_signal_counts_and_sends_nothing(seeded: Seeded) -> None:
     """§6.2: it is the candidate list of slice 5 §7.1's reminders, counted. The count sends
     nothing, and nothing about a reminder is reachable from this response."""
     result = _dashboard(seeded.engine)
-    signal = next(s for s in result.signals if s.code == "scaduto_non_incassato")
+    signal = next(s for s in result.signals if s.code == "overdue_unpaid")
     assert signal.count == 1
     assert "payment_reminder" not in result.model_dump_json()
 
 
 def test_the_overdue_card_equals_its_drill_through(seeded: Seeded) -> None:
-    count = _signal(seeded.engine, "scaduto_non_incassato")
+    count = _signal(seeded.engine, "overdue_unpaid")
     rows = _invoices(seeded.engine, InvoiceListQuery(overdue=True, limit=_ALL))
     assert count == len(rows)
     assert {row.due_date for row in rows} == {date(2026, 4, 1)}
@@ -584,7 +584,7 @@ def test_the_concentration_signal_counts_customers_over_the_configured_share(
     """`Concentrato` holds 0.90 of the year's two-customer register, well past the
     default 0.30 threshold `Settings.preferred_concentration_threshold` carries;
     `Diluito`'s 0.10 does not."""
-    assert _signal(seeded.engine, "concentrazione_sopra_soglia") == 1
+    assert _signal(seeded.engine, "concentration_above_threshold") == 1
 
 
 def test_the_concentration_signal_names_the_customer_that_crosses_it(seeded: Seeded) -> None:
@@ -609,7 +609,7 @@ def test_the_concentration_signal_reflects_a_differently_configured_threshold(
             preferred_concentration_threshold=0.95,  # type: ignore[call-arg]
         )
         high = DashboardService(session, strict).get_operational_dashboard(READONLY)
-    assert _code(high, "concentrazione_sopra_soglia") == 0
+    assert _code(high, "concentration_above_threshold") == 0
 
     with session_factory(seeded.engine)() as session:
         lenient = Settings(
@@ -617,7 +617,7 @@ def test_the_concentration_signal_reflects_a_differently_configured_threshold(
             preferred_concentration_threshold=0.05,  # type: ignore[call-arg]
         )
         low = DashboardService(session, lenient).get_operational_dashboard(READONLY)
-    assert _code(low, "concentrazione_sopra_soglia") == 2
+    assert _code(low, "concentration_above_threshold") == 2
 
 
 def test_the_concentration_signal_link_is_the_economic_tab(seeded: Seeded) -> None:
@@ -625,7 +625,7 @@ def test_the_concentration_signal_link_is_the_economic_tab(seeded: Seeded) -> No
     over the threshold" endpoint, only the concentration table itself, on the tab that
     already renders it."""
     signal = next(
-        s for s in _dashboard(seeded.engine).signals if s.code == "concentrazione_sopra_soglia"
+        s for s in _dashboard(seeded.engine).signals if s.code == "concentration_above_threshold"
     )
     assert signal.link == "/app?tab=economic"
     assert signal.label

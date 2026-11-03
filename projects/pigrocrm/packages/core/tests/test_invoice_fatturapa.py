@@ -246,8 +246,8 @@ def test_a_hostile_name_round_trips_byte_for_byte() -> None:
         )
     )
     root = etree.fromstring(xml)
-    denominazioni = [element.text for element in root.iter("Denominazione")]
-    assert HOSTILE in denominazioni
+    names = [element.text for element in root.iter("Denominazione")]
+    assert HOSTILE in names
 
 
 def test_a_hostile_name_creates_no_element_the_exporter_did_not_create() -> None:
@@ -506,12 +506,12 @@ def test_a_country_code_that_is_not_a_country_code_is_refused() -> None:
     `Nazione` wants two upper-case letters -- so a typo would otherwise reach the file and
     be rejected by the SdI after a register number had been spent on it.
     """
-    for sbagliata in ("D", "de1", "1I"):
+    for wrong in ("D", "de1", "1I"):
         with pytest.raises(ValidationFailed) as caught:
             InvoicePaExporter().to_bytes(
                 _invoice(
                     [_line(1, "Consulenza", "1.000000", "100.000000", "100.00")],
-                    customer=_customer(country=sbagliata),
+                    customer=_customer(country=wrong),
                 )
             )
         assert caught.value.details["field"] == "country"
