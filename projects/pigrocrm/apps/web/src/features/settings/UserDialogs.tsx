@@ -26,7 +26,7 @@ import { ROLES } from './userRoles'
 import { useInviteUser, useUpdateUser, type UserRecord } from './queries'
 
 /**
- * The three dialogs of the Utenti panel -- invite, rename, change the aziende of a member --
+ * The three dialogs of the Utenti panel -- invite, rename, change the legal entities of a member --
  * each with its own form state. The panel mounts one only while it is open, so every
  * opening starts from the member's current values, and passes the panel's `update` mutation
  * to the two that edit a member, so a pending change on any row disables both Save buttons.
@@ -85,14 +85,14 @@ function unattributed(problem: ProblemDetail | null): string | null {
   return problem.detail
 }
 
-/** «Invita»: the address, an optional name, the role and, from the second azienda on,
- *  the aziende the invited person will see. */
+/** «Invita»: the address, an optional name, the role and, from the second legal entity on,
+ *  the legal entities the invited person will see. */
 export function InviteUserDialog({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
   const [nome, setName] = useState('')
-  const [ruolo, setRole] = useState<UserRecord['role']>('collaborator')
+  const [roleValue, setRole] = useState<UserRecord['role']>('collaborator')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  // The scope (REB-635): the checked aziende of the invite. Drawn from the second azienda
+  // The scope (REB-635): the checked legal entities of the invite. Drawn from the second legal entity
   // on, like the selector.
   const legal_entity = useLegalEntity()
   const several = legal_entity.legal_entities.length > 1
@@ -110,11 +110,11 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
       // The empty optional name is sent as null, the shape the API's own schema
       // answers `InvitationCreate.nome` with: the acceptance page asks for one when
       // the invitation carried none (spec §1), so "blank" here means "not known yet".
-      // The scope only from the second azienda on: a one-azienda space sends none.
+      // The scope only from the second legal entity on: a one-legal-entity space sends none.
       {
         email,
         nome: nome.trim() === '' ? null : nome.trim(),
-        role: ruolo,
+        role: roleValue,
         ...(several ? { legal_entities: scopeBody(inviteLegalEntities, legal_entity.legal_entities) } : {}),
       },
       {
@@ -182,7 +182,7 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="invite-ruolo">Ruolo</Label>
-            <Select value={ruolo} onValueChange={(value) => setRole(value as typeof ruolo)}>
+            <Select value={roleValue} onValueChange={(value) => setRole(value as typeof roleValue)}>
               <SelectTrigger id="invite-ruolo" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -200,7 +200,7 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
               legal_entities={legal_entity.legal_entities}
               checked={inviteLegalEntities}
               onChange={setInviteLegalEntities}
-              idPrefix="invite-azienda"
+              idPrefix="invite-legal-entity"
               error={fieldError?.field === 'legal_entities' ? fieldError.message : undefined}
             />
           )}
@@ -344,7 +344,7 @@ export function ScopeUserDialog({
             legal_entities={legal_entity.legal_entities}
             checked={scopeLegalEntities}
             onChange={setScopeLegalEntities}
-            idPrefix="scope-azienda"
+            idPrefix="scope-legal-entity"
             error={
               scopeProblem && fieldErrorFrom(scopeProblem)?.field === 'legal_entities'
                 ? fieldErrorFrom(scopeProblem)?.message

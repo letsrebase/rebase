@@ -52,8 +52,8 @@ type IdentityName = IdentityField['name']
 
 /**
  * The three regimes the settings' fiscal panel offers (REB-621), with the one VAT rate
- * each is usually opened with: the forfettario issues at zero with the server's own
- * natura and declaration, the ordinary regime at the standard rate and no natura, a
+ * each is usually opened with: the flat-rate regime issues at zero with the server's own
+ * VAT nature and declaration, the ordinary regime at the standard rate and no VAT nature, a
  * foreign company at its own country's rate. Everything else on the profile keeps
  * `FiscalProfileUpsert`'s defaults and is edited on the panel the page lands on.
  */
@@ -91,11 +91,11 @@ function emptyValues(): Values {
 
 /**
  * The fiscal half of the body. A key left out takes `FiscalProfileUpsert`'s default,
- * which is the forfettario's, so the two other regimes say explicitly what they do not
+ * which is the flat-rate regime's, so the two other regimes say explicitly what they do not
  * carry: no declaration of their own, and none of the three income parameters, which
- * are the forfettario's arithmetic and would otherwise make the estimate compute a
- * substitute tax for an SRL or a foreign company; abroad also no code and no bollo, as
- * the settings panel sends them. The natura is the person's, empty for «nothing»: the
+ * are the flat-rate regime's arithmetic and would otherwise make the estimate compute a
+ * substitute tax for an SRL or a foreign company; abroad also no code and no stamp duty, as
+ * the settings panel sends them. The VAT nature is the person's, empty for «nothing»: the
  * server requires one beside a zero rate and discards one beside a non-zero rate, and
  * names the field either way.
  */
@@ -161,8 +161,8 @@ function bodyFrom(values: Values): Record<string, unknown> {
 
 /**
  * «Nuova azienda» (REB-632): one form, one request, the row and its fiscal profile
- * together, as `POST /api/aziende` takes them (spec §3), so no azienda is ever born
- * that could not issue. On success the page lands on the new azienda's own panels,
+ * together, as `POST /api/aziende` takes them (spec §3), so no legal entity is ever born
+ * that could not issue. On success the page lands on the new legal entity's own panels,
  * where everything this form leaves at its default can be completed.
  */
 export function NewLegalEntityForm({

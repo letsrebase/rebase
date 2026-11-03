@@ -897,8 +897,8 @@ describe('EmailTab', () => {
   })
 
   /**
-   * `draft_email` never attaches anything, so an assistant that writes «in allegato
-   * l'offerta» produces a draft that promises a file it does not carry. A warning, not a
+   * `draft_email` never attaches anything, so an assistant that writes «in attachment
+   * l'offer» produces a draft that promises a file it does not carry. A warning, not a
    * refusal: the text is the person's to judge.
    */
   it('warns when the text promises an attachment that is not there', async () => {

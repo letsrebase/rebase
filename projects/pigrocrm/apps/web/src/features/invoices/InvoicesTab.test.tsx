@@ -33,8 +33,8 @@ describe('InvoicesTab', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  /** A consumed proforma's number lives on the fattura it became; the tab shows the
-   *  fattura and not both, like the list page under «Tutte» (ORB-169). */
+  /** A consumed proforma's number lives on the invoice it became; the tab shows the
+   *  invoice and not both, like the list page under «Tutte» (ORB-169). */
   it('asks the server to leave out consumed proformas', async () => {
     renderWithClient(<InvoicesTab owner={{ dealId: 'd1' }} />)
     await screen.findByText('Nessuna fattura.')

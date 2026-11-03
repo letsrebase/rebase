@@ -53,7 +53,7 @@ export function DashboardPage({
             <PeriodPicker period={{ da, a }} onChange={(next) => onSearchChange(next)} />
           )
         }
-        // The late and due-today attività (REB-874): the first thing under the title, with
+        // The late and due-today tasks (REB-874): the first thing under the title, with
         // the analysis tabs starting under it.
         aboveTabs={<DaFareBand />}
         tabs={

@@ -54,7 +54,7 @@ export function UsersPanel() {
   const revoke = useRevokeInvite()
   const update = useUpdateUser()
   // The scope column and the row action are drawn from the second azienda on, and
-  // also in a one-azienda space while somebody still carries a scope: a member whose
+  // also in a one-legal-entity space while somebody still carries a scope: a member whose
   // aziende were all deactivated sees nothing, and this is where an admin reads
   // «nessuna azienda attiva» and widens them back.
   const showScope =

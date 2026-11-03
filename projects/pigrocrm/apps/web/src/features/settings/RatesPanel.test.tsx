@@ -149,9 +149,9 @@ describe('RatesPanel', () => {
     vi.mocked(api.PUT).mockImplementation(() => ok(undefined, 204))
     renderPanel()
 
-    const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    await userEvent.clear(tariffa)
-    await userEvent.click(within(rowOf(tariffa)).getByRole('button', { name: 'Salva' }))
+    const rateValue = await screen.findByLabelText('Tariffa oraria di Ivan')
+    await userEvent.clear(rateValue)
+    await userEvent.click(within(rowOf(rateValue)).getByRole('button', { name: 'Salva' }))
 
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
     expect(api.PUT).toHaveBeenCalledWith('/api/users/{user_id}/rates', {
@@ -295,11 +295,11 @@ describe('RatesPanel', () => {
     )
     renderPanel()
 
-    const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    await userEvent.click(within(rowOf(tariffa)).getByRole('button', { name: 'Salva' }))
+    const rateValue = await screen.findByLabelText('Tariffa oraria di Ivan')
+    await userEvent.click(within(rowOf(rateValue)).getByRole('button', { name: 'Salva' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/requires one of \[admin\]/)
-    expect(tariffa).toHaveAttribute('aria-invalid', 'false')
+    expect(rateValue).toHaveAttribute('aria-invalid', 'false')
   })
 
   /**
@@ -314,8 +314,8 @@ describe('RatesPanel', () => {
     )
     renderPanel()
 
-    const tariffa = await screen.findByLabelText('Tariffa oraria di Ivan')
-    const save = within(rowOf(tariffa)).getByRole('button', { name: 'Salva' })
+    const rateValue = await screen.findByLabelText('Tariffa oraria di Ivan')
+    const save = within(rowOf(rateValue)).getByRole('button', { name: 'Salva' })
     await userEvent.click(save)
     expect(await screen.findByRole('alert')).toHaveTextContent('periodo chiuso')
 

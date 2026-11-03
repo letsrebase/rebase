@@ -279,7 +279,7 @@ export function CustomerForm({
 
         {showLegalEntityPicker ? (
           <div className="space-y-2">
-            <Label htmlFor="customer-azienda">Azienda</Label>
+            <Label htmlFor="customer-legal-entity">Azienda</Label>
             {/* Straight into `native`, not through `change`: that routes a key the
                 active schema lists as a custom field into `custom`, and a tenant may
                 well have named one `azienda_id` (CodeRabbit, PR #509). */}
@@ -292,7 +292,7 @@ export function CustomerForm({
                 }))
               }
             >
-              <SelectTrigger id="customer-azienda" className="w-full">
+              <SelectTrigger id="customer-legal-entity" className="w-full">
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>
               <SelectContent>

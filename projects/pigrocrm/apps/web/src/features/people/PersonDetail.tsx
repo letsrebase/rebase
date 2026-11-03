@@ -116,7 +116,7 @@ export function PersonDetail() {
         subtitle={person.role ?? 'Persona'}
         entityType="person"
         entityId={personId}
-        attivita={<EntityTask link={{ kind: 'person', id: personId }} />}
+        tasks={<EntityTask link={{ kind: 'person', id: personId }} />}
         emails={gmailConfigured ? <EmailTab entityType="person" entityId={personId} /> : undefined}
         actions={
           canWrite && (

@@ -98,7 +98,7 @@ function renderShell(children: React.ReactNode = <div />, legal_entity?: LegalEn
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
-  // Without `legal_entity` the shell runs on the context's default, a one-azienda space.
+  // Without `legal_entity` the shell runs on the context's default, a one-legal-entity space.
   const tree = () => (
     <QueryClientProvider client={client}>
       {legal_entity ? (
@@ -208,7 +208,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
     ])
-    // Agenti and Impostazioni come after every section, Impostazioni last.
+    // Agents and Settings come after every section, Settings last.
     const lastLink = nav.getByRole('link', { name: 'Agenti' })
     const settings = nav.getByRole('button', { name: 'Impostazioni' })
     expect(lastLink.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -484,8 +484,8 @@ describe('AppShell', () => {
   })
 
   /**
-   * The Avvisi page (REB-734) is every role's own list, so it sits outside any gate: in
-   * «Da fare», right after the calendar and right before Proposte, which stays the last
+   * The Reminders page (REB-734) is every role's own list, so it sits outside any gate: in
+   * «Da fare», right after the calendar and right before Proposals, which stays the last
    * entry of the section (REB-750) and opens `/app/proposals`.
    */
   it.each(['admin', 'collaborator', 'readonly'])('shows Avvisi to a %s, between Calendario and Proposte', (role) => {
@@ -969,7 +969,7 @@ describe('the azienda selector (REB-625)', () => {
     }
   }
 
-  it('is not drawn in a one-azienda space, which is every space until milestone 5', () => {
+  it('is not drawn in a one-legal-entity space, which is every space until milestone 5', () => {
     renderShell()
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })

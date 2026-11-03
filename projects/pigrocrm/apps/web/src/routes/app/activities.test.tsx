@@ -1,5 +1,5 @@
 /**
- * The addresses that open the Attività page keep answering after «Oggi» became its first
+ * The addresses that open the Tasks page keep answering after «Oggi» became its first
  * view (REB-873): the old `/app/tasks?view=today`, the `?open=` of a search hit, a reminder or a mail,
  * and the `?assigned=` the Oggi view sends the rows it left out with.
  */

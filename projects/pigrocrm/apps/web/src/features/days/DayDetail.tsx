@@ -84,10 +84,10 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
 
   function confirm() {
     if (pending === null || spec === undefined) return
-    const motivo = reason.trim() !== '' ? reason.trim() : spec.defaultReason
-    if (motivo === null) return
+    const reasonText = reason.trim() !== '' ? reason.trim() : spec.defaultReason
+    if (reasonText === null) return
     move.mutate(
-      { status: pending, reason: motivo },
+      { status: pending, reason: reasonText },
       {
         onSuccess: (next) => {
           toast.success(`Giornata: ${statusLabel(next.status).toLowerCase()}`)

@@ -25,9 +25,9 @@ const EMPTY = '—'
 export interface InvoiceColumnOptions {
   customer?: boolean
   /**
-   * The aziende to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
-   * only under «Tutte le aziende» from the second azienda on (`useLegalEntitiesToName`): with one
-   * azienda, or with one selected, every row is that azienda's and the name would repeat
+   * The legal entities to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
+   * only under «Tutte le aziende» from the second legal entity on (`useLegalEntitiesToName`): with one
+   * legal entity, or with one selected, every row is that legal entity's and the name would repeat
    * the sidebar on each line. The accessor stays the bare number, so sorting and the
    * export see one value; the name is drawn by the cell, muted, after a middle dot.
    */

@@ -68,7 +68,7 @@ describe('the «Azienda» column (REB-625)', () => {
     { id: 'a-2', nome: 'rebase' },
   ] as NonNullable<Parameters<typeof buildCustomerColumns>[1]>['legal_entities']
 
-  it('is absent without the option, so a one-azienda space keeps its five columns', () => {
+  it('is absent without the option, so a one-legal-entity space keeps its five columns', () => {
     const headers = buildCustomerColumns([]).map((column) => column.header)
     expect(headers).not.toContain('Azienda')
   })

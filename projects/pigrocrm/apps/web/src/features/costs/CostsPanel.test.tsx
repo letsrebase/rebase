@@ -202,7 +202,7 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
     ])
   })
 
-  it('draws nothing for a cost on a deal, nor in a one-azienda space', async () => {
+  it('draws nothing for a cost on a deal, nor in a one-legal-entity space', async () => {
     serveEmpty()
     renderPanel(DEAL, TWO)
     await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))
@@ -210,7 +210,7 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })
 
-  it('draws nothing for a general expense in a one-azienda space', async () => {
+  it('draws nothing for a general expense in a one-legal-entity space', async () => {
     serveEmpty()
     renderPanel(null)
     await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))

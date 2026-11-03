@@ -45,7 +45,7 @@ const CONSULTING = {
   ...TIMES,
 }
 /** No `code`: created by hand from this very panel, and archived later. */
-const VECCHIA = {
+const OLD = {
   id: 'cat-9',
   nome: 'Vecchia voce',
   position: 7,
@@ -119,7 +119,7 @@ describe('CostCategoriesPanel', () => {
    * is the difference between "no code" and "a code nobody rendered".
    */
   it('shows a dash for a category that has no code, and offers no control for it', async () => {
-    respond([], [VECCHIA])
+    respond([], [OLD])
     renderPanel()
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Includi archiviate' }))
 
@@ -281,7 +281,7 @@ describe('CostCategoriesPanel', () => {
    * offers "Ripristina", never "Archivia" again.
    */
   it('keeps an archived category readable and restorable behind the checkbox', async () => {
-    respond([CONSULTING], [VECCHIA])
+    respond([CONSULTING], [OLD])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
@@ -304,8 +304,8 @@ describe('CostCategoriesPanel', () => {
   })
 
   it('restores an archived category through the unarchive endpoint', async () => {
-    respond([], [VECCHIA])
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...VECCHIA, archived: false }))
+    respond([], [OLD])
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...OLD, archived: false }))
     renderPanel()
 
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Includi archiviate' }))

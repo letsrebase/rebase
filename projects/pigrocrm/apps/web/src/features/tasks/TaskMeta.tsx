@@ -3,7 +3,7 @@ import type { Task } from '@/features/calendar/queries'
 import { LINK_KIND_LABELS, linkOf, type LinkValue } from './links'
 import { useAssignees, useRecordLabel } from './queries'
 
-/** The record an attività hangs from, as a link to its own page. */
+/** The record a task hangs from, as a link to its own page. */
 export function RecordLink({ link }: { link: LinkValue }) {
   const label = useRecordLabel(link)
   const text = (
@@ -41,24 +41,24 @@ export function RecordLink({ link }: { link: LinkValue }) {
 }
 
 /**
- * The two facts about an attività that its title does not carry: who it is for and what it
+ * The two facts about a task that its title does not carry: who it is for and what it
  * is about. Nothing is drawn for a task that has neither, so the plain ones stay plain.
  * `hideLink` is for a record's own page, where the link would point at the page it is on.
  */
 export function TaskMeta({
-  attivita,
+  task,
   hideLink = false,
 }: {
-  attivita: Task
+  task: Task
   hideLink?: boolean
 }) {
   const assignees = useAssignees()
-  const name = assignees.nameOf(attivita.assigned_to)
-  const link = hideLink ? null : linkOf(attivita)
+  const name = assignees.nameOf(task.assigned_to)
+  const link = hideLink ? null : linkOf(task)
   if (name === null && link === null) return null
   return (
     <span className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-      {name !== null && <span>Per {attivita.assigned_to === assignees.me ? 'me' : name}</span>}
+      {name !== null && <span>Per {task.assigned_to === assignees.me ? 'me' : name}</span>}
       {link !== null && <RecordLink link={link} />}
     </span>
   )

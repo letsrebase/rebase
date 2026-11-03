@@ -176,7 +176,7 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('sends only what changed: the new deadline, nothing else', async () => {
-    renderDialog({ attivita: existing })
+    renderDialog({ task: existing })
 
     expect(screen.getByLabelText('Titolo')).toHaveValue('Sollecitare Rossi')
     fireEvent.change(screen.getByLabelText('Scadenza'), { target: { value: '2026-11-06' } })
@@ -197,7 +197,7 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('takes a deadline off with null, and moves the link as four columns', async () => {
-    renderDialog({ attivita: existing })
+    renderDialog({ task: existing })
 
     fireEvent.change(screen.getByLabelText('Scadenza'), { target: { value: '' } })
     await userEvent.click(screen.getByRole('button', { name: 'Scollega' }))
@@ -219,11 +219,11 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('reopens a completed one, and offers no «Riapri» on an open one', async () => {
-    const { unmount } = renderDialog({ attivita: existing })
+    const { unmount } = renderDialog({ task: existing })
     expect(screen.queryByRole('button', { name: 'Riapri' })).not.toBeInTheDocument()
     unmount()
 
-    renderDialog({ attivita: { ...existing, status: 'completed', completed_at: '2026-10-20' } })
+    renderDialog({ task: { ...existing, status: 'completed', completed_at: '2026-10-20' } })
     await userEvent.click(screen.getByRole('button', { name: 'Riapri' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
@@ -231,13 +231,13 @@ describe('AttivitaDialog on an existing attività', () => {
   })
 
   it('archives with DELETE, and an archived one offers «Ripristina» instead', async () => {
-    const { unmount } = renderDialog({ attivita: existing })
+    const { unmount } = renderDialog({ task: existing })
     await userEvent.click(screen.getByRole('button', { name: 'Archivia' }))
     await waitFor(() => expect(api.DELETE).toHaveBeenCalled())
     expect(vi.mocked(api.DELETE).mock.calls[0]?.[0]).toBe('/api/activities/{task_id}')
     unmount()
 
-    renderDialog({ attivita: existing, archived: true })
+    renderDialog({ task: existing, archived: true })
     expect(screen.queryByRole('button', { name: 'Archivia' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
@@ -248,7 +248,7 @@ describe('AttivitaDialog on an existing attività', () => {
 describe('AttivitaDialog for a reader', () => {
   it('opens to read: every field disabled and nothing that writes', () => {
     role.canWrite = false
-    renderDialog({ attivita: existing })
+    renderDialog({ task: existing })
 
     expect(screen.getByLabelText('Titolo')).toBeDisabled()
     expect(screen.getByLabelText('Scadenza')).toBeDisabled()

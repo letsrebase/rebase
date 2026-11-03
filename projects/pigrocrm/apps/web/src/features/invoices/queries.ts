@@ -44,7 +44,7 @@ export interface InvoiceFilters {
    */
   overdue?: boolean
   /**
-   * The fattura a consumed proforma was issued as. The fattura carries
+   * The invoice a consumed proforma was issued as. The invoice carries
    * `origin_proforma_id` and the proforma carries nothing, so the proforma's page asks
    * the list for the one row that points at it (ORB-134).
    */

@@ -64,7 +64,7 @@ function fullName(person: Person): string {
  * `DataTableFeatures` (`DataTable.tsx`'s own export) is the same `TFeatures`
  * every table in this product is instantiated with.
  *
- * Order -- Nome, Azienda, Ruolo, Email, Telefono -- is "the columns you
+ * Order -- Nome, Legal entity, Role, Email, Phone -- is "the columns you
  * need to call someone", not alphabetical or wire order: who they are, where they
  * work, what they do there, then how to reach them. «Azienda» sits immediately
  * after the name because it is read as part of the identity ("Mario Rossi, ACME

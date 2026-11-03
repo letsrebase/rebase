@@ -62,7 +62,7 @@ export function CellDays({ days }: { days: readonly CalendarWorkUnit[] }) {
  * not the date has a day: a date can hold half a day and a person may want to see it
  * before adding to it, and the form itself says when the date is taken.
  */
-export function PanelDays({ day: giorno, days }: { day: string; days: readonly CalendarWorkUnit[] }) {
+export function PanelDays({ day: calendarDay, days }: { day: string; days: readonly CalendarWorkUnit[] }) {
   const canWrite = useCanWrite()
   return (
     <section aria-labelledby="giornate-del-giorno" className="space-y-2">
@@ -94,7 +94,7 @@ export function PanelDays({ day: giorno, days }: { day: string; days: readonly C
       )}
       {canWrite ? (
         <Button asChild variant="outline" size="sm">
-          <Link to="/app/days/new" search={{ data: giorno }}>
+          <Link to="/app/days/new" search={{ data: calendarDay }}>
             <CalendarPlus className="mr-2 size-4" aria-hidden />
             Registra una giornata
           </Link>

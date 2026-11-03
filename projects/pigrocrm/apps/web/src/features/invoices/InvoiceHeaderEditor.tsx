@@ -20,13 +20,13 @@ interface Errors {
  * the accrual period (ORB-61). The detail page renders this in place of the read-only
  * rows while the document can change, so a date is either stated or asked, never both.
  *
- * A draft fattura has no date to edit here: `issue_date` is assigned at emission
- * (`InvoiceService.issue`) and `InvoiceUpdate` refuses it on a fattura, so the input
+ * A draft invoice has no date to edit here: `issue_date` is assigned at emission
+ * (`InvoiceService.issue`) and `InvoiceUpdate` refuses it on a invoice, so the input
  * exists only on a proforma. The period is asked on both.
  *
  * Saved through `PATCH /api/invoices/{id}`, the call `memo` and `note_interne`
  * already travel on. The freeze is the server's, not a prop: a consumed proforma or an
- * issued fattura answers 409, and the banner shows it as it comes.
+ * issued invoice answers 409, and the banner shows it as it comes.
  */
 export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
   const update = useUpdateInvoice(invoice.id)

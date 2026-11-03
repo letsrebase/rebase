@@ -97,8 +97,8 @@ function DealPicker({
 const NO_CONTRACT = '__nessuno__'
 
 /**
- * The active contracts of the azienda that cap the customer's share, to read the same
- * addition against. Optional beside the ceilings; the only thing to ask when the azienda
+ * The active contracts of the legal entity that cap the customer's share, to read the same
+ * addition against. Optional beside the ceilings; the only thing to ask when the legal entity
  * has none (`required`).
  */
 function ContractPicker({
@@ -166,7 +166,7 @@ const SOURCES = [
  * keyboard produces into the decimal the API reads and prints what comes back.
  */
 export function Simulator({
-  year: anno,
+  year: defaultYear,
   legalEntityId,
   hasCeilings,
   contracts,
@@ -184,10 +184,10 @@ export function Simulator({
   const trackDeal = useCallback((current: Deal | null) => {
     latestDeal.current = current
   }, [])
-  const [valore, setValue] = useState('')
+  const [amountText, setValue] = useState('')
   const [hours, setHours] = useState('')
   const [rate, setRate] = useState('')
-  const [data, setData] = useState(`${anno}-12-31`)
+  const [data, setData] = useState(`${defaultYear}-12-31`)
   const uid = useId()
   const [asked, setAsked] = useState<{
     year: number
@@ -197,7 +197,7 @@ export function Simulator({
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const simulation = useCeilingSimulation(
-    asked?.year ?? anno,
+    asked?.year ?? defaultYear,
     asked?.input ?? null,
     legalEntityId,
     asked?.attempt,
@@ -214,7 +214,7 @@ export function Simulator({
     event.preventDefault()
     const request = simulatorRequest({
       source,
-      value: valore,
+      value: amountText,
       hours,
       rate,
       deal: dealId === '' ? null : latestDeal.current,
@@ -287,7 +287,7 @@ export function Simulator({
               id={`${uid}-valore`}
               inputMode="decimal"
               placeholder="12.000,00"
-              value={valore}
+              value={amountText}
               onChange={(event) => edit(setValue)(event.target.value)}
               aria-invalid={errors.value ? true : undefined}
             />

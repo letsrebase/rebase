@@ -9,16 +9,16 @@ import { useAuth } from '@/lib/auth'
 export const BAND_ROWS = 5
 
 /**
- * The Home's «Da fare» band (REB-874): the attività that are late and the ones due today,
+ * The Home's «Da fare» band (REB-874): the tasks that are late and the ones due today,
  * above the analysis tabs, so the first screen of the product says what asks for a person
  * before it says how the books are doing.
  *
- * The cut is «mine and nobody's», the one the sidebar's overdue count and the Attività page
+ * The cut is «mine and nobody's», the one the sidebar's overdue count and the Tasks page
  * open on since REB-871: `assigned_to` is the signed-in person plus `include_unassigned`,
- * which is how an attività an agent created without naming anybody still shows up. The
+ * which is how a task an agent created without naming anybody still shows up. The
  * counts in the heading are the server's real totals; the rows are the first
  * `BAND_ROWS` of «in ritardo» then «oggi», each an `TaskItem`, so «Fatto», «Modifica»
- * and the link to the record work here exactly as on the Attività page. Every attività
+ * and the link to the record work here exactly as on the Tasks page. Every tasks
  * write invalidates the `queryKeys.activitiesAll` prefix this reads under, so «Fatto» takes the row
  * out, and the sidebar count with it, in one refetch.
  *
@@ -58,8 +58,8 @@ export function DaFareBand() {
   }
 
   const rows = [
-    ...late.items.map((attivita) => ({ attivita, isLate: true })),
-    ...today.items.map((attivita) => ({ attivita, isLate: false })),
+    ...late.items.map((task) => ({ task, isLate: true })),
+    ...today.items.map((task) => ({ task, isLate: false })),
   ].slice(0, BAND_ROWS)
   const rest = total - rows.length
 
@@ -73,10 +73,10 @@ export function DaFareBand() {
           {today.total > 0 && <span>{today.total} oggi</span>}
         </h2>
         <ul className="space-y-3 text-sm">
-          {rows.map(({ attivita, isLate }) => (
+          {rows.map(({ task, isLate }) => (
             // The late ones say their day, which is what makes them late; today's do not
             // repeat it.
-            <TaskItem key={attivita.id} attivita={attivita} showDueDate={isLate} />
+            <TaskItem key={task.id} task={task} showDueDate={isLate} />
           ))}
         </ul>
         <div className="flex items-center justify-between gap-3 text-sm">

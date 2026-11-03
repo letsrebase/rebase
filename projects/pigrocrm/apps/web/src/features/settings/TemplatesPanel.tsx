@@ -105,7 +105,7 @@ export function TemplatesPanel() {
   const [editing, setEditing] = useState<Template | null>(null)
   const [nome, setName] = useState('')
   const [type, setType] = useState<string>('offer')
-  const [corpo, setBody] = useState('')
+  const [bodyText, setBody] = useState('')
   const [variables, setVariables] = useState<VariableDraft[]>([])
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [previewText, setPreviewText] = useState<string | null>(null)
@@ -140,7 +140,7 @@ export function TemplatesPanel() {
     return {
       nome,
       type,
-      body_markdown: corpo,
+      body_markdown: bodyText,
       declared_variables: variables.map((variable) => ({
         nome: variable.nome,
         label: variable.label,
@@ -325,7 +325,7 @@ export function TemplatesPanel() {
               <Label htmlFor="template-corpo">Corpo Markdown</Label>
               <Textarea
                 id="template-corpo"
-                value={corpo}
+                value={bodyText}
                 rows={14}
                 className="font-mono text-sm"
                 aria-invalid={fieldError?.field === 'body_markdown' ? true : undefined}

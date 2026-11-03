@@ -9,9 +9,9 @@ import { ContractForm } from './ContractForm'
 import { useCustomerContracts } from './queries'
 
 /**
- * The Contratti tab on a customer's page (REB-741): the customer's contracts, newest
+ * The Contracts tab on a customer's page (REB-741): the customer's contracts, newest
  * first, each opening its own page, and «Nuovo contratto» for the customer the page is
- * about, which is never asked for again. A contract is created as a bozza and the page
+ * about, which is never asked for again. A contract is created as a draft and the page
  * it opens is where it is edited and activated.
  */
 export function ContractsTab({ customerId }: { customerId: string }) {

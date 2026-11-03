@@ -105,7 +105,7 @@ describe('DealForm', () => {
   /**
    * The defect this guards, identical in shape to `CustomerForm`/`PersonForm`'s
    * own (reproduced live there first): archive a field definition while a
-   * record still carries a value for it, open Modifica, press Salva with
+   * record still carries a value for it, open Edit, press Save with
    * nothing else changed. A flat form state would re-derive "is this key
    * custom?" from the *active* schema, reclassify the value as native, and
    * 422 on `DealUpdate`'s `extra="forbid"`.

@@ -38,9 +38,9 @@ import { ensureSpaceHasWork, loginAsAdmin, seedDealWithRate } from './helpers'
  * non-breaking space, so everything that is not a digit, a dot or a comma goes first.
  */
 function centesimi(text: string): number {
-  const pulito = text.replace(/[^\d.,-]/g, '')
-  const negativo = pulito.startsWith('-')
-  const [whole = '0', decimali = ''] = pulito.replace('-', '').replace(/\./g, '').split(',')
+  const cleaned = text.replace(/[^\d.,-]/g, '')
+  const negativo = cleaned.startsWith('-')
+  const [whole = '0', decimali = ''] = cleaned.replace('-', '').replace(/\./g, '').split(',')
   const value = Number(whole) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
   return negativo ? -value : value
 }
@@ -133,7 +133,7 @@ test.describe('economics', () => {
     // therefore inside the year the annual estimate is read for.
     const today = new Date()
     const days = daysOfMonth(today, 3)
-    const monthByEsteso = `${Months[today.getMonth()]} ${today.getFullYear()}`
+    const monthByLongName = `${Months[today.getMonth()]} ${today.getFullYear()}`
 
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
@@ -259,7 +259,7 @@ test.describe('economics', () => {
     // names the month it covers, which is what makes it legible beside a timesheet.
     const lineInvoice = page.getByRole('row').filter({ hasText: 'Attività' })
     await expect(lineInvoice).toHaveCount(1)
-    await expect(lineInvoice).toContainText(monthByEsteso)
+    await expect(lineInvoice).toContainText(monthByLongName)
     await expect(lineInvoice).toContainText('24.00')
     await expect(lineInvoice).toContainText('2.400,00 €')
 

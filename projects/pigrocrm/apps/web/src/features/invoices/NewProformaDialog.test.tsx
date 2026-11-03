@@ -83,7 +83,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-/** The aziende the dialog runs under: none means the context's default, a one-azienda
+/** The legal entities the dialog runs under: none means the context's default, a one-legal-entity
  *  space; a test about «Emessa da» sets two before opening. */
 let legal_entities: LegalEntityValue | undefined
 
@@ -517,7 +517,7 @@ describe('«Emessa da» (REB-626)', () => {
     expect(await screen.findByText('rebase')).toBeInTheDocument()
   })
 
-  it('says nothing in a one-azienda space', async () => {
+  it('says nothing in a one-legal-entity space', async () => {
     await open()
     await chooseCustomer('ACME Srl')
     expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()

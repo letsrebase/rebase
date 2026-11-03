@@ -86,12 +86,12 @@ export function FiscalPanel({
   legalEntityId?: string
   /** Shown beside the year in the card's heading: the azienda's name in «tutte». */
   title?: string
-  /** In «tutte» the tab draws one card per azienda whose profile carries the
+  /** In «tutte» the tab draws one card per legal entity whose profile carries the
    *  coefficients and nothing for the others (spec §1.9): a missing profile or a
    *  regime with no coefficient renders nothing instead of a prompt to configure it,
-   *  which is a question for Impostazioni and not for a page that lists every azienda.
+   *  which is a question for Settings and not for a page that lists every legal entity.
    *  The same for the refusal a non-admin gets: the cards above already say the
-   *  estimate is an administrator's, and one banner per azienda would say it again. */
+   *  estimate is an administrator's, and one banner per legal entity would say it again. */
   quiet?: boolean
 }) {
   const allowed = useCan('get_fiscal_estimate')

@@ -30,7 +30,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-// The tabs link out (the fiscal card points at Impostazioni → Aziende when a parameter is
+// The tabs link out (the fiscal card points at Settings → Legal entities when a parameter is
 // missing), and a `<Link>` outside a router throws. What those destinations are is asserted
 // in each tab's own file; here the only question is which tab got mounted.
 vi.mock('@tanstack/react-router', () => ({
@@ -253,8 +253,7 @@ describe('DashboardPage', () => {
 describe('DashboardPage, the page intestazione', () => {
   /**
    * Since the 2026-09-08 revision the dashboard owns its own header rather than being
-   * given one by the route: the tabs are part of the intestazione (§4, «Sotto, quando
-   * servono, le tab»), and the period picker is this screen's one header control. A
+   * given one by the route: the tabs are part of the intestazione (§4: the tabs sit under it, when there are any), and the period picker is this screen's one header control. A
    * route that kept drawing its own `PageHeader` above this one would put two `<h1>`s
    * on the home page.
    */

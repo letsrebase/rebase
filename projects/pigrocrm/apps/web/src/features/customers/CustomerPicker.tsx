@@ -25,8 +25,8 @@ export type PickedCustomer = Pick<Customer, 'id' | 'legal_name'>
  * that only stores the id -- a person's stored customer, say -- shows the name on open.
  * A customer picked here is named from the pick; a caller that already has the name
  * passes it as `selectedName`. Either way no read is made.
- * `legalEntityId` limits the matches to one azienda's customers; without it the sidebar's
- * azienda applies, as on every list of customers.
+ * `legalEntityId` limits the matches to one legal entity's customers; without it the sidebar's
+ * legal entity applies, as on every list of customers.
  */
 export function CustomerPicker({
   id,

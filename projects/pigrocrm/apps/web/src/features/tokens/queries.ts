@@ -66,7 +66,7 @@ export function useTokenOptions() {
     queryFn: () => unwrap(api.GET('/api/tokens/options')),
     enabled: Boolean(userId),
     // Read again on every mount: an administrator who has just opened the switch in
-    // Impostazioni → Spazio must not meet «chiuso per questo spazio» for the next 30 s.
+    // Settings → Spazio must not meet «chiuso per questo spazio» for the next 30 s.
     staleTime: 0,
   })
 }

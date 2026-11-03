@@ -29,12 +29,12 @@ export const HOME = { to: '/app', label: 'Home', icon: LayoutDashboard, exact: t
  * where the caption becomes a separator.
  *
  * «Da fare» is what asks for a person's attention, in the order they reach for it: the
- * attività (late ones counted beside it), the calendar that draws the dated ones by day,
+ * tasks (late ones counted beside it), the calendar that draws the dated ones by day,
  * the reminders still unread (REB-734) and the proposals an agent left for a decision
  * (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
  * register, the hours the next invoice is built from, the contract days (REB-745). None of
  * it is admin-gated: every write behind these pages is gated at the service, where the
- * refusal belongs. The Solleciti page left the menu on 2026-09-09 at Ivan's request; its
+ * refusal belongs. The Payment reminders page left the menu on 2026-09-09 at Ivan's request; its
  * API and MCP tools remain.
  */
 export const SECTIONS = [
@@ -110,9 +110,9 @@ export const SETTINGS_PATHS = {
  * per section of one page would be a rail of settings and nothing else.
  *
  * Shown to every role (R2): each role sees only the groups holding a section it may open
- * (`canSeeSettingsTab`), so a member has «Personale» alone and a collaboratore adds
+ * (`canSeeSettingsTab`), so a member has «Personale» alone and a collaborator adds
  * «Collegamenti» (their own Drive, REB-457). The weekly digest's opt-out link lands on
- * Profilo for whoever got the mail (spec 2026-09-16 §3.6).
+ * Profile for whoever got the mail (spec 2026-09-16 §3.6).
  */
 export const SETTINGS = {
   label: 'Impostazioni',

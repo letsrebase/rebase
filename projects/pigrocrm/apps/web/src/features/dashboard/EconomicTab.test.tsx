@@ -79,7 +79,7 @@ const NO_CEILINGS = {
  *  rendering something nobody asserted on (ORB-139: the two `pila_*` heights). The
  *  heights are illustrative, not sums: the chart prints them, it never checks them. */
 function month(
-  mese: number,
+  yearMonth: number,
   paid = '0.00',
   unpaid = '0.00',
   drafts = '0.00',
@@ -87,7 +87,7 @@ function month(
 ): CashMonth {
   return {
     year: 2026,
-    month: mese,
+    month: yearMonth,
     paid,
     unpaid,
     drafts,
@@ -201,8 +201,8 @@ describe('EconomicTab', () => {
   })
 
   it('offers the two readings as one switch, marks the current one and hands the other back', async () => {
-    // ORB-133, Ivan: «un interruttore che dia modo di passare da competenza / incasso è
-    // utile, default a competenza». The switch is a radio group so the reading is announced
+    // ORB-133, Ivan: a switch between the accrual and the payment reading,
+    // defaulting to accrual. The switch is a radio group so the reading is announced
     // as a choice, not as two unrelated buttons; the change goes back to the URL through
     // the callback, never into local state.
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
@@ -380,10 +380,10 @@ describe('EconomicTab', () => {
     // explains. This does not assert adjacency -- `EconomicTab.tsx` puts «Concentrazione
     // clienti» between the last figure and this card -- only that it is not pushed above
     // them, which is the one thing document order can prove.
-    const grafico = screen.getByRole('figure', { name: 'Andamento economico 2026' })
+    const chart = screen.getByRole('figure', { name: 'Andamento economico 2026' })
     const cards = screen.getByRole('group', { name: 'Ricavi incassati' })
     const card = screen.getByText('Stima fiscale 2026')
-    expect(grafico.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(chart.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(cards.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const last = screen.getByRole('group', { name: 'Totale netto ricavi con proiezione' })
     expect(last.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -659,7 +659,7 @@ describe('EconomicTab, with several aziende', () => {
     expect(await screen.findByRole('heading', { name: 'Stima fiscale 2026' })).toBeInTheDocument()
     expect(queriesSentTo('/api/analytics/overview')[0]).toMatchObject({ legal_entity_id: 'a-1' })
     expect(queriesSentTo('/api/analytics/fiscal')).toEqual([{ year: 2026, legal_entity_id: 'a-1' }])
-    // One azienda on screen: no per-azienda headings anywhere.
+    // One legal entity on screen: no per-legal-entity headings anywhere.
     expect(screen.queryByRole('heading', { name: 'humancraft' })).not.toBeInTheDocument()
   })
 })

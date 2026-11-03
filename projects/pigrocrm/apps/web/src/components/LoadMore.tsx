@@ -4,8 +4,7 @@ import { Button } from '@rebase/ui/button'
 /**
  * The affordance under a list that has more pages than it shows: a button that reads one
  * page further, and a sentence saying that the list is not complete rather than leaving
- * the user to notice. `message` is the caller's whole sentence ("Mostrati 50 clienti, ce
- * ne sono altri.") and so is the button's `label` ("Carica altri"), because the noun's
+ * the user to notice. `message` is the caller's whole sentence (shown as «Mostrati 50 clienti, ce ne sono altri.») and so is the button's `label` («Carica altri»), because the noun's
  * gender is the caller's to agree.
  *
  * `role="status"` on the sentence, so a screen reader announces the appended count after a

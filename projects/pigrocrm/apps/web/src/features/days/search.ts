@@ -34,10 +34,10 @@ export function validateNewDaySearch(search: Record<string, unknown>): NewDaySea
 }
 
 /** The first and last day of `AAAA-MM`, as the API's `da` and `a`. */
-export function monthWindow(mese: string): { da: string; a: string } {
-  const [year = 0, month = 1] = mese.split('-').map(Number)
+export function monthWindow(yearMonth: string): { da: string; a: string } {
+  const [year = 0, month = 1] = yearMonth.split('-').map(Number)
   const last = new Date(year, month, 0).getDate()
-  return { da: `${mese}-01`, a: `${mese}-${String(last).padStart(2, '0')}` }
+  return { da: `${yearMonth}-01`, a: `${yearMonth}-${String(last).padStart(2, '0')}` }
 }
 
 /** The month to open on when the URL names none and no contract narrows the list. */

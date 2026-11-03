@@ -59,8 +59,8 @@ function AssigneeCell({ id }: { id: string | null }) {
   return <span>{id === assignees.me ? 'Io' : name}</span>
 }
 
-function LinkCell({ attivita }: { attivita: Task }) {
-  const link = linkOf(attivita)
+function LinkCell({ task }: { task: Task }) {
+  const link = linkOf(task)
   if (link === null) return <span className="text-muted-foreground">—</span>
   return (
     // The link goes to the record; the click must not also open the row's dialog.
@@ -94,7 +94,7 @@ function LinkFilter({
 }
 
 /**
- * The «Tutte» view of the Attività page: every attività of the space as a table, with the
+ * The «Tutte» view of the Tasks page: every task of the space as a table, with the
  * filters the API has. It opens on what a person opens it for, the open ones assigned to
  * them, and every filter is one press from «all»: the default is a starting point and never
  * a hidden clause (the chips and the select say what is applied).
@@ -114,7 +114,7 @@ export function AllView({
 }: {
   tabs: ReactNode
   notice?: ReactNode
-  /** Whose attività the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
+  /** Whose tasks the view shows: `ME`, `EVERYONE` or a user id. Held by the page, so
    *  the choice survives a switch between its two views. */
   assignee: string
   onAssigneeChange: (next: string) => void
@@ -185,7 +185,7 @@ export function AllView({
       {
         id: 'link',
         header: 'Collegata a',
-        cell: ({ row }) => <LinkCell attivita={row.original} />,
+        cell: ({ row }) => <LinkCell task={row.original} />,
       },
       {
         id: 'actions',
@@ -321,7 +321,7 @@ export function AllView({
         <TaskDialog
           open
           onOpenChange={(open) => !open && setEditing(null)}
-          attivita={editing}
+          task={editing}
           archived={archived}
         />
       )}

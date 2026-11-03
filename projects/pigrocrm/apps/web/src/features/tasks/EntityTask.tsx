@@ -10,13 +10,13 @@ import { LINK_COLUMN, type LinkValue } from './links'
 import { useTaskList } from './queries'
 
 /**
- * The attività of one record: the open ones first, then the closed ones, each with the
+ * The tasks of one record: the open ones first, then the closed ones, each with the
  * actions of any other list, and a button that opens the creation dialog already linked
  * to this record.
  *
  * Not the record's timeline. The timeline is the history of what happened to it; this is
  * what somebody still has to do about it, and the page the two sit on says so in both
- * names. Only the attività linked to this record itself are listed: a deal's tasks do not
+ * names. Only the tasks linked to this record itself are listed: a deal's tasks do not
  * appear on its customer's page, since the link is one record by design and a roll-up
  * would answer a different question than «what is attached here».
  *
@@ -37,9 +37,9 @@ export function EntityTask({ link }: { link: LinkValue }) {
   const items = [...open, ...closed]
 
   return (
-    <section aria-labelledby="attivita-del-record" className="space-y-4">
+    <section aria-labelledby="record-tasks" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 id="attivita-del-record" className="font-semibold">
+        <h2 id="record-tasks" className="font-semibold">
           Attività
         </h2>
         {canWrite && (
@@ -60,7 +60,7 @@ export function EntityTask({ link }: { link: LinkValue }) {
         <>
           <ul className="space-y-3 text-sm">
             {open.map((item) => (
-              <TaskItem key={item.id} attivita={item} showDueDate hideLink />
+              <TaskItem key={item.id} task={item} showDueDate hideLink />
             ))}
           </ul>
           {closed.length > 0 && (
@@ -68,7 +68,7 @@ export function EntityTask({ link }: { link: LinkValue }) {
               <h3 className="text-sm font-medium text-muted-foreground">Chiuse</h3>
               <ul className="space-y-3 text-sm">
                 {closed.map((item) => (
-                  <TaskItem key={item.id} attivita={item} showDueDate hideLink />
+                  <TaskItem key={item.id} task={item} showDueDate hideLink />
                 ))}
               </ul>
             </div>

@@ -265,14 +265,14 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
           <div className="flex items-center gap-2">
             <Checkbox
               id="contract-pagamento-proprio"
-              checked={values.payment_proprio}
+              checked={values.payment_custom}
               onCheckedChange={(checked) => set('payment_proprio', checked === true)}
             />
             <Label htmlFor="contract-pagamento-proprio" className="font-normal">
               Termini di pagamento propri del contratto
             </Label>
           </div>
-          {values.payment_proprio ? (
+          {values.payment_custom ? (
             <div className="grid grid-cols-2 items-end gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contract-giorni-pagamento">Giorni di pagamento</Label>
@@ -414,7 +414,7 @@ export function ContractForm({ open, onOpenChange, customerId, contract, onSaved
             <div className="flex items-center gap-2">
               <Checkbox
                 id="contract-preautorizzazione"
-                checked={values.expenses_preautorizzazione}
+                checked={values.expenses_preauthorization}
                 onCheckedChange={(checked) => set('expenses_preautorizzazione', checked === true)}
               />
               <Label htmlFor="contract-preautorizzazione" className="font-normal">

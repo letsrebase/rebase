@@ -55,7 +55,7 @@ export function usePeoplePages(params: PeopleListParams = {}) {
 
 export function usePerson(personId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
-    // `enabled` for a caller that only sometimes needs the row (the attività dialog
+    // `enabled` for a caller that only sometimes needs the row (the tasks dialog
     // names the person a task hangs on); an empty id must never produce a request.
     enabled: (options.enabled ?? true) && personId !== '',
     queryKey: queryKeys.person(personId),

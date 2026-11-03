@@ -80,7 +80,7 @@ function respond(routes: Record<string, () => unknown>) {
 const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, active: true } as LegalEntityRecord
 const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, active: true } as LegalEntityRecord
 
-/** The provider's value for a two-azienda space, the shape `AppShell` reads too. */
+/** The provider's value for a two-legal-entity space, the shape `AppShell` reads too. */
 function twoLegalEntities(): LegalEntityValue {
   const legal_entities = [HUMANCRAFT, REBASE]
   return {
@@ -546,7 +546,7 @@ describe('UsersPanel', () => {
       expect(screen.getByRole('row', { name: /Luca/ })).toHaveTextContent('humancraft, rebase')
     })
 
-    it('draws no column and sends no scope in a one-azienda space where nobody is scoped', async () => {
+    it('draws no column and sends no scope in a one-legal-entity space where nobody is scoped', async () => {
       respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
       vi.mocked(api.POST).mockReturnValueOnce(Promise.resolve(ok(PENDING_INVITE, 201)))
       renderPanel()
@@ -567,7 +567,7 @@ describe('UsersPanel', () => {
       )
     })
 
-    it('still shows a stranded scope in a one-azienda space, so an admin can widen it', async () => {
+    it('still shows a stranded scope in a one-legal-entity space, so an admin can widen it', async () => {
       // The second azienda was deactivated after Bea was scoped to it: the space is back
       // to one azienda, the selector is gone, and Bea sees nothing until this row says so.
       respond({ ...lists, '/api/users': () => ok([SCOPED_USER]) })

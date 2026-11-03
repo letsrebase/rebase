@@ -2,16 +2,16 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { login, loginAsAdmin } from './helpers'
 
 /**
- * A member scoped to one azienda sees that azienda and nothing else (REB-635, spec
+ * A member scoped to one legal entity sees that legal entity and nothing else (REB-635, spec
  * 2026-10-03 §1.11, §4, §5). The stack runs the API as the application role
  * (`scripts/e2e-env.sh`), so what B does not see here is what Postgres refuses to show,
  * not what a `WHERE` left out.
  *
- * A, the space's admin, opens a second azienda and one customer under each; B is created
+ * A, the space's admin, opens a second legal entity and one customer under each; B is created
  * and then scoped from the Team panel, through the UI this card adds. B signs in on a
  * second browser context, so A's session stays alive for the clean-up at the end: the
- * second azienda is deactivated again, since another spec's «Analisi › Fiscale» expects
- * one active azienda and the files of this suite share the stack.
+ * second legal entity is deactivated again, since another spec's «Analisi › Fiscale» expects
+ * one active legal entity and the files of this suite share the stack.
  */
 
 const STAMP = Date.now()

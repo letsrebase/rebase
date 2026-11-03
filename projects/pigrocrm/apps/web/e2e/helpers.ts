@@ -323,8 +323,8 @@ export async function seedDealWithRate(
   request: APIRequestContext,
   {
     nome,
-    rate: tariffa,
-    customer: cliente,
+    rate: rateValue,
+    customer: customerOverrides,
   }: { nome: string; rate: string; customer?: Record<string, string> },
 ): Promise<{ dealId: string; customerId: string }> {
   const customerResponse = await request.post('/api/customers', {
@@ -335,7 +335,7 @@ export async function seedDealWithRate(
     // recipient with no address, no P.IVA or no `sdi_code`. A second seeding helper
     // for that one difference would be two fixtures to keep in step; an override on the
     // one that exists is the same fixture with more of the record filled in.
-    data: { legal_name: `${nome} SRL`, ...cliente },
+    data: { legal_name: `${nome} SRL`, ...customerOverrides },
   })
   expect(customerResponse.status(), await customerResponse.text()).toBe(201)
   const customer = (await customerResponse.json()) as { id: string }
@@ -351,7 +351,7 @@ export async function seedDealWithRate(
   // the Tariffe screen itself calls, so seeding through it means the fixture and the
   // screen under test are writing the same column the same way.
   const rate = await request.put(`/api/deals/${deal.id}/rate`, {
-    data: { hourly_rate: tariffa },
+    data: { hourly_rate: rateValue },
   })
   expect(rate.status(), await rate.text()).toBe(204)
 

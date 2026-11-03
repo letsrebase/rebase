@@ -30,7 +30,7 @@ describe('toFormValues', () => {
     created_at: '2026-01-01',
     nome: 'Acme',
     value: '10.00',
-    custom_fields: { industry: 'PMI', vecchio: 'x' },
+    custom_fields: { industry: 'PMI', legacy: 'x' },
   }
 
   it('seeds exactly the listed native keys, never the rest of the row', () => {
@@ -44,7 +44,7 @@ describe('toFormValues', () => {
   it('copies custom_fields whole into its own namespace, detached from the row', () => {
     const result = toFormValues(entity, ['nome'])
 
-    expect(result.custom).toEqual({ industry: 'PMI', vecchio: 'x' })
+    expect(result.custom).toEqual({ industry: 'PMI', legacy: 'x' })
     result.custom.industry = 'changed'
     expect(entity.custom_fields.industry).toBe('PMI')
   })

@@ -142,7 +142,7 @@ describe('DaFareBand', () => {
     expect(titles[0]).toContain('Sollecitare Rossi')
     expect(titles[1]).toContain('Inviare il preventivo')
     expect(titles[2]).toContain('Telefonare a Bianchi')
-    // The next seven days and the undated are the Attività page's, not the Home's.
+    // The next seven days and the undated are the Tasks page's, not the Home's.
     expect(screen.queryByText('Preventivo Acme')).not.toBeInTheDocument()
     expect(screen.queryByText('Chiedere il codice SDI')).not.toBeInTheDocument()
   })

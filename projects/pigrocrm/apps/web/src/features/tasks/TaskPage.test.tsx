@@ -56,7 +56,7 @@ const group = (items: unknown[]) => ({ total: items.length, items })
 
 const FOUND = row({ id: 'found', title: 'Da cercare', status: 'completed', assigned_to: null })
 
-/** The server for both views and for the one attività `?open=` names. */
+/** The server for both views and for the one task `?open=` names. */
 function serve() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/activities/today') {

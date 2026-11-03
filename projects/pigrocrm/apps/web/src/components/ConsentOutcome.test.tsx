@@ -18,8 +18,8 @@ afterEach(() => {
 const SESSION_GMAIL = 'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.'
 const SESSION_DRIVE = 'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.'
 
-function outcome(provider: ConsentProvider, esito: string) {
-  return render(<ConsentOutcome {...consentOutcome(provider, esito)} />)
+function outcome(provider: ConsentProvider, code: string) {
+  return render(<ConsentOutcome {...consentOutcome(provider, code)} />)
 }
 
 describe.each([
@@ -33,9 +33,9 @@ describe.each([
   })
 
   it('offers «Riprova» under no other outcome', () => {
-    for (const esito of ['connected', 'denied', 'error']) {
-      expect(consentOutcome(provider, esito).retry).toBeNull()
-      const { unmount } = outcome(provider, esito)
+    for (const code of ['connected', 'denied', 'error']) {
+      expect(consentOutcome(provider, code).retry).toBeNull()
+      const { unmount } = outcome(provider, code)
       expect(screen.getByRole('status')).toBeInTheDocument()
       expect(screen.queryByRole('link')).toBeNull()
       unmount()

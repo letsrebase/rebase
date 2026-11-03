@@ -241,10 +241,10 @@ describe('the accrual period column', () => {
 })
 
 /**
- * The «Descrizione» column (ORB-130): the causale, which until now the list never
- * showed. A causale can be 200 characters long, so the cell is the one place in this
+ * The «Descrizione» column (ORB-130): the reason line, which until now the list never
+ * showed. A reason line can be 200 characters long, so the cell is the one place in this
  * table that truncates: the column takes what the others leave, down to a floor, and the
- * text clips there with the whole causale as the cell's title, rather than a column that
+ * text clips there with the whole reason line as the cell's title, rather than a column that
  * widens the table to fit the longest row.
  */
 describe('the description column', () => {

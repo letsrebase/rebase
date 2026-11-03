@@ -50,8 +50,8 @@ export function shiftMonth(month: string, months: number): string {
 }
 
 /** The first day of `AAAA-MM`, at local midnight. */
-export function firstOfMonth(mese: string): Date {
-  const [year, month] = mese.split('-').map(Number)
+export function firstOfMonth(yearMonth: string): Date {
+  const [year, month] = yearMonth.split('-').map(Number)
   if (year === undefined || month === undefined) return new Date()
   if (!Number.isFinite(year) || !Number.isFinite(month)) return new Date()
   return new Date(year, month - 1, 1)
@@ -67,8 +67,8 @@ export function firstOfMonth(mese: string): Date {
  * real days and not blanks, because clicking 1 October from September's last row and
  * getting nothing would be a dead cell.
  */
-export function monthCells(mese: string): MonthCell[] {
-  const first = firstOfMonth(mese)
+export function monthCells(yearMonth: string): MonthCell[] {
+  const first = firstOfMonth(yearMonth)
   const month = first.getMonth()
   // `getDay()` is 0 for Sunday, and this grid starts on Monday: `(day + 6) % 7` maps
   // Monday to 0 and Sunday to 6, which is the offset of the first cell.

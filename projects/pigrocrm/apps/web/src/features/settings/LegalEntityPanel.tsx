@@ -84,8 +84,8 @@ function valuesFrom(profile: LegalEntityRecord): Record<FieldName, string> {
 }
 
 /**
- * One azienda's identity: who issues, where it is, how to reach it, how it is taxed
- * in words. The row always exists (a space is born with its default azienda, REB-615),
+ * One legal entity's identity: who issues, where it is, how to reach it, how it is taxed
+ * in words. The row always exists (a space is born with its default legal entity, REB-615),
  * so there is no «not configured yet» state any more: a fresh space shows the name it
  * signed up with and empty fiscal fields, which is the state to fill in.
  */

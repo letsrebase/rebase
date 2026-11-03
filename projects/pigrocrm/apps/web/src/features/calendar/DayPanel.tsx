@@ -130,7 +130,7 @@ function Due({ data }: { data: CalendarDay | undefined }) {
       </h3>
       <ul className="space-y-2 text-sm">
         {attivita.map((item) => (
-          <TaskItem key={item.id} attivita={item} />
+          <TaskItem key={item.id} task={item} />
         ))}
         {invoices.map((invoice) => (
           <li key={invoice.id} className="flex items-center justify-between gap-3">

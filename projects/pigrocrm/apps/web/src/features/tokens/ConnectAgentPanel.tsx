@@ -20,7 +20,7 @@ import { useCreateToken, useTokenOptions, type CreatedToken } from './queries'
 /**
  * Everything a client needs to talk to this installation's MCP server over HTTP
  * (ORB-170): the endpoint, a token minted right here, and the two shapes a
- * configuration takes. Shared by the «Collega un agente» dialog of the Agenti page and the
+ * configuration takes. Shared by the «Collega un agente» dialog of the Agents page and the
  * start page's «Fai lavorare l'assistente» block (spec 2026-09-16 §4.2, REB-222), so
  * the two cannot drift.
  *

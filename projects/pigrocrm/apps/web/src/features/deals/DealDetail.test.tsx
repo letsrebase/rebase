@@ -268,7 +268,7 @@ describe('the azienda in the header (REB-626)', () => {
     expect(await screen.findByText(/^ACME Srl · 4\.500,00\s€ · rebase$/)).toBeInTheDocument()
   })
 
-  it('says nothing about the azienda in a one-azienda space', async () => {
+  it('says nothing about the azienda in a one-legal-entity space', async () => {
     mockPage()
     renderWithClient(<DealDetail />)
     expect(await screen.findByText(/^ACME Srl · 4\.500,00\s€$/)).toBeInTheDocument()

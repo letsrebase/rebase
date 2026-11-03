@@ -38,10 +38,10 @@ export function InvoiceActions({
   /** Called once the server has accepted the delete: the page this bar sits on no
    *  longer exists, so the caller decides where to go (the list, in practice). */
   onDeleted?: () => void
-  /** Called with the row that now carries the number. For a draft fattura it is this
+  /** Called with the row that now carries the number. For a draft invoice it is this
    *  same row; for a proforma it is a *new* row (spec 5), and the page this bar sits on
    *  has become a consumed proforma with nothing left to do on it, so the caller goes
-   *  to the fattura, where «XML FatturaPA» is (ORB-134). */
+   *  to the invoice, where «XML FatturaPA» is (ORB-134). */
   onIssued?: (issued: Invoice) => void
 }) {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)

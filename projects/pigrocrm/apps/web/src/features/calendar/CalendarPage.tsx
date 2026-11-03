@@ -33,23 +33,23 @@ import { useCalendarMonth, type CalendarDay } from './queries'
  * noise.
  */
 export function CalendarPage({
-  month: mese,
+  month: yearMonth,
   onMonthChange,
 }: {
   month: string
-  onMonthChange: (mese: string) => void
+  onMonthChange: (yearMonth: string) => void
 }) {
-  const month = useCalendarMonth(mese)
+  const month = useCalendarMonth(yearMonth)
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const canWrite = useCanWrite()
 
   const weeks = useMemo(() => {
-    const cells = monthCells(mese)
+    const cells = monthCells(yearMonth)
     const rows: MonthCell[][] = []
     for (let start = 0; start < cells.length; start += 7) rows.push(cells.slice(start, start + 7))
     return rows
-  }, [mese])
+  }, [yearMonth])
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarDay>()
     for (const day of month.data?.days ?? []) map.set(day.day, day)
@@ -61,7 +61,7 @@ export function CalendarPage({
     <PageHeader
       icon={CalendarDays}
       title="Calendario"
-      description={monthLabel(mese)}
+      description={monthLabel(yearMonth)}
       actions={
         <>
           {canWrite && (
@@ -74,7 +74,7 @@ export function CalendarPage({
             variant="outline"
             size="icon"
             aria-label="Mese precedente"
-            onClick={() => onMonthChange(shiftMonth(mese, -1))}
+            onClick={() => onMonthChange(shiftMonth(yearMonth, -1))}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -85,7 +85,7 @@ export function CalendarPage({
             variant="outline"
             size="icon"
             aria-label="Mese successivo"
-            onClick={() => onMonthChange(shiftMonth(mese, 1))}
+            onClick={() => onMonthChange(shiftMonth(yearMonth, 1))}
           >
             <ChevronRight className="size-4" />
           </Button>
@@ -130,7 +130,7 @@ export function CalendarPage({
             <div
               className="grid grid-cols-1 gap-px overflow-hidden border bg-border md:grid-cols-7"
               role="grid"
-              aria-label={`Calendario di ${monthLabel(mese)}`}
+              aria-label={`Calendario di ${monthLabel(yearMonth)}`}
             >
               <div role="row" className="contents max-md:hidden">
                 {WEEKDAY_LABELS.map((label) => (
@@ -178,7 +178,7 @@ export function CalendarPage({
                 </h2>
                 <ul className="space-y-2 text-sm">
                   {withoutDueDate.map((item) => (
-                    <TaskItem key={item.id} attivita={item} />
+                    <TaskItem key={item.id} task={item} />
                   ))}
                 </ul>
               </section>

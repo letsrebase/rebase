@@ -44,7 +44,7 @@ export const SEARCH_DEBOUNCE_MS = 250
  */
 export function useGlobalSearch(term: string) {
   const debounced = useDebounced(term.trim(), SEARCH_DEBOUNCE_MS)
-  // The sidebar's azienda narrows the palette too (REB-625): under azienda A, «brief»
+  // The sidebar's legal entity narrows the palette too (REB-625): under legal entity A, «brief»
   // finds A's documents and A's customers' people, and nothing of B's.
   const { selected } = useLegalEntity()
   const query = useQuery({

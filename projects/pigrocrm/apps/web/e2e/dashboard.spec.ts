@@ -295,7 +295,7 @@ test.describe('il ciclo completo — metà umana', () => {
     expect(shared).toContain(`&a=${a}`)
     await page.goto(shared.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
-    // Five tabs since the Giornate joined them (REB-756, after the Anno of REB-757 and the
+    // Five tabs since the Work units joined them (REB-756, after the Year of REB-757 and the
     // Scadenziario of REB-329); the operational one left the page on 2026-09-08.
     await expect(page.getByRole('tab')).toHaveCount(5)
 
@@ -324,7 +324,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByText(/^Stima fiscale \d{4}$/)).toBeVisible()
     await expect(page.getByText('Ricavi incassabili')).toBeVisible()
     await expect(page.getByRole('link', { name: /Apri la stima fiscale/i })).toHaveCount(0)
-    // The seeded azienda is a forfettario, so the room under its two ceilings is on the
+    // The seeded legal entity is a flat-rate regime, so the room under its two ceilings is on the
     // page, with the simulator under it (REB-755).
     await expect(page.getByText(/^Soglie del forfettario \d{4}$/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Simula' })).toBeVisible()

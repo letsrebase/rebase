@@ -22,9 +22,9 @@ const Statuses = [
   'non_billable',
 ]
 
-function month(mese: string, over: Record<string, unknown> = {}, given: Record<string, string> = {}) {
+function month(yearMonth: string, over: Record<string, unknown> = {}, given: Record<string, string> = {}) {
   return {
-    month: mese,
+    month: yearMonth,
     complete: true,
     by_status: Statuses.map((status) => ({
       status,

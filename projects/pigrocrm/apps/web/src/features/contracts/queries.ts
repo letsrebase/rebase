@@ -212,7 +212,7 @@ export function useUpdateContractExpense(contractId: string, expenseId: string) 
   })
 }
 
-// -- Rinnovo e ricavi programmati -------------------------------------------------------
+// -- Renewal e revenue programmati -------------------------------------------------------
 
 /** `null` when nobody has recorded an assumption yet: the API answers 404 for «none
  *  recorded», which is a state of this contract and not a failure of the request. */
@@ -288,7 +288,7 @@ export function useContractConcentration(contractId: string, enabled: boolean) {
   })
 }
 
-// -- Note sulle clausole ----------------------------------------------------------------
+// -- Clause notes ----------------------------------------------------------------
 
 export type ClauseNote = components['schemas']['ClauseNoteRead']
 export type ClauseNoteCreateBody = components['schemas']['ClauseNoteCreate']
@@ -363,12 +363,12 @@ export function useRenewContract(contractId: string) {
   })
 }
 
-// -- Tetto sulla quota del cliente -------------------------------------------------------
+// -- Cap sulla quota del customer -------------------------------------------------------
 
-/** The azienda's active contracts that carry a cap on the customer's share (REB-761), for
+/** The legal entity's active contracts that carry a cap on the customer's share (REB-761), for
  *  the dashboard's «ci sta?» simulator to pick from. The list endpoint has no filter on the
  *  cap, so every page of the active contracts is read and the capped ones kept here: an
- *  azienda has a handful of active contracts, and a first page alone could hide one. Under
+ *  legal entity has a handful of active contracts, and a first page alone could hide one. Under
  *  the `contracts` key, so any contract written anywhere refreshes it. */
 export function useCappedContracts(legalEntityId: string | null | undefined) {
   return useQuery({

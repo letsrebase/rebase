@@ -194,7 +194,7 @@ export function DealDetail() {
   // The header's second line: whose deal, and for how much. `customer_legal_name`
   // rides on `DealRead` so this costs no request; the Collegamenti tab keeps the full
   // customer card.
-  // And, from the second azienda on, whose azienda it is (REB-626): the deal keeps the
+  // And, from the second legal entity on, whose legal entity it is (REB-626): the deal keeps the
   // one its customer had when it was created (spec §1.7), so the header says it.
   const subtitle = [
     deal.customer_legal_name,
@@ -216,7 +216,7 @@ export function DealDetail() {
         invoices={<InvoicesTab owner={{ dealId }} />}
         hours={<TimeEntriesTab dealId={dealId} />}
         economics={<EconomicsTab dealId={dealId} />}
-        attivita={<EntityTask link={{ kind: 'deal', id: dealId }} />}
+        tasks={<EntityTask link={{ kind: 'deal', id: dealId }} />}
         emails={gmailConfigured ? <EmailTab entityType="deal" entityId={dealId} /> : undefined}
         actions={
           canWrite && (

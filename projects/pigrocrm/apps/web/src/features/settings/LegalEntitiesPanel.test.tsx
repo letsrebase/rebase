@@ -1,7 +1,7 @@
 /**
- * Impostazioni → Aziende with «Nuova azienda» (REB-632, spec 2026-10-03 §5): the one
+ * Settings → Legal entities with «Nuova azienda» (REB-632, spec 2026-10-03 §5): the one
  * button, the form it opens, the single request the form sends (the row and its fiscal
- * profile together), and the page landing on the new azienda once the list has two.
+ * profile together), and the page landing on the new legal entity once the list has two.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'

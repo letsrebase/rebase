@@ -43,9 +43,9 @@ export function displayNative(value: string | null): string {
  */
 export interface CustomerColumnOptions {
   /**
-   * The aziende to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
-   * §5 «Lists»). Given only under «Tutte le aziende» from the second azienda on
-   * (`useLegalEntitiesToName`): with one azienda, or with one selected, the column would say
+   * The legal entities to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
+   * §5 «Lists»). Given only under «Tutte le aziende» from the second legal entity on
+   * (`useLegalEntitiesToName`): with one legal entity, or with one selected, the column would say
    * the same thing on every row.
    */
   legal_entities?: LegalEntityRecord[]

@@ -100,14 +100,14 @@ describe('buildPersonColumns', () => {
   })
 
   it('keeps zero and false as real custom-field values, not a dash', () => {
-    const punteggio: FieldDefinition = {
+    const scoreField: FieldDefinition = {
       key: 'score',
       label: 'Punteggio',
       type: 'number',
       required: false,
       options: [],
     }
-    const [, , , , , score] = buildPersonColumns([punteggio])
+    const [, , , , , score] = buildPersonColumns([scoreField])
     expect(cellValue(score!, { ...BASE_PERSON, custom_fields: { score: 0 } })).toBe('0')
   })
 })

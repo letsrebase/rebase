@@ -192,7 +192,7 @@ describe('TodayView', () => {
 
     expect(await screen.findByText(/Ne sono mostrate 1 su 120/)).toBeInTheDocument()
     // The rows left out are listed for the person this page is showing, not for the
-    // Attività page's own default.
+    // Tasks page's own default.
     expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
       'data-search',
       JSON.stringify({ view: 'all', assigned: 'io' }),

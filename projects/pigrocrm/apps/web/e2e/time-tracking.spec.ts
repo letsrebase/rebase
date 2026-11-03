@@ -124,7 +124,7 @@ test.describe('time tracking', () => {
     const month = `${year}-${String(lunedi.getMonth() + 1).padStart(2, '0')}`
     // `agosto 2026` -- `period_label`'s own long form, which is what both the closed-
     // periods list and the archived report's title read.
-    const monthByEsteso = `${Months[lunedi.getMonth()]} ${year}`
+    const monthByLongName = `${Months[lunedi.getMonth()]} ${year}`
 
     async function openTheWeek(): Promise<void> {
       await page.goto('/app/hours')
@@ -139,15 +139,15 @@ test.describe('time tracking', () => {
       }
     }
 
-    const cellaDi = (day: Date) =>
+    const cellOf = (day: Date) =>
       page.getByLabel(`${nome}, ${DAY_LONG.format(day)}`, { exact: true })
 
     // 1. The weekly grid writes an hour, in the shape an Italian keyboard produces.
     await openTheWeek()
-    const cella = cellaDi(lunedi)
+    const cell = cellOf(lunedi)
     const totalBefore = await page.getByTestId('grid-total').innerText()
-    await cella.fill('3,5')
-    await cella.blur()
+    await cell.fill('3,5')
+    await cell.blur()
     await expect(page.getByTestId(`row-total-${dealId}`)).toHaveText('3,5')
     // The footer too: the row total and the grid total are computed by two different
     // functions over the same cells, and this is the only place they are ever asked to
@@ -225,7 +225,7 @@ test.describe('time tracking', () => {
     expect(pdfBytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
 
     await page.getByRole('tab', { name: 'Documenti' }).click()
-    await expect(page.getByText(`Rapporto ore ${monthByEsteso}`)).toBeVisible()
+    await expect(page.getByText(`Rapporto ore ${monthByLongName}`)).toBeVisible()
 
     // 5. A closed month refuses the next write, in the server's own words (criterion 2,
     //    second half). The refusal asserted below is the *API's* -- there is no
@@ -235,10 +235,10 @@ test.describe('time tracking', () => {
     await page.goto('/app/settings/periods')
     await page.getByLabel(/chiudi il mese/i).fill(month)
     await page.getByRole('button', { name: 'Chiudi periodo' }).click()
-    await expect(page.getByText(monthByEsteso, { exact: true })).toBeVisible()
+    await expect(page.getByText(monthByLongName, { exact: true })).toBeVisible()
 
     await openTheWeek()
-    const bloccata = cellaDi(martedi)
+    const bloccata = cellOf(martedi)
     await bloccata.fill('2')
     await bloccata.blur()
     await expect(
@@ -262,11 +262,11 @@ test.describe('time tracking', () => {
     page.once('dialog', (dialog) => {
       void dialog.accept()
     })
-    await rowAction(page, monthByEsteso, 'Riapri')
+    await rowAction(page, monthByLongName, 'Riapri')
     await expect(page.getByText('Nessun periodo chiuso.')).toBeVisible()
 
     await openTheWeek()
-    const riaperta = cellaDi(martedi)
+    const riaperta = cellOf(martedi)
     await riaperta.fill('2')
     await riaperta.blur()
     await expect(page.getByTestId(`row-total-${dealId}`)).toHaveText('5,5')

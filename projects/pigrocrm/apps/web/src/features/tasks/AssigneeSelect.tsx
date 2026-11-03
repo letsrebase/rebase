@@ -9,7 +9,7 @@ import { EVERYONE, ME } from './filters'
 import { useAssignees } from './queries'
 
 /**
- * The «whose attività» select the Attività page and the Oggi page share: everybody's,
+ * The «whose attività» select the Tasks page and the Oggi page share: everybody's,
  * the signed-in person's own, or one colleague's. The two words that are not user ids
  * (`EVERYONE`, `ME`) are `filters.ts`'s, so a page translates the value with one rule.
  */

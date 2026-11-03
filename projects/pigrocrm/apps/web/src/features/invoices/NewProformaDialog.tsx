@@ -214,13 +214,13 @@ function DealPicker({
 /**
  * Creating a proforma.
  *
- * From the Fatture page, where nothing is known and both pickers are asked; from a
- * customer's Fatture tab, where the customer is; and from a deal's header, where the
+ * From the Invoices page, where nothing is known and both pickers are asked; from a
+ * customer's Invoices tab, where the customer is; and from a deal's header, where the
  * customer, the deal and the first line all are. One dialog for the three, because the
  * document they create is the same one -- what changes is only how many of its questions
  * the page behind it has already answered.
  *
- * A proforma and not a `invoice` bozza, even though `POST /api/invoices` accepts both:
+ * A proforma and not a `invoice` draft, even though `POST /api/invoices` accepts both:
  * what the owner does next is confirm it and issue it (`POST /{id}/confirm`, then
  * `POST /{id}/issue`), which is exactly the proforma's own path -- and neither shape
  * has a number until emission, so nothing here can burn one.
@@ -236,7 +236,7 @@ function DealPicker({
  * receives and answers to, so it carries a date of its own, the sender's and stable,
  * rather than printing the day it was rendered. Today by default, read from local date
  * parts (`toIsoDate`), and editable on the detail page until the proforma is consumed.
- * It is not a register date: the fattura issued from it takes its own at emission.
+ * It is not a register date: the invoice issued from it takes its own at emission.
  *
  * The accrual period (ORB-61) is optional, both ends or neither. It is what the P&L
  * «per competenza» reads and what the XML's `DataInizioPeriodo`/`DataFinePeriodo` say,

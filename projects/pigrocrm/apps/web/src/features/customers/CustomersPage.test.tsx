@@ -1,6 +1,6 @@
 /**
- * The customer list's header and filter row (design spec §4): the title and «Nuovo
- * cliente» come from `PageHeader`, and the search box lives in the filter row above the
+ * The customer list's header and filter row (design spec §4): the title and «New
+ * customer» come from `PageHeader`, and the search box lives in the filter row above the
  * table rather than floating between a local `<header>` and the rows.
  *
  * `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`.

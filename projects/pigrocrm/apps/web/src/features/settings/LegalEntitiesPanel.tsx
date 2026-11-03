@@ -10,14 +10,14 @@ import { NewLegalEntityForm } from './NewLegalEntityForm'
 import { useLegalEntities, type LegalEntityRecord } from './queries'
 
 /**
- * Impostazioni → Aziende (REB-617, spec 2026-10-03 §5): the one page that replaced
- * «Emittente» and «Fiscale» when the emitter profile became one row per azienda.
+ * Settings → Legal entities (REB-617, spec 2026-10-03 §5): the one page that replaced
+ * «Emittente» and «Fiscale» when the emitter profile became one row per legal entity.
  *
- * With one azienda the page opens straight on it and reads as the two panels did: who
- * issues, then how it is taxed. From the second azienda on, a row of buttons picks
+ * With one legal entity the page opens straight on it and reads as the two panels did: who
+ * issues, then how it is taxed. From the second legal entity on, a row of buttons picks
  * which one the two panels show, with the default marked. «Nuova azienda» arrived with
  * milestone 5 (REB-632, spec §9): it waited until the register, the customer chain,
- * the rendering and the per-azienda taxes could serve a second azienda, and it is the
+ * the rendering and the per-legal-entity taxes could serve a second legal entity, and it is the
  * first visible piece of the whole project, since the sidebar's selector appears the
  * moment the list has two.
  */

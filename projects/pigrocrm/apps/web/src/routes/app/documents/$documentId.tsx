@@ -44,7 +44,7 @@ function DocumentDetail() {
     <EntityDetailLayout
       icon={FileText}
       title={record.title}
-      // The type, and from the second azienda on the azienda the document belongs to
+      // The type, and from the second legal entity on the legal entity the document belongs to
       // (REB-626), the one its owner had when it was created.
       subtitle={[
         DOCUMENT_TYPE_LABELS[record.type] ?? record.type,

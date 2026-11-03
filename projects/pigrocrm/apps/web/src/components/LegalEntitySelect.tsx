@@ -15,7 +15,7 @@ import { FOCUS } from './sidebarStyles'
 const EVERY_LEGAL_ENTITY = 'all'
 
 /**
- * The azienda selector (REB-625): drawn from the second azienda on, between the search
+ * The legal entity selector (REB-625): drawn from the second legal entity on, between the search
  * and the navigation, so the lists below it read as «of this azienda».
  */
 export function LegalEntitySelect({ rail }: { rail: boolean }) {

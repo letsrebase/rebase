@@ -17,7 +17,7 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  * write) -- Token is not (`PatService` scopes by `actor.id`, not role) and lives
  * at its own route, `/app/token`, outside this gate entirely.
  *
- * Note the asymmetry on the two newest: `TemplateService.list`/`describe`/
+ * Notes the asymmetry on the two newest: `TemplateService.list`/`describe`/
  * `preview` and `EmitterProfileService.get` carry no role check, because the
  * new-from-template dialog and the PDF header need them for every role. Only the
  * writes are gated, and only the writes live behind this tab.
@@ -48,12 +48,12 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  *
  * - `profilo` (`ProfilePanel`) is a person's own preferences, not an admin-only write,
  *   and the weekly digest's own opt-out link (spec 2026-09-16 §3.6) sends whoever
- *   received the mail straight to `/app/settings/profile` -- a collaboratore or readonly
+ *   received the mail straight to `/app/settings/profile` -- a collaborator or readonly
  *   account included. Without this exemption that link would be dead for anyone but an
  *   admin, which REB-221's first round shipped and its second round exists to fix.
- * - `drive` (`DrivePanel`) is open to a collaboratore (REB-457). The Drive credential is
+ * - `drive` (`DrivePanel`) is open to a collaborator (REB-457). The Drive credential is
  *   per CRM user and the service lets any writer connect their own, and the consent's
- *   callback lands every outcome (`?outcome=`) on this tab. A collaboratore reads the
+ *   callback lands every outcome (`?outcome=`) on this tab. A collaborator reads the
  *   outcome there, from the route itself, and manages their own Drive under it.
  *
  * A non-admin past the gate sees only the tabs their role may see, never the admin-only

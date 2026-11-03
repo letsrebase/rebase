@@ -517,9 +517,9 @@ describe('DrivePanel space storage line (REB-562)', () => {
 /**
  * REB-457. `DriveRepository.storage_account` picks the space's one write folder from
  * every user's row (the most recently updated `active` row that names one), so a folder
- * a collaboratore chose would receive every document the space generates. That field
+ * a collaborator chose would receive every document the space generates. That field
  * stays an admin's; the rest of the panel (connect, the read roots, disconnect) is the
- * collaboratore's own credential and works for them as it does for an admin.
+ * collaborator's own credential and works for them as it does for an admin.
  */
 describe('DrivePanel for a collaboratore', () => {
   beforeEach(() => {

@@ -54,7 +54,7 @@ function CompanyFilter({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-96">
         <CustomerPicker
-          id="filtro-azienda"
+          id="filtro-legal-entity"
           value={customerId ?? null}
           ariaLabel="Cerca un'azienda"
           placeholder="Tutte le aziende: cerca per filtrare…"

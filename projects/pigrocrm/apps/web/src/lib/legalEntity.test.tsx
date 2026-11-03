@@ -71,7 +71,7 @@ beforeEach(() => {
 })
 
 describe('LegalEntityProvider', () => {
-  it('is a one-azienda space until the second azienda: nothing selected, nothing several', async () => {
+  it('is a one-legal-entity space until the second azienda: nothing selected, nothing several', async () => {
     localStorage.setItem(legalEntityKey('u1'), 'a1')
     const { result } = renderHook(() => useLegalEntity(), { wrapper })
     await waitFor(() => expect(result.current.legal_entities).toHaveLength(1))

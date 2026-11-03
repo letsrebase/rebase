@@ -84,10 +84,10 @@ const LegalReferenceFlatRate =
  */
 export const FIELDS: readonly FiscalField[] = [
   { name: 'default_vat_rate', label: 'Aliquota IVA predefinita' },
-  // Natura and riferimento stay on «Estero» too: a foreign company whose untaxed line
-  // must carry a legal mention names it here, and the server requires a natura beside
+  // VAT nature and legal reference stay on «Estero» too: a foreign company whose untaxed line
+  // must carry a legal mention names it here, and the server requires a VAT nature beside
   // a zero rate whoever issues (`invoice_lines`' own rule). Emptied when the regime
-  // turns foreign, since «N2.2» is the forfettario's. The ordinary regime taxes every
+  // turns foreign, since «N2.2» is the flat-rate regime's. The ordinary regime taxes every
   // line and carries neither.
   {
     name: 'default_vat_nature',
@@ -189,15 +189,15 @@ export function valuesFrom(profile: FiscalProfile): Values {
 /**
  * What a save sends. The same fifteen keys whichever the regime, because the PUT is a
  * full replace and a key left out is a key the server defaults; on any regime but the
- * forfettario the ones only it reads go explicitly empty, since the server's own
- * defaults for them are the forfettario's («N2.2», the bollo on, the ATECO coefficient)
+ * flat-rate regime the ones only it reads go explicitly empty, since the server's own
+ * defaults for them are the flat-rate regime's («N2.2», the stamp duty on, the ATECO coefficient)
  * and a profile that carried them would be refused or, worse, would estimate the
- * forfettario's taxes. «Estero» also has no code and keeps its natura; the ordinary
- * regime sends `RF01` and no natura, since it taxes every line.
+ * flat-rate regime's taxes. «Estero» also has no code and keeps its VAT nature; the ordinary
+ * regime sends `RF01` and no VAT nature, since it taxes every line.
  */
 export function bodyFrom(values: Values): Record<string, unknown> {
   const { pack_id, regime_code, ...fields } = values
-  // The bollo amounts are hidden outside the forfettario and the server still wants
+  // The bollo amounts are hidden outside the flat-rate regime and the server still wants
   // decimals for them: a blank left from an edit under another regime goes as the default.
   const rest = {
     ...fields,

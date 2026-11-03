@@ -34,11 +34,11 @@ function TaskRoute() {
 // the router plugin's automatic code-splitting, which is why the page lives in `features/`.
 export const Route = createFileRoute('/app/activities')({
   component: TaskRoute,
-  // `?open=<id>` is how the global search opens one attività in its dialog. Anything that
+  // `?open=<id>` is how the global search opens one task in its dialog. Anything that
   // is not a UUID is dropped, so a hand-edited URL is the plain page and not a request the
   // API refuses.
   //
-  // `?assigned=` is whose attività the page opens on: «io», «tutte» or a user id. The Oggi
+  // `?assigned=` is whose tasks the page opens on: «io», «tutte» or a user id. The Oggi
   // view's «le altre sono nella pagina Attività» carries the person it was showing, so the
   // rows it left out are the ones listed.
   //

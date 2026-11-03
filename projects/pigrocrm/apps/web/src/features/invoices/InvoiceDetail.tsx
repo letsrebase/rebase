@@ -75,7 +75,7 @@ export function InvoiceDetail() {
     <EntityDetailLayout
       icon={Receipt}
       title={formatInvoiceHeading(row)}
-      // The causale, and from the second azienda on who issued it (REB-626).
+      // The reason line, and from the second legal entity on who issued it (REB-626).
       subtitle={
         [row.memo, issuedFrom ? `Emessa da ${issuedFrom}` : undefined]
           .filter((part): part is string => typeof part === 'string' && part !== '')

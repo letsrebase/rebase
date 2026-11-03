@@ -128,7 +128,7 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
       })
     }
     if (regime === 'foreign') {
-      // The forfettario's natura and declaration mean nothing abroad; the bollo is an
+      // The flat-rate regime's VAT nature and declaration mean nothing abroad; the stamp duty is an
       // Italian duty. Emptied here so the foreign save never carries them.
       change({
         pack_id: 'non-it',
@@ -140,8 +140,8 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
       return
     }
     if (regime === 'RF01') {
-      // The ordinary regime taxes every line: no natura, no declaration, no bollo, and a
-      // zero rate is refused, so the forfettario's 0.00 becomes the standard 22.00.
+      // The ordinary regime taxes every line: no VAT nature, no declaration, no stamp duty, and a
+      // zero rate is refused, so the flat-rate regime's 0.00 becomes the standard 22.00.
       const zeroRate = !/[1-9]/.test(values.default_vat_rate)
       change({
         pack_id: 'it-standard',

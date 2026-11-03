@@ -192,7 +192,7 @@ export function CustomerDetail() {
         }
         contracts={<ContractsTab customerId={customerId} />}
         economics={<EconomicsTab customerId={customerId} />}
-        attivita={<EntityTask link={{ kind: 'customer', id: customerId }} />}
+        tasks={<EntityTask link={{ kind: 'customer', id: customerId }} />}
         emails={
           gmailConfigured ? (
             <EmailTab

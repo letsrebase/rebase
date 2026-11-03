@@ -45,7 +45,7 @@ export function PipelinePanel() {
   const [open, setOpen] = useState(false)
   const [nome, setName] = useState('')
   const [probability, setProbability] = useState('0')
-  const [tipo, setType] = useState<'open' | 'won' | 'lost'>('open')
+  const [typeValue, setType] = useState<'open' | 'won' | 'lost'>('open')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
   const stages = useStages()
@@ -71,7 +71,7 @@ export function PipelinePanel() {
         nome,
         position: stages.data?.length ?? 0,
         default_probability: Number(probability),
-        type: tipo,
+        type: typeValue,
       },
       {
         onSuccess: () => {
@@ -101,8 +101,8 @@ export function PipelinePanel() {
       onError: (error) => {
         // Refused (409) if any deal, archived included, still points at this
         // stage -- `PipelineService.delete`'s own docstring. The server's
-        // sentence already says what to do about it ("spostali in un altro
-        // stato prima di eliminarlo"); the count riding along in `deals` is
+        // sentence already says what to do about it (move them to another
+        // stage before deleting it); the count riding along in `deals` is
         // appended the same way `CustomerDetail.archive` appends its own
         // `active_deals`, rather than left to disappear even though the server
         // reported it.
@@ -236,7 +236,7 @@ export function PipelinePanel() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="stage-tipo">Tipo</Label>
-              <Select value={tipo} onValueChange={(value) => setType(value as typeof tipo)}>
+              <Select value={typeValue} onValueChange={(value) => setType(value as typeof typeValue)}>
                 <SelectTrigger id="stage-tipo" className="w-full">
                   <SelectValue />
                 </SelectTrigger>

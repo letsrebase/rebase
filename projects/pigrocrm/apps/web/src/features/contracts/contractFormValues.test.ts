@@ -106,7 +106,7 @@ describe('toContractBody', () => {
 
   it('clears both payment terms when the contract goes back to the customer’s', () => {
     const initial = contractToFormValues(CONTRACT)
-    const body = toContractBody({ ...initial, payment_proprio: false }, initial, nothingRendered)
+    const body = toContractBody({ ...initial, payment_custom: false }, initial, nothingRendered)
     expect(body).toEqual({ payment_days: null, payment_end_of_month: null })
   })
 
@@ -119,7 +119,7 @@ describe('toContractBody', () => {
   it('writes the expense policy as the tagged shape the trigger reads', () => {
     const initial = contractToFormValues(CONTRACT)
     const body = toContractBody(
-      { ...initial, expenses_kind: 'reimbursable', expenses_preautorizzazione: true },
+      { ...initial, expenses_kind: 'reimbursable', expenses_preauthorization: true },
       initial,
       nothingRendered,
     )
@@ -134,7 +134,7 @@ describe('toContractBody', () => {
   })
 
   it('leaves a stored custom value whose definition is archived out of the body', () => {
-    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { vecchio: 'x' } })
+    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { legacy: 'x' } })
     expect(toContractBody(initial, initial, nothingRendered)).toEqual({})
   })
 

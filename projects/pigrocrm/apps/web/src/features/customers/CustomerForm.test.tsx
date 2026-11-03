@@ -98,8 +98,8 @@ describe('CustomerForm', () => {
 
   /**
    * The defect this guards, reproduced live before the fix: archive a field
-   * definition while a record still carries a value for it, open Modifica, press
-   * Salva with nothing else changed. A flat form state has to re-derive "is this key
+   * definition while a record still carries a value for it, open Edit, press
+   * Save with nothing else changed. A flat form state has to re-derive "is this key
    * custom?" from the *active* schema, which no longer lists the archived key, so the
    * value was reclassified as a native column and sent as a top-level key --
    * `CustomerUpdate` is `extra="forbid"`, so the PATCH came back 422
@@ -379,7 +379,7 @@ describe('the «Azienda» picker (REB-626)', () => {
     expect(submitted(onSubmit)).toMatchObject({ legal_entity_id: 'a-2' })
   })
 
-  it('is not drawn in a one-azienda space, and the body carries no azienda', async () => {
+  it('is not drawn in a one-legal-entity space, and the body carries no azienda', async () => {
     const onSubmit = vi.fn()
     renderWithClient(
       <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,

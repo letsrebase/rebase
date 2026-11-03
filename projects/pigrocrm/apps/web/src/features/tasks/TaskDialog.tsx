@@ -46,7 +46,7 @@ export interface TaskDefaults {
 }
 
 /**
- * The one dialog an attività is written in: title, optional deadline, notes, assignee and
+ * The one dialog a task is written in: title, optional deadline, notes, assignee and
  * at most one linked record. Reused by every screen that creates or opens one, each
  * prefilling what it already knows (`defaults`), so no screen has its own small form that
  * forgets a field.
@@ -63,13 +63,13 @@ export interface TaskDefaults {
 export function TaskDialog({
   open,
   onOpenChange,
-  attivita,
+  task,
   archived = false,
   defaults = {},
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  attivita?: Task
+  task?: Task
   archived?: boolean
   defaults?: TaskDefaults
 }) {
@@ -77,13 +77,13 @@ export function TaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{attivita ? 'Modifica attività' : 'Nuova attività'}</DialogTitle>
+          <DialogTitle>{task ? 'Modifica attività' : 'Nuova attività'}</DialogTitle>
           <DialogDescription>
             Scadenza, note, assegnatario e record collegato sono facoltativi.
           </DialogDescription>
         </DialogHeader>
         <TaskForm
-          attivita={attivita}
+          task={task}
           archived={archived}
           defaults={defaults}
           onClose={() => onOpenChange(false)}
@@ -94,12 +94,12 @@ export function TaskDialog({
 }
 
 function TaskForm({
-  attivita,
+  task,
   archived,
   defaults,
   onClose,
 }: {
-  attivita: Task | undefined
+  task: Task | undefined
   archived: boolean
   defaults: TaskDefaults
   onClose: () => void
@@ -112,11 +112,11 @@ function TaskForm({
   const assignees = useAssignees()
   const readOnly = !useCanWrite()
 
-  const initialLink = attivita ? linkOf(attivita) : (defaults.link ?? null)
-  const [title, setTitle] = useState(attivita?.title ?? '')
-  const [due_date, setDueDate] = useState(attivita?.due_date ?? defaults.due_date ?? '')
-  const [note, setNote] = useState(attivita?.note ?? '')
-  const [assignedTo, setAssignedTo] = useState(attivita?.assigned_to ?? NOBODY)
+  const initialLink = task ? linkOf(task) : (defaults.link ?? null)
+  const [title, setTitle] = useState(task?.title ?? '')
+  const [due_date, setDueDate] = useState(task?.due_date ?? defaults.due_date ?? '')
+  const [note, setNote] = useState(task?.note ?? '')
+  const [assignedTo, setAssignedTo] = useState(task?.assigned_to ?? NOBODY)
   const [link, setLink] = useState<LinkValue | null>(initialLink)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -150,7 +150,7 @@ function TaskForm({
     const cleanDueDate = due_date === '' ? null : due_date
     const cleanAssignee = assignedTo === NOBODY ? null : assignedTo
 
-    if (!attivita) {
+    if (!task) {
       run(
         (options) =>
           create.mutate(
@@ -175,10 +175,10 @@ function TaskForm({
     // Only what changed: the timeline records which fields a PATCH named, and a save that
     // names all of them says the person rewrote everything.
     const edits: Omit<UpdateBody, 'due_date_to_remove' | 'reference_to_remove'> = {}
-    if (trimmed !== attivita.title) edits.title = trimmed
-    if (cleanNote !== attivita.note) edits.note = cleanNote
-    if (cleanDueDate !== attivita.due_date) edits.due_date = cleanDueDate
-    if (cleanAssignee !== attivita.assigned_to) edits.assigned_to = cleanAssignee
+    if (trimmed !== task.title) edits.title = trimmed
+    if (cleanNote !== task.note) edits.note = cleanNote
+    if (cleanDueDate !== task.due_date) edits.due_date = cleanDueDate
+    if (cleanAssignee !== task.assigned_to) edits.assigned_to = cleanAssignee
     // All four columns together: moving a task from a customer to a deal is «set deal_id
     // and clear customer_id», and the service checks the result, not the patch.
     if (!sameLink(link, initialLink)) Object.assign(edits, linkColumns(link))
@@ -194,7 +194,7 @@ function TaskForm({
       due_date_to_remove: false,
       reference_to_remove: false,
     }
-    run((options) => update.mutate({ id: attivita.id, changes }, options), 'Attività salvata')
+    run((options) => update.mutate({ id: task.id, changes }, options), 'Attività salvata')
   }
 
   return (
@@ -209,9 +209,9 @@ function TaskForm({
           that write are not drawn (a search hit must open for anybody who can search). */}
       <fieldset disabled={readOnly} className="min-w-0 space-y-4">
       <div className="space-y-1">
-        <Label htmlFor="attivita-titolo">Titolo</Label>
+        <Label htmlFor="task-title">Titolo</Label>
         <Input
-          id="attivita-titolo"
+          id="task-title"
           autoFocus
           value={title}
           maxLength={200}
@@ -222,9 +222,9 @@ function TaskForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label htmlFor="attivita-scadenza">Scadenza</Label>
+          <Label htmlFor="task-due-date">Scadenza</Label>
           <Input
-            id="attivita-scadenza"
+            id="task-due-date"
             type="date"
             value={due_date}
             onChange={(event) => setDueDate(event.target.value)}
@@ -232,9 +232,9 @@ function TaskForm({
           <p className="text-xs text-muted-foreground">Vuota: resta tra le attività senza scadenza.</p>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="attivita-assegnata">Assegnata a</Label>
+          <Label htmlFor="task-assignee">Assegnata a</Label>
           <Select value={assignedTo} onValueChange={setAssignedTo}>
-            <SelectTrigger id="attivita-assegnata">
+            <SelectTrigger id="task-assignee">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -247,10 +247,10 @@ function TaskForm({
               {/* The current assignee when this list cannot name them (a colleague seen by
                   somebody who is not an admin, or an account since deactivated): the row
                   keeps its value until somebody chooses another. */}
-              {attivita?.assigned_to &&
-                !assignees.options.some((person) => person.id === attivita.assigned_to) && (
-                  <SelectItem value={attivita.assigned_to}>
-                    {assignees.nameOf(attivita.assigned_to)}
+              {task?.assigned_to &&
+                !assignees.options.some((person) => person.id === task.assigned_to) && (
+                  <SelectItem value={task.assigned_to}>
+                    {assignees.nameOf(task.assigned_to)}
                   </SelectItem>
                 )}
             </SelectContent>
@@ -259,9 +259,9 @@ function TaskForm({
       </div>
 
       <div className="space-y-1">
-        <Label htmlFor="attivita-note">Note</Label>
+        <Label htmlFor="task-note">Note</Label>
         <Textarea
-          id="attivita-note"
+          id="task-note"
           value={note}
           rows={3}
           onChange={(event) => setNote(event.target.value)}
@@ -269,8 +269,8 @@ function TaskForm({
       </div>
 
       <div className="space-y-1">
-        <Label htmlFor="attivita-collegamento">Collegata a</Label>
-        <RecordPicker id="attivita-collegamento" value={link} onChange={setLink} />
+        <Label htmlFor="task-link">Collegata a</Label>
+        <RecordPicker id="task-link" value={link} onChange={setLink} />
       </div>
       </fieldset>
       {problem !== null && (
@@ -281,32 +281,32 @@ function TaskForm({
 
       <DialogFooter className="sm:justify-between">
         <div className="flex gap-2">
-          {attivita && archived && !readOnly && (
+          {task && archived && !readOnly && (
             <Button
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => run((options) => restore.mutate(attivita.id, options), 'Attività ripristinata')}
+              onClick={() => run((options) => restore.mutate(task.id, options), 'Attività ripristinata')}
             >
               Ripristina
             </Button>
           )}
-          {attivita && !archived && !readOnly && attivita.status !== 'open' && (
+          {task && !archived && !readOnly && task.status !== 'open' && (
             <Button
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => run((options) => reopen.mutate(attivita.id, options), 'Attività riaperta')}
+              onClick={() => run((options) => reopen.mutate(task.id, options), 'Attività riaperta')}
             >
               Riapri
             </Button>
           )}
-          {attivita && !archived && !readOnly && (
+          {task && !archived && !readOnly && (
             <Button
               type="button"
               variant="destructive"
               disabled={busy}
-              onClick={() => run((options) => archive.mutate(attivita.id, options), 'Attività archiviata')}
+              onClick={() => run((options) => archive.mutate(task.id, options), 'Attività archiviata')}
             >
               Archivia
             </Button>
@@ -318,7 +318,7 @@ function TaskForm({
           </Button>
           {!archived && !readOnly && (
             <Button type="submit" disabled={trimmed === '' || busy}>
-              {attivita ? 'Salva' : 'Aggiungi'}
+              {task ? 'Salva' : 'Aggiungi'}
             </Button>
           )}
         </div>

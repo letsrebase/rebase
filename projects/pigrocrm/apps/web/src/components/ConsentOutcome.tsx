@@ -2,7 +2,7 @@ import { useCanWrite } from '@/lib/auth'
 
 /**
  * The sentence a Google consent flow came back with (`?outcome=`), on whichever page the
- * callback landed: Impostazioni → Gmail or → Drive (which a collaboratore opens too since
+ * callback landed: Settings → Gmail or → Drive (which a collaborator opens too since
  * REB-457; a readonly person reads the Drive one above the settings gate), the Home,
  * «Primi passi». The sentence is looked up by the caller in the one fixed table
  * (`consentOutcome`, `features/consent/outcome.ts`), never rendered from the address bar.

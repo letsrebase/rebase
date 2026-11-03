@@ -155,8 +155,8 @@ function Register({ overview }: { overview: YearOverview }) {
 }
 
 /**
- * One azienda's year as the accountant reads it (REB-757): the revenue by regime and by
- * tax treatment, the register of the issued invoices with the stamp duty and the rivalsa
+ * One legal entity's year as the accountant reads it (REB-757): the revenue by regime and by
+ * tax treatment, the register of the issued invoices with the stamp duty and the surcharge
  * apart, and the CSV of the same lines.
  *
  * The register year is the year the invoices were numbered in (`year`), the universe the
@@ -165,7 +165,7 @@ function Register({ overview }: { overview: YearOverview }) {
  * invoices' own words, printed as stored: rewording them here would put on a page the
  * accountant reads a sentence no document ever carried.
  *
- * `quiet` is «tutte» with several aziende, where the tab draws one block per azienda: one
+ * `quiet` is «tutte» with several legal entities, where the tab draws one block per legal entity: one
  * the API has no register for (404) draws nothing, and one with nothing issued says so
  * under its own name, so the tab is never blank.
  */
@@ -197,7 +197,7 @@ export function YearPanel({
   }
   const overview = query.data
   // The azienda the file is of: the block's own, else the one the sidebar selected. The
-  // server resolves the only azienda of a one-azienda space by itself, so nothing is sent.
+  // server resolves the only legal entity of a one-legal-entity space by itself, so nothing is sent.
   const csvLegalEntity = legalEntityId ?? selected
 
   return (
@@ -307,9 +307,9 @@ export function YearPanel({
 }
 
 /**
- * The «Anno» tab: the year of the period picker, one block per azienda when the sidebar
- * says «Tutte» on a space with several (a register is numbered per azienda, and two
- * aziende's invoices are never in one file).
+ * The «Anno» tab: the year of the period picker, one block per legal entity when the sidebar
+ * says «Tutte» on a space with several (a register is numbered per legal entity, and two
+ * legal entities' invoices are never in one file).
  */
 export function YearTab({ period }: { period: Period }) {
   const year = yearOf(period)
