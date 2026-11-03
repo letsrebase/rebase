@@ -47,7 +47,7 @@ export function useCreateToken() {
   const { user } = useAuth()
   const userId = user?.id ?? ''
   return useMutation({
-    mutationFn: (input: { nome: string; full_access: boolean }) =>
+    mutationFn: (input: { name: string; full_access: boolean }) =>
       unwrap(api.POST('/api/tokens', { body: input })),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.tokens(userId) }),
   })

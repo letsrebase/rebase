@@ -194,7 +194,7 @@ describe('DashboardPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Anno' }))
     expect(onSearchChange).toHaveBeenCalledTimes(1)
     const [next] = onSearchChange.mock.calls[0]!
-    expect(next.da).toMatch(/^\d{4}-01-01$/)
+    expect(next.from).toMatch(/^\d{4}-01-01$/)
     expect(next.a).toMatch(/^\d{4}-12-31$/)
   })
 

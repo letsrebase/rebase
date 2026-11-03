@@ -184,7 +184,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
   const end = chosenEnd ?? defaultEnd
   const validWindow = end > today
 
-  const projection = useContractProjection(contract.id, { da: today, a: end }, validWindow)
+  const projection = useContractProjection(contract.id, { from: today, to: end }, validWindow)
   const started = contract.start <= today
   const concentration = useContractConcentration(contract.id, started)
 

@@ -92,7 +92,7 @@ export function UsersPanel() {
           >
             <SelectTrigger
               className="w-40"
-              aria-label={`Ruolo di ${user.nome}`}
+              aria-label={`Ruolo di ${user.name}`}
               title={isSelf ? 'Non puoi cambiare il ruolo del tuo stesso account.' : undefined}
             >
               <SelectValue />
@@ -153,7 +153,7 @@ export function UsersPanel() {
         // CLI), and an item that disappears from one row is a menu nobody learns.
         return (
           <RowActions
-            label={`Azioni per ${user.nome}`}
+            label={`Azioni per ${user.name}`}
             items={[
               {
                 label: 'Rinomina…',
@@ -195,7 +195,7 @@ export function UsersPanel() {
       id: 'persona',
       // The name the admin carried, when they knew one; the acceptance page asks for
       // the rest (spec §1), so an address alone is a normal row here.
-      cell: (info) => info.row.original.nome ?? info.row.original.email,
+      cell: (info) => info.row.original.name ?? info.row.original.email,
     },
     { header: 'Email', accessorKey: 'email' },
     {
@@ -241,7 +241,7 @@ export function UsersPanel() {
       meta: { align: 'right' },
       cell: (info) => {
         const row = info.row.original
-        const label = row.nome ?? row.email
+        const label = row.name ?? row.email
         return (
           <RowActions
             label={`Azioni per ${label}`}

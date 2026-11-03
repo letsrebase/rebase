@@ -74,9 +74,9 @@ describe('groupByDay', () => {
   it('puts the latest day first, the latest entry first within it, and sums each day', () => {
     const groups = groupByDay(
       [
-        entry({ id: 'a', data: '2026-03-09', hours: '2.50', created_at: '2026-03-09T09:00:00Z' }),
-        entry({ id: 'b', data: '2026-03-11', hours: '1.25' }),
-        entry({ id: 'c', data: '2026-03-09', hours: '0.75', created_at: '2026-03-09T15:00:00Z' }),
+        entry({ id: 'a', date: '2026-03-09', hours: '2.50', created_at: '2026-03-09T09:00:00Z' }),
+        entry({ id: 'b', date: '2026-03-11', hours: '1.25' }),
+        entry({ id: 'c', date: '2026-03-09', hours: '0.75', created_at: '2026-03-09T15:00:00Z' }),
       ],
       days,
     )
@@ -89,7 +89,7 @@ describe('groupByDay', () => {
 
 describe('TimeRegister', () => {
   it('shows the week total, the billable share and one section per day', () => {
-    renderRegister([entry(), entry({ id: 'e2', data: '2026-03-11', hours: '1.25', billable: false })])
+    renderRegister([entry(), entry({ id: 'e2', date: '2026-03-11', hours: '1.25', billable: false })])
     expect(screen.getByTestId('week-total')).toHaveTextContent('3,75 h')
     expect(screen.getByTestId('week-total')).toHaveTextContent('fatturabili 2,5 h')
     expect(screen.getByRole('region', { name: /lunedì 9 marzo/ })).toBeInTheDocument()

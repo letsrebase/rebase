@@ -30,7 +30,7 @@ vi.mock('@/lib/auth', () => ({
   // test asking for a writer gets every writer control and a reader gets none.
   useCan: () => auth.canWrite,
   // The owner row names the signed-in person (REB-780).
-  useAuth: () => ({ user: { id: 'u-me', nome: 'Io' } }),
+  useAuth: () => ({ user: { id: 'u-me', name: 'Io' } }),
 }))
 
 // `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`: what
@@ -64,7 +64,7 @@ beforeEach(() => {
  *  `formatDate`/`formatMoney`, which read the string they are handed. */
 const DEAL = {
   id: 'd1',
-  nome: 'Sito vetrina',
+  name: 'Sito vetrina',
   customer_id: 'c1',
   legal_entity_id: 'a2',
   customer_legal_name: 'ACME Srl',
@@ -162,9 +162,9 @@ describe('DealDetail', () => {
           // `useStages` unwraps to a bare array, not to a page.
           if (path === '/api/pipeline-stages')
             return ok([
-              { id: 's1', nome: 'Lead', position: 1, type: 'open', code: null, default_probability: 10 },
-              { id: 'won', nome: 'Vinto', position: 4, type: 'won', code: 'won', default_probability: 100 },
-              { id: 'lost', nome: 'Perso', position: 5, type: 'lost', code: 'lost', default_probability: 0 },
+              { id: 's1', name: 'Lead', position: 1, type: 'open', code: null, default_probability: 10 },
+              { id: 'won', name: 'Vinto', position: 4, type: 'won', code: 'won', default_probability: 100 },
+              { id: 'lost', name: 'Perso', position: 5, type: 'lost', code: 'lost', default_probability: 0 },
             ])
           // So does the timeline, which the Pipedrive-shaped page mounts in its right
           // column («Ultimi eventi», 2026-09-09). Handed a page envelope it would
@@ -233,8 +233,8 @@ describe('DealDetail', () => {
 })
 
 describe('the azienda in the header (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -249,7 +249,7 @@ describe('the azienda in the header (REB-626)', () => {
       ((path: string) => {
         if (path === '/api/deals/{deal_id}') return ok(DEAL)
         if (path === '/api/pipeline-stages')
-          return ok([{ id: 's1', nome: 'Lead', position: 1, type: 'open', code: null, default_probability: 10 }])
+          return ok([{ id: 's1', name: 'Lead', position: 1, type: 'open', code: null, default_probability: 10 }])
         return ok([])
       }) as never,
     )

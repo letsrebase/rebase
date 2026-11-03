@@ -36,8 +36,8 @@ function listQuery(): Record<string, string | undefined> {
 describe('the days register', () => {
   it('lists a contract’s days with their state, each a link to its page', async () => {
     serving([
-      row({ id: 'd1', data: '2026-03-03', status: 'worked_without_approval', description: 'Workshop' }),
-      row({ id: 'd2', data: '2026-03-02', status: 'disputed', quantity: '1.00', description: 'Revisione' }),
+      row({ id: 'd1', date: '2026-03-03', status: 'worked_without_approval', description: 'Workshop' }),
+      row({ id: 'd2', date: '2026-03-02', status: 'disputed', quantity: '1.00', description: 'Revisione' }),
     ])
     renderWithQuery(<DaysPage search={{ contract: CONTRACT_ID }} onSearchChange={vi.fn()} />)
 
@@ -47,7 +47,7 @@ describe('the days register', () => {
     expect(screen.getByRole('link', { name: /Registra giornata/ })).toHaveAttribute('href', '/app/days/new')
     // The contract narrows the list and no month was asked for: the whole ledger of that
     // contract is requested, with no window.
-    expect(listQuery()).toMatchObject({ contract_id: CONTRACT_ID, da: undefined, a: undefined })
+    expect(listQuery()).toMatchObject({ contract_id: CONTRACT_ID, from: undefined, to: undefined })
   })
 
   it('opens on the current month of every contract when nothing is chosen', async () => {

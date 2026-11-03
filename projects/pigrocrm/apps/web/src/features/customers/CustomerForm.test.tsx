@@ -281,8 +281,8 @@ describe('CustomerForm', () => {
 })
 
 describe('the «Azienda» picker (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a-2', nome: 'rebase ltd', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a-1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a-2', name: 'rebase ltd', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -393,7 +393,7 @@ describe('the «Azienda» picker (REB-626)', () => {
 })
 
 describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR #509)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a-1', name: 'humancraft', active: true } as LegalEntityRecord
   const ONE_LEFT: LegalEntityValue = {
     legal_entities: [HUMANCRAFT],
     selected: null,
@@ -450,8 +450,8 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
 })
 
 describe('the picker beside a custom field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a-2', nome: 'rebase ltd', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a-1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a-2', name: 'rebase ltd', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -498,8 +498,8 @@ describe('the picker beside a custom field that happens to be named azienda_id (
 
 describe('the «Responsabile» picker (REB-773)', () => {
   const OWNERS = [
-    { id: 'u-1', nome: 'Giulia' },
-    { id: 'u-2', nome: 'Marco' },
+    { id: 'u-1', name: 'Giulia' },
+    { id: 'u-2', name: 'Marco' },
   ]
 
   it('is not drawn without the people to choose from, and the body carries no owner', async () => {

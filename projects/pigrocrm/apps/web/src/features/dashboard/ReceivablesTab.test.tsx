@@ -32,8 +32,8 @@ function failed(error: unknown, status: number) {
 const band = (code: string, label: string, amount: string, number: number) => ({
   code,
   label,
-  da: null,
-  a: null,
+  from: null,
+  to: null,
   amount,
   number,
   share: 0.5,

@@ -27,7 +27,7 @@ function cellValue(column: ReturnType<typeof buildDealColumns>[number], deal: De
 const BASE_DEAL: Deal = {
   id: 'd1',
   legal_entity_id: 'a-1',
-  nome: 'Sito vetrina',
+  name: 'Sito vetrina',
   customer_id: 'c1',
   pipeline_stage_id: 's1',
   expected_value: null,
@@ -252,7 +252,7 @@ function renderCell(index: number, deal: Deal) {
 
 describe('how a deal row reads', () => {
   it('carries the deal name beside a chip of its initials', () => {
-    renderCell(0, { ...BASE_DEAL, nome: 'Sito vetrina' })
+    renderCell(0, { ...BASE_DEAL, name: 'Sito vetrina' })
     expect(screen.getByText('Sito vetrina')).toBeInTheDocument()
     expect(screen.getByText('SV')).toBeInTheDocument()
   })

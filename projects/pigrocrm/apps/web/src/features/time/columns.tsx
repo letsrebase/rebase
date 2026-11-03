@@ -111,8 +111,8 @@ export function buildTimeEntryColumns(
     {
       header: 'Data',
       id: 'data',
-      accessorFn: (row) => formatIsoDateItalian(row.data),
-      cell: ({ row }) => <DateCell value={row.original.data} />,
+      accessorFn: (row) => formatIsoDateItalian(row.date),
+      cell: ({ row }) => <DateCell value={row.original.date} />,
     },
     {
       header: 'Ore',

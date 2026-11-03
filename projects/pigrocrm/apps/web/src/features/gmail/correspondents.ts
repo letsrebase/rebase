@@ -61,7 +61,7 @@ export function useAddCorrespondent(customerId: string) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.people() })
   }
   return useMutation({
-    mutationFn: (body: { address: string; nome: string }) =>
+    mutationFn: (body: { address: string; name: string }) =>
       unwrap(
         api.POST('/api/customers/{customer_id}/people-from-mail', {
           params: { path: { customer_id: customerId } },

@@ -157,9 +157,9 @@ test.describe('economics', () => {
     // the `sdi_code` because `check_party_exportable`/`check_recipient_routing` run
     // inside `issue`, *before* a register number is consumed, and refuse a recipient
     // missing any of them.
-    const nome = `Progetto Economia ${Date.now()}`
+    const name = `Progetto Economia ${Date.now()}`
     const { dealId } = await seedDealWithRate(page.request, {
-      nome,
+      name,
       rate: '100.000000',
       customer: {
         vat_number: '12345678901',
@@ -326,7 +326,7 @@ test.describe('economics', () => {
   test('a failed request never looks like a zero margin', async ({ page }) => {
     await loginAsAdmin(page)
     const { dealId } = await seedDealWithRate(page.request, {
-      nome: `Progetto Errore ${Date.now()}`,
+      name: `Progetto Errore ${Date.now()}`,
       rate: '100.000000',
     })
     await page.route('**/api/deals/*/pnl', (route) => route.abort('failed'))

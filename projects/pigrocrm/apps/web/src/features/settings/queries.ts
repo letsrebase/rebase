@@ -168,7 +168,7 @@ export function useInviteUser() {
   return useMutation({
     mutationFn: (body: {
       email: string
-      nome: string | null
+      name: string | null
       role: string
       legal_entities?: string[] | null
     }) =>

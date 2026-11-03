@@ -20,7 +20,7 @@ function ok(data: unknown) {
 const TEMPLATE = {
   id: 't1',
   contract_id: 'c1',
-  nome: 'Fattura mensile',
+  name: 'Fattura mensile',
   subject: 'Fattura {{numero_fattura}}',
   body: 'Gentile {{cliente}}',
   attachments: ['invoice_pdf', 'register_pdf'],
@@ -49,11 +49,11 @@ const PREVIEW = {
   body: 'Gentile Acme S.r.l.,\n\nin allegato la fattura 2026/12.',
   to_suggested: ['mario@acme.example'],
   attachments: [
-    { type: 'invoice_pdf', nome: 'Fattura 2026/12' },
-    { type: 'register_pdf', nome: 'Registro giornate 01/10/2026 - 31/10/2026' },
+    { type: 'invoice_pdf', name: 'Fattura 2026/12' },
+    { type: 'register_pdf', name: 'Registro giornate 01/10/2026 - 31/10/2026' },
   ],
-  da: '2026-10-01',
-  a: '2026-10-31',
+  from: '2026-10-01',
+  to: '2026-10-31',
 }
 
 function mockGets(templates: unknown[]) {
@@ -63,7 +63,7 @@ function mockGets(templates: unknown[]) {
       return ok(DRAFT)
     }
     if (path.endsWith('/email-template-variables')) {
-      return ok([{ nome: 'customer', label: 'Cliente' }])
+      return ok([{ name: 'customer', label: 'Cliente' }])
     }
     return ok(templates)
   }) as never)
@@ -114,7 +114,7 @@ describe('ContractEmailSection', () => {
         '/api/contracts/{contract_id}/email-templates',
         expect.objectContaining({
           body: expect.objectContaining({
-            nome: 'Fattura mensile',
+            name: 'Fattura mensile',
             attachments: ['invoice_pdf', 'register_pdf'],
           }),
         }),

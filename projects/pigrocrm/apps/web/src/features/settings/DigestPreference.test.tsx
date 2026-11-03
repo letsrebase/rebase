@@ -25,7 +25,7 @@ function failed(error: unknown, status: number) {
 const USER = {
   id: 'u1',
   email: 'collab@pigro.it',
-  nome: 'Cora Collaboratrice',
+  name: 'Cora Collaboratrice',
   role: 'collaborator' as const,
   active: true,
   weekly_digest: true,

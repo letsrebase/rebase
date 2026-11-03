@@ -93,8 +93,8 @@ function LegalEntityPicker({
           size="sm"
           onClick={() => onPick(legal_entity.id)}
         >
-          {legal_entity.nome}
-          {legal_entity.predefinita ? (
+          {legal_entity.name}
+          {legal_entity.is_default ? (
             <Badge variant="secondary" className="ml-2">
               predefinita
             </Badge>

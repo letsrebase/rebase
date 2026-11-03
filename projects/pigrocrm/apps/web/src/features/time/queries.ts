@@ -29,8 +29,8 @@ export interface TimeEntriesListParams {
   deal_id?: string
   legal_entity_id?: string
   user_id?: string
-  da?: string
-  a?: string
+  from?: string
+  to?: string
   billable?: boolean
   invoiced?: boolean
 }

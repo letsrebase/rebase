@@ -74,12 +74,12 @@ test.describe('il calendario', () => {
     page,
   }) => {
     await loginAsAdmin(page)
-    const nome = `Calendario E2E ${Date.now()}`
+    const name = `Calendario E2E ${Date.now()}`
     // `page.request`, never the top-level `request` fixture: the second is its own
     // APIRequestContext and carries none of the page's cookies, so every seeding call
     // through it answers 401. `seedDealWithRate`'s own callers all use `page.request`
     // for that reason, and this spec's first run learned it the hard way.
-    await seedDealWithRate(page.request, { nome, rate: '80.00' })
+    await seedDealWithRate(page.request, { name, rate: '80.00' })
 
     await page.goto(`/app/calendar?month=${Month}`)
     // The cell is addressed by the label the component builds ("1: … ore"), not by a
@@ -89,7 +89,7 @@ test.describe('il calendario', () => {
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()
     await dialog.getByRole('combobox', { name: 'Deal' }).click()
-    await page.getByRole('option', { name: nome }).click()
+    await page.getByRole('option', { name: name }).click()
     await dialog.getByRole('button', { name: 'Giornata (8h)' }).click()
 
     // The calendar itself shows it, which is the read the page just invalidated.

@@ -49,8 +49,8 @@ function projection(from_renewal: string, total: string) {
   return {
     contract_id: 'c1',
     come_di: '2026-10-26',
-    da: '2026-10-26',
-    a: '2027-01-01',
+    from: '2026-10-26',
+    to: '2027-01-01',
     irrevocability_window_until_to: '2026-11-25',
     scheduled: '1500.00',
     from_renewal,

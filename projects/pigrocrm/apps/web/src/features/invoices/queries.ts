@@ -390,7 +390,7 @@ export function useMarkTransmitted(invoiceId: string) {
       unwrap(
         api.POST('/api/invoices/{invoice_id}/transmitted', {
           params: { path: { invoice_id: invoiceId } },
-          body: { data },
+          body: { date: data },
         }),
       ),
     onSuccess: () => invalidate(invoiceId),

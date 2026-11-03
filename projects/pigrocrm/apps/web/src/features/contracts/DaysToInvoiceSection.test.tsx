@@ -104,8 +104,8 @@ describe('DaysToInvoiceSection', () => {
   })
 
   it('bills one month when one is chosen, asking the server for that month', async () => {
-    vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query?: { da?: string } } }) =>
-      ok(init.params.query?.da === '2026-10-01' ? days({ lines: [OCTOBER], months: ['2026-10', '2026-11'], taxable_amount: '750.00' }) : days())) as never)
+    vi.mocked(api.GET).mockImplementation(((_path: string, init: { params: { query?: { from?: string } } }) =>
+      ok(init.params.query?.from === '2026-10-01' ? days({ lines: [OCTOBER], months: ['2026-10', '2026-11'], taxable_amount: '750.00' }) : days())) as never)
     vi.mocked(api.POST).mockImplementation((() => ok({ id: 'inv-1' })) as never)
     renderSection()
 
@@ -116,7 +116,7 @@ describe('DaysToInvoiceSection', () => {
 
     expect(api.POST).toHaveBeenCalledWith(
       '/api/contracts/{contract_id}/invoice-days',
-      expect.objectContaining({ body: { da: '2026-10-01', a: '2026-10-31' } }),
+      expect.objectContaining({ body: { from: '2026-10-01', to: '2026-10-31' } }),
     )
   })
 

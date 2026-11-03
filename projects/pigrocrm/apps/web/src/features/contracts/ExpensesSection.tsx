@@ -39,7 +39,7 @@ import {
 
 interface ExpenseFormValues {
   category_id: string
-  data: string
+  date: string
   amount: string
   description: string
   pre_authorized: boolean
@@ -49,7 +49,7 @@ interface ExpenseFormValues {
 function emptyForm(): ExpenseFormValues {
   return {
     category_id: '',
-    data: toIsoDate(new Date()),
+    date: toIsoDate(new Date()),
     amount: '',
     description: '',
     pre_authorized: false,
@@ -60,7 +60,7 @@ function emptyForm(): ExpenseFormValues {
 function toFormValues(expense: ContractExpense): ExpenseFormValues {
   return {
     category_id: expense.category_id,
-    data: expense.data,
+    date: expense.date,
     amount: String(expense.amount),
     description: expense.description,
     pre_authorized: expense.pre_authorized,
@@ -107,7 +107,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
       ...(isCreate || values.category_id !== expense.category_id
         ? { category_id: values.category_id }
         : {}),
-      data: values.data,
+      date: values.date,
       amount: values.amount.trim().replace(',', '.'),
       description: values.description.trim(),
       pre_authorized: values.pre_authorized,
@@ -140,7 +140,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
     fieldError !== null &&
     [
       'category_id',
-      'data',
+      'date',
       'amount',
       'description',
       'authorization_reference',
@@ -168,7 +168,7 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
             <SelectContent>
               {choices.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
-                  {category.nome}
+                  {category.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -178,15 +178,15 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="expense-data">Data</Label>
+            <Label htmlFor="expense-date">Data</Label>
             <Input
-              id="expense-data"
+              id="expense-date"
               type="date"
-              value={values.data}
-              onChange={(event) => set('data', event.target.value)}
-              aria-invalid={fieldError?.field === 'data'}
+              value={values.date}
+              onChange={(event) => set('date', event.target.value)}
+              aria-invalid={fieldError?.field === 'date'}
             />
-            {errorOn('data')}
+            {errorOn('date')}
           </div>
           <div className="space-y-2">
             <Label htmlFor="expense-amount">Importo ({currencySign(currency)})</Label>
@@ -275,7 +275,7 @@ export function ExpensesSection({ contractId, currency }: { contractId: string; 
   const [dialog, setDialog] = useState<{ open: boolean; expense?: ContractExpense }>({
     open: false,
   })
-  const categoryName = new Map((categories.data ?? []).map((category) => [category.id, category.nome]))
+  const categoryName = new Map((categories.data ?? []).map((category) => [category.id, category.name]))
 
   return (
     <Card>
@@ -310,7 +310,7 @@ export function ExpensesSection({ contractId, currency }: { contractId: string; 
                       <StatusPill tone={standing.tone}>{standing.label}</StatusPill>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {formatDate(expense.data)} · {categoryName.get(expense.category_id) ?? '—'}
+                      {formatDate(expense.date)} · {categoryName.get(expense.category_id) ?? '—'}
                       {expense.pre_authorized
                         ? ` · autorizzata: ${expense.authorization_reference ?? ''}`
                         : ''}

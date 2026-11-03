@@ -83,7 +83,7 @@ export function PersonDetail() {
   if (!person) return <p className="p-8">Persona non trovata.</p>
 
   const custom = schema.data?.custom_fields ?? []
-  const fullName = `${person.nome} ${person.last_name ?? ''}`.trim()
+  const fullName = `${person.first_name} ${person.last_name ?? ''}`.trim()
 
   function archive() {
     if (!person) return

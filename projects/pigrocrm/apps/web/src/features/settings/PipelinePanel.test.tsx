@@ -25,7 +25,7 @@ function failed(error: unknown, status: number) {
 
 const STAGE = {
   id: 's1',
-  nome: 'Lead',
+  name: 'Lead',
   position: 0,
   default_probability: 10,
   type: 'open' as const,
@@ -57,9 +57,9 @@ beforeEach(() => {
  *  loaded full `pnpm --filter web test` run this shape lost the race (REB-405), the
  *  same headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already
  *  describes for the suite as a whole. Matching that headroom here. */
-async function openRowMenu(nome: string) {
+async function openRowMenu(name: string) {
   await userEvent.click(
-    await screen.findByRole('button', { name: `Azioni per ${nome}` }, { timeout: 10_000 }),
+    await screen.findByRole('button', { name: `Azioni per ${name}` }, { timeout: 10_000 }),
   )
   // Radix opens the menu content into a portal, so the trigger's click resolving does
   // not itself guarantee the content has mounted: wait for the menu here so every
@@ -184,7 +184,7 @@ describe('PipelinePanel', () => {
       expect(api.POST).toHaveBeenCalledWith(
         '/api/pipeline-stages',
         expect.objectContaining({
-          body: expect.objectContaining({ nome: 'Trattativa', type: 'open' }),
+          body: expect.objectContaining({ name: 'Trattativa', type: 'open' }),
         }),
       ),
     )

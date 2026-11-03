@@ -55,12 +55,12 @@ describe('useTimeEntries', () => {
   it('forwards its filters and asks for a full page', async () => {
     const { wrapper } = harness()
     mockGet.mockReturnValueOnce(ok({ items: [], next_cursor: null }))
-    renderHook(() => useTimeEntries({ deal_id: 'd-1', da: '2026-08-01' }), { wrapper })
+    renderHook(() => useTimeEntries({ deal_id: 'd-1', from: '2026-08-01' }), { wrapper })
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
     expect(mockGet).toHaveBeenCalledWith(
       '/api/time-entries',
       expect.objectContaining({
-        params: { query: { deal_id: 'd-1', da: '2026-08-01', limit: 200 } },
+        params: { query: { deal_id: 'd-1', from: '2026-08-01', limit: 200 } },
       }),
     )
   })

@@ -33,9 +33,9 @@ export function useRecordLabel(link: LinkValue | null): string | undefined {
     case 'customer':
       return customer.data?.legal_name
     case 'person':
-      return person.data ? [person.data.nome, person.data.last_name].filter(Boolean).join(' ') : undefined
+      return person.data ? [person.data.first_name, person.data.last_name].filter(Boolean).join(' ') : undefined
     case 'deal':
-      return deal.data?.nome
+      return deal.data?.name
     case 'invoice': {
       const data = invoice.data
       if (!data) return undefined
@@ -49,7 +49,7 @@ export function useRecordLabel(link: LinkValue | null): string | undefined {
 
 export interface Assignee {
   id: string
-  nome: string
+  name: string
 }
 
 /**
@@ -67,17 +67,17 @@ export function useAssignees() {
 
   const options = useMemo<Assignee[]>(() => {
     if (admin) {
-      return (users.data ?? []).filter((item) => item.active).map(({ id, nome }) => ({ id, nome }))
+      return (users.data ?? []).filter((item) => item.active).map(({ id, name: name }) => ({ id, name }))
     }
-    return user ? [{ id: user.id, nome: user.nome }] : []
+    return user ? [{ id: user.id, name: user.name }] : []
   }, [admin, users.data, user])
 
   const nameOf = useCallback(
     (id: string | null): string | null => {
       if (id === null) return null
       const known = (admin ? users.data : undefined)?.find((item) => item.id === id)
-      if (known) return known.nome
-      return user?.id === id ? user.nome : 'Un collega'
+      if (known) return known.name
+      return user?.id === id ? user.name : 'Un collega'
     },
     [admin, users.data, user],
   )

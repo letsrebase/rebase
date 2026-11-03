@@ -102,7 +102,7 @@ function Loaded({ day }: { day: WorkUnitDetail }) {
     <>
       <PageHeader
         icon={CalendarCheck}
-        title={`Giornata del ${formatIsoDateItalian(day.data)}`}
+        title={`Giornata del ${formatIsoDateItalian(day.date)}`}
         description={`${day.contract_title}, ${day.customer_name}`}
         actions={
           canWrite && offered.length > 0 ? (

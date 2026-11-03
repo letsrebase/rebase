@@ -6,7 +6,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 
 interface Riga {
   id: string
-  nome: string
+  name: string
 }
 
 // Two columns on purpose: a plain `accessorKey` (the default "just call
@@ -19,8 +19,8 @@ const COLUMNS: ColumnDef<DataTableFeatures, Riga>[] = [
   { accessorKey: 'nome', header: 'Nome' },
 ]
 
-const ACME: Riga = { id: '1', nome: 'ACME Srl' }
-const BETA: Riga = { id: '2', nome: 'Beta SpA' }
+const ACME: Riga = { id: '1', name: 'ACME Srl' }
+const BETA: Riga = { id: '2', name: 'Beta SpA' }
 const DATA: Riga[] = [ACME, BETA]
 
 function rowFor(text: string): HTMLElement {

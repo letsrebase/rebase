@@ -506,13 +506,13 @@ describe('EconomicTab', () => {
 
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 
-function legalEntityRecord(id: string, nome: string): LegalEntityRecord {
+function legalEntityRecord(id: string, name: string): LegalEntityRecord {
   return {
     id,
-    nome,
-    predefinita: id === 'a-1',
+    name,
+    is_default: id === 'a-1',
     active: true,
-    legal_name: nome,
+    legal_name: name,
     vat_number: null,
     tax_code: null,
     address: null,

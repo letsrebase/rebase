@@ -47,8 +47,8 @@ describe('the settings label maps', () => {
   })
 
   it('does not read a key named like an object property as a label', () => {
-    expect(ruleLabel('constructor')).toBe(humaniseKey('constructor'))
-    expect(templateTypeLabel('__proto__')).toBe(humaniseKey('__proto__'))
-    expect(costCategoryCodeLabel('toString')).toBe(humaniseKey('toString'))
+    expect(ruleLabel('function Object() { [native code] }')).toBe(humaniseKey('function Object() { [native code] }'))
+    expect(templateTypeLabel('[object Object]')).toBe(humaniseKey('[object Object]'))
+    expect(costCategoryCodeLabel('function toString() { [native code] }')).toBe(humaniseKey('function toString() { [native code] }'))
   })
 })

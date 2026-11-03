@@ -80,7 +80,7 @@ function DealPicker({
         <SelectContent>
           {candidates.map((deal) => (
             <SelectItem key={deal.id} value={deal.id} disabled={!hasEstimate(deal)}>
-              {deal.nome}
+              {deal.name}
               {deal.customer_legal_name ? ` · ${deal.customer_legal_name}` : ''}
               {hasEstimate(deal) ? '' : ' (senza stima)'}
             </SelectItem>

@@ -49,7 +49,7 @@ export function PeriodsPanel() {
 
   // Resolved from the users list rather than from a name embedded in the lock: the lock
   // stores an id, and a renamed user must show its current name here.
-  const names = new Map((users.data ?? []).map((user) => [user.id, user.nome]))
+  const names = new Map((users.data ?? []).map((user) => [user.id, user.name]))
 
   return (
     <div className="space-y-6">

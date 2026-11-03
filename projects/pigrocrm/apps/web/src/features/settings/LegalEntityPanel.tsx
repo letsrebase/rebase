@@ -20,7 +20,7 @@ import { isStaleRow, type StalePhase } from './staleRow'
  */
 interface LegalEntityField {
   name:
-    | 'nome'
+    | 'name'
     | 'legal_name'
     | 'vat_number'
     | 'tax_code'
@@ -41,7 +41,7 @@ interface LegalEntityField {
 }
 
 const FIELDS: readonly LegalEntityField[] = [
-  { name: 'nome', label: 'Nome breve', hint: 'Come compare nelle liste; vuoto, è la ragione sociale' },
+  { name: 'name', label: 'Nome breve', hint: 'Come compare nelle liste; vuoto, è la ragione sociale' },
   { name: 'legal_name', label: 'Ragione sociale', required: true },
   { name: 'vat_number', label: 'Partita IVA', hint: '11 cifre' },
   { name: 'tax_code', label: 'Codice fiscale' },

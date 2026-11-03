@@ -211,7 +211,7 @@ function LogHours({
             <SelectContent>
               {(deals.data?.items ?? []).map((deal) => (
                 <SelectItem key={deal.id} value={deal.id}>
-                  {deal.nome}
+                  {deal.name}
                 </SelectItem>
               ))}
             </SelectContent>

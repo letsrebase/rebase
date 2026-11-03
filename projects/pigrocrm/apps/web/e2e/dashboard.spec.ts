@@ -100,7 +100,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await loginAsAdmin(page)
     const me = (await (await page.request.get('/api/auth/me')).json()) as {
       id: string
-      nome: string
+      name: string
     }
     const cycle = await seedCycleFixture(page)
 
@@ -179,7 +179,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(movimento).toContainText('A: Vinto')
     // The member's name, resolved from the id the payload holds (REB-781), and the channel
     // they used: this test drives the browser.
-    await expect(movimento).toContainText(`Attivata da ${me.nome} (dal web)`)
+    await expect(movimento).toContainText(`Attivata da ${me.name} (dal web)`)
 
     // 7. The signal, after: **down by one**.
     //
@@ -209,7 +209,7 @@ test.describe('il ciclo completo — metà umana', () => {
     // document. Seeded so the count is at least one — a card and a list that agree on zero
     // agree about nothing, and would go on agreeing with the filter deleted.
     const { dealId } = await seedDealWithRate(page.request, {
-      nome: `Ciclo da fatturare ${stamp}`,
+      name: `Ciclo da fatturare ${stamp}`,
       rate: '90.000000',
     })
     const entry = await page.request.post('/api/time-entries', {
@@ -233,7 +233,7 @@ test.describe('il ciclo completo — metà umana', () => {
     // And one deal that does *not* satisfy it, so "the filter narrows" is a fact this test
     // owns rather than one it inherits from whatever else the database happens to hold.
     await seedDealWithRate(page.request, {
-      nome: `Ciclo non fatturabile ${stamp}`,
+      name: `Ciclo non fatturabile ${stamp}`,
       rate: '90.000000',
     })
 

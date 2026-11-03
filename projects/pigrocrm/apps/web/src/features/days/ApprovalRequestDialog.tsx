@@ -32,7 +32,7 @@ import {
 
 interface Row {
   key: number
-  data: string
+  date: string
   quantity: string
   description: string
 }
@@ -42,11 +42,11 @@ let nextKey = 1
 function emptyRow(): Row {
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
-  return { key: nextKey++, data: toIsoDate(tomorrow), quantity: FULL_DAY, description: '' }
+  return { key: nextKey++, date: toIsoDate(tomorrow), quantity: FULL_DAY, description: '' }
 }
 
 function toDays(rows: readonly Row[]): ApprovalRequestDay[] {
-  return rows.map((row) => ({ data: row.data, quantity: row.quantity, description: row.description.trim() }))
+  return rows.map((row) => ({ date: row.date, quantity: row.quantity, description: row.description.trim() }))
 }
 
 /** Addresses typed in one field, separated by a comma, a semicolon or a space. */
@@ -103,8 +103,8 @@ export function ApprovalRequestDialog({
   const [sendFailure, setSendFailure] = useState<string | null>(null)
 
   const recipients = to ?? customer.data?.email ?? ''
-  const datesReady = rows.every((row) => row.data !== '' && row.description.trim() !== '')
-  const duplicated = new Set(rows.map((row) => row.data)).size !== rows.length
+  const datesReady = rows.every((row) => row.date !== '' && row.description.trim() !== '')
+  const duplicated = new Set(rows.map((row) => row.date)).size !== rows.length
 
   function reset() {
     setStep('dates')
@@ -250,8 +250,8 @@ export function ApprovalRequestDialog({
                     <Input
                       id={`req-date-${row.key}`}
                       type="date"
-                      value={row.data}
-                      onChange={(event) => update(row.key, { data: event.target.value })}
+                      value={row.date}
+                      onChange={(event) => update(row.key, { date: event.target.value })}
                     />
                   </div>
                   <div className="space-y-1">

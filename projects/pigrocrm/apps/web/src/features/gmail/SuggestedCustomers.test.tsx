@@ -22,21 +22,21 @@ vi.mock('@rebase/ui/sonner', () => ({ toast }))
 const PROPOSALS: SuggestedCustomer[] = [
   {
     domain: 'acme.it',
-    nome: 'Acme',
+    name: 'Acme',
     conversations: 4,
     last_message: '2026-09-20T09:30:00Z',
     people: [
-      { address: 'marco@acme.it', nome: 'Marco Bianchi', already_in_directory: false },
-      { address: 'sara@acme.it', nome: '', already_in_directory: false },
-      { address: 'luca@acme.it', nome: 'Luca', already_in_directory: true },
+      { address: 'marco@acme.it', name: 'Marco Bianchi', already_in_directory: false },
+      { address: 'sara@acme.it', name: '', already_in_directory: false },
+      { address: 'luca@acme.it', name: 'Luca', already_in_directory: true },
     ],
   },
   {
     domain: 'studio-rossi.it',
-    nome: 'Studio Rossi',
+    name: 'Studio Rossi',
     conversations: 1,
     last_message: null,
-    people: [{ address: 'anna@studio-rossi.it', nome: 'Anna', already_in_directory: false }],
+    people: [{ address: 'anna@studio-rossi.it', name: 'Anna', already_in_directory: false }],
   },
 ]
 
@@ -111,7 +111,7 @@ describe('the proposed customers', () => {
             {
               domain: 'acme.it',
               legal_name: 'Acme S.r.l.',
-              people: [{ address: 'marco@acme.it', nome: 'Marco Bianchi' }],
+              people: [{ address: 'marco@acme.it', name: 'Marco Bianchi' }],
             },
           ],
         },

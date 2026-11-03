@@ -322,10 +322,10 @@ export async function relaunchApi(): Promise<void> {
 export async function seedDealWithRate(
   request: APIRequestContext,
   {
-    nome,
+    name,
     rate: rateValue,
     customer: customerOverrides,
-  }: { nome: string; rate: string; customer?: Record<string, string> },
+  }: { name: string; rate: string; customer?: Record<string, string> },
 ): Promise<{ dealId: string; customerId: string }> {
   const customerResponse = await request.post('/api/customers', {
     // Merged over the default, never replacing it: `time-tracking.spec.ts` needs
@@ -335,13 +335,13 @@ export async function seedDealWithRate(
     // recipient with no address, no P.IVA or no `sdi_code`. A second seeding helper
     // for that one difference would be two fixtures to keep in step; an override on the
     // one that exists is the same fixture with more of the record filled in.
-    data: { legal_name: `${nome} SRL`, ...customerOverrides },
+    data: { legal_name: `${name} SRL`, ...customerOverrides },
   })
   expect(customerResponse.status(), await customerResponse.text()).toBe(201)
   const customer = (await customerResponse.json()) as { id: string }
 
   const dealResponse = await request.post('/api/deals', {
-    data: { nome, customer_id: customer.id },
+    data: { name, customer_id: customer.id },
   })
   expect(dealResponse.status(), await dealResponse.text()).toBe(201)
   const deal = (await dealResponse.json()) as { id: string }
@@ -464,7 +464,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
 
   const deal = await page.request.post('/api/deals', {
     data: {
-      nome: dealName,
+      name: dealName,
       customer_id: customerId,
       pipeline_stage_id: openStage.id,
       // A string, never a JSON number: `expected_value` is `Numeric(12,2)`, and a float

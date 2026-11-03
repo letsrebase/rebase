@@ -24,7 +24,7 @@ test('a collaboratore is offered only their own Settings groups and cannot reach
   // account with a password, and `legal_entities.spec.ts` seeds its second member the same way.
   await loginAsAdmin(page)
   const created = await page.request.post('/api/users', {
-    data: { email, password, nome: 'Collaboratore E2E', role: 'collaborator' },
+    data: { email, password, name: 'Collaboratore E2E', role: 'collaborator' },
   })
   expect(created.status(), await created.text()).toBe(201)
 

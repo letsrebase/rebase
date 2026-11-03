@@ -104,7 +104,7 @@ export function TokensPanel() {
   const { user } = useAuth()
   const [creating, setCreating] = useState(false)
   const [connecting, setConnecting] = useState(false)
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [fullAccess, setFullAccess] = useState(false)
   const [issued, setIssued] = useState<CreatedToken | null>(null)
@@ -125,7 +125,7 @@ export function TokensPanel() {
   useUnsavedTokenGuard(Boolean(issued))
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
-  const banner = problem && fieldError?.field !== 'nome' ? problem.detail : null
+  const banner = problem && fieldError?.field !== 'name' ? problem.detail : null
 
   function openDialog() {
     setProblem(null)
@@ -136,7 +136,7 @@ export function TokensPanel() {
 
   function submit() {
     setProblem(null)
-    create.mutate({ nome, full_access: fullAccess && fullAccessAvailable }, {
+    create.mutate({ name, full_access: fullAccess && fullAccessAvailable }, {
       onSuccess: (created) => {
         setIssued(created)
         setCopied(false)
@@ -162,7 +162,7 @@ export function TokensPanel() {
 
   function revokeToken(token: TokenRecord) {
     const confirmed = window.confirm(
-      `Revocare il token "${token.nome}"? Chi lo usa smetterà immediatamente di avere accesso. L'operazione non è reversibile.`,
+      `Revocare il token "${token.name}"? Chi lo usa smetterà immediatamente di avere accesso. L'operazione non è reversibile.`,
     )
     if (!confirmed) return
 
@@ -177,7 +177,7 @@ export function TokensPanel() {
   function changeAccess(token: TokenRecord, next: boolean, whose = '') {
     if (next) {
       const confirmed = window.confirm(
-        `Dare l’accesso completo al token "${token.nome}"${whose}? ${FULL_ACCESS_HELP}`,
+        `Dare l’accesso completo al token "${token.name}"${whose}? ${FULL_ACCESS_HELP}`,
       )
       if (!confirmed) return
     }
@@ -237,7 +237,7 @@ export function TokensPanel() {
         // for it at all rather than a menu holding one disabled item.
         return (
           <RowActions
-            label={`Azioni per ${token.nome}`}
+            label={`Azioni per ${token.name}`}
             items={
               token.revoked_at
                 ? []
@@ -272,7 +272,7 @@ export function TokensPanel() {
         const token = info.row.original
         return (
           <RowActions
-            label={`Azioni per ${token.nome} di ${token.owner_name}`}
+            label={`Azioni per ${token.name} di ${token.owner_name}`}
             items={fullAccessAction(token, fullAccessAvailable, (t, next) =>
               changeAccess(t, next, ` di ${token.owner_name}`),
             )}
@@ -387,11 +387,11 @@ export function TokensPanel() {
             <Label htmlFor="token-nome">Nome</Label>
             <Input
               id="token-nome"
-              aria-invalid={fieldError?.field === 'nome'}
-              value={nome}
+              aria-invalid={fieldError?.field === 'name'}
+              value={name}
               onChange={(event) => setName(event.target.value)}
             />
-            {fieldError?.field === 'nome' && (
+            {fieldError?.field === 'name' && (
               <p className="text-sm text-destructive">{fieldError.message}</p>
             )}
           </div>

@@ -30,7 +30,7 @@ const TIMES = { created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:0
 
 const SOFTWARE = {
   id: 'cat-2',
-  nome: 'Software e licenze',
+  name: 'Software e licenze',
   position: 1,
   code: 'software_licenses',
   archived: false,
@@ -38,7 +38,7 @@ const SOFTWARE = {
 }
 const CONSULTING = {
   id: 'cat-1',
-  nome: 'Consulenza esterna',
+  name: 'Consulenza esterna',
   position: 0,
   code: 'external_consulting',
   archived: false,
@@ -47,7 +47,7 @@ const CONSULTING = {
 /** No `code`: created by hand from this very panel, and archived later. */
 const OLD = {
   id: 'cat-9',
-  nome: 'Vecchia voce',
+  name: 'Vecchia voce',
   position: 7,
   code: null,
   archived: true,
@@ -80,17 +80,17 @@ function renderPanel() {
 /** The `<li>` a named category lives in, reached through its own name input: the row
  *  has no test id and no heading, and every assertion about it is really an assertion
  *  about that row rather than about the list. */
-function rowFor(nome: string) {
-  const input = screen.getByLabelText(`Nome della categoria ${nome}`)
+function rowFor(name: string) {
+  const input = screen.getByLabelText(`Nome della categoria ${name}`)
   const row = input.closest('li')
-  if (!row) throw new Error(`no row for ${nome}`)
+  if (!row) throw new Error(`no row for ${name}`)
   return row
 }
 
 /** The row's actions live behind the «⋯» menu since the 2026-09-08 revision (design
  *  spec §4); the trigger is labelled per category so a list of them stays unambiguous. */
-async function openRowMenu(nome: string) {
-  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${nome}` }))
+async function openRowMenu(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${name}` }))
 }
 
 beforeEach(() => {
@@ -181,7 +181,7 @@ describe('CostCategoriesPanel', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/cost-categories', {
-        body: { nome: 'Formazione', position: 2 },
+        body: { name: 'Formazione', position: 2 },
       }),
     )
   })
@@ -326,7 +326,7 @@ describe('CostCategoriesPanel', () => {
    */
   it('renames with the trimmed name alone, never the code or the position', async () => {
     respond([CONSULTING])
-    vi.mocked(api.PATCH).mockImplementation(() => ok({ ...CONSULTING, nome: 'Consulenze' }))
+    vi.mocked(api.PATCH).mockImplementation(() => ok({ ...CONSULTING, name: 'Consulenze' }))
     renderPanel()
 
     const input = await screen.findByLabelText('Nome della categoria Consulenza esterna')
@@ -338,7 +338,7 @@ describe('CostCategoriesPanel', () => {
     await waitFor(() =>
       expect(api.PATCH).toHaveBeenCalledWith('/api/cost-categories/{category_id}', {
         params: { path: { category_id: 'cat-1' } },
-        body: { nome: 'Consulenze' },
+        body: { name: 'Consulenze' },
       }),
     )
   })

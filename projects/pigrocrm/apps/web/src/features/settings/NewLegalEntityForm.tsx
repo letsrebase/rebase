@@ -16,7 +16,7 @@ import { useCreateLegalEntity, type LegalEntityRecord } from './queries'
  */
 interface IdentityField {
   name:
-    | 'nome'
+    | 'name'
     | 'legal_name'
     | 'vat_number'
     | 'tax_code'
@@ -34,7 +34,7 @@ interface IdentityField {
 }
 
 const IDENTITY: readonly IdentityField[] = [
-  { name: 'nome', label: 'Nome breve', required: true, hint: 'Come compare nel selettore e nelle liste' },
+  { name: 'name', label: 'Nome breve', required: true, hint: 'Come compare nel selettore e nelle liste' },
   { name: 'legal_name', label: 'Ragione sociale', required: true },
   { name: 'vat_number', label: 'Partita IVA', hint: '11 cifre per un’azienda italiana' },
   { name: 'tax_code', label: 'Codice fiscale' },
@@ -152,7 +152,7 @@ function bodyFrom(values: Values): Record<string, unknown> {
   ) as Record<IdentityName, string | null>
   return {
     ...identity,
-    nome: values.identity.nome.trim(),
+    name: values.identity.name.trim(),
     legal_name: values.identity.legal_name.trim(),
     country: values.identity.country.trim().toUpperCase() || 'IT',
     fiscal_profile: fiscalBody(values),
@@ -180,7 +180,7 @@ export function NewLegalEntityForm({
     setProblem(null)
     create.mutate(bodyFrom(values), {
       onSuccess: (created) => {
-        toast.success(`Azienda «${created.nome}» creata`)
+        toast.success(`Azienda «${created.name}» creata`)
         onCreated(created)
       },
       onError: (error) => setProblem(toProblem(error)),
@@ -214,7 +214,7 @@ export function NewLegalEntityForm({
       ? fieldError.message
       : null
   const incomplete =
-    values.identity.nome.trim() === '' ||
+    values.identity.name.trim() === '' ||
     values.identity.legal_name.trim() === '' ||
     values.default_vat_rate.trim() === ''
 

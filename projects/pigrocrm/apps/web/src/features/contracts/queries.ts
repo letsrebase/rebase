@@ -254,8 +254,8 @@ export function useSetRenewalAssumption(contractId: string) {
 }
 
 export interface ProjectionWindow {
-  da: string
-  a: string
+  from: string
+  to: string
 }
 
 export function useContractProjection(

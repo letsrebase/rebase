@@ -30,7 +30,7 @@ function failed(error: unknown, status: number) {
 const ADMIN = {
   id: 'u1',
   email: 'admin@pigro.it',
-  nome: 'Ada Admin',
+  name: 'Ada Admin',
   role: 'admin' as const,
   active: true,
   created_at: '2026-08-01T10:00:00Z',
@@ -40,7 +40,7 @@ const ADMIN = {
 const DISABLED_USER = {
   id: 'u2',
   email: 'ex@pigro.it',
-  nome: 'Ex Collega',
+  name: 'Ex Collega',
   role: 'collaborator' as const,
   active: false,
   created_at: '2026-08-01T10:00:00Z',
@@ -50,7 +50,7 @@ const DISABLED_USER = {
 const OTHER_ACTIVE_USER = {
   id: 'u3',
   email: 'altro@pigro.it',
-  nome: 'Altro Utente',
+  name: 'Altro Utente',
   role: 'collaborator' as const,
   active: true,
   created_at: '2026-08-01T10:00:00Z',
@@ -60,7 +60,7 @@ const OTHER_ACTIVE_USER = {
 const PENDING_INVITE = {
   id: 'i1',
   email: 'luca@pigro.it',
-  nome: 'Luca',
+  name: 'Luca',
   role: 'collaborator' as const,
   invited_by: 'u1',
   expires_at: '2026-09-29T10:00:00Z',
@@ -77,8 +77,8 @@ function respond(routes: Record<string, () => unknown>) {
   })
 }
 
-const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, active: true } as LegalEntityRecord
-const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, active: true } as LegalEntityRecord
+const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
 
 /** The provider's value for a two-legal-entity space, the shape `AppShell` reads too. */
 function twoLegalEntities(): LegalEntityValue {
@@ -136,9 +136,9 @@ beforeEach(() => {
  * same headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already describes
  * for the suite as a whole. Matching that headroom here.
  */
-async function openRowMenu(nome: string) {
+async function openRowMenu(name: string) {
   await userEvent.click(
-    await screen.findByRole('button', { name: `Azioni per ${nome}` }, { timeout: 10_000 }),
+    await screen.findByRole('button', { name: `Azioni per ${name}` }, { timeout: 10_000 }),
   )
   // Radix opens the menu content into a portal, so the trigger's click resolving does
   // not itself guarantee the content has mounted: wait for the menu here so every
@@ -247,7 +247,7 @@ describe('UsersPanel', () => {
       expect(api.POST).toHaveBeenCalledWith(
         '/api/users/invites',
         expect.objectContaining({
-          body: { email: 'giulia@pigro.it', nome: null, role: 'collaborator' },
+          body: { email: 'giulia@pigro.it', name: null, role: 'collaborator' },
         }),
       ),
     )
@@ -455,9 +455,9 @@ describe('UsersPanel', () => {
 
   describe('correcting a member’s name', () => {
     it('renames a member through the real endpoint', async () => {
-      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', nome: 'rebase' }
+      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', name: 'rebase' }
       respond({ ...lists, '/api/users': () => ok([ADMIN, founder]) })
-      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, nome: 'Ivan' })))
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, name: 'Ivan' })))
       renderPanel()
 
       await openRowMenu('rebase')
@@ -471,16 +471,16 @@ describe('UsersPanel', () => {
       await waitFor(() =>
         expect(api.PATCH).toHaveBeenCalledWith(
           '/api/users/{user_id}',
-          expect.objectContaining({ body: { nome: 'Ivan' } }),
+          expect.objectContaining({ body: { name: 'Ivan' } }),
         ),
       )
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Nome aggiornato'))
     })
 
     it('refreshes the signed-in user, so a renamed founder is renamed in the shell too', async () => {
-      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', nome: 'rebase' }
+      const founder = { ...OTHER_ACTIVE_USER, id: 'u9', name: 'rebase' }
       respond({ ...lists, '/api/users': () => ok([founder]) })
-      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, nome: 'Ivan' })))
+      vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...founder, name: 'Ivan' })))
       const { client } = renderPanel()
       const invalidate = vi.spyOn(client, 'invalidateQueries')
 
@@ -526,8 +526,8 @@ describe('UsersPanel', () => {
   // --- the scope of a member (REB-635, spec 2026-10-03 §1.11, §5 Team) --------------------
 
   describe('the aziende a member sees', () => {
-    const SCOPED_USER = { ...OTHER_ACTIVE_USER, id: 'u4', nome: 'Bea Scoped', legal_entities: ['a2'] }
-    const EMPTIED_USER = { ...OTHER_ACTIVE_USER, id: 'u5', nome: 'Carla Vuota', legal_entities: [] }
+    const SCOPED_USER = { ...OTHER_ACTIVE_USER, id: 'u4', name: 'Bea Scoped', legal_entities: ['a2'] }
+    const EMPTIED_USER = { ...OTHER_ACTIVE_USER, id: 'u5', name: 'Carla Vuota', legal_entities: [] }
 
     it('says «Tutte», the names, or that no azienda is active, from the second azienda on', async () => {
       respond({
@@ -561,7 +561,7 @@ describe('UsersPanel', () => {
         expect(api.POST).toHaveBeenCalledWith(
           '/api/users/invites',
           expect.objectContaining({
-            body: { email: 'giulia@pigro.it', nome: null, role: 'collaborator' },
+            body: { email: 'giulia@pigro.it', name: null, role: 'collaborator' },
           }),
         ),
       )
@@ -614,7 +614,7 @@ describe('UsersPanel', () => {
         expect(api.POST).toHaveBeenLastCalledWith(
           '/api/users/invites',
           expect.objectContaining({
-            body: { email: 'tutti@pigro.it', nome: null, role: 'collaborator', legal_entities: null },
+            body: { email: 'tutti@pigro.it', name: null, role: 'collaborator', legal_entities: null },
           }),
         ),
       )
@@ -627,7 +627,7 @@ describe('UsersPanel', () => {
         expect(api.POST).toHaveBeenLastCalledWith(
           '/api/users/invites',
           expect.objectContaining({
-            body: { email: 'bea@pigro.it', nome: null, role: 'collaborator', legal_entities: ['a2'] },
+            body: { email: 'bea@pigro.it', name: null, role: 'collaborator', legal_entities: ['a2'] },
           }),
         ),
       )
@@ -713,9 +713,9 @@ describe('the mail of an invitation', () => {
       ...lists,
       '/api/users/invites': () =>
         ok([
-          withMail('delivered', { id: 'i1', nome: 'Luca' }),
-          withMail('bounced', { id: 'i2', nome: 'Bianca', email: 'bianca@pigro.it' }),
-          withMail('failed', { id: 'i3', nome: 'Carla', email: 'carla@pigro.it' }),
+          withMail('delivered', { id: 'i1', name: 'Luca' }),
+          withMail('bounced', { id: 'i2', name: 'Bianca', email: 'bianca@pigro.it' }),
+          withMail('failed', { id: 'i3', name: 'Carla', email: 'carla@pigro.it' }),
         ]),
     })
     renderPanel()
@@ -735,7 +735,7 @@ describe('the mail of an invitation', () => {
     respond({
       ...lists,
       '/api/users/invites': () =>
-        ok([withMail('delivered', { id: 'i1' }), withMail('suppressed', { id: 'i2', nome: 'B' })]),
+        ok([withMail('delivered', { id: 'i1' }), withMail('suppressed', { id: 'i2', name: 'B' })]),
     })
     renderPanel()
 

@@ -32,7 +32,7 @@ import { useInviteUser, useUpdateUser, type UserRecord } from './queries'
  * to the two that edit a member, so a pending change on any row disables both Save buttons.
  */
 
-const KNOWN_FIELDS = ['email', 'nome', 'role', 'legal_entities']
+const KNOWN_FIELDS = ['email', 'name', 'role', 'legal_entities']
 
 function LegalEntitiesChecklist({
   legal_entities,
@@ -69,7 +69,7 @@ function LegalEntitiesChecklist({
                 )
               }
             />
-            <Label htmlFor={id}>{legal_entity.nome}</Label>
+            <Label htmlFor={id}>{legal_entity.name}</Label>
           </div>
         )
       })}
@@ -89,7 +89,7 @@ function unattributed(problem: ProblemDetail | null): string | null {
  *  the legal entities the invited person will see. */
 export function InviteUserDialog({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [roleValue, setRole] = useState<UserRecord['role']>('collaborator')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   // The scope (REB-635): the checked legal entities of the invite. Drawn from the second legal entity
@@ -113,7 +113,7 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
       // The scope only from the second legal entity on: a one-legal-entity space sends none.
       {
         email,
-        nome: nome.trim() === '' ? null : nome.trim(),
+        name: name.trim() === '' ? null : name.trim(),
         role: roleValue,
         ...(several ? { legal_entities: scopeBody(inviteLegalEntities, legal_entity.legal_entities) } : {}),
       },
@@ -172,11 +172,11 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
             <Label htmlFor="invite-nome">Nome (opzionale)</Label>
             <Input
               id="invite-nome"
-              aria-invalid={fieldError?.field === 'nome'}
-              value={nome}
+              aria-invalid={fieldError?.field === 'name'}
+              value={name}
               onChange={(event) => setName(event.target.value)}
             />
-            {fieldError?.field === 'nome' && (
+            {fieldError?.field === 'name' && (
               <p className="text-sm text-destructive">{fieldError.message}</p>
             )}
           </div>
@@ -233,13 +233,13 @@ export function RenameUserDialog({
   update: ReturnType<typeof useUpdateUser>
   onClose: () => void
 }) {
-  const [renameName, setRenameName] = useState(user.nome)
+  const [renameName, setRenameName] = useState(user.name)
   const [renameProblem, setRenameProblem] = useState<ProblemDetail | null>(null)
 
   function saveRename() {
     setRenameProblem(null)
     update.mutate(
-      { userId: user.id, body: { nome: renameName.trim() } },
+      { userId: user.id, body: { name: renameName.trim() } },
       {
         onSuccess: () => {
           toast.success('Nome aggiornato')
@@ -254,7 +254,7 @@ export function RenameUserDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nome di {user.nome}</DialogTitle>
+          <DialogTitle>Nome di {user.name}</DialogTitle>
           <DialogDescription>
             È il nome che compare nei selettori di assegnatario e responsabile e nello storico.
           </DialogDescription>
@@ -325,7 +325,7 @@ export function ScopeUserDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Aziende di {user.nome}</DialogTitle>
+          <DialogTitle>Aziende di {user.name}</DialogTitle>
           <DialogDescription>
             La modifica vale dalla prossima richiesta. Lo spazio tiene sempre almeno un
             amministratore che vede tutte le aziende.

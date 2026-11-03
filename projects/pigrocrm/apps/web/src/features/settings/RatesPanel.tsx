@@ -96,12 +96,12 @@ function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProbl
 
   return (
     <TableRow>
-      <TableCell>{user.nome}</TableCell>
+      <TableCell>{user.name}</TableCell>
       <TableCell>
         <Input
           type="number"
           step="0.000001"
-          aria-label={`Tariffa oraria di ${user.nome}`}
+          aria-label={`Tariffa oraria di ${user.name}`}
           aria-invalid={fieldError?.field === 'default_hourly_rate'}
           value={rate}
           onChange={(event) => setRate(event.target.value)}
@@ -115,7 +115,7 @@ function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProbl
         <Input
           type="number"
           step="0.000001"
-          aria-label={`Costo orario di ${user.nome}`}
+          aria-label={`Costo orario di ${user.name}`}
           aria-invalid={fieldError?.field === 'default_hourly_cost'}
           value={cost}
           onChange={(event) => setCost(event.target.value)}
@@ -159,12 +159,12 @@ function DealRateRow({ deal, onProblem }: { deal: Deal; onProblem: OnProblem }) 
 
   return (
     <TableRow>
-      <TableCell>{deal.nome}</TableCell>
+      <TableCell>{deal.name}</TableCell>
       <TableCell>
         <Input
           type="number"
           step="0.000001"
-          aria-label={`Tariffa oraria del deal ${deal.nome}`}
+          aria-label={`Tariffa oraria del deal ${deal.name}`}
           aria-invalid={fieldError?.field === 'hourly_rate'}
           value={rate}
           onChange={(event) => setRate(event.target.value)}
@@ -286,7 +286,7 @@ export function RatesPanel() {
               <SelectContent>
                 {withoutRate.map((deal) => (
                   <SelectItem key={deal.id} value={deal.id}>
-                    {deal.nome}
+                    {deal.name}
                   </SelectItem>
                 ))}
               </SelectContent>

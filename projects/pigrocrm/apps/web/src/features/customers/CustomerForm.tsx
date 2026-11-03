@@ -75,7 +75,7 @@ const NO_OWNER = '__nessuno'
 /** The people an admin may hand a customer to (REB-773), as the detail page draws them. */
 export interface OwnerOption {
   id: string
-  nome: string
+  name: string
 }
 
 /**
@@ -298,7 +298,7 @@ export function CustomerForm({
               <SelectContent>
                 {legal_entity.legal_entities.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    {item.nome}
+                    {item.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -339,7 +339,7 @@ export function CustomerForm({
                 <SelectItem value={NO_OWNER}>Nessuno</SelectItem>
                 {owners.map((person) => (
                   <SelectItem key={person.id} value={person.id}>
-                    {person.nome}
+                    {person.name}
                   </SelectItem>
                 ))}
               </SelectContent>

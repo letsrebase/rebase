@@ -29,7 +29,7 @@ function failed(error: unknown, status: number) {
 
 const EXISTING_TOKEN = {
   id: 't1',
-  nome: 'Claude',
+  name: 'Claude',
   prefix: 'pgc_abc12345',
   full_access: false,
   last_used_at: null,
@@ -39,7 +39,7 @@ const EXISTING_TOKEN = {
 
 const TEAM_TOKEN = {
   id: 't9',
-  nome: 'Fatturazione',
+  name: 'Fatturazione',
   prefix: 'pgc_team0001',
   full_access: true,
   last_used_at: null,
@@ -116,7 +116,7 @@ beforeEach(() => {
     user: {
       id: 'u1',
       email: 'admin@pigro.it',
-      nome: 'Admin',
+      name: 'Admin',
       role: 'admin',
       active: true,
       default_hourly_rate: null,
@@ -239,7 +239,7 @@ describe('TokensPanel', () => {
         Promise.resolve(
           ok({
             id: 't2',
-            nome: 'Claude sul portatile',
+            name: 'Claude sul portatile',
             prefix: 'pgc_zzzz9999',
             full_access: false,
             last_used_at: null,
@@ -443,7 +443,7 @@ describe('TokensPanel', () => {
    */
   describe('full access, token by token', () => {
     it('shows each token as standard or complete', async () => {
-      mockGets(ok([EXISTING_TOKEN, { ...EXISTING_TOKEN, id: 't2', nome: 'Fatture', full_access: true }]))
+      mockGets(ok([EXISTING_TOKEN, { ...EXISTING_TOKEN, id: 't2', name: 'Fatture', full_access: true }]))
       renderPanel()
 
       expect(await screen.findByText('Standard')).toBeInTheDocument()
@@ -468,7 +468,7 @@ describe('TokensPanel', () => {
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-          body: { nome: 'Fatture', full_access: true },
+          body: { name: 'Fatture', full_access: true },
         }),
       )
     })
@@ -485,7 +485,7 @@ describe('TokensPanel', () => {
 
       await waitFor(() =>
         expect(api.POST).toHaveBeenCalledWith('/api/tokens', {
-          body: { nome: 'Chiacchiere', full_access: false },
+          body: { name: 'Chiacchiere', full_access: false },
         }),
       )
     })
@@ -586,7 +586,7 @@ describe('TokensPanel', () => {
         user: {
           id: 'u3',
           email: 'collab@pigro.it',
-          nome: 'Collab',
+          name: 'Collab',
           role: 'collaborator',
           active: true,
           default_hourly_rate: null,

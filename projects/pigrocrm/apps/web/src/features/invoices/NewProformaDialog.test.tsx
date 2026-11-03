@@ -45,8 +45,8 @@ const CUSTOMERS = [
 // purpose), which is what lets the deal-fixed dialog name the customer without asking
 // for it.
 const DEALS = [
-  { id: 'deal-1', nome: 'Sito vetrina', customer_id: 'cust-1', customer_legal_name: 'ACME Srl', legal_entity_id: 'a2' },
-  { id: 'deal-2', nome: 'App interna', customer_id: 'cust-1', customer_legal_name: 'ACME Srl', legal_entity_id: 'a1' },
+  { id: 'deal-1', name: 'Sito vetrina', customer_id: 'cust-1', customer_legal_name: 'ACME Srl', legal_entity_id: 'a2' },
+  { id: 'deal-2', name: 'App interna', customer_id: 'cust-1', customer_legal_name: 'ACME Srl', legal_entity_id: 'a1' },
 ]
 
 /** Every GET this dialog can make, answered by path. `useDeals` walks a cursor, so its
@@ -489,8 +489,8 @@ describe('NewProformaButton, opened from a record that already answers the quest
 })
 
 describe('«Emessa da» (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
 
   function twoLegalEntities() {
     legal_entities = {

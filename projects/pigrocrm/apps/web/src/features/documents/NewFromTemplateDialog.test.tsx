@@ -9,7 +9,7 @@ import type { Template, TemplateDescription } from './queries'
 
 const TEMPLATE: Template = {
   id: 't-1',
-  nome: 'Consulenza CTO',
+  name: 'Consulenza CTO',
   type: 'offer',
   body_markdown: 'Oggetto: {{oggetto}}',
   declared_variables: [],
@@ -20,11 +20,11 @@ const TEMPLATE: Template = {
 
 const DESCRIPTION: TemplateDescription = {
   id: 't-1',
-  nome: 'Consulenza CTO',
+  name: 'Consulenza CTO',
   type: 'offer',
   variables: [
-    { nome: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
-    { nome: 'urgent', label: 'Urgente', type: 'checkbox', required: false, options: [] },
+    { name: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
+    { name: 'urgent', label: 'Urgente', type: 'checkbox', required: false, options: [] },
   ],
   used_journeys: [['subject'], ['customer', 'legal_name']],
   variables_not_used: [],

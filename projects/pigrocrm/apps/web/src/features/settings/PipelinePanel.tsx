@@ -32,7 +32,7 @@ const TYPES = [
   { value: 'lost', label: 'Perso' },
 ] as const
 
-const KNOWN_FIELDS = ['nome', 'position', 'default_probability', 'type', 'code']
+const KNOWN_FIELDS = ['name', 'position', 'default_probability', 'type', 'code']
 
 function unattributed(problem: ProblemDetail | null): string | null {
   if (!problem) return null
@@ -43,7 +43,7 @@ function unattributed(problem: ProblemDetail | null): string | null {
 
 export function PipelinePanel() {
   const [open, setOpen] = useState(false)
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [probability, setProbability] = useState('0')
   const [typeValue, setType] = useState<'open' | 'won' | 'lost'>('open')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
@@ -68,7 +68,7 @@ export function PipelinePanel() {
     setProblem(null)
     create.mutate(
       {
-        nome,
+        name,
         position: stages.data?.length ?? 0,
         default_probability: Number(probability),
         type: typeValue,
@@ -92,7 +92,7 @@ export function PipelinePanel() {
     // their own (reversible) archive -- here it matters even more, since this one
     // truly cannot be undone from the UI.
     const confirmed = window.confirm(
-      `Eliminare definitivamente lo stato "${stage.nome}"? L'operazione non è reversibile.`,
+      `Eliminare definitivamente lo stato "${stage.name}"? L'operazione non è reversibile.`,
     )
     if (!confirmed) return
 
@@ -138,7 +138,7 @@ export function PipelinePanel() {
       // server (409), but a stage without them goes for good.
       cell: (info) => (
         <RowActions
-          label={`Azioni per ${info.row.original.nome}`}
+          label={`Azioni per ${info.row.original.name}`}
           items={[
             {
               label: 'Elimina',
@@ -211,11 +211,11 @@ export function PipelinePanel() {
               <Label htmlFor="stage-nome">Nome</Label>
               <Input
                 id="stage-nome"
-                aria-invalid={fieldError?.field === 'nome'}
-                value={nome}
+                aria-invalid={fieldError?.field === 'name'}
+                value={name}
                 onChange={(event) => setName(event.target.value)}
               />
-              {fieldError?.field === 'nome' && (
+              {fieldError?.field === 'name' && (
                 <p className="text-sm text-destructive">{fieldError.message}</p>
               )}
             </div>

@@ -125,7 +125,7 @@ export function TimerBar({
     stop.mutate(
       // Today from the browser's own calendar, not the server's UTC day: the person
       // stopping at 00:30 is still on the day they see on their clock.
-      { deal_id: chosenDeal, description: description.trim() || null, data: toIsoDate(new Date()) },
+      { deal_id: chosenDeal, description: description.trim() || null, date: toIsoDate(new Date()) },
       {
         onSuccess: (entry) => {
           toast.success(`Registrate ${formatHoursValue(entry.hours)} ore`)
@@ -220,7 +220,7 @@ export function TimerBar({
           <SelectItem value={NO_DEAL}>Nessun deal (scegli dopo)</SelectItem>
           {deals.map((deal) => (
             <SelectItem key={deal.id} value={deal.id}>
-              {deal.nome}
+              {deal.name}
             </SelectItem>
           ))}
         </SelectContent>

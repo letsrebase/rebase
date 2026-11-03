@@ -61,7 +61,7 @@ export function DealStageBar({
             <li key={stage.id} className="min-w-0 flex-1">
               <button
                 type="button"
-                title={stage.nome}
+                title={stage.name}
                 aria-current={isCurrent ? 'step' : undefined}
                 disabled={!canMove || busy || isCurrent}
                 onClick={() => onMove(stage.id)}
@@ -83,7 +83,7 @@ export function DealStageBar({
                   isCurrent && 'ring-2 ring-foreground/30 ring-offset-1 ring-offset-card',
                 )}
               >
-                <span className="truncate">{stage.nome}</span>
+                <span className="truncate">{stage.name}</span>
               </button>
             </li>
           );
@@ -98,13 +98,13 @@ export function DealStageBar({
                 outcome === 'won' ? 'text-foreground' : 'text-destructive',
               )}
             >
-              {current?.nome}
+              {current?.name}
             </span>
             {canMove ? ' · Per riaprirlo scegli una fase.' : ''}
           </>
         ) : current ? (
           <>
-            Fase attuale: <span className="font-medium text-foreground">{current.nome}</span>
+            Fase attuale: <span className="font-medium text-foreground">{current.name}</span>
             {canMove ? ' · Clicca una fase per spostarlo.' : ''}
           </>
         ) : (

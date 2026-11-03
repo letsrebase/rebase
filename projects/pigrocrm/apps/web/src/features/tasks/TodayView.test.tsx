@@ -17,7 +17,7 @@ const ME = '33333333-3333-7333-8333-333333333333'
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Lorenzo', role: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, name: 'Lorenzo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -70,7 +70,7 @@ let panel: {
 function serve() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/activities/today') return ok(panel)
-    if (path === '/api/users') return ok([{ id: ME, nome: 'Lorenzo', active: true }])
+    if (path === '/api/users') return ok([{ id: ME, name: 'Lorenzo', active: true }])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
   vi.mocked(api.POST).mockImplementation(((path: string) => {

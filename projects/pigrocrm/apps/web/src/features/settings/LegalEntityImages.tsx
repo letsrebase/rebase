@@ -102,7 +102,7 @@ function ImageBlock({
       <p className="text-sm font-medium">{title}</p>
       <p className="text-muted-foreground text-xs">{copy}</p>
       {present && image.data ? (
-        <Preview blob={image.data} alt={`${title} di ${legal_entity.nome}`} />
+        <Preview blob={image.data} alt={`${title} di ${legal_entity.name}`} />
       ) : (
         <div className="text-muted-foreground flex h-20 items-center border border-dashed px-3 text-sm">
           {present && image.isLoading ? 'Caricamento…' : empty}

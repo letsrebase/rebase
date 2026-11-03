@@ -178,7 +178,7 @@ export function CostForm({
             <SelectContent>
               {categories.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
-                  {category.nome}
+                  {category.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -209,7 +209,7 @@ export function CostForm({
                 <SelectItem value={SHARED}>Condivisa</SelectItem>
                 {legal_entity.legal_entities.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    {item.nome}
+                    {item.name}
                   </SelectItem>
                 ))}
               </SelectContent>

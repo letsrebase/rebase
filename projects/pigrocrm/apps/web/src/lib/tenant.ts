@@ -42,8 +42,8 @@ export function tenantPrefixFrom(pathname: string): string {
 /** Same rule as `pigrocrm.core.tenants.schemas.slugify`, so the page's preview is what
  *  the server will accept: accents stripped, runs of anything else become one hyphen,
  *  trimmed, lowercased, cut to 32. */
-export function slugify(nome: string): string {
-  const ascii = nome
+export function slugify(name: string): string {
+  const ascii = name
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\u0020-\u007e]/g, '')

@@ -293,7 +293,7 @@ export function EconomicTab({
             key={legal_entity.id}
             year={year}
             legalEntityId={legal_entity.id}
-            title={legal_entity.nome}
+            title={legal_entity.name}
           />
         ))
       ) : (
@@ -324,12 +324,12 @@ export function EconomicTab({
           byLegalEntity(customer_concentration).map((group) => (
             <div key={group.legalEntityId} className="space-y-1">
               <h3 className="text-sm font-medium text-muted-foreground">
-                {byId(group.legalEntityId)?.nome ?? 'Azienda non più attiva'}
+                {byId(group.legalEntityId)?.name ?? 'Azienda non più attiva'}
               </h3>
               <ConcentrationTable
                 rows={group.rows}
                 label={`Concentrazione dei ricavi per cliente, ${
-                  byId(group.legalEntityId)?.nome ?? 'Azienda non più attiva'
+                  byId(group.legalEntityId)?.name ?? 'Azienda non più attiva'
                 }`}
               />
             </div>
@@ -354,7 +354,7 @@ export function EconomicTab({
             key={legal_entity.id}
             year={year}
             legalEntityId={legal_entity.id}
-            title={legal_entity.nome}
+            title={legal_entity.name}
             quiet
           />
         ))

@@ -110,7 +110,7 @@ export function InvitePage({
 }) {
   const { enterWithInvite } = useAuth()
   const [state, setState] = useState<State>({ kind: 'loading' })
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [entering, setEntering] = useState(false)
   // The peek effect re-runs only when this counter moves: «Riprova» is a re-peek, the
   // one right answer for a network failure or a 429 (both leave the token unspent),
@@ -141,8 +141,8 @@ export function InvitePage({
     try {
       // The name field only exists when the peek carried none, and then it is what the
       // accept needs; otherwise the invitation's stored name is the server's to read.
-      const askedForName = state.kind === 'peek' && state.peek.nome === null
-      await enterWithInvite(token, askedForName ? nome : undefined)
+      const askedForName = state.kind === 'peek' && state.peek.name === null
+      await enterWithInvite(token, askedForName ? name : undefined)
       go(await homeAfterEntry())
     } catch (caught) {
       const problem = toProblem(caught)
@@ -181,18 +181,18 @@ export function InvitePage({
           {state.kind === 'loading' && <Skeleton className="h-20 w-full" />}
           {state.kind === 'peek' && (
             <>
-              {state.peek.nome === null ? (
+              {state.peek.name === null ? (
                 <div className="space-y-2">
                   <Label htmlFor="invite-nome">Come ti chiami?</Label>
                   <Input
                     id="invite-nome"
-                    value={nome}
+                    value={name}
                     onChange={(event) => setName(event.target.value)}
                     autoComplete="name"
                   />
                 </div>
               ) : (
-                <p className="text-muted-foreground text-sm">Ciao {state.peek.nome}!</p>
+                <p className="text-muted-foreground text-sm">Ciao {state.peek.name}!</p>
               )}
               <Button className="w-full" onClick={enter} disabled={entering}>
                 {entering ? 'Un momento…' : 'Entra nello spazio'}

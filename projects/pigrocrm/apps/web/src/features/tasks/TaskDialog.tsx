@@ -241,7 +241,7 @@ function TaskForm({
               <SelectItem value={NOBODY}>Nessuno in particolare</SelectItem>
               {assignees.options.map((person) => (
                 <SelectItem key={person.id} value={person.id}>
-                  {person.id === assignees.me ? `${person.nome} (io)` : person.nome}
+                  {person.id === assignees.me ? `${person.name} (io)` : person.name}
                 </SelectItem>
               ))}
               {/* The current assignee when this list cannot name them (a colleague seen by

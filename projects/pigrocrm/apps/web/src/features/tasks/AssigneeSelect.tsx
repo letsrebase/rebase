@@ -33,7 +33,7 @@ export function AssigneeSelect({
           .filter((person) => person.id !== assignees.me)
           .map((person) => (
             <SelectItem key={person.id} value={person.id}>
-              {person.nome}
+              {person.name}
             </SelectItem>
           ))}
       </SelectContent>

@@ -19,8 +19,8 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-const auth: { user: { id: string; email: string; nome: string; role: 'admin' | 'collaborator' | 'readonly'; active: boolean } } = {
-  user: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin', active: true },
+const auth: { user: { id: string; email: string; name: string; role: 'admin' | 'collaborator' | 'readonly'; active: boolean } } = {
+  user: { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true },
 }
 vi.mock('@/lib/auth', async () => {
   const { can } = await vi.importActual<typeof import('@/lib/permissions')>('@/lib/permissions')
@@ -118,7 +118,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin', active: true }
+  auth.user = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true }
   vi.restoreAllMocks()
 })
 

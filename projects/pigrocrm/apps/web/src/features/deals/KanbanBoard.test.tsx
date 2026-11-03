@@ -5,21 +5,21 @@ import { KanbanBoard, resolveMove } from './KanbanBoard'
 import type { Deal } from './queries'
 
 const STAGES = [
-  { id: 's1', nome: 'Lead', position: 0, default_probability: 10, type: 'open' as const, code: null },
+  { id: 's1', name: 'Lead', position: 0, default_probability: 10, type: 'open' as const, code: null },
   {
     id: 's2',
-    nome: 'Offerta',
+    name: 'Offerta',
     position: 1,
     default_probability: 50,
     type: 'open' as const,
     code: null,
   },
-  { id: 's3', nome: 'Vinto', position: 2, default_probability: 100, type: 'won' as const, code: null },
+  { id: 's3', name: 'Vinto', position: 2, default_probability: 100, type: 'won' as const, code: null },
 ]
 
 const DEALS = [
-  { id: 'd1', nome: 'Progetto A', pipeline_stage_id: 's1', expected_value: '1000.00', probability: 10 },
-  { id: 'd2', nome: 'Progetto B', pipeline_stage_id: 's2', expected_value: '2500.50', probability: 50 },
+  { id: 'd1', name: 'Progetto A', pipeline_stage_id: 's1', expected_value: '1000.00', probability: 10 },
+  { id: 'd2', name: 'Progetto B', pipeline_stage_id: 's2', expected_value: '2500.50', probability: 50 },
 ] as unknown as Deal[]
 
 describe('KanbanBoard', () => {
@@ -67,8 +67,8 @@ describe('KanbanBoard', () => {
 
   it('sums more than one deal in the same column, not just displays a single value', () => {
     const sameColumn = [
-      { id: 'a', nome: 'A', pipeline_stage_id: 's1', expected_value: '1000.00', probability: 10 },
-      { id: 'b', nome: 'B', pipeline_stage_id: 's1', expected_value: '2500.50', probability: 10 },
+      { id: 'a', name: 'A', pipeline_stage_id: 's1', expected_value: '1000.00', probability: 10 },
+      { id: 'b', name: 'B', pipeline_stage_id: 's1', expected_value: '2500.50', probability: 10 },
     ] as unknown as Deal[]
     render(<KanbanBoard stages={STAGES} deals={sameColumn} onMove={vi.fn()} onOpen={vi.fn()} />)
     expect(screen.getByText(/3\.500,50/)).toBeInTheDocument()

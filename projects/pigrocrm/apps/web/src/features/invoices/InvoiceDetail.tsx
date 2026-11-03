@@ -40,7 +40,7 @@ export function InvoiceDetail() {
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
   const legal_entity = useLegalEntity()
-  const issuedFrom = legal_entity.several ? legal_entity.byId(invoice.data?.legal_entity_id)?.nome : undefined
+  const issuedFrom = legal_entity.several ? legal_entity.byId(invoice.data?.legal_entity_id)?.name : undefined
   if (invoice.isLoading) {
     return (
       <p className="flex items-center gap-2 p-8">

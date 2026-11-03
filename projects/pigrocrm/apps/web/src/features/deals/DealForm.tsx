@@ -65,7 +65,7 @@ const NO_OWNER = '__nessuno'
 /** The people a deal may be handed to: the space's active members (REB-780). */
 export interface OwnerOption {
   id: string
-  nome: string
+  name: string
 }
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
@@ -261,7 +261,7 @@ export function DealForm({
                 {!isCreate && <SelectItem value={NO_OWNER}>Nessuno</SelectItem>}
                 {owners.map((person) => (
                   <SelectItem key={person.id} value={person.id}>
-                    {person.nome}
+                    {person.name}
                   </SelectItem>
                 ))}
               </SelectContent>

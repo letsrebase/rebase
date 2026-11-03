@@ -10,7 +10,7 @@ import type { Cost, CostCategory } from './queries'
 const CATEGORIES: CostCategory[] = [
   {
     id: 'cat-1',
-    nome: 'Consulenze',
+    name: 'Consulenze',
     position: 0,
     code: null,
     archived: false,
@@ -24,7 +24,7 @@ const COST: Cost = {
   legal_entity_id: null,
   deal_id: null,
   category_id: 'cat-1',
-  data: '2026-03-05',
+  date: '2026-03-05',
   amount: '2500.50',
   description: 'Consulenza fiscale',
   supplier: 'Studio Rossi',

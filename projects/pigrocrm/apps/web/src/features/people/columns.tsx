@@ -53,7 +53,7 @@ export function displayNative(value: string | null): string {
  */
 function fullName(person: Person): string {
   const last_name = person.last_name === null || person.last_name === '' ? '' : ` ${person.last_name}`
-  return `${person.nome}${last_name}`
+  return `${person.first_name}${last_name}`
 }
 
 /**

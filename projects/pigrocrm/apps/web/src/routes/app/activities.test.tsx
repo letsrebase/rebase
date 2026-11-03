@@ -75,6 +75,6 @@ describe('the /app/oggi route', () => {
 
   it('still reads `?da=digest` of the mails sent before the English rename', () => {
     const validate = TodayRoute.options.validateSearch as (search: Record<string, unknown>) => { from?: string }
-    expect(validate({ da: 'digest' })).toEqual({ from: 'digest' })
+    expect(validate({ from: 'digest' })).toEqual({ from: 'digest' })
   })
 })

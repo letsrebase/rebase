@@ -17,7 +17,7 @@ const ME = '33333333-3333-7333-8333-333333333333'
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => true,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Giulia Demo', role: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, name: 'Giulia Demo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -72,7 +72,7 @@ function serve() {
       return ok({ items: [row({ id: 'listed', title: 'Preparare le proposte' })], next_cursor: null })
     }
     if (path === '/api/activities/{task_id}') return ok(FOUND)
-    if (path === '/api/users') return ok([{ id: ME, nome: 'Giulia Demo', active: true }])
+    if (path === '/api/users') return ok([{ id: ME, name: 'Giulia Demo', active: true }])
     throw new Error(`unexpected GET ${path}`)
   }) as never)
 }

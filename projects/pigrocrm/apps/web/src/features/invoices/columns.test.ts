@@ -298,8 +298,8 @@ describe('the state column and an imported invoice', () => {
 
 describe('the azienda beside the number (REB-625)', () => {
   const LEGAL_ENTITIES = [
-    { id: 'a1', nome: 'humancraft' },
-    { id: 'a2', nome: 'rebase' },
+    { id: 'a1', name: 'humancraft' },
+    { id: 'a2', name: 'rebase' },
   ] as InvoiceColumnOptions['legal_entities']
 
   function renderNumber(row: Invoice, options?: InvoiceColumnOptions) {

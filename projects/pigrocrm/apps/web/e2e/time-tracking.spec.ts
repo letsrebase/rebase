@@ -84,11 +84,11 @@ test.describe('time tracking', () => {
     // deal, so a fixed name would collide with a previous run's row on any database
     // that outlives one -- and the row it addresses by `aria-label` would then be
     // ambiguous rather than merely duplicated.
-    const nome = `Progetto E2E ${Date.now()}`
+    const name = `Progetto E2E ${Date.now()}`
     // `page.request`, never the top-level `request` fixture -- see `seedDealWithRate`'s
     // own docstring: the fixture's cookie jar is a separate one and every call here
     // would come back 401.
-    const { dealId } = await seedDealWithRate(page.request, { nome, rate: '80.000000' })
+    const { dealId } = await seedDealWithRate(page.request, { name, rate: '80.000000' })
 
     // Both days this test writes into have to be real, writable days, and in the *same*
     // calendar month. Writable: the API refuses a day after today (`422 data futura`),
@@ -140,7 +140,7 @@ test.describe('time tracking', () => {
     }
 
     const cellOf = (day: Date) =>
-      page.getByLabel(`${nome}, ${DAY_LONG.format(day)}`, { exact: true })
+      page.getByLabel(`${name}, ${DAY_LONG.format(day)}`, { exact: true })
 
     // 1. The weekly grid writes an hour, in the shape an Italian keyboard produces.
     await openTheWeek()
@@ -181,7 +181,7 @@ test.describe('time tracking', () => {
     // 3. Raising the deal rate must not move the hour already written (criterion 2,
     //    first half): the rate is copied onto the row when the row is created.
     await page.goto('/app/settings/rates')
-    const fieldRate = page.getByLabel(`Tariffa oraria del deal ${nome}`)
+    const fieldRate = page.getByLabel(`Tariffa oraria del deal ${name}`)
     const lineRate = page.getByRole('row').filter({ has: fieldRate })
     await fieldRate.fill('150')
     // Scoped to the row: this screen renders one «Salva» per person and one per deal,

@@ -29,14 +29,14 @@ function failed(error: unknown, status: number) {
 
 const MARIO: SlackMember = {
   user_id: 'u-mario',
-  nome: 'Mario Rossi',
+  name: 'Mario Rossi',
   email: 'mario@acme.example',
   state: 'matched',
   slack_email: 'mario@acme.example',
 }
 const ADA: SlackMember = {
   user_id: 'u-ada',
-  nome: 'Ada Bianchi',
+  name: 'Ada Bianchi',
   email: 'ada@studio.example',
   state: 'unmatched',
   slack_email: null,

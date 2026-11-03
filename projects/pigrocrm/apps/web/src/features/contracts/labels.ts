@@ -124,7 +124,7 @@ export const RATE_TIPI: Record<RateCardCreateBody['type'], string> = {
 }
 
 export const RateUnit: Record<RateCardCreateBody['unit'], string> = {
-  ora: 'ora',
+  hour: 'ora',
   day: 'day',
   month: 'month',
   year: 'year',

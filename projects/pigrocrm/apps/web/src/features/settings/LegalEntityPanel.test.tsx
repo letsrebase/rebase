@@ -22,8 +22,8 @@ function failed(error: unknown, status: number) {
 
 const LEGAL_ENTITY: LegalEntityRecord = {
   id: 'a-1',
-  nome: 'Studio Rossi',
-  predefinita: true,
+  name: 'Studio Rossi',
+  is_default: true,
   active: true,
   legal_name: 'Studio Rossi',
   vat_number: '12345678901',
@@ -100,7 +100,7 @@ describe('LegalEntityPanel', () => {
     expect(path).toBe('/api/legal-entities/{legal_entity_id}')
     expect(options.params.path.legal_entity_id).toBe('a-1')
     expect(options.body.certified_email).toBe('')
-    expect(options.body.nome).toBe('Studio Rossi')
+    expect(options.body.name).toBe('Studio Rossi')
   })
 
   it('follows a newer row while untouched and keeps a draft once typing started', async () => {

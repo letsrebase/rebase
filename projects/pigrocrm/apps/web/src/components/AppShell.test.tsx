@@ -65,7 +65,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() 
 
 const mockAuth = vi.hoisted(() => ({ role: 'admin' as string, id: undefined as string | undefined }))
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: mockAuth.id, nome: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
+  useAuth: () => ({ user: { id: mockAuth.id, name: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
   useIsAdmin: () => mockAuth.role === 'admin',
 }))
 
@@ -854,7 +854,7 @@ describe('the space switcher', () => {
   it('enters another space on click and navigates to its own basepath', async () => {
     GET.mockResolvedValue({ data: [{ slug: 'other', role: 'collaborator' }], response: { status: 200 } })
     POST.mockResolvedValue({
-      data: { id: 'u1', email: 'ada@altro.it', nome: 'Ada', role: 'collaborator' },
+      data: { id: 'u1', email: 'ada@altro.it', name: 'Ada', role: 'collaborator' },
       response: { status: 200 },
     })
     renderShell()
@@ -954,8 +954,8 @@ describe('the space switcher', () => {
 })
 
 describe('the azienda selector (REB-625)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
 
   function twoLegalEntities(selected: string | null): LegalEntityValue {
     return {

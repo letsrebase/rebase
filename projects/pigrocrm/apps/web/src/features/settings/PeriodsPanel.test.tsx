@@ -48,7 +48,7 @@ function respond(routes: Record<string, () => Promise<never>>) {
 const LOCK = { year: 2026, month: 3, closed_at: '2026-04-02T10:00:00Z', closed_by: 'u1' }
 const IVAN = {
   id: 'u1',
-  nome: 'Ivan',
+  name: 'Ivan',
   email: 'i@x.test',
   role: 'admin',
   active: true,

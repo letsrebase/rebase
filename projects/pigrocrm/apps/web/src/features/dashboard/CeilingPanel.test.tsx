@@ -398,15 +398,15 @@ describe('CeilingPanel, «ci sta?»', () => {
 describe('CeilingPanel, simulating a deal', () => {
   const DEAL = {
     id: 'd1',
-    nome: 'Sito vetrina',
+    name: 'Sito vetrina',
     customer_legal_name: 'Acme Srl',
     pipeline_stage_id: 's-open',
     budgeted_value: '12000.00',
     budgeted_hours: null,
     hourly_rate: null,
   }
-  const NO_ESTIMATE = { ...DEAL, id: 'd2', nome: 'Idea', budgeted_value: null }
-  const WON = { ...DEAL, id: 'd3', nome: 'Già vinto', pipeline_stage_id: 's-won' }
+  const NO_ESTIMATE = { ...DEAL, id: 'd2', name: 'Idea', budgeted_value: null }
+  const WON = { ...DEAL, id: 'd3', name: 'Già vinto', pipeline_stage_id: 's-won' }
 
   function routeWithDeals() {
     route({
@@ -415,8 +415,8 @@ describe('CeilingPanel, simulating a deal', () => {
       '/api/deals': () => ok({ items: [DEAL, NO_ESTIMATE, WON], next_cursor: null }),
       '/api/pipeline-stages': () =>
         ok([
-          { id: 's-open', nome: 'Trattativa', type: 'open' },
-          { id: 's-won', nome: 'Vinto', type: 'won' },
+          { id: 's-open', name: 'Trattativa', type: 'open' },
+          { id: 's-won', name: 'Vinto', type: 'won' },
         ]),
     })
   }

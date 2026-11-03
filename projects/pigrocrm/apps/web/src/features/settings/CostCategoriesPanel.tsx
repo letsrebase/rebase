@@ -41,11 +41,11 @@ function CategoryRow({
   // the parent and outlives this row's own mutation.
   onProblem: (message: string | null) => void
 }) {
-  const [nome, setName] = useState(category.nome)
+  const [name, setName] = useState(category.name)
   const rename = useUpdateCostCategory(category.id)
   const archive = useArchiveCostCategory()
   const unarchive = useUnarchiveCostCategory()
-  const dirty = nome.trim() !== category.nome
+  const dirty = name.trim() !== category.name
 
   /* Behind the «⋯» like every other row action (§4). «Salva» is *disabled* rather than
      absent when there is nothing to save, which is `RowActions`' own rule: an item that
@@ -65,7 +65,7 @@ function CategoryRow({
       // folder already does exactly this.
       onProblem(null)
       rename.mutate(
-        { nome: nome.trim() },
+        { name: name.trim() },
         {
           onSuccess: () => toast.success('Categoria rinominata'),
           onError: (error) => onProblem(toProblem(error).detail),
@@ -101,8 +101,8 @@ function CategoryRow({
   return (
     <li className="flex flex-wrap items-center gap-3 p-3">
       <Input
-        aria-label={`Nome della categoria ${category.nome}`}
-        value={nome}
+        aria-label={`Nome della categoria ${category.name}`}
+        value={name}
         onChange={(event) => setName(event.target.value)}
         className="max-w-xs"
       />
@@ -117,7 +117,7 @@ function CategoryRow({
           repeats it says nothing while costing a line of noise on each one. */}
       {category.archived && <StatusPill tone="muted">Archiviata</StatusPill>}
       <div className="ml-auto">
-        <RowActions label={`Azioni per ${category.nome}`} items={items} />
+        <RowActions label={`Azioni per ${category.name}`} items={items} />
       </div>
     </li>
   )
@@ -126,7 +126,7 @@ function CategoryRow({
 export function CostCategoriesPanel() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [open, setOpen] = useState(false)
-  const [nome, setName] = useState('')
+  const [name, setName] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   // Separate from `problem` on purpose: the list banner sits behind the dialog overlay,
   // so a create that fails there would report itself somewhere nobody can see. Kept as
@@ -138,7 +138,7 @@ export function CostCategoriesPanel() {
   // Only what no control can show: a 409 on a duplicate name carries no `field` at
   // all, and swallowing it would leave the dialog silent after a refused create.
   const dialogBanner =
-    dialogProblem && dialogFieldError?.field !== 'nome' ? dialogProblem.detail : null
+    dialogProblem && dialogFieldError?.field !== 'name' ? dialogProblem.detail : null
 
   const categories = useCostCategories(includeArchived)
   const create = useCreateCostCategory()
@@ -240,11 +240,11 @@ export function CostCategoriesPanel() {
             <Label htmlFor="category-name">Nome</Label>
             <Input
               id="category-name"
-              aria-invalid={dialogFieldError?.field === 'nome'}
-              value={nome}
+              aria-invalid={dialogFieldError?.field === 'name'}
+              value={name}
               onChange={(event) => setName(event.target.value)}
             />
-            {dialogFieldError?.field === 'nome' ? (
+            {dialogFieldError?.field === 'name' ? (
               <p className="text-sm text-destructive">{dialogFieldError.message}</p>
             ) : null}
             <p className="text-xs text-muted-foreground">
@@ -261,7 +261,7 @@ export function CostCategoriesPanel() {
               onClick={() => {
                 setDialogProblem(null)
                 create.mutate(
-                  { nome, position: rows.length },
+                  { name: name, position: rows.length },
                   {
                     onSuccess: () => {
                       toast.success('Categoria creata')

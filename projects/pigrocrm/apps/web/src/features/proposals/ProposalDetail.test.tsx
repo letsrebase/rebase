@@ -19,9 +19,9 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
 }))
 
-const auth = { role: 'collaborator' as 'readonly' | 'collaborator' | 'admin', nome: 'Lorenzo Fiore' }
+const auth = { role: 'collaborator' as 'readonly' | 'collaborator' | 'admin', name: 'Lorenzo Fiore' }
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { id: 'u1', email: 'lorenzo@example.it', nome: auth.nome, role: auth.role } }),
+  useAuth: () => ({ user: { id: 'u1', email: 'lorenzo@example.it', name: auth.name, role: auth.role } }),
   useCanWrite: () => auth.role !== 'readonly',
 }))
 
@@ -49,7 +49,7 @@ beforeEach(() => {
   vi.mocked(toast.success).mockReset()
   navigate.mockReset()
   auth.role = 'collaborator'
-  auth.nome = 'Lorenzo Fiore'
+  auth.name = 'Lorenzo Fiore'
 })
 
 describe('a proposal waiting for a decision', () => {

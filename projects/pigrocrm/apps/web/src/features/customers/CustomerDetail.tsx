@@ -291,7 +291,7 @@ export function CustomerDetail() {
                   renderItem={(person) => (
                     <Row
                       key={person.id}
-                      label={[person.nome, person.last_name].filter(Boolean).join(' ')}
+                      label={[person.first_name, person.last_name].filter(Boolean).join(' ')}
                       value={displayNative(person.email)}
                     />
                   )}
@@ -305,7 +305,7 @@ export function CustomerDetail() {
                   query={deals}
                   emptyMessage="Nessun deal collegato."
                   renderItem={(deal) => (
-                    <Row key={deal.id} label={deal.nome} value={formatCurrency(deal.expected_value)} />
+                    <Row key={deal.id} label={deal.name} value={formatCurrency(deal.expected_value)} />
                   )}
                 />
               </CardContent>

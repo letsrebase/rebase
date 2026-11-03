@@ -379,7 +379,7 @@ describe('the typed client', () => {
   const ME = {
     id: '11111111-1111-1111-1111-111111111111',
     email: 'titolare@studio.it',
-    nome: 'Titolare',
+    name: 'Titolare',
     role: 'admin',
     active: true,
   }

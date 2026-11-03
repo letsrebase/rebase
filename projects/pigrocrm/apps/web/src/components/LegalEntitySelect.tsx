@@ -36,7 +36,7 @@ export function LegalEntitySelect({ rail }: { rail: boolean }) {
         >
           <Building2 className="size-4 shrink-0" aria-hidden="true" />
           <span className={cn('flex-1 truncate text-left', rail && 'sr-only')}>
-            {legal_entity.legal_entities[0]?.nome}
+            {legal_entity.legal_entities[0]?.name}
           </span>
         </p>
       </div>
@@ -66,7 +66,7 @@ export function LegalEntitySelect({ rail }: { rail: boolean }) {
           <SelectItem value={EVERY_LEGAL_ENTITY}>Tutte le aziende</SelectItem>
           {legal_entity.legal_entities.map((item) => (
             <SelectItem key={item.id} value={item.id}>
-              {item.nome}
+              {item.name}
             </SelectItem>
           ))}
         </SelectContent>

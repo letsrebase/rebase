@@ -39,7 +39,7 @@ function renderWithClient(ui: ReactElement) {
 
 const BASE_PERSON: Person = {
   id: 'p1',
-  nome: 'Mario',
+  first_name: 'Mario',
   last_name: 'Rossi',
   email: null,
   phone: null,
@@ -131,7 +131,7 @@ describe('PersonForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Mario',
+      first_name: 'Mario',
       last_name: 'Rossi',
       custom_fields: { seniority: 'Senior' },
     })
@@ -165,7 +165,7 @@ describe('PersonForm', () => {
     const payload = submitted(onSubmit)
     expect(payload).not.toHaveProperty('seniority')
     expect(payload.custom_fields).toEqual({})
-    expect(payload).toEqual({ nome: 'Mario', last_name: 'Rossi', custom_fields: {} })
+    expect(payload).toEqual({ first_name: 'Mario', last_name: 'Rossi', custom_fields: {} })
   })
 
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
@@ -183,7 +183,7 @@ describe('PersonForm', () => {
     await userEvent.type(screen.getByLabelText(/^Nome/), 'Luigi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
-    expect(submitted(onSubmit)).toEqual({ nome: 'Luigi', custom_fields: { available: false } })
+    expect(submitted(onSubmit)).toEqual({ first_name: 'Luigi', custom_fields: { available: false } })
   })
 
   /** The other side of the same rule (see `DynamicForm.test.tsx`): doing this on
@@ -208,7 +208,7 @@ describe('PersonForm', () => {
     const payload = submitted(onSubmit)
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({
-      nome: 'Mario',
+      first_name: 'Mario',
       last_name: 'Rossi',
       phone: '02123456',
       custom_fields: {},
@@ -239,7 +239,7 @@ describe('PersonForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Mario',
+      first_name: 'Mario',
       last_name: 'Rossi',
       phone: '',
       custom_fields: { seniority: null },
@@ -310,7 +310,7 @@ describe('PersonForm', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       expect(submitted(onSubmit)).toEqual({
-        nome: 'Luigi',
+        first_name: 'Luigi',
         customer_id: 'cust-1',
         custom_fields: {},
       })

@@ -272,7 +272,7 @@ function MemberRow({ member, active }: { member: SlackMember; active: boolean })
         onSuccess: () => {
           setEditing(false)
           setAddress('')
-          toast.success(`${member.nome} abbinato a ${address.trim()}.`)
+          toast.success(`${member.name} abbinato a ${address.trim()}.`)
         },
       },
     )
@@ -282,7 +282,7 @@ function MemberRow({ member, active }: { member: SlackMember; active: boolean })
     <li className="space-y-2 px-3 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium">{member.nome}</p>
+          <p className="font-medium">{member.name}</p>
           <p className="truncate text-sm text-muted-foreground">
             {member.email}
             {member.state === 'manual' && member.slack_email
@@ -297,7 +297,7 @@ function MemberRow({ member, active }: { member: SlackMember; active: boolean })
               variant="ghost"
               size="sm"
               disabled={unlink.isPending || !active}
-              aria-label={`Ripristina l’abbinamento di ${member.nome}`}
+              aria-label={`Ripristina l’abbinamento di ${member.name}`}
               onClick={() => unlink.mutate(member.user_id)}
             >
               Ripristina
@@ -308,7 +308,7 @@ function MemberRow({ member, active }: { member: SlackMember; active: boolean })
               variant="outline"
               size="sm"
               disabled={!active}
-              aria-label={`Correggi l’abbinamento di ${member.nome}`}
+              aria-label={`Correggi l’abbinamento di ${member.name}`}
               onClick={() => setEditing(true)}
             >
               Correggi
@@ -331,7 +331,7 @@ function MemberRow({ member, active }: { member: SlackMember; active: boolean })
         >
           <div className="space-y-1">
             <Label htmlFor={`slack-address-${member.user_id}`}>
-              Indirizzo di {member.nome} in Slack
+              Indirizzo di {member.name} in Slack
             </Label>
             <Input
               id={`slack-address-${member.user_id}`}

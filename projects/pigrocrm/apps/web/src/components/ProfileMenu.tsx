@@ -34,7 +34,7 @@ export function ProfileMenu({ rail, go }: { rail: boolean; go: (url: string) => 
   // two cannot disagree about when a space stops being new.
   const hasData = useSpaceHasData()
 
-  const initials = (user?.nome ?? '?')
+  const initials = (user?.name ?? '?')
     .split(' ')
     .map((part) => part[0])
     .join('')
@@ -64,7 +64,7 @@ export function ProfileMenu({ rail, go }: { rail: boolean; go: (url: string) => 
               </AvatarFallback>
             </Avatar>
             <div className={cn('min-w-0 flex-1', rail && 'sr-only')}>
-              <p className="truncate text-sm font-medium">{user?.nome}</p>
+              <p className="truncate text-sm font-medium">{user?.name}</p>
               {/* The role in words: «admin» is what the API stores, not what the
                   product writes (spec §5.5). */}
               <p className="truncate text-xs text-sidebar-foreground/70">
@@ -79,7 +79,7 @@ export function ProfileMenu({ rail, go }: { rail: boolean; go: (url: string) => 
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" className="w-56">
           <DropdownMenuLabel className="font-normal">
-            <p className="truncate text-sm font-medium">{user?.nome}</p>
+            <p className="truncate text-sm font-medium">{user?.name}</p>
             <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />

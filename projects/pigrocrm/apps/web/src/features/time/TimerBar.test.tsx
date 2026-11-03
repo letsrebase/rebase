@@ -14,7 +14,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), 
 
 const USER = '33333333-3333-7333-8333-333333333333'
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
-const deal = { id: DEAL, nome: 'Progetto Alfa' } as never
+const deal = { id: DEAL, name: 'Progetto Alfa' } as never
 
 function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never

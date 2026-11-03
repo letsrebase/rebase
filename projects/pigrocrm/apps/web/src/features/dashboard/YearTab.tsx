@@ -53,7 +53,7 @@ function stampDutyDeclarations(register: YearRegisterRow[]): { sentence: string;
 }
 
 function Register({ overview }: { overview: YearOverview }) {
-  const { register, total } = overview
+  const { register = [], total } = overview
   if (register.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">Nessuna fattura emessa nel {overview.year}.</p>
@@ -324,7 +324,7 @@ export function YearTab({ period }: { period: Period }) {
             key={legal_entity.id}
             year={year}
             legalEntityId={legal_entity.id}
-            title={legal_entity.nome}
+            title={legal_entity.name}
             quiet
           />
         ))

@@ -114,7 +114,7 @@ export function buildDealColumns(
       // `customer_legal_name`, filled by one batched lookup per page, precisely so
       // this cell could exist (see `DealService._reads`).
       cell: ({ row }) => (
-        <EntityCell name={row.original.nome} sub={row.original.customer_legal_name ?? null} />
+        <EntityCell name={row.original.name} sub={row.original.customer_legal_name ?? null} />
       ),
     },
     {

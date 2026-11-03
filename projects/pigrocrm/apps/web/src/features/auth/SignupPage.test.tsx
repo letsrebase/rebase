@@ -149,7 +149,7 @@ describe('the signup wizard', () => {
     await user.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', member: true },
+        body: { slug: 'ada-lovelace', name: 'Ada Lovelace', email: 'ada@studio.it', member: true },
       }),
     )
     await waitFor(() => expect(go).toHaveBeenCalledWith('/ada-lovelace/app/'))
@@ -252,7 +252,7 @@ describe('the signup wizard', () => {
     await user.click(button)
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', member: false },
+        body: { slug: 'ada-lovelace', name: 'Ada Lovelace', email: 'bob@studio.it', member: false },
       }),
     )
   })
@@ -284,7 +284,7 @@ describe('the signup wizard', () => {
     await user.click(button)
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', member: false },
+        body: { slug: 'ada-lovelace', name: 'Ada Lovelace', email: 'bob@studio.it', member: false },
       }),
     )
   })
@@ -382,7 +382,7 @@ describe('the fast path (REB-488)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/tenants/', {
-        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', member: true },
+        body: { slug: 'ada-lovelace', name: 'Ada Lovelace', email: 'ada@studio.it', member: true },
       }),
     )
     await waitFor(() => expect(go).toHaveBeenCalledWith('/ada-lovelace/app/'))

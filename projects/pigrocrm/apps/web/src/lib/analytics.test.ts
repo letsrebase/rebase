@@ -150,13 +150,13 @@ describe('on the real client', () => {
 })
 
 describe('identifySession', () => {
-  const ADA = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', role: 'admin' as const }
+  const ADA = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin' as const }
 
   it('names the person with what Ivan chose to see, and the root installation as root', () => {
     identifySession(ADA, '')
     expect(identifyUser).toHaveBeenCalledWith('u1', {
       email: 'ada@studio.it',
-      nome: 'Ada',
+      name: 'Ada',
       role: 'admin',
     })
     expect(identifyGroup).toHaveBeenCalledWith('space', 'root')

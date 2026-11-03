@@ -17,8 +17,8 @@ function ok(data: unknown) {
 }
 
 const CATEGORIES = [
-  { id: 'cat-1', nome: 'Trasferte', archived: false },
-  { id: 'cat-2', nome: 'Vecchia', archived: true },
+  { id: 'cat-1', name: 'Trasferte', archived: false },
+  { id: 'cat-2', name: 'Vecchia', archived: true },
 ]
 const base = {
   contract_id: 'c1',

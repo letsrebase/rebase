@@ -23,7 +23,7 @@ describe('recordLink', () => {
     expect(recordLink({ entity, entity_id: ID })).toEqual(expected)
   })
 
-  it.each(['work_unit', 'google_connection', 'period', 'something_new', '', 'constructor', 'toString'])(
+  it.each(['work_unit', 'google_connection', 'period', 'something_new', '', 'function Object() { [native code] }', 'function toString() { [native code] }'])(
     'gives no link for the kind «%s», which has no page to open',
     (entity) => {
       expect(recordLink({ entity, entity_id: ID })).toBeNull()

@@ -48,7 +48,7 @@ function DocumentDetail() {
       // (REB-626), the one its owner had when it was created.
       subtitle={[
         DOCUMENT_TYPE_LABELS[record.type] ?? record.type,
-        legal_entity.several ? legal_entity.byId(record.legal_entity_id)?.nome : undefined,
+        legal_entity.several ? legal_entity.byId(record.legal_entity_id)?.name : undefined,
       ]
         .filter((part): part is string => typeof part === 'string' && part !== '')
         .join(' · ')}

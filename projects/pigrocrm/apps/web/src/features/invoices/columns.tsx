@@ -89,7 +89,7 @@ export function buildInvoiceColumns(
       ]
     : []
 
-  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.nome]))
+  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
 
   return [
     {
@@ -101,12 +101,12 @@ export function buildInvoiceColumns(
       accessorFn: (row) => formatInvoiceNumber(row),
       cell: ({ row }) => {
         const number = formatInvoiceNumber(row.original)
-        const nome = legalEntityName.get(row.original.legal_entity_id)
-        if (nome === undefined) return number
+        const name = legalEntityName.get(row.original.legal_entity_id)
+        if (name === undefined) return number
         return (
           <>
             {number}
-            <span className="text-muted-foreground"> · {nome}</span>
+            <span className="text-muted-foreground"> · {name}</span>
           </>
         )
       },

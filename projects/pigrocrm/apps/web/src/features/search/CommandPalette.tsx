@@ -135,7 +135,7 @@ export function CommandPalette({
 
   /** "5 di 500" and "5 di 5" are different answers; «oltre» is how the ceiling is said. */
   function count(group: SearchGroup): string {
-    return group.total_and_a_minimum ? `oltre ${group.total}` : String(group.total)
+    return group.total_is_minimum ? `oltre ${group.total}` : String(group.total)
   }
 
   return (

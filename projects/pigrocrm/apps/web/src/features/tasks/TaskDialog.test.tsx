@@ -19,7 +19,7 @@ const role = vi.hoisted(() => ({ canWrite: true }))
 vi.mock('@/lib/auth', () => ({
   useCanWrite: () => role.canWrite,
   useIsAdmin: () => true,
-  useAuth: () => ({ user: { id: ME, nome: 'Lorenzo', role: 'admin' }, isLoading: false }),
+  useAuth: () => ({ user: { id: ME, name: 'Lorenzo', role: 'admin' }, isLoading: false }),
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
@@ -29,9 +29,9 @@ function ok(data: unknown) {
 }
 
 const users = [
-  { id: ME, nome: 'Lorenzo', active: true },
-  { id: COLLEAGUE, nome: 'Ivan', active: true },
-  { id: '55555555-5555-7555-8555-555555555555', nome: 'Ex collega', active: false },
+  { id: ME, name: 'Lorenzo', active: true },
+  { id: COLLEAGUE, name: 'Ivan', active: true },
+  { id: '55555555-5555-7555-8555-555555555555', name: 'Ex collega', active: false },
 ]
 
 const search = {
@@ -64,7 +64,7 @@ beforeEach(() => {
     if (path === '/api/users') return ok(users)
     if (path === '/api/search') return ok(search)
     if (path === '/api/deals/{deal_id}')
-      return ok({ id: DEAL, nome: 'Acme sito', customer_id: null })
+      return ok({ id: DEAL, name: 'Acme sito', customer_id: null })
     throw new Error(`unexpected GET ${path}`)
   }) as never)
   vi.mocked(api.POST).mockImplementation((() => ok({ id: 'new' })) as never)

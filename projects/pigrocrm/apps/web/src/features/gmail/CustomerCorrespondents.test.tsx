@@ -43,7 +43,7 @@ function found() {
   return [
     {
       address: 'marco@acme.it',
-      nome: 'Marco Bianchi',
+      name: 'Marco Bianchi',
       messages: 3,
       conversations: 2,
       last_message: '2026-10-18T10:00:00Z',
@@ -51,7 +51,7 @@ function found() {
     },
     {
       address: 'sara@acme.it',
-      nome: '',
+      name: '',
       messages: 1,
       conversations: 1,
       last_message: '2026-09-01T10:00:00Z',
@@ -145,7 +145,7 @@ describe('CustomerCorrespondents', () => {
 
     expect(api.POST).toHaveBeenCalledWith('/api/customers/{customer_id}/people-from-mail', {
       params: { path: { customer_id: CUSTOMER_ID } },
-      body: { address: 'marco@acme.it', nome: 'Marco Bianchi' },
+      body: { address: 'marco@acme.it', name: 'Marco Bianchi' },
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Marco Bianchi aggiunto alle persone'))
     await waitFor(() =>

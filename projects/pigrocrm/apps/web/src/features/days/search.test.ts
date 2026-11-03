@@ -21,10 +21,10 @@ describe('the days register’s URL', () => {
 
 describe('monthWindow', () => {
   it('is the first and last day of the month, February and its leap year included', () => {
-    expect(monthWindow('2026-03')).toEqual({ da: '2026-03-01', a: '2026-03-31' })
-    expect(monthWindow('2026-02')).toEqual({ da: '2026-02-01', a: '2026-02-28' })
-    expect(monthWindow('2028-02')).toEqual({ da: '2028-02-01', a: '2028-02-29' })
-    expect(monthWindow('2026-12')).toEqual({ da: '2026-12-01', a: '2026-12-31' })
+    expect(monthWindow('2026-03')).toEqual({ from: '2026-03-01', to: '2026-03-31' })
+    expect(monthWindow('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+    expect(monthWindow('2028-02')).toEqual({ from: '2028-02-01', to: '2028-02-29' })
+    expect(monthWindow('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' })
   })
 
   it('opens on the month it is given', () => {

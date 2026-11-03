@@ -27,7 +27,7 @@ function failed(error: unknown, status: number) {
 
 const IVAN = {
   id: 'u1',
-  nome: 'Ivan',
+  name: 'Ivan',
   email: 'ivan@x.test',
   role: 'admin',
   active: true,
@@ -39,7 +39,7 @@ const IVAN = {
 }
 const MARA = {
   id: 'u2',
-  nome: 'Mara',
+  name: 'Mara',
   email: 'mara@x.test',
   role: 'collaborator',
   active: true,
@@ -62,10 +62,10 @@ const DEAL_BASE = {
   custom_fields: {},
   ...DEAL_TIMES,
 }
-const ACME = { ...DEAL_BASE, id: 'd1', nome: 'Sito Acme', hourly_rate: '120.000000' }
+const ACME = { ...DEAL_BASE, id: 'd1', name: 'Sito Acme', hourly_rate: '120.000000' }
 /** A real rate meaning "these hours are not billed", not the absence of one. */
-const PRO_BONO = { ...DEAL_BASE, id: 'd2', nome: 'Pro bono ONLUS', hourly_rate: '0.000000' }
-const WITHOUT = { ...DEAL_BASE, id: 'd3', nome: 'Restyling Bianchi', hourly_rate: null }
+const PRO_BONO = { ...DEAL_BASE, id: 'd2', name: 'Pro bono ONLUS', hourly_rate: '0.000000' }
+const WITHOUT = { ...DEAL_BASE, id: 'd3', name: 'Restyling Bianchi', hourly_rate: null }
 
 function respond(users: unknown[], deals: unknown[]) {
   vi.mocked(api.GET).mockImplementation((path: string) => {

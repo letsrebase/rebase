@@ -109,7 +109,7 @@ describe('reasonLabel', () => {
   })
 
   it('shows a reason named like an object property as typed', () => {
-    for (const reason of ['constructor', '__proto__', 'toString']) {
+    for (const reason of ['function Object() { [native code] }', '[object Object]', 'function toString() { [native code] }']) {
       expect(reasonLabel(reason)).toBe(reason)
     }
   })

@@ -28,7 +28,7 @@ export function ProfilePanel() {
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
         <dt className="text-muted-foreground">Nome</dt>
-        <dd>{user.nome}</dd>
+        <dd>{user.name}</dd>
         <dt className="text-muted-foreground">Email</dt>
         <dd>{user.email}</dd>
         <dt className="text-muted-foreground">Ruolo</dt>

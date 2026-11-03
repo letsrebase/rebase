@@ -49,7 +49,7 @@ const cost = (overrides: Record<string, unknown> = {}) => ({
 
 const CATEGORY = {
   id: 'cat1',
-  nome: 'Software e licenze',
+  name: 'Software e licenze',
   position: 1,
   code: 'software_licenses',
   archived: false,
@@ -170,8 +170,8 @@ describe('CostsPanel', () => {
 })
 
 describe('the «Azienda» picker of a general expense (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,
@@ -220,8 +220,8 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
 })
 
 describe('a custom cost field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', active: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', active: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
   const TWO: LegalEntityValue = {
     legal_entities: [HUMANCRAFT, REBASE],
     selected: null,

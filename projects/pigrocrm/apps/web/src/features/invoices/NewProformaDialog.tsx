@@ -165,7 +165,7 @@ function FixedCustomerAndDeal({ dealId }: { dealId: string }) {
   return (
     <>
       <FixedField label="Cliente" value={deal.data?.customer_legal_name ?? undefined} />
-      <FixedField label="Deal" value={deal.data?.nome} />
+      <FixedField label="Deal" value={deal.data?.name} />
     </>
   )
 }
@@ -202,7 +202,7 @@ function DealPicker({
           <SelectItem value={NO_DEAL}>Nessun deal</SelectItem>
           {deals.data?.items.map((deal) => (
             <SelectItem key={deal.id} value={deal.id}>
-              {deal.nome}
+              {deal.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -407,7 +407,7 @@ function NewProformaDialog({
 
           {/* Only once the read has answered: a `…` between choosing and knowing would
               read as an azienda with no name. */}
-          {issuedBy !== undefined ? <FixedField label="Emessa da" value={issuedBy.nome} /> : null}
+          {issuedBy !== undefined ? <FixedField label="Emessa da" value={issuedBy.name} /> : null}
 
           <div className="space-y-2">
             <Label htmlFor="proforma-description">

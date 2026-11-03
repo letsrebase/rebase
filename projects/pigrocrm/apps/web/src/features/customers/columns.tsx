@@ -55,7 +55,7 @@ export function buildCustomerColumns(
   customFields: FieldDefinition[],
   options: CustomerColumnOptions = {},
 ): ColumnDef<DataTableFeatures, Customer>[] {
-  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.nome]))
+  const legalEntityName = new Map((options.legal_entities ?? []).map((a) => [a.id, a.name]))
   const legal_entity: ColumnDef<DataTableFeatures, Customer>[] = options.legal_entities
     ? [
         {

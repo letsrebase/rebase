@@ -79,18 +79,18 @@ export function buildGrid(
   const wanted = new Set(days.map((day) => day.iso))
   const grid = new Map<string, Map<string, GridCell>>()
   for (const entry of entries) {
-    if (!wanted.has(entry.data)) continue
+    if (!wanted.has(entry.date)) continue
     let row = grid.get(entry.deal_id)
     if (row === undefined) {
       row = new Map(days.map((day) => [day.iso, { entryId: null, hours: null }]))
       grid.set(entry.deal_id, row)
     }
-    const cell = row.get(entry.data)
+    const cell = row.get(entry.date)
     // Already taken: keep the first, per the docstring above. Not an overwrite, because
     // the second entry is not a correction of the first -- both are real hours, and the
     // row total below counts only the one the cell can edit.
     if (cell === undefined || cell.entryId !== null) continue
-    row.set(entry.data, { entryId: entry.id, hours: entry.hours })
+    row.set(entry.date, { entryId: entry.id, hours: entry.hours })
   }
   return grid
 }

@@ -35,7 +35,7 @@ const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 
 const deal = {
   id: DEAL,
-  nome: 'Progetto Alfa',
+  name: 'Progetto Alfa',
   customer_id: '11111111-1111-7111-8111-111111111111',
   pipeline_stage_id: '22222222-2222-7222-8222-222222222222',
   expected_value: null,
@@ -73,8 +73,8 @@ const task = {
 
 const month = {
   month: '2026-09',
-  da: '2026-09-01',
-  a: '2026-09-30',
+  from: '2026-09-01',
+  to: '2026-09-30',
   today: '2026-09-09',
   total_hours: '8.00',
   days: [

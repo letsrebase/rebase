@@ -127,7 +127,7 @@ export function RegisterSection({ contractId }: { contractId: string }) {
               <TableBody>
                 {register.data.entries.map((entry) => (
                   <TableRow key={entry.work_unit_id}>
-                    <TableCell>{formatDate(entry.data)}</TableCell>
+                    <TableCell>{formatDate(entry.date)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatItalianQuantity(entry.quantity)}</TableCell>
                     <TableCell>{entry.description}</TableCell>
                     <TableCell>{STATE_LABEL[entry.status] ?? entry.status}</TableCell>

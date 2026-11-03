@@ -32,7 +32,7 @@ import {
  */
 export function variablesToFields(variables: TemplateVariable[]): FieldDefinition[] {
   return variables.map((variable) => ({
-    key: variable.nome,
+    key: variable.name,
     label: variable.label,
     type: variable.type as FieldType,
     required: variable.required,
@@ -162,7 +162,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
                   className="w-full px-4 py-3 text-left hover:bg-muted"
                   onClick={() => chooseTemplate(template.id)}
                 >
-                  <span className="font-medium">{template.nome}</span>
+                  <span className="font-medium">{template.name}</span>
                   <span className="ml-2 text-sm text-muted-foreground">{template.type}</span>
                 </button>
               </li>
