@@ -628,7 +628,7 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
     """The refusal is read by a person: the message names the first twenty numbers and
-    says how many there are, while `details["numeri"]` keeps every one of them for a
+    says how many there are, while `details["numbers"]` keeps every one of them for a
     caller that wants to act on the list.
     """
     from pigrocrm.core.db.clock import today_local
@@ -651,7 +651,7 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     )
     with pytest.raises(Conflict) as caught:
         service.issue(draft.id, InvoiceIssue(), ADMIN)
-    assert caught.value.details["numeri"] == gaps
+    assert caught.value.details["numbers"] == gaps
     assert f"({len(gaps)} in tutto)" in caught.value.message
     assert str(GAPS_SHOWN_IN_MESSAGE) in caught.value.message
     # The twenty-first number is not spelled out.

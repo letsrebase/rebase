@@ -605,7 +605,7 @@ def test_no_legal_entities_configured_refuses_rather_than_guesses(
     document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     with pytest.raises(ValidationFailed) as caught:
         InvoiceService(db_session, local_storage).confirm_import(document_id, ADMIN)
-    assert caught.value.details["entity"] == "legal_entities"
+    assert caught.value.details["entity"] == "legal_entity"
     assert caught.value.details["field"] == "vat_number"
 
 

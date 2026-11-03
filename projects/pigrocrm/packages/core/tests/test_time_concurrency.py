@@ -61,7 +61,7 @@ def world(db_engine: Engine) -> Iterator[tuple[Any, UUID, UUID]]:
             cleanup.execute(text("DELETE FROM activities WHERE actor_id = :user"), params)
             cleanup.execute(text("DELETE FROM time_entries WHERE user_id = :user"), params)
             cleanup.execute(text("DELETE FROM time_timers WHERE user_id = :user"), params)
-            cleanup.execute(text("DELETE FROM period_locks WHERE anno = 2020 AND mese = 6"))
+            cleanup.execute(text("DELETE FROM period_locks WHERE year = 2020 AND month = 6"))
             cleanup.execute(text("DELETE FROM deals WHERE id = :deal"), params)
             cleanup.execute(text("DELETE FROM customers WHERE id = :customer"), params)
             cleanup.execute(text("DELETE FROM pipeline_stages WHERE id = :stage"), params)

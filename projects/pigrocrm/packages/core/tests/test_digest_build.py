@@ -437,21 +437,21 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
     against zero is a field a `return 0` would satisfy, and this one is a count of the
     deals somebody is supposed to invoice this week.
 
-    `concentrazione_sopra_soglia` (REB-371) is in the list too: the corpus's one
+    `concentration_above_threshold` (REB-371) is in the list too: the corpus's one
     customer holds the whole register, past the default 0.30 threshold, which is what
     makes this also a test of the `conteggio > 0` filter carrying that fourth signal
     exactly the way it already carries the first two.
     """
     digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
-    assert digest.hours_uninvoiced == Decimal("6.00")
+    assert digest.unbilled_hours == Decimal("6.00")
     assert digest.accrued_value == Decimal("300.00")
     # The won deal has no unbilled hours, so «vinto ma da fatturare» is zero -- which is
     # what makes this the test of the `conteggio > 0` filter and not only of the list.
     assert digest.won_to_invoice == 0
     assert [s.code for s in digest.signals] == [
         "invoiced_unwon",
-        "scaduto_non_incassato",
-        "concentrazione_sopra_soglia",
+        "overdue_unpaid",
+        "concentration_above_threshold",
     ]
     assert all(s.count > 0 for s in digest.signals)
     assert all(s.link for s in digest.signals)
@@ -496,7 +496,7 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
 
     aggiornato = _build(corpus.engine, (corpus.date_from, corpus.date_to))
     assert aggiornato.won_to_invoice == 1
-    assert "vinto_da_fatturare" in [s.code for s in aggiornato.signals]
+    assert "won_to_invoice" in [s.code for s in aggiornato.signals]
 
 
 def test_the_pipeline_carries_only_the_stages_that_hold_something(corpus: Corpus) -> None:

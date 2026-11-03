@@ -490,7 +490,7 @@ def test_to_foreign_legal_entity_issues_to_pdf_with_no_stamp_duty_and_refuses_th
     assert row.snapshot["tax"]["regime_code"] is None
     assert row.snapshot["legal_entity"]["legal_name"] == "Rebase Ltd"
     scope = invoice_pdf.build_scope(service.artifacts.for_export(row), reference=None)
-    assert scope["invoice"]["stamp_duty_declaration"] == ""
+    assert scope["fattura"]["dichiarazione_bollo"] == ""
     with pytest.raises(Conflict) as caught:
         service.export_xml(draft.id, ADMIN)
     assert "non emette fatture elettroniche" in caught.value.message

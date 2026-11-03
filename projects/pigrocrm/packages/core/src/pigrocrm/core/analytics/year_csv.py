@@ -204,7 +204,7 @@ def year_csv_filename(overview: YearOverview) -> str:
     ascii_name = (
         unicodedata.normalize("NFKD", overview.legal_entity_name).encode("ascii", "ignore").decode()
     )
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "legal_entity"
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "azienda"
     return f"registro-{overview.year}-{slug}.csv"
 
 

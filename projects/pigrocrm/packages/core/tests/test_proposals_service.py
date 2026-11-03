@@ -447,7 +447,7 @@ def test_accept_work_unit_creates_an_approval_and_to_work_unit_at_approved_in_on
     assert approval is not None
     assert approval.document_id == document.id
     assert approval.excerpt == proposal.excerpt
-    assert approval.origin == {"kind": "agente", "proposal_id": str(proposal.id)}
+    assert approval.origin == {"kind": "agent", "proposal_id": str(proposal.id)}
 
 
 def test_accept_work_unit_rejects_an_edited_contract_id_that_diverges_from_the_proposal(
@@ -482,7 +482,7 @@ def test_accept_work_unit_rejects_an_edited_contract_id_that_diverges_from_the_p
 def test_accept_work_unit_is_atomic_when_the_work_unit_write_conflicts(
     db_session: Session,
 ) -> None:
-    """The partial unique index (`uq_work_units_contract_data_live`) refuses a
+    """The partial unique index (`uq_work_units_contract_date_live`) refuses a
     second live day on the same contract and date. When it does, nothing of this
     accept attempt survives: no orphan `Approval`, and the proposal stays
     `'pending'` -- never a day silently left at `'proposed'`, and never a

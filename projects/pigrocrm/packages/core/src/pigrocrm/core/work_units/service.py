@@ -69,7 +69,7 @@ CONTRACT_ENTITY = "contract"
 
 # The partial unique index that allows one live day per contract per date
 # (`models.py`): the name Postgres reports when a second one is recorded.
-LIVE_DAY_INDEX = "uq_work_units_contract_data_live"
+LIVE_DAY_INDEX = "uq_work_units_contract_date_live"
 
 # The two edges that are not a person's click on a day's page: `invoiced` is what an
 # invoice does to a day (`invoicing.py`), and `approved` is what recording an approval

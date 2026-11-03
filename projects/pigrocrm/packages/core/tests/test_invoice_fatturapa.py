@@ -583,7 +583,7 @@ def test_an_legal_entity_with_only_to_fiscal_code_and_no_vat_number_is_refused()
                 legal_entity=legal_entity_without_vat_number,
             )
         )
-    assert caught.value.details["entity"] == "legal_entities"
+    assert caught.value.details["entity"] == "legal_entity"
     assert caught.value.details["field"] == "vat_number"
 
 
@@ -1209,7 +1209,7 @@ def test_an_issuer_email_shorter_than_the_schema_floor_is_refused_by_the_pre_che
     alone. Refused here, before the register number, and by the writer if it is not."""
     legal_entity = LEGAL_ENTITY.model_copy(update={"email": "a@b.it"})
     with pytest.raises(ValidationFailed) as pre:
-        check_party_exportable(legal_entity, "legal_entities")
+        check_party_exportable(legal_entity, "legal_entity")
     assert pre.value.details["field"] == "email"
     assert pre.value.details["reason"].startswith("il valore ha meno dei 7 caratteri")
     with pytest.raises(ValidationFailed) as writer:
@@ -1229,7 +1229,7 @@ def test_an_issuer_email_with_no_dot_in_the_domain_is_refused_by_the_pre_check()
     itself refuses. `_EMAIL_CONTATTI_RE` closes that gap."""
     legal_entity = LEGAL_ENTITY.model_copy(update={"email": "info@localhost"})
     with pytest.raises(ValidationFailed) as pre:
-        check_party_exportable(legal_entity, "legal_entities")
+        check_party_exportable(legal_entity, "legal_entity")
     assert pre.value.details["field"] == "email"
     assert pre.value.details["reason"].startswith("il valore non ha la forma richiesta")
     with pytest.raises(ValidationFailed) as writer:

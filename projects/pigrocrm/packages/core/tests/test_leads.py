@@ -61,10 +61,10 @@ MARIA = "maria.rossi@acme.it"
 
 
 def _body(**parts: Any) -> LeadUpsert:
-    """The body of spec § 3, with any top-level or `contact_person`/`deal` field overridden."""
+    """The body of spec § 3, with any top-level or `contact`/`deal` field overridden."""
     body: dict[str, Any] = {
-        "legal_entity": "Acme S.r.l.",
-        "contact_person": {
+        "company": "Acme S.r.l.",
+        "contact": {
             "first_name": "Maria",
             "last_name": "Rossi",
             "email": MARIA,
@@ -75,7 +75,7 @@ def _body(**parts: Any) -> LeadUpsert:
             "name": "Acme S.r.l.: Backend developer",
             "expected_value": "24000.00",
             "expected_close_date": "2099-01-15",
-            "note": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
+            "notes": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
         },
     }
     for key, value in parts.items():
@@ -242,7 +242,7 @@ def test_an_existing_person_is_reused_whatever_the_case_of_the_address(door: Doo
         other_customer = _customer(space, "Altra S.r.l.")
         _person(space, MARIA, other_customer, first_name="Mariella")
 
-    answer = door.service().file(uuid4(), _body(contact_person={"email": MARIA.upper()}))
+    answer = door.service().file(uuid4(), _body(contact={"email": MARIA.upper()}))
 
     assert answer.created is True
     assert (answer.customer_id, answer.person_id) == (customer_id, person_id)
@@ -256,7 +256,7 @@ def test_a_different_typed_name_is_said_in_the_deal_note(door: Door) -> None:
     with _space(door) as space:
         _person(space, MARIA, _customer(space, "Rossi Costruzioni S.r.l."))
 
-    answer = door.service().file(uuid4(), _body(legal_entity="Acme S.r.l."))
+    answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
         deal = space.get(Deal, answer.deal_id)
@@ -270,7 +270,7 @@ def test_the_same_typed_name_adds_no_line(door: Door) -> None:
     with _space(door) as space:
         _person(space, MARIA, _customer(space, "acme  s.r.l."))
 
-    answer = door.service().file(uuid4(), _body(legal_entity="Acme S.r.l."))
+    answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
         deal = space.get(Deal, answer.deal_id)
@@ -352,7 +352,7 @@ def test_a_customer_is_never_matched_by_name(door: Door) -> None:
     with _space(door) as space:
         _customer(space, "Acme S.r.l.")
 
-    answer = door.service().file(uuid4(), _body(legal_entity="Acme S.r.l."))
+    answer = door.service().file(uuid4(), _body(company="Acme S.r.l."))
 
     with _space(door) as space:
         assert _count(space, Customer) == 2

@@ -152,7 +152,7 @@ def test_the_gate_refuses_a_revoked_account_with_no_transport_at_all(
     db_session.flush()
     with pytest.raises(CredentialRevoked) as caught:
         _service(db_session).usable(actor_for(account), scope=SCOPE_SEND, feature="l'invio")
-    assert "revoked" in caught.value.message
+    assert "revocato" in caught.value.message
 
 
 def test_the_gate_tells_an_expired_consent_apart_from_a_revoked_one(
@@ -165,8 +165,8 @@ def test_the_gate_tells_an_expired_consent_apart_from_a_revoked_one(
     db_session.flush()
     with pytest.raises(ConsentExpired) as caught:
         _service(db_session).usable(actor_for(account), scope=SCOPE_SEND, feature="l'invio")
-    assert "expired" in caught.value.message
-    assert "revoked" not in caught.value.message
+    assert "scaduto" in caught.value.message
+    assert "revocato" not in caught.value.message
 
 
 def test_the_gate_on_a_disconnected_mailbox_says_there_is_none(db_session: Session) -> None:
@@ -236,13 +236,13 @@ def test_the_health_banner_has_a_cause_and_a_text_for_each(db_session: Session) 
     db_session.flush()
     revoked = service.health(actor)
     assert revoked.banner == "revoked"
-    assert "revoked" in (revoked.banner_text or "")
+    assert "revocato" in (revoked.banner_text or "")
 
     account.status = "expired"
     db_session.flush()
     expired = service.health(actor)
     assert expired.banner == "expired"
-    assert "expired" in (expired.banner_text or "")
+    assert "scaduto" in (expired.banner_text or "")
 
     account.status = "active"
     account.consent_expires_at = datetime.now(UTC) + timedelta(hours=36)
@@ -323,7 +323,7 @@ def test_a_consent_already_past_its_date_is_not_reported_as_merely_expiring(
     db_session.flush()
     health = _service(db_session, unverified=True).health(actor_for(account))
     assert health.banner == "expired"
-    assert "expired" in (health.banner_text or "")
+    assert "scaduto" in (health.banner_text or "")
 
 
 def test_a_published_app_stops_predicting_an_expiry_written_when_it_was_in_testing(
@@ -405,7 +405,7 @@ def test_a_status_of_expired_is_a_fact_and_is_reported_whatever_the_app_is(
     db_session.flush()
     health = _service(db_session).health(actor_for(account))
     assert health.banner == "expired"
-    assert "expired" in (health.banner_text or "")
+    assert "scaduto" in (health.banner_text or "")
 
 
 def test_health_on_an_installation_with_no_account_is_empty_not_an_error(

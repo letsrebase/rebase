@@ -176,7 +176,7 @@ def test_the_command_opens_one_task_in_the_root_and_in_every_space(
     out = capsys.readouterr().out
     for label in ("root", *SPACES):
         assert f"{label}: overdue_invoice aperte 1, già aperte 0" in out
-        assert f"{label}: deal_fermo aperte 0, già aperte 0" in out
+        assert f"{label}: stalled_deal aperte 0, già aperte 0" in out
         assert _count(settings, None if label == "root" else label) == 1
 
 
@@ -234,7 +234,7 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
     assert cli.main(["automations", "--slug", UNO]) == 1, "the ping should not say it is fine"
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: frozen_clock non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
     assert "secret" not in captured.err
     assert f"{UNO}: overdue_invoice aperte 1" in captured.out, "the pass itself worked"
     assert _clock(settings, UNO) is None

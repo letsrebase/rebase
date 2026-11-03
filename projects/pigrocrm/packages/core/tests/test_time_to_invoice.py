@@ -148,7 +148,7 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
     # invoice legible next to a timesheet the client can check it against.
     assert any("marzo 2026" in description for *_, description in lines)
     assert any("aprile 2026" in description for *_, description in lines)
-    assert all("hours" in description for *_, description in lines)
+    assert all("ore" in description for *_, description in lines)
 
     # One activity for the whole binding, not thirty-seven: it is a single commercial
     # act over a selection, unlike `recalculate_rates`, which changes each row's meaning
@@ -424,7 +424,7 @@ def test_an_hour_already_on_an_issued_invoice_cannot_be_invoiced_twice(
 
     with pytest.raises(Conflict) as excinfo:
         billing.bind_to_invoice(billable_deal_id, BindTimeRequest(entry_ids=[entry.id]), ADMIN)
-    assert "invoice" in excinfo.value.message
+    assert "fattura" in excinfo.value.message
     # The refusal names the document, because "already invoiced" is only actionable if
     # the user can go and look at the invoice in question.
     assert excinfo.value.details["number"] == issued.number

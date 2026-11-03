@@ -595,7 +595,7 @@ def test_the_closed_period_ladder_steps_at_30_and_60_days_past_the_end(
 def test_the_current_period_is_not_closed_and_the_cadence_sets_the_period(world: World) -> None:
     monthly = world.contract("monthly")
     world.day(monthly, date(2026, 10, 1))
-    quarterly = world.contract("Trimestrale")
+    quarterly = world.contract("quarterly")
     world.day(quarterly, date(2026, 8, 1))  # Q3 ended 30 September
     open_quarter = world.contract("quarterly")
     world.day(open_quarter, date(2026, 10, 2))  # Q4 is running
@@ -1017,7 +1017,7 @@ def test_the_italian_helpers_pluralise_and_use_a_decimal_comma() -> None:
     assert format_entries(1) == "1 voce" and format_entries(3) == "3 voci"
     assert format_hours(Decimal("1")) == "1 ora" and format_hours(Decimal("2.25")) == "2,25 ore"
     assert format_days_ago(1) == "ieri" and format_days_ago(2) == "2 giorni fa"
-    assert ago(0) == "today" and ago(1) == "ieri" and ago(2) == "2 giorni fa"
+    assert ago(0) == "oggi" and ago(1) == "ieri" and ago(2) == "2 giorni fa"
     assert counted(1, "minuto", "minuti") == "1 minuto" and counted(61, "minuto", "minuti") == (
         "61 minuti"
     )

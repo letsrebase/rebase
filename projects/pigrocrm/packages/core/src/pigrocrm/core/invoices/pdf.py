@@ -78,7 +78,7 @@ Regimes: dict[str, str] = {
 # The word after the `TipoDocumento` code on the first line (`TD01 fattura`). The
 # product issues `TD01` and nothing else today (`invoices/models.py`); a code this table
 # does not know prints alone rather than as "fattura" by default.
-TIPI_DOCUMENT: dict[str, str] = {"TD01": "invoice"}
+TIPI_DOCUMENT: dict[str, str] = {"TD01": "fattura"}
 
 # The words for FPR12's `ModalitaPagamentoType`, for the DETTAGLI column
 # (`MP05` in the first column, `Bonifico IBAN IT…` in the second). Same fallback rule.

@@ -104,7 +104,7 @@ def test_an_unconfigured_legal_entities_refuses_to_classify_at_all() -> None:
     legal_entity = _legal_entity(vat_number=None, tax_code=None)
     with pytest.raises(ValidationFailed) as caught:
         classify_direction(supplier, [legal_entity])
-    assert caught.value.details["entity"] == "legal_entities"
+    assert caught.value.details["entity"] == "legal_entity"
 
 
 def test_the_file_lands_on_the_legal_entity_whose_identifier_matches_among_several() -> None:
@@ -126,7 +126,7 @@ def test_to_supplier_matching_two_legal_entities_by_different_channels_is_refuse
     supplier = _party(vat_number="IT01234567890", tax_code="HMCRFT00A01H501K")
     with pytest.raises(ValidationFailed) as caught:
         match_legal_entity(supplier, [by_vat_number, by_cf])
-    assert caught.value.details["entity"] == "legal_entities"
+    assert caught.value.details["entity"] == "legal_entity"
     assert caught.value.details["field"] == "tax_code"
 
 

@@ -116,7 +116,7 @@ _EXPIRED_LINK = "/app/invoices?overdue=true"
 # (`EconomicOverview.customer_concentration`). Unlike the other three signals there is
 # no separate filtered list of "customers over the threshold" to point at instead --
 # the concentration table itself is the rows behind this count.
-_CONCENTRATION_LINK = "/app/?tab=economica"
+_CONCENTRATION_LINK = "/app?tab=economic"
 _CUSTOMERS_SHOWN = 10
 _OVERDUE_SHOWN = 50
 

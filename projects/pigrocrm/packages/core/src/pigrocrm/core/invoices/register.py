@@ -15,7 +15,7 @@ from pigrocrm.core.invoices.schemas import RegisterGapRead, RegisterGapsDeclare
 
 GAPS_ACTION = "declare_invoice_register_gaps"
 # How many undeclared numbers `issue`'s refusal spells out. The whole list always stays
-# in `details["numeri"]`, machine-readable; the *sentence* is read by a person, and a
+# in `details["numbers"]`, machine-readable; the *sentence* is read by a person, and a
 # register whose lowest imported number is high can leave hundreds of them.
 GAPS_SHOWN_IN_MESSAGE = 20
 
@@ -141,7 +141,7 @@ class RegisterGaps:
         """Native issuing must not resume on top of a silent gap: the next number would
         look like it continues a register that has an unexplained hole underneath it.
 
-        Rendered short, reported whole: `details["numeri"]` carries every number, and the
+        Rendered short, reported whole: `details["numbers"]` carries every number, and the
         message names the first `GAPS_SHOWN_IN_MESSAGE` plus a count. A refusal a person
         cannot read is a refusal that does not explain itself."""
         gaps = self.undeclared_gaps(year, legal_entity_id)

@@ -359,8 +359,8 @@ def _import(**overrides: object) -> CustomersFromSuggestions:
                 "domain": "acme.it",
                 "legal_name": "Acme S.r.l.",
                 "people": [
-                    {"address": "marco@acme.it", "nome": "Marco Bianchi"},
-                    {"address": "sara@acme.it", "nome": ""},
+                    {"address": "marco@acme.it", "name": "Marco Bianchi"},
+                    {"address": "sara@acme.it", "name": ""},
                 ],
             },
             {"domain": "studio-rossi.it", "legal_name": "  Studio Rossi  ", "people": []},
@@ -418,7 +418,7 @@ def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: 
         {
             "domain": "acme.it",
             "legal_name": "Acme",
-            "people": [{"address": "ceo@rival.it", "nome": "Ceo"}],
+            "people": [{"address": "ceo@rival.it", "name": "Ceo"}],
         }
     ]
     with pytest.raises(ValidationFailed):
@@ -466,7 +466,7 @@ def test_a_display_name_longer_than_a_person_holds_is_clipped(db_session: Sessio
         {
             "domain": "acme.it",
             "legal_name": "Acme",
-            "people": [{"address": "marco@acme.it", "nome": "M" * 130 + " " + "B" * 124}],
+            "people": [{"address": "marco@acme.it", "name": "M" * 130 + " " + "B" * 124}],
         }
     ]
     CustomerService(db_session).create_from_suggestions(_import(customers=long), ADMIN)

@@ -119,7 +119,7 @@ class ContractCreate(BaseModel):
     @model_validator(mode="after")
     def _end_not_before_start(self) -> "ContractCreate":
         if self.end is not None and self.end < self.start:
-            raise ValueError("fine non può precedere inizio")
+            raise ValueError("end non può precedere start")
         return self
 
 
@@ -280,7 +280,7 @@ class RateCardCreate(BaseModel):
         # conflict. Catching it here, before the row ever reaches the database,
         # is what keeps the two failures distinguishable.
         if self.valid_to is not None and self.valid_to < self.valid_from:
-            raise ValueError("valido_a non può precedere valido_da")
+            raise ValueError("valid_to non può precedere valid_from")
         return self
 
 
@@ -507,14 +507,14 @@ class RenewalAssumptionRead(BaseModel):
 class ContractProjectionQuery(BaseModel):
     """The window `ContractProjectionService.project` reads: `[da, a)`, half-open --
     an occurrence dated exactly `a` belongs to the next window, matching
-    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `come_di` is the date
+    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `as_of` is the date
     a termination notice is assumed served on; `None` reads as "today", resolved by
     the service and never by this schema (packages/core's own single clock,
     db/clock.py)."""
 
     date_from: date
     date_to: date
-    come_di: date | None = None
+    as_of: date | None = None
 
     @model_validator(mode="after")
     def _a_after_da(self) -> "ContractProjectionQuery":
@@ -531,7 +531,7 @@ class ContractProjectionRead(BaseModel):
     figure"."""
 
     contract_id: UUID
-    come_di: date
+    as_of: date
     date_from: date
     date_to: date
     irrevocability_window_until_to: date | None

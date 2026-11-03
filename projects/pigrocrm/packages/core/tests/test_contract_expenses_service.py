@@ -252,8 +252,8 @@ def test_list_for_contract_returns_every_expense_oldest_first(db_session: Sessio
     contract = _contract(db_session)
     category = _category(db_session)
     service = ContractExpenseService(db_session)
-    second = service.create(contract.id, _create_data(category.id, data=date(2026, 3, 10)), WRITER)
-    first = service.create(contract.id, _create_data(category.id, data=date(2026, 3, 1)), WRITER)
+    second = service.create(contract.id, _create_data(category.id, date=date(2026, 3, 10)), WRITER)
+    first = service.create(contract.id, _create_data(category.id, date=date(2026, 3, 1)), WRITER)
 
     items = service.list_for_contract(contract.id, WRITER)
     assert [item.id for item in items] == [first.id, second.id]

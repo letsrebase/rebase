@@ -824,7 +824,7 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
         with ThreadPoolExecutor(max_workers=2) as pool:
             edited = pool.submit(edit)
             sent = pool.submit(send)
-            assert edited.result(timeout=60) == "refused:in_invio"
+            assert edited.result(timeout=60) == "refused:sending"
             assert sent.result(timeout=60) == "sent"
 
         left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
@@ -925,7 +925,7 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
         with ThreadPoolExecutor(max_workers=2) as pool:
             deleted = pool.submit(delete)
             sent = pool.submit(send)
-            assert deleted.result(timeout=60) == "refused:in_invio"
+            assert deleted.result(timeout=60) == "refused:sending"
             assert sent.result(timeout=60) == "sent"
 
         left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))

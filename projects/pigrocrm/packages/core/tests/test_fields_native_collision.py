@@ -1,7 +1,7 @@
 """A13. The residual document's 2026-08-20 update makes this blocking for slice 4
 because this slice's native columns are named `hours`, `data`, `amount` and
 `description` -- the first labels anyone would type defining a custom field on an
-hours entry. Before this guard, a field labelled "Ore" on `time_entry` slugified to
+hours entry. Before this guard, a field labelled "Hours" on `time_entry` slugified to
 `hours`, the API answered 201, and every later write landed in `custom_fields.hours`
 instead of the real column, silently.
 
@@ -31,23 +31,23 @@ def admin() -> Actor:
 @pytest.mark.parametrize(
     ("entity_type", "label", "colliding_key"),
     [
-        ("time_entry", "Ore", "hours"),
-        ("time_entry", "Data", "date"),
-        ("time_entry", "Descrizione", "description"),
-        ("cost", "Importo", "amount"),
-        ("cost", "Data", "date"),
-        ("deal", "Nome", "name"),
-        ("customer", "Ragione sociale", "legal_name"),
+        ("time_entry", "Hours", "hours"),
+        ("time_entry", "Date", "date"),
+        ("time_entry", "Description", "description"),
+        ("cost", "Amount", "amount"),
+        ("cost", "Date", "date"),
+        ("deal", "Name", "name"),
+        ("customer", "Legal name", "legal_name"),
         # `note` is no column since the notes thread (REB-879), but a Create takes it as the
         # first note, so a custom field may not take the name.
         ("deal", "Note", "note"),
         ("customer", "Note", "note"),
         ("person", "Note", "note"),
         # Slugification is what makes this reachable by accident: nobody types
-        # `budgeted_hours`, they type "Ore preventivate".
-        ("deal", "Ore  preventivate", "budgeted_hours"),
+        # `budgeted_hours`, they type "Budgeted hours".
+        ("deal", "Budgeted  hours", "budgeted_hours"),
         # Accent folding too -- slugify_key transliterates before stripping.
-        ("deal", "Probabilità", "probability"),
+        ("deal", "Probabílity", "probability"),
     ],
 )
 def test_a_label_that_slugifies_onto_a_native_column_is_refused(
@@ -85,7 +85,7 @@ def test_nothing_is_written_when_the_guard_fires(db_session: Session, admin: Act
     with pytest.raises(ValidationFailed):
         service.create(
             FieldDefinitionCreate(
-                entity_type="cost", key="Importo", label="Importo", field_type="currency"
+                entity_type="cost", key="Amount", label="Amount", field_type="currency"
             ),
             admin,
         )

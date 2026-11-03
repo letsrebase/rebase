@@ -943,7 +943,7 @@ def test_restoring_a_deal_whose_customer_is_now_archived_is_refused(
     with pytest.raises(Conflict) as exc:
         service.restore(deal.id, ADMIN)
     assert exc.value.details["entity"] == "deal"
-    assert "customer" in exc.value.message
+    assert "cliente" in exc.value.message
 
 
 def test_restoring_the_customer_first_then_the_deal_works(

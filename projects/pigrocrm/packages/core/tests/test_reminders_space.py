@@ -927,7 +927,7 @@ def test_the_legal_entities_are_read_once_by_evaluation(space: Space) -> None:
     seen: list[str] = []
 
     def record(_c: object, _cur: object, statement: str, *_a: object) -> None:
-        if "FROM emitter_profile JOIN fiscal_profile" in statement:
+        if "FROM legal_entities JOIN fiscal_profile" in statement:
             seen.append(statement)
 
     engine = space.session.get_bind()

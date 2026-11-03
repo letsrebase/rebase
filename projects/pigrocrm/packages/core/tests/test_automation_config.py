@@ -136,7 +136,7 @@ def test_changing_the_threshold_is_audited_and_an_equal_value_is_not(db_session:
 
     service.update_automation_config(AutomationConfigUpdate(a4_stalled_deal_days=45), ADMIN)
     (entry,) = ActivityRepository(db_session).by_kind(["automation.config_changed"])
-    assert entry.payload["a4_stalled_deal_days"] == {"da": 30, "a": 45}
+    assert entry.payload["a4_stalled_deal_days"] == {"from": 30, "to": 45}
 
 
 def test_an_admin_can_switch_a_rule_off(db_session: Session) -> None:
@@ -213,7 +213,7 @@ def test_every_change_writes_an_activity(db_session: Session) -> None:
     rows = ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10)
     assert len(rows) == 1
     assert rows[0].actor_id == ADMIN.id
-    assert rows[0].payload["a1_wins_accepted_offer_deal"] == {"da": True, "a": False}
+    assert rows[0].payload["a1_wins_accepted_offer_deal"] == {"from": True, "to": False}
     # The unchanged rule is absent, not recorded as unchanged: an audit entry listing
     # every field on every edit is an audit entry nobody reads.
     assert "a2_advances_sent_offer_deal" not in rows[0].payload

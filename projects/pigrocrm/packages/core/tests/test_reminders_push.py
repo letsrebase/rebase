@@ -639,7 +639,7 @@ def test_links_stay_on_the_space_the_person_is_in() -> None:
     assert url_prefix("https://pigro.example.test") == ""
     assert url_prefix("") == ""
     assert absolute("https://pigro.example.test/acme/", "/app/reminders") == (
-        "https://pigro.example.test/acme/app/avvisi"
+        "https://pigro.example.test/acme/app/reminders"
     )
 
 

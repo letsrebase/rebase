@@ -329,12 +329,12 @@ def _task(engine: Engine) -> list[TimelineLine]:
 def _digest_empty(**overrides: Any) -> WeeklyDigest:
     fields: dict[str, Any] = {
         "week": "2026-W37",
-        "da": date(2026, 9, 7),
-        "a": date(2026, 9, 13),
+        "date_from": date(2026, 9, 7),
+        "date_to": date(2026, 9, 13),
         "overdue": [],
         "in_due_date": [],
         "won_to_invoice": 0,
-        "hours_uninvoiced": Decimal("0.00"),
+        "unbilled_hours": Decimal("0.00"),
         "accrued_value": Decimal("0.00"),
         "issued": [],
         "total_month_current": Decimal("0.00"),
@@ -342,7 +342,7 @@ def _digest_empty(**overrides: Any) -> WeeklyDigest:
         "paid": [],
         "hours": None,
         "pipeline": [],
-        "deal_mossi": [],
+        "deal_moves": [],
         "offers_pending": [],
         "signals": [],
     }
@@ -371,16 +371,16 @@ def test_no_section_has_rows_in_an_empty_week() -> None:
         {"overdue": [_invoice()]},
         {"in_due_date": [_invoice()]},
         {"won_to_invoice": 1},
-        {"hours_uninvoiced": Decimal("0.25")},
+        {"unbilled_hours": Decimal("0.25")},
         # The third of «Da emettere»'s figures. `digest_mail` prints that section's second
-        # line on `hours_uninvoiced or accrued_value`, so accrued value with no unbilled
+        # line on `unbilled_hours or accrued_value`, so accrued value with no unbilled
         # hours behind it is still a section the recipient saw.
         {"accrued_value": Decimal("1.00")},
         {"issued": [_invoice()]},
         {"paid": [_invoice()]},
         {"pipeline": [{"stage_name": "Aperto", "number": 1, "total_value": Decimal("1.00")}]},
         {
-            "deal_mossi": [
+            "deal_moves": [
                 {
                     "deal_id": uuid7(),
                     "title": "D",
@@ -405,11 +405,11 @@ def test_the_three_figures_of_to_issue_are_one_section() -> None:
     a section the recipient never saw -- or not told about one they did."""
     for fields in (
         {"won_to_invoice": 2},
-        {"hours_uninvoiced": Decimal("3.00")},
+        {"unbilled_hours": Decimal("3.00")},
         {"accrued_value": Decimal("150.00")},
         {
             "won_to_invoice": 2,
-            "hours_uninvoiced": Decimal("3.00"),
+            "unbilled_hours": Decimal("3.00"),
             "accrued_value": Decimal("150.00"),
         },
     ):
@@ -440,8 +440,8 @@ def test_a_week_with_everything_lights_all_seven() -> None:
         issued=[_invoice()],
         paid=[_invoice()],
         hours={
-            "da": date(2026, 9, 7),
-            "a": date(2026, 9, 13),
+            "date_from": date(2026, 9, 7),
+            "date_to": date(2026, 9, 13),
             "days": [],
             "days_without_hours": [],
             "total_hours": Decimal("6.00"),
@@ -551,7 +551,7 @@ def test_each_recipient_gets_their_own_task_of_the_week(corpus: Corpus) -> None:
     assert di_ada.text.index("Preventivo in ritardo") < di_ada.text.index("Telefonare a Rossi")
     for outside in ("Gia fatta", "Senza data", "Fra due settimane"):
         assert outside not in di_ada.text
-    assert f"{PUBLIC_URL}/app/today?from=digest" in di_ada.text
+    assert f"{PUBLIC_URL}/app/activities?view=today&from=digest" in di_ada.text
     # A person with nothing assigned gets no section, not an empty heading.
     assert "Da fare" in di_ada.text and "Da fare" in di_bruno.text
 
@@ -580,7 +580,7 @@ def test_to_long_list_of_late_task_is_cut_and_says_how_many_more(corpus: Corpus)
 
     assert di_ada.text.count("Arretrato") == 10
     assert "…e 3 altre in ritardo" in di_ada.text
-    assert f"{PUBLIC_URL}/app/today?from=digest" in di_ada.text
+    assert f"{PUBLIC_URL}/app/activities?view=today&from=digest" in di_ada.text
 
 
 def test_a_recipient_with_nothing_assigned_has_no_da_fare_section(corpus: Corpus) -> None:

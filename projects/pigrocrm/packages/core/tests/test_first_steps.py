@@ -92,7 +92,7 @@ def test_a_live_time_entry_is_work(db_session: Session) -> None:
         TimeEntry(
             deal_id=deal.id,
             user_id=user.id,
-            data=date(2026, 9, 22),
+            date=date(2026, 9, 22),
             hours=Decimal("2.00"),
             description="Lavoro",
             billable=True,

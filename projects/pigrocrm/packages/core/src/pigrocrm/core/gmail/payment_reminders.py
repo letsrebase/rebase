@@ -495,8 +495,8 @@ class PaymentRemindersService:
                 # Counted separately from `lines` because they answer different questions:
                 # how many positions are occupied, and how many letters a client actually
                 # received. See `PaymentReminder`'s own docstring.
-                func.count(PaymentReminder.sent_at).label("inviati"),
-                func.max(PaymentReminder.sent_at).label("ultimo"),
+                func.count(PaymentReminder.sent_at).label("sent"),
+                func.max(PaymentReminder.sent_at).label("last"),
                 func.max(func.coalesce(PaymentReminder.sent_at, PaymentReminder.created_at)).label(
                     "last_task"
                 ),

@@ -84,7 +84,9 @@ def _acme(session: Session) -> Customer:
 
 
 def _ada(session: Session, customer: Customer) -> Person:
-    person = Person(name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+    person = Person(
+        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id
+    )
     session.add(person)
     session.flush()
     return person

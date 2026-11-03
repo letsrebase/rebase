@@ -117,7 +117,7 @@ class RateCardService:
             raise ValidationFailed(
                 "rate_card",
                 "valid_to",
-                "non può precedere valido_da",
+                "non può precedere valid_from",
                 expected=f">= {merged['valid_from'].isoformat()}",
             )
 

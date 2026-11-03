@@ -246,7 +246,9 @@ def test_each_entity_type_is_checked_against_its_own_table(db_session: Session) 
     draft against a row of the wrong kind."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    person = Person(name="Ada", last_name="Rossi", email="ada@acme.it", customer_id=customer.id)
+    person = Person(
+        first_name="Ada", last_name="Rossi", email="ada@acme.it", customer_id=customer.id
+    )
     db_session.add(person)
     db_session.flush()
     service = _service(db_session)

@@ -184,7 +184,7 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"nome": nome, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"name": nome, "created_at": created, "updated_at": updated}))
     return seeded
 
 
@@ -279,7 +279,7 @@ _ENTITIES: dict[
         ("created_at", "updated_at", "legal_name"),
     ),
     "people": (_seed_people, _page_people, ("created_at", "updated_at", "last_name")),
-    "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "nome")),
+    "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "name")),
     "documents": (_seed_documents, _page_documents, ("created_at", "updated_at", "title")),
 }
 

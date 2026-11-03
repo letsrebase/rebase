@@ -65,11 +65,11 @@ def test_an_unpriceable_picked_day_contributes_zero_and_match_amounts_is_false()
     assert proposal.match_amounts is False
 
 
-def _day(day_id: UUID, data: date, quantity: Decimal = Decimal("1")) -> WorkUnit:
+def _day(day_id: UUID, day_date: date, quantity: Decimal = Decimal("1")) -> WorkUnit:
     return WorkUnit(
         id=day_id,
         contract_id=CONTRACT_ID,
-        data=data,
+        date=day_date,
         quantity=quantity,
         description="lavoro",
     )
