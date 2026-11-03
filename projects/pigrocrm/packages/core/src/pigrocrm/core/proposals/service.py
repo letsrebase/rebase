@@ -193,7 +193,7 @@ class ProposalService:
         member's name as it is now, or the actor's kind for one without a user row. The
         timeline row carries the user id as well, so a later rename does not orphan it."""
         user = self.session.get(User, actor.id) if actor.id is not None else None
-        return user.nome or user.email if user is not None else actor.type
+        return user.name or user.email if user is not None else actor.type
 
     def reject(self, proposal_id: UUID, data: ProposalReject, actor: Actor) -> ProposalRead:
         actor.require_person("reject_proposal")
@@ -248,11 +248,11 @@ class ProposalService:
         self.session.commit()
         return ProposalRead.model_validate(proposal)
 
-    def _accept_contract(self, proposal: Proposal, fields: dict[str, Any], actor: Actor) -> UUID:
+    def _accept_contract(self, proposal: Proposal, raw: dict[str, Any], actor: Actor) -> UUID:
         """Creates the `contracts` row (plus its first `rate_cards` row) and
         re-points the originating document's ownership at it -- spec §10, §11's own
         "widen at accept time, not at archive time" ordering."""
-        fields = self._parse_contract_fields(fields)
+        fields = self._parse_contract_fields(raw)
         customer = self.session.get(Customer, fields.contract.customer_id)
         if customer is None:
             raise NotFound("customer", fields.contract.customer_id)
@@ -313,16 +313,16 @@ class ProposalService:
         )
         return contract.id
 
-    def _accept_work_unit(self, proposal: Proposal, fields: dict[str, Any], actor: Actor) -> UUID:
+    def _accept_work_unit(self, proposal: Proposal, raw: dict[str, Any], actor: Actor) -> UUID:
         """Creates the `approval` row and the `work_unit` at `'approved'`, both in
         one transaction -- never leaving a day at `'proposed'` (spec §10).
 
         Re-checks `fields.contract_id` against `proposal.contract_id` even though
-        `create()` already checked it once: `fields` here may be a human's edited
+        `create()` already checked it once: `raw` here may be a human's edited
         `accepted_fields`, not the original `proposed_fields` `create()` validated,
         and a reviewer who approved a proposal against contract A must not have
         their accept silently redirected to contract B by an edited payload."""
-        fields = self._parse_work_unit_fields(fields)
+        fields = self._parse_work_unit_fields(raw)
         if fields.contract_id != proposal.contract_id:
             raise ValidationFailed(
                 ENTITY,
@@ -342,7 +342,7 @@ class ProposalService:
                 "work_unit",
                 "esiste già un day non concluso per questo contratto in questa data",
                 contract_id=str(fields.contract_id),
-                data=str(fields.data),
+                data=str(fields.date),
             ),
         ):
             approval = Approval(
@@ -353,7 +353,7 @@ class ProposalService:
                 message_id=fields.approval.message_id,
                 document_id=proposal.document_id,
                 excerpt=proposal.excerpt,
-                origin={"kind": "agente", "proposal_id": str(proposal.id)},
+                origin={"kind": "agent", "proposal_id": str(proposal.id)},
             )
             self.session.add(approval)
             self.session.flush()
@@ -361,7 +361,7 @@ class ProposalService:
             set_transition_context(self.session, actor, f"proposta {proposal.id} accettata")
             work_unit = WorkUnit(
                 contract_id=fields.contract_id,
-                data=fields.data,
+                data=fields.date,
                 quantity=fields.quantity,
                 description=fields.description,
                 status="approved",
@@ -373,7 +373,7 @@ class ProposalService:
             fields.contract_id,
             "day_approved",
             actor,
-            {"data": str(fields.data), "proposal_id": str(proposal.id)},
+            {"date": str(fields.date), "proposal_id": str(proposal.id)},
         )
         return work_unit.id
 

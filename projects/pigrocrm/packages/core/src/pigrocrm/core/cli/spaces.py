@@ -32,7 +32,7 @@ def seed_templates(settings: Settings) -> int:
     ):
         created = TemplateService(session).seed_defaults(Actor.system())
     for template in created:
-        print(f"creato: {template.nome} ({template.type})")
+        print(f"creato: {template.name} ({template.type})")
     if not created:
         print("nessun template da creare: sono già presenti")
     return 0
@@ -110,7 +110,7 @@ def ensure_space_defaults(settings: Settings) -> int:
             try:
                 with session_factory(engine)() as space:
                     bind_scope(space, Actor.system())
-                    report = ensure_defaults(space, nome=slug)
+                    report = ensure_defaults(space, name=slug)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non arredato ({type(exc).__name__})", file=sys.stderr)
                 continue

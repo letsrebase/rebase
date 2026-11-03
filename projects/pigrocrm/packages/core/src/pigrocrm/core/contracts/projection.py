@@ -25,9 +25,10 @@ not a second one invented here.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -50,7 +51,7 @@ class RecurringFeeOccurrence:
     recognised, `amount` the amount recognised on it -- one rate card's own
     `amount`, unchanged, per occurrence."""
 
-    data: date
+    date: dt.date
     amount: Decimal
 
 
@@ -63,17 +64,17 @@ class ContractProjection:
     Done-when criterion names, distinct from `CashOverview.projected`."""
 
     contract_id: UUID
-    come_di: date
-    da: date
-    a: date
-    irrevocability_window_until_to: date | None
+    come_di: dt.date
+    da: dt.date
+    a: dt.date
+    irrevocability_window_until_to: dt.date | None
     scheduled: Decimal
     from_renewal: Decimal
     total: Decimal
 
 
 def generate_recurring_fee_occurrences(
-    contract: Contract, rate_cards: Sequence[RateCard], through: date
+    contract: Contract, rate_cards: Sequence[RateCard], through: dt.date
 ) -> list[RecurringFeeOccurrence]:
     """Every fixed recurring-fee rate card of `contract`, expanded into its own
     occurrence dates -- one per `delivery_period`, starting at the card's own
@@ -102,7 +103,7 @@ def generate_recurring_fee_occurrences(
             continue
 
         if card.delivery_period == "one_off":
-            occurrences.append(RecurringFeeOccurrence(data=card.valid_from, amount=card.amount))
+            occurrences.append(RecurringFeeOccurrence(date=card.valid_from, amount=card.amount))
             continue
 
         # Each date is counted from the card's own `valid_from`, never from the previous
@@ -112,15 +113,15 @@ def generate_recurring_fee_occurrences(
         index = 0
         occurrence_date = card.valid_from
         while occurrence_date <= bound:
-            occurrences.append(RecurringFeeOccurrence(data=occurrence_date, amount=card.amount))
+            occurrences.append(RecurringFeeOccurrence(date=occurrence_date, amount=card.amount))
             index += 1
             occurrence_date = add_months(card.valid_from, index * step)
     return occurrences
 
 
 def schedule_end(
-    contract: Contract, window_end: date, occurrences: Sequence[RecurringFeeOccurrence]
-) -> date:
+    contract: Contract, window_end: dt.date, occurrences: Sequence[RecurringFeeOccurrence]
+) -> dt.date:
     """The last date `contract`'s own recurring schedule speaks for -- mastro's
     `scheduleEnd` (`certainty.ts:219-233`). A fixed-term contract's schedule ends at
     its own `end`; an open-ended one's ends at the last occurrence this caller
@@ -130,16 +131,16 @@ def schedule_end(
         return contract.end
     if not occurrences:
         return window_end
-    return max(occurrence.data for occurrence in occurrences)
+    return max(occurrence.date for occurrence in occurrences)
 
 
 def renewal_assumption_contribution(
     contract: Contract,
     assumption: RenewalAssumption | None,
     occurrences: Sequence[RecurringFeeOccurrence],
-    come_di: date,
-    da: date,
-    a: date,
+    come_di: dt.date,
+    da: dt.date,
+    a: dt.date,
 ) -> Decimal:
     """A contract's projected renewal contribution over `[da, a)` -- mastro's
     `renewalAssumptionContribution` (`certainty.ts:344-385`). Zero with no assumption
@@ -177,9 +178,9 @@ def project(
     contract: Contract,
     rate_cards: Sequence[RateCard],
     assumption: RenewalAssumption | None,
-    come_di: date,
-    da: date,
-    a: date,
+    come_di: dt.date,
+    da: dt.date,
+    a: dt.date,
 ) -> ContractProjection:
     """The genuine "projected" figure over `[da, a)`: every recurring-fee occurrence
     beyond the irrevocability window plus the renewal assumption's own prorated
@@ -199,7 +200,7 @@ def project(
     beyond_window = [
         occurrence
         for occurrence in occurrences
-        if effective_window_end < occurrence.data <= end and da <= occurrence.data < a
+        if effective_window_end < occurrence.date <= end and da <= occurrence.date < a
     ]
     scheduled = round_money(sum((o.amount for o in beyond_window), ZERO_MONEY))
     from_renewal = renewal_assumption_contribution(

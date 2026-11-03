@@ -27,7 +27,7 @@ from pigrocrm.core.mail import day_short
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
-from pigrocrm.core.reminders.detectors.text import days, days_fa
+from pigrocrm.core.reminders.detectors.text import format_days, format_days_ago
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.timetracking.models import TimeEntry
 
@@ -94,8 +94,8 @@ def detect_past_close(ctx: DetectorContext) -> list[Detection]:
                 customer_owner,
                 type_key="deal_past_close",
                 measure=late,
-                title=f"Deal oltre la chiusura prevista: {deal.nome}",
-                detail=(f"Doveva chiudere {day_short(deal.expected_close_date)}, {days_fa(late)}"),
+                title=f"Deal oltre la chiusura prevista: {deal.name}",
+                detail=(f"Doveva chiudere {day_short(deal.expected_close_date)}, {format_days_ago(late)}"),
             )
         )
     return found
@@ -130,7 +130,7 @@ def _last_activity(zone: str) -> ColumnElement[date]:
         .scalar_subquery()
     )
     hours = (
-        select(func.max(TimeEntry.data))
+        select(func.max(TimeEntry.date))
         .where(TimeEntry.deal_id == Deal.id, TimeEntry.deleted_at.is_(None))
         .scalar_subquery()
     )
@@ -163,8 +163,8 @@ def detect_stale(ctx: DetectorContext) -> list[Detection]:
                 customer_owner,
                 type_key="deal_stale",
                 measure=idle,
-                title=f"Deal fermo: {deal.nome}",
-                detail=f"Niente da {days(idle)} (ultima cosa: {day_short(last_activity)})",
+                title=f"Deal fermo: {deal.name}",
+                detail=f"Niente da {format_days(idle)} (ultima cosa: {day_short(last_activity)})",
             )
         )
     return found

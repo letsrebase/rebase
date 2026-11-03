@@ -315,7 +315,7 @@ class IssuedInvoiceImporter:
                 payment_status=data.payment_status,
                 payment_date=data.payment_date,
                 transmitted_externally_at=data.transmitted_externally_at,
-                note_interne=data.note_interne,
+                internal_notes=data.internal_notes,
                 imported_from=imported_from if imported_from is not None else data.imported_from,
                 xml_document_id=xml_document_id,
                 xml_hash_sha256=xml_hash_sha256,

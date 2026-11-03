@@ -66,7 +66,7 @@ _A2_TRANSITION = ("draft", "sent")
 
 # The two stage codes the rules resolve. Not names: a name is renamable and `code` exists
 # precisely so an automation survives somebody relabelling a column on the board.
-_WON_CODE = "vinto"
+_WON_CODE = "won"
 _OFFER_CODE = "offer"
 
 
@@ -180,7 +180,7 @@ class AutomationRunner:
     def _resolve_won_stage(
         self,
     ) -> tuple[PipelineStageRead | None, AutomationSkipReason | None]:
-        """`code='vinto'`, then the single `type='won'`, then decline.
+        """`code='won'`, then the single `type='won'`, then decline.
 
         The `type` fallback exists for A1 and not for A2 because `won` identifies exactly
         one intended stage while `open` identifies four. Residuo **R14**: two `won` stages
@@ -245,8 +245,8 @@ class AutomationRunner:
             {
                 "rule": rule,
                 "document_id": str(document.id),
-                "da": previous.nome,
-                "a": target.nome,
+                "from": previous.name,
+                "to": target.name,
                 "triggered_by": str(actor.id) if actor.id is not None else None,
                 "triggered_via": actor.type,
             },

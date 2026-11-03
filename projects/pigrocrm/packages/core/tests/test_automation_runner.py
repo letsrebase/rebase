@@ -97,7 +97,7 @@ def test_a1_moves_the_deal_to_won(
     document = _offer(db_session, deal, "accepted")
     AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
-    assert deal.pipeline_stage_id == stages["vinto"].id
+    assert deal.pipeline_stage_id == stages["won"].id
     assert deal.probability == 100
 
 
@@ -198,7 +198,7 @@ def test_a1_resolves_by_code_and_not_by_name(
 ) -> None:
     """The stage renamed, the automation unaffected. This is what `code` is for
     (slice 1 §5.4, residuo R11)."""
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.nome = "Chiuso positivo"
     db_session.flush()
@@ -212,7 +212,7 @@ def test_a1_resolves_by_code_and_not_by_name(
 def test_a1_falls_back_to_the_single_won_stage_when_the_code_is_gone(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
     db_session.flush()
@@ -229,7 +229,7 @@ def test_a1_refuses_to_guess_between_two_won_stages(
     """Residuo **R14**: nothing forbids two `type='won'` stages, and no migration in this
     slice adds a constraint -- it would refuse data an installation may have created for a
     reason. So the automation does not guess; it declines and says why."""
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
     db_session.add(PipelineStage(nome="Vinto bis", position=6, default_probability=100, type="won"))
@@ -251,7 +251,7 @@ def test_a1_declines_when_there_is_no_won_stage_at_all(
 ) -> None:
     """§16 criterion 7's second half: accepting the offer **succeeds**, and the
     non-execution is recorded."""
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     db_session.delete(won)
     db_session.flush()
@@ -270,7 +270,7 @@ def test_a1_on_a_deal_already_won_is_a_recorded_no_op(
     """§16 criterion 8: idempotence is *inherited*, not added (§9.4). The effect is a
     state, not an increment, so a second accepted offer produces one move and one recorded
     no-op -- and no execution-log table is needed to know that."""
-    deal.pipeline_stage_id = stages["vinto"].id
+    deal.pipeline_stage_id = stages["won"].id
     db_session.flush()
 
     document = _offer(db_session, deal, "accepted")
@@ -331,14 +331,14 @@ def test_a2_never_moves_a_deal_backwards(
 ) -> None:
     """§9.2: a deal already in Negoziazione must not retreat because a second offer was
     sent. An automation that moves things backwards gets switched off on day one."""
-    deal.pipeline_stage_id = stages["negoziazione"].id
+    deal.pipeline_stage_id = stages["negotiation"].id
     db_session.flush()
 
     document = _offer(db_session, deal, "sent")
     AutomationRunner(db_session).on_offer_state_changed(document, "draft", ADMIN)
     db_session.flush()
 
-    assert deal.pipeline_stage_id == stages["negoziazione"].id
+    assert deal.pipeline_stage_id == stages["negotiation"].id
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
     assert skipped[0].payload["reason"] == "already_in_state"
 
@@ -399,7 +399,7 @@ def test_switching_a2_off_leaves_a1_alone(
     document = _offer(db_session, deal, "accepted")
     AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
-    assert deal.pipeline_stage_id == stages["vinto"].id
+    assert deal.pipeline_stage_id == stages["won"].id
 
 
 # -- the four declared reasons, enumerated ---------------------------------------
@@ -415,7 +415,7 @@ Scenario = Callable[[Session, Deal, dict[str, PipelineStageRead]], tuple[Documen
 def _scenario_stage_absent(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     db_session.delete(won)
     db_session.flush()
@@ -425,7 +425,7 @@ def _scenario_stage_absent(
 def _scenario_stage_ambiguous(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
     db_session.add(PipelineStage(nome="Vinto bis", position=6, default_probability=100, type="won"))
@@ -436,7 +436,7 @@ def _scenario_stage_ambiguous(
 def _scenario_already_in_state(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
-    deal.pipeline_stage_id = stages["vinto"].id
+    deal.pipeline_stage_id = stages["won"].id
     db_session.flush()
     return _offer(db_session, deal, "accepted"), "sent"
 

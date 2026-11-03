@@ -40,7 +40,7 @@ class InvitationCreate(BaseModel):
     form."""
 
     email: EmailStr
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     role: Role = "collaborator"
     # The aziende the invitee will see (spec 2026-10-03 §1.11): omitted or `null` is
     # every azienda, as before; a list scopes them to those; an empty list is refused by
@@ -69,7 +69,7 @@ class InvitationRead(BaseModel):
 
     id: UUID
     email: str
-    nome: str | None
+    name: str | None
     role: Role
     legal_entities: list[UUID] | None = None
     invited_by: UUID
@@ -86,7 +86,7 @@ class InvitationPeek(BaseModel):
 
     space: str
     invited_from: str
-    nome: str | None
+    name: str | None
 
 
 class InvitationOffer(BaseModel):
@@ -97,7 +97,7 @@ class InvitationOffer(BaseModel):
 
     role: Role
     invited_from: str
-    nome: str | None
+    name: str | None
 
 
 class UserCreate(BaseModel):
@@ -110,7 +110,7 @@ class UserCreate(BaseModel):
     # 2026-09-12 §6.4): the person enters with a link by mail and never had a password.
     # `UserService.create` refuses it from anyone but the system.
     password: str | None = None
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     role: Role = "collaborator"
     default_hourly_rate: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_DECIMAL_PLACES, ge=0
@@ -126,7 +126,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     role: Role | None = None
     active: bool | None = None
     # The member's scope (spec 2026-10-03 §1.11): a list scopes them, an explicit
@@ -158,7 +158,7 @@ class MemberRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
 
 
 class MemberDetail(MemberRead):
@@ -176,7 +176,7 @@ class UserRead(BaseModel):
 
     id: UUID
     email: str
-    nome: str
+    name: str
     role: Role
     active: bool
     # `None` for a member who sees the whole space, the ids otherwise (REB-633): what

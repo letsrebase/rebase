@@ -124,7 +124,7 @@ def set_transition_context(session: Session, actor: Actor, reason: str) -> None:
         text("SELECT set_config('pigrocrm.actor', :v, true)"),
         {"v": actor_to_transition_json(actor)},
     )
-    session.execute(text("SELECT set_config('pigrocrm.motivo', :v, true)"), {"v": reason})
+    session.execute(text("SELECT set_config('pigrocrm.reason', :v, true)"), {"v": reason})
 
 
 class WorkUnitService:
@@ -178,14 +178,14 @@ class WorkUnitService:
                 "questo contratto ha gia' una giornata in quella data: "
                 "revoca o rifiuta quella esistente per registrarne un'altra",
                 contract_id=str(data.contract_id),
-                data=data.data.isoformat(),
+                date=data.date.isoformat(),
             )
 
         with savepoint(self.session, refuse):
             work_unit = self.repo.add(
                 WorkUnit(
                     contract_id=data.contract_id,
-                    data=data.data,
+                    date=data.date,
                     quantity=data.quantity,
                     description=data.description,
                     status=data.status,
@@ -210,7 +210,7 @@ class WorkUnitService:
             work_unit.contract_id,
             "day_created",
             actor,
-            {"work_unit": work_unit.data.isoformat(), "status": work_unit.status},
+            {"work_unit": work_unit.date.isoformat(), "status": work_unit.status},
         )
         if commit:
             self.session.commit()
@@ -256,7 +256,7 @@ class WorkUnitService:
                 work_unit.contract_id,
                 "day_state_changed",
                 actor,
-                {"work_unit": work_unit.data.isoformat(), "da": origin, "a": work_unit.status},
+                {"work_unit": work_unit.date.isoformat(), "from": origin, "to": work_unit.status},
             )
         self.session.commit()
         return WorkUnitRead.model_validate(work_unit)
@@ -310,7 +310,7 @@ class WorkUnitService:
             requires_prior_approval=contract.requires_prior_approval,
             start_contract=contract.start,
             contract_end=contract.end,
-            out_of_term=_term_violation(work_unit.data, contract.start, contract.end),
+            out_of_term=_term_violation(work_unit.date, contract.start, contract.end),
             approval=approval,
             transitions=self.transitions_for(work_unit_id),
             actions=allowed_actions(work_unit.status),
@@ -472,7 +472,7 @@ class ApprovalService:
             if day is None or day.contract_id != data.contract_id:
                 raise NotFound(WORK_UNIT_ENTITY, day_id)
             if day.status not in APPROVABLE_STATUSES or day.approval_id is not None:
-                refused.append(f"{day.data.isoformat()} ({day.status})")
+                refused.append(f"{day.date.isoformat()} ({day.status})")
             days.append(day)
         if refused:
             raise Conflict(

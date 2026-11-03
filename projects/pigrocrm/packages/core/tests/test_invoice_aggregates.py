@@ -305,7 +305,7 @@ def test_the_signal_counts_deals_invoiced_but_still_open(
     open deal is one signal, not two."""
     stages = _seeded_stages(db_session)
     open_deal = _deal(db_session, customer, "Aperto", stages["lead"])
-    won_deal = _deal(db_session, customer, "Vinto", stages["vinto"])
+    won_deal = _deal(db_session, customer, "Vinto", stages["won"])
 
     _invoice(db_session, customer, deal_id=open_deal.id)
     _invoice(db_session, customer, deal_id=open_deal.id)
@@ -351,7 +351,7 @@ def test_the_signal_is_about_open_deals_and_not_lost_ones(
     different problem with a different remedy, which this signal must not silently absorb.
     """
     stages = _seeded_stages(db_session)
-    lost = _deal(db_session, customer, "Perso", stages["perso"])
+    lost = _deal(db_session, customer, "Perso", stages["lost"])
     _invoice(db_session, customer, deal_id=lost.id)
 
     assert InvoiceRepository(db_session).count_deals_invoiced_not_won() == 0

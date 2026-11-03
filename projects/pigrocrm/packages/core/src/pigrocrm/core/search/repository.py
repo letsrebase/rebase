@@ -72,10 +72,10 @@ CUSTOMER_FIELDS: tuple[ScoredField, ...] = (
 )
 PERSON_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("last_name", Person.last_name, WEIGHT_IDENTIFYING),
-    ScoredField("nome", Person.nome, WEIGHT_IDENTIFYING),
+    ScoredField("first_name", Person.first_name, WEIGHT_IDENTIFYING),
     ScoredField("email", Person.email, WEIGHT_EMAIL),
 )
-DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("nome", Deal.nome, WEIGHT_IDENTIFYING),)
+DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("name", Deal.name, WEIGHT_IDENTIFYING),)
 DOCUMENT_FIELDS: tuple[ScoredField, ...] = (
     ScoredField("title", Document.title, WEIGHT_IDENTIFYING),
 )
@@ -264,7 +264,7 @@ class SearchRepository:
             PERSON_FIELDS,
             term,
             limit,
-            label=lambda row: " ".join(part for part in (row.nome, row.last_name) if part),
+            label=lambda row: " ".join(part for part in (row.first_name, row.last_name) if part),
             subtitle=lambda row: row.email,
             scope=scope,
         )
@@ -276,7 +276,7 @@ class SearchRepository:
             DEAL_FIELDS,
             term,
             limit,
-            label=lambda row: row.nome,
+            label=lambda row: row.name,
             subtitle=lambda row: None,
             scope=_own(Deal, legal_entity_id),
         )
@@ -361,7 +361,7 @@ class SearchRepository:
             total_and_a_minimum=group.total_and_a_minimum,
         )
 
-    def attivita(self, term: str, limit: int) -> SearchGroup:
+    def tasks(self, term: str, limit: int) -> SearchGroup:
         """§10.9: an attività by its title and its notes, whatever state it is in.
 
         Closed ones are found too, and say so in the subtitle: a search that hid what was
@@ -371,7 +371,7 @@ class SearchRepository:
         of its own (the calendar keeps them whatever azienda is selected).
         """
         return self._group(
-            "attivita",
+            "task",
             Task,
             TASK_FIELDS,
             term,

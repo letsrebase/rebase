@@ -18,7 +18,7 @@ expression comes back as a `Decimal` at the declared scale. (`sqlalchemy.cast` a
 `func.cast` compile identically here -- SQLAlchemy special-cases the name -- so the
 spelling is a matter of reading, not of behaviour; verified, not assumed.)
 
-**The substring arm is `word_similarity(termine, campo)`, not `similarity(campo, termine)`,
+**The substring arm is `word_similarity(term, field)`, not `similarity(field, term)`,
 and that is the one place this module departs from §8.5 as written.** The ladder's third
 rung is about a term occurring *inside* a field, and `similarity()` does not measure that:
 it compares whole strings, so it penalises a field for the text it carries besides the

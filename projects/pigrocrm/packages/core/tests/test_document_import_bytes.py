@@ -110,8 +110,8 @@ def test_the_import_records_where_the_bytes_came_from(db_session: Session, tmp_p
         )
     )
     kinds = [kind for kind, _ in rows]
-    assert "document.importato" in kinds
-    payload = next(payload for kind, payload in rows if kind == "document.importato")
+    assert "document.imported" in kinds
+    payload = next(payload for kind, payload in rows if kind == "document.imported")
     assert payload["origin"] == ORIGIN
 
 

@@ -170,8 +170,8 @@ def _stages(session: Session) -> tuple[UUID, UUID, UUID]:
     """
     wanted = (
         ("offer", "Offerta", 2, 50, "open"),
-        ("vinto", "Vinto", 4, 100, "won"),
-        ("perso", "Perso", 5, 0, "lost"),
+        ("won", "Vinto", 4, 100, "won"),
+        ("lost", "Perso", 5, 0, "lost"),
     )
     ids: list[UUID] = []
     for code, nome, position, probability, type in wanted:

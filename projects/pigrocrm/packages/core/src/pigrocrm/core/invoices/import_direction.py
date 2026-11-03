@@ -78,7 +78,7 @@ def match_legal_entity(
     ]
     if not any(vat_number or cf for _, vat_number, cf in identities):
         raise ValidationFailed(
-            "legal_entities",
+            "legal_entity",
             "vat_number",
             "nessuna azienda ha una partita IVA o un codice fiscale validi: "
             "non e' possibile classificare la direzione di una fattura importata",
@@ -94,7 +94,7 @@ def match_legal_entity(
             matched.append(legal_entity)
     if len(matched) > 1:
         raise ValidationFailed(
-            "legal_entities",
+            "legal_entity",
             "tax_code",
             "il fornitore del file corrisponde a due aziende, una per partita IVA e una per "
             "codice fiscale: correggi i dati fiscali delle aziende prima di importare",

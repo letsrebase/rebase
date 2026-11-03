@@ -9,7 +9,8 @@ caller cannot move an expense onto a different contract by editing the body.
 billed-onto column directly.
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -36,7 +37,7 @@ class ContractExpenseCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category_id: UUID
-    data: date
+    date: dt.date
     amount: Decimal = Field(gt=0, max_digits=AMOUNT_MAX_DIGITS, decimal_places=MONEY_SCALE)
     description: SafeStr = Field(min_length=1, max_length=DESCRIPTION_MAX_LENGTH)
     pre_authorized: bool = False
@@ -47,11 +48,11 @@ class ContractExpenseCreate(BaseModel):
     def _reference_matches_pre_authorized(self) -> "ContractExpenseCreate":
         if self.pre_authorized and not self.authorization_reference:
             raise ValueError(
-                "riferimento_autorizzazione è obbligatorio quando pre_autorizzata è vero"
+                "authorization_reference è obbligatorio quando pre_authorized è vero"
             )
         if not self.pre_authorized and self.authorization_reference:
             raise ValueError(
-                "riferimento_autorizzazione va lasciato vuoto quando pre_autorizzata è falso"
+                "authorization_reference va lasciato vuoto quando pre_authorized è falso"
             )
         return self
 
@@ -65,7 +66,7 @@ class ContractExpenseUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category_id: UUID | None = None
-    data: date | None = None
+    date: dt.date | None = None
     amount: Decimal | None = Field(
         default=None, gt=0, max_digits=AMOUNT_MAX_DIGITS, decimal_places=MONEY_SCALE
     )
@@ -83,7 +84,7 @@ class ContractExpenseRead(BaseModel):
     id: UUID
     contract_id: UUID
     category_id: UUID
-    data: date
+    date: dt.date
     amount: Decimal
     description: str
     pre_authorized: bool

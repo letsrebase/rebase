@@ -271,7 +271,7 @@ class DocumentService:
         AutomationRunner(self.session).on_offer_state_changed(document, previous, actor)
 
         self._context.activities.record(
-            ENTITY, document.id, "state_changed", actor, {"da": previous, "a": status}
+            ENTITY, document.id, "state_changed", actor, {"from": previous, "to": status}
         )
         self.session.commit()
         return DocumentRead.model_validate(document)

@@ -42,7 +42,7 @@ class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
             "entity_type IN ('deal', 'customer', 'person')", name="ck_notes_entity_type"
         ),
         CheckConstraint(
-            "fonte IS NULL OR fonte IN ('web', 'mcp', 'sistema', 'rebase')",
+            "source IS NULL OR source IN ('web', 'mcp', 'system', 'rebase')",
             name="ck_notes_source",
         ),
     )

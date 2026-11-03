@@ -264,7 +264,7 @@ class EmailSendService:
                 "uncertain",
                 error=_UNCERTAIN,
                 actor=actor,
-                kind="gmail.invio_incerto",
+                kind="gmail.send_uncertain",
             )
             raise Conflict(
                 ENTITY,

@@ -1,4 +1,5 @@
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -26,10 +27,10 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMi
 class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
     """User-configurable, like pipeline stages and field definitions.
 
-    `code` is the stable identity of a seeded category, distinct from `nome`, which
+    `code` is the stable identity of a seeded category, distinct from `name`, which
     the user is free to rename -- exactly why `pipeline_stages.code` was added during
     the slice 1 review (residual R11), after `seed_defaults` was found deduplicating
-    on `nome`, the one field the user can change. Categories a user creates have no
+    on `name`, the one field the user can change. Categories a user creates have no
     `code`; Postgres treats every NULL as distinct under a unique index, so any number
     of them coexist.
 
@@ -41,7 +42,7 @@ class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "cost_categories"
 
-    nome: Mapped[str] = mapped_column(String(60), nullable=False)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     code: Mapped[str | None] = mapped_column(String(30), default=None)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -51,7 +52,7 @@ class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
         # Case-insensitive identity needs a functional index, not a convention: a
         # plain unique=True on a text column is case-sensitive, and normalising in the
         # service protects only the paths that go through it.
-        Index("uq_cost_categories_nome", func.lower(nome), unique=True),
+        Index("uq_cost_categories_name", func.lower(name), unique=True),
     )
 
 
@@ -73,7 +74,7 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     type `mcp` carries the id of the PAT's owning user (slice 1 §9), so there is
     always a person to attribute it to.
 
-    `data` is a `Date`, not a timestamp -- §6.3. It is the calendar day the work
+    `date` is a `Date`, not a timestamp -- §6.3. It is the calendar day the work
     belongs to, and that day decides which month, which report and which period it
     lands in. The previous system's `formatIsoDate` used `toISOString()`, so an hour logged at 23:30
     CEST on 31 March was stored as 1 April and went into the wrong monthly export --
@@ -110,7 +111,7 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # unbounded: two 14-hour entries on one day are a likely error but not an
         # impossible one, and refusing the second would refuse a correction in
         # progress.
-        CheckConstraint("ore > 0 AND ore <= 24", name="ck_time_entries_ore_range"),
+        CheckConstraint("hours > 0 AND hours <= 24", name="ck_time_entries_hours_range"),
         # §4.3, and the one rule no write path can go around. Deliberately wider than
         # the service rule -- it forbids deleting any entry bound to a line, draft
         # included -- because a constraint that distinguished invoice state would have
@@ -123,26 +124,26 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             name="ck_time_entries_billed_not_deleted",
         ),
         CheckConstraint(
-            "tariffa_origine IN ('manuale', 'deal', 'utente', 'assente')",
+            "rate_source IN ('manual', 'deal', 'user', 'absent')",
             name="ck_time_entries_rate_source",
         ),
         CheckConstraint(
-            "costo_origine IN ('manuale', 'utente', 'assente')",
+            "cost_source IN ('manual', 'user', 'absent')",
             name="ck_time_entries_cost_source",
         ),
         # The shape every query in this slice has, partial on the filter every one of
         # them applies. Residual R7 asks for exactly this in general; the two new
         # tables are simply born with it.
         Index(
-            "ix_time_entries_deal_data",
+            "ix_time_entries_deal_date",
             "deal_id",
-            "data",
+            "date",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_time_entries_user_data",
+            "ix_time_entries_user_date",
             "user_id",
-            "data",
+            "date",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index("ix_time_entries_custom_fields", "custom_fields", postgresql_using="gin"),
@@ -150,7 +151,7 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     deal_id: Mapped[UUID] = mapped_column(ForeignKey("deals.id"), nullable=False, index=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    data: Mapped[date] = mapped_column(Date, nullable=False)
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
     hours: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -161,7 +162,7 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     invoice_line_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("invoice_lines.id", ondelete="SET NULL"), default=None, index=True
     )
-    note_interne: Mapped[str | None] = mapped_column(Text, default=None)
+    internal_notes: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
@@ -228,11 +229,11 @@ class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __table_args__ = (
         # Zero is refused because it is neither a cost nor a correction; negative is
         # allowed because it is a refund or a credit note received (§4.4).
-        CheckConstraint("importo <> 0", name="ck_costs_amount_not_zero"),
-        Index("ix_costs_deal_data", "deal_id", "data", postgresql_where=text("deleted_at IS NULL")),
+        CheckConstraint("amount <> 0", name="ck_costs_amount_not_zero"),
+        Index("ix_costs_deal_date", "deal_id", "date", postgresql_where=text("deleted_at IS NULL")),
         # The period P&L reads costs by date across every deal *and* the general
         # expenses, where `deal_id` is NULL and the two-column index above cannot help.
-        Index("ix_costs_data", "data", postgresql_where=text("deleted_at IS NULL")),
+        Index("ix_costs_date", "date", postgresql_where=text("deleted_at IS NULL")),
         Index("ix_costs_custom_fields", "custom_fields", postgresql_using="gin"),
     )
 
@@ -241,12 +242,12 @@ class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # cost («condivisa», REB-623, spec §1.7), which only the view over every azienda
     # shows. No column default: `NULL` is a meaning here, not an omission.
     legal_entity_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("emitter_profile.id"), default=None, index=True
+        ForeignKey("legal_entities.id"), default=None, index=True
     )
     category_id: Mapped[UUID] = mapped_column(
         ForeignKey("cost_categories.id"), nullable=False, index=True
     )
-    data: Mapped[date] = mapped_column(Date, nullable=False)
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     supplier: Mapped[str | None] = mapped_column(String(200), default=None)
@@ -280,4 +281,4 @@ class PeriodLock(Base):
     closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     closed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
-    __table_args__ = (CheckConstraint("mese >= 1 AND mese <= 12", name="ck_period_locks_month"),)
+    __table_args__ = (CheckConstraint("month >= 1 AND month <= 12", name="ck_period_locks_month"),)

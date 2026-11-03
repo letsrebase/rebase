@@ -163,7 +163,7 @@ class TimerService:
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=row.user_id,
-                data=data.data if data.data is not None else today_local(),
+                date=data.date if data.date is not None else today_local(),
                 hours=elapsed_hours(row.started_at, _now()),
                 description=description.strip() or DEFAULT_DESCRIPTION,
                 billable=row.billable,

@@ -40,7 +40,7 @@ ENTITY = "user"
 # an administrator" and "who turned this account off", which is the entire reason this
 # audit exists. `password_hash` is not here and must never be -- it is not reachable
 # through `UserUpdate` at all, and the absence tests pin that.
-_AUDITED_FIELDS = ("nome", "role", "active", "limited_scope")
+_AUDITED_FIELDS = ("name", "role", "active", "limited_scope")
 
 # `update` refuses a change that would take the space's ability to administer itself
 # away. Two refusals, both in service of one invariant -- there is always at least one
@@ -170,7 +170,7 @@ class UserService:
         user = User(
             email=data.email,
             password_hash=hash_password(data.password) if data.password is not None else None,
-            nome=data.nome,
+            name=data.name,
             role=data.role,
             active=True,
             default_hourly_rate=data.default_hourly_rate,

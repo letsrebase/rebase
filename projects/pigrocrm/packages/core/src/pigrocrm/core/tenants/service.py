@@ -183,7 +183,7 @@ class TenantService:
                     UserService(space).create(
                         # No password: the admin enters with a link by mail, and the first
                         # link proves the address (spec 2026-09-12 §6.4).
-                        UserCreate(email=data.email, password=None, nome=data.nome, role="admin"),
+                        UserCreate(email=data.email, password=None, name=data.name, role="admin"),
                         Actor.system(),
                     )
                     # Born ready (spec 2026-09-12 §6.5): stages, templates and
@@ -194,7 +194,7 @@ class TenantService:
                     # migration failed. `nome` is capped at 200 by `TenantSignup`,
                     # under the emitter's 255; a name that is only spaces would make
                     # an empty header, so the slug stands in for it.
-                    ensure_defaults(space, nome=data.nome.strip() or data.slug)
+                    ensure_defaults(space, name=data.name.strip() or data.slug)
             finally:
                 engine.dispose()
         except Exception:

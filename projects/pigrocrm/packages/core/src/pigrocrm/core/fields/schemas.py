@@ -25,7 +25,7 @@ EntityType = Literal[
     # Slice 10. A commitment carries custom fields for the same reason everything
     # else does: whoever runs the installation knows what they need to record about
     # one, and the alternative is a `note` field holding a form.
-    "attivita",
+    "task",
     # REB-358. A contract engagement carries custom fields for the identical
     # reason: whoever runs the installation knows what they need to record about
     # one engagement that the schema's own columns do not already carry.

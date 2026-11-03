@@ -295,7 +295,7 @@ def test_the_automations_entry_precedes_the_documents_own(
     service.set_offer_state(document.id, "sent", ADMIN)
     service.set_offer_state(document.id, "accepted", ADMIN)
 
-    assert deal.pipeline_stage_id == stages["vinto"].id
+    assert deal.pipeline_stage_id == stages["won"].id
     ordered = ActivityRepository(db_session).by_kind([KIND_STAGE_MOVED, "state_changed"], limit=10)
     assert [entry.kind for entry in ordered][:2] == ["state_changed", KIND_STAGE_MOVED]
 

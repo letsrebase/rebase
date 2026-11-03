@@ -18,7 +18,7 @@ from pigrocrm.core.money import round_money
 # else on the row is frozen, and an attempt raises `ImmutableField` naming the field.
 # `payment_status`/`payment_date` are absent because they have their own method, which
 # is what makes their agreement checkable; `status` is absent for the same reason.
-MUTABLE_AFTER_ISSUE: frozenset[str] = frozenset({"note_interne", "custom_fields"})
+MUTABLE_AFTER_ISSUE: frozenset[str] = frozenset({"internal_notes", "custom_fields"})
 
 
 def is_editable(invoice: Invoice) -> bool:

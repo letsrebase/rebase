@@ -40,10 +40,10 @@ RESERVED_SLUGS = frozenset(
 )
 
 
-def slugify(nome: str) -> str:
+def slugify(name: str) -> str:
     """What the page proposes from the name a person types: accents stripped, anything
     that is not a letter or digit turned into one hyphen, trimmed, lowercased."""
-    ascii_only = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
+    ascii_only = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     hyphenated = re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
     return hyphenated[:SLUG_MAX].rstrip("-")
 
@@ -64,7 +64,7 @@ def validate_slug(slug: str) -> str | None:
 
 class TenantSignup(BaseModel):
     slug: str = Field(min_length=SLUG_MIN, max_length=SLUG_MAX)
-    nome: SafeStr = Field(min_length=1, max_length=200)
+    name: SafeStr = Field(min_length=1, max_length=200)
     email: EmailStr
     # No password (spec 2026-09-12 §6.4): a space's first admin enters with a link by
     # mail, and a password chosen by whoever typed somebody else's address would outlive

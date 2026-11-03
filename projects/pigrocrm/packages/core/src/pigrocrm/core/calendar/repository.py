@@ -41,14 +41,14 @@ class CalendarRepository:
         «whose calendar is this» is a question about the actor and not about SQL.
         """
         stmt = (
-            select(TimeEntry.data, TimeEntry.deal_id, func.sum(TimeEntry.hours))
+            select(TimeEntry.date, TimeEntry.deal_id, func.sum(TimeEntry.hours))
             .where(
                 TimeEntry.deleted_at.is_(None),
-                TimeEntry.data >= da,
-                TimeEntry.data <= a,
+                TimeEntry.date >= da,
+                TimeEntry.date <= a,
             )
-            .group_by(TimeEntry.data, TimeEntry.deal_id)
-            .order_by(TimeEntry.data)
+            .group_by(TimeEntry.date, TimeEntry.deal_id)
+            .order_by(TimeEntry.date)
         )
         if user_id is not None:
             stmt = stmt.where(TimeEntry.user_id == user_id)
@@ -78,7 +78,7 @@ class CalendarRepository:
         if not deal_ids:
             return {}
         rows = self.session.execute(
-            select(Deal.id, Deal.nome, Customer.legal_name)
+            select(Deal.id, Deal.name, Customer.legal_name)
             .join(Customer, Customer.id == Deal.customer_id, isouter=True)
             .where(Deal.id.in_(deal_ids))
         ).all()
@@ -137,11 +137,11 @@ class CalendarRepository:
             .join(Contract, Contract.id == WorkUnit.contract_id)
             .join(Customer, Customer.id == Contract.customer_id)
             .where(
-                WorkUnit.data >= da,
-                WorkUnit.data <= a,
+                WorkUnit.date >= da,
+                WorkUnit.date <= a,
                 WorkUnit.status.not_in(("rejected", "revoked")),
             )
-            .order_by(WorkUnit.data, Contract.title, WorkUnit.id)
+            .order_by(WorkUnit.date, Contract.title, WorkUnit.id)
         )
         if legal_entity_id is not None:
             stmt = stmt.where(Contract.legal_entity_id == legal_entity_id)

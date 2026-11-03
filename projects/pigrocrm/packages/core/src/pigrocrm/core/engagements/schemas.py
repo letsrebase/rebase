@@ -7,7 +7,7 @@ the hub's for a name, applied at the door, so a value the space would refuse is 
 naming the field, never a customer that half exists.
 """
 
-from datetime import date
+import datetime as dt
 from decimal import Decimal
 from uuid import UUID
 
@@ -34,7 +34,7 @@ class EngagementFreelancer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
 
 
@@ -44,8 +44,8 @@ class EngagementLetter(BaseModel):
     number: SafeStr = Field(min_length=1, max_length=20)
     role: SafeStr = Field(min_length=1, max_length=200)
     legal_entity: SafeStr = Field(min_length=1, max_length=255)
-    start_date: date
-    data_fine: date | None = None
+    start_date: dt.date
+    data_fine: dt.date | None = None
     # The daily fee, as the letter prints it.
     fee: Decimal = Field(gt=0, max_digits=9, decimal_places=2)
     expected_days: int | None = Field(default=None, ge=1, le=366)
@@ -103,14 +103,14 @@ class ReportInvoice(BaseModel):
     number: int | None
     status: str
     payment_status: str
-    data: date | None
+    date: dt.date | None
     hours: Decimal | None = None
 
 
 class ReportEntry(BaseModel):
     """One time entry of the deal: a day with two entries is two rows, and the hub sums."""
 
-    data: date
+    date: dt.date
     hours: Decimal
     description: str
     billable: bool
@@ -122,7 +122,7 @@ class ReportDeal(BaseModel):
     (`DealTimeSummary.status`)."""
 
     id: UUID
-    nome: str
+    name: str
     hourly_rate: Decimal | None
     budgeted_hours: Decimal | None
     status: str
@@ -160,7 +160,7 @@ class LeadContactPerson(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(min_length=1, max_length=LEAD_PERSON_NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(min_length=1, max_length=LEAD_PERSON_NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=LEAD_PERSON_NAME_MAX_LENGTH)
     email: EmailStr
     phone: SafeStr | None = Field(default=None, max_length=LEAD_PHONE_MAX_LENGTH)
@@ -174,9 +174,9 @@ class LeadDeal(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(min_length=1, max_length=LEAD_DEAL_NAME_MAX_LENGTH)
+    name: SafeStr = Field(min_length=1, max_length=LEAD_DEAL_NAME_MAX_LENGTH)
     expected_value: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
-    expected_close_date: date | None = None
+    expected_close_date: dt.date | None = None
     # The hub's longest note is about 6,000 characters (its fields are bounded); a sentence
     # is added to it, so the room under the note's own bound is kept.
     note: SafeStr | None = Field(default=None, max_length=NOTE_MAX_LENGTH - 1_000)

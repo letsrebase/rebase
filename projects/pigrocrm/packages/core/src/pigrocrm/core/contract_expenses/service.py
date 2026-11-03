@@ -36,14 +36,14 @@ def _check_reference_matches_pre_authorized(
         raise ValidationFailed(
             ENTITY,
             "authorization_reference",
-            "obbligatorio quando pre_autorizzata è vero",
+            "obbligatorio quando pre_authorized è vero",
             expected="un riferimento non vuoto",
         )
     if not pre_authorized and authorization_reference:
         raise ValidationFailed(
             ENTITY,
             "authorization_reference",
-            "va lasciato vuoto quando pre_autorizzata è falso",
+            "va lasciato vuoto quando pre_authorized è falso",
             expected="nessun valore",
         )
 
@@ -76,7 +76,7 @@ class ContractExpenseService:
             ContractExpense(
                 contract_id=contract_id,
                 category_id=data.category_id,
-                data=data.data,
+                date=data.date,
                 amount=data.amount,
                 description=data.description,
                 pre_authorized=data.pre_authorized,

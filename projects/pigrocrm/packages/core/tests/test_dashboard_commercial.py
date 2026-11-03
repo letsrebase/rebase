@@ -95,7 +95,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             Deal(
                 nome="DASH vinto",
                 customer_id=customer_id,
-                pipeline_stage_id=stages["vinto"].id,
+                pipeline_stage_id=stages["won"].id,
                 expected_value=Decimal("5000.00"),
                 probability=100,
                 closed_at=today_local(),
@@ -106,7 +106,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             Deal(
                 nome="DASH perso",
                 customer_id=customer_id,
-                pipeline_stage_id=stages["perso"].id,
+                pipeline_stage_id=stages["lost"].id,
                 expected_value=Decimal("2000.00"),
                 probability=0,
                 closed_at=today_local(),
@@ -264,7 +264,7 @@ def test_every_figure_comes_from_one_instant(
                 Deal(
                     nome="DASH intruso",
                     customer_id=seeded.customer_id,
-                    pipeline_stage_id=seeded.stages["vinto"].id,
+                    pipeline_stage_id=seeded.stages["won"].id,
                     expected_value=Decimal("7000.00"),
                     probability=100,
                     closed_at=today_local(),
@@ -319,16 +319,16 @@ def test_the_pipeline_carries_every_stage_and_says_which_kind_it_is(seeded: Seed
     """
     result = _dashboard(seeded.engine)
     by_code = {row.stage_code: row for row in result.pipeline}
-    assert set(by_code) == {"lead", "contattato", "offer", "negoziazione", "vinto", "perso"}
+    assert set(by_code) == {"lead", "contacted", "offer", "negotiation", "won", "lost"}
     assert [row.position for row in result.pipeline] == sorted(
         row.position for row in result.pipeline
     )
     assert by_code["lead"].stage_type == "open"
-    assert by_code["vinto"].stage_type == "won"
-    assert by_code["perso"].stage_type == "lost"
-    assert by_code["vinto"].number == 1
-    assert by_code["perso"].number == 1
-    assert by_code["vinto"].total_value == Decimal("5000.00")
+    assert by_code["won"].stage_type == "won"
+    assert by_code["lost"].stage_type == "lost"
+    assert by_code["won"].number == 1
+    assert by_code["lost"].number == 1
+    assert by_code["won"].total_value == Decimal("5000.00")
 
 
 def test_the_closed_stages_count_what_sits_there_today_whatever_the_period(
@@ -343,8 +343,8 @@ def test_the_closed_stages_count_what_sits_there_today_whatever_the_period(
     """
     seeded_deals = _dashboard(seeded.engine, date(2019, 1, 1), date(2019, 12, 31))
     by_code = {row.stage_code: row for row in seeded_deals.pipeline}
-    assert by_code["vinto"].number == 1
-    assert by_code["perso"].number == 1
+    assert by_code["won"].number == 1
+    assert by_code["lost"].number == 1
     assert seeded_deals.closings.won == 0
     assert seeded_deals.closings.lost == 0
 
@@ -395,7 +395,7 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
                 Deal(
                     nome=nome,
                     customer_id=seeded.customer_id,
-                    pipeline_stage_id=seeded.stages["contattato"].id,
+                    pipeline_stage_id=seeded.stages["contacted"].id,
                     expected_value=Decimal("100.00"),
                     probability=50,
                     expected_close_date=when,
@@ -416,7 +416,7 @@ def test_the_unattributable_count_is_declared(seeded: Seeded) -> None:
             Deal(
                 nome="DASH storico",
                 customer_id=seeded.customer_id,
-                pipeline_stage_id=seeded.stages["vinto"].id,
+                pipeline_stage_id=seeded.stages["won"].id,
                 expected_value=Decimal("900.00"),
                 probability=100,
                 closed_at=None,

@@ -101,7 +101,7 @@ def build_year(
     overview = YearOverview(
         year=year,
         legal_entity_id=legal_entity.id,
-        legal_entity_name=legal_entity.nome,
+        legal_entity_name=legal_entity.name,
         total=YearTotals(
             invoices=len(register),
             taxable_amount=sum_money(row.taxable_amount for row in register),

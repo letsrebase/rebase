@@ -17,7 +17,7 @@ EMAIL_ADDRESS_MAX_LENGTH = 320
 class ContractEmailTemplateCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     subject: SafeStr = Field(min_length=1, max_length=SUBJECT_MAX_LENGTH)
     body: SafeStr = Field(min_length=1, max_length=BODY_MAX_LENGTH)
     attachments: list[AttachmentKind] = []
@@ -26,7 +26,7 @@ class ContractEmailTemplateCreate(BaseModel):
 class ContractEmailTemplateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, min_length=1, max_length=NAME_MAX_LENGTH)
     subject: SafeStr | None = Field(default=None, min_length=1, max_length=SUBJECT_MAX_LENGTH)
     body: SafeStr | None = Field(default=None, min_length=1, max_length=BODY_MAX_LENGTH)
     attachments: list[AttachmentKind] | None = None
@@ -38,7 +38,7 @@ class ContractEmailTemplateRead(BaseModel):
 
     id: UUID
     contract_id: UUID
-    nome: str
+    name: str
     subject: str
     body: str
     attachments: list[AttachmentKind]
@@ -48,7 +48,7 @@ class ContractEmailTemplateRead(BaseModel):
 
 
 class ContractEmailVariable(BaseModel):
-    nome: str
+    name: str
     label: str
 
 
@@ -68,7 +68,7 @@ class ContractEmailPrepare(ContractEmailRequest):
 
 class ContractEmailAttachment(BaseModel):
     type: AttachmentKind
-    nome: str
+    name: str
 
 
 class ContractEmailPreview(BaseModel):

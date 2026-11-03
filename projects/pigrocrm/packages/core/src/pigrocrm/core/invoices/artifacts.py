@@ -172,7 +172,7 @@ class InvoiceArtifacts:
         )
         if id_tax is None:
             raise ValidationFailed(
-                "legal_entities",
+                "legal_entity",
                 "tax_code",
                 "il nome del file XML richiede un codice fiscale o una partita IVA "
                 "validi dell'emittente",
@@ -406,7 +406,7 @@ class InvoiceArtifacts:
         export = self.for_export(invoice)
         # Re-checked here even though `issue` already checked: the snapshot could have
         # been edited out of band.
-        check_party_exportable(export.snapshot.legal_entity, "legal_entities")
+        check_party_exportable(export.snapshot.legal_entity, "legal_entity")
         check_party_exportable(export.snapshot.customer, "customer")
         check_recipient_routing(export.snapshot.customer)
         check_recipient_identity(export.snapshot.customer)

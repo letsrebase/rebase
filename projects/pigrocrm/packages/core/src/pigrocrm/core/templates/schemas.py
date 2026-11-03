@@ -65,7 +65,7 @@ class TemplateVariable(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(max_length=VARIABLE_NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=VARIABLE_NAME_MAX_LENGTH)
     label: SafeStr = Field(max_length=VARIABLE_LABEL_MAX_LENGTH)
     type: FieldType
     required: bool = False
@@ -83,7 +83,7 @@ class TemplateVariable(BaseModel):
 class TemplateCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(max_length=NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=NAME_MAX_LENGTH)
     type: TemplateType = "offer"
     # No `max_length`: the column is `Text`, unbounded. `SafeStr` still closes the
     # NUL-byte gap a plain `str` would leave open on a native Postgres column.
@@ -95,7 +95,7 @@ class TemplateCreate(BaseModel):
 class TemplateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     type: TemplateType | None = None
     body_markdown: SafeStr | None = None
     declared_variables: list[TemplateVariable] | None = None
@@ -106,7 +106,7 @@ class TemplateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     type: str
     body_markdown: str
     declared_variables: list[TemplateVariable]
@@ -143,7 +143,7 @@ class TemplateDescription(BaseModel):
     """
 
     id: UUID
-    nome: str
+    name: str
     type: str
     # The compilation-form variables -- what a human (or an agent on their behalf) is
     # expected to actually supply values for.

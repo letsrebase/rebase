@@ -49,7 +49,7 @@ from pigrocrm.core.timetracking.schemas import (
 ENTITY: EntityType = "time_entry"
 
 # §4.3's table, as data. Frozen once the entry belongs to a fiscal document;
-# `note_interne` and `custom_fields` stay mutable because they appear on no artefact.
+# `internal_notes` and `custom_fields` stay mutable because they appear on no artefact.
 # `description` is in this tuple and it is not obvious: it is the column the client
 # reads in the timesheet attached to the invoice, so changing it after issue would
 # make the delivered document and the database say two different things.
@@ -212,8 +212,8 @@ class TimeEntryService:
         actor.require_write("log_time")
         deal = self._require_deal(data.deal_id)
         self._require_active_user(data.user_id)
-        self._check_not_future(data.data)
-        self.locks.assert_writable(ENTITY, "data", data.data)
+        self._check_not_future(data.date)
+        self.locks.assert_writable(ENTITY, "data", data.date)
 
         resolved = self.rates.resolve(
             deal_id=data.deal_id,
@@ -225,7 +225,7 @@ class TimeEntryService:
             TimeEntry(
                 deal_id=data.deal_id,
                 user_id=data.user_id,
-                data=data.data,
+                date=data.date,
                 hours=data.hours,
                 # Stored raw: multi-line, unescaped, exactly as typed. `escape_for`
                 # prepares it at render, once, for the context it lands in. The previous system
@@ -237,7 +237,7 @@ class TimeEntryService:
                 applied_cost=resolved.cost,
                 rate_source=resolved.rate_source,
                 cost_source=resolved.cost_source,
-                note_interne=data.note_interne,
+                internal_notes=data.internal_notes,
                 custom_fields=self._validated_custom(data.custom_fields or {}),
             )
         )
@@ -260,7 +260,7 @@ class TimeEntryService:
             # would force reopening the deal to tell the truth -- corrupting the
             # pipeline to save the actuals. The UI warns, this records, neither refuses.
             self.activities.record(
-                ENTITY, entry.id, "time_logged_on_closed_deal", actor, {"stage": stage.nome}
+                ENTITY, entry.id, "time_logged_on_closed_deal", actor, {"stage": stage.name}
             )
         if commit:
             self.session.commit()
@@ -295,7 +295,7 @@ class TimeEntryService:
         # Both the stored date and the new one: moving a row out of a closed month is
         # still a write into it, and checking only the destination would let somebody
         # empty a reported month one row at a time.
-        self.locks.assert_writable(ENTITY, "data", entry.data, changes.get("data"))
+        self.locks.assert_writable(ENTITY, "data", entry.date, changes.get("data"))
 
         # A rate supplied on an update is an explicit override and is re-frozen with
         # `origine = "manuale"`; a rate NOT supplied is never re-resolved, because
@@ -348,7 +348,7 @@ class TimeEntryService:
                 "la voce è legata a una riga di fattura: scollegala prima di cancellarla",
                 invoice_line_id=str(entry.invoice_line_id),
             )
-        self.locks.assert_writable(ENTITY, "data", entry.data)
+        self.locks.assert_writable(ENTITY, "data", entry.date)
         entry.deleted_at = datetime.now(UTC)
         self.activities.record(ENTITY, entry.id, "deleted", actor)
         self.session.commit()
@@ -377,7 +377,7 @@ class TimeEntryService:
                 deal_id=str(deal.id),
             )
 
-        self.locks.assert_writable(ENTITY, "data", entry.data)
+        self.locks.assert_writable(ENTITY, "data", entry.date)
         was_deleted = entry.deleted_at is not None
         entry.deleted_at = None
         if was_deleted:
@@ -483,7 +483,7 @@ class TimeEntryService:
         # A closed month is closed to this too: the lock and the recalculation are the
         # two ways the past can move, and leaving a gap between them would make the
         # lock decorative.
-        self.locks.assert_writable(ENTITY, "data", *[e.data for e in entries])
+        self.locks.assert_writable(ENTITY, "data", *[e.date for e in entries])
 
         touched = 0
         for entry in entries:

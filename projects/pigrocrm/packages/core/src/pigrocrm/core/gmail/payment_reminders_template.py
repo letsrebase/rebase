@@ -68,20 +68,20 @@ tel. {{emittente.telefono}}{{/if}}{{#if emittente.sito_web}}
 """
 
 PAYMENT_REMINDER_DECLARED_VARIABLES: tuple[DeclaredVariable, ...] = (
-    DeclaredVariable(nome="cliente", label="Cliente", type="text", required=True),
-    DeclaredVariable(nome="numero_fattura", label="Numero fattura", type="text", required=True),
-    DeclaredVariable(nome="data_fattura", label="Data fattura", type="text", required=True),
-    DeclaredVariable(nome="scadenza", label="Scadenza", type="text", required=True),
-    DeclaredVariable(nome="importo", label="Importo", type="text", required=True),
-    DeclaredVariable(nome="iban", label="IBAN", type="text", required=True),
+    DeclaredVariable(name="cliente", label="Cliente", type="text", required=True),
+    DeclaredVariable(name="numero_fattura", label="Numero fattura", type="text", required=True),
+    DeclaredVariable(name="data_fattura", label="Data fattura", type="text", required=True),
+    DeclaredVariable(name="scadenza", label="Scadenza", type="text", required=True),
+    DeclaredVariable(name="importo", label="Importo", type="text", required=True),
+    DeclaredVariable(name="iban", label="IBAN", type="text", required=True),
     # The three flags are derived from `level` by `level_flags`, never typed by a
     # human -- they are declared anyway, and as optional, because an undeclared name is
     # an *error* to the renderer when the template reads it and every one of the three
     # is read on every render. Optional, not required: exactly one of them is `True` on
     # any given render, so requiring them would fail every reminder ever sent.
-    DeclaredVariable(nome="primo", label="Primo sollecito", type="checkbox", required=False),
-    DeclaredVariable(nome="secondo", label="Secondo sollecito", type="checkbox", required=False),
-    DeclaredVariable(nome="terzo", label="Terzo sollecito", type="checkbox", required=False),
+    DeclaredVariable(name="primo", label="Primo sollecito", type="checkbox", required=False),
+    DeclaredVariable(name="secondo", label="Secondo sollecito", type="checkbox", required=False),
+    DeclaredVariable(name="terzo", label="Terzo sollecito", type="checkbox", required=False),
     # Derived from whether there is actually a document to attach, never typed by a
     # human -- the same shape as the three level flags, and declared optional for the
     # same reason. It exists because `GmailRepository.invoice_pdf_version_ids` may
@@ -91,7 +91,7 @@ PAYMENT_REMINDER_DECLARED_VARIABLES: tuple[DeclaredVariable, ...] = (
     # nothing: it invites them to look for a file that is not there and then to distrust
     # the figure next to it.
     DeclaredVariable(
-        nome="allegato",
+        name="allegato",
         label="Copia della fattura allegata",
         type="checkbox",
         required=False,
@@ -99,7 +99,7 @@ PAYMENT_REMINDER_DECLARED_VARIABLES: tuple[DeclaredVariable, ...] = (
     # Optional: an emitter profile saved before this column existed has no signature
     # block, and a reminder with no free-text signature is still a correct reminder --
     # `emittente.legal_name` is always there under it.
-    DeclaredVariable(nome="firma_email", label="Firma", type="text", required=False),
+    DeclaredVariable(name="firma_email", label="Firma", type="text", required=False),
 )
 
 # The same declarations as JSONB-storable dicts, for `TemplateService.seed_defaults`.

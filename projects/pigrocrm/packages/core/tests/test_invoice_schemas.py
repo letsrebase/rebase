@@ -126,7 +126,7 @@ def test_update_exposes_the_editable_columns_and_custom_fields() -> None:
     `ImmutableField`."""
     assert set(InvoiceUpdate.model_fields) == {
         "memo",
-        "note_interne",
+        "internal_notes",
         "custom_fields",
         "accrual_from",
         "accrual_to",

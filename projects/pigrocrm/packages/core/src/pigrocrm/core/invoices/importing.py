@@ -126,7 +126,7 @@ class InvoiceImporter:
         and the refusal names the screen to go to."""
         legal_entities = self.ctx.legal_entity.repo.active_italian()
         if not legal_entities:
-            raise NotFound("legal_entities", "predefinita")
+            raise NotFound("legal_entity", "default")
         return legal_entities
 
     # ---- review ---------------------------------------------------------------

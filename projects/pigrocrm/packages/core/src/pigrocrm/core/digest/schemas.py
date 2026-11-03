@@ -18,7 +18,7 @@ Italian field names, like every other schema in this package: the reader of the 
 the reader of this file are the same person.
 """
 
-from datetime import date
+import datetime as dt
 from decimal import Decimal
 from uuid import UUID
 
@@ -50,7 +50,7 @@ class DigestInvoice(BaseModel):
     # section is *about*. An invoice issued in July and collected this week belongs to the
     # week by its `payment_date`, and printing its emission date beside it would read as
     # the wrong week.
-    data: date
+    date: dt.date
     status: str
     payment_status: str
     # `trasmessa_esternamente_il is not None`: the document has been deposited with the
@@ -74,7 +74,7 @@ class DigestDealMove(BaseModel):
     deal_id: UUID
     title: str
     stage_name: str
-    when: date
+    when: dt.date
 
 
 class DigestOffer(BaseModel):
@@ -117,7 +117,7 @@ class DigestTaskLine(BaseModel):
 
     task_id: UUID
     title: str
-    due_date: date
+    due_date: dt.date
     # Only the overdue fill this in, as `DigestInvoice.days_of_delay` does: `None` and
     # not `0`, since a commitment due today is a fact about the day and not a delay.
     days_of_delay: int | None = None
@@ -165,8 +165,8 @@ class WeeklyDigest(BaseModel):
     """
 
     week: str
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
 
     # 1. Da incassare.
     overdue: list[DigestInvoice]
@@ -200,7 +200,7 @@ class WeeklyDigest(BaseModel):
 
     # 8. Da fare. The recipient's, so it is empty on a freshly built report and set per
     # address by `DigestRun` (see `DigestTask`).
-    attivita: DigestTask = Field(default_factory=DigestTask)
+    tasks: DigestTask = Field(default_factory=DigestTask)
 
     @property
     def week_stalled(self) -> bool:
@@ -237,7 +237,7 @@ class WeeklyDigest(BaseModel):
             and not self.deal_mossi
             and not self.offers_pending
             and not self.signals
-            and self.attivita.empty
+            and self.tasks.empty
             and self.hours is None
             and self.won_to_invoice == 0
             and self.hours_uninvoiced == 0

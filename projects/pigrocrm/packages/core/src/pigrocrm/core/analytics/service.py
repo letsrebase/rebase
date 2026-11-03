@@ -252,7 +252,7 @@ class AnalyticsService:
                     ENTITY,
                     "contract_id",
                     "il contratto è di un'altra azienda",
-                    expected=f"un contratto di {legal_entity.nome}",
+                    expected=f"un contratto di {legal_entity.name}",
                 )
             cap = ContractService(self.session).simulate_cap(
                 query.contract_id, addition, query.expected_date, actor

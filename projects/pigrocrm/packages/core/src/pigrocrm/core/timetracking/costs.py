@@ -146,14 +146,14 @@ class CostService:
         self._check_amount(data.amount)
         self._check_refs(data.deal_id, data.document_id)
         self.categories.require_active(data.category_id)
-        self.locks.assert_writable(ENTITY, "data", data.data)
+        self.locks.assert_writable(ENTITY, "data", data.date)
 
         cost = self.repo.add(
             Cost(
                 deal_id=data.deal_id,
                 legal_entity_id=self._legal_entity_for(data.deal_id, data.legal_entity_id),
                 category_id=data.category_id,
-                data=data.data,
+                date=data.date,
                 # The **total paid**, VAT included: under the flat-rate regime input VAT
                 # is not deductible, so it is cost in every sense and recording the net
                 # would understate it by 22% (§4.4).
@@ -209,7 +209,7 @@ class CostService:
             )
         if changes.get("category_id") is not None:
             self.categories.require_active(changes["category_id"])
-        self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))
+        self.locks.assert_writable(ENTITY, "data", cost.date, changes.get("data"))
 
         if data.custom_fields is not None:
             changes["custom_fields"] = merge_custom(
@@ -224,7 +224,7 @@ class CostService:
     def soft_delete(self, cost_id: UUID, actor: Actor) -> None:
         actor.require_write("delete_cost")
         cost = self._require(cost_id)
-        self.locks.assert_writable(ENTITY, "data", cost.data)
+        self.locks.assert_writable(ENTITY, "data", cost.date)
         cost.deleted_at = datetime.now(UTC)
         self.activities.record(ENTITY, cost.id, "deleted", actor)
         self.session.commit()
@@ -232,7 +232,7 @@ class CostService:
     def restore(self, cost_id: UUID, actor: Actor) -> CostRead:
         actor.require_write("restore_cost")
         cost = self._require(cost_id, include_deleted=True)
-        self.locks.assert_writable(ENTITY, "data", cost.data)
+        self.locks.assert_writable(ENTITY, "data", cost.date)
         was_deleted = cost.deleted_at is not None
         cost.deleted_at = None
         if was_deleted:

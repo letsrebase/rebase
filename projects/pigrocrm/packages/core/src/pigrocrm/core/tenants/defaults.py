@@ -46,7 +46,7 @@ def _is_empty(session: Session, model: type[PipelineStage | Template | CostCateg
     return (session.scalar(select(func.count()).select_from(model)) or 0) == 0
 
 
-def ensure_defaults(session: Session, *, nome: str | None = None) -> DefaultsReport:
+def ensure_defaults(session: Session, *, name: str | None = None) -> DefaultsReport:
     """On a session of one space (never of the registry). Commits, through the seeds.
 
     `nome` is what the azienda row is called when there is none yet: the space's own
@@ -63,8 +63,8 @@ def ensure_defaults(session: Session, *, nome: str | None = None) -> DefaultsRep
         templates = len(TemplateService(session).seed_defaults(actor))
     if _is_empty(session, CostCategory):
         categories = len(CostCategoryService(session).seed_defaults(actor))
-    if nome and LegalEntityRepository(session).count() == 0:
-        LegalEntityService(session).upsert_default(LegalEntityUpsert(legal_name=nome), actor)
+    if name and LegalEntityRepository(session).count() == 0:
+        LegalEntityService(session).upsert_default(LegalEntityUpsert(legal_name=name), actor)
         legal_entities = 1
     return DefaultsReport(
         stages=stages, templates=templates, categories=categories, legal_entities=legal_entities

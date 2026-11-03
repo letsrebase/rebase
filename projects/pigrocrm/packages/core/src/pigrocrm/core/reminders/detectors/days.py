@@ -78,10 +78,10 @@ def _rows(
         Contract.deleted_at.is_(None), WorkUnit.status.not_in(_DONE)
     )
     if day_cutoff is not None:
-        stmt = stmt.where(WorkUnit.data <= day_cutoff)
+        stmt = stmt.where(WorkUnit.date <= day_cutoff)
     return [
         (unit, contract)
-        for unit, contract in ctx.session.execute(stmt.order_by(WorkUnit.data, WorkUnit.id))
+        for unit, contract in ctx.session.execute(stmt.order_by(WorkUnit.date, WorkUnit.id))
     ]
 
 
@@ -108,7 +108,7 @@ def _detect(
                 recipients=ctx.directory.recipients(
                     (links.customer_owner_id,), contract.legal_entity_id
                 ),
-                title=f"{title}: {contract.title}, {day_short(unit.data)}",
+                title=f"{title}: {contract.title}, {day_short(unit.date)}",
                 detail=f"{detail(unit, contract)}{customer}",
                 # The day has no page of its own: the reminder opens its contract.
                 entity="contract",
@@ -121,7 +121,7 @@ def _detect(
 
 
 def _since_the_day(ctx: DetectorContext, unit: WorkUnit) -> int:
-    return max((ctx.today - unit.data).days, 0)
+    return max((ctx.today - unit.date).days, 0)
 
 
 def detect_worked_without_approval(ctx: DetectorContext) -> list[Detection]:
@@ -193,7 +193,7 @@ def detect_requirement_unmet(ctx: DetectorContext) -> list[Detection]:
             Contract.requires_prior_approval.is_(True),
             or_(
                 Approval.contract_id != WorkUnit.contract_id,
-                _received_day(ctx.timezone) > WorkUnit.data,
+                _received_day(ctx.timezone) > WorkUnit.date,
             ),
         )
     )
@@ -229,14 +229,14 @@ def detect_requirement_unmet(ctx: DetectorContext) -> list[Detection]:
 def detect_outside_term(ctx: DetectorContext) -> list[Detection]:
     stmt = select(WorkUnit, Contract).where(
         or_(
-            WorkUnit.data < Contract.start,
-            (Contract.end.is_not(None)) & (WorkUnit.data > Contract.end),
+            WorkUnit.date < Contract.start,
+            (Contract.end.is_not(None)) & (WorkUnit.date > Contract.end),
         )
     )
     rows = _rows(ctx, stmt, day_cutoff=ctx.today - timedelta(days=max(ctx.bound(OUTSIDE_TERM), 0)))
 
     def detail(unit: WorkUnit, contract: Contract) -> str:
-        if unit.data < contract.start:
+        if unit.date < contract.start:
             return f"Il contratto inizia {day_short(contract.start)}, la giornata è prima"
         assert contract.end is not None
         return f"Il contratto finisce {day_short(contract.end)}, la giornata è dopo"

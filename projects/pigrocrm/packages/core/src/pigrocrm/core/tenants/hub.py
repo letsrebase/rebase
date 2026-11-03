@@ -53,7 +53,7 @@ class MemberLookup(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     member: bool
-    nome: str | None = None
+    first_name: str | None = None
     last_name: str | None = None
 
 

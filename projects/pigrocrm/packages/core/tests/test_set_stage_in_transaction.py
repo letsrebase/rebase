@@ -53,8 +53,8 @@ def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
 def test_it_moves_the_deal_and_settles_the_probability(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    DealService(db_session).set_stage_in_transaction(deal, stages["vinto"])
-    assert deal.pipeline_stage_id == stages["vinto"].id
+    DealService(db_session).set_stage_in_transaction(deal, stages["won"])
+    assert deal.pipeline_stage_id == stages["won"].id
     # "Won at 60%" stays unreachable through this path too.
     assert deal.probability == 100
 
@@ -62,7 +62,7 @@ def test_it_moves_the_deal_and_settles_the_probability(
 def test_it_settles_the_closure_date(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    DealService(db_session).set_stage_in_transaction(deal, stages["vinto"])
+    DealService(db_session).set_stage_in_transaction(deal, stages["won"])
     assert deal.closed_at == today_local()
 
 
@@ -71,7 +71,7 @@ def test_it_records_nothing(
 ) -> None:
     """The runner writes its own single entry (§9.5). Two entries for one movement is the
     defect §9.3 names explicitly."""
-    DealService(db_session).set_stage_in_transaction(deal, stages["vinto"])
+    DealService(db_session).set_stage_in_transaction(deal, stages["won"])
     db_session.flush()
     assert ActivityRepository(db_session).by_kind(["stage_changed"], limit=10) == []
 
@@ -88,7 +88,7 @@ def test_it_does_not_commit(
     reason this assertion is worth writing: without a commit the deal is gone, with one it
     is present and `vinto`.
     """
-    DealService(db_session).set_stage_in_transaction(deal, stages["vinto"])
+    DealService(db_session).set_stage_in_transaction(deal, stages["won"])
     db_session.rollback()
     reloaded = db_session.get(Deal, deal.id)
     # The row itself vanished with the rollback of the fixture's own insert, which is
@@ -113,8 +113,8 @@ def test_moving_back_to_an_open_stage_clears_the_closure_date(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
     service = DealService(db_session)
-    service.set_stage_in_transaction(deal, stages["vinto"])
-    service.set_stage_in_transaction(deal, stages["negoziazione"])
+    service.set_stage_in_transaction(deal, stages["won"])
+    service.set_stage_in_transaction(deal, stages["negotiation"])
     assert deal.closed_at is None
 
 
@@ -131,9 +131,9 @@ def test_a_correction_between_two_terminal_stages_keeps_the_original_closure_dat
     second closure.
     """
     service = DealService(db_session)
-    service.set_stage_in_transaction(deal, stages["vinto"])
+    service.set_stage_in_transaction(deal, stages["won"])
     stamped = deal.closed_at
     assert stamped is not None
-    service.set_stage_in_transaction(deal, stages["perso"])
+    service.set_stage_in_transaction(deal, stages["lost"])
     assert deal.closed_at == stamped
     assert deal.probability == 0

@@ -101,13 +101,13 @@ def monthly_figures(
     fetch_from = date(lookback_year, lookback_month, 1)
     fetch_to = month_bounds(a.year, a.month)[1]
 
-    month_of = func.to_char(WorkUnit.data, "YYYY-MM")
+    month_of = func.to_char(WorkUnit.date, "YYYY-MM")
     stmt = (
         select(month_of, WorkUnit.status, func.sum(WorkUnit.quantity))
         .join(Contract, Contract.id == WorkUnit.contract_id)
         .where(
-            WorkUnit.data >= fetch_from,
-            WorkUnit.data <= fetch_to,
+            WorkUnit.date >= fetch_from,
+            WorkUnit.date <= fetch_to,
             WorkUnit.status.not_in(STATUSES_NEVER_ACCADUTI),
         )
         .group_by(month_of, WorkUnit.status)
@@ -236,7 +236,7 @@ def realised_rates(
     `da`..`a` that sit on a line of an issued invoice."""
     stmt = (
         select(
-            WorkUnit.data,
+            WorkUnit.date,
             WorkUnit.quantity,
             Contract.id,
             Contract.title,
@@ -250,12 +250,12 @@ def realised_rates(
         .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
         .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
         .where(
-            WorkUnit.data >= da,
-            WorkUnit.data <= a,
+            WorkUnit.date >= da,
+            WorkUnit.date <= a,
             WorkUnit.status.not_in(STATUSES_NEVER_ACCADUTI),
             *revenue_filter(),
         )
-        .order_by(WorkUnit.data, WorkUnit.id)
+        .order_by(WorkUnit.date, WorkUnit.id)
     )
     if legal_entity_id is not None:
         stmt = stmt.where(Contract.legal_entity_id == legal_entity_id)
@@ -286,7 +286,7 @@ def realised_rates(
     by_contract: dict[UUID, _Rate] = {}
     total_days = ZERO_DAYS
     total_amount = ZERO_MONEY
-    for day, quantity, contract_id, title, customer_id, nome, line_id, line_total in rows:
+    for day, quantity, contract_id, title, customer_id, name, line_id, line_total in rows:
         quantity = Decimal(quantity)
         card = next(
             (
@@ -302,7 +302,7 @@ def realised_rates(
         )
         portion = line_total * quantity / line_days[line_id]
         for key, label, bucket in (
-            (customer_id, nome, by_customer),
+            (customer_id, name, by_customer),
             (contract_id, title, by_contract),
         ):
             rate = bucket.setdefault(key, _Rate(label))

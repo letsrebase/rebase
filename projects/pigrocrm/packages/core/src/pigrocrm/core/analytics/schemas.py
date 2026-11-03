@@ -10,7 +10,8 @@ computing any economic total at all -- the previous system's whole P&L lived in 
 three fiscal constants and float hour sums.
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -90,8 +91,8 @@ CashBase = Literal["accrual", "collection"]
 
 
 class PeriodPnlQuery(BaseModel):
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
     customer_id: UUID | None = None
     base: RevenueBase = "issue"
     # One azienda's deals, costs and hours, or every azienda's (REB-630, spec
@@ -116,8 +117,8 @@ class PeriodPnl(BaseModel):
     reportable number is `closed`.
     """
 
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
     customer_id: UUID | None
     # Echoed from the query, so a reader of the figure knows which of the two readings
     # of revenue produced it (ORB-61) without keeping the request beside the response.
@@ -183,8 +184,8 @@ class UnbilledBacklog(BaseModel):
 
 
 class BudgetQuery(BaseModel):
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
     customer_id: UUID | None = None
     # Mandatory pagination from the first commit (residual B3): the margins view is by
     # its nature a list of *closed* deals, so unbounded growth stops being invisible here.
@@ -194,7 +195,7 @@ class BudgetQuery(BaseModel):
 
 class BudgetVsActualRow(BaseModel):
     deal_id: UUID
-    nome: str
+    name: str
     budgeted_hours: Decimal | None
     actuals_hours: Decimal
     budgeted_value: Decimal | None
@@ -308,7 +309,7 @@ class ContractDateMarker(BaseModel):
     title: str
     customer_id: UUID
     type: Literal["irrevocability_end", "renewal_due"]
-    data: date
+    date: dt.date
 
 
 class CashOverview(BaseModel):
@@ -409,7 +410,7 @@ class CeilingSimulationQuery(BaseModel):
         ge=0,
     )
     contract_id: UUID | None = None
-    expected_date: date | None = None
+    expected_date: dt.date | None = None
 
 
 class CeilingSimulationResult(BaseModel):
@@ -485,7 +486,7 @@ class YearRegisterRow(BaseModel):
     invoice_id: UUID
     year: int
     number: int
-    issue_date: date
+    issue_date: dt.date
     customer_id: UUID
     legal_name: str
     vat_number: str | None
@@ -497,7 +498,7 @@ class YearRegisterRow(BaseModel):
     # The sentence the invoice itself prints for its stamp duty, or `None` without one.
     stamp_duty_declaration: str | None
     payment_status: str
-    payment_date: date | None
+    payment_date: dt.date | None
 
 
 class YearOverview(BaseModel):
@@ -634,10 +635,10 @@ class DaysAnalysis(BaseModel):
     worked without the approval the contract asks for. The period is echoed back, rounded
     out to whole months for the monthly figures; the rate reads the exact `da`..`a`."""
 
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
     legal_entity_id: UUID | None
-    today: date
+    today: dt.date
     months: list[DaysMonth]
     last_complete_month: str | None
     days_in_period: Decimal = Field(max_digits=10, decimal_places=2)

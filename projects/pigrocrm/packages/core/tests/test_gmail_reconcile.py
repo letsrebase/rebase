@@ -114,9 +114,9 @@ def test_an_uncertain_send_writes_its_own_timeline_entry(db_session: Session) ->
     db_session.rollback()
 
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.invio_incerto" in kinds
+    assert "gmail.send_uncertain" in kinds
     payloads = (
-        db_session.execute(select(Activity.payload).where(Activity.kind == "gmail.invio_incerto"))
+        db_session.execute(select(Activity.payload).where(Activity.kind == "gmail.send_uncertain"))
         .scalars()
         .all()
     )

@@ -20,11 +20,11 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 # `code`, never on `nome` -- see `PipelineStage`'s docstring for why.
 DEFAULT_STAGES: list[tuple[str, str, int, int, str]] = [
     ("lead", "Lead", 0, 10, "open"),
-    ("contattato", "Contattato", 1, 25, "open"),
+    ("contacted", "Contattato", 1, 25, "open"),
     ("offer", "Offerta", 2, 50, "open"),
-    ("negoziazione", "Negoziazione", 3, 75, "open"),
-    ("vinto", "Vinto", 4, 100, "won"),
-    ("perso", "Perso", 5, 0, "lost"),
+    ("negotiation", "Negoziazione", 3, 75, "open"),
+    ("won", "Vinto", 4, 100, "won"),
+    ("lost", "Perso", 5, 0, "lost"),
 ]
 
 
@@ -36,11 +36,11 @@ ENTITY = "pipeline_stage"
 # because it is the only part a human recognises. `position` and
 # `default_probability` are left out of the identity: they are cosmetic, and their
 # changes are already carried in full by `updated`.
-_IDENTITY_FIELDS = ("nome", "code", "type")
+_IDENTITY_FIELDS = ("name", "code", "type")
 
 # Mirrors `PipelineStageUpdate`'s own fields -- `code` is absent there by design
 # (identity, not a label), so it is absent here too.
-_AUDITED_FIELDS = ("nome", "position", "default_probability", "type")
+_AUDITED_FIELDS = ("name", "position", "default_probability", "type")
 
 
 def _identity(stage: PipelineStage) -> dict[str, object]:
@@ -169,12 +169,12 @@ class PipelineService:
         actor.require_unscoped_admin("seed_pipeline")
         existing_codes = {s.code for s in self.repo.list() if s.code is not None}
         try:
-            for code, nome, position, probability, type in DEFAULT_STAGES:
+            for code, name, position, probability, type in DEFAULT_STAGES:
                 if code not in existing_codes:
                     stage = self.repo.add(
                         PipelineStage(
                             code=code,
-                            nome=nome,
+                            name=name,
                             position=position,
                             default_probability=probability,
                             type=type,

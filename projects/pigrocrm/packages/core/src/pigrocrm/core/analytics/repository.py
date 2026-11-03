@@ -175,8 +175,8 @@ class AnalyticsRepository:
             select(Cost.deal_id, func.coalesce(func.sum(Cost.amount), 0))
             .where(
                 Cost.deal_id.isnot(None),
-                Cost.data >= da,
-                Cost.data <= a,
+                Cost.date >= da,
+                Cost.date <= a,
                 Cost.deleted_at.is_(None),
             )
             .group_by(Cost.deal_id)
@@ -192,8 +192,8 @@ class AnalyticsRepository:
             return per_deal, ZERO_MONEY
         generali = select(func.coalesce(func.sum(Cost.amount), 0)).where(
             Cost.deal_id.is_(None),
-            Cost.data >= da,
-            Cost.data <= a,
+            Cost.date >= da,
+            Cost.date <= a,
             Cost.deleted_at.is_(None),
         )
         if legal_entity_id is not None:
@@ -213,8 +213,8 @@ class AnalyticsRepository:
         printed column and the total come to disagree.
         """
         stmt = select(TimeEntry.deal_id, TimeEntry.hours, TimeEntry.applied_cost).where(
-            TimeEntry.data >= da,
-            TimeEntry.data <= a,
+            TimeEntry.date >= da,
+            TimeEntry.date <= a,
             TimeEntry.deleted_at.is_(None),
             TimeEntry.applied_cost.isnot(None),
         )
@@ -235,7 +235,7 @@ class AnalyticsRepository:
     ) -> dict[UUID, Decimal]:
         stmt = (
             select(TimeEntry.deal_id, func.coalesce(func.sum(TimeEntry.hours), 0))
-            .where(TimeEntry.data >= da, TimeEntry.data <= a, TimeEntry.deleted_at.is_(None))
+            .where(TimeEntry.date >= da, TimeEntry.date <= a, TimeEntry.deleted_at.is_(None))
             .group_by(TimeEntry.deal_id)
         )
         if deal_ids is not None:
@@ -266,14 +266,14 @@ class AnalyticsRepository:
         gives an actual invoicing attempt: a read-only aggregate must survive a coverage
         gap, not raise because of one.
         """
-        stmt = select(WorkUnit.contract_id, WorkUnit.data, WorkUnit.quantity).where(
+        stmt = select(WorkUnit.contract_id, WorkUnit.date, WorkUnit.quantity).where(
             WorkUnit.status.in_(WORK_UNIT_COMMITTED_STATUSES),
             WorkUnit.invoice_line_id.is_(None),
         )
         if da is not None:
-            stmt = stmt.where(WorkUnit.data >= da)
+            stmt = stmt.where(WorkUnit.date >= da)
         if a is not None:
-            stmt = stmt.where(WorkUnit.data <= a)
+            stmt = stmt.where(WorkUnit.date <= a)
         if customer_id is not None or legal_entity_id is not None:
             # A day's azienda is its contract's (REB-630), as its customer is.
             stmt = stmt.join(Contract, Contract.id == WorkUnit.contract_id)
@@ -372,9 +372,9 @@ class AnalyticsRepository:
             ),
         )
         if da is not None:
-            stmt = stmt.where(TimeEntry.data >= da)
+            stmt = stmt.where(TimeEntry.date >= da)
         if a is not None:
-            stmt = stmt.where(TimeEntry.data <= a)
+            stmt = stmt.where(TimeEntry.date <= a)
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
         stmt = self._legal_entity_scope(stmt, legal_entity_id, TimeEntry.deal_id)
 
@@ -399,8 +399,8 @@ class AnalyticsRepository:
             select(func.count())
             .select_from(TimeEntry)
             .where(
-                TimeEntry.data >= da,
-                TimeEntry.data <= a,
+                TimeEntry.date >= da,
+                TimeEntry.date <= a,
                 TimeEntry.deleted_at.is_(None),
                 TimeEntry.created_at >= day_after(a),
             )
@@ -410,8 +410,8 @@ class AnalyticsRepository:
             select(func.count())
             .select_from(Cost)
             .where(
-                Cost.data >= da,
-                Cost.data <= a,
+                Cost.date >= da,
+                Cost.date <= a,
                 Cost.deleted_at.is_(None),
                 Cost.created_at >= day_after(a),
             )
@@ -502,10 +502,10 @@ class AnalyticsRepository:
         """`Σ importo` of costs by the month they were incurred, deal or no deal. Under
         one azienda, the costs that carry its id: a cost with a deal copied the deal's,
         a shared one (`NULL`) is nobody's and shows only in «tutte» (REB-630, §1.7)."""
-        month = func.extract("month", Cost.data)
+        month = func.extract("month", Cost.date)
         stmt = (
             select(month, func.sum(Cost.amount))
-            .where(Cost.deleted_at.is_(None), *in_year(Cost.data, year))
+            .where(Cost.deleted_at.is_(None), *in_year(Cost.date, year))
             .group_by(month)
         )
         if legal_entity_id is not None:
@@ -585,14 +585,14 @@ class AnalyticsRepository:
             .where(Invoice.year == year, *revenue_filter(), *invoice_legal_entity(legal_entity_id))
             .group_by(
                 Invoice.legal_entity_id,
-                LegalEntity.predefinita,
-                LegalEntity.nome,
+                LegalEntity.is_default,
+                LegalEntity.name,
                 Customer.id,
                 Customer.legal_name,
             )
             .order_by(
-                LegalEntity.predefinita.desc(),
-                LegalEntity.nome,
+                LegalEntity.is_default.desc(),
+                LegalEntity.name,
                 Invoice.legal_entity_id,
                 revenue.desc(),
                 Customer.legal_name,
@@ -670,12 +670,12 @@ class AnalyticsRepository:
             .union(
                 select(Cost.deal_id.label("deal_id")).where(
                     Cost.deal_id.isnot(None),
-                    Cost.data >= da,
-                    Cost.data <= a,
+                    Cost.date >= da,
+                    Cost.date <= a,
                     Cost.deleted_at.is_(None),
                 ),
                 select(TimeEntry.deal_id.label("deal_id")).where(
-                    TimeEntry.data >= da, TimeEntry.data <= a, TimeEntry.deleted_at.is_(None)
+                    TimeEntry.date >= da, TimeEntry.date <= a, TimeEntry.deleted_at.is_(None)
                 ),
             )
             .subquery()
@@ -683,7 +683,7 @@ class AnalyticsRepository:
         stmt = select(Deal).where(Deal.id.in_(select(active.c.deal_id)), Deal.deleted_at.is_(None))
         if after is not None:
             stmt = stmt.where(
-                or_(Deal.nome > after[0], and_(Deal.nome == after[0], Deal.id > after[1]))
+                or_(Deal.name > after[0], and_(Deal.name == after[0], Deal.id > after[1]))
             )
         if customer_id is not None:
             stmt = stmt.where(Deal.customer_id == customer_id)
@@ -691,7 +691,7 @@ class AnalyticsRepository:
             # The deal's own column, not the invoice's: a deal keeps its azienda when its
             # customer moves (spec §1.7), and this list is of deals.
             stmt = stmt.where(Deal.legal_entity_id == legal_entity_id)
-        return list(self.session.execute(stmt.order_by(Deal.nome, Deal.id).limit(limit)).scalars())
+        return list(self.session.execute(stmt.order_by(Deal.name, Deal.id).limit(limit)).scalars())
 
     def revenue_for_customer_in_window(
         self,

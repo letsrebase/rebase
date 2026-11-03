@@ -36,7 +36,7 @@ def contract_date_markers(
                     title=contract.title,
                     customer_id=contract.customer_id,
                     type="irrevocability_end",
-                    data=end,
+                    date=end,
                 )
             )
         deadline = renewal_deadline(contract)
@@ -47,10 +47,10 @@ def contract_date_markers(
                     title=contract.title,
                     customer_id=contract.customer_id,
                     type="renewal_due",
-                    data=deadline,
+                    date=deadline,
                 )
             )
-    markers.sort(key=lambda m: (m.data, m.title))
+    markers.sort(key=lambda m: (m.date, m.title))
     return markers
 
 

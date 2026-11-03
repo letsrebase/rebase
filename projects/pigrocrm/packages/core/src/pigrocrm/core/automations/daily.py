@@ -83,7 +83,7 @@ OFFER_PENDING_DAYS: Final = 7
 # And stops being the follow-up of that sending this many days after the wait is over.
 OFFER_WINDOW_DAYS: Final = 30
 
-_TASK_ENTITY = "attivita"
+_TASK_ENTITY = "task"
 _UNIQUE_INDEX = "uq_tasks_rule_open"
 # The two timeline kinds that say a deal changed stage: a person's move and the automation
 # A1/A2's. Both, because a deal moved by an accepted offer has changed stage all the same.
@@ -344,7 +344,7 @@ class AutomationPass:
         rows = self.session.execute(
             select(
                 Deal.id,
-                Deal.nome,
+                Deal.name,
                 func.coalesce(Deal.owner_id, Customer.owner_id),
                 since_day,
             )
@@ -362,11 +362,11 @@ class AutomationPass:
             _Candidate(
                 "deal_id",
                 deal_id,
-                _title(f"Il deal {nome} è fermo da {(today - since).days} giorni"),
+                _title(f"Il deal {name} è fermo da {(today - since).days} giorni"),
                 today,
                 owner_id,
             )
-            for deal_id, nome, owner_id, since in rows
+            for deal_id, name, owner_id, since in rows
         ]
 
     def _invoices_overdue(self, today: date) -> list[_Candidate]:
