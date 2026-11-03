@@ -24,10 +24,12 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.contracts.schemas import ContractUpdate
 from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -351,3 +353,50 @@ def test_a_contract_in_another_currency_is_not_simulated_with_an_amount_in_euros
     with pytest.raises(ValidationFailed) as excinfo:
         ContractService(db_session).simulate_cap(contract.id, Decimal("1.00"), None, ADMIN)
     assert excinfo.value.details["field"] == "currency"
+
+
+def test_a_deals_addition_to_the_cap_is_its_share_in_the_contracts_anniversary_year(
+    db_session: Session,
+) -> None:
+    """A fee of 1.000 a month from 1 June, counted at 12 months, has ten of its payments
+    (June to March) before the anniversary on 10 March 2027: that is what the cap reads, where
+    the calendar year 2026 holds seven. The pack's ceilings still read the calendar year."""
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
+    _, contract = _world(db_session, cap="50.00")
+    PipelineService(db_session).seed_defaults(ADMIN)
+    stage = next(s for s in PipelineService(db_session).list() if s.code == "lead")
+    deal = Deal(
+        name="Manutenzione",
+        customer_id=contract.customer_id,
+        pipeline_stage_id=stage.id,
+        probability=50,
+        custom_fields={},
+    )
+    db_session.add(deal)
+    db_session.flush()
+    db_session.add(
+        DealValueLine(
+            deal_id=deal.id,
+            position=0,
+            unit="flat",
+            delivery_period="monthly",
+            unit_price=Decimal("1000.00"),
+            quantity=Decimal(1),
+            start=date(2026, 6, 1),
+        )
+    )
+    db_session.flush()
+
+    simulation = AnalyticsService(db_session).simulate_ceiling(
+        2026,
+        CeilingSimulationQuery(
+            deal_id=deal.id, contract_id=contract.id, expected_date=date(2026, 6, 1)
+        ),
+        ADMIN,
+    )
+
+    assert simulation.brief_addition == Decimal("7000.00")
+    assert simulation.contract_cap is not None
+    assert simulation.contract_cap.simulated_customer_revenue == Decimal("10300.00")
+    assert simulation.contract_cap.simulated_total_revenue == Decimal("11000.00")
+    assert simulation.contract_cap.falls_within is False

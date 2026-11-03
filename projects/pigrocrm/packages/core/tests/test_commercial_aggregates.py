@@ -1,6 +1,6 @@
 """§4's figures, each from its one stated source.
 
-The two §3 exceptions are here and the tests say so out loud, because an exception that is
+The three §3 exceptions are here and the tests say so out loud, because an exception that is
 not written down is a rule that does not hold. Everything else in this file is a `COUNT` or
 a `SUM` over a single table.
 """
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.repository import DocumentRepository
@@ -571,3 +571,80 @@ def test_the_signal_ignores_a_soft_deleted_offer(
     db_session.add(offer)
     db_session.flush()
     assert DocumentRepository(db_session).count_accepted_with_unwon_deal() == 0
+
+
+# -- the third §3 exception: the monthly recurring value --------------------------
+
+
+def _line(
+    db_session: Session,
+    deal: Deal,
+    *,
+    period: str,
+    price: str,
+    unit: str = "flat",
+    quantity: str = "1",
+    position: int = 0,
+) -> None:
+    db_session.add(
+        DealValueLine(
+            deal_id=deal.id,
+            position=position,
+            unit=unit,
+            delivery_period=period,
+            unit_price=Decimal(price),
+            quantity=Decimal(quantity),
+            start=date(2026, 3, 1),
+        )
+    )
+    db_session.flush()
+
+
+def test_the_monthly_recurring_value_of_the_open_deals_is_a_monthly_figure_per_line(
+    db_session: Session, customer: Customer, stages: dict[str, Any]
+) -> None:
+    """**§3 exception 3.** A monthly fee counts as it is, an annual one a twelfth, a day
+    line by its days a month, a one-off nothing; a won deal is not an open one."""
+    monthly = _deal(db_session, customer, stages["lead"].id)
+    _line(db_session, monthly, period="monthly", price="500.00")
+    _line(db_session, monthly, period="one_off", price="20000.00", position=1)
+    annual = _deal(db_session, customer, stages["offer"].id)
+    _line(db_session, annual, period="annual", price="1200.00")
+    days = _deal(db_session, customer, stages["lead"].id)
+    _line(db_session, days, period="monthly", unit="day", price="450.00", quantity="2.50")
+    _deal(db_session, customer, stages["lead"].id)  # no lines: nothing
+    won = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
+    _line(db_session, won, period="monthly", price="9999.00")
+
+    assert DealRepository(db_session).open_monthly_recurring() == Decimal("1725.00")
+
+
+def test_the_monthly_recurring_value_of_the_won_deals_is_the_periods_by_closed_at(
+    db_session: Session, customer: Customer, stages: dict[str, Any]
+) -> None:
+    inside = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
+    _line(db_session, inside, period="annual", price="6000.00")
+    before = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 2, 28))
+    _line(db_session, before, period="monthly", price="100.00")
+    lost = _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 10))
+    _line(db_session, lost, period="monthly", price="100.00")
+    archived = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 11))
+    _line(db_session, archived, period="monthly", price="100.00")
+    archived.deleted_at = datetime.now(UTC)
+    db_session.flush()
+
+    result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
+
+    assert result.won_monthly_recurring == Decimal("500.00")
+    # A monthly figure sits beside the total and never in it.
+    assert result.won_value == Decimal("1000.00")
+
+
+def test_the_monthly_recurring_value_is_zero_when_nothing_recurs(
+    db_session: Session, customer: Customer, stages: dict[str, Any]
+) -> None:
+    repo = DealRepository(db_session)
+    assert repo.open_monthly_recurring() == Decimal("0.00")
+    assert repo.closed_in_period(date(2026, 3, 1), date(2026, 3, 31)).won_monthly_recurring == (
+        Decimal("0.00")
+    )

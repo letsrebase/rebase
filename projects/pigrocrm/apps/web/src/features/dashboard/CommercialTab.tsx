@@ -19,6 +19,10 @@ function isOpen(row: PipelineStageSummary) {
 }
 
 /**
+ * Since 2026-11-03 two monthly figures sit beside the totals: the recurring value of the open
+ * deals and of the deals won in the period, each labelled per month and never added to
+ * anything.
+ *
  * Since 2026-09-08 the commercial tab is the first row and the pipeline: what closed in
  * the period (won, lost, conversion, value) and where the deals are by stage. The detail
  * table, the pending offers, the 30-day forecast and the signals left the page; the API
@@ -101,6 +105,19 @@ export function CommercialTab({ period }: { period: Period }) {
           label="Valore vinto nel periodo"
           value={money(data.closings.won_value)}
           hint="valore dichiarato dai deal, non fatturato"
+        />
+        {/* A figure per month, in its own cards and in no total (REB-931): the lines of a
+            deal that recur are not part of «Valore vinto» as one sum, and a fee of 500 a
+            month added to a project of 30.000 would say nothing true. */}
+        <BigNumber
+          label="Ricorrente mensile dei deal aperti"
+          value={`${money(data.open_monthly_recurring)}/mese`}
+          hint="canoni e tariffe in corso, al mese: non è un totale"
+        />
+        <BigNumber
+          label="Ricorrente mensile dei deal vinti nel periodo"
+          value={`${money(data.closings.won_monthly_recurring)}/mese`}
+          hint="al mese, a parte dal valore vinto"
         />
       </div>
 

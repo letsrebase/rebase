@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
+from pigrocrm.core.deals.models import DealValueLine
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate
@@ -202,6 +203,36 @@ async def test_simulate_ceiling_derives_the_addition_from_hours_and_rate(
             {"year": TODAY.year, "budgeted_hours": "100.00", "hourly_rate": "250.000000"},
         )
     assert result.structured_content["brief_addition"] == "25000.00"
+
+
+async def test_simulate_ceiling_reads_a_saved_deal_by_its_value_lines(
+    server, mcp_session: Session, seeded_deal_id
+) -> None:
+    """A fee of 1.000 a month from 1 October adds the three payments of the year."""
+    _configure_profile(mcp_session)
+    mcp_session.add(
+        DealValueLine(
+            deal_id=seeded_deal_id,
+            position=0,
+            unit="flat",
+            delivery_period="monthly",
+            unit_price=Decimal("1000.00"),
+            quantity=Decimal(1),
+            start=TODAY.replace(month=10, day=1),
+        )
+    )
+    mcp_session.flush()
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "simulate_ceiling", {"year": TODAY.year, "deal_id": str(seeded_deal_id)}
+        )
+        refused = await client.call_tool(
+            "simulate_ceiling",
+            {"year": TODAY.year, "deal_id": str(seeded_deal_id), "budgeted_value": "1.00"},
+        )
+    assert result.structured_content["brief_addition"] == "3000.00"
+    assert refused.is_error
+    assert "deal_id" in refused.content[0].text
 
 
 async def test_simulate_ceiling_without_any_estimate_is_guidance_not_a_dump(

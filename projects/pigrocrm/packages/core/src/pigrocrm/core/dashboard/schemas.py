@@ -123,6 +123,9 @@ class ClosedInPeriod(BaseModel):
     # is on the economic dashboard, and the two figures live on two pages for exactly this
     # reason (§4).
     won_value: Decimal = Field(max_digits=12, decimal_places=2)
+    # §3 exception 3 (REB-931). The monthly recurring value of those same deals' lines: a
+    # figure *per month*, labelled as one and never added to `won_value`, which is a total.
+    won_monthly_recurring: Decimal = Field(max_digits=12, decimal_places=2)
     # §3 exception 2. Per cent, two places. `None` -- never `0` -- when nothing closed:
     # zero per cent means "I lost everything", no closed deals means something else. Same
     # rule as slice 4 §7.1's margin percentage, computed by the same `money.percentage_of`
@@ -154,6 +157,9 @@ class CommercialDashboard(BaseModel):
     legal_entity_id: UUID | None = None
     pipeline: list[PipelineStageSummary]
     closings: ClosedInPeriod
+    # §3 exception 3 (REB-931): the monthly recurring value of the deals in an open stage
+    # today, per month and never added to a pipeline total.
+    open_monthly_recurring: Decimal = Field(max_digits=12, decimal_places=2)
     offers_pending: list[PendingOffer]
     offers_pending_total: int
     expected_closings_30_days: int

@@ -1,7 +1,7 @@
 import { useDraggable } from '@dnd-kit/core'
 import { Card, CardContent } from '@rebase/ui/card'
 import { cn } from '@rebase/ui/cn'
-import { formatMoney } from './columns'
+import { formatDealValue } from './columns'
 import type { Deal } from './queries'
 
 interface Props {
@@ -50,7 +50,7 @@ export function KanbanCard({ deal, onOpen, canDrag, ownerName }: Props) {
       <CardContent className="space-y-1 p-3">
         <p className="text-sm font-medium">{deal.name}</p>
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{formatMoney(deal.expected_value)}</span>
+          <span>{formatDealValue(deal)}</span>
           <span>{deal.probability}%</span>
         </div>
         {ownerName ? <p className="text-xs text-muted-foreground">{ownerName}</p> : null}

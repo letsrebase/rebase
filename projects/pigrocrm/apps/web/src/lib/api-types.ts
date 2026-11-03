@@ -2349,7 +2349,8 @@ export interface paths {
          * @description The «ci sta?» (does it fit?) simulator (REB-352 §1.4): the estimate of a deal not yet won,
          *     added to the actual revenue and re-evaluated against every active threshold, without
          *     saving anything. Needs `budgeted_value`, or `budgeted_hours` together with
-         *     `hourly_rate`. With `contract_id` it also answers on that contract's cap.
+         *     `hourly_rate`, or a saved deal's `deal_id` (never both): the deal's value lines give the
+         *     share that falls in `year`. With `contract_id` it also answers on that contract's cap.
          */
         get: operations["simulate_ceiling_api_analytics_ceilings_simulate_get"];
         put?: never;
@@ -5679,6 +5680,8 @@ export interface components {
             lost: number;
             /** Won Value */
             won_value: string;
+            /** Won Monthly Recurring */
+            won_monthly_recurring: string;
             /** Conversion Rate */
             conversion_rate?: string | null;
         };
@@ -5702,6 +5705,8 @@ export interface components {
             /** Pipeline */
             pipeline: components["schemas"]["PipelineStageSummary"][];
             closings: components["schemas"]["ClosedInPeriod"];
+            /** Open Monthly Recurring */
+            open_monthly_recurring: string;
             /** Offers Pending */
             offers_pending: components["schemas"]["PendingOffer"][];
             /** Offers Pending Total */
@@ -31890,6 +31895,8 @@ export interface operations {
                 budgeted_hours?: number | string | null;
                 budgeted_value?: number | string | null;
                 hourly_rate?: number | string | null;
+                /** @description A saved deal (REB-931): the addition is its value lines' share in `year`, instead of the raw estimate, which is then refused. In the contract cap the addition is its share in the contract anniversary year. */
+                deal_id?: string | null;
                 /** @description A contract with a cap on the client's share (REB-761): the same addition is also read against its cap, over the contract anniversary year that contains `expected_date`, in `contract_cap`. */
                 contract_id?: string | null;
                 /** @description The day the revenue arrives, YYYY-MM-DD; omitted, today. */

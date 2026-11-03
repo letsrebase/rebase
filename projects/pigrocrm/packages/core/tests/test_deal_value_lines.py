@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
@@ -294,15 +294,45 @@ def test_a_line_or_a_total_beyond_the_column_is_refused_by_name_not_by_the_datab
     assert create(db_session, customer_id, line(price="1")).expected_value == Decimal("1.00")
 
 
-def test_a_date_past_the_calendar_is_refused_not_raised(
+PAST_THE_CALENDAR = [
+    # Past the calendar at the end of its duration, and at the end of the open-ended twelve
+    # months, which is reached in `term_total` and not in `line_term`.
+    line(period="monthly", start=date(9999, 6, 1), months=12),
+    line(period="monthly", start=date(9999, 6, 1)),
+    line(period="monthly", start=date(9999, 12, 1), months=2),
+    line(period="annual", start=date(9999, 12, 31)),
+]
+
+
+@pytest.mark.parametrize("bad", PAST_THE_CALENDAR)
+def test_a_date_past_the_calendar_is_refused_by_create_update_and_preview(
+    db_session: Session, customer_id: UUID, bad: DealValueLineIn
+) -> None:
+    service = DealService(db_session)
+    with pytest.raises(ValidationFailed) as on_create:
+        create(db_session, customer_id, line(price="1"), bad)
+    assert "riga 2" in str(on_create.value) and "fuori dal calendario" in str(on_create.value)
+
+    deal = create(db_session, customer_id, line(price="1"))
+    with pytest.raises(ValidationFailed):
+        service.update(deal.id, DealUpdate(value_lines=[bad]), ADMIN)
+    with pytest.raises(ValidationFailed):
+        service.preview_value(ValuePreviewIn(value_lines=[bad]))
+    assert service.get(deal.id, ADMIN).expected_value == Decimal("1.00")
+
+
+def test_replacing_the_lines_locks_the_deal_row_first(
     db_session: Session, customer_id: UUID
 ) -> None:
-    with pytest.raises(ValidationFailed):
-        create(
-            db_session,
-            customer_id,
-            line(period="monthly", start=date(9999, 6, 1), months=12),
-        )
+    """Two writers replacing one deal's lines would otherwise both insert position 0."""
+    deal = create(db_session, customer_id, line(price="1"))
+    statements: list[str] = []
+    connection = db_session.connection()
+    event.listen(connection, "before_cursor_execute", lambda *args: statements.append(args[2]))
+    DealService(db_session).update(deal.id, DealUpdate(value_lines=[line(price="2")]), ADMIN)
+    lock = next(i for i, sql in enumerate(statements) if "FOR UPDATE" in sql)
+    delete = next(i for i, sql in enumerate(statements) if sql.startswith("DELETE FROM deal_value"))
+    assert lock < delete
 
 
 def test_the_database_holds_the_shape_the_schema_promises(

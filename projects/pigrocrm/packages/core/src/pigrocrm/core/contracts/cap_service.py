@@ -1,6 +1,7 @@
 """A contract's cap on its customer's share of revenue (REB-352 §1.5, REB-761): the share
 over the anniversary year, and the «ci sta?» simulation of a synthetic addition."""
 
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -25,6 +26,11 @@ from pigrocrm.core.money import percent_to_share, round_money, share
 # The currency a simulated addition is in: a deal's estimate carries none, and deals are
 # estimated in euros (`Deal.budgeted_value`).
 SIMULATION_CURRENCY = "EUR"
+
+# What a simulation adds: one figure, or a function of the anniversary year the cap is read
+# over (first and last day, both inclusive) for an addition that depends on when its money
+# falls, such as a deal's value lines (REB-931).
+Addition = Decimal | Callable[[date, date], Decimal]
 
 
 class ContractCapService:
@@ -86,7 +92,7 @@ class ContractCapService:
         )
 
     def simulate_cap(
-        self, contract_id: UUID, addition: Decimal, expected_date: date | None, actor: Actor
+        self, contract_id: UUID, addition: Addition, expected_date: date | None, actor: Actor
     ) -> ContractCapSimulation:
         """REB-761: the contract's cap against its customer's share after a synthetic
         addition, the «ci sta?» simulator's own reading (`AnalyticsService.simulate_ceiling`
@@ -96,6 +102,10 @@ class ContractCapService:
 
         A contract with no cap has nothing to be checked against, and says so naming the
         field instead of answering that everything fits.
+
+        `addition` may be a function of the anniversary year it is read over, for a figure
+        that depends on when the money falls (a deal's value lines): it is called once, with
+        the window's first and last day.
         """
         contract = self.repo.get(contract_id)
         if contract is None:
@@ -121,6 +131,7 @@ class ContractCapService:
         # the cap is read where the clause begins, and the simulation still answers.
         reference = expected_date if expected_date is not None else today_local()
         period_from, period_to = self._anniversary_window(contract, max(reference, contract.start))
+        figure = addition if isinstance(addition, Decimal) else addition(period_from, period_to)
         revenue = self.analytics.revenue_for_customer_in_window(
             contract.customer_id, period_from, period_to, legal_entity_id=contract.legal_entity_id
         )
@@ -129,7 +140,7 @@ class ContractCapService:
             (Decimal("0.00"), Decimal("0.00")),
         )
         cap = percent_to_share(contract.customer_share_cap)
-        simulated_share = share(customer + addition, total + addition)
+        simulated_share = share(customer + figure, total + figure)
         return ContractCapSimulation(
             contract_id=contract.id,
             title=contract.title,
@@ -141,8 +152,8 @@ class ContractCapService:
             current_customer_revenue=customer,
             current_total_revenue=total,
             current_share=share(customer, total),
-            simulated_customer_revenue=round_money(customer + addition),
-            simulated_total_revenue=round_money(total + addition),
+            simulated_customer_revenue=round_money(customer + figure),
+            simulated_total_revenue=round_money(total + figure),
             simulated_share=simulated_share,
             falls_within=simulated_share < cap,
         )

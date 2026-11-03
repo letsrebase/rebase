@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, Protocol
 
-from pigrocrm.core.db.clock import add_months
+from pigrocrm.core.db.clock import add_months, stepped_dates
 from pigrocrm.core.money import ZERO_MONEY, round_money
 
 Unit = Literal["flat", "day", "hour"]
@@ -93,26 +93,13 @@ def _last_day(term: ValueTerm) -> date:
     )
 
 
-def _stepped(start: date, last: date, step: int) -> list[date]:
-    # Each date is counted from `start`, never from the previous one: stepping from a
-    # clamped date would carry the clamp forward (31 January, then the 28th of every month).
-    days: list[date] = []
-    index = 0
-    day = start
-    while day <= last:
-        days.append(day)
-        index += 1
-        day = add_months(start, index * step)
-    return days
-
-
 def occurrences(term: ValueTerm) -> list[date]:
     """The dates the term falls due. A one-off falls once, on its start; a recurring term
     on its start and every step after it up to its last day (an open-ended one is counted
     at 12 months)."""
     if term.delivery_period == "one_off":
         return [term.start]
-    return _stepped(term.start, _last_day(term), _STEP_MONTHS[term.delivery_period])
+    return stepped_dates(term.start, _last_day(term), _STEP_MONTHS[term.delivery_period])
 
 
 def terms_overlap(a: ValueTerm, b: ValueTerm) -> bool:
@@ -155,7 +142,7 @@ def _share_dates(term: ValueTerm) -> list[tuple[date, Decimal]]:
     the window; every other term falls on its occurrences. The per-slot amount is rounded
     and the remainder lands on the last slot, so the slots add up to `term_total` exactly."""
     if term.unit != "flat" and term.delivery_period == "one_off" and term.end is not None:
-        days = _stepped(term.start, term.end, 1)
+        days = stepped_dates(term.start, term.end, 1)
         each = round_money(term_total(term) / len(days))
     else:
         days = occurrences(term)
