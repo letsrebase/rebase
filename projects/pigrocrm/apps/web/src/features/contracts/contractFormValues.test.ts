@@ -26,6 +26,7 @@ const CONTRACT: Contract = {
   expense_policy: { kind: 'reimbursable_with_cap', amount_cap: '500.00' },
   status: 'active',
   previous_contract_id: null,
+  deal_id: null,
   note: null,
   custom_fields: {},
   created_at: '2026-01-01T00:00:00Z',

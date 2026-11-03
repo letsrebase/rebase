@@ -15,6 +15,7 @@ import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useCustomer } from '@/features/customers/queries'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useMemberDirectory } from '@/features/users/directory'
+import { ConvertDealButton, DealContractSection } from '@/features/deals/DealContract'
 import { DealForm, dealToFormValues } from '@/features/deals/DealForm'
 import { DealStageBar } from '@/features/deals/DealStageBar'
 import { displayNative, formatDate, formatHours, formatMoney } from '@/features/deals/columns'
@@ -256,6 +257,7 @@ export function DealDetail() {
                   Perso
                 </Button>
               )}
+              <ConvertDealButton deal={deal} />
               <Button
                 variant="outline"
                 onClick={() => {
@@ -313,6 +315,8 @@ export function DealDetail() {
                       }
                     />
                   </Section>
+
+                  <DealContractSection contractId={deal.contract_id} />
 
                   <Section title="Preventivo">
                     <Row label="Ore preventivate" value={formatHours(deal.budgeted_hours)} />

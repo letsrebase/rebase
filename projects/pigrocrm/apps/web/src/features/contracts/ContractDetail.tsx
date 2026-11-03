@@ -8,6 +8,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { ClauseNotesSection } from '@/features/contracts/ClauseNotesSection'
+import { ContractDealLink } from '@/features/contracts/ContractDealLink'
 import { ContractForm } from '@/features/contracts/ContractForm'
 import { ContractDays } from '@/features/days/ContractDays'
 import { ContractEmailSection } from '@/features/contracts/ContractEmailSection'
@@ -117,6 +118,7 @@ export function ContractDetail() {
                     {customer.data?.legal_name ?? EMPTY}
                   </Link>
                 </div>
+                <ContractDealLink dealId={row.deal_id} />
                 <Row label="Inizio" value={formatDate(row.start)} />
                 <Row label="Fine" value={row.end === null ? 'Senza scadenza' : formatDate(row.end)} />
                 <Row label="Rinnovo" value={renewalLabel(row.renewal_type)} />
