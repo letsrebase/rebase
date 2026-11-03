@@ -9,11 +9,12 @@ typed so a different line stays a valid file.
 """
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from rebase_core.card_draft import FONTI_FIELDS, CardDraft
 from rebase_core.card_judge import CardJudgement
-from rebase_core.llm import LlmResponse
+from rebase_core.llm import LlmRequest, LlmResponse
 
 MODEL = "claude-opus-5"
 
@@ -180,3 +181,30 @@ def judge_response(
         output_tokens=300,
         cache_read_tokens=0,
     )
+
+
+class Scripted:
+    """`RecordingCall` that can also fail: each answer is a response or an exception to
+    raise, and `during` runs inside the call, before it answers, for what happens
+    elsewhere while Claude is writing (`once`: only inside the first call)."""
+
+    def __init__(
+        self,
+        answers: list[LlmResponse | BaseException],
+        during: Callable[[], None] | None = None,
+        *,
+        once: bool = False,
+    ) -> None:
+        self._answers = list(answers)
+        self._during = during
+        self._once = once
+        self.requests: list[LlmRequest] = []
+
+    def complete(self, request: LlmRequest) -> LlmResponse:
+        self.requests.append(request)
+        if self._during is not None and (not self._once or len(self.requests) == 1):
+            self._during()
+        answer = self._answers.pop(0)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer

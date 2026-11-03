@@ -8,22 +8,20 @@ from uuid import UUID
 import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from test_matches import QUADRO_VERSION, _body, _second_card
-from test_signing import (
+from match_fixtures import QUADRO_VERSION, TABLES, _body, _second_card, _setup
+from signing_fixtures import (
     SIGNED_AT,
-    TABLES,
     _draft,
     _envelope_of,
     _framework_of,
     _letter_of,
     _matches,
-    _setup,
     _sign,
     _signing,
     _webhook,
 )
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from rebase_core.contract_schemas import MemberContracts
 from rebase_core.errors import NotFound
@@ -119,7 +117,7 @@ def test_a_signed_framework_shows_its_dates_its_copy_and_no_link(clean: Session)
     fake.sign(envelope, SIGNED_AT)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    signing.finish(signed)
+    signing.recovery.finish(signed)
     user_id = _user_of(clean, freelancer_id)
 
     mine = _service(clean).for_user(user_id)
@@ -175,9 +173,9 @@ def test_a_notice_moves_the_signed_framework_under_the_new_one_instead_of_hiding
     fake.sign(first_envelope, SIGNED_AT)
     first_signed = signing.apply(_webhook(fake, first_envelope, "DOCUMENT_COMPLETED"))
     assert first_signed is not None
-    signing.finish(first_signed)
+    signing.recovery.finish(first_signed)
     first_quadro = _framework_of(clean, freelancer_id)
-    signing.record_notice(first_quadro.id, admin_id)
+    signing.admin.record_notice(first_quadro.id, admin_id)
 
     second_match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     signing.send_match(second_match.id, admin_id)
@@ -186,7 +184,7 @@ def test_a_notice_moves_the_signed_framework_under_the_new_one_instead_of_hiding
     fake.sign(second_envelope, second_signed_at)
     second_signed = signing.apply(_webhook(fake, second_envelope, "DOCUMENT_COMPLETED"))
     assert second_signed is not None
-    signing.finish(second_signed)
+    signing.recovery.finish(second_signed)
     second_quadro = _framework_of(clean, freelancer_id)
     assert second_quadro.id != first_quadro.id
 

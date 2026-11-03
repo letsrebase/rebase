@@ -14,6 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const source = readFileSync(join(__dirname, 'team.js'), 'utf-8')
 const utmSource = readFileSync(join(__dirname, 'utm.js'), 'utf-8')
 const indexHtml = readFileSync(join(__dirname, 'index.html'), 'utf-8')
+const bandCases = (
+  JSON.parse(readFileSync(join(__dirname, '../../../shared/format-cases/format-cases.json'), 'utf-8')) as {
+    bandLabel: { band: Band; unit: string; label: string }[]
+  }
+).bandLabel
 
 interface Band {
   min: number
@@ -105,10 +110,9 @@ it('stays small: the first page a visitor loads carries it', () => {
 describe('bandLabel', () => {
   it('writes the bands as the hub does, non-breaking space and en dash included', () => {
     const { bandLabel } = load()
-    expect(bandLabel({ min: 400, max: 500 })).toBe(`400${DASH}500${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 800, max: null })).toBe(`oltre 800${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 0, max: 300 })).toBe(`fino a 300${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 1000, max: 1150 })).toBe(`1.000${DASH}1.150${NBSP}€ al giorno`)
+    for (const { band, label } of bandCases.filter((c) => c.unit === 'giorno')) {
+      expect(bandLabel(band), JSON.stringify(band)).toBe(label)
+    }
     // A band that is not one reads as no band, never as «undefined–NaN».
     for (const odd of [null, undefined, {}, { min: '400', max: 500 }, { min: 400 }]) {
       expect(bandLabel(odd as unknown as Band)).toBe('Tariffa da definire')
@@ -352,5 +356,37 @@ describe('mount', () => {
     await flush()
     expect(error.textContent).toBe('Non siamo riusciti a proporre un team. Riprova.')
     expect(button.disabled).toBe(false)
+  })
+
+  it('gives up after about 95 seconds, with the same message, and frees the form', async () => {
+    vi.useFakeTimers()
+    try {
+      const api = load()
+      let signal: AbortSignal | undefined
+      const fetchSpy = vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            signal = init.signal as AbortSignal
+            signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+          }),
+      )
+      const { form, textarea, button, error } = fixture()
+      api.mount(form, fetchSpy as unknown as typeof fetch)
+      textarea.value = DESCRIZIONE
+      submit(form)
+      expect(button.disabled).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(94_000)
+      expect(signal?.aborted).toBe(false)
+      expect(button.disabled).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(signal?.aborted).toBe(true)
+      expect(error.textContent).toBe('Non siamo riusciti a proporre un team. Riprova.')
+      expect(button.disabled).toBe(false)
+      expect(form.hasAttribute('aria-busy')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

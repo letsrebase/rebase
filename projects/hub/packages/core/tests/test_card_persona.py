@@ -5,65 +5,32 @@ happens to the persona when the card fails or the CV changes, and the readers th
 never carry it."""
 
 import json
-from collections.abc import Iterator
 from datetime import UTC, datetime
-from decimal import Decimal
+from functools import partial
 from typing import Any
-from uuid import UUID
 
-import pytest
 from fakes_cards import CARD, NO_PERSONA, PERSONA, card_response, text_pdf
+from freelancer_fixtures import apply_freelancer, card_writer
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_core.card_draft import CardPersona, clean_persona, differenze, phone_digits
 from rebase_core.card_guard import KnownIdentifiers, identifying
-from rebase_core.cards import IDENTIFYING_AGAIN, CardWriter, stored_persona
+from rebase_core.card_persona import stored_persona
+from rebase_core.card_prompt import IDENTIFYING_AGAIN
+from rebase_core.card_writer import CardWriter
 from rebase_core.cloud import CloudTalentService
-from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import RecordingCall
 from rebase_core.members import MemberService
 from rebase_core.models import FreelancerCard
-from rebase_core.schemas import FreelancerCreate
 from rebase_core.talenti import TalentiService
 from rebase_core.team_schemas import Card, CardPersonaRead, CloudTalentQuery
 
 NOW = datetime(2026, 10, 29, 9, 0, tzinfo=UTC)
-CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS.")
 CV_2 = text_pdf("Charles Babbage, analyst, 2026: Python.")
 
 
-@pytest.fixture
-def clean(hub_session: Session) -> Iterator[Session]:
-    yield hub_session
-    hub_session.rollback()
-    for table in ("admin_actions", "ai_usage", "notes", "matches", "companies", "freelancers"):
-        hub_session.execute(text(f"DELETE FROM {table}"))
-    hub_session.execute(text("DELETE FROM users"))
-    hub_session.commit()
-
-
-def _apply(session: Session, telefono: str | None = None) -> UUID:
-    data = FreelancerCreate(
-        nome="Ada",
-        cognome="Lovelace",
-        email="ada@studio.it",
-        tariffa_giornaliera=Decimal("450.00"),
-        posizione="Backend developer",
-        remoto="remoto",
-        links=[],
-    )
-    read, _ = FreelancerService(session).apply(data, CV, "cv.pdf", "")
-    if telefono is not None:
-        session.execute(
-            text("UPDATE users SET telefono = :t WHERE email = 'ada@studio.it'"), {"t": telefono}
-        )
-        session.commit()
-    return read.id
-
-
-def _writer(session: Session, llm: RecordingCall) -> CardWriter:
-    return CardWriter(session, llm, now=lambda: NOW)
+_writer = partial(card_writer, now=NOW)
 
 
 def _persona(**fields: Any) -> CardPersona:
@@ -202,30 +169,32 @@ def test_the_guard_reads_the_name_the_cv_spells_the_contacts_and_the_links() -> 
     assert identifying(_card(sintesi="Dal 2016 al 2024 con Python 3.12."), known) == []
 
 
-def test_a_card_that_carries_the_persons_phone_is_asked_again_then_failed(clean: Session) -> None:
-    person = _apply(clean)
+def test_a_card_that_carries_the_persons_phone_is_asked_again_then_failed(
+    clean_hub: Session,
+) -> None:
+    person = apply_freelancer(clean_hub)
     leaky = {**CARD, "sintesi": "Backend developer, chiamare il 333 123 4567."}
     llm = RecordingCall(
         [card_response(leaky, persona=PERSONA), card_response(leaky, persona=PERSONA)]
     )
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.card is None and read.error is not None and "un recapito" in read.error
     assert len(llm.requests) == 2
     assert IDENTIFYING_AGAIN in llm.requests[1].messages[2].text
     assert "Campi da correggere: sintesi." in llm.requests[1].messages[2].text
     # The contacts are read all the same: the card was refused, not the persona.
-    persona = stored_persona(clean, person)
+    persona = stored_persona(clean_hub, person)
     assert persona is not None and persona.telefono == "+39 333 123 4567"
 
 
-def test_a_rewrite_without_the_phone_is_written(clean: Session) -> None:
-    person = _apply(clean)
+def test_a_rewrite_without_the_phone_is_written(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub)
     leaky = {**CARD, "sintesi": "Backend developer, chiamare il 333 123 4567."}
     llm = RecordingCall([card_response(leaky, persona=PERSONA), card_response(persona=PERSONA)])
 
-    read = _writer(clean, llm).write(person)
+    read = _writer(clean_hub, llm).write(person)
 
     assert read.error is None and read.card is not None
     assert "333" not in read.card.sintesi
@@ -234,13 +203,15 @@ def test_a_rewrite_without_the_phone_is_written(clean: Session) -> None:
 # ---- what is stored, read and retired ------------------------------------------------------
 
 
-def test_the_admin_read_has_the_persona_and_the_differences(clean: Session) -> None:
-    person = _apply(clean, telefono="02 5550199")
+def test_the_admin_read_has_the_persona_and_the_differences(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub, telefono="02 5550199")
     employers = ["Initech Labs"]
-    writer = _writer(clean, RecordingCall([card_response(persona=PERSONA, employers=employers)]))
+    writer = _writer(
+        clean_hub, RecordingCall([card_response(persona=PERSONA, employers=employers)])
+    )
 
     writer.write(person)
-    admin = CardWriter(clean, None).read_admin(person)
+    admin = CardWriter(clean_hub, None).read_admin(person)
 
     assert admin.persona == CardPersonaRead(
         nome="Ada",
@@ -257,125 +228,125 @@ def test_the_admin_read_has_the_persona_and_the_differences(clean: Session) -> N
         ("telefono", "+39 333 123 4567", "02 5550199"),
     ]
     # The anonymous card's own read has no such fields.
-    plain = CardWriter(clean, None).read(person).model_dump()
+    plain = CardWriter(clean_hub, None).read(person).model_dump()
     assert "persona" not in plain and "differenze" not in plain
 
 
-def test_a_card_without_a_persona_reads_as_none(clean: Session) -> None:
-    person = _apply(clean)
-    CardWriter(clean, RecordingCall([card_response()])).write(person)
-    clean.execute(text("UPDATE freelancer_cards SET persona = NULL"))
-    clean.commit()
+def test_a_card_without_a_persona_reads_as_none(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub)
+    CardWriter(clean_hub, RecordingCall([card_response()])).write(person)
+    clean_hub.execute(text("UPDATE freelancer_cards SET persona = NULL"))
+    clean_hub.commit()
 
-    admin = CardWriter(clean, None).read_admin(person)
+    admin = CardWriter(clean_hub, None).read_admin(person)
 
     assert admin.persona is None and admin.differenze == []
 
 
 def test_the_persona_is_kept_when_the_guard_refuses_the_card_and_retired_with_the_cv(
-    clean: Session,
+    clean_hub: Session,
 ) -> None:
-    person = _apply(clean)
+    person = apply_freelancer(clean_hub)
     gendered = {**CARD, "ruolo": "Sviluppatrice backend"}
     first = RecordingCall([card_response(gendered, persona=PERSONA)] * 2)
-    _writer(clean, first).write(person)
-    row = clean.get(FreelancerCard, person, populate_existing=True)
+    _writer(clean_hub, first).write(person)
+    row = clean_hub.get(FreelancerCard, person, populate_existing=True)
     assert row is not None and row.card is None and row.error is not None
-    assert stored_persona(clean, person) is not None
+    assert stored_persona(clean_hub, person) is not None
 
     # A new CV whose answer is refused outright brings no persona of its own: the old
     # one, read from the CV that is gone, goes.
-    MemberService(clean).replace_cv(person, CV_2, "cv 2026.pdf", "application/pdf")
+    MemberService(clean_hub).replace_cv(person, CV_2, "cv 2026.pdf", "application/pdf")
     refused = RecordingCall([card_response(stop_reason="refusal")])
-    _writer(clean, refused).write(person)
+    _writer(clean_hub, refused).write(person)
 
-    assert stored_persona(clean, person) is None
+    assert stored_persona(clean_hub, person) is None
 
 
-def test_a_new_cvs_card_replaces_the_persona(clean: Session) -> None:
-    person = _apply(clean)
-    _writer(clean, RecordingCall([card_response(persona=PERSONA)])).write(person)
-    MemberService(clean).replace_cv(person, CV_2, "cv 2026.pdf", "application/pdf")
+def test_a_new_cvs_card_replaces_the_persona(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub)
+    _writer(clean_hub, RecordingCall([card_response(persona=PERSONA)])).write(person)
+    MemberService(clean_hub).replace_cv(person, CV_2, "cv 2026.pdf", "application/pdf")
     other = {**NO_PERSONA, "nome": "Charles", "cognome": "Babbage"}
 
-    _writer(clean, RecordingCall([card_response(persona=other)])).write(person)
+    _writer(clean_hub, RecordingCall([card_response(persona=other)])).write(person)
 
-    persona = stored_persona(clean, person)
+    persona = stored_persona(clean_hub, person)
     assert persona is not None and (persona.nome, persona.email) == ("Charles", None)
 
 
-def test_a_persona_read_from_another_cv_is_never_shown(clean: Session) -> None:
+def test_a_persona_read_from_another_cv_is_never_shown(clean_hub: Session) -> None:
     """Whatever left it behind (a merge, a replaced CV the card never caught up with), a
     persona tagged with another CV's hash reads as none: on the card route, and so on the
     MCP tool that reads it through the same function."""
-    person = _apply(clean)
-    _writer(clean, RecordingCall([card_response(persona=PERSONA)])).write(person)
-    assert CardWriter(clean, None).read_admin(person).persona is not None
+    person = apply_freelancer(clean_hub)
+    _writer(clean_hub, RecordingCall([card_response(persona=PERSONA)])).write(person)
+    assert CardWriter(clean_hub, None).read_admin(person).persona is not None
 
-    clean.execute(
+    clean_hub.execute(
         text("UPDATE freelancer_cards SET persona = jsonb_set(persona, '{cv_sha256}', '\"x\"')")
     )
-    clean.commit()
+    clean_hub.commit()
 
-    admin = CardWriter(clean, None).read_admin(person)
+    admin = CardWriter(clean_hub, None).read_admin(person)
     assert admin.persona is None and admin.differenze == []
-    assert stored_persona(clean, person) is None
+    assert stored_persona(clean_hub, person) is None
 
 
-def test_a_failed_regeneration_of_the_same_cv_keeps_the_persona(clean: Session) -> None:
-    person = _apply(clean)
-    writer = _writer(clean, RecordingCall([card_response(persona=PERSONA)]))
+def test_a_failed_regeneration_of_the_same_cv_keeps_the_persona(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub)
+    writer = _writer(clean_hub, RecordingCall([card_response(persona=PERSONA)]))
     writer.write(person)
-    again = _writer(clean, RecordingCall([card_response(stop_reason="refusal")]))
+    again = _writer(clean_hub, RecordingCall([card_response(stop_reason="refusal")]))
 
     again.write(person, force=True)
 
-    persona = stored_persona(clean, person)
+    persona = stored_persona(clean_hub, person)
     assert persona is not None and persona.email == "ada.lovelace@example.org"
 
 
-def test_deleting_the_cv_deletes_the_persona(clean: Session) -> None:
-    person = _apply(clean)
-    _writer(clean, RecordingCall([card_response(persona=PERSONA)])).write(person)
+def test_deleting_the_cv_deletes_the_persona(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub)
+    _writer(clean_hub, RecordingCall([card_response(persona=PERSONA)])).write(person)
 
-    CardWriter(clean, None).delete(person)
-    clean.commit()
+    CardWriter(clean_hub, None).delete(person)
+    clean_hub.commit()
 
-    assert stored_persona(clean, person) is None
+    assert stored_persona(clean_hub, person) is None
 
 
 def test_a_card_of_the_previous_prompt_waits_for_an_admin_and_is_never_written_by_the_loop(
-    clean: Session,
+    clean_hub: Session,
 ) -> None:
-    person = _apply(clean)
-    _writer(clean, RecordingCall([card_response()])).write(person)
-    clean.execute(text("UPDATE freelancer_cards SET prompt_version = 2, persona = NULL"))
-    clean.commit()
+    person = apply_freelancer(clean_hub)
+    _writer(clean_hub, RecordingCall([card_response()])).write(person)
+    clean_hub.execute(text("UPDATE freelancer_cards SET prompt_version = 2, persona = NULL"))
+    clean_hub.commit()
     silent = RecordingCall([])
 
-    assert CardWriter(clean, silent).refresh_stale().written == 0
+    assert CardWriter(clean_hub, silent).refresh_stale().written == 0
     assert silent.requests == []
-    assert [item.reason for item in CardWriter(clean, None).stale_cards()] == ["prompt"]
+    assert [item.reason for item in CardWriter(clean_hub, None).stale_cards()] == ["prompt"]
 
 
 # ---- where the persona must never be ------------------------------------------------------
 
 
-def test_no_other_reader_of_a_card_carries_the_contacts(clean: Session) -> None:
-    person = _apply(clean)
+def test_no_other_reader_of_a_card_carries_the_contacts(clean_hub: Session) -> None:
+    person = apply_freelancer(clean_hub)
     _writer(
-        clean, RecordingCall([card_response(persona=PERSONA, employers=["Initech Labs"])])
+        clean_hub, RecordingCall([card_response(persona=PERSONA, employers=["Initech Labs"])])
     ).write(person)
-    clean.execute(
+    clean_hub.execute(
         text("UPDATE freelancers SET vetted_at = now(), stato = 'attivo' WHERE id = :f"),
         {"f": person},
     )
-    clean.commit()
+    clean_hub.commit()
 
     reads = {
-        "cloud": CloudTalentService(clean).list(CloudTalentQuery()).model_dump(),
-        "catalogue": TalentiService(clean).list_recent().model_dump(),
-        "card": CardWriter(clean, None).read(person).model_dump(),
+        "cloud": CloudTalentService(clean_hub).list(CloudTalentQuery()).model_dump(),
+        "catalogue": TalentiService(clean_hub).list_recent().model_dump(),
+        "card": CardWriter(clean_hub, None).read(person).model_dump(),
     }
     for name, read in reads.items():
         body = json.dumps(read, default=str).lower()

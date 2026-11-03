@@ -1,7 +1,7 @@
 """What makes a bare sign-up not a lead (REB-800).
 
-A sign-up is a lead until its address has a card (`_card_emails`, written three times in
-this package). Since LinkedIn is the second identity, a sign-up whose LinkedIn profile is
+A sign-up is a lead until its address has a card (`card_rows.card_emails`). Since LinkedIn is
+the second identity, a sign-up whose LinkedIn profile is
 on somebody's card is that person under another address, so it is no lead either: the
 person is listed once, as the card, and a campaign to leads does not mail them twice.
 The row itself stays on the list of sign-ups; it is only left out of the lead lists.

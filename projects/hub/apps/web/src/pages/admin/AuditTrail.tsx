@@ -4,8 +4,9 @@ import { Button } from '@rebase/ui/button'
 import { ApiError, admin, type AdminAction, type ThreadKind } from '@/lib/api'
 import { formatDateTime, formatSmallEuro } from '@/lib/format'
 import { noteSourceLabel, regenerationReason } from '@/lib/notes'
+import { keys } from '@/lib/query-keys'
 
-const KIND_LABELS: Record<AdminAction['kind'], string> = {
+const KIND_LABELS: Partial<Record<AdminAction['kind'], string>> = {
   overridden: 'Modifica',
   cleared: 'CV rimosso',
   deleted: 'Eliminazione',
@@ -26,6 +27,8 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   status_changed: 'Cambio di stato',
   card_regenerated: 'Scheda rigenerata',
   anon_cv_downloaded: 'CV anonimo scaricato',
+  admin_promoted: 'Reso amministratore',
+  admin_demoted: 'Tolto da amministratore',
 }
 
 /** What a merge did, in one line (REB-800), for the two entries that carry its counts:
@@ -53,7 +56,7 @@ function kindLabel(action: AdminAction): string {
     return `Scheda non rigenerata: ${regenerationReason(action.payload.reason)}`
   }
   if (action.kind === 'anon_cv_downloaded' && action.payload.riusato) return 'CV anonimo scaricato (già pronto)'
-  return KIND_LABELS[action.kind]
+  return KIND_LABELS[action.kind] ?? action.kind
 }
 
 /** What a regeneration of this card was (REB-861), in one line: started from a bulk start or on
@@ -64,7 +67,7 @@ function regenerationDetail(action: AdminAction): string {
   const parts = [bulk ? 'in blocco' : 'singola']
   if (model) parts.push(model)
   if (version) parts.push(`prompt v${version}`)
-  if (cost !== undefined) parts.push(`costo ${formatSmallEuro(cost)}${unpriced ? ' (una chiamata senza prezzo)' : ''}`)
+  if (cost != null) parts.push(`costo ${formatSmallEuro(cost)}${unpriced ? ' (una chiamata senza prezzo)' : ''}`)
   return parts.join(' · ')
 }
 
@@ -130,7 +133,7 @@ export function AuditTrail({
   onReverted: () => void
 }) {
   const client = useQueryClient()
-  const queryKey = ['audit', kind, id] as const
+  const queryKey = keys.audit(kind, id)
   const trail = useQuery({ queryKey, queryFn: () => admin.auditTrail(kind, id) })
   const revert = useMutation({
     mutationFn: (actionId: string) => admin.revertAction(kind, id, actionId),

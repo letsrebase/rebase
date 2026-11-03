@@ -1,34 +1,57 @@
 """What the member area and the admin ledger read and write about referrals (P-REB-44).
 
-Kept beside `contract_schemas.py`'s own split from `schemas.py`: a domain with more than
-a couple of shapes gets its own file rather than growing the general one further.
+Kept beside `contract_schemas.py`'s own split from the family schema modules: a domain
+with more than a couple of shapes gets its own file rather than growing the general one
+further.
 """
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rebase_core.models import RATE_DIGITS, RATE_PLACES, REFERRAL_CODE_LENGTH
+from rebase_core.models import (
+    RATE_DIGITS,
+    RATE_PLACES,
+    REFERRAL_CODE_LENGTH,
+    REFERRAL_STATES,
+    REWARD_STATES,
+)
+from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import ReferralKind, ReferralState, ReferredStatus, RewardState, enum_of
 
 RATE_MAX = Decimal("1")
 
+# What a match's referred side shows: the referral still unproved, what it would earn
+# (`previsto`), what an earlier match already earned (`gia_maturato`), or the reward's own
+# state. Written only by `ReferralService.for_matches`.
+PREVISTO = "previsto"
+GIA_MATURATO = "gia_maturato"
+# `verified_via` of a referral: the proof that made it `verificato` (`models.referrals`).
+VERIFIED_VIA = ("accesso", "lettera", "storico")
+VerifiedVia = Annotated[str, Field(json_schema_extra=enum_of(VERIFIED_VIA))]
+MatchReferralState = Annotated[
+    str,
+    Field(json_schema_extra=enum_of((REFERRAL_STATES[0], PREVISTO, GIA_MATURATO, *REWARD_STATES))),
+]
 
-class MemberReferralItem(BaseModel):
+
+class MemberReferralItem(ResponseModel):
     """One person or company the member's own code brought in: enough to recognise
     who it was and whether it has turned into anything yet. Never a euro figure of a
     real engagement: rebase's own margin on it is an admin-only number."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    kind: str
+    kind: ReferralKind
     nome: str
     created_at: datetime
-    stato: str | None
+    stato: ReferredStatus | None
 
 
-class MemberReferral(BaseModel):
+class MemberReferral(ResponseModel):
     """`GET /api/hub/me/referral`: the member's own code, issued the first time this
     route is asked for one, who it has brought in so far, and the two rates a referral
     earns (REB-610). The rates are read from the admin's settings on every call, so the
@@ -42,7 +65,7 @@ class MemberReferral(BaseModel):
     referred: list[MemberReferralItem]
 
 
-class PublicReferralRates(BaseModel):
+class PublicReferralRates(ResponseModel):
     """`GET /api/hub/referral-rates`: the two percentages of rebase's margin a referral
     earns, as the admin's settings row holds them right now, and nothing else. This is
     the one referral shape a stranger reads, so it is closed on purpose: no code, no
@@ -54,7 +77,7 @@ class PublicReferralRates(BaseModel):
     rate_company: Decimal
 
 
-class MatchReferral(BaseModel):
+class MatchReferral(ResponseModel):
     """One referred side of a match, as the admin's «Match» list reads it (REB-609).
     `stato` is a reward's own state once one exists for this referral and its letter
     belongs to this match (`da_confermare`, `confermato`, `pagato`, with the real `rate`
@@ -68,16 +91,16 @@ class MatchReferral(BaseModel):
     whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
     can link to it."""
 
-    kind: str
+    kind: ReferralKind
     referrer_nome: str
     referrer_freelancer_id: UUID | None
     rate: Decimal | None
     amount: Decimal | None
-    stato: str
+    stato: MatchReferralState
     reward_id: UUID | None
 
 
-class ReferralEvidence(BaseModel):
+class ReferralEvidence(ResponseModel):
     """What an admin needs to judge one attribution (REB-657), all read from rows that
     already exist (`rebase_core.referral_evidence`): `code` is the `rif` the signup was
     made with, `signed_up_at` when the referred card or request was made, `utm_source`
@@ -95,7 +118,7 @@ class ReferralEvidence(BaseModel):
     ever_logged_in: bool | None
 
 
-class ReferralLedgerItem(BaseModel):
+class ReferralLedgerItem(ResponseModel):
     """One row of the admin's referral ledger: the referrer, who was referred, and the
     reward as it was computed or as an admin priced it by hand. `reward_id` is `None`
     until the referred party's first letter is signed -- a referral is on this ledger
@@ -128,7 +151,7 @@ class ReferralLedgerItem(BaseModel):
 
     referral_id: UUID
     reward_id: UUID | None
-    kind: str
+    kind: ReferralKind
     referred_id: UUID
     referrer_nome: str
     referrer_email: str
@@ -146,10 +169,10 @@ class ReferralLedgerItem(BaseModel):
     rate: Decimal | None
     base_amount: Decimal | None
     reward_amount: Decimal | None
-    stato: str | None
-    referral_stato: str
+    stato: RewardState | None
+    referral_stato: ReferralState
     verified_at: datetime | None
-    verified_via: str | None
+    verified_via: VerifiedVia | None
     note: str | None
     created_at: datetime
     confirmed_at: datetime | None
@@ -157,7 +180,7 @@ class ReferralLedgerItem(BaseModel):
     evidence: ReferralEvidence
 
 
-class ReferralLedgerList(BaseModel):
+class ReferralLedgerList(ResponseModel):
     items: list[ReferralLedgerItem]
     next_cursor: str | None
 
@@ -183,7 +206,7 @@ class ReferralRewardPrice(BaseModel):
     reward_amount: Decimal = Field(max_digits=10, decimal_places=2, ge=0)
 
 
-class ReferralSettingsRead(BaseModel):
+class ReferralSettingsRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     rate_freelancer: Decimal

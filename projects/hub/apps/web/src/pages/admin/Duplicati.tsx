@@ -22,7 +22,8 @@ import {
 } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { DUPLICATES_KEY, mergeResultLine, pairCount, useDuplicates } from '@/lib/duplicates'
-import { Empty, Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header } from './list-kit'
 
 const SIGNAL_LABELS: Record<DuplicateSignal, string> = {
   linkedin: 'Stesso profilo LinkedIn',
@@ -218,9 +219,9 @@ function MergeDialog({
     mutationFn: () => admin.mergeFreelancer(keep.freelancer_id, hide.freelancer_id),
     onSuccess: (result) => {
       void client.invalidateQueries({ queryKey: DUPLICATES_KEY })
-      void client.invalidateQueries({ queryKey: ['talenti'] })
-      void client.invalidateQueries({ queryKey: ['freelancer'] })
-      void client.invalidateQueries({ queryKey: ['audit'] })
+      void client.invalidateQueries({ queryKey: keys.talents() })
+      void client.invalidateQueries({ queryKey: keys.freelancerAll })
+      void client.invalidateQueries({ queryKey: keys.auditAll })
       onMerged(result)
     },
   })

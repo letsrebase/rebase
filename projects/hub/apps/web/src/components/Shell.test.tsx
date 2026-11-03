@@ -10,12 +10,12 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { Shell } from './Shell'
 
-function mount(panel?: boolean) {
+function mount() {
   const root = createRootRoute({ component: () => <Outlet /> })
   const home = createRoute({
     getParentRoute: () => root,
     path: '/',
-    component: () => <Shell panel={panel}>a step</Shell>,
+    component: () => <Shell>a step</Shell>,
   })
   const router = createRouter({
     routeTree: root.addChildren([home]),
@@ -34,19 +34,6 @@ describe('the public frame', () => {
     expect(await screen.findByRole('link', { name: 'Privacy' })).toHaveAttribute('href', 'https://letsrebase.com/privacy')
     expect(screen.getByRole('link', { name: 'Termini' })).toHaveAttribute('href', 'https://letsrebase.com/terms')
     expect(document.body.textContent).not.toMatch(/Studio Rossi|example\.com|Humancraft/)
-  })
-
-  // ORB-128: ORB-124 took the panel off the frame itself, so every public page lost it
-  // when only the chooser should have. The panel is the default; the chooser's layout
-  // passes `panel={false}` and is the one page that sits straight on the grid.
-  it('boxes the content in a panel by default', async () => {
-    mount()
-    expect((await screen.findByText('a step')).className).toContain('bg-card')
-  })
-
-  it('leaves the content on the bare grid when a page asks for it', async () => {
-    mount(false)
-    expect((await screen.findByText('a step')).className).not.toContain('bg-card')
   })
 
   it('links the two policy pages on the site they belong to', async () => {

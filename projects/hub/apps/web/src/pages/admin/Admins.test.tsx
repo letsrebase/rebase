@@ -112,6 +112,17 @@ describe('the Amministratori page (REB-279: promote/demote, no password anywhere
     expect(init?.method).toBe('POST')
   })
 
+  it('says so under the form when a row cannot be removed, and keeps the row', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    spy.mockResolvedValueOnce(answer(200, page([IVAN, ADA])))
+    spy.mockResolvedValueOnce(answer(409, { detail: 'Deve restare almeno un amministratore.' }))
+    mount()
+    await screen.findByText('ada@rebase.it')
+    await userEvent.setup().click(screen.getByRole('button', { name: /Rimuovi.*Ada.*ada@rebase\.it/s }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Deve restare almeno un amministratore.')
+    expect(screen.getByText('ada@rebase.it')).toBeInTheDocument()
+  })
+
   it('debounces the search box and asks the server, not the browser, to narrow the list', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     spy.mockResolvedValueOnce(answer(200, page([IVAN, ADA])))

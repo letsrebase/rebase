@@ -24,5 +24,6 @@ def upgrade_to_head(database_url: str) -> None:
 def head_revision() -> str:
     """The newest revision this package ships, as the version table will read it."""
     head = ScriptDirectory.from_config(Config(str(INI_PATH))).get_current_head()
-    assert head is not None
+    if head is None:
+        raise RuntimeError("the migrations directory has no head revision")
     return head

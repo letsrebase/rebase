@@ -41,6 +41,15 @@ function mount() {
 afterEach(() => vi.restoreAllMocks())
 
 describe('the Istanze Pigro page', () => {
+  it('shows a space whose address is not a web address as its name alone, never as a link', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 1, items: [{ ...ADA, url: 'javascript:alert(1)' }], next_cursor: null }),
+    )
+    mount()
+    expect(await screen.findByText('studio-ada')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'studio-ada' })).toBeNull()
+  })
+
   it('lists every space with a link to it, and names the member who owns one', async () => {
     // ORB-142: which spaces exist and whose they are.
     const spy = vi
@@ -98,10 +107,10 @@ describe('the Istanze Pigro page', () => {
     expect(screen.getByText('Mostrate 1 istanze, ce ne sono altre.')).toBeInTheDocument()
 
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Mostra altre' }))
+    await user.click(screen.getByRole('button', { name: 'Mostra altri' }))
     expect(await screen.findByRole('link', { name: 'bob-dev' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'studio-ada' })).toBeInTheDocument()
     expect(spy.mock.calls[1]![0]).toBe('/api/hub/pigro/instances?cursor=cursor-1')
-    expect(screen.queryByRole('button', { name: 'Mostra altre' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mostra altri' })).toBeNull()
   })
 })

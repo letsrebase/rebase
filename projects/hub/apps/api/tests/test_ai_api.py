@@ -7,11 +7,12 @@ import os
 import re
 from collections.abc import Iterator
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
+from api_responses import ok
 from fakes_cards import card_response, text_pdf
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -33,14 +34,15 @@ from rebase_api.deps import (
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.ai_config import AiConfigService
 from rebase_core.card_batch import CardBatches
-from rebase_core.cards import CardWriter
+from rebase_core.card_writer import CardWriter
 from rebase_core.config import Settings
 from rebase_core.errors import LlmUnavailable
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
-from rebase_core.llm import LlmRequest, LlmResponse, RecordingBatch, RecordingCall
+from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
+from rebase_core.llm_batch import RecordingBatch
 from rebase_core.mail import RecordingSender
 from rebase_core.models import AdminAction, AiUsage, CardBatch, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
 
 SECRET = "sk-secret-abcd"
 SECRETS_KEY = base64.b64encode(os.urandom(32)).decode()
@@ -51,23 +53,27 @@ class StubCall:
     """The provider, stubbed: records the usage the way `AiCall` does, with the purpose it
     was built with, and answers `ok` (or fails with the seam's fixed sentence)."""
 
-    def __init__(self, session: Session, task: str, *, fail: bool = False) -> None:
+    def __init__(
+        self, session: Session, task: str, *, fail: bool = False, record: bool = True
+    ) -> None:
         self.session = session
         self.task = task
         self.fail = fail
+        self.record = record
 
     def complete(self, request: LlmRequest) -> LlmResponse:
         if self.fail:
             raise LlmUnavailable("Il modello non risponde in questo momento.")
-        service = AiConfigService(self.session, Settings(_env_file=None))  # type: ignore[call-arg]
-        service.record_usage(
-            task=self.task,
-            purpose="prova",
-            provider="anthropic",
-            model="claude-opus-5",
-            input_tokens=10,
-            output_tokens=2,
-        )
+        if self.record:
+            service = AiConfigService(self.session, Settings(_env_file=None))  # type: ignore[call-arg]
+            service.record_usage(
+                task=self.task,
+                purpose="prova",
+                provider="anthropic",
+                model="claude-opus-5",
+                input_tokens=10,
+                output_tokens=2,
+            )
         return LlmResponse(
             text='{"answer": "ok"}',
             stop_reason="end_turn",
@@ -110,9 +116,9 @@ def admin(client: TestClient, api_session: Session) -> Iterator[User]:
 
 @pytest.fixture
 def stub(client: TestClient, api_session: Session) -> dict[str, Any]:
-    state: dict[str, Any] = {"fail": False}
+    state: dict[str, Any] = {"fail": False, "record": True}
     client.app.dependency_overrides[get_prova_call] = lambda: (  # type: ignore[attr-defined]
-        lambda task: StubCall(api_session, task, fail=state["fail"])
+        lambda task: StubCall(api_session, task, fail=state["fail"], record=state["record"])
     )
     return state
 
@@ -228,7 +234,7 @@ def test_get_never_contains_the_key(client: TestClient, admin: User) -> None:
 def test_the_audit_says_replaced_never_the_key(
     client: TestClient, admin: User, api_session: Session
 ) -> None:
-    client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
+    ok(client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET}))
     payloads = [json.dumps(a.payload) for a in api_session.scalars(select(AdminAction))]
     assert any("chiave sostituita" in p for p in payloads)
     assert not any(SECRET in p for p in payloads)
@@ -348,6 +354,33 @@ def test_prova_error_message_has_no_key(
     assert response.status_code == 200
     assert response.json()["error"] == "Il modello non risponde in questo momento."
     assert SECRET not in response.text
+
+
+def test_prova_shows_the_cost_of_its_own_call_not_an_earlier_probe(
+    client: TestClient, admin: User, stub: dict[str, Any], api_session: Session
+) -> None:
+    """A probe whose usage row was lost used to show the cost of the latest `prova` row of
+    the task, an earlier probe's: the cost is read from rows written since this call began."""
+    client.put(f"{BASE}/providers/anthropic/key", json={"key": SECRET})
+    _price(client)
+    api_session.add(
+        AiUsage(
+            at=datetime.now(UTC) - timedelta(hours=1),
+            task="card",
+            purpose="prova",
+            provider="anthropic",
+            model="claude-opus-5",
+            priced=True,
+            cost_eur=Decimal("0.5"),
+        )
+    )
+    api_session.commit()
+
+    stub["record"] = False
+    assert client.post(f"{BASE}/tasks/card/prova").json()["cost_eur"] is None
+
+    stub["record"] = True
+    assert Decimal(client.post(f"{BASE}/tasks/card/prova").json()["cost_eur"]) < Decimal("0.5")
 
 
 def test_prova_goes_through_the_real_seam_and_counts_against_cap(
@@ -540,11 +573,11 @@ def test_regenerate_stale_needs_a_model_and_a_sane_limit(
         assert bad.status_code == 422
 
 
-def test_a_start_while_another_is_running_queues_nothing(
+def test_a_start_while_another_is_running_is_refused_and_queues_nothing(
     client: TestClient, written_cards: list[Any], api_session: Session, llm: RecordingCall
 ) -> None:
-    """The lock of a running batch is held on a connection of its own, as the batch holds
-    it: a second click finds it and the page is told nothing was queued."""
+    """The lock of a running regeneration is held on a connection of its own, as the run
+    holds it: a second click finds it and is told, with a 409, that one is already running."""
     import hashlib
 
     key = int.from_bytes(
@@ -558,7 +591,8 @@ def test_a_start_while_another_is_running_queues_nothing(
             holder.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
             holder.commit()
 
-    assert second.json() == {"queued": 0}
+    assert second.status_code == 409
+    assert "già in corso" in second.json()["detail"]
     assert llm.requests == []
 
 
@@ -598,7 +632,8 @@ def test_a_start_from_the_threshold_sends_a_batch_and_the_page_reads_it(
     assert page["batch"]["status"] == "in_progress"
     assert (page["batch"]["count"], page["batch"]["done"]) == (2, 0)
     assert page["batch"]["submitted_at"] is not None
-    assert client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5}).json() == {"queued": 0}
+    again = client.post(f"{BASE}/cards/regenerate-stale", json={"limit": 5})
+    assert again.status_code == 409  # a batch not yet applied counts as a run
     assert call.submissions == 1
     assert len(api_session.scalars(select(CardBatch)).all()) == 1
 

@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session
 from rebase_core.contract_schemas import ContractPdf, MemberContract, MemberContracts
 from rebase_core.errors import NotFound
 from rebase_core.framework import framework_dates, rome_today
-from rebase_core.matches import LETTERA, QUADRO, MatchService
+from rebase_core.match_reads import MatchReads
+from rebase_core.match_rows import LETTERA, QUADRO
 from rebase_core.members import MemberService
 from rebase_core.models import ContractDocument, Match
 from rebase_core.regimes import OCCASIONALE, PARTITA_IVA, as_regime, document_label
@@ -125,4 +126,4 @@ class MemberContractService:
             or document.signed_pdf is None
         ):
             raise NotFound("documento", document_id)
-        return MatchService(self.session).document_pdf(document_id, signed=True)
+        return MatchReads(self.session).document_pdf(document_id, signed=True)

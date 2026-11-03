@@ -7,10 +7,10 @@ import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import type { AudiencePreview, CampaignTemplate } from '@/lib/api'
+import { ANY } from '@/lib/adminList'
 import { COMPANY_STATES, FREELANCER_LIST_STATES, REMOTO_LABELS, STATE_LABELS } from '@/lib/format'
-import { AmountFilter, FilterField } from '../lists'
+import { AmountFilter, FilterField } from '../list-kit'
 import {
-  ANY,
   NONE,
   hasOtherFilters,
   type AudienceCount,

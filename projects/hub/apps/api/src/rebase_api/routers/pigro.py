@@ -7,7 +7,9 @@ share; the hub's own database is touched only to name the member who owns a spac
 from fastapi import APIRouter, HTTPException, status
 
 from rebase_api.deps import AdminDep, HttpCallDep, SessionDep, SettingsDep
-from rebase_core.pigro import PigroRegistry, PigroSpaceList, PigroUnavailable
+from rebase_api.params import LIST_LIMIT_DEFAULT, Cursor, Limit, SearchQ
+from rebase_core.pigro import PigroRegistry, PigroSpaceList
+from rebase_core.pigro_door import PigroUnavailable
 
 router = APIRouter(prefix="/api/hub/pigro", tags=["hub-admin"])
 
@@ -18,9 +20,9 @@ def list_spaces(
     session: SessionDep,
     settings: SettingsDep,
     http: HttpCallDep,
-    q: str | None = None,
-    cursor: str | None = None,
-    limit: int = 100,
+    q: SearchQ = None,
+    cursor: Cursor = None,
+    limit: Limit = LIST_LIMIT_DEFAULT,
 ) -> PigroSpaceList:
     """Every space in PigroCRM's registry, newest first, each with the hub member who
     opened it when the address is one the wizard knows; `q` searches the slug and the

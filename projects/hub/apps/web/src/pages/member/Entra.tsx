@@ -2,7 +2,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { ApiError } from '@/lib/api'
-import { takeEntraToken } from '@/lib/entra-token'
+import { takeEntraToken } from '@rebase/analytics/entra-token'
 import { useEnter } from '@/lib/me'
 
 /** Where the mail's link lands. The token is posted from here, once, and never fetched

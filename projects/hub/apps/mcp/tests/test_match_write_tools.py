@@ -18,17 +18,19 @@ from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from mcp import Client
 from mcp.server import MCPServer
+from mcp_tool_support import IVAN, PDF, _payload
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 from test_match_tools import _wipe
-from test_tools import IVAN, PDF, _payload
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.contract_schemas import FiscalData
 from rebase_core.contracts.fields import Value
 from rebase_core.fiscal import FiscalService
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
 from rebase_core.models import (
@@ -39,7 +41,6 @@ from rebase_core.models import (
     Match,
     User,
 )
-from rebase_core.schemas import CompanyCreate, FreelancerCreate
 from rebase_core.signing import SigningService
 from rebase_mcp.server import build_server
 

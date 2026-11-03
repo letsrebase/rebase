@@ -10,8 +10,11 @@ what it returns, nothing more."""
 import base64
 import json
 import os
+import stat
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -20,30 +23,66 @@ from fakes_cards import CARD, card_response, judge_response, text_pdf
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
-from rebase_core import cli, signing
+from rebase_core import (
+    ai_verify as ai_verify_module,
+)
+from rebase_core import (
+    card_batch as card_batch_module,
+)
+from rebase_core import (
+    card_writer as card_writer_module,
+)
+from rebase_core import (
+    crm_link as crm_link_module,
+)
+from rebase_core import (
+    llm as llm_module,
+)
+from rebase_core import (
+    llm_batch as llm_batch_module,
+)
+from rebase_core import (
+    signing,
+)
+from rebase_core import (
+    sources as sources_module,
+)
 from rebase_core.ai_config import AiConfigService
 from rebase_core.ai_verify import VerifyReport
+from rebase_core.campaigns import tick as tick_module
 from rebase_core.campaigns.tick import TickResult
 from rebase_core.card_batch import BatchPolled, CardBatches
 from rebase_core.card_judge import JUDGE_MAX_OUTPUT_TOKENS
+from rebase_core.cli import ai as cli_ai
+from rebase_core.cli import campaigns as cli_campaigns
+from rebase_core.cli import cards as cli_cards
+from rebase_core.cli import common as cli_common
 from rebase_core.cli import main
+from rebase_core.cli import members as cli_members
+from rebase_core.cli import signing as cli_signing
 from rebase_core.config import Settings
-from rebase_core.crm_link import CrmLinkCount
 from rebase_core.db import session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
+from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.http import urllib_engagements_call
-from rebase_core.llm import LlmResponse, RecordingBatch, RecordingCall, TaskOverride
-from rebase_core.models import CardEvalProfile, CardEvalRun, FreelancerCard, User
-from rebase_core.schemas import FreelancerCreate
-from rebase_core.signing import SweepResult
+from rebase_core.llm import LlmResponse, RecordingCall, TaskOverride
+from rebase_core.llm_batch import RecordingBatch
+from rebase_core.models import AdminToken, CardEvalProfile, CardEvalRun, FreelancerCard, User
+from rebase_core.pigro_door import SweepCount
+from rebase_core.signing_recovery import SweepResult
 from rebase_core.team_schemas import Card, CardsRefreshed
+
+
+class _FakeRecovery:
+    def sweep(self) -> SweepResult:
+        return _FakeSigningService.result
 
 
 class _FakeSigningService:
     """Records the session and the collaborators `contracts_sweep` built it with, and
-    answers `sweep()` with a canned result."""
+    answers `recovery.sweep()` with a canned result."""
 
     instances: list["_FakeSigningService"] = []
     result = SweepResult(touched=3, unconfirmed=0)
@@ -51,24 +90,22 @@ class _FakeSigningService:
     def __init__(self, session: object, **kwargs: Any) -> None:
         self.session = session
         self.kwargs = kwargs
+        self.recovery = _FakeRecovery()
         _FakeSigningService.instances.append(self)
-
-    def sweep(self) -> SweepResult:
-        return _FakeSigningService.result
 
 
 class _FakeCrmLeadService:
     """What `contracts_sweep`'s CRM round (REB-868) is built with, and a canned count."""
 
     instances: list["_FakeCrmLeadService"] = []
-    count = CrmLinkCount(linked=0, failed=0)
+    count = SweepCount(linked=0, failed=0)
 
     def __init__(self, session: object, settings: Settings, http: object, llm: object) -> None:
         self.http = http
         self.llm = llm
         _FakeCrmLeadService.instances.append(self)
 
-    def link_pending(self) -> CrmLinkCount:
+    def link_pending(self) -> SweepCount:
         return _FakeCrmLeadService.count
 
 
@@ -77,14 +114,14 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeSigningService.instances = []
     _FakeSigningService.result = SweepResult(touched=3, unconfirmed=0)
     _FakeCrmLeadService.instances = []
-    _FakeCrmLeadService.count = CrmLinkCount(linked=0, failed=0)
-    monkeypatch.setattr(cli, "CrmLeadService", _FakeCrmLeadService)
+    _FakeCrmLeadService.count = SweepCount(linked=0, failed=0)
+    monkeypatch.setattr(crm_link_module, "CrmLeadService", _FakeCrmLeadService)
 
 
 def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_count(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
 
     assert main(["contracts-sweep"]) == 0
@@ -95,7 +132,7 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     assert (kwargs["documenso"], kwargs["sender"]) == (None, None)
     # And with the link to Pigro, over the seam that waits for a new space (REB-499).
     assert isinstance(kwargs["engagements"], EngagementService)
-    assert kwargs["engagements"].http is urllib_engagements_call
+    assert kwargs["engagements"].door.http is urllib_engagements_call
     out = capsys.readouterr().out
     assert out.strip().splitlines() == [
         "3 documenti ripresi, 0 match collegati a Pigro",
@@ -109,7 +146,7 @@ def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_i
     """REB-431: a refusal or an unreachable Documenso during the confirmation step
     leaves a document `inviato` -- not silently, any more. Left off the line entirely
     when it is zero, so the ordinary run reads exactly as it always has."""
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
     _FakeSigningService.result = SweepResult(touched=1, unconfirmed=2)
 
@@ -127,7 +164,7 @@ def test_contracts_sweep_prints_the_pigro_counts(
     """REB-499: the round after the documents says how many active matches it linked to
     their deal on Pigro, always, and how many it tried and left unlinked when there are
     any, so a CRM that stopped answering shows on the same line."""
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
     _FakeSigningService.result = SweepResult(touched=2, unconfirmed=0, linked=3, link_failed=1)
 
@@ -154,9 +191,9 @@ def test_contracts_sweep_files_the_requests_in_a_round_of_its_own(
     """REB-868: the CRM round does not depend on the signing service (which has no
     engagement service here), reads over the seam that waits for a slow CRM, and prints
     its own line: the count it filed, and the ones it left only when there are any."""
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
-    _FakeCrmLeadService.count = CrmLinkCount(linked=4, failed=2)
+    _FakeCrmLeadService.count = SweepCount(linked=4, failed=2)
 
     assert main(["contracts-sweep"]) == 0
 
@@ -171,7 +208,7 @@ def test_the_documenso_check_command_dispatches_to_documenso_check(
 ) -> None:
     """No Documenso configured: `main` reaches `documenso_check` with this process's
     settings and reports its refusal, rather than doing nothing on an unknown command."""
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
 
     assert main(["documenso-check"]) == 1
 
@@ -181,15 +218,17 @@ def test_the_documenso_check_command_dispatches_to_documenso_check(
 def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None, resend_api_key="k"))  # type: ignore[call-arg]
     monkeypatch.setattr(
-        cli,
+        cli_campaigns, "get_settings", lambda: Settings(_env_file=None, resend_api_key="k")
+    )  # type: ignore[call-arg]
+    monkeypatch.setattr(
+        cli_common,
         "session_factory",
         lambda _engine: lambda: type("S", (), {"close": lambda self: None})(),
     )
-    monkeypatch.setattr(cli, "create_engine_from_settings", lambda _settings: None)
+    monkeypatch.setattr(cli_common, "create_engine_from_settings", lambda _settings: None)
     monkeypatch.setattr(
-        cli,
+        tick_module,
         "run_tick",
         lambda *_a, **_k: TickResult(campagne=1, inviate=2, saltate=1, fallite=0, stampate=3),
     )
@@ -203,7 +242,7 @@ def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
 def test_without_a_key_the_tick_sends_nothing_and_says_so(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli_campaigns, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
     assert main(["campaigns-tick"]) == 0
     assert "invio non configurato" in capsys.readouterr().out
 
@@ -242,9 +281,9 @@ def test_cards_refresh_prints_the_counts(
     """One batch of `--limit` per run, the oldest first (`refresh_stale`), so the
     operator runs it again until it prints «0 schede scritte»."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+    monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-refresh", "--limit", "10"]) == 0
 
@@ -281,9 +320,9 @@ def test_cards_refresh_says_the_stop(
     «0 schede scritte, 0 non riuscite» still says the backlog is done. A card still
     gendered after its rewrite is among the «non riuscite» (REB-802)."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+    monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeCardWriter)
     monkeypatch.setattr(_FakeCardWriter, "result", result)
 
     assert main(["cards-refresh"]) == 0
@@ -329,9 +368,11 @@ def test_cards_regenerate_goes_through_the_batch_api_above_the_threshold(
     matched without regard to case, with `fonte` `cli`."""
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: RecordingBatch())
-    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(
+        llm_batch_module, "batch_for_task", lambda opener, settings, task: RecordingBatch()
+    )
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeRegeneratingWriter)
     monkeypatch.setattr(
         _FakeRegeneratingWriter, "result", CardsRefreshed(written=0, failed=0, batched=14)
     )
@@ -351,9 +392,9 @@ def test_cards_regenerate_without_a_batch_api_writes_with_the_workers(
 ) -> None:
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
-    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(llm_batch_module, "batch_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeRegeneratingWriter)
     monkeypatch.setattr(_FakeRegeneratingWriter, "result", CardsRefreshed(written=4, failed=1))
 
     assert main(["cards-regenerate", "--batch", "--admin", "ivan@rebase.it"]) == 0
@@ -369,9 +410,9 @@ def test_cards_regenerate_says_when_one_is_already_on(
 ) -> None:
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
-    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(llm_batch_module, "batch_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeRegeneratingWriter)
     monkeypatch.setattr(_FakeRegeneratingWriter, "running", True)
 
     assert main(["cards-regenerate", "--admin", "ivan@rebase.it"]) == 0
@@ -402,9 +443,9 @@ def test_cards_regenerate_refuses_without_an_administrator(
 ) -> None:
     _FakeCardWriter.instances = []
     _FakeRegeneratingWriter.started = []
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "batch_for_task", lambda opener, settings, task: None)
-    monkeypatch.setattr(cli, "CardWriter", _FakeRegeneratingWriter)
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(llm_batch_module, "batch_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeRegeneratingWriter)
 
     assert main(["cards-regenerate", *argv]) == 2
 
@@ -445,11 +486,13 @@ def test_cards_batch_poll_says_where_the_batch_stands(
             return polled
 
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "call_for_task", _configured_card_task)
-    monkeypatch.setattr(cli, "AiBatch", lambda opener, settings, task: RecordingBatch())
-    monkeypatch.setattr(cli, "CardBatches", FakeBatches)
-    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+    monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(llm_module, "call_for_task", _configured_card_task)
+    monkeypatch.setattr(
+        llm_batch_module, "AiBatch", lambda opener, settings, task: RecordingBatch()
+    )
+    monkeypatch.setattr(card_batch_module, "CardBatches", FakeBatches)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-batch-poll"]) == 0
 
@@ -462,9 +505,9 @@ def test_cards_refresh_names_modelli_ai_when_no_task_configured(
     """With no model configured for the card task a run would print «0 schede scritte» for
     ever: it says why instead, and where to fix it."""
     _FakeCardWriter.instances = []
-    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "call_for_task", lambda opener, settings, task: None)
-    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+    monkeypatch.setattr(cli_cards, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(llm_module, "call_for_task", lambda opener, settings, task: None)
+    monkeypatch.setattr(card_writer_module, "CardWriter", _FakeCardWriter)
 
     assert main(["cards-refresh"]) == 1
 
@@ -499,11 +542,11 @@ class _FakeSources:
 def fake_sources(monkeypatch: pytest.MonkeyPatch, hub_engine: Engine) -> type[_FakeSources]:
     url = hub_engine.url.render_as_string(hide_password=False)
     monkeypatch.setattr(
-        cli,
+        cli_cards,
         "get_settings",
         lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
     )
-    monkeypatch.setattr(cli, "default_source_service", _FakeSources)
+    monkeypatch.setattr(sources_module, "default_source_service", _FakeSources)
     _FakeSources.enabled, _FakeSources.asked = set(), []
     return _FakeSources
 
@@ -526,7 +569,7 @@ def test_sources_refetch_reads_the_limit_and_calls_no_model(
     the `card` task's seam."""
     fake_sources.enabled = {"github"}
     monkeypatch.setattr(
-        cli, "call_for_task", lambda *args: pytest.fail("the weekly pass asked for a model")
+        llm_module, "call_for_task", lambda *args: pytest.fail("the weekly pass asked for a model")
     )
 
     assert main(["sources-refetch", "--limit", "7"]) == 0
@@ -550,7 +593,7 @@ def ai_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Any:
     def use(secrets_key: str = _SECRETS_KEY) -> None:
         url = hub_engine.url.render_as_string(hide_password=False)
         monkeypatch.setattr(
-            cli,
+            cli_ai,
             "get_settings",
             lambda: Settings(database_url=url, secrets_key=secrets_key, _env_file=None),  # type: ignore[call-arg]
         )
@@ -675,14 +718,14 @@ def test_ai_verify_prints_the_report_and_never_the_key(
         admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
         session.add(admin)
         session.commit()
-        AiConfigService(session, cli.get_settings()).save_key(admin.id, "google", key)
+        AiConfigService(session, cli_ai.get_settings()).save_key(admin.id, "google", key)
     seen: list[str] = []
 
     def fake_verify(provider: str, model: str, api_key: str) -> VerifyReport:
         seen.append(api_key)
         return VerifyReport(True, True, False, True, "ModelHTTPError (status 400)")
 
-    monkeypatch.setattr(cli, "verify", fake_verify)
+    monkeypatch.setattr(ai_verify_module, "verify", fake_verify)
 
     assert main(["ai-verify", "--provider", "google", "--model", "gemini-4-argon"]) == 1
 
@@ -740,7 +783,7 @@ def eval_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Ses
     `test_llm.py`'s), and the evaluation tables are emptied after."""
     url = hub_engine.url.render_as_string(hide_password=False)
     monkeypatch.setattr(
-        cli,
+        cli_cards,
         "get_settings",
         lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
     )
@@ -809,7 +852,7 @@ def _fake_ai_calls(
         built.append({"task": task, **kwargs})
         return llm
 
-    monkeypatch.setattr(cli, "AiCall", fake_ai_call)
+    monkeypatch.setattr(llm_module, "AiCall", fake_ai_call)
     return built, llm
 
 
@@ -957,7 +1000,7 @@ def test_cards_eval_exits_1_and_says_so_when_the_cap_stops_it(
         def complete(self, request: object) -> object:
             raise LlmCapReached("Tetto giornaliero raggiunto")
 
-    monkeypatch.setattr(cli, "AiCall", lambda *args, **kwargs: Spent())
+    monkeypatch.setattr(llm_module, "AiCall", lambda *args, **kwargs: Spent())
 
     assert main(["cards-eval", "--allow-disabled"]) == 1
     assert "INCOMPLETA, fermata qui: Tetto giornaliero raggiunto" in capsys.readouterr().out
@@ -1015,3 +1058,91 @@ def test_cards_eval_takes_only_a_known_provider_effort_and_prompt_version() -> N
 def test_the_manual_evaluation_command_is_gone() -> None:
     with pytest.raises(SystemExit):
         main(["cards-eval-draft", "--freelancer", str(uuid4()), "--label", "x"])
+
+
+@pytest.fixture
+def token_db(hub_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
+    """The command's settings point at the test database, with one admin in it."""
+    url = hub_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(
+        cli_members,
+        "get_settings",
+        lambda: Settings(database_url=url, _env_file=None),  # type: ignore[call-arg]
+    )
+    session = session_factory(hub_engine)()
+    session.add(User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin"))
+    session.commit()
+    yield session
+    session.rollback()
+    session.execute(text("DELETE FROM admin_tokens"))
+    session.execute(text("DELETE FROM users"))
+    session.commit()
+    session.close()
+
+
+def test_createtoken_prints_the_token_once_on_stdout(
+    token_db: Session, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["createtoken", "--email", " Ivan@Rebase.it "]) == 0
+
+    printed = capsys.readouterr().out.strip()
+    assert printed.startswith("reb_")
+    [row] = token_db.scalars(select(AdminToken)).all()
+    assert row.expires_at is None
+    assert printed.startswith(row.prefix)
+
+
+def test_createtoken_with_a_token_file_writes_it_0600_and_prints_nothing_of_it(
+    token_db: Session, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    target = tmp_path / "token"
+
+    assert main(["createtoken", "--email", "ivan@rebase.it", "--token-file", str(target)]) == 0
+
+    written = target.read_text().strip()
+    out = capsys.readouterr().out
+    assert written.startswith("reb_") and written not in out
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    [row] = token_db.scalars(select(AdminToken)).all()
+    assert written.startswith(row.prefix)
+
+
+def test_createtoken_never_overwrites_a_token_file_and_mints_nothing_then(
+    token_db: Session, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    target = tmp_path / "token"
+    target.write_text("keep me")
+
+    assert main(["createtoken", "--email", "ivan@rebase.it", "--token-file", str(target)]) == 2
+
+    assert target.read_text() == "keep me"
+    assert token_db.scalars(select(AdminToken)).all() == []
+    assert "esiste già" in capsys.readouterr().err
+
+
+def test_createtoken_leaves_no_empty_file_when_no_token_was_minted(
+    token_db: Session, tmp_path: Path
+) -> None:
+    target = tmp_path / "token"
+
+    assert main(["createtoken", "--email", "nessuno@rebase.it", "--token-file", str(target)]) == 1
+
+    assert not target.exists()
+
+
+def test_createtoken_expires_after_the_days_asked(token_db: Session) -> None:
+    assert main(["createtoken", "--email", "ivan@rebase.it", "--expires-in-days", "3"]) == 0
+
+    [row] = token_db.scalars(select(AdminToken)).all()
+    assert row.expires_at is not None
+    left = row.expires_at - datetime.now(UTC)
+    assert timedelta(days=2, hours=23) < left <= timedelta(days=3)
+    assert main(["createtoken", "--email", "ivan@rebase.it", "--expires-in-days", "0"]) == 2
+
+
+def test_createtoken_and_setrole_fail_rather_than_wait_for_input_without_a_terminal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["createtoken"]) == 2
+    assert main(["setrole", "--role", "admin"]) == 2
+    assert capsys.readouterr().err.count("quando non c'è un terminale") == 2

@@ -164,7 +164,9 @@ def test_a_missing_row_is_a_503_that_is_never_cached_and_never_invented(
 
 
 def test_reading_the_rates_does_not_spend_the_signups_budget(
-    client: TestClient, settings_row: Callable[[str, str], None]
+    client: TestClient,
+    settings_row: Callable[[str, str], None],
+    strict_rate_limit: None,
 ) -> None:
     """The limiter's bucket is the wizards' and the signup form's. A landing that reads the
     rates on every view must not leave its visitor with a 429 on the form."""

@@ -6,7 +6,7 @@ then cross-checks every card against the sources it was written from, with no ad
 The cross-check is two things, kept apart in what is stored and what is reported:
 
 * **rules**, where one exists (`card_eval_checks`): the card validates and no guard of
-  `cards.py` refused it, nothing of the person's identifiers is left in it, and the years
+  `card_writer.py` refused it, nothing of the person's identifiers is left in it, and the years
   are recomputed from the CV's dated periods when the text allows a reliable parse;
 * **a judging call** (`card_judge`), separate from the writing one and answered by the
   `card` task's provider and model or another provider's, that is given the card and the
@@ -47,7 +47,9 @@ from rebase_core.card_eval_checks import (
 )
 from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.card_judge import CardJudgement, JudgeFailure, judge
-from rebase_core.cards import PROMPT_VERSION, PROMPT_VERSIONS, CardWriter, known_identifiers
+from rebase_core.card_persona import known_identifiers
+from rebase_core.card_prompt import PROMPT_VERSION, PROMPT_VERSIONS
+from rebase_core.card_writer import CardWriter
 from rebase_core.cv_text import CvText
 from rebase_core.errors import InvalidState, LlmUnavailable, NotFound, ValidationFailed
 from rebase_core.freelancers import ENTITY, FreelancerService

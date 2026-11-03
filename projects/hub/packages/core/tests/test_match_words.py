@@ -32,12 +32,12 @@ from rebase_core.match_words import (
     send_report_sentence,
 )
 from rebase_core.models import MATCH_STATES
-from rebase_core.signing import (
+from rebase_core.signing_words import (
     CANCELLED_BY_REBASE,
     CANCELLED_ON_DOCUMENSO,
     CANCELLED_WITH_MATCH,
     REFUSED_ON_SITE,
-    _cancel_reason,
+    cancel_reason,
 )
 
 SENT = date(2026, 9, 25)
@@ -55,27 +55,27 @@ STORED_REASONS = [
     (CANCELLED_ON_DOCUMENSO, "Annullato su Documenso.", False),
     (REFUSED_ON_SITE, "Rifiutato dal freelance sul sito di firma.", True),
     (
-        _cancel_reason(Outcome("envelope", REJECTED, reason="il periodo non va")),
+        cancel_reason(Outcome("envelope", REJECTED, reason="il periodo non va")),
         "Rifiutato dal freelance: il periodo non va.",
         True,
     ),
     (
-        _cancel_reason(Outcome("envelope", REJECTED, reason="il periodo non va.")),
+        cancel_reason(Outcome("envelope", REJECTED, reason="il periodo non va.")),
         "Rifiutato dal freelance: il periodo non va.",
         True,
     ),
     (
-        _cancel_reason(Outcome("envelope", REJECTED, reason="perché così poco?")),
+        cancel_reason(Outcome("envelope", REJECTED, reason="perché così poco?")),
         "Rifiutato dal freelance: perché così poco?",
         True,
     ),
     (
-        _cancel_reason(Outcome("envelope", REJECTED, reason="no grazie!")),
+        cancel_reason(Outcome("envelope", REJECTED, reason="no grazie!")),
         "Rifiutato dal freelance: no grazie!",
         True,
     ),
     (
-        _cancel_reason(Outcome("envelope", REJECTED, reason="ci devo pensare…")),
+        cancel_reason(Outcome("envelope", REJECTED, reason="ci devo pensare…")),
         "Rifiutato dal freelance: ci devo pensare…",
         True,
     ),

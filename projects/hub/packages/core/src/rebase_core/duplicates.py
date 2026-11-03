@@ -19,21 +19,38 @@ two sign-ups with one profile are reported too, and the form no longer makes a s
 import re
 import unicodedata
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import combinations
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel
-from sqlalchemy import select, text
+from pydantic import Field
+from sqlalchemy import (
+    ColumnElement,
+    Row,
+    Select,
+    SQLColumnExpression,
+    and_,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.orm import Session
 
 from rebase_core.linkedin import PROFILE_SQL_PREDICATE, linkedin_key
 from rebase_core.models import Freelancer, Signup, User
+from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import enum_of
 
 LINKEDIN = "linkedin"
 NOME = "nome"
 TELEFONO = "telefono"
+SIGNALS = (LINKEDIN, NOME, TELEFONO)
+DuplicateSignal = Annotated[str, Field(json_schema_extra=enum_of(SIGNALS))]
 # Cards a Talenti row names as «may be this person»: a common name is shared by many, and a
 # row is read by an agent that pays for every id.
 FLAGS_PER_ROW = 5
@@ -138,11 +155,10 @@ def _pairs(
             found[frozenset((first.freelancer_id, second.freelancer_id))].add(signal)
 
 
-def find_duplicates(session: Session) -> DuplicateReport:
-    """Every pair of live cards that share a LinkedIn profile, a name or a telephone
-    number, and every sign-up that repeats a profile. One read of the identity columns
-    of the live cards, grouped in memory: a hundred and fifty rows, no per-pair query."""
-    rows = session.execute(
+def _live_people() -> Select[*tuple[Any, ...]]:
+    """The identity columns of the live cards (a card of a person merged away is no longer
+    one), oldest first: the one read `find_duplicates` and `duplicates_of` share."""
+    return (
         select(
             Freelancer.id,
             Freelancer.user_id,
@@ -159,7 +175,12 @@ def find_duplicates(session: Session) -> DuplicateReport:
         .join(User, User.id == Freelancer.user_id)
         .where(Freelancer.deleted_at.is_(None), User.merged_into_id.is_(None))
         .order_by(Freelancer.created_at, Freelancer.id)
-    ).all()
+    )
+
+
+def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
+    """Every pair of the cards in `rows` that share a LinkedIn profile, a name or a
+    telephone number, survivors first. `rows` come oldest first from `_live_people`."""
     people: dict[UUID, Person] = {}
     by_linkedin: dict[str, list[Person]] = defaultdict(list)
     by_name: dict[str, list[Person]] = defaultdict(list)
@@ -187,7 +208,7 @@ def find_duplicates(session: Session) -> DuplicateReport:
     _pairs(by_linkedin, LINKEDIN, found)
     _pairs(by_name, NOME, found)
     _pairs(by_phone, TELEFONO, found)
-    order = (LINKEDIN, NOME, TELEFONO)
+    order = SIGNALS
     pairs: list[DuplicatePair] = []
     for ids, signals in found.items():
         first, second = (people[i] for i in ids)
@@ -198,6 +219,16 @@ def find_duplicates(session: Session) -> DuplicateReport:
     pairs.sort(
         key=lambda p: (p.survivor.rank, p.survivor.freelancer_id, p.assorbito.rank), reverse=True
     )
+    return pairs
+
+
+def find_duplicates(session: Session) -> DuplicateReport:
+    """Every pair of live cards that share a LinkedIn profile, a name or a telephone
+    number, and every sign-up that repeats a profile. One read of the identity columns
+    of all the live cards, grouped in memory: for the report and the command, which want
+    every pair. A Talenti page asks `duplicates_of`, which reads only its own cards'
+    neighbours."""
+    pairs = _pairs_among(session.execute(_live_people()).all())
     return DuplicateReport(
         unibili=[p for p in pairs if p.unibile],
         da_rivedere=[p for p in pairs if not p.unibile],
@@ -280,14 +311,98 @@ def ensure_unique_indexes(session: Session) -> IndexesEnsured:
     return done
 
 
+def _ascii_word(value: str) -> str:
+    """A name's word reduced to its ASCII letters and digits, lower case, after
+    decomposition: what `_name_key` keeps of it, less everything outside ASCII. Two words
+    `_name_key` reads as one have the same `_ascii_word`, so it is a key SQL can match
+    on without the exact folding (`_ascii_word_sql` computes the same on a column)."""
+    return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", value).lower())
+
+
+# The expressions of `_ascii_word_sql` and `_ascii_digits_sql` are written with their
+# constants inline, not as bound values, so that an expression index on them (should the
+# table ever be big enough to want one) is the one the planner matches.
+def _ascii_word_sql(column: SQLColumnExpression[str]) -> ColumnElement[str]:
+    return func.lower(
+        func.regexp_replace(
+            func.normalize(column, literal_column("NFKD")),
+            literal_column("'[^A-Za-z0-9]'"),
+            literal_column("''"),
+            literal_column("'g'"),
+        )
+    )
+
+
+def _ascii_digits_sql(column: SQLColumnExpression[str | None]) -> ColumnElement[str]:
+    return func.regexp_replace(
+        column, literal_column("'[^0-9]'"), literal_column("''"), literal_column("'g'")
+    )
+
+
+def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
+    """The live cards that could share a LinkedIn profile, a name or a telephone number
+    with one of `page`, the page's own included, oldest first.
+
+    The keys are matched in SQL by something that every pair `_pairs_among` would make
+    also satisfies, and `_pairs_among` then applies the exact rule to what is read: the
+    LinkedIn profile as stored (`linkedin_key` is its lower case; the unique index holds
+    it to that shape), the name as its two words reduced to ASCII letters and digits
+    (`_ascii_word`), in either order, the number as its ASCII digits with or without the
+    country prefix `_phone_key` strips. A card with no key is not matched at all."""
+    profiles: set[str] = set()
+    names: set[str] = set()
+    numbers: set[str] = set()
+    non_ascii_number = False
+    for row in page:
+        if (profile := linkedin_key(row.linkedin_url)) is not None:
+            profiles.add(profile)
+        if _name_key(row.nome, row.cognome) is not None:
+            first, last = _ascii_word(row.nome), _ascii_word(row.cognome)
+            names.update((f"{first}|{last}", f"{last}|{first}"))
+        if (number := _phone_key(row.telefono)) is not None:
+            digits = re.sub(r"[^0-9]", "", number)
+            if digits:
+                numbers.update((digits, f"39{digits}", f"0039{digits}"))
+            else:
+                non_ascii_number = True
+    matches: list[ColumnElement[bool]] = []
+    if profiles:
+        matches.append(func.lower(User.linkedin_url).in_(profiles))
+    if names:
+        # The two words in either order, as `_name_key` reads them. One expression, so it is
+        # computed once per row: a row-value `IN` repeats it for every pair.
+        both = (
+            _ascii_word_sql(User.nome)
+            .concat(literal_column("'|'"))
+            .concat(_ascii_word_sql(User.cognome))
+        )
+        matches.append(both.in_(sorted(names)))
+    digits_sql = _ascii_digits_sql(User.telefono)
+    if numbers:
+        matches.append(digits_sql.in_(numbers))
+    if non_ascii_number:
+        # A number of digits outside ASCII (`\D` keeps those): nothing to match on but
+        # having a telephone number that is not made of ASCII digits.
+        matches.append(and_(User.telefono.is_not(None), digits_sql == ""))
+    if not matches:
+        return []
+    return list(session.execute(_live_people().where(or_(*matches))).all())
+
+
 def duplicates_of(session: Session, freelancer_ids: list[UUID]) -> dict[UUID, list[UUID]]:
     """For a page of Talenti rows: the other live cards each might be, by LinkedIn, name
-    or telephone (`possibile_duplicato_di`). Reads the whole report once; the list is a
-    page of a hundred, the table a few hundred rows, and a card with none has no key."""
+    or telephone (`possibile_duplicato_di`), the first `FLAGS_PER_ROW` in the order
+    `find_duplicates` lists the pairs. Reads the page's own cards and the cards sharing a
+    key with them (`_neighbours`), never the table: a page of a hundred costs two reads
+    however many people there are."""
+    if not freelancer_ids:
+        return {}
     wanted = set(freelancer_ids)
+    page = session.execute(_live_people().where(Freelancer.id.in_(wanted))).all()
     answer: dict[UUID, list[UUID]] = {}
-    report = find_duplicates(session)
-    for pair in (*report.unibili, *report.da_rivedere):
+    pairs = _pairs_among(_neighbours(session, page))
+    # The mergeable pairs first, then the ones to review, as the report lists them.
+    for pair in (*(p for p in pairs if p.unibile), *(p for p in pairs if not p.unibile)):
         for mine, other in (
             (pair.survivor, pair.assorbito),
             (pair.assorbito, pair.survivor),
@@ -299,7 +414,7 @@ def duplicates_of(session: Session, freelancer_ids: list[UUID]) -> dict[UUID, li
     return answer
 
 
-class PersonRead(BaseModel):
+class PersonRead(ResponseModel):
     """A card of a pair as the admin reads it: who, and what decides the survivor."""
 
     freelancer_id: UUID
@@ -312,18 +427,18 @@ class PersonRead(BaseModel):
     ha_cv: bool
 
 
-class DuplicatePairRead(BaseModel):
+class DuplicatePairRead(ResponseModel):
     """`survivor` is the default of the merge (the newest CV); `segnali` says why the two
     look alike (`linkedin`, `nome`, `telefono`), and `unibile` that the profile is the same,
     the only signal that is a reason to merge rather than to look."""
 
     survivor: PersonRead
     assorbito: PersonRead
-    segnali: list[str]
+    segnali: list[DuplicateSignal]
     unibile: bool
 
 
-class DuplicateListRead(BaseModel):
+class DuplicateListRead(ResponseModel):
     unibili: list[DuplicatePairRead]
     da_rivedere: list[DuplicatePairRead]
     iscrizioni: int

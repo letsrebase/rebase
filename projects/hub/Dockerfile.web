@@ -15,6 +15,9 @@ RUN pnpm install --frozen-lockfile --filter hub...
 COPY shared/brand ./shared/brand
 COPY shared/analytics ./shared/analytics
 COPY shared/ui ./shared/ui
+# The amount and rate cases the hub's tests share with the website: `build` type-checks
+# the tests too, so the fixture has to be in the image.
+COPY shared/format-cases ./shared/format-cases
 COPY projects/hub/apps/web ./projects/hub/apps/web
 RUN pnpm --filter hub build
 

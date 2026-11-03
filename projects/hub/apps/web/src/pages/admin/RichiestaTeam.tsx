@@ -9,8 +9,8 @@ import { Textarea } from '@rebase/ui/textarea'
 import {
   admin,
   ApiError,
-  type AdminTeamMember,
-  type AdminTeamProposal,
+  type TeamMember,
+  type TeamProposal,
   type TeamRequest,
   type TeamRequestStato,
   type TeamRequestTalent,
@@ -24,9 +24,10 @@ import {
   formatDate,
   formatDateTime,
   formatDaysPerWeek,
-  formatEuro,
 } from '@/lib/format'
-import { Empty, Header, Row } from './lists'
+import { formatMoney } from '@rebase/ui/format'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, Row } from './list-kit'
 
 /** Core's `RIASSUNTO_MAX_LENGTH` and `PROGETTO_MAX_LENGTH` (the note's ceiling). */
 const RIASSUNTO_MAX = 1500
@@ -40,7 +41,7 @@ function sentence(error: unknown, fallback: string): string {
 
 /** What the engine read about place in the company's description: whether the work is
  *  on site, and the place it named, if any. */
-function place(luogo: AdminTeamProposal['luogo']): string {
+function place(luogo: TeamProposal['luogo']): string {
   if (luogo.locale) return luogo.dove ? `In sede, a ${luogo.dove}` : 'In sede, luogo non indicato'
   return luogo.dove ? `Da remoto · ${luogo.dove}` : 'Da remoto'
 }
@@ -48,7 +49,7 @@ function place(luogo: AdminTeamProposal['luogo']): string {
 /** The team's bands per day and per month, as the company read them; «Tariffa da
  *  definire» when a member has no rate. Never asked of an empty team, which has no price
  *  at all rather than one to define. */
-function teamBands(economia: AdminTeamProposal['economia']): string {
+function teamBands(economia: TeamProposal['economia']): string {
   if (!economia.giorno || !economia.mese) return 'Tariffa da definire'
   return `${bandLabel(economia.giorno)} · ${bandLabel(economia.mese, 'mese')}`
 }
@@ -93,7 +94,7 @@ function moves(request: TeamRequest): Move[] {
  */
 export function AdminRichiestaTeam() {
   const { id } = useParams({ from: '/signedIn/admin/team/$id' })
-  const row = useQuery({ queryKey: ['team-request', id], queryFn: () => admin.teamRequest(id) })
+  const row = useQuery({ queryKey: keys.teamRequest(id), queryFn: () => admin.teamRequest(id) })
   if (row.isError) {
     return (
       <Empty>
@@ -112,10 +113,12 @@ function RequestPage({ request }: { request: TeamRequest }) {
   const key = ['team-request', request.id] as const
   function apply(updated: TeamRequest) {
     client.setQueryData<TeamRequest>(key, updated)
-    void client.invalidateQueries({ queryKey: ['team-requests'] })
+    void client.invalidateQueries({ queryKey: keys.teamRequests() })
   }
-  const members = new Map<string, AdminTeamMember>(
-    (request.proposal?.team ?? []).map((member) => [member.freelancer_id, member]),
+  const members = new Map<string, TeamMember>(
+    (request.proposal?.team ?? []).flatMap((member) =>
+      member.freelancer_id ? [[member.freelancer_id, member] as const] : [],
+    ),
   )
   const teamId = useId()
   const contactsId = useId()
@@ -201,7 +204,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
   )
 }
 
-function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: AdminTeamMember | undefined }) {
+function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: TeamMember | undefined }) {
   return (
     <TableRow>
       <TableCell>
@@ -216,7 +219,7 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Admi
           <p className="text-xs text-muted-foreground">{formatDaysPerWeek(member.giorni_settimana)}</p>
         ) : null}
       </TableCell>
-      <TableCell>{talent.tariffa_giornaliera === null ? '—' : formatEuro(talent.tariffa_giornaliera)}</TableCell>
+      <TableCell>{talent.tariffa_giornaliera === null ? '—' : formatMoney(talent.tariffa_giornaliera)}</TableCell>
       <TableCell>{talent.fascia ? bandLabel(talent.fascia) : '—'}</TableCell>
       <TableCell>{answer(talent)}</TableCell>
     </TableRow>

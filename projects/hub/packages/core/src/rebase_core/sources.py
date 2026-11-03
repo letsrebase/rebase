@@ -43,14 +43,16 @@ next pass, after the limit lifts, takes them in the order they were due.
 import hashlib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import Insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from rebase_core.ai_config import AI_CONFIG_ENTITY, AI_CONFIG_ENTITY_ID
@@ -241,10 +243,13 @@ def delete_sources(session: Session, freelancer_id: UUID) -> int:
     here: the caller's own delete commits it with the rest, as `CardWriter.delete` does.
     A function beside the service because the callers that need only this (a person's
     soft delete, a merge) have no fetcher to build a service with."""
-    result = session.execute(
-        delete(FreelancerSource).where(FreelancerSource.freelancer_id == freelancer_id)
+    result = cast(
+        "CursorResult[Any]",
+        session.execute(
+            delete(FreelancerSource).where(FreelancerSource.freelancer_id == freelancer_id)
+        ),
     )
-    return int(result.rowcount or 0)  # type: ignore[attr-defined]
+    return result.rowcount
 
 
 class SourceService:
@@ -276,7 +281,8 @@ class SourceService:
         if kind not in AI_SOURCE_KINDS:
             raise ValidationFailed("ai_source", "kind", "fonte sconosciuta")
         row = self.session.get(AiSource, kind)
-        assert row is not None, "migration 0038 seeds both switches"
+        if row is None:  # migration 0038 seeds both switches
+            raise NotFound("ai_source", kind)
         before = row.enabled
         if before == enabled:
             return
@@ -302,7 +308,15 @@ class SourceService:
 
     def current(self, freelancer_id: UUID) -> SourceSet:
         """What is stored for the person, as it was last read. No network."""
-        return self._set(self._rows(freelancer_id))
+        return self._set(self._rows([freelancer_id]))
+
+    def current_many(self, freelancer_ids: Sequence[UUID]) -> dict[UUID, SourceSet]:
+        """`current` for several people in one query: every person asked for is in the
+        answer, with an empty set when nothing is stored for them."""
+        grouped: dict[UUID, list[FreelancerSource]] = {person: [] for person in freelancer_ids}
+        for row in self._rows(list(grouped)):
+            grouped[row.freelancer_id].append(row)
+        return {person: self._set(rows) for person, rows in grouped.items()}
 
     def refetch(self, freelancer_id: UUID) -> SourceSet:
         """Reads the person's enabled sources again and makes the stored rows exactly
@@ -333,7 +347,7 @@ class SourceService:
             return SourceSet([])
         on = self.enabled_kinds()
         reads = [read for read in reads if _SWITCH[read.kind] in on]
-        existing = {(r.kind, r.ref): r for r in self._rows(freelancer_id)}
+        existing = {(r.kind, r.ref): r for r in self._rows([freelancer_id])}
         keep = {(read.kind, read.ref) for read in reads}
         for key, stale in existing.items():
             if key not in keep:
@@ -455,11 +469,11 @@ class SourceService:
 
     # ---- helpers ---------------------------------------------------------------------
 
-    def _rows(self, freelancer_id: UUID) -> list[FreelancerSource]:
+    def _rows(self, freelancer_ids: Sequence[UUID]) -> list[FreelancerSource]:
         return list(
             self.session.scalars(
                 select(FreelancerSource)
-                .where(FreelancerSource.freelancer_id == freelancer_id)
+                .where(FreelancerSource.freelancer_id.in_(freelancer_ids))
                 .order_by(FreelancerSource.kind, FreelancerSource.position)
                 .execution_options(populate_existing=True)
             )

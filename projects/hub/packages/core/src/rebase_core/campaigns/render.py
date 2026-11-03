@@ -12,7 +12,8 @@ from rebase_core.campaigns.links import LINK, LINK_URL_MISSING, is_ours, with_qu
 from rebase_core.campaigns.states import ENTITY, PIGRO_LATER
 from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
-from rebase_core.mail import INK_QUIET, Mail, _button, _frame, _quiet_link
+from rebase_core.mail import Mail
+from rebase_core.mail_layout import INK_QUIET, button, frame, quiet_link
 from rebase_core.models import Campaign
 
 _PARA = 'style="margin:0 0 24px 0;"'
@@ -126,18 +127,18 @@ def render(
     body = "\n".join(
         (
             *(f"<p {_PARA}>{html.escape(p).replace(chr(10), '<br>')}</p>" for p in paragraphs),
-            _button(href, html.escape(campaign.bottone_testo)),
-            f"<p {_FINE}>{FALLBACK}<br>{_quiet_link(href, href)}</p>",
+            button(href, html.escape(campaign.bottone_testo)),
+            f"<p {_FINE}>{FALLBACK}<br>{quiet_link(href, href)}</p>",
             f"<p {_AFTER}>Ivan<br>rebase</p>",
             f"<p {_FINE}>{UNSUBSCRIBE_LINE} "
-            f"{_quiet_link(html.escape(page, quote=True), 'Disiscriviti')}</p>",
+            f"{quiet_link(html.escape(page, quote=True), 'Disiscriviti')}</p>",
         )
     )
     mail = Mail(
         to=target.email,
         subject=("[prova] " if test else "") + subject,
         text=text + "\n",
-        html=_frame(subject, body),
+        html=frame(subject, body),
     )
     headers = {
         "List-Unsubscribe": f"<{api}>",

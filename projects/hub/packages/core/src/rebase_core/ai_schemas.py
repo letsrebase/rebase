@@ -7,10 +7,10 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from rebase_core.schema_common import ResponseModel
 
 
-class ProviderRead(BaseModel):
+class ProviderRead(ResponseModel):
     provider: str
     configured: bool
     # «configurata, finisce con …abcd», or `None` while there is no key.
@@ -20,7 +20,7 @@ class ProviderRead(BaseModel):
     saved_by_name: str | None
 
 
-class TaskRead(BaseModel):
+class TaskRead(ResponseModel):
     task: str
     provider: str
     model: str
@@ -35,7 +35,7 @@ class TaskRead(BaseModel):
     reason: str | None
 
 
-class PriceRead(BaseModel):
+class PriceRead(ResponseModel):
     provider: str
     model: str
     input_eur_per_mtok: Decimal
@@ -44,7 +44,7 @@ class PriceRead(BaseModel):
     cache_read_eur_per_mtok: Decimal | None
 
 
-class SpendRow(BaseModel):
+class SpendRow(ResponseModel):
     task: str
     provider: str
     cost_eur: Decimal
@@ -53,12 +53,12 @@ class SpendRow(BaseModel):
     unpriced_calls: int
 
 
-class SpendRead(BaseModel):
+class SpendRead(ResponseModel):
     month: str  # «2026-10», the month in Rome
     rows: list[SpendRow]
 
 
-class SourceSwitchRead(BaseModel):
+class SourceSwitchRead(ResponseModel):
     """The switch of one kind of source the card is written from: `github` or `links`,
     off until the privacy notice covers reading what people linked."""
 
@@ -68,7 +68,7 @@ class SourceSwitchRead(BaseModel):
     updated_by_name: str | None
 
 
-class StaleCardRead(BaseModel):
+class StaleCardRead(ResponseModel):
     """A card that is no longer what the current prompt and inputs would write, and that
     only an admin's start regenerates: `prompt` a newer prompt version, `source` the
     hub's facts, the position or a source changed."""
@@ -79,7 +79,7 @@ class StaleCardRead(BaseModel):
     generated_at: datetime | None
 
 
-class CardBatchRead(BaseModel):
+class CardBatchRead(ResponseModel):
     """The regeneration running through the Batch API (REB-853): `count` cards sent at
     `submitted_at` (`None` while it is being sent), `done` of them settled. `status`:
     `submitting`, `in_progress` (at the provider), `ended` (applying its results)."""
@@ -90,7 +90,7 @@ class CardBatchRead(BaseModel):
     submitted_at: datetime | None
 
 
-class StaleCardsRead(BaseModel):
+class StaleCardsRead(ResponseModel):
     """«Schede da aggiornare»: how many cards are stale (`count`, by reason in
     `by_reason`), what regenerating them would cost (`estimated_cost_eur`: the average
     cost of a recorded `card` call times `count`, `None` while none is recorded) and the
@@ -106,7 +106,7 @@ class StaleCardsRead(BaseModel):
     batch: CardBatchRead | None = None
 
 
-class RegenerationStarted(BaseModel):
+class RegenerationStarted(ResponseModel):
     """The answer of an admin's start: how many cards were queued; they are written after
     the response, with a few workers at once or, from the batch threshold, as one Message
     Batch."""
@@ -114,7 +114,7 @@ class RegenerationStarted(BaseModel):
     queued: int
 
 
-class AiConfigRead(BaseModel):
+class AiConfigRead(ResponseModel):
     secrets_key_present: bool
     providers: list[ProviderRead]
     tasks: list[TaskRead]

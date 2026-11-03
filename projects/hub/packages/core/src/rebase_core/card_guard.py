@@ -5,7 +5,7 @@ the surname and first name the CV carries, the GitHub login, the repositories th
 the hostnames of their links and the employers their CV names. It answers the **names of
 the offending fields**, never the word that matched, so a log line built from the answer
 never repeats an identifier. A card that hits is asked for one rewrite, then fails
-(`cards.py`).
+(`card_writer.py`).
 
 The two readings differ on purpose. The person's own name is read the way it always was
 (`_names`): a whole word written with a capital, because many surnames are words too

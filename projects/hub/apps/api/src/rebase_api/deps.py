@@ -29,15 +29,16 @@ from rebase_core.llm import (
     AiCall,
     LlmCall,
     ModelFactory,
-    batch_for_task,
     build_model,
     call_for_task,
 )
+from rebase_core.llm_batch import batch_for_task
 from rebase_core.mail import EmailSender, sender_from_settings
+from rebase_core.member_schemas import MeRead
 from rebase_core.members import MemberService
-from rebase_core.schemas import MeRead
 from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.team_builder import TeamBuilder
+from rebase_core.team_slots import ProposalSlots, proposal_slots
 from rebase_core.users import UserService
 
 MEMBER_COOKIE = "rebase_user"
@@ -142,13 +143,16 @@ def get_admin(
     (REB-281): every admin resolves through the one cookie, `rebase_user` (`orbiters_user`
     until REB-668, still read), like everyone else."""
     users = UserService(session, settings)
-    tokens = session_tokens(request)
-    for raw in tokens:
-        me = users.resolve_admin(raw)
-        if me is not None:
+    signed_in = False
+    for raw in session_tokens(request):
+        me = users.resolve(raw)
+        if me is None:
+            continue
+        if me.role == "admin":
             adopt_legacy_cookie(request, response, settings, raw)
             return AdminRead.model_validate(me)
-    if any(users.resolve(raw) is not None for raw in tokens):
+        signed_in = True
+    if signed_in:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Serve il ruolo di amministratore")
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
 
@@ -204,28 +208,13 @@ def get_campaign_sender(settings: SettingsDep) -> CampaignSender | None:
 CampaignSenderDep = Annotated[CampaignSender | None, Depends(get_campaign_sender)]
 
 
-# The proposals running now in this process (spec § 5): one semaphore for the process,
-# sized by `REBASE_TEAM_BUILDER_CONCURRENCY` when the first proposal arrives. A proposal
-# holds a worker thread for the seconds Claude takes, on the pool the member area and
-# the webhooks share, so the one past the cap is refused at once, never queued.
-_proposal_slots: tuple[int, threading.BoundedSemaphore] | None = None
-_proposal_slots_lock = threading.Lock()
+def get_proposal_slots(settings: SettingsDep) -> ProposalSlots:
+    """The process's proposal gate (`rebase_core.team_slots`, spec § 5): the slots, the
+    clients' daily shares and the refusal writers, one for the process."""
+    return proposal_slots(settings)
 
 
-def get_proposal_slots(settings: SettingsDep) -> threading.BoundedSemaphore:
-    """The process's proposal slots, acquired with `blocking=False` and released in a
-    `finally`. Keyed by the size, the way `analytics.build_client` keys its client: the
-    setting never changes in a running process, and a test that sets another size gets
-    a semaphore of that size; a slot held on the old one is released into the old one."""
-    global _proposal_slots
-    size = settings.team_builder_concurrency
-    with _proposal_slots_lock:
-        if _proposal_slots is None or _proposal_slots[0] != size:
-            _proposal_slots = (size, threading.BoundedSemaphore(size))
-        return _proposal_slots[1]
-
-
-ProposalSlotsDep = Annotated[threading.BoundedSemaphore, Depends(get_proposal_slots)]
+ProposalSlotsDep = Annotated[ProposalSlots, Depends(get_proposal_slots)]
 
 
 def get_http_call() -> HttpCall:

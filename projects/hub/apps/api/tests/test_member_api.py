@@ -14,11 +14,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.llm import RecordingCall
 from rebase_core.mail import Mail, RecordingSender
-from rebase_core.models import GuideDownload, Login, User
+from rebase_core.models import GuideDownload, Login, MagicLinkToken, User
 from rebase_core.perks import GUIDE_PATH
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -173,13 +172,14 @@ def test_a_refused_mail_is_logged_without_the_address(
     # `[loggers]` list -- this module's among them. Undo that here so `caplog` can see
     # what this test is about; nothing at runtime relies on the logger being disabled.
     logging.getLogger("rebase_api.routers.members").disabled = False
+    logging.getLogger("rebase_core.mail").disabled = False
     client.app.dependency_overrides[get_sender] = lambda: RefusingSender()  # type: ignore[attr-defined]
     _apply(client, "ada@studio.it")
     with caplog.at_level(logging.WARNING):
         response = client.post("/api/hub/auth/link", json={"email": "ada@studio.it"})
     assert response.status_code == 202
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
-    assert any("refused by the provider" in record.getMessage() for record in warnings)
+    assert any("the magic link mail" in record.getMessage() for record in warnings)
     assert "ada@studio.it" not in caplog.text
 
 
@@ -193,6 +193,106 @@ def test_the_link_request_answers_the_same_whether_the_address_applied_or_not(
     assert known.json() == unknown.json() == {"ok": True}
     assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
     assert "/entra?t=" in sender.sent[0].text
+
+
+def _tight_budget(client: TestClient, api_session: Session, room: int) -> None:
+    """The settings of an installation whose wizard mail budget has `room` links left today:
+    the shared database keeps every test's tokens, so the budget is the day's wizard count
+    plus `room`."""
+    used = (
+        api_session.scalar(
+            select(func.count())
+            .select_from(MagicLinkToken)
+            .where(MagicLinkToken.asked_via == "wizard")
+        )
+        or 0
+    )
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined,call-arg]
+        _env_file=None,
+        resend_daily_quota=100_000,
+        campaign_daily_reserve=50_000,
+        public_mail_daily_budget=max(used + room, 1),
+    )
+
+
+def test_sign_in_is_never_closed_by_the_wizards_budget_or_by_other_peoples_logins(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    """The review's blocker: 16 members each ask for their link on one day, with the
+    wizard's budget already spent, and every one gets it."""
+    addresses = [f"m{index}@studio.it" for index in range(16)]
+    for address in addresses:
+        _apply(client, address)
+    _tight_budget(client, api_session, room=0)
+
+    for address in addresses:
+        assert client.post("/api/hub/auth/link", json={"email": address}).status_code == 202
+
+    assert sorted(mail.to for mail in sender.sent) == sorted(addresses)
+
+
+def test_one_person_asking_again_and_again_stops_at_their_own_cap_in_silence(
+    client: TestClient,
+    sender: RecordingSender,
+    api_session: Session,
+    clean: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A person has a daily cap of their own: past it no mail is sent and the answer is the
+    one every other request gets (it must not say whether the address exists), and the log
+    says so without the address. Nobody else is affected."""
+    logging.getLogger("rebase_core.users").disabled = False
+    _apply(client, "ada@studio.it")
+    _apply(client, "grace@studio.it")
+    cap = Settings(_env_file=None).magic_link_daily_per_user  # type: ignore[call-arg]
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(cap + 2):
+            assert (
+                client.post("/api/hub/auth/link", json={"email": "ada@studio.it"}).status_code
+                == 202
+            )
+            # Past the per-address minute throttle (unspent links only), still today: the
+            # links are spent, not moved back, so the test is the same near midnight.
+            api_session.execute(
+                text("UPDATE magic_link_tokens SET used_at = now() WHERE used_at IS NULL")
+            )
+            api_session.commit()
+        assert (
+            client.post("/api/hub/auth/link", json={"email": "grace@studio.it"}).status_code == 202
+        )
+
+    assert [mail.to for mail in sender.sent].count("ada@studio.it") == cap
+    assert [mail.to for mail in sender.sent].count("grace@studio.it") == 1
+    assert "daily cap" in caplog.text and "ada@studio.it" not in caplog.text
+
+
+def _reapply(client: TestClient, email: str, nome: str) -> int:
+    """An application, without a CV, from an address that is already on file."""
+    return client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": nome,
+            "cognome": "Lovelace",
+            "email": email,
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+        },
+    ).status_code
+
+
+def test_an_application_for_an_address_on_file_sends_no_mail_once_the_budget_is_spent(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _apply(client, "grace@studio.it")
+    assert _reapply(client, "ada@studio.it", "Ada") == 201  # the wizard's one mail
+    _tight_budget(client, api_session, room=0)  # that spent the wizard's budget
+
+    # The same answer as always: nothing says what happened.
+    assert _reapply(client, "grace@studio.it", "Grace") == 201
+    assert [mail.to for mail in sender.sent] == ["ada@studio.it"]
 
 
 def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_routes(
@@ -552,7 +652,6 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
     # `PUT /me/cv` now spends from the same public bucket as the wizard's routes
     # (the fix for the unbounded, unmetered upload); a fresh minute here keeps this
     # test about the admin's view of the thread, not about the rate limit's budget.
-    reset_rate_limit()
 
     # The admin reads the thread the member wrote into.
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
@@ -682,7 +781,6 @@ def test_a_company_contact_edits_their_most_recent_request(
     # `POST /auth/link` and `POST /auth/enter` both spend from the public bucket this
     # test's two `_request_company` calls already drew on; a fresh minute here keeps
     # the test about the thread, not about the rate limit's budget.
-    reset_rate_limit()
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
@@ -722,7 +820,6 @@ def test_a_company_contact_edits_an_older_request_by_its_id(
         (older["id"], "8 mesi"),
     ]
 
-    reset_rate_limit()
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
@@ -822,7 +919,6 @@ def test_a_company_contact_files_an_additional_request(
     assert body["richieste"][0]["figura_richiesta"] == "Data engineer"
 
     # An admin sees two rows, the same company's name on both, the older untouched.
-    reset_rate_limit()
     api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
     api_session.commit()
     assert client.post("/api/hub/me/logout").status_code == 204
@@ -878,9 +974,10 @@ def test_creating_a_company_request_with_no_existing_one_is_a_404(
 def test_a_member_completes_the_card_an_admin_drafted(
     client: TestClient, sender: RecordingSender, clean: None, api_session: Session
 ) -> None:
+    from rebase_core.freelancer_schemas import FreelancerDraft
     from rebase_core.freelancers import FreelancerService
-    from rebase_core.schemas import FreelancerDraft, SignupCreate
     from rebase_core.service import SignupService
+    from rebase_core.signup_schemas import SignupCreate
 
     signup = SignupService(api_session).subscribe(
         SignupCreate(email="ada@studio.it", nome="Ada", cognome="Lovelace")

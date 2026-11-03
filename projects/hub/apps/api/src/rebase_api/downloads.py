@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from fastapi import Response
 
-from rebase_core.schemas import CvFile
+from rebase_core.freelancer_schemas import CvFile
 
 
 def cv_response(cv: CvFile) -> Response:

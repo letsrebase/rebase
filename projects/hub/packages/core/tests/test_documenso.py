@@ -1,13 +1,15 @@
 """The Documenso client against a Documenso in a dict (REB-387): the probe's exact calls,
 what the hub reads back, and the one sentence an admin reads when it fails."""
 
+import http.client
 import json
+import urllib.error
 from datetime import UTC, datetime
 
 import pytest
 from fakes_documenso import BASE, TOKEN, FakeDocumenso
 
-from rebase_core.cli import documenso_check
+from rebase_core.cli.signing import documenso_check
 from rebase_core.config import Settings
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.contracts.render import SignatureBlank
@@ -103,6 +105,29 @@ def test_the_create_sends_the_probes_payload_with_every_documenso_mail_off() -> 
     assert fake.headers[0]["Content-Type"].startswith("multipart/form-data; boundary=")
 
 
+def test_a_file_name_cannot_close_its_header_or_add_one() -> None:
+    """The name sits in a quoted `Content-Disposition` value: a quote or a line break in
+    it would end the value or add a header of its own (HCORE-14)."""
+    seen: list[bytes] = []
+
+    def call(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        seen.append(body)
+        return 200, json.dumps({"id": "envelope_0001"}).encode()
+
+    client = DocumensoClient(BASE, TOKEN, http=call)
+    client.create(
+        title="Lettera",
+        external_id=EXTERNAL,
+        filename='a"\r\nX-Evil: 1\r\n\r\n.pdf',
+        pdf=PDF,
+        signer_email="ada@studio.it",
+        signer_name="Ada Lovelace",
+        fields=fields_from_blanks([DATE, SIGNATURE]),
+    )
+    head = seen[0].split(PDF)[0]
+    assert b'filename="aX-Evil: 1.pdf"\r\nContent-Type: application/pdf\r\n\r\n' in head
+
+
 def test_get_then_distribute_answer_the_item_and_the_signing_url() -> None:
     fake = FakeDocumenso()
     envelope_id = _create(fake)
@@ -187,6 +212,26 @@ def test_a_wrong_token_is_refused_in_documensos_words() -> None:
     wrong = DocumensoClient(BASE, "api_sbagliato", http=fake)
     with pytest.raises(DocumensoFailed, match="Invalid session or API token"):
         wrong.get(envelope_id)
+
+
+def test_every_way_the_network_fails_is_unreachable_and_a_bug_is_not() -> None:
+    def failing(error: BaseException) -> DocumensoClient:
+        def call(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+            raise error
+
+        return DocumensoClient(BASE, TOKEN, http=call)
+
+    for error in (
+        urllib.error.URLError("refused"),
+        TimeoutError("timed out"),
+        ConnectionResetError("reset"),
+        http.client.IncompleteRead(b"%PDF"),
+    ):
+        with pytest.raises(DocumensoFailed) as caught:
+            failing(error).get("envelope_0001")
+        assert caught.value.message == UNREACHABLE
+    with pytest.raises(KeyError):
+        failing(KeyError("a bug, not an outage")).get("envelope_0001")
 
 
 def test_no_answer_is_one_sentence_whatever_the_network_did() -> None:

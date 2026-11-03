@@ -12,11 +12,12 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate, CompanyRead
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerRead
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import NOTE_MAX_LENGTH, Note, User
 from rebase_core.notes import NoteService
-from rebase_core.schemas import CompanyCreate, CompanyRead, FreelancerCreate, FreelancerRead
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 

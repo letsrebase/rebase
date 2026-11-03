@@ -134,7 +134,7 @@ describe('the landing shares the product system', () => {
     // day (docs/design/DECISIONS.md): the landing keeps the pitch deck's rhythm, and
     // its blocks rise in. The promise that survives is the second half -- nothing a
     // failed script can leave hidden: a block is hidden only under `html.js`, which
-    // the inline gate in index.html's head sets, `.reveal-all` shows everything after
+    // the gate script in index.html's head sets, `.reveal-all` shows everything after
     // three seconds whatever the script did, and reduced motion turns it all off.
     const hidden = rule('.js .deck [data-reveal]')
     expect(hidden).toMatch(/opacity:\s*0/)
@@ -145,10 +145,12 @@ describe('the landing shares the product system', () => {
     expect(css.match(/transition:/g)).toHaveLength(2)
     expect(css).not.toMatch(/\.rise|data-hidden|@keyframes|animation:/)
     expect(css).not.toMatch(/animation-timeline|scroll\(\)|view\(\)/)
-    // The gate is in the page, first thing after the stylesheet, and in no other page.
-    const index = readFileSync(join(__dirname, 'index.html'), 'utf-8')
-    expect(index).toMatch(/<script>\s*document\.documentElement\.classList\.add\('js'\)/)
-    expect(index).toMatch(/classList\.add\('reveal-all'\)\s*\}, 3000\)/)
+    // The gate is a blocking script in the head of both pages that reveal (its
+    // behaviour is `consent.test.ts`'s), and no other page has anything to reveal.
+    for (const name of ['index.html', 'pigrocrm.html']) {
+      const head = readFileSync(join(__dirname, name), 'utf-8').match(/<head>[\s\S]*<\/head>/)?.[0] ?? ''
+      expect(head, name).toMatch(/<script src="\/assets\/reveal-gate\.js"><\/script>/)
+    }
     for (const name of ['privacy.html', 'terms.html']) {
       expect(readFileSync(join(__dirname, name), 'utf-8')).not.toMatch(/data-reveal|class="deck"/)
     }

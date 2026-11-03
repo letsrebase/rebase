@@ -3,7 +3,9 @@ the campaign that carries it, and the test mail that leads there untouched."""
 
 import re
 
-from campaign_api_flow import admin_user, tidy  # noqa: F401  (fixture)
+from admins import an_admin
+from campaign_api_flow import tidy  # noqa: F401  (fixture)
+from campaign_fixtures import RESEND_TEST_SECRET
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -28,7 +30,7 @@ BODY = {
 
 
 def signed_in(client: TestClient, sender: RecordingSender, session: Session) -> None:
-    admin_user(session)
+    an_admin(session, cognome="Sala")
     assert client.post("/api/hub/auth/link", json={"email": "ivan@rebase.it"}).status_code == 202
     token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200
@@ -64,7 +66,7 @@ def test_a_link_campaign_is_saved_read_back_and_tested_without_our_tracking(
     client.app.dependency_overrides[get_campaign_sender] = lambda: recording  # type: ignore[attr-defined]
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined]
         _env_file=None,  # type: ignore[call-arg]
-        resend_webhook_secret="whsec_c2VncmV0bw==",
+        resend_webhook_secret=RESEND_TEST_SECRET,
     )
     created = client.post("/api/hub/campaigns", json=BODY)
     assert created.status_code == 201, created.text

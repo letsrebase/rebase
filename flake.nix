@@ -336,7 +336,9 @@
             hub-web = viteApp {
               name = "hub";
               dir = ./projects/hub/apps/web;
-              shared = appShared;
+              # The hub's build type-checks its tests, which read the cases it shares
+              # with the website (`Dockerfile.web` copies the directory too).
+              shared = appShared ++ [ ./shared/format-cases ];
             };
             website = viteApp {
               name = "website";
