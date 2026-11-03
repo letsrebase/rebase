@@ -123,7 +123,7 @@ def list_admins(
 
 
 class PromoteRequest(BaseModel):
-    """`POST /admins/promote`'s body: an email, and `nome`/`last_name` for an address
+    """`POST /admins/promote`'s body: an email, and `first_name`/`last_name` for an address
     with no `users` row yet -- ignored, harmlessly, when one already exists."""
 
     model_config = ConfigDict(extra="forbid")
@@ -379,7 +379,7 @@ def list_companies(
     created_from: datetime | None = None,
     created_to: datetime | None = None,
 ) -> CompanyList:
-    """REB-285 adds `q` (nome_azienda/referente/email/progetto, trigram-ordered),
+    """REB-285 adds `q` (company_name/referente/email/progetto, trigram-ordered),
     `cursor`, and every filter after `origin` beside the original `limit`/`status`."""
     return CompanyService(session).list_recent(
         limit=limit,

@@ -65,8 +65,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         «Aziende»: ogni riga porta azienda, referente, email, progetto, da quando e
         per quanto, budget a giornata e stato. Dal più recente, o dal più
         pertinente quando `q` restringe.
-        `q` cerca nome azienda, referente, email e progetto; `status` filtra (nuovo,
-        contattato, in_corso, chiuso) e `by_status` conta con ogni filtro tranne
+        `q` cerca nome azienda, referente, email e progetto; `status` filtra (`new`,
+        `contacted`, `in_progress`, `closed`) e `by_status` conta con ogni filtro tranne
         `status`; `budget_min` e `budget_max` sul budget a giornata (stringa, «500»,
         «450.50» o all'italiana «1.500», «1.234,50»), `period_from` sull'inizio del progetto (ISO
         8601), `origin` sulla pagina da cui è arrivata la richiesta, `created_from` e
@@ -125,7 +125,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def set_company_status(company_id: str, status: str) -> dict[str, Any]:
-        """Sposta una richiesta fra nuovo, contattato, in_corso e chiuso. Il cambio finisce
+        """Sposta una richiesta fra `new`, `contacted`, `in_progress` e `closed`. Il cambio finisce
         nel registro di `get_company_audit` (`status_changed`, con prima e dopo): per il
         perché usa `add_company_note`."""
         return deps.run(

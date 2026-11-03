@@ -112,7 +112,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         (estremi compresi); `industries` e `languages` per i settori e le lingue della scheda
         (ogni termine deve comparire, come `skills`: `["fintech"]`,
         `["inglese"]`); `location` per il luogo della scheda (`"Milano"`); `job_title` per
-        il ruolo dichiarato; `remote` per disponibilità (remoto/ibrido/in_sede);
+        il ruolo dichiarato; `remote` per disponibilità (`remote`/`hybrid`/`on_site`);
         `min_rate` e `max_rate` per tariffa a giornata (stringa, «500», «450.50»
         o all'italiana «1.500», «1.234,50»); `origin` per come è nata la riga (`form`
         iscrizione senza scheda, `wizard` compilata dalla persona, `admin` scritta da un

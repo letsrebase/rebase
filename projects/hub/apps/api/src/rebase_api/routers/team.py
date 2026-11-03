@@ -59,7 +59,7 @@ def propose_team(
     builder: TeamBuilderDep,
     slots: ProposalSlotsDep,
 ) -> TeamProposalRead:
-    """«Proponi il team» and «Rigenera» (`previous_id`, `nota`). 503 «Il team builder è
+    """«Proponi il team» and «Rigenera» (`previous_id`, `note`). 503 «Il team builder è
     spento.» without a key or with the switch off, 503 «Troppe richieste…» with every
     slot taken, the client's share of the day used or the day's proposals spent, 502 when
     Claude does not answer."""

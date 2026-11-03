@@ -98,7 +98,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def set_freelancer_status(freelancer_id: str, status: str) -> dict[str, Any]:
-        """Sposta una candidatura fra nuovo, contattato, attivo e scartato. Non tocca
+        """Sposta una candidatura fra `new`, `contacted`, `active` e `discarded`. Non tocca
         quello che la persona ha scritto. Il cambio finisce nel registro di
         `get_freelancer_audit` (`status_changed`, con prima e dopo): per il perché usa
         `add_freelancer_note`."""
@@ -176,7 +176,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         """Scrive o svuota qualsiasi campo del profilo: nome,
         cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
         posizione, modalità di lavoro, link, stato e chi ha compilato per ultimo
-        (persona/admin). Le note non sono un campo: stanno nel thread (`add_freelancer_note`,
+        (`person`/`admin`). Le note non sono un campo: stanno nel thread (`add_freelancer_note`,
         `update_note`). Ogni parametro omesso resta com'era; una stringa vuota svuota
         il campo dove è ammesso (tariffa, posizione, LinkedIn, modalità di
         lavoro), altrove è rifiutata perché il campo non può restare senza un valore.

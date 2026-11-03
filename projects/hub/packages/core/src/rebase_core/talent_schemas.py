@@ -19,8 +19,8 @@ class TalentRead(ResponseModel):
     `signups` row with no card, ORB-163) as one row, `status` `lead` for the bare ones
     and the freelancer's own state otherwise. `origin` names how the row came to be --
     `form` for a bare sign-up (the landing's own sign-up form), `wizard` for a card the
-    person filled in themselves (`compilata_da == "persona"`), `admin` for one an admin
-    drafted from research (`compilata_da == "admin"`, ORB-155). Distinct from
+    person filled in themselves (`filled_by == "person"`), `admin` for one an admin
+    drafted from research (`filled_by == "admin"`, ORB-155). Distinct from
     `Freelancer.origin`/`Signup`'s own UTM columns, which name the page and the
     campaign a submission started from, not the channel that created the row.
 
