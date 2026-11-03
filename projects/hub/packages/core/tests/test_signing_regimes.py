@@ -173,7 +173,7 @@ def test_an_occasional_documents_names_are_its_own_on_documenso_and_in_the_mail(
         framework_envelope.payload["title"] == "Contratto quadro rebase per prestazioni occasionali"
     )
     assert framework_envelope.filename == (
-        f"framework-agreement-occasional-v{OCCASIONAL_FRAMEWORK_VERSION}.pdf"
+        f"contratto-quadro-occasionale-v{OCCASIONAL_FRAMEWORK_VERSION}.pdf"
     )
     assert sender.sent[-1].subject == (
         "Da firmare: contratto quadro rebase per prestazioni occasionali"
@@ -184,7 +184,7 @@ def test_an_occasional_documents_names_are_its_own_on_documenso_and_in_the_mail(
     letter = _letter_of(clean, match.id)
     letter_envelope = list(fake.envelopes.values())[-1]
     assert letter_envelope.payload["title"] == f"Lettera di incarico occasionale n. {letter.number}"
-    assert letter_envelope.filename == f"engagement-letter-occasional-{letter.number}.pdf"
+    assert letter_envelope.filename == f"lettera-di-incarico-occasionale-{letter.number}.pdf"
     assert sender.sent[-1].subject == (
         f"Da firmare: lettera di incarico occasionale n. {letter.number}"
     )

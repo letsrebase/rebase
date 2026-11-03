@@ -135,7 +135,7 @@ def test_a_signed_framework_shows_its_dates_its_copy_and_no_link(clean: Session)
     )
     copy = _service(clean).signed_pdf(user_id, signed)
     assert copy.content == fake.signed_pdf(envelope)
-    assert copy.filename == f"framework-agreement-v{FRAMEWORK_VERSION}-signed.pdf"
+    assert copy.filename == f"contratto-quadro-v{FRAMEWORK_VERSION}-firmato.pdf"
     [letter] = mine.letters
     assert letter.status == "sent" and letter.signing_url is not None
 

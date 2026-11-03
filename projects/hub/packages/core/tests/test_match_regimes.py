@@ -40,8 +40,8 @@ from rebase_core.regimes import Regime
 
 
 def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Session) -> None:
-    """REB-687: `framework-agreement-occasional-v1.0.pdf`, never a second
-    `framework-agreement-v1.0.pdf`."""
+    """REB-687: `contratto-quadro-occasionale-v1.0.pdf`, never a second
+    `contratto-quadro-v1.0.pdf`."""
     admin_id, freelancer_id, _company_id = _setup(clean)
     framework = ContractDocument(
         kind="framework",
@@ -57,7 +57,7 @@ def test_an_occasional_document_downloads_under_its_own_texts_name(clean: Sessio
     clean.add(framework)
     clean.commit()
     assert _service(clean).reads.document_pdf(framework.id).filename == (
-        "framework-agreement-occasional-v1.0.pdf"
+        "contratto-quadro-occasionale-v1.0.pdf"
     )
 
 
@@ -326,8 +326,8 @@ def test_an_occasional_preview_renders_the_occasional_texts(clean: Session) -> N
         freelancer_id, _body(company_id, regime="occasional"), "framework"
     )
     assert (letter.filename, framework.filename) == (
-        "preview-engagement-letter-occasional.pdf",
-        "preview-framework-agreement-occasional.pdf",
+        "anteprima-lettera-di-incarico-occasionale.pdf",
+        "anteprima-contratto-quadro-occasionale.pdf",
     )
     assert [document for document, _ in renderer.calls] == [
         "engagement-letter-occasional",
