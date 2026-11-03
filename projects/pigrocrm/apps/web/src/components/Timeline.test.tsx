@@ -291,7 +291,7 @@ describe('Timeline', () => {
       const item = (await screen.findByText('Sistema')).closest('li')
       expect(item).toHaveTextContent('Attivata da Marco Verdi (via MCP)')
       expect(item).toHaveTextContent('Regola: A1')
-      expect(item).not.toHaveTextContent('Attivata from: ')
+      expect(item).not.toHaveTextContent('Attivata da: ')
     })
 
     it('shows a note event by its label alone: no note id, no door, no earlier text', async () => {

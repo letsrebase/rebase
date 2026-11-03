@@ -57,7 +57,7 @@ describe('clickTarget', () => {
   it('opens a path under the space', () => {
     expect(clickTarget({ url: '/acme/app/invoices/1' }, SCOPE)).toBe('https://pigro.example/acme/app/invoices/1')
     expect(clickTarget({ url: '/acme/app/activities?open=3' }, SCOPE)).toBe(
-      'https://pigro.example/acme/app/activities?apri=3',
+      'https://pigro.example/acme/app/activities?open=3',
     )
   })
 

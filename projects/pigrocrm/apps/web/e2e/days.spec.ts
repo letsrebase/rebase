@@ -80,7 +80,7 @@ test.describe('contract days', () => {
     const contractId = await seedContract(page.request, { title, requiresPriorApproval: false })
     // An approved day exists only through an approval, so the fixture records one.
     const created = await page.request.post('/api/work-units', {
-      data: { contract_id: contractId, data: FIRST_ISO, quantity: '1.00', description: 'Workshop con il cliente', status: 'proposed' },
+      data: { contract_id: contractId, date: FIRST_ISO, quantity: '1.00', description: 'Workshop con il cliente', status: 'proposed' },
     })
     expect(created.status(), await created.text()).toBe(201)
     const dayId = ((await created.json()) as { id: string }).id
@@ -142,12 +142,12 @@ test.describe('contract days', () => {
     const title = `Approvazione E2E ${Date.now()}`
     const contractId = await seedContract(page.request, { title, requiresPriorApproval: true })
     const days: string[] = []
-    for (const [data, status] of [
+    for (const [date, status] of [
       [FIRST_ISO, 'proposed'],
       [`${Month}-02`, 'worked'],
     ] as const) {
       const created = await page.request.post('/api/work-units', {
-        data: { contract_id: contractId, data, quantity: '1.00', description: `Giornata ${data}`, status },
+        data: { contract_id: contractId, date, quantity: '1.00', description: `Giornata ${date}`, status },
       })
       expect(created.status(), await created.text()).toBe(201)
       days.push(((await created.json()) as { id: string }).id)

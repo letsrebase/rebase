@@ -125,7 +125,7 @@ describe('DynamicForm', () => {
         onChange={vi.fn()}
         problem={{
           ...VALIDATION_PROBLEM,
-          field: 'industry',
+          field: 'settore',
           reason: 'campo non definito (campi disponibili: nessuno)',
           expected: undefined,
         }}

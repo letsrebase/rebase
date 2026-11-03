@@ -75,7 +75,7 @@ export function detail(overrides: Partial<WorkUnitDetail> = {}): WorkUnitDetail 
         previous_status: null,
         new_status: 'approved',
         actor: { kind: 'human', id: 'u1' },
-        reason: 'creation',
+        reason: 'creazione',
         created_at: '2026-03-01T09:00:00Z',
         seq: 1,
       },

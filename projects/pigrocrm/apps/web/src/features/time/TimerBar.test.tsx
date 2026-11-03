@@ -95,7 +95,7 @@ describe('TimerBar', () => {
     expect(path).toBe('/api/time-entries/timer/stop')
     expect(init.body).toMatchObject({ deal_id: DEAL, description: 'Call con il cliente' })
     // The day is the browser's own calendar day.
-    expect((init.body as { data: string }).data).toMatch(/^2026-03-12$/)
+    expect((init.body as { date: string }).date).toMatch(/^2026-03-12$/)
   })
 
   it('opens on the manual line and refuses to log without a deal', async () => {

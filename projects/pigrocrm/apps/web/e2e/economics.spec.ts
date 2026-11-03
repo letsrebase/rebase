@@ -146,7 +146,7 @@ test.describe('economics', () => {
     // the next person who runs the suite twice by hand against a stack they kept alive.
     // The per-deal assertions further down need no such care: they are scoped to a deal
     // whose name carries this run's own timestamp.
-    await page.goto('/app/?tab=economica')
+    await page.goto('/app/?tab=economic')
     const revenueTaxBefore = await amount(riga(page, 'Ricavi incassabili'))
 
     // 2. A deal that can actually be invoiced.
@@ -188,7 +188,7 @@ test.describe('economics', () => {
         data: {
           deal_id: dealId,
           user_id: me.id,
-          data: day,
+          date: day,
           hours: '8.00',
           description: 'Sviluppo',
           applied_cost: '25.000000',
@@ -302,7 +302,7 @@ test.describe('economics', () => {
     // In Home → Economica, under the cards: the estimate is a card of the dashboard since
     // the Analisi section left the interface, read for the year the period on screen
     // names, which for a bare `/app/?tab=economic` is the current one.
-    await page.goto('/app/?tab=economica')
+    await page.goto('/app/?tab=economic')
     await expect(page.getByRole('note')).toContainText(/stima/i)
     await expect
       .poll(async () => amount(riga(page, 'Ricavi incassabili')))

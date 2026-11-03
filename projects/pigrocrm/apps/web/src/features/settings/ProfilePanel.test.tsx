@@ -50,7 +50,7 @@ describe('ProfilePanel', () => {
 
     expect(screen.getByText('Cora Collaboratrice')).toBeInTheDocument()
     expect(screen.getByText('collab@pigro.it')).toBeInTheDocument()
-    expect(screen.getByText('collaborator')).toBeInTheDocument()
+    expect(screen.getByText('collaboratore')).toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
 })

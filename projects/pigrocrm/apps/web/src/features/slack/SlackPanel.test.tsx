@@ -225,13 +225,13 @@ describe('SlackPanel', () => {
       Promise.resolve(
         path === '/api/slack/channels'
           ? ok([
-              { id: 'C1', name: 'reminder', is_private: false, is_member: false },
+              { id: 'C1', name: 'promemoria', is_private: false, is_member: false },
               { id: 'G1', name: 'amministrazione', is_private: true, is_member: true },
             ])
           : ok(CONNECTED),
       )) as never)
     PUT.mockResolvedValue(
-      ok({ ...CONNECTED, workspace: { ...WORKSPACE, channel_id: 'C1', channel_name: 'reminder' } }),
+      ok({ ...CONNECTED, workspace: { ...WORKSPACE, channel_id: 'C1', channel_name: 'promemoria' } }),
     )
     renderPanel()
     await screen.findByText('Acme Test')
@@ -253,12 +253,12 @@ describe('SlackPanel', () => {
     const user = userEvent.setup()
     const withChannel = {
       ...CONNECTED,
-      workspace: { ...WORKSPACE, channel_id: 'C1', channel_name: 'reminder' },
+      workspace: { ...WORKSPACE, channel_id: 'C1', channel_name: 'promemoria' },
     }
     GET.mockImplementation(((path: string) =>
       Promise.resolve(
         path === '/api/slack/channels'
-          ? ok([{ id: 'C1', name: 'reminder', is_private: false, is_member: false }])
+          ? ok([{ id: 'C1', name: 'promemoria', is_private: false, is_member: false }])
           : ok(withChannel),
       )) as never)
     PUT.mockResolvedValue(ok(CONNECTED))

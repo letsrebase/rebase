@@ -90,7 +90,7 @@ describe('RegisterSection', () => {
     expect(screen.getAllByText('Fatturato')).toHaveLength(2)
     expect(screen.getByText('2026/12')).toBeInTheDocument()
     expect(screen.getByText('Bozza')).toBeInTheDocument()
-    expect(screen.getByText('email · mario@cliente.example')).toBeInTheDocument()
+    expect(screen.getByText('Email · mario@cliente.example')).toBeInTheDocument()
     expect(screen.getByText('Totale: 1,5')).toBeInTheDocument()
     expect(screen.getByText(/1 giornata è nel registro senza approvazione/)).toBeInTheDocument()
   })

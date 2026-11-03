@@ -27,7 +27,7 @@ const OCTOBER = {
   description: 'Attività ottobre 2026 - 1.50 giorno',
   work_units: 2,
   quantity: '1.50',
-  unit_of_measure: 'day',
+  unit_of_measure: 'giorno',
   unit_price: '500.00',
   amount: '750.00',
 }
@@ -36,7 +36,7 @@ const NOVEMBER = {
   description: 'Attività novembre 2026 - 1.00 giorno',
   work_units: 1,
   quantity: '1.00',
-  unit_of_measure: 'day',
+  unit_of_measure: 'giorno',
   unit_price: '500.00',
   amount: '500.00',
 }

@@ -37,7 +37,7 @@ function renderLayout(overrides: Partial<Parameters<typeof EntityDetailLayout>[0
       entityType="customer"
       entityId="abc"
       overview={<p>panoramica</p>}
-      links={<p>links tab</p>}
+      links={<p>collegamenti</p>}
       {...overrides}
     />,
   )
@@ -73,7 +73,7 @@ describe('EntityDetailLayout', () => {
   it('switches to Collegamenti when asked', async () => {
     renderLayout()
     await userEvent.click(screen.getByRole('tab', { name: 'Collegamenti' }))
-    expect(screen.getByText('links tab')).toBeInTheDocument()
+    expect(screen.getByText('collegamenti')).toBeInTheDocument()
   })
 
   it('switches to Timeline when asked', async () => {
@@ -162,7 +162,7 @@ describe('EntityDetailLayout', () => {
     const tab = screen.getByRole('tab', { name: 'Email' })
     expect(tab).toBeInTheDocument()
     await userEvent.click(tab)
-    expect(screen.getByText('conversations')).toBeInTheDocument()
+    expect(screen.getByText('conversazioni')).toBeInTheDocument()
   })
 
   // Only a customer has contracts, so a person or a deal passing nothing gets no tab.

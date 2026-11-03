@@ -284,7 +284,7 @@ describe('FiscalPanel', () => {
       'stamp_duty_threshold',
       // The version the form was seeded from (REB-622), beside the fifteen fields.
       'updated_at',
-    ])
+    ].sort())
     expect(body).toHaveProperty('pack_id', 'it-flat-rate')
     expect(body).toHaveProperty('regime_code', 'RF19')
   })

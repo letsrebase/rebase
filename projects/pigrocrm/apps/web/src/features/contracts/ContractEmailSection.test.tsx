@@ -63,7 +63,7 @@ function mockGets(templates: unknown[]) {
       return ok(DRAFT)
     }
     if (path.endsWith('/email-template-variables')) {
-      return ok([{ name: 'customer', label: 'Cliente' }])
+      return ok([{ name: 'cliente', label: 'Cliente' }])
     }
     return ok(templates)
   }) as never)

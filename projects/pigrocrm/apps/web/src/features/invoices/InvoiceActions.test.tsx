@@ -164,7 +164,7 @@ describe('InvoiceActions', () => {
     await userEvent.click(screen.getByRole('button', { name: /emetti/i }))
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
-    expect(String(vi.mocked(toast.success).mock.calls[0]?.[0])).toContain('issued')
+    expect(String(vi.mocked(toast.success).mock.calls[0]?.[0])).toContain('emessa')
     await waitFor(() => expect(toast.warning).toHaveBeenCalled())
     const warning = String(vi.mocked(toast.warning).mock.calls[0]?.[0])
     expect(warning).toContain('emesso correttamente')

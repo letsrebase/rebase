@@ -14,8 +14,8 @@ import {
 const DEAL_A = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 const DEAL_B = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb'
 
-const entry = (dealId: string, data: string, hours: string, id = `${dealId}-${data}`) =>
-  ({ id, deal_id: dealId, data, hours }) as never
+const entry = (dealId: string, date: string, hours: string, id = `${dealId}-${date}`) =>
+  ({ id, deal_id: dealId, date, hours }) as never
 
 describe('weekDays', () => {
   it('is Monday-first and seven days long', () => {

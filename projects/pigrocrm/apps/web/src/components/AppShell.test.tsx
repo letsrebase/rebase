@@ -664,7 +664,7 @@ describe('AppShell', () => {
 
   it('renders its children in the page area', () => {
     renderShell(<p>contenuto</p>)
-    expect(within(screen.getByRole('main')).getByText('content')).toBeInTheDocument()
+    expect(within(screen.getByRole('main')).getByText('contenuto')).toBeInTheDocument()
   })
 
   it('makes the page itself the one scroller, with no inset frame around it', () => {
@@ -840,7 +840,7 @@ describe('the space switcher', () => {
     GET.mockResolvedValue({
       data: [
         { slug: 'studio', role: 'admin' },
-        { slug: 'other', role: 'collaborator' },
+        { slug: 'altro', role: 'collaborator' },
       ],
       response: { status: 200 },
     })
@@ -852,7 +852,7 @@ describe('the space switcher', () => {
   })
 
   it('enters another space on click and navigates to its own basepath', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'other', role: 'collaborator' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'altro', role: 'collaborator' }], response: { status: 200 } })
     POST.mockResolvedValue({
       data: { id: 'u1', email: 'ada@altro.it', name: 'Ada', role: 'collaborator' },
       response: { status: 200 },
@@ -863,14 +863,14 @@ describe('the space switcher', () => {
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
       expect(POST).toHaveBeenCalledWith('/api/identity/enter/{slug}', {
-        params: { path: { slug: 'other' } },
+        params: { path: { slug: 'altro' } },
       }),
     )
     await waitFor(() => expect(mockGo).toHaveBeenCalledWith('/altro/app/'))
   })
 
   it('reports the API sentence when entering another space fails', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'other', role: 'admin' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'altro', role: 'admin' }], response: { status: 200 } })
     POST.mockResolvedValue({
       error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
       response: { status: 404 },
@@ -904,7 +904,7 @@ describe('the space switcher', () => {
       if (path === '/api/identity/spaces') {
         spacesCalls += 1
         return Promise.resolve({
-          data: spacesCalls === 1 ? [] : [{ slug: 'other', role: 'collaborator' }],
+          data: spacesCalls === 1 ? [] : [{ slug: 'altro', role: 'collaborator' }],
           response: { status: 200 },
         })
       }

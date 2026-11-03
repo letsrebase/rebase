@@ -55,7 +55,7 @@ describe('the days register', () => {
     renderWithQuery(<DaysPage search={{}} onSearchChange={vi.fn()} />)
     expect(await screen.findByText('Nessuna giornata')).toBeInTheDocument()
     expect(listQuery().contract_id).toBeUndefined()
-    expect(listQuery().da).toMatch(/^\d{4}-\d{2}-01$/)
+    expect(listQuery().from).toMatch(/^\d{4}-\d{2}-01$/)
   })
 
   it('says when the API cut the list', async () => {

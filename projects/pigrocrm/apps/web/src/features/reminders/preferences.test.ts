@@ -114,9 +114,9 @@ describe('visibleTypes', () => {
 
 describe('thresholdWording', () => {
   it('reads «da N giorni» for a ladder that climbs with time and «N giorni prima» for one that climbs as a date nears', () => {
-    expect(thresholdWording({ direction: 'since', unit: 'days' })).toEqual({ before: 'da', after: 'days' })
+    expect(thresholdWording({ direction: 'since', unit: 'days' })).toEqual({ before: 'da', after: 'giorni' })
     expect(thresholdWording({ direction: 'until', unit: 'days' })).toEqual({ before: '', after: 'giorni prima' })
-    expect(thresholdWording({ direction: 'since', unit: 'hours' }).after).toBe('hours')
+    expect(thresholdWording({ direction: 'since', unit: 'hours' }).after).toBe('ore')
     expect(thresholdWording({ direction: 'since', unit: 'minutes' }).after).toBe('minuti')
     expect(thresholdWording({ direction: 'since', unit: 'percent' }).after).toBe('%')
   })

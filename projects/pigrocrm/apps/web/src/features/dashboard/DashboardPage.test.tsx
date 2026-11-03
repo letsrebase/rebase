@@ -195,7 +195,7 @@ describe('DashboardPage', () => {
     expect(onSearchChange).toHaveBeenCalledTimes(1)
     const [next] = onSearchChange.mock.calls[0]!
     expect(next.from).toMatch(/^\d{4}-01-01$/)
-    expect(next.a).toMatch(/^\d{4}-12-31$/)
+    expect(next.to).toMatch(/^\d{4}-12-31$/)
   })
 
   it('draws the three period presets as controls and not as bare text', () => {

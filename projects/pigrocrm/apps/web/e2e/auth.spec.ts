@@ -34,7 +34,7 @@ test('a correct login reaches the dashboard and logout returns to login', async 
   await page.getByRole('button', { name: 'Accedi' }).click()
 
   // `(\?|$)` rather than `(\/|$)`: `/app/` carries a `validateSearch` since slice 6, so a
-  // correct login lands on `/app?tab=commercial&da=…&a=…`. The old alternation was also
+  // correct login lands on `/app?tab=commercial&from=…&to=…`. The old alternation was also
   // satisfied by `/app/login` itself, which is the failure mode `helpers.ts::login`
   // documents at length.
   await expect(page).toHaveURL(/\/app\/?(\?|$)/)

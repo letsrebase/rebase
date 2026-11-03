@@ -43,7 +43,7 @@ export async function login(page: Page, email: string, password: string): Promis
   // And not the `/\/app\/?$/` that replaced it either, which anchored on the end of the
   // string and therefore stopped being true the moment `/app/` grew a `validateSearch`
   // (slice 6: the dashboard's period is in the URL, §4). The landing URL is now
-  // `/app?tab=commercial&da=…&a=…`, so an end-anchored pattern fails for every spec in
+  // `/app?tab=commercial&from=…&to=…`, so an end-anchored pattern fails for every spec in
   // this suite while the login it is checking has actually succeeded. `(\?|$)` is what
   // admits the search string without re-admitting `/app/login`: after `/app` the next
   // character has to be `?` or nothing, and in `/app/login` it is `l`.

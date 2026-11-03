@@ -62,7 +62,7 @@ async function seedPages(request: APIRequestContext): Promise<{ contractId: stri
   const day = await request.post('/api/work-units', {
     data: {
       contract_id: contractId,
-      data: QUINDICI,
+      date: QUINDICI,
       quantity: '1.00',
       description: 'Attività di consulenza',
       status: 'worked',

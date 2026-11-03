@@ -92,16 +92,16 @@ describe('cellDaysLabel', () => {
 describe('unitLabel', () => {
   it('says the unit as the words after a rate’s figure', () => {
     expect(unitLabel('day')).toBe('al giorno')
-    expect(unitLabel('ora')).toBe('all’ora')
+    expect(unitLabel('hour')).toBe('all’ora')
     expect(unitLabel('year')).toBe('all’anno')
     expect(unitLabel('flat')).toBe('a forfait')
-    expect(unitLabel('week')).toBe('per settimana')
+    expect(unitLabel('settimana')).toBe('per settimana')
   })
 })
 
 describe('reasonLabel', () => {
   it('words the key the service writes when a day is recorded', () => {
-    expect(reasonLabel('creation')).toBe('Giornata registrata')
+    expect(reasonLabel('creazione')).toBe('Giornata registrata')
   })
 
   it('shows a reason a person typed as they typed it', () => {

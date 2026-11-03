@@ -138,13 +138,13 @@ describe('the chooser (REB-377)', () => {
   it('shows one row per space instead of the email form once at least one resolves', async () => {
     mockSpaces([
       { slug: 'studio', role: 'admin' },
-      { slug: 'other', role: 'collaborator' },
+      { slug: 'altro', role: 'collaborator' },
     ])
     render(<LoginPage />)
     expect(await screen.findByRole('button', { name: /studio/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /altro/ })).toBeInTheDocument()
     expect(screen.getByText('amministratore')).toBeInTheDocument()
-    expect(screen.getByText('collaborator')).toBeInTheDocument()
+    expect(screen.getByText('collaboratore')).toBeInTheDocument()
     expect(screen.queryByLabelText('Email')).toBeNull()
   })
 
@@ -203,7 +203,7 @@ describe('the chooser (REB-377)', () => {
   it('disables the create-space button and the other rows while a space is being entered', async () => {
     mockSpaces([
       { slug: 'studio', role: 'admin' },
-      { slug: 'other', role: 'collaborator' },
+      { slug: 'altro', role: 'collaborator' },
     ])
     let resolveEntering: (value: unknown) => void = () => {}
     POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))

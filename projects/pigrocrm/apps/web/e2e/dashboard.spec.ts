@@ -216,7 +216,7 @@ test.describe('il ciclo completo — metà umana', () => {
       data: {
         deal_id: dealId,
         user_id: me.id,
-        data: isoToday(),
+        date: isoToday(),
         // A string with two decimal places: a bare JSON number arrives as a float, and
         // `Decimal` then carries only as many places as the float itself.
         hours: '4.00',
@@ -242,7 +242,7 @@ test.describe('il ciclo completo — metà umana', () => {
     const signals = (await (await page.request.get('/api/dashboard/operational')).json()) as {
       signals: { code: string; count: number }[]
     }
-    const cartellino = signals.signals.find((s) => s.code === 'vinto_da_fatturare')
+    const cartellino = signals.signals.find((s) => s.code === 'won_to_invoice')
     if (!cartellino) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
     const sulCartellino = cartellino.count
     expect(sulCartellino).toBeGreaterThanOrEqual(1)
@@ -277,7 +277,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
 
-    await page.goto(`/app/?tab=economica&from=${da}&to=${a}`)
+    await page.goto(`/app/?tab=economic&from=${da}&to=${a}`)
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
 
     // The period is still in the address bar, which is the entire point of §4: a screenshot
@@ -288,11 +288,10 @@ test.describe('il ciclo completo — metà umana', () => {
     // /app/?" page, which is an artefact of the harness and not of the product.
     // `search.spec.ts` records the same trap from the other direction.
     const shared = page.url()
-    // `&a=`, not `a=`: the closing bound's parameter name is a suffix of the opening one's,
-    // so a bare `a=…` would also be found inside `da=…` and the assertion would hold for a
-    // URL carrying only one of the two.
-    expect(shared).toContain(`da=${da}`)
-    expect(shared).toContain(`&a=${a}`)
+    // Both bounds, each by its own name: `from=` and `to=` share no suffix, so neither
+    // assertion can be satisfied by the other parameter.
+    expect(shared).toContain(`from=${da}`)
+    expect(shared).toContain(`to=${a}`)
     await page.goto(shared.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
     // Five tabs since the Work units joined them (REB-756, after the Year of REB-757 and the
@@ -300,11 +299,11 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByRole('tab')).toHaveCount(5)
 
     // The days analysis opens from its own URL and reads the same period.
-    await page.goto(`/app/?tab=giornate&from=${da}&to=${a}`)
+    await page.goto(`/app/?tab=work_units&from=${da}&to=${a}`)
     await expect(page.getByRole('group', { name: 'Giornate nel periodo' })).toBeVisible()
     await expect(page.getByRole('group', { name: 'Tariffa reale al giorno' })).toBeVisible()
 
-    await page.goto('/app/?tab=commerciale')
+    await page.goto('/app/?tab=commercial')
     await expect(page.getByText('Pipeline per stato')).toBeVisible()
     await expect(page.getByLabel('Dal')).toHaveCount(1)
   })
@@ -314,7 +313,7 @@ test.describe('il ciclo completo — metà umana', () => {
   }) => {
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
-    await page.goto('/app/?tab=economica')
+    await page.goto('/app/?tab=economic')
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
     await expect(page.getByRole('figure', { name: /Andamento economico/ })).toBeVisible()
     await expect(page.getByRole('figure', { name: /Proiezione economica/ })).toBeVisible()
@@ -334,7 +333,7 @@ test.describe('il ciclo completo — metà umana', () => {
     page,
   }) => {
     await loginAsAdmin(page)
-    await page.goto('/app/?tab=anno')
+    await page.goto('/app/?tab=year')
     await expect(page.getByRole('tab', { name: 'Anno' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByText('Registro delle fatture emesse')).toBeVisible()
     const [download] = await Promise.all([

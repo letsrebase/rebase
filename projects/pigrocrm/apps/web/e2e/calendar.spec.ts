@@ -67,7 +67,7 @@ test.describe('il calendario', () => {
     await expect(page.getByRole('grid')).toBeVisible()
     await page.getByRole('button', { name: 'Mese precedente' }).click()
     // The URL carries the month, so the back button and a pasted link both work.
-    await expect(page).toHaveURL(/mese=\d{4}-\d{2}/)
+    await expect(page).toHaveURL(/month=\d{4}-\d{2}/)
   })
 
   test('una giornata loggata dal calendario è una voce di ore come le altre', async ({
