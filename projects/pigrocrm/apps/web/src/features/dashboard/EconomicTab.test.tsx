@@ -49,7 +49,7 @@ function ok(data: unknown) {
  * single answer for both would feed the panel a payload with no `warning` and no year
  * -- green on an assertion about a card that never rendered what it renders in the app.
  */
-function byPath(panoramica: unknown, tax: unknown = TAX, thresholds: unknown[] = []) {
+function byPath(overview: unknown, tax: unknown = TAX, thresholds: unknown[] = []) {
   return (path: string) =>
     Promise.resolve(
       path === '/api/analytics/fiscal'
@@ -58,7 +58,7 @@ function byPath(panoramica: unknown, tax: unknown = TAX, thresholds: unknown[] =
           ? ok({ year: 2026, legal_entity_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', thresholds })
           : path === '/api/contracts'
             ? ok({ items: [], next_cursor: null })
-            : ok(panoramica),
+            : ok(overview),
     )
 }
 

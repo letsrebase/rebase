@@ -27,7 +27,7 @@ import { formatDate, formatQuantity } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
-import { RatePeriods, RATE_TIPI, RateUnit, currencySign, formatAmount } from './labels'
+import { RatePeriods, RATE_TYPE_OPTIONS, RateUnit, currencySign, formatAmount } from './labels'
 import {
   useCreateRateCard,
   useRateCards,
@@ -41,7 +41,7 @@ type Type = RateCardCreateBody['type']
 type Unit = RateCardCreateBody['unit']
 type Period = NonNullable<RateCardCreateBody['delivery_period']>
 
-const TIPI = Object.keys(RATE_TIPI) as Type[]
+const TYPE_OPTIONS = Object.keys(RATE_TYPE_OPTIONS) as Type[]
 const Unit = Object.keys(RateUnit) as Unit[]
 const Periods = Object.keys(RatePeriods) as Period[]
 
@@ -109,10 +109,10 @@ function toBody(values: RateFormValues): RateCardUpdateBody {
 
 /** Where a card stands today, read from its own two dates: never stored, so a card
  *  closed by a newer one and a card that has not started yet read right without a job. */
-function standing(card: RateCard, today: string): 'future' | 'in_vigore' | 'closed' {
+function standing(card: RateCard, today: string): 'future' | 'in_force' | 'closed' {
   if (card.valid_from > today) return 'future'
   if (card.valid_to !== null && card.valid_to < today) return 'closed'
-  return 'in_vigore'
+  return 'in_force'
 }
 
 /**
@@ -274,9 +274,9 @@ function RateCardDialog({ open, onOpenChange, contractId, currency, cards, card 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TIPI.map((type) => (
+                {TYPE_OPTIONS.map((type) => (
                   <SelectItem key={type} value={type}>
-                    {RATE_TIPI[type]}
+                    {RATE_TYPE_OPTIONS[type]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -403,7 +403,7 @@ function details(card: RateCard): string {
 
 const STANDING_PILL = {
   future: { tone: 'gold', label: 'Futura' },
-  in_vigore: { tone: 'ink', label: 'In vigore' },
+  in_force: { tone: 'ink', label: 'In vigore' },
   closed: { tone: 'muted', label: 'Chiusa' },
 } as const
 
@@ -455,7 +455,7 @@ export function RateCardsSection({ contractId, currency }: { contractId: string;
                       <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {RATE_TIPI[card.type as Type] ?? card.type}
+                      {RATE_TYPE_OPTIONS[card.type as Type] ?? card.type}
                       {extra === '' ? '' : ` · ${extra}`}
                     </p>
                   </div>

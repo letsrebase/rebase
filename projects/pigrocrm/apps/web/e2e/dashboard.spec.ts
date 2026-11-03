@@ -138,9 +138,9 @@ test.describe('il ciclo completo — metà umana', () => {
     // step 5 below pass whether or not automation A1 had ever run. `DealStageBar` says
     // where the deal *is*: «Fase attuale: X» while it is open, the outcome's own word
     // once it is closed.
-    const fase = page.getByRole('group', { name: 'Fase del deal' })
-    await expect(fase).toContainText('Fase attuale:')
-    await expect(fase).not.toContainText('Vinto')
+    const stage = page.getByRole('group', { name: 'Fase del deal' })
+    await expect(stage).toContainText('Fase attuale:')
+    await expect(stage).not.toContainText('Vinto')
 
     await page.getByRole('tab', { name: 'Documenti' }).click()
     await page.getByRole('link', { name: cycle.documentTitle }).click()
@@ -166,20 +166,20 @@ test.describe('il ciclo completo — metà umana', () => {
     // Narrowed to A1, because A2 writes an entry of the *same* kind on this same deal: the
     // first offer going `sent` advanced it to «Offerta». Two automations, two rows, and
     // an assertion that did not say which rule it meant would pass on either of them.
-    const movimento = page
+    const movement = page
       .getByRole('listitem')
       .filter({ hasText: /Automazione\.stage spostato/ })
       .filter({ hasText: 'Regola: A1' })
-    await expect(movimento).toHaveCount(1)
-    await expect(movimento).toContainText('Sistema')
+    await expect(movement).toHaveCount(1)
+    await expect(movement).toContainText('Sistema')
     // Not the user's own badge: an automation attributed to whoever happened to trigger it
     // is indistinguishable from a change that person made by hand.
-    await expect(movimento).not.toContainText('Utente')
-    await expect(movimento).toContainText('Regola: A1')
-    await expect(movimento).toContainText('A: Vinto')
+    await expect(movement).not.toContainText('Utente')
+    await expect(movement).toContainText('Regola: A1')
+    await expect(movement).toContainText('A: Vinto')
     // The member's name, resolved from the id the payload holds (REB-781), and the channel
     // they used: this test drives the browser.
-    await expect(movimento).toContainText(`Attivata da ${me.name} (dal web)`)
+    await expect(movement).toContainText(`Attivata da ${me.name} (dal web)`)
 
     // 7. The signal, after: **down by one**.
     //
@@ -244,20 +244,20 @@ test.describe('il ciclo completo — metà umana', () => {
     }
     const cartellino = signals.signals.find((s) => s.code === 'won_to_invoice')
     if (!cartellino) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
-    const sulCartellino = cartellino.count
-    expect(sulCartellino).toBeGreaterThanOrEqual(1)
+    const onTheTag = cartellino.count
+    expect(onTheTag).toBeGreaterThanOrEqual(1)
 
     await page.goto('/app/deal/list?to_invoice=true')
     await expect(page).toHaveURL(/\/app\/deal\/list\?to_invoice=true/)
     // Filtered rather than bare: `DataTable`'s own loading indicator is also a `status`,
     // so `getByRole('status')` alone is two elements and a strict-mode violation.
-    const bandiera = page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })
-    await expect(bandiera).toContainText('Solo i deal vinti con ore fatturabili')
+    const banner = page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })
+    await expect(banner).toContainText('Solo i deal vinti con ore fatturabili')
 
     // Criterion 2, as a number. The header row is the `+ 1`; `useDeals` drains every page
     // of the cursor, so this is the whole filtered set and not the first fifty of it.
     const filtrate = page.getByRole('row')
-    await expect(filtrate).toHaveCount(sulCartellino + 1)
+    await expect(filtrate).toHaveCount(onTheTag + 1)
 
     // The other half of criterion 2, and the one its quiet failure hides behind: an
     // unfiltered list rendered under a label promising a filtered one would satisfy every
@@ -268,7 +268,7 @@ test.describe('il ciclo completo — metà umana', () => {
     )
     const all = page.getByRole('row')
     await expect(async () => {
-      expect(await all.count()).toBeGreaterThan(sulCartellino + 1)
+      expect(await all.count()).toBeGreaterThan(onTheTag + 1)
     }).toPass()
   })
 

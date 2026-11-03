@@ -21,9 +21,9 @@ const DESKTOP = { width: 1440, height: 900 }
 // The month before this one, whose 15th is always in the past (the API refuses a day after
 // today), and which no other spec writes to: `calendario.spec.ts` and `days.spec.ts` work
 // on the current month, and a day panel with a dozen days on it no longer fits a dialog.
-const QUINDICI_SCORSO = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
-const Month = `${QUINDICI_SCORSO.getFullYear()}-${String(QUINDICI_SCORSO.getMonth() + 1).padStart(2, '0')}`
-const QUINDICI = `${Month}-15`
+const FIFTEENTH_LAST_MONTH = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+const Month = `${FIFTEENTH_LAST_MONTH.getFullYear()}-${String(FIFTEENTH_LAST_MONTH.getMonth() + 1).padStart(2, '0')}`
+const FIFTEENTH = `${Month}-15`
 
 /** A contract with a rate, a worked day in the month before this one and a draft invoice. */
 async function seedPages(request: APIRequestContext): Promise<{ contractId: string; invoiceId: string }> {
@@ -62,7 +62,7 @@ async function seedPages(request: APIRequestContext): Promise<{ contractId: stri
   const day = await request.post('/api/work-units', {
     data: {
       contract_id: contractId,
-      date: QUINDICI,
+      date: FIFTEENTH,
       quantity: '1.00',
       description: 'Attività di consulenza',
       status: 'worked',

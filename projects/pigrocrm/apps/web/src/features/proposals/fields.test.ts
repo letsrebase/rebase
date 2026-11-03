@@ -80,7 +80,7 @@ describe('describeProposal, a day', () => {
   it('words the day and the approval it rests on', () => {
     expect(rowsOf(description, 'Giornata')).toEqual({
       Data: '05/11/2026',
-      Quantità: '1 giorno',
+      'Quantità': '1 giorno',
       'Descrizione': 'Sopralluogo al magazzino di Verona',
     })
     expect(rowsOf(description, 'Approvazione del cliente')).toEqual({
@@ -102,7 +102,7 @@ describe('describeProposal, a day', () => {
     const fromNumber = describeProposal(waiting('work_unit', { ...DAY, quantity: 0.5 }))
     expect(fromString.title).toBe('Giornata del 05/11/2026 · 0,5 gg')
     expect(fromNumber.title).toBe(fromString.title)
-    expect(rowsOf(fromNumber, 'Giornata').Quantità).toBe('0,5 giorni')
+    expect(rowsOf(fromNumber, 'Giornata')['Quantità']).toBe('0,5 giorni')
   })
 })
 
@@ -158,7 +158,7 @@ describe('describeProposal, a contract', () => {
     const rate = rowsOf(description, 'Prima scheda tariffaria')
     expect(rate['Tipo']).toBe('Canone ricorrente')
     expect(rate['Importo']?.replace(/\s/g, ' ')).toBe('1.800,00 € / mese')
-    expect(rate.Validità).toBe('dal 01/01/2027')
+    expect(rate['Validità']).toBe('dal 01/01/2027')
   })
 
   it('does not call a flat fee «per forfait»', () => {

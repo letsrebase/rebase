@@ -37,12 +37,12 @@ import { ensureSpaceHasWork, loginAsAdmin, seedDealWithRate } from './helpers'
  * the code it is checking checks nothing. The euro sign arrives from ICU preceded by a
  * non-breaking space, so everything that is not a digit, a dot or a comma goes first.
  */
-function centesimi(text: string): number {
+function cents(text: string): number {
   const cleaned = text.replace(/[^\d.,-]/g, '')
-  const negativo = cleaned.startsWith('-')
-  const [whole = '0', decimali = ''] = cleaned.replace('-', '').replace(/\./g, '').split(',')
-  const value = Number(whole) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
-  return negativo ? -value : value
+  const negative = cleaned.startsWith('-')
+  const [whole = '0', decimals = ''] = cleaned.replace('-', '').replace(/\./g, '').split(',')
+  const value = Number(whole) * 100 + Number(decimals.padEnd(2, '0').slice(0, 2))
+  return negative ? -value : value
 }
 
 /**
@@ -57,7 +57,7 @@ function centesimi(text: string): number {
  * ambiguous -- `0,00 €` is on three rows at once before anything is invoiced, which is
  * exactly the state this spec has the most to say about.
  */
-function riga(dove: Page | Locator, label: string | RegExp): Locator {
+function row(dove: Page | Locator, label: string | RegExp): Locator {
   return dove.getByText(label).locator('xpath=..')
 }
 
@@ -87,8 +87,8 @@ function monthCurrent(today: Date): string {
  */
 function daysOfMonth(today: Date, days: number): string[] {
   const month = monthCurrent(today)
-  return Array.from({ length: days }, (_, indice) => {
-    const number = Math.max(1, today.getDate() - (days - 1 - indice))
+  return Array.from({ length: days }, (_, index) => {
+    const number = Math.max(1, today.getDate() - (days - 1 - index))
     return `${month}-${String(number).padStart(2, '0')}`
   })
 }
@@ -113,7 +113,7 @@ const Months = [
 
 /** Reads a `Row`'s figure as integer hundredths. */
 async function amount(locator: Locator): Promise<number> {
-  return centesimi(await locator.innerText())
+  return cents(await locator.innerText())
 }
 
 test.describe('economics', () => {
@@ -147,7 +147,7 @@ test.describe('economics', () => {
     // The per-deal assertions further down need no such care: they are scoped to a deal
     // whose name carries this run's own timestamp.
     await page.goto('/app/?tab=economic')
-    const revenueTaxBefore = await amount(riga(page, 'Ricavi incassabili'))
+    const revenueTaxBefore = await amount(row(page, 'Ricavi incassabili'))
 
     // 2. A deal that can actually be invoiced.
     //
@@ -200,20 +200,20 @@ test.describe('economics', () => {
     // 3. Before any invoice: provisional, and the accrued value is not called revenue.
     await page.goto(`/app/deal/${dealId}`)
     await page.getByRole('tab', { name: 'Economia' }).click()
-    await expect(riga(page, 'Ricavi fatturati')).toContainText('0,00 €')
-    await expect(riga(page, 'Ricavi fatturati')).toContainText('0 fatture emesse')
-    await expect(riga(page, 'Costo del lavoro')).toContainText('600,00 €')
+    await expect(row(page, 'Ricavi fatturati')).toContainText('0,00 €')
+    await expect(row(page, 'Ricavi fatturati')).toContainText('0 fatture emesse')
+    await expect(row(page, 'Costo del lavoro')).toContainText('600,00 €')
     // The qualifier, and the figure it qualifies. A deal with twenty-four hours and no
     // invoice has a negative margin; that is unfinished work, not a loss.
-    await expect(riga(page, 'Margine lordo')).toContainText('-600,00 €')
-    await expect(riga(page, 'Margine lordo')).toContainText('(provvisorio)')
+    await expect(row(page, 'Margine lordo')).toContainText('-600,00 €')
+    await expect(row(page, 'Margine lordo')).toContainText('(provvisorio)')
     // `null` is not zero per cent: nothing has been invoiced, which is a different
     // sentence from "every euro earned went out in costs".
-    await expect(riga(page, 'Margine %')).toContainText('non calcolabile')
-    await expect(riga(page, 'Valore maturato')).toContainText('2.400,00 €')
-    await expect(riga(page, 'Valore maturato')).toContainText('stima — non è un ricavo')
-    await expect(riga(page, 'Ore consuntivate')).toContainText('24')
-    await expect(riga(page, 'Ore da fatturare')).toContainText('24')
+    await expect(row(page, 'Margine %')).toContainText('non calcolabile')
+    await expect(row(page, 'Valore maturato')).toContainText('2.400,00 €')
+    await expect(row(page, 'Valore maturato')).toContainText('stima — non è un ricavo')
+    await expect(row(page, 'Ore consuntivate')).toContainText('24')
+    await expect(row(page, 'Ore da fatturare')).toContainText('24')
 
     // 4. The hours become a draft -- and the deal's economics do not move.
     //
@@ -223,18 +223,18 @@ test.describe('economics', () => {
     // opposite reading would leave the work in neither figure: priced, done, and
     // invisible until somebody pressed «Emetti».
     await page.getByRole('button', { name: 'Genera bozza di fattura' }).click()
-    const dialogo = page.getByRole('dialog')
+    const dialog = page.getByRole('dialog')
     // The three entries, each priced by the API and none of them summed here.
-    await expect(dialogo.getByText('Sviluppo')).toHaveCount(3)
-    await expect(dialogo.getByText('800,00 €')).toHaveCount(3)
+    await expect(dialog.getByText('Sviluppo')).toHaveCount(3)
+    await expect(dialog.getByText('800,00 €')).toHaveCount(3)
     await page.getByRole('button', { name: 'Genera', exact: true }).click()
     await expect(page.getByText('Bozza di fattura creata')).toBeVisible()
 
-    await expect(riga(page, 'Ricavi fatturati')).toContainText('0,00 €')
-    await expect(riga(page, 'Ricavi fatturati')).toContainText('0 fatture emesse')
-    await expect(riga(page, 'Ore da fatturare')).toContainText('24')
-    await expect(riga(page, 'Margine lordo')).toContainText('(provvisorio)')
-    await expect(riga(page, 'Valore maturato')).toContainText('2.400,00 €')
+    await expect(row(page, 'Ricavi fatturati')).toContainText('0,00 €')
+    await expect(row(page, 'Ricavi fatturati')).toContainText('0 fatture emesse')
+    await expect(row(page, 'Ore da fatturare')).toContainText('24')
+    await expect(row(page, 'Margine lordo')).toContainText('(provvisorio)')
+    await expect(row(page, 'Valore maturato')).toContainText('2.400,00 €')
 
     // 5. The human issues it, from the invoice screen, through the real button.
     //
@@ -276,21 +276,21 @@ test.describe('economics', () => {
     }[]
     const won = stages.find((stage) => stage.code === 'won')
     expect(won, 'lo stato «vinto» deve esistere: e2e-setup.sh semina la pipeline').toBeTruthy()
-    const mossa = await page.request.patch(`/api/deals/${dealId}/stage`, {
+    const move = await page.request.patch(`/api/deals/${dealId}/stage`, {
       data: { stage_id: won?.id },
     })
-    expect(mossa.status(), await mossa.text()).toBe(200)
+    expect(move.status(), await move.text()).toBe(200)
 
     await page.goto(`/app/deal/${dealId}`)
     await page.getByRole('tab', { name: 'Economia' }).click()
     await expect(page.getByText('chiuso', { exact: true })).toBeVisible()
-    await expect(riga(page, 'Ricavi fatturati')).toContainText('2.400,00 €')
-    await expect(riga(page, 'Ricavi fatturati')).toContainText('1 fatture emesse')
-    await expect(riga(page, 'Margine lordo')).toContainText('1.800,00 €')
-    await expect(riga(page, 'Margine lordo')).toContainText('(definitivo)')
-    await expect(riga(page, 'Margine %')).toContainText('75,00 %')
-    await expect(riga(page, 'Ore consuntivate')).toContainText('24')
-    await expect(riga(page, 'Ore da fatturare')).toContainText('0')
+    await expect(row(page, 'Ricavi fatturati')).toContainText('2.400,00 €')
+    await expect(row(page, 'Ricavi fatturati')).toContainText('1 fatture emesse')
+    await expect(row(page, 'Margine lordo')).toContainText('1.800,00 €')
+    await expect(row(page, 'Margine lordo')).toContainText('(definitivo)')
+    await expect(row(page, 'Margine %')).toContainText('75,00 %')
+    await expect(row(page, 'Ore consuntivate')).toContainText('24')
+    await expect(row(page, 'Ore da fatturare')).toContainText('0')
     // Dropped, not merely zero: once the revenue is the invoice, repeating the estimate
     // beside it invites the reader to treat it as a second figure for the same thing.
     await expect(page.getByText('Valore maturato')).toHaveCount(0)
@@ -305,7 +305,7 @@ test.describe('economics', () => {
     await page.goto('/app/?tab=economic')
     await expect(page.getByRole('note')).toContainText(/stima/i)
     await expect
-      .poll(async () => amount(riga(page, 'Ricavi incassabili')))
+      .poll(async () => amount(row(page, 'Ricavi incassabili')))
       .toBe(revenueTaxBefore + 240_000)
     // The three parameters are configured (e2e-setup.sh seeds the forfettario profile),
     // so every derived line is a figure rather than «non calcolabile» -- which is the
@@ -313,8 +313,8 @@ test.describe('economics', () => {
     // Anchored: `getByText` with a plain string matches a case-insensitive *substring*,
     // and this panel carries both «Aliquota imposta sostitutiva» and «Imposta
     // sostitutiva» -- two rows, one of which is a rate and the other a sum of money.
-    await expect(riga(page, /^Imposta sostitutiva/)).not.toContainText('non calcolabile')
-    await expect(riga(page, /^Reddito netto stimato/)).not.toContainText('non calcolabile')
+    await expect(row(page, /^Imposta sostitutiva/)).not.toContainText('non calcolabile')
+    await expect(row(page, /^Reddito netto stimato/)).not.toContainText('non calcolabile')
   })
 
   /**

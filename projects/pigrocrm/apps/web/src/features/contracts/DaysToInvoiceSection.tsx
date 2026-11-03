@@ -94,20 +94,20 @@ export function DaysToInvoiceSection({ contractId, currency }: { contractId: str
                 )}
 
                 <ul className="divide-y">
-                  {ready.lines.map((riga) => (
+                  {ready.lines.map((row) => (
                     <li
-                      key={`${riga.month}-${riga.description}-${riga.unit_price}`}
+                      key={`${row.month}-${row.description}-${row.unit_price}`}
                       className="flex items-center justify-between gap-4 py-3"
                     >
                       <div className="min-w-0">
-                        <p className="font-medium">{italianiseDecimals(riga.description)}</p>
+                        <p className="font-medium">{italianiseDecimals(row.description)}</p>
                         <p className="text-sm text-muted-foreground">
-                          {plural(riga.work_units, 'giornata', 'giornate')} a{' '}
-                          {formatAmount(riga.unit_price, currency)} per {riga.unit_of_measure}
+                          {plural(row.work_units, 'giornata', 'giornate')} a{' '}
+                          {formatAmount(row.unit_price, currency)} per {row.unit_of_measure}
                         </p>
                       </div>
                       <span className="shrink-0 tabular-nums">
-                        {formatAmount(riga.amount, currency)}
+                        {formatAmount(row.amount, currency)}
                       </span>
                     </li>
                   ))}

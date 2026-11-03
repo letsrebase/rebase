@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { TaskPage } from './TaskPage'
-import type { Vista } from './vista'
+import type { View } from './view'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -78,13 +78,13 @@ function serve() {
 }
 
 function renderPage(
-  view: Vista,
-  extra: { openId?: string; onDismissOpen?: () => void; onVistaChange?: (next: Vista) => void } = {},
+  view: View,
+  extra: { openId?: string; onDismissOpen?: () => void; onViewChange?: (next: View) => void } = {},
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <TaskPage view={view} onVistaChange={extra.onVistaChange ?? vi.fn()} {...extra} />
+      <TaskPage view={view} onViewChange={extra.onViewChange ?? vi.fn()} {...extra} />
     </QueryClientProvider>,
   )
 }
@@ -117,11 +117,11 @@ describe('TaskPage', () => {
   })
 
   it('keeps the person chosen on one view when the other is opened', async () => {
-    const onVistaChange = vi.fn()
+    const onViewChange = vi.fn()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     function Page() {
-      const [view, setVista] = useState<Vista>('today')
-      return <TaskPage view={view} onVistaChange={(next) => { onVistaChange(next); setVista(next) }} />
+      const [view, setView] = useState<View>('today')
+      return <TaskPage view={view} onViewChange={(next) => { onViewChange(next); setView(next) }} />
     }
     render(
       <QueryClientProvider client={client}>
@@ -140,11 +140,11 @@ describe('TaskPage', () => {
   })
 
   it('hands the chosen tab back for the route to put in the URL', async () => {
-    const onVistaChange = vi.fn()
-    renderPage('today', { onVistaChange })
+    const onViewChange = vi.fn()
+    renderPage('today', { onViewChange })
 
     await userEvent.click(screen.getByRole('tab', { name: 'Tutte' }))
-    expect(onVistaChange).toHaveBeenCalledWith('all')
+    expect(onViewChange).toHaveBeenCalledWith('all')
   })
 
   it.each(['today', 'all'] as const)(

@@ -170,10 +170,10 @@ describe('SlackPanel', () => {
     await screen.findByText('Acme Test')
 
     await user.click(screen.getByRole('button', { name: 'Correggi l’abbinamento di Ada Bianchi' }))
-    const abbina = screen.getByRole('button', { name: 'Abbina' })
-    expect(abbina).toBeDisabled()
+    const match = screen.getByRole('button', { name: 'Abbina' })
+    expect(match).toBeDisabled()
     await user.type(screen.getByLabelText('Indirizzo di Ada Bianchi in Slack'), ' ada.bianchi@acme.example ')
-    await user.click(abbina)
+    await user.click(match)
 
     expect(PUT).toHaveBeenCalledWith('/api/slack/users/{user_id}/link', {
       params: { path: { user_id: 'u-ada' } },

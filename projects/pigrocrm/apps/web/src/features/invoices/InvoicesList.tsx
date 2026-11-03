@@ -32,7 +32,7 @@ import {
  *  filter" is `null` (see `FilterChips`). */
 const ANY = 'all'
 
-const TIPI = [
+const TYPE_OPTIONS = [
   { value: ANY, label: 'Tutti i tipi' },
   { value: 'invoice', label: 'Fatture' },
   { value: 'proforma', label: 'Proforma' },
@@ -139,7 +139,7 @@ export function InvoicesList({ overdue }: { overdue?: boolean }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TIPI.map((entry) => (
+              {TYPE_OPTIONS.map((entry) => (
                 <SelectItem key={entry.value} value={entry.value}>
                   {entry.label}
                 </SelectItem>

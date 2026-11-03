@@ -41,14 +41,14 @@ import {
 } from './queries'
 import { templateTypeLabel } from './labels'
 
-const TIPI = [
+const TYPE_OPTIONS = [
   { value: 'offer', label: 'Offerta' },
   { value: 'contract', label: 'Contratto' },
   { value: 'minutes', label: 'Verbale' },
   { value: 'document', label: 'Documento' },
 ] as const
 
-const TIPI_VARIABLE = [
+const VARIABLE_TYPE_OPTIONS = [
   { value: 'text', label: 'Testo' },
   { value: 'textarea', label: 'Testo lungo' },
   { value: 'number', label: 'Numero' },
@@ -311,7 +311,7 @@ export function TemplatesPanel() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TIPI.map((entry) => (
+                    {TYPE_OPTIONS.map((entry) => (
                       <SelectItem key={entry.value} value={entry.value}>
                         {entry.label}
                       </SelectItem>
@@ -408,7 +408,7 @@ export function TemplatesPanel() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {TIPI_VARIABLE.map((entry) => (
+                        {VARIABLE_TYPE_OPTIONS.map((entry) => (
                           <SelectItem key={entry.value} value={entry.value}>
                             {entry.label}
                           </SelectItem>

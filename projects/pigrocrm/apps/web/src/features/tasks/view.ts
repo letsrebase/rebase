@@ -8,9 +8,9 @@ export const VIEWS = [
   { id: 'all', label: 'Tutte' },
 ] as const
 
-export type Vista = (typeof VIEWS)[number]['id']
+export type View = (typeof VIEWS)[number]['id']
 
-export function isVista(value: unknown): value is Vista {
+export function isView(value: unknown): value is View {
   return VIEWS.some((view) => view.id === value)
 }
 
@@ -20,7 +20,7 @@ export function isVista(value: unknown): value is Vista {
  * tasks to open (`?open=`, the dialog sits over the table) and a chosen assignee
  * (`?assigned=`, the Oggi view's «le altre sono nella pagina Attività»).
  */
-export function vistaOf(search: { view?: Vista; open?: string; assigned?: string }): Vista {
+export function viewOf(search: { view?: View; open?: string; assigned?: string }): View {
   if (search.view !== undefined) return search.view
   return search.open !== undefined || search.assigned !== undefined ? 'all' : 'today'
 }

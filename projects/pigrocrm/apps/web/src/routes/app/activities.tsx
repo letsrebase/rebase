@@ -3,9 +3,9 @@ import { attributionOf } from '@/lib/attribution'
 import { legacyParam } from '@/lib/legacySearch'
 import { TaskPage } from '@/features/tasks/TaskPage'
 import { EVERYONE, ME } from '@/features/tasks/filters'
-import { isVista, vistaOf, type Vista } from '@/features/tasks/vista'
+import { isView, viewOf, type View } from '@/features/tasks/view'
 
-const LEGACY_VIEWS: Record<string, Vista> = { 'oggi': 'today', 'tutte': 'all' }
+const LEGACY_VIEWS: Record<string, View> = { 'oggi': 'today', 'tutte': 'all' }
 const LEGACY_ASSIGNEES: Record<string, string> = { 'io': ME, 'tutte': EVERYONE }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -13,7 +13,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function TaskRoute() {
   const search = Route.useSearch()
   const { open, assigned } = search
-  const view = vistaOf(search)
+  const view = viewOf(search)
   const navigate = useNavigate()
   // `key`: arriving with another id while the page is open is a remount, so the dialog
   // opens for it instead of staying dismissed from the previous one.
@@ -21,7 +21,7 @@ function TaskRoute() {
     <TaskPage
       key={`${open ?? ''}|${assigned ?? ''}`}
       view={view}
-      onVistaChange={(next) =>
+      onViewChange={(next) =>
         void navigate({ to: '/app/activities', search: { assigned, view: next }, replace: true })
       }
       openId={open}
@@ -50,7 +50,7 @@ export const Route = createFileRoute('/app/activities')({
   // `?view=` is the tab: «oggi» or «tutte» (`vistaOf` says what an address without it means).
   validateSearch: (
     search: Record<string, unknown>,
-  ): { open?: string; assigned?: string; view?: Vista; from?: string } => {
+  ): { open?: string; assigned?: string; view?: View; from?: string } => {
     // Links already sent (push payloads, the Monday digest, bookmarks) carry the Italian words of
     // before the English rename of 2026-11-02 (the open, assigned and view parameters, and the
     // words io, tutte, oggi).
@@ -65,7 +65,7 @@ export const Route = createFileRoute('/app/activities')({
     assigned:
       typeof assigned === 'string' &&
       (assigned === ME || assigned === EVERYONE || UUID_RE.test(assigned)) ? assigned : undefined,
-    view: isVista(view) ? view : undefined,
+    view: isView(view) ? view : undefined,
     // `?from=digest` rides along from the digest mail's link (`?da=digest` in mails sent before
     // the English rename), where PostHog reads the return.
     from: attributionOf(search),

@@ -29,7 +29,7 @@ function dead(status: number, code: string, detail: string) {
 }
 
 const PEEK = { space: 'Studio Bianchi', invited_from: 'Ada Admin', name: 'Luca' }
-const PEEK_NO_NOME = { ...PEEK, name: null }
+const PEEK_NO_NAME = { ...PEEK, name: null }
 
 /** GET routed the way the page uses it: the peek on `/api/auth/invite`, the bare
  *  page's `/api/tenants/root` answering "this installation has no name". */
@@ -72,7 +72,7 @@ describe('the invitation page', () => {
   })
 
   it('asks for the name only when the invitation carried none, and sends what was typed', async () => {
-    peeking(PEEK_NO_NOME)
+    peeking(PEEK_NO_NAME)
     render(<InvitePage token="abc" go={vi.fn()} />)
 
     const field = await screen.findByLabelText('Come ti chiami?')

@@ -102,13 +102,13 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
         Ore ({data ? formatItalianQuantity(data.hours) : ''})
       </h3>
       <ul className="space-y-1 text-sm">
-        {lines.map((riga) => (
-          <li key={riga.deal_id} className="flex justify-between gap-4">
+        {lines.map((row) => (
+          <li key={row.deal_id} className="flex justify-between gap-4">
             <span>
-              {riga.customer ? `${riga.customer} · ` : ''}
-              {riga.deal_name}
+              {row.customer ? `${row.customer} · ` : ''}
+              {row.deal_name}
             </span>
-            <span className="tabular-nums">{formatItalianQuantity(riga.hours)} h</span>
+            <span className="tabular-nums">{formatItalianQuantity(row.hours)} h</span>
           </li>
         ))}
       </ul>

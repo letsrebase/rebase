@@ -116,7 +116,7 @@ export function expensePolicyBody(policy: ExpensePolicy): Record<string, unknown
   return body
 }
 
-export const RATE_TIPI: Record<RateCardCreateBody['type'], string> = {
+export const RATE_TYPE_OPTIONS: Record<RateCardCreateBody['type'], string> = {
   fixed_recurring: 'Canone ricorrente',
   daily: 'Giornaliera',
   hourly: 'Oraria',

@@ -6,7 +6,7 @@ import { ME } from './filters'
 import { TodayView } from './TodayView'
 import { useTask } from './queries'
 import { AllView } from './AllView'
-import { VIEWS, type Vista } from './vista'
+import { VIEWS, type View } from './view'
 
 /**
  * `/app/activities`, the one page for tasks (REB-873): two views under one title, «Oggi»
@@ -24,13 +24,13 @@ import { VIEWS, type Vista } from './vista'
  */
 export function TaskPage({
   view,
-  onVistaChange,
+  onViewChange,
   openId,
   onDismissOpen,
   initialAssignee = ME,
 }: {
-  view: Vista
-  onVistaChange: (next: Vista) => void
+  view: View
+  onViewChange: (next: View) => void
   openId?: string
   /** Whose tasks the views open on: `ME`, `EVERYONE` or a user id. */
   initialAssignee?: string
@@ -59,7 +59,7 @@ export function TaskPage({
   ) : null
 
   return (
-    <Tabs value={view} onValueChange={(next) => onVistaChange(next as Vista)}>
+    <Tabs value={view} onValueChange={(next) => onViewChange(next as View)}>
       {/* One view is mounted at a time, as on the dashboard: the other would issue its own
           requests to draw nothing. */}
       {view === 'today' ? (

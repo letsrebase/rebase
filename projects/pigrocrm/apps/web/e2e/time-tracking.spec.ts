@@ -65,9 +65,9 @@ function moreDays(value: Date, days: number): Date {
  * -- and it is written out here rather than imported, for the reason `lunediDi` above is
  * too: a test that borrows the arithmetic of the code it is checking checks nothing.
  */
-function centesimi(text: string): number {
-  const [whole = '0', decimali = ''] = text.replace(/\./g, '').split(',')
-  return Number(whole) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
+function cents(text: string): number {
+  const [whole = '0', decimals = ''] = text.replace(/\./g, '').split(',')
+  return Number(whole) * 100 + Number(decimals.padEnd(2, '0').slice(0, 2))
 }
 
 test.use({ timezoneId: 'Europe/Rome' })
@@ -162,8 +162,8 @@ test.describe('time tracking', () => {
     // documented command -- and failed for the next person who ran the spec twice by
     // hand, which is the worse of the two ways to be wrong.
     await expect
-      .poll(async () => centesimi(await page.getByTestId('grid-total').innerText()))
-      .toBe(centesimi(totalBefore) + 350)
+      .poll(async () => cents(await page.getByTestId('grid-total').innerText()))
+      .toBe(cents(totalBefore) + 350)
 
     // 2. The deal's Ore tab shows it, with the rate frozen from the deal.
     await page.goto(`/app/deal/${dealId}`)
@@ -199,14 +199,14 @@ test.describe('time tracking', () => {
     // 4. The timesheet comes out in both formats, as real files (criterion 10).
     await page.getByLabel(/rapporto ore del mese/i).fill(month)
 
-    const scaricamento = page.waitForEvent('download')
+    const download = page.waitForEvent('download')
     await page.getByRole('button', { name: 'XLSX' }).click()
-    const foglio = await scaricamento
-    expect(await foglio.suggestedFilename()).toBe(`rapporto-ore-${month}.xlsx`)
+    const sheet = await download
+    expect(await sheet.suggestedFilename()).toBe(`rapporto-ore-${month}.xlsx`)
     // A name is not a file. The first four bytes of every .xlsx are a ZIP local file
     // header ("PK\x03\x04"), so this is the cheapest proof that what arrived is a
     // workbook and not an error page with a helpful filename.
-    const bytes = readFileSync(await foglio.path())
+    const bytes = readFileSync(await sheet.path())
     expect(bytes.length).toBeGreaterThan(0)
     expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK')
 
@@ -217,9 +217,9 @@ test.describe('time tracking', () => {
     // `/api/documents/{id}/download` -- the one path that carries authorisation on
     // either storage backend. Clicking it therefore has to produce a real file *and*
     // leave a document behind, and both halves are asserted here.
-    const scaricamentoPdf = page.waitForEvent('download')
+    const downloadPdf = page.waitForEvent('download')
     await page.getByRole('button', { name: 'PDF' }).click()
-    const report = await scaricamentoPdf
+    const report = await downloadPdf
     const pdfBytes = readFileSync(await report.path())
     // "%PDF-". A name is not a file here either, and Typst either ran or it did not.
     expect(pdfBytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
@@ -238,9 +238,9 @@ test.describe('time tracking', () => {
     await expect(page.getByText(monthByLongName, { exact: true })).toBeVisible()
 
     await openTheWeek()
-    const bloccata = cellOf(martedi)
-    await bloccata.fill('2')
-    await bloccata.blur()
+    const blocked = cellOf(martedi)
+    await blocked.fill('2')
+    await blocked.blur()
     await expect(
       page.getByText(/è chiuso: riaprilo per modificare voci datate in quel mese/),
     ).toBeVisible()
