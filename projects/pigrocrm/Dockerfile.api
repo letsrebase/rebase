@@ -7,7 +7,7 @@
 # Two stages: `build` resolves and installs the virtualenv with uv, `runtime` is Python, the
 # document renderer and the finished /app, with no compiler and no build cache in it.
 
-FROM ghcr.io/astral-sh/uv:0.9.24 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6 AS uv
 
 FROM python:3.13-slim-trixie AS build
 
