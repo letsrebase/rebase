@@ -542,7 +542,7 @@ function twoLegalEntities(selected: string | null): LegalEntityValue {
     legal_entities: [HUMANCRAFT, REBASE_LTD],
     selected,
     select: vi.fn(),
-    several: true, scoped: false, pinned: false,
+    several: true, scoped: false, pinned: false, loaded: true,
     byId: (id) => [HUMANCRAFT, REBASE_LTD].find((a) => a.id === id),
   }
 }

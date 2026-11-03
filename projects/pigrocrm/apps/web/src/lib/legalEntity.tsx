@@ -42,6 +42,11 @@ export interface LegalEntityValue {
   /** True for a scoped person with one azienda: the selection is that azienda, drawn as
    *  a label rather than a control, since there is nothing to choose between. */
   pinned: boolean
+  /** False until the list of legal entities has answered (and never for a session with none to
+   *  ask for). Until then `several` is false whatever the space holds, so a request that
+   *  depends on «one legal entity or several» has to wait: sent early on a space with two, an
+   *  estimate asked without a legal entity is a 422. A list that failed counts as answered. */
+  loaded: boolean
   /** The active azienda an id names, or `undefined` for `null` and for an id no longer there. */
   byId: (id: string | null | undefined) => LegalEntityRecord | undefined
 }
@@ -53,6 +58,7 @@ const OneLegalEntity: LegalEntityValue = {
   several: false,
   scoped: false,
   pinned: false,
+  loaded: true,
   byId: () => undefined,
 }
 
@@ -104,6 +110,7 @@ export function LegalEntityProvider({ children }: { children: ReactNode }) {
   const chosen = choice.userId === userId ? choice.id : readSelectedLegalEntity(userId)
 
   const several = legal_entities.length > 1
+  const loaded = userId === '' || !list.isPending
   // A scoped session (spec 2026-10-03 §1.11, §5): `me.legal_entities` is the list the person
   // may see, and `GET /api/aziende` already answers those alone, so nothing is filtered
   // here. With one of them there is nothing to choose: the selection is pinned to it,
@@ -130,8 +137,8 @@ export function LegalEntityProvider({ children }: { children: ReactNode }) {
     [legal_entities],
   )
   const value = useMemo<LegalEntityValue>(
-    () => ({ legal_entities, selected, select, several, scoped, pinned, byId }),
-    [legal_entities, selected, select, several, scoped, pinned, byId],
+    () => ({ legal_entities, selected, select, several, scoped, pinned, loaded, byId }),
+    [legal_entities, selected, select, several, scoped, pinned, loaded, byId],
   )
   return <LegalEntityContext value={value}>{children}</LegalEntityContext>
 }

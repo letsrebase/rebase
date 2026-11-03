@@ -114,13 +114,13 @@ export function useEconomicOverview(year: number, base: CashBase) {
  * a 403 for the answer.
  */
 export function useFiscalEstimate(year: number, legalEntityId?: string | null, enabled = true) {
-  const { selected } = useLegalEntity()
+  const { selected, loaded } = useLegalEntity()
   const legal_entity = legalEntityId === undefined ? selected : legalEntityId
   const query = legal_entity === null ? { year } : { year, legal_entity_id: legal_entity }
   return useQuery({
     queryKey: queryKeys.fiscalEstimate(year, legal_entity),
     queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query } })),
-    enabled,
+    enabled: enabled && (legal_entity !== null || loaded),
   })
 }
 
@@ -131,12 +131,15 @@ export function useFiscalEstimate(year: number, legalEntityId?: string | null, e
  * thresholds do not apply to, and the panel then draws nothing.
  */
 export function useCeilingHeadroom(year: number, legalEntityId?: string | null) {
-  const { selected } = useLegalEntity()
+  const { selected, loaded } = useLegalEntity()
   const legal_entity = legalEntityId === undefined ? selected : legalEntityId
   const query = legal_entity === null ? { year } : { year, legal_entity_id: legal_entity }
   return useQuery({
     queryKey: queryKeys.ceilings(year, legal_entity),
     queryFn: () => unwrap(api.GET('/api/analytics/ceilings', { params: { query } })),
+    // Asked without a legal entity only once the list of legal entities has answered: before
+    // that `several` is false on every space, and on one with two the server refuses (422).
+    enabled: legal_entity !== null || loaded,
   })
 }
 
@@ -189,13 +192,14 @@ export function useCeilingSimulation(
 /** One legal entity's register for `year` (REB-757): revenue by regime and tax treatment and
  *  the issued invoices, with the stamp duty and the surcharge apart. */
 export function useYearOverview(year: number, legalEntityId?: string | null) {
-  const { selected } = useLegalEntity()
+  const { selected, loaded } = useLegalEntity()
   const legal_entity = legalEntityId === undefined ? selected : legalEntityId
   const query = legal_entity === null ? { year } : { year, legal_entity_id: legal_entity }
   return useQuery({
     queryKey: queryKeys.yearOverview(year, legal_entity),
     queryFn: () => unwrap(api.GET('/api/analytics/year', { params: { query } })),
     staleTime: DASHBOARD_STALE_MS,
+    enabled: legal_entity !== null || loaded,
   })
 }
 

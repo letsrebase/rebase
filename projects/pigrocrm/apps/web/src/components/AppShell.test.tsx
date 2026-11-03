@@ -965,6 +965,7 @@ describe('the azienda selector (REB-625)', () => {
       several: true,
       scoped: false,
       pinned: false,
+      loaded: true,
       byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
     }
   }
@@ -1010,6 +1011,7 @@ describe('the azienda selector (REB-625)', () => {
       several: false,
       scoped: true,
       pinned: true,
+      loaded: true,
       byId: (id) => (id === 'a2' ? REBASE : undefined),
     }
     renderShell(<div />, value)

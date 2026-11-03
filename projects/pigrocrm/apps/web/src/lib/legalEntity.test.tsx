@@ -161,6 +161,7 @@ describe('useLegalEntityScope', () => {
       several,
       scoped: false,
       pinned: false,
+      loaded: true,
       byId: () => undefined,
     }
     return ({ children }: { children: ReactNode }) => {

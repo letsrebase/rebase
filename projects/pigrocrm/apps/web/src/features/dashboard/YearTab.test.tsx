@@ -94,6 +94,7 @@ const ONE: LegalEntityValue = {
   several: false,
   scoped: false,
   pinned: false,
+  loaded: true,
   byId: () => undefined,
 }
 
