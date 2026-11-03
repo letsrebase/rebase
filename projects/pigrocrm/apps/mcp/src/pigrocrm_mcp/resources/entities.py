@@ -45,7 +45,9 @@ def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[
     lines = ["", "## Note"]
     for note in notes:
         # A note from before the thread existed has no source and no author.
-        who = note.author or ("Nota precedente" if note.source is None else label(NOTE_SOURCE, note.source))
+        who = note.author or (
+            "Nota precedente" if note.source is None else label(NOTE_SOURCE, note.source)
+        )
         header = f"**{note.created_at:%Y-%m-%d %H:%M}** · {who}"
         if note.source is not None:
             header += f" · fonte: {label(NOTE_SOURCE, note.source)}"

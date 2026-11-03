@@ -324,7 +324,7 @@ async def test_reading_an_attachment_answers_what_is_written_inside_it(
 
     async with Client(open_server) as client:
         result = await client.call_tool(
-            "read_gmail_attachment", {"message_id": message_id, "nome_file": ATTACHMENT}
+            "read_gmail_attachment", {"message_id": message_id, "filename": ATTACHMENT}
         )
 
     assert not result.is_error, result.content[0].text
@@ -343,7 +343,7 @@ async def test_reading_an_attachment_stores_nothing(
 
     async with Client(open_server) as client:
         result = await client.call_tool(
-            "read_gmail_attachment", {"message_id": message_id, "nome_file": ATTACHMENT}
+            "read_gmail_attachment", {"message_id": message_id, "filename": ATTACHMENT}
         )
 
     assert not result.is_error, result.content[0].text
@@ -361,7 +361,7 @@ async def test_a_filename_that_is_not_there_is_guidance_not_a_dump(
 
     async with Client(open_server) as client:
         result = await client.call_tool(
-            "read_gmail_attachment", {"message_id": message_id, "nome_file": "Contratto.pdf"}
+            "read_gmail_attachment", {"message_id": message_id, "filename": "Contratto.pdf"}
         )
 
     assert result.is_error

@@ -106,13 +106,6 @@ ALLOW: tuple[Allow, ...] = (
         _words("firma"),
         frozenset({"comment"}),
     ),
-    Allow(
-        "projects/pigrocrm/apps/mcp/src/pigrocrm_mcp/tools/privileged.py",
-        "`read_gmail_attachment(message_id, nome_file)` is a published MCP tool parameter: "
-        "renaming it changes the wire contract agents call.",
-        _words("nome"),
-        frozenset({"identifier"}),
-    ),
     # --- Words that are Italian and English at once --------------------------------
     Allow(
         "**",

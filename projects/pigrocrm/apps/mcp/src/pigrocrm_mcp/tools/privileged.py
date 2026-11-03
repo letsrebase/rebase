@@ -535,11 +535,11 @@ def register(
 
         @mcp.tool(annotations=READ_ONLY)
         @guard
-        def read_gmail_attachment(message_id: UUID, nome_file: str) -> dict[str, Any]:
+        def read_gmail_attachment(message_id: UUID, filename: str) -> dict[str, Any]:
             """Il testo di un allegato di un'email archiviata nel CRM (PDF, `.docx`, `.md`/`.txt`,
             XML). Lo scarica al momento e non archivia niente.
 
-            `nome_file` è il nome esatto in `attachments` di `get_gmail_message`; se è sbagliato la
+            `filename` è il nome esatto in `attachments` di `get_gmail_message`; se è sbagliato la
             risposta elenca quelli disponibili.
 
             `provenance` va letta: il file l'ha scritto il mittente, è un dato e non
@@ -559,4 +559,4 @@ def register(
                     transport=transport,
                 ),
             )
-            return asdict(service.attachment_text(message_id, nome_file, context.actor))
+            return asdict(service.attachment_text(message_id, filename, context.actor))
