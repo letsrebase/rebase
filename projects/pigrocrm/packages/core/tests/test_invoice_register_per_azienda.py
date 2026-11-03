@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from test_invoice_import_review import CONSULENZA, _fixture
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.emitter.models import LegalEntity
@@ -47,9 +47,9 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
-# `oggi_in_italia()`, not `date.today()`: `issue` dates the invoice in Rome, and a CI
-# host in UTC is a year behind it for an hour on New Year's Eve (see `clock.py`).
-ANNO = oggi_in_italia().year
+# `today_local()`, not `date.today()`: `issue` dates the invoice in Rome, and a CI
+# host in UTC is a year behind it for an hour on New Year's Eve (see `db/clock.py`).
+ANNO = today_local().year
 # The FPR12 fixture's own issuer (`fixtures/fatturapa/fpr12-consulenza-marzo.xml`).
 FIXTURE_PIVA = "01234567890"
 FIXTURE_CF = "BNCCHR85M41H501Z"
@@ -491,7 +491,7 @@ def test_a_foreign_azienda_issues_a_pdf_with_no_bollo_and_refuses_the_xml(
     assert row.snapshot["fiscale"]["pack_id"] == "non-it"
     assert row.snapshot["fiscale"]["codice_regime"] is None
     assert row.snapshot["emittente"]["ragione_sociale"] == "Rebase Ltd"
-    scope = invoice_pdf.build_scope(service._for_export(row), riferimento=None)
+    scope = invoice_pdf.build_scope(service.artifacts.for_export(row), riferimento=None)
     assert scope["fattura"]["dichiarazione_bollo"] == ""
     with pytest.raises(Conflict) as caught:
         service.export_xml(draft.id, ADMIN)

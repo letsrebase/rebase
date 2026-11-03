@@ -212,7 +212,7 @@ def test_two_simultaneous_redemptions_of_one_state_produce_exactly_one_success(
     """ "Single-use" is a claim about concurrency, so it is tested as one.
 
     Two connections issue the same conditional update at the same moment -- the shape
-    `GmailRepository.consume_state` will use in B1-6. Postgres serialises them on the
+    `OAuthStateRepository.consume` uses. Postgres serialises them on the
     row lock: the loser re-evaluates its `WHERE` against the winner's committed row,
     finds `consumed_at` no longer NULL, and updates nothing. Exactly one authorisation
     code is therefore exchangeable per state, even if a browser fires the callback

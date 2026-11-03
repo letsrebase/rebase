@@ -17,7 +17,6 @@ from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
 from pigrocrm.core.contracts.projection import (
     RecurringFeeOccurrence,
     generate_recurring_fee_occurrences,
-    irrevocability_window_end,
     project,
     renewal_assumption_contribution,
     schedule_end,
@@ -105,14 +104,14 @@ def test_annual_cadence_steps_twelve_months_clamping_the_day_of_month() -> None:
     ]
 
 
-def test_a_day_31_start_stepping_monthly_clamps_into_february() -> None:
+def test_a_day_31_start_clamps_into_a_short_month_and_returns_to_the_31st() -> None:
     card = _rate_card(periodo_erogazione="mensile", valido_da=date(2026, 1, 31))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2026, 4, 30))
     assert [o.data for o in occurrences] == [
         date(2026, 1, 31),
         date(2026, 2, 28),
-        date(2026, 3, 28),
-        date(2026, 4, 28),
+        date(2026, 3, 31),
+        date(2026, 4, 30),
     ]
 
 
@@ -167,29 +166,6 @@ def test_a_card_starting_after_the_horizon_contributes_nothing() -> None:
         _contract(), [card], through=date(2026, 12, 31)
     )
     assert occurrences == []
-
-
-# ---- irrevocability_window_end -----------------------------------------------------
-
-
-def test_window_end_is_the_notice_period_from_today_for_an_open_ended_contract() -> None:
-    contract = _contract(fine=None, preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 7, 1)
-
-
-def test_window_end_clips_to_a_fixed_terms_own_fine() -> None:
-    contract = _contract(fine=date(2026, 6, 15), preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 6, 15)
-
-
-def test_window_end_is_none_once_the_contract_has_already_ended() -> None:
-    contract = _contract(fine=date(2025, 12, 31), preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) is None
-
-
-def test_a_contract_ending_exactly_today_is_not_yet_considered_over() -> None:
-    contract = _contract(fine=date(2026, 6, 1), preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 6, 1)
 
 
 # ---- schedule_end -------------------------------------------------------------------
@@ -335,3 +311,23 @@ def test_project_with_no_rate_cards_and_no_assumption_is_zero() -> None:
     assert result.programmato == ZERO_MONEY
     assert result.da_rinnovo == ZERO_MONEY
     assert result.totale == ZERO_MONEY
+
+
+def test_an_open_ended_contracts_projection_does_not_depend_on_where_the_window_stops() -> None:
+    """Two adjacent windows add up to the window that spans both: the schedule an
+    open-ended contract's renewal assumption starts after is its own, not the last
+    occurrence the query happened to ask for."""
+    contract = _contract(fine=None, preavviso_disdetta_giorni=30)
+    card = _rate_card(valido_da=date(2026, 1, 1), periodo_erogazione="mensile")
+    assumption = _assumption(probabilita=50, volume_atteso=Decimal("36500.00"))
+    kwargs = {"come_di": date(2026, 6, 1)}
+
+    whole = project(contract, [card], assumption, da=date(2026, 8, 1), a=date(2028, 1, 1), **kwargs)
+    first = project(
+        contract, [card], assumption, da=date(2026, 8, 1), a=date(2027, 3, 15), **kwargs
+    )
+    second = project(
+        contract, [card], assumption, da=date(2027, 3, 15), a=date(2028, 1, 1), **kwargs
+    )
+
+    assert first.totale + second.totale == whole.totale

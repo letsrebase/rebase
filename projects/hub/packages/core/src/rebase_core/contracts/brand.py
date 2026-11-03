@@ -117,12 +117,12 @@ def fonts_dir() -> Path:
     if something removed the directory, as a temp cleaner on a long-lived host would."""
     global _fonts
     with _fonts_lock:
-        present = _fonts is not None and all(
-            (_fonts / f"Outfit-{name}.ttf").is_file() for name in WEIGHTS.values()
-        )
-        if not present:
-            directory = Path(tempfile.mkdtemp(prefix="rebase-contract-fonts-"))
-            static_fonts(directory)
-            _fonts = directory
-        assert _fonts is not None
-        return _fonts
+        current = _fonts
+        if current is not None and all(
+            (current / f"Outfit-{name}.ttf").is_file() for name in WEIGHTS.values()
+        ):
+            return current
+        directory = Path(tempfile.mkdtemp(prefix="rebase-contract-fonts-"))
+        static_fonts(directory)
+        _fonts = directory
+        return directory

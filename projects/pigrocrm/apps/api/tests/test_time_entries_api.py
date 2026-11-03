@@ -75,6 +75,37 @@ def test_post_creates_and_returns_decimals_as_strings(logged_in: TestClient) -> 
     assert '"ore":"3.50"' in response.text.replace(" ", "")
 
 
+def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClient) -> None:
+    """The PDF is rendered and archived by a POST (a GET must not create anything: a
+    cross-site navigation sends the session cookie). The GET is the XLSX, whatever
+    `formato` a stale client still sends."""
+    deal_id, user_id = _seed_deal_and_user(logged_in)
+    logged_in.post(
+        "/api/time-entries",
+        json={
+            "deal_id": deal_id,
+            "user_id": user_id,
+            "data": "2026-03-10",
+            "ore": "2.00",
+            "descrizione": "Sviluppo",
+            "tariffa_applicata": "80.000000",
+        },
+    )
+
+    for params in ({"mese": "2026-03"}, {"mese": "2026-03", "formato": "pdf"}):
+        response = logged_in.get(f"/api/deals/{deal_id}/time-report", params=params)
+        assert response.status_code == 200, response.text
+        assert "spreadsheetml" in response.headers["content-type"]
+    assert logged_in.get("/api/documents", params={"deal_id": deal_id}).json()["items"] == []
+
+    assert logged_in.get(f"/api/deals/{deal_id}/time-report/pdf").status_code == 405
+    unknown = logged_in.post(
+        "/api/deals/00000000-0000-0000-0000-000000000000/time-report/pdf",
+        params={"mese": "2026-03"},
+    )
+    assert unknown.status_code == 404
+
+
 def test_a_closed_period_is_a_409_problem_document_naming_the_month(
     logged_in: TestClient,
 ) -> None:

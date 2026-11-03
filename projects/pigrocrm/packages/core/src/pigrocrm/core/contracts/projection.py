@@ -25,14 +25,15 @@ not a second one invented here.
 
 from __future__ import annotations
 
-import calendar
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+from pigrocrm.core.contracts.dates import irrevocability_window_end
 from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
+from pigrocrm.core.contracts.renewal import add_months
 from pigrocrm.core.money import ZERO_MONEY, round_money
 
 # The disbursement periods that repeat -- see RateCard.periodo_erogazione
@@ -71,18 +72,6 @@ class ContractProjection:
     totale: Decimal
 
 
-def _add_months(start: date, months: int) -> date:
-    """`start` plus a whole number of months, day-of-month clamped to the target
-    month's own length -- the same clamp `invoices/scadenza.py` already applies for
-    an end-of-month due date, so 31 January plus one month lands on 28/29 February
-    rather than raising."""
-    total = start.year * 12 + (start.month - 1) + months
-    year, month = divmod(total, 12)
-    month += 1
-    day = min(start.day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
-
-
 def generate_recurring_fee_occurrences(
     contract: Contract, rate_cards: Sequence[RateCard], through: date
 ) -> list[RecurringFeeOccurrence]:
@@ -116,26 +105,17 @@ def generate_recurring_fee_occurrences(
             occurrences.append(RecurringFeeOccurrence(data=card.valido_da, importo=card.importo))
             continue
 
+        # Each date is counted from the card's own `valido_da`, never from the previous
+        # occurrence: stepping from a clamped date would carry the clamp forward, and a
+        # fee anchored on 31 January would fall on the 28th of every later month.
         step = _PERIOD_STEP_MONTHS[card.periodo_erogazione]
+        index = 0
         occurrence_date = card.valido_da
         while occurrence_date <= bound:
             occurrences.append(RecurringFeeOccurrence(data=occurrence_date, importo=card.importo))
-            occurrence_date = _add_months(occurrence_date, step)
+            index += 1
+            occurrence_date = add_months(card.valido_da, index * step)
     return occurrences
-
-
-def irrevocability_window_end(contract: Contract, come_di: date) -> date | None:
-    """The irrevocability window's inclusive end: termination notice served on
-    `come_di` still runs the contract `preavviso_disdetta_giorni` more days --
-    mastro's `irrevocabilityWindowEnd` (`certainty.ts:197-206`). `None` once the
-    contract has already ended by `come_di`: a finished contract guarantees nothing
-    further, and there is no window left to be beyond."""
-    if contract.fine is not None and contract.fine < come_di:
-        return None
-    notice_end = come_di + timedelta(days=contract.preavviso_disdetta_giorni)
-    if contract.fine is not None and contract.fine < notice_end:
-        return contract.fine
-    return notice_end
 
 
 def schedule_end(
@@ -205,7 +185,13 @@ def project(
     beyond the irrevocability window plus the renewal assumption's own prorated
     share -- mastro's `projectedAmount` (`certainty.ts:403-433`). Distinct from, and
     never combined with, `CashOverview.proiettato`."""
-    occurrences = generate_recurring_fee_occurrences(contract, rate_cards, through=a)
+    # An open-ended contract's schedule ends at its last occurrence (`schedule_end`), and the
+    # renewal assumption starts the day after: expanded only through `a`, that end would
+    # move with the window the caller asked about and the same days would be priced
+    # differently from one query to the next. Through the assumption's own horizon it is
+    # the schedule's own.
+    through = a if assumption is None else max(a, assumption.orizzonte_al)
+    occurrences = generate_recurring_fee_occurrences(contract, rate_cards, through=through)
     window_end = irrevocability_window_end(contract, come_di)
     effective_window_end = window_end if window_end is not None else come_di
     end = schedule_end(contract, effective_window_end, occurrences)
@@ -236,7 +222,6 @@ __all__ = [
     "ContractProjection",
     "RecurringFeeOccurrence",
     "generate_recurring_fee_occurrences",
-    "irrevocability_window_end",
     "project",
     "renewal_assumption_contribution",
     "schedule_end",

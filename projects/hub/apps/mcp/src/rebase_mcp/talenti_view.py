@@ -18,7 +18,7 @@ import pydantic_core
 from mcp.types import CallToolResult, TextContent
 
 from rebase_core.errors import ValidationFailed
-from rebase_core.schemas import TalentoRead
+from rebase_core.talent_schemas import TalentoRead
 
 # The page size an agent gets without asking, and the most it can ask for. The service
 # itself still pages 500 at a time for the campaign audiences (`talenti.LIST_LIMIT_MAX`);

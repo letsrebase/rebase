@@ -1,6 +1,7 @@
 """An admin's personal tokens: minted once, resolved to the admin, refused uniformly."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -143,3 +144,62 @@ def test_list_page_stays_scoped_to_the_caller_and_keeps_revoked_ones(
 def test_a_malformed_cursor_is_refused(ivan: User, hub_session: Session) -> None:
     with pytest.raises(ValidationFailed):
         AdminTokenService(hub_session).list_page(ivan.id, cursor="not-a-valid-cursor")
+
+
+def test_a_token_is_stamped_at_most_once_a_minute(ivan: User, hub_session: Session) -> None:
+    """REB-803: a busy agent resolves on every request; `last_used_at` is the list's
+    «ultimo uso», not an access log, and costs one write a minute."""
+    tokens = AdminTokenService(hub_session)
+    read, raw = tokens.create(ivan.id, "Claude Code")
+    tokens.resolve(raw)
+    [first] = tokens.list(ivan.id)
+    assert first.last_used_at is not None
+    tokens.resolve(raw)
+    tokens.resolve(raw)
+    hub_session.expire_all()
+    [again] = tokens.list(ivan.id)
+    assert again.last_used_at == first.last_used_at
+
+    old = datetime.now(UTC) - timedelta(minutes=2)
+    hub_session.execute(
+        text("UPDATE admin_tokens SET last_used_at = :old WHERE id = :id"),
+        {"old": old, "id": str(read.id)},
+    )
+    hub_session.commit()
+    tokens.resolve(raw)
+    hub_session.expire_all()
+    [after] = tokens.list(ivan.id)
+    assert after.last_used_at is not None and after.last_used_at > old + timedelta(minutes=1)
+
+
+def test_an_expired_token_fails_like_a_revoked_one(ivan: User, hub_session: Session) -> None:
+    tokens = AdminTokenService(hub_session)
+    soon = datetime.now(UTC) + timedelta(days=30)
+    read, raw = tokens.create(ivan.id, "Per un mese", expires_at=soon)
+    assert read.expires_at == soon
+    assert tokens.resolve(raw).id == ivan.id
+    hub_session.execute(
+        text("UPDATE admin_tokens SET expires_at = :past WHERE id = :id"),
+        {"past": datetime.now(UTC) - timedelta(seconds=1), "id": str(read.id)},
+    )
+    hub_session.commit()
+    with pytest.raises(ValidationFailed) as refused:
+        tokens.resolve(raw)
+    assert refused.value.details["reason"] == INVALID_TOKEN
+    [listed] = tokens.list(ivan.id)
+    assert listed.expires_at is not None
+
+
+def test_an_expiry_is_a_future_instant_with_a_timezone(ivan: User, hub_session: Session) -> None:
+    tokens = AdminTokenService(hub_session)
+    for bad in (
+        datetime.now(UTC) - timedelta(minutes=1),
+        (datetime.now(UTC) + timedelta(days=1)).replace(tzinfo=None),
+    ):
+        with pytest.raises(ValidationFailed) as refused:
+            tokens.create(ivan.id, "Mai", expires_at=bad)
+        assert refused.value.details["field"] == "expires_at"
+    assert tokens.list(ivan.id) == []
+    _, raw = tokens.create(ivan.id, "Senza scadenza")
+    assert tokens.list(ivan.id)[0].expires_at is None
+    assert tokens.resolve(raw).id == ivan.id

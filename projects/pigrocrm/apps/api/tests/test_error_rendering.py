@@ -19,6 +19,20 @@ def _throwaway_app() -> FastAPI:
     def boom() -> None:
         raise Conflict("pipeline_stage", "ha ancora dei deal collegati", stage_id=uuid4())
 
+    @app.get("/shadow")
+    def shadow() -> None:
+        raise Conflict(
+            "pipeline_stage",
+            "ha ancora dei deal collegati",
+            code="lead",
+            type="x",
+            title="x",
+            status=1,
+            detail="x",
+            instance="x",
+            extra="kept",
+        )
+
     return app
 
 
@@ -71,3 +85,35 @@ def test_the_openapi_document_declares_both_shapes_a_422_can_actually_be() -> No
     assert content["application/json"]["schema"] == {
         "$ref": "#/components/schemas/HTTPValidationError"
     }
+
+
+def test_details_never_overwrite_the_fixed_keys_of_the_problem_document() -> None:
+    """The details are spread into the document, so a detail that shares a name with one
+    of the fixed keys must not win: clients branch on `code`."""
+    with TestClient(_throwaway_app()) as client:
+        body = client.get("/shadow").json()
+
+    assert body["code"] == "conflict"
+    assert body["status"] == 409
+    assert body["type"] == "https://pigrocrm.dev/errors/conflict"
+    assert body["title"] == "Conflitto con lo stato attuale"
+    assert body["detail"].endswith("ha ancora dei deal collegati")
+    assert body["instance"] == "/shadow"
+    assert body["extra"] == "kept"
+
+
+def test_a_duplicate_stage_code_answers_the_conflict_code_and_names_the_stage_code(
+    logged_in: TestClient,
+) -> None:
+    """The duplicate-stage conflict used to carry the stage's own code as `code` and
+    overwrite the problem's: a client branching on `code == "conflict"` saw `"lead"`."""
+    stage = {"nome": "Prima", "posizione": 90, "code": "stage-dup-test"}
+    assert logged_in.post("/api/pipeline-stages", json=stage).status_code == 201
+    response = logged_in.post(
+        "/api/pipeline-stages", json={**stage, "nome": "Seconda", "posizione": 91}
+    )
+
+    assert response.status_code == 409, response.text
+    body = response.json()
+    assert body["code"] == "conflict"
+    assert body["stage_code"] == "stage-dup-test"

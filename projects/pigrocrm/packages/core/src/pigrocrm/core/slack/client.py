@@ -2,9 +2,9 @@
 
 No Slack SDK: `urllib.request` and `json` are enough for the six methods this uses, and a
 client library in `packages/core` would drag a transitive tree into the one package the
-architecture test keeps small. The seam is the one `gmail/transport.py` made, a call that
-takes `(method, url, headers, body)` and answers `(status, body, response headers)`, so a
-`Retry-After` on a 429 is readable; what a test replaces is the network
+architecture test keeps small. The seam is `core/http.py`'s, shared with Gmail and Drive: a
+call that takes `(method, url, headers, body)` and answers `(status, body, response
+headers)`, so a `Retry-After` on a 429 is readable; what a test replaces is the network
 (`tests/fakes/fake_slack.py`), and the URLs, the form bodies, the Basic header, the
 pagination and the error classification all run for real.
 
@@ -12,7 +12,7 @@ pagination and the error classification all run for real.
 the usual shape, so a status check alone reads a refused post as accepted. `_call` reads
 `ok`: a code that says the token is dead (`DEAD_TOKEN_CODES`) is `SlackTokenRevoked`, any
 other is `SlackRefused` carrying the code, and a 429, a 5xx or no response at all is
-retried and then `slack_unavailable`. `users.lookupByEmail`'s `users_not_found` is an
+retried and then `SlackUnavailable`. `users.lookupByEmail`'s `users_not_found` is an
 answer and not a failure, so it is `None`.
 
 Nothing here logs. The bot token, the client secret and the authorization code pass
@@ -30,24 +30,21 @@ from typing import Any
 from urllib.parse import urlencode
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.gmail.transport import (
-    MAX_HTTP_ATTEMPTS,
-    GmailCall,
+from pigrocrm.core.http import (
+    RATE_LIMITED_ONLY,
+    RETRYABLE_STATUSES,
+    HttpCall,
     SleepFn,
-    _parse_retry_after,
-    _retry_delay_seconds,
-    _urllib_call,
+    call_with_retry,
+    urllib_call,
 )
 from pigrocrm.core.slack.errors import (
     DEAD_TOKEN_CODES,
     SlackRefused,
     SlackTokenRevoked,
-    slack_unavailable,
+    SlackUnavailable,
 )
 
-# The seam is Gmail's own call type: the same three-tuple, for the same reason.
-SlackCall = GmailCall
-_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 599})
 _PAGE_SIZE = 200
 # Two thousand channels is more than a space that wants a picker has, and a workspace of
 # a hundred thousand must not turn the picker into a hundred requests.
@@ -82,10 +79,10 @@ class SlackChannel:
 
 class SlackClient:
     def __init__(
-        self, base_url: str, *, http: SlackCall | None = None, sleep: SleepFn | None = None
+        self, base_url: str, *, http: HttpCall | None = None, sleep: SleepFn | None = None
     ) -> None:
         self._base = base_url.rstrip("/")
-        self._http: SlackCall = http or _urllib_call
+        self._http: HttpCall = http or urllib_call
         self._sleep: SleepFn = sleep or time.sleep
 
     # -- the install ------------------------------------------------------------
@@ -228,28 +225,30 @@ class SlackClient:
             headers["Authorization"] = authorization
         url = f"{self._base}/api/{method}"
         body = urlencode(params).encode()
-        status, payload, response_headers = self._http("POST", url, headers, body)
-        retryable = _RETRYABLE_STATUSES if retry_unknown else frozenset({429})
-        for attempt in range(MAX_HTTP_ATTEMPTS - 1):
-            if status not in retryable:
-                break
-            # A server-supplied Retry-After outranks the guessed schedule, clamped
-            # (`gmail/transport.py`).
-            self._sleep(_parse_retry_after(response_headers) or _retry_delay_seconds(attempt))
-            status, payload, response_headers = self._http("POST", url, headers, body)
-        if status in _RETRYABLE_STATUSES:
-            raise slack_unavailable(status)
+        # A post whose outcome is unknown must not be retried on a 5xx or no answer at all,
+        # since the message may have been delivered; a 429 was refused before processing.
+        status, payload, _ = call_with_retry(
+            self._http,
+            self._sleep,
+            "POST",
+            url,
+            headers,
+            body,
+            retryable=RETRYABLE_STATUSES if retry_unknown else RATE_LIMITED_ONLY,
+        )
+        if status in RETRYABLE_STATUSES:
+            raise SlackUnavailable(status)
         try:
             reply = json.loads(payload.decode())
         except (ValueError, UnicodeDecodeError):
             reply = None
         if not isinstance(reply, dict):
-            raise slack_unavailable(status)
+            raise SlackUnavailable(status)
         if reply.get("ok") is True:
             return reply
         code = str(reply.get("error") or "unknown_error")
         if code == "ratelimited":
-            raise slack_unavailable(429)
+            raise SlackUnavailable(429)
         if token_errors and code in DEAD_TOKEN_CODES:
             raise SlackTokenRevoked(code)
         raise SlackRefused(method, code)
@@ -269,7 +268,7 @@ def _channel(raw: object) -> SlackChannel | None:
 SlackClientFactory = Callable[[Settings], SlackClient]
 
 
-def slack_client_for(settings: Settings, *, http: SlackCall | None = None) -> SlackClient:
+def slack_client_for(settings: Settings, *, http: HttpCall | None = None) -> SlackClient:
     """The client a service builds: Slack's address from the settings, the network unless a
     test hands in its own."""
     return SlackClient(settings.slack_url, http=http)

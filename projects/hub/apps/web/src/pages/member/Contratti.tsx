@@ -5,18 +5,21 @@ import { Button } from '@rebase/ui/button'
 import { member, type MemberContract } from '@/lib/api'
 import { objectOf, whatOf } from '@/lib/contracts'
 import { formatDate, formatDateTime, memberDocumentStateLabel } from '@/lib/format'
+import { keys } from '@/lib/query-keys'
+import { isHttpUrl } from '@/lib/url'
 
 function Actions({ document }: { document: MemberContract }) {
   // «Firma» wants «il contratto quadro» / «la lettera n. X», the direct object `objectOf`
   // gives (REB-687); the signed copy's label reuses `whatOf`'s own genitive phrasing, the
   // one place both this page and the admin's name a document the same way (REB-392).
   const what = objectOf(document)
-  if (!document.signing_url && !document.ha_pdf_firmato) return null
+  const signingUrl = document.signing_url && isHttpUrl(document.signing_url) ? document.signing_url : null
+  if (!signingUrl && !document.ha_pdf_firmato) return null
   return (
     <div className="flex flex-wrap gap-2">
-      {document.signing_url && (
+      {signingUrl && (
         <Button asChild size="sm">
-          <a href={document.signing_url} target="_blank" rel="noreferrer" aria-label={`Firma ${what}`}>
+          <a href={signingUrl} target="_blank" rel="noreferrer" aria-label={`Firma ${what}`}>
             <PenLine className="mr-2 size-4" aria-hidden="true" />
             Firma il documento
           </a>
@@ -97,11 +100,10 @@ function Letter({ lettera }: { lettera: MemberContract }) {
       </div>
       <p className="text-muted-foreground">{[lettera.cliente, period].filter(Boolean).join(', ')}</p>
       <Actions document={lettera} />
-      {lettera.pigro_url && (
+      {lettera.pigro_url && isHttpUrl(lettera.pigro_url) && (
         // Only once the letter's match is linked to its deal on Pigro (spec § 3.6).
         <div className="space-y-2">
           <Button asChild variant="outline" size="sm">
-            {/* The API keeps only an http(s) address the CRM answered for the deal's page. */}
             <a
               href={lettera.pigro_url}
               target="_blank"
@@ -126,7 +128,7 @@ function Letter({ lettera }: { lettera: MemberContract }) {
  *  signing site; a signed one offers its copy. A cancelled one says so here, since the
  *  signing site still opens it and only fails at the click. */
 export function MemberContratti() {
-  const contracts = useQuery({ queryKey: ['me', 'contracts'], queryFn: () => member.contracts() })
+  const contracts = useQuery({ queryKey: keys.memberContracts, queryFn: () => member.contracts() })
   const data = contracts.data
   const signed = data
     ? [data.quadro, data.quadro_occasionale, ...data.quadri_precedenti, ...data.lettere].some(

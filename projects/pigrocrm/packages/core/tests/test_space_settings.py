@@ -1,17 +1,29 @@
 """Settings a database decides for itself, laid over the environment's."""
 
 import base64
+import importlib.util
+import logging
+from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings
+from pigrocrm.core.config import DEFAULT_JWT_SECRET, Settings
 from pigrocrm.core.errors import PermissionDenied
-from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate, apply_overrides
+from pigrocrm.core.space_settings import (
+    SpaceSetting,
+    SpaceSettingsService,
+    SpaceSettingsUpdate,
+    apply_overrides,
+)
+from pigrocrm.core.space_settings.sealing import SEALED_PREFIX, unseal_value
 from pigrocrm.core.tenants import space_base_settings
 
-ADMIN = Actor(id=None, type="mcp", role="admin")
+ADMIN = Actor(id=None, type="user", role="admin")
 BASE = Settings(
     _env_file=None,  # type: ignore[call-arg]
     public_url="https://pigro.example/studio",
@@ -90,11 +102,11 @@ def test_an_empty_string_clears_an_override(db_session: Session) -> None:
 def test_only_an_admin_reads_or_writes(db_session: Session) -> None:
     service = SpaceSettingsService(db_session, BASE)
     with pytest.raises(PermissionDenied):
-        service.read(Actor(id=None, type="mcp", role="collaboratore"), spazio=None)
+        service.read(Actor(id=None, type="user", role="collaboratore"), spazio=None)
     with pytest.raises(PermissionDenied):
         service.update(
             SpaceSettingsUpdate(mcp_full_access=True),
-            Actor(id=None, type="mcp", role="collaboratore"),
+            Actor(id=None, type="user", role="collaboratore"),
             spazio=None,
         )
 
@@ -270,3 +282,128 @@ def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
         SpaceSettingsUpdate(updated_at=cleared.updated_at), ADMIN, spazio="studio"
     )
     assert same.updated_at == cleared.updated_at
+
+
+def _stored(session: Session, key: str) -> str:
+    return session.scalars(select(SpaceSetting.value).where(SpaceSetting.key == key)).one()
+
+
+def test_the_client_secret_and_the_token_key_are_sealed_at_rest_and_read_back_whole(
+    db_session: Session,
+) -> None:
+    """B-02: a dump of `space_settings` must not carry the key that opens the refresh
+    tokens of the same database."""
+    service = SpaceSettingsService(db_session, BASE)
+    service.update(
+        SpaceSettingsUpdate(google_client_id="abc.apps", google_client_secret="shh-secret"),
+        ADMIN,
+        spazio="studio",
+    )
+
+    secret_row = _stored(db_session, "google_client_secret")
+    key_row = _stored(db_session, "google_token_key")
+    assert secret_row.startswith(SEALED_PREFIX) and "shh-secret" not in secret_row
+    assert key_row.startswith(SEALED_PREFIX)
+    effective = service.effective()
+    assert effective.google_client_secret == "shh-secret"
+    assert len(base64.b64decode(effective.google_token_key)) == 32
+    # A row that is not a secret stays readable text.
+    assert _stored(db_session, "google_client_id") == "abc.apps"
+
+
+def test_a_secret_this_installation_cannot_open_reads_as_not_set_and_never_breaks_the_space(
+    db_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    other = Settings(_env_file=None, jwt_secret="another-installation-secret-32-chars-long")  # type: ignore[call-arg]
+    SpaceSettingsService(db_session, other).update(
+        SpaceSettingsUpdate(google_client_id="abc.apps", google_client_secret="shh"),
+        ADMIN,
+        spazio="studio",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        effective = SpaceSettingsService(db_session, BASE).effective()
+
+    assert effective.google_client_id == "abc.apps"
+    assert effective.google_client_secret == ""
+    assert effective.google_token_key == ""
+    assert "shh" not in caplog.text
+
+
+REAL = Settings(  # type: ignore[call-arg]
+    _env_file=None, jwt_secret="a-real-secret-for-the-sealing-migration-tests-only"
+)
+
+
+def _migration_0065(monkeypatch: pytest.MonkeyPatch, settings: Settings):
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "0065_seal_space_settings_secrets.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0065", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "get_settings", lambda: settings)
+    return module
+
+
+def _plain_rows(db_session: Session) -> None:
+    db_session.add_all(
+        [
+            SpaceSetting(key="google_client_secret", value="plain-secret"),
+            SpaceSetting(key="google_token_key", value="plain-key"),
+        ]
+    )
+    db_session.flush()
+
+
+def test_migration_0065_seals_the_rows_written_in_plain_text_and_downgrade_unseals_them(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _migration_0065(monkeypatch, REAL)
+    _plain_rows(db_session)
+
+    with Operations.context(MigrationContext.configure(db_session.connection())):
+        module.upgrade()
+        sealed_once = _stored(db_session, "google_client_secret")
+        module.upgrade()  # run twice: a sealed row is left alone
+        assert _stored(db_session, "google_client_secret") == sealed_once
+        assert sealed_once.startswith(SEALED_PREFIX)
+        assert unseal_value(sealed_once, REAL.jwt_secret) == "plain-secret"
+        assert unseal_value(_stored(db_session, "google_token_key"), REAL.jwt_secret) == "plain-key"
+
+        module.downgrade()
+        assert _stored(db_session, "google_client_secret") == "plain-secret"
+        assert _stored(db_session, "google_token_key") == "plain-key"
+
+
+def test_migration_0065_refuses_to_seal_under_a_placeholder_secret(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _migration_0065(
+        monkeypatch,
+        Settings(_env_file=None, jwt_secret=DEFAULT_JWT_SECRET),  # type: ignore[call-arg]
+    )
+    _plain_rows(db_session)
+
+    with (
+        Operations.context(MigrationContext.configure(db_session.connection())),
+        pytest.raises(RuntimeError, match="placeholder"),
+    ):
+        module.upgrade()
+    assert _stored(db_session, "google_client_secret") == "plain-secret"
+
+
+def test_a_secret_row_not_yet_sealed_is_read_as_it_is(db_session: Session) -> None:
+    """A space whose migration was refused or has not run yet keeps working until the next boot."""
+    _plain_rows(db_session)
+    db_session.add(SpaceSetting(key="google_client_id", value="abc.apps"))
+    db_session.flush()
+
+    effective = SpaceSettingsService(db_session, BASE).effective()
+
+    assert effective.google_client_secret == "plain-secret"
+    assert effective.google_token_key == "plain-key"

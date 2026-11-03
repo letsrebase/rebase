@@ -9,8 +9,12 @@ from mcp.server import MCPServer
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import calendario as calendar_tools
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import AttivitaChanges, BoundedLimit, IsoDateStr
+from pigrocrm_mcp.tools.params import (
+    AttivitaChanges,
+    BoundedLimit,
+    IsoDateStr,
+    parse_legal_entity_id,
+)
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:

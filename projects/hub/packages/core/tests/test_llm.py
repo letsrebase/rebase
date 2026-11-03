@@ -17,9 +17,11 @@ import base64
 import json
 import logging
 import os
+import queue
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -47,21 +49,23 @@ from rebase_core.errors import (
 )
 from rebase_core.llm import (
     FALLBACK_BETA,
-    UNAVAILABLE_SENTENCE,
-    AiBatch,
     AiCall,
-    BatchHandle,
-    BatchOutcome,
     LlmMessage,
     LlmRequest,
     LlmResponse,
     RecordingCall,
     TaskOverride,
-    batch_for_task,
-    build_batch_model,
     build_model,
     call_for_task,
 )
+from rebase_core.llm_batch import (
+    AiBatch,
+    BatchHandle,
+    BatchOutcome,
+    batch_for_task,
+    build_batch_model,
+)
+from rebase_core.llm_sentences import unavailable_sentence
 from rebase_core.models import AiTask, AiUsage, Freelancer, User
 
 API_KEY = "sk-ant-test-not-a-real-key"
@@ -225,7 +229,9 @@ def test_a_prova_consumes_the_tasks_daily_cap(opener: SessionOpener) -> None:
     with opener() as session:
         task = session.get(AiTask, "card")
         assert task is not None
-        task.daily_cap_eur = Decimal("0.01")
+        # A call holds its worst case (2000 output tokens at EUR 25/Mtok is 0.05, the input a
+        # little), so the first fits under 0.06, and after it (0.012 spent) the second does not.
+        task.daily_cap_eur = Decimal("0.06")
         session.commit()
     stub = Stub(Stub.reply(input_tokens=1500, output_tokens=180), Stub.reply())
 
@@ -413,7 +419,7 @@ def test_provider_error_maps_to_llm_unavailable_without_key_in_message(
     ):
         _call(opener, stub).complete(_request())
 
-    assert str(exc_info.value) == UNAVAILABLE_SENTENCE
+    assert str(exc_info.value) == unavailable_sentence("card")
     assert exc_info.value.__cause__ is None and exc_info.value.__suppress_context__
     assert API_KEY not in caplog.text
     assert "CV" not in caplog.text
@@ -906,7 +912,7 @@ def test_an_answer_from_an_unpriced_model_still_spends_the_daily_cap(
     with opener() as session:
         task = session.get(AiTask, "card")
         assert task is not None
-        task.daily_cap_eur = Decimal("0.01")
+        task.daily_cap_eur = Decimal("0.06")  # a call's worst case is a little over 0.05
         session.commit()
     wire._handler = lambda request: httpx2.Response(
         200, json=_beta_message(model="claude-opus-5-20261001")
@@ -933,7 +939,7 @@ def test_wire_outage_is_llm_unavailable_without_key_or_prompt_in_the_log(
     with caplog.at_level(logging.INFO), pytest.raises(LlmUnavailable) as error:
         _wire_call(opener).complete(_request())
 
-    assert str(error.value) == UNAVAILABLE_SENTENCE
+    assert str(error.value) == unavailable_sentence("card")
     assert API_KEY not in caplog.text
     assert USER_TEXT not in caplog.text
     # One retry, not the SDK's default two: the 90-second budget of the team builder.
@@ -1298,3 +1304,179 @@ def test_batch_outage_is_llm_unavailable(
 
     with pytest.raises(LlmUnavailable):
         _batch(opener).submit({"id-0": _request()})
+
+
+# ---- spend holds (HCORE-01, REB-889) ------------------------------------------------------
+
+
+def _cap(opener: SessionOpener, cap: str) -> None:
+    with opener() as session:
+        session.execute(text(f"UPDATE ai_tasks SET daily_cap_eur = {cap} WHERE task = 'card'"))
+        session.commit()
+
+
+def test_a_call_that_fails_gives_its_hold_back(opener: SessionOpener) -> None:
+    """The hold is placed before the network and deleted when the provider does not answer:
+    nothing is left in the books and the whole cap is free again."""
+    _cap(opener, "0.06")
+    stub = Stub(ModelHTTPError(500, MODEL, {"error": "down"}), Stub.reply())
+
+    with pytest.raises(LlmUnavailable):
+        _call(opener, stub).complete(_request())
+
+    assert _usage_rows(opener) == []
+    _call(opener, stub).complete(_request())  # the worst case fits again
+    assert len(_usage_rows(opener)) == 1
+
+
+def test_the_hold_is_in_the_books_while_the_provider_answers_and_the_answer_replaces_it(
+    opener: SessionOpener,
+) -> None:
+    during: list[Any] = []
+
+    def factory(
+        provider: str, model: str, api_key: str, effort: str | None
+    ) -> tuple[Model, ModelSettings]:
+        def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            with opener() as session:
+                during.extend(session.scalars(select(AiUsage)))
+                during.append(AiConfigService(session, _settings()).spent_today("card"))
+            return Stub.reply(input_tokens=1000, output_tokens=200)
+
+        return FunctionModel(respond, model_name=model), ModelSettings()
+
+    AiCall(opener, _settings(), "card", model_factory=factory).complete(_request())
+
+    [hold, spent] = during
+    assert hold.reserved_until is not None and (hold.input_tokens, hold.output_tokens) == (0, 0)
+    assert hold.freelancer_id is None and hold.priced is True
+    # The worst case: 2000 output tokens at 25 euro per million, and the input a little.
+    assert Decimal("0.05") < spent < Decimal("0.06")
+    [row] = _usage_rows(opener)
+    assert row.id == hold.id and row.reserved_until is None
+    assert row.cost_eur == Decimal("0.010000")  # 1000 in at 5 and 200 out at 25, per million
+
+
+def test_concurrent_calls_cannot_all_pass_the_cap(opener: SessionOpener) -> None:
+    """Four calls at once with room for two worst cases: two reach the provider, two are
+    refused, whatever the order. Before the holds all four read the same empty sum."""
+    _cap(opener, "0.12")
+    gate = threading.Event()
+    entered = threading.Semaphore(0)
+    outcomes: queue.Queue[str] = queue.Queue()
+
+    def factory(
+        provider: str, model: str, api_key: str, effort: str | None
+    ) -> tuple[Model, ModelSettings]:
+        def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            entered.release()
+            if not gate.wait(30):
+                raise TimeoutError
+            return Stub.reply()
+
+        return FunctionModel(respond, model_name=model), ModelSettings()
+
+    def call() -> None:
+        try:
+            AiCall(opener, _settings(), "card", model_factory=factory).complete(_request())
+            outcomes.put("answered")
+        except LlmCapReached:
+            outcomes.put("refused")
+
+    threads = [threading.Thread(target=call) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    try:
+        # The two that fit are inside the provider's call and wait; the other two come back.
+        assert entered.acquire(timeout=30) and entered.acquire(timeout=30)
+        assert [outcomes.get(timeout=30), outcomes.get(timeout=30)] == ["refused", "refused"]
+    finally:
+        gate.set()
+        for thread in threads:
+            thread.join()
+
+    assert sorted(outcomes.get_nowait() for _ in range(2)) == ["answered", "answered"]
+    assert [row.reserved_until for row in _usage_rows(opener)] == [None, None]
+
+
+def test_a_batch_holds_its_estimate_and_a_call_and_a_batch_see_each_other(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    _cap(opener, "0.10")
+    batch = _batch(opener)
+
+    handle = batch.submit({"id-0": _request()}, Decimal("0.06"))
+
+    [hold] = _usage_rows(opener)
+    assert hold.id == handle.hold_id and hold.batch is True and hold.cost_eur == Decimal("0.06")
+    assert hold.reserved_until is not None and hold.reserved_until > datetime.now(UTC) + timedelta(
+        hours=24
+    )
+    with pytest.raises(LlmCapReached):  # a second batch: 0.06 + 0.06 passes 0.10
+        batch.submit({"id-0": _request()}, Decimal("0.06"))
+    with pytest.raises(LlmCapReached):  # a call: 0.06 + its worst case (0.05) passes it too
+        _call(opener, Stub()).complete(_request())
+    assert BatchHandle.from_json(json.loads(json.dumps(handle.to_json()))) == handle
+
+
+def test_the_first_recorded_answer_replaces_the_batch_hold_in_its_own_transaction(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    batch = _batch(opener)
+    handle = batch.submit({"id-0": _request()}, Decimal("0.06"))
+    batch_wire.lines = [
+        {"custom_id": "id-0", "result": {"type": "succeeded", "message": _beta_message()}}
+    ]
+    answered = batch.collect(handle, Scheda)["id-0"].response
+    assert answered is not None
+    assert len(_usage_rows(opener)) == 1  # collecting an answer is not recording it
+
+    with opener() as session:
+        batch.record(session, handle, answered, None)  # type: ignore[arg-type]
+        session.rollback()
+    [hold] = _usage_rows(opener)  # a record that rolls back leaves the hold as it was
+    assert hold.reserved_until is not None
+
+    with opener() as session:
+        batch.record(session, handle, answered, None)  # type: ignore[arg-type]
+        session.commit()
+    [row] = _usage_rows(opener)
+    assert row.reserved_until is None and row.cost_eur == Decimal("0.006000")
+
+
+def test_a_batch_that_ends_with_nothing_to_record_releases_its_hold(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    batch = _batch(opener)
+    handle = batch.submit({"id-0": _request()}, Decimal("0.06"))
+    batch_wire.lines = [{"custom_id": "id-0", "result": {"type": "expired"}}]
+
+    assert batch.collect(handle, Scheda)["id-0"] == BatchOutcome("expired")
+
+    assert _usage_rows(opener) == []
+
+
+def test_a_batch_that_cannot_be_sent_releases_its_hold(
+    opener: SessionOpener, wire: Wire, batch_wire: BatchWire
+) -> None:
+    wire._handler = lambda request: httpx2.Response(
+        500, json={"type": "error", "error": {"type": "api_error", "message": "boom"}}
+    )
+
+    with pytest.raises(LlmUnavailable):
+        _batch(opener).submit({"id-0": _request()}, Decimal("0.06"))
+
+    assert _usage_rows(opener) == []
+
+
+def test_a_handle_stored_before_the_holds_has_none() -> None:
+    old = {
+        "id": BATCH_ID,
+        "provider": "anthropic",
+        "model": MODEL,
+        "group": "{}",
+        "created_at": "2026-10-28T09:00:00+00:00",
+        "request_count": 2,
+    }
+
+    assert BatchHandle.from_json(old).hold_id is None

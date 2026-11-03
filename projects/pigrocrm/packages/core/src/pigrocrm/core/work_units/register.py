@@ -35,9 +35,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import DocumentFromTemplate, DocumentRead
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import NotFound, ValidationFailed
@@ -209,7 +209,7 @@ class ContractRegisterService:
         """Everything the PDF needs, finished: no cell is computed by the template."""
         return {
             "periodo": f"{_italian_date(register.da)} - {_italian_date(register.a)}",
-            "oggi": _italian_date(oggi_in_italia()),
+            "oggi": _italian_date(today_local()),
             "contratto": {"titolo": register.titolo},
             "voci": [
                 {
@@ -261,7 +261,7 @@ class ContractRegisterService:
             # A savepoint of its own: two first requests can both find no row, and the loser's
             # insert is refused by the unique name. It rolls back to here and reads the winner's.
             with self.session.begin_nested():
-                return self.templates.add(
+                template = self.templates.add(
                     Template(
                         nome=REGISTER_TEMPLATE_NOME,
                         tipo="rapporto_ore",
@@ -272,9 +272,14 @@ class ContractRegisterService:
                         attivo=True,
                     )
                 )
+            # Committed on purpose: `create_from_template` commits the session before it
+            # renders, so the seed is filed here, deliberately, as the seed command would.
+            self.session.commit()
+            return template
         except IntegrityError:
             existing = self.templates.get_by_nome(REGISTER_TEMPLATE_NOME)
-            assert existing is not None
+            if existing is None:
+                raise
             return existing
 
     def render_pdf(
@@ -299,7 +304,8 @@ class ContractRegisterService:
             )
         register = self.build(contract_id, da, a, actor, invoice_id=invoice_id)
         contract = self.session.get(Contract, contract_id)
-        assert contract is not None  # `build` raised NotFound otherwise
+        if contract is None:
+            raise NotFound("contract", contract_id)
         template = self._template()
         return DocumentService(self.session, self.storage).create_from_template(
             DocumentFromTemplate(

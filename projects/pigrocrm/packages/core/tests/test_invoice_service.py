@@ -832,10 +832,10 @@ def test_a_new_proforma_is_dated_today_in_the_issuer_s_calendar(
 ) -> None:
     """The PDF used to print the render day, so the same proforma re-rendered tomorrow
     said tomorrow. The date is the sender's and it is stored at creation."""
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
 
     proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    assert proforma.data_emissione == oggi_in_italia()
+    assert proforma.data_emissione == today_local()
 
 
 def test_a_proforma_may_be_created_with_its_own_date(
@@ -1019,3 +1019,32 @@ def test_the_order_is_edited_on_the_merged_row_and_cleared_as_a_whole(
         ADMIN,
     )
     assert (cleared.ordine_numero, cleared.ordine_cig) == (None, None)
+
+
+def test_unpaid_for_customer_lists_the_issued_unpaid_rows_oldest_deadline_first(
+    service: InvoiceService, db_session: Session
+) -> None:
+    from datetime import timedelta
+
+    from fakes.invoice_fixtures import unpaid_invoice
+
+    from pigrocrm.core.db.clock import today_local
+
+    today = today_local()
+    customer = Customer(ragione_sociale="Debitore S.r.l.")
+    db_session.add(customer)
+    db_session.flush()
+    later = unpaid_invoice(db_session, due=today + timedelta(days=20), customer=customer)
+    earlier = unpaid_invoice(db_session, due=today + timedelta(days=5), customer=customer)
+    paid = unpaid_invoice(db_session, due=today + timedelta(days=1), customer=customer)
+    paid.stato_pagamento = "incassato"
+    paid.data_incasso = today
+    unpaid_invoice(db_session, due=today + timedelta(days=2))  # another customer's
+    db_session.flush()
+
+    rows = service.unpaid_for_customer(customer.id, ADMIN, limit=10)
+
+    assert [row.id for row in rows] == [earlier.id, later.id]
+    assert [row.id for row in service.unpaid_for_customer(customer.id, ADMIN, limit=1)] == [
+        earlier.id
+    ]

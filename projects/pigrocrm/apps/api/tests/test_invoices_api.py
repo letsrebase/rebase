@@ -10,17 +10,17 @@ from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.invoices import pdf as invoice_pdf
-from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.invoices.artifacts import InvoiceArtifacts
 
-# `oggi_in_italia()`, not `date.today()`: `issue` and `mark_transmitted_externally`
-# both compare against Europe/Rome's own calendar (see `clock.py`), and the two can
+# `today_local()`, not `date.today()`: `issue` and `mark_transmitted_externally`
+# both compare against Europe/Rome's own calendar (see `db/clock.py`), and the two can
 # disagree with the process's own system timezone -- exactly the class of defect that
 # module exists to close. A bare `date.today()` here made
 # `test_a_transmitted_invoice_refuses_annulment_and_says_where_to_go` flake with a 422
 # ("una consegna non si registra con data futura") whenever the two clocks disagreed.
-TODAY = oggi_in_italia().isoformat()
+TODAY = today_local().isoformat()
 
 COLLABORATORE_EMAIL = "collaboratore-dual@pigro.it"
 COLLABORATORE_PASSWORD = "supersegreta1"
@@ -179,7 +179,7 @@ def test_issuing_assigns_a_number_and_produces_both_artefacts(
     issued = response.json()
     assert issued["stato"] == "emessa"
     assert issued["numero"] == 1
-    assert issued["anno"] == oggi_in_italia().year
+    assert issued["anno"] == today_local().year
     # The row is read back after the render (REB-143), so the answer already says both
     # files exist and the web has no reason to render them a second time.
     assert issued["pdf_document_id"] is not None
@@ -302,10 +302,10 @@ def test_an_xml_export_that_breaks_the_transaction_leaves_the_pdf_it_already_com
     endpoint catches it: without the rollback, the read-back would answer 500 on
     `InFailedSqlTransaction` and the person would see the failure this card removes."""
 
-    def aborts_the_transaction(self: InvoiceService, *_args: object, **_kwargs: object) -> None:
-        self.session.execute(text("SELECT 1/0"))
+    def aborts_the_transaction(self: InvoiceArtifacts, *_args: object, **_kwargs: object) -> None:
+        self.ctx.session.execute(text("SELECT 1/0"))
 
-    monkeypatch.setattr(InvoiceService, "export_xml", aborts_the_transaction)
+    monkeypatch.setattr(InvoiceArtifacts, "export_xml", aborts_the_transaction)
     draft = _draft(logged_in, customer["id"])
     response = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
     assert response.status_code == 200, response.text

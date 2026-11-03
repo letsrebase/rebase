@@ -3,6 +3,10 @@ from typing import Any
 from uuid import UUID
 
 from pigrocrm.core.contract_emails.service import ContractEmailService
+from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
+from pigrocrm.core.contracts.projection_service import ContractProjectionService
+from pigrocrm.core.contracts.rate_card_service import RateCardService
+from pigrocrm.core.contracts.renewal_assumption_service import RenewalAssumptionService
 from pigrocrm.core.contracts.schemas import (
     ClauseNoteCreate,
     ClauseNoteUpdate,
@@ -16,13 +20,7 @@ from pigrocrm.core.contracts.schemas import (
     RateCardUpdate,
     RenewalAssumptionUpsert,
 )
-from pigrocrm.core.contracts.service import (
-    ClauseNoteService,
-    ContractProjectionService,
-    ContractService,
-    RateCardService,
-    RenewalAssumptionService,
-)
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.work_units.register import ContractRegisterService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import pick, refuse_empty, report

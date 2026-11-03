@@ -15,17 +15,18 @@ shape unchanged: a thin read of a `users` row, never the card fields, never a jo
 
 import hashlib
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from pydantic import ConfigDict
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import NAME_MAX_LENGTH, AdminToken, User
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.schema_common import ResponseModel
 from rebase_core.search import matches_any, similarity_score
 
 ENTITY = "token"
@@ -33,12 +34,15 @@ TOKEN_PREFIX = "reb_"
 PREFIX_VISIBLE_CHARS = 8
 INVALID_TOKEN = "Token non valido"
 DEFAULT_NAME = "Claude Code"
+# `last_used_at` is «ultimo uso» in the list, not an access log: a token used every second
+# is stamped once a minute, so a busy agent costs no write per request (REB-803).
+LAST_USED_RESOLUTION = timedelta(minutes=1)
 TOKEN_LIST_LIMIT_DEFAULT = 100
 TOKEN_LIST_LIMIT_MAX = 500
 _TOKEN_SEARCH_COLUMNS = (AdminToken.nome,)
 
 
-class AdminRead(BaseModel):
+class AdminRead(ResponseModel):
     """An admin as the API and the MCP server both read them: never the card, never a
     join. `attivo` and `created_at` are here for the list of admins (ORB-123)."""
 
@@ -51,7 +55,7 @@ class AdminRead(BaseModel):
     created_at: datetime
 
 
-class AdminTokenRead(BaseModel):
+class AdminTokenRead(ResponseModel):
     """A token as the admin area lists it: never the hash, never the value."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -62,9 +66,10 @@ class AdminTokenRead(BaseModel):
     created_at: datetime
     last_used_at: datetime | None
     revoked_at: datetime | None
+    expires_at: datetime | None
 
 
-class AdminList(BaseModel):
+class AdminList(ResponseModel):
     """Every admin (ORB-123), oldest first with no search term so the page still reads
     as a history, or best-match first once `q` narrows it (REB-313, the shape REB-285
     gives Talenti and Aziende). `next_cursor` is `None` on the last page."""
@@ -73,7 +78,7 @@ class AdminList(BaseModel):
     next_cursor: str | None = None
 
 
-class AdminTokenList(BaseModel):
+class AdminTokenList(ResponseModel):
     """The admin's own tokens (REB-313), the same search-and-cursor shape beside
     `AdminTokenService.list`'s full, unpaginated read. `next_cursor` is `None` on the
     last page."""
@@ -89,21 +94,29 @@ def _digest(raw: str) -> str:
 def is_token(raw: str | None) -> bool:
     """Whether a string could be one of ours: a bearer that is not is no credential at
     all, and the caller refuses it without a read."""
-    return bool(raw) and raw.startswith(TOKEN_PREFIX)  # type: ignore[union-attr]
+    return raw is not None and raw.startswith(TOKEN_PREFIX)
 
 
 class AdminTokenService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def create(self, user_id: UUID, nome: str) -> tuple[AdminTokenRead, str]:
-        """A fresh token for the admin, with the name they gave it. The raw value is the
-        second element, returned exactly once."""
+    def create(
+        self, user_id: UUID, nome: str, expires_at: datetime | None = None
+    ) -> tuple[AdminTokenRead, str]:
+        """A fresh token for the admin, with the name they gave it and, optionally, the
+        moment it stops working (REB-803; a timezone-aware instant in the future, or no
+        expiry at all). The raw value is the second element, returned exactly once."""
         nome = nome.strip()
         if not nome:
             raise ValidationFailed(ENTITY, "nome", "serve un nome")
         if len(nome) > NAME_MAX_LENGTH:
             raise ValidationFailed(ENTITY, "nome", f"al massimo {NAME_MAX_LENGTH} caratteri")
+        if expires_at is not None:
+            if expires_at.tzinfo is None:
+                raise ValidationFailed(ENTITY, "expires_at", "serve un fuso orario")
+            if expires_at <= datetime.now(UTC):
+                raise ValidationFailed(ENTITY, "expires_at", "deve essere nel futuro")
         owner = self.session.get(User, user_id)
         if owner is None or owner.role != "admin" or not owner.attivo:
             raise NotFound("admin", user_id)
@@ -113,6 +126,7 @@ class AdminTokenService:
             nome=nome,
             token_hash=_digest(raw),
             prefix=raw[: len(TOKEN_PREFIX) + PREFIX_VISIBLE_CHARS],
+            expires_at=expires_at,
         )
         self.session.add(row)
         self.session.commit()
@@ -132,24 +146,45 @@ class AdminTokenService:
         return AdminTokenRead.model_validate(row)
 
     def resolve(self, raw: str | None) -> AdminRead:
-        """The admin behind a token, or one `ValidationFailed` for every failure. Stamps
-        `last_used_at`, which is what the list shows as «ultimo uso». `populate_existing`
-        forces a fresh read of the owner: `role`/`attivo` can change between two calls
-        against the same long-lived session (an MCP server's, in production; a test's
-        raw `UPDATE` in this package's own suite), and a cached, stale copy would let a
-        just-demoted or just-deactivated admin's token keep resolving."""
-        if not is_token(raw):
+        """The admin behind a token, or one `ValidationFailed` for every failure: an
+        unknown, revoked or expired token and a deactivated or demoted owner read the
+        same. Stamps `last_used_at` (the list's «ultimo uso») at most once a minute, with
+        a conditional `UPDATE` that commits only when it changed a row, so a busy agent
+        costs no write per request. `populate_existing` forces a fresh read of the owner:
+        `role`/`attivo` can change between two calls against the same long-lived session
+        (an MCP server's, in production; a test's raw `UPDATE` in this package's own
+        suite), and a cached, stale copy would let a just-demoted or just-deactivated
+        admin's token keep resolving."""
+        if raw is None or not is_token(raw):
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
-        assert raw is not None
+        now = datetime.now(UTC)
         row = self.session.scalar(select(AdminToken).where(AdminToken.token_hash == _digest(raw)))
-        if row is None or row.revoked_at is not None:
+        if (
+            row is None
+            or row.revoked_at is not None
+            or (row.expires_at is not None and row.expires_at <= now)
+        ):
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
         owner = self.session.get(User, row.user_id, populate_existing=True)
         if owner is None or owner.role != "admin" or not owner.attivo:
             raise ValidationFailed(ENTITY, "token", INVALID_TOKEN)
-        row.last_used_at = datetime.now(UTC)
-        self.session.commit()
-        return AdminRead.model_validate(owner)
+        admin = AdminRead.model_validate(owner)
+        stamped = self.session.execute(
+            update(AdminToken)
+            .where(
+                AdminToken.id == row.id,
+                or_(
+                    AdminToken.last_used_at.is_(None),
+                    AdminToken.last_used_at < now - LAST_USED_RESOLUTION,
+                ),
+            )
+            .values(last_used_at=now)
+            .returning(AdminToken.id)
+            .execution_options(synchronize_session=False)
+        )
+        if stamped.first() is not None:
+            self.session.commit()
+        return admin
 
     def list_page(
         self,

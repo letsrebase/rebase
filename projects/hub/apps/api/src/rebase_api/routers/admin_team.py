@@ -27,20 +27,15 @@ from rebase_api.deps import (
     SettingsDep,
     TeamBuilderDep,
 )
+from rebase_api.params import Cursor, Limit
 from rebase_core.config import Settings
 from rebase_core.db import SessionOpener
 from rebase_core.mail import EmailSender
-from rebase_core.pagination import CURSOR_MAX_LENGTH
+from rebase_core.team_availability import NO_SENDER, AvailabilityBatch, TeamAvailabilityService
 from rebase_core.team_builder import (
     LIST_LIMIT_DEFAULT as PROPOSALS_LIMIT_DEFAULT,
 )
-from rebase_core.team_requests import (
-    LIST_LIMIT_DEFAULT,
-    LIST_LIMIT_MAX,
-    NO_SENDER,
-    AvailabilityBatch,
-    TeamRequestService,
-)
+from rebase_core.team_requests import LIST_LIMIT_DEFAULT, TeamRequestService
 from rebase_core.team_schemas import (
     TeamProposalList,
     TeamRequestList,
@@ -54,9 +49,7 @@ router = APIRouter(prefix="/api/hub/team", tags=["hub-admin"])
 
 _log = logging.getLogger(__name__)
 
-Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
 Word = Annotated[str | None, Query(max_length=20)]
-Cursor = Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)]
 
 
 @router.get("/requests", response_model=TeamRequestList)
@@ -148,11 +141,12 @@ def _deliver(
     sender: EmailSender,
     batch: AvailabilityBatch,
 ) -> None:
-    """After the response: it never raises, since nobody is left to read it, and logs
-    the request's id alone."""
+    """After the response: a batch of mails run in a session of its own, not one mail
+    through `send_after_response`. It never raises, since nobody is left to read it, and
+    logs the request's id alone."""
     try:
         with open_session() as session:
-            TeamRequestService(session, settings=settings, sender=sender).deliver(batch)
+            TeamAvailabilityService(session, settings=settings, sender=sender).deliver(batch)
     except Exception:
         # A database error mid-batch leaves talents marked as mailed: «Rimanda» mails them too.
         _log.exception("team request %s: sending the availability mails failed", batch.request_id)
@@ -175,7 +169,7 @@ def contact_team_talents(
     time, or nobody left to write to; 503 without a mail key."""
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
-    read, batch = TeamRequestService(session, settings=settings).prepare_contact(
+    read, batch = TeamAvailabilityService(session, settings=settings).prepare_contact(
         request_id, admin.id, only_silent=only_silent
     )
     background.add_task(_deliver, open_session, settings, sender, batch)

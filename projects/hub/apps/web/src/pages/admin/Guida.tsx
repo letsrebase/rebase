@@ -3,7 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import { Empty, Figure, Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Figure, Header } from './list-kit'
 
 /**
  * How the guide is doing (ORB-156): every download the members' route wrote down, the
@@ -12,7 +13,7 @@ import { Empty, Figure, Header } from './lists'
  * takes the file, and by nothing else.
  */
 export function AdminGuida() {
-  const stats = useQuery({ queryKey: ['guide-stats'], queryFn: () => admin.guideStats() })
+  const stats = useQuery({ queryKey: keys.guideStats, queryFn: () => admin.guideStats() })
   return (
     <>
       <Header title="La guida" count={stats.data?.totale} />
@@ -47,13 +48,19 @@ export function AdminGuida() {
                     {stats.data.recenti.map((download) => (
                       <TableRow key={download.id}>
                         <TableCell>
-                          <Link
-                            to="/admin/freelance/$id"
-                            params={{ id: download.freelancer_id }}
-                            className="font-medium hover:underline"
-                          >
-                            {download.nome} {download.cognome}
-                          </Link>
+                          {download.freelancer_id ? (
+                            <Link
+                              to="/admin/freelance/$id"
+                              params={{ id: download.freelancer_id }}
+                              className="font-medium hover:underline"
+                            >
+                              {download.nome} {download.cognome}
+                            </Link>
+                          ) : (
+                            <span className="font-medium">
+                              {download.nome} {download.cognome}
+                            </span>
+                          )}
                           <p className="text-xs text-muted-foreground">{download.email}</p>
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">

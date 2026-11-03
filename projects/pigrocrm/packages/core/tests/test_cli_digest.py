@@ -34,6 +34,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+import pigrocrm.core.cli.cron as cli_cron
+from pigrocrm.core import telemetry
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
@@ -43,6 +45,7 @@ from pigrocrm.core.digest.run import INVIO_RIFIUTATO, DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import Mail, RecordingSender
+from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.tenants import (
     TenantService,
     TenantSignup,
@@ -155,8 +158,8 @@ def cron(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> RecordingSender
     the ordinary state of an installation with no key, not a special case."""
     sender = RecordingSender()
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "sender_from_settings", lambda _settings: sender)
-    monkeypatch.setattr(cli, "tracker_from_settings", lambda _settings: None)
+    monkeypatch.setattr(cli_cron, "sender_from_settings", lambda _settings: sender)
+    monkeypatch.setattr(cli_cron, "tracker_from_settings", lambda _settings: None)
     return sender
 
 
@@ -312,7 +315,7 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
         assert f"{PUBLIC_URL}/{slug}/app" in mail.text
         assert _settimane(settings, slug) == [iso]
     # The root installation is not in the registry and is visited all the same, first.
-    assert out.splitlines()[0] == f"{cli.ROOT_LABEL}: inviato a 2"
+    assert out.splitlines()[0] == f"{ROOT_LABEL}: inviato a 2"
     assert _settimane(settings, None) == [iso]
 
 
@@ -336,7 +339,6 @@ def test_the_root_installation_gets_its_week_like_a_space(
     walk alone never mailed it. Its database is `database_url`, its titolare the first
     admin still active, its links carry `PIGROCRM_ROOT_SLUG` like a space's carry its
     slug, and `--slug root` visits it alone, without the registry."""
-    import pigrocrm.core.tenants as tenants
 
     def no_registry(_settings: Settings) -> Engine:
         raise AssertionError("the root is not in the registry")
@@ -344,13 +346,13 @@ def test_the_root_installation_gets_its_week_like_a_space(
     monkeypatch.setattr(
         cli, "get_settings", lambda: settings.model_copy(update={"root_slug": root_slug})
     )
-    monkeypatch.setattr(tenants, "ensure_tenants_database", no_registry)
+    monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", no_registry)
     iso = iso_week(_settimana_scorsa(settings)[0])
 
-    assert cli.main(["digest", "--slug", cli.ROOT_LABEL]) == 0
+    assert cli.main(["digest", "--slug", ROOT_LABEL]) == 0
 
     captured = capsys.readouterr()
-    assert captured.out.strip() == f"{cli.ROOT_LABEL}: inviato a 2"
+    assert captured.out.strip() == f"{ROOT_LABEL}: inviato a 2"
     assert captured.err == ""
     root_mails = [mail for mail in cron.sent if mail.to.endswith("@radice.it")]
     # Every active user who kept it on, as in a space; never the one switched off.
@@ -497,7 +499,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     own `_motore` holds the real function and goes on reaching the real databases, which
     is what lets the fixtures clean up after this test.
     """
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     vero = tenants_database.tenant_database_url
     monkeypatch.setattr(
@@ -535,8 +537,8 @@ def test_a_client_that_cannot_be_built_is_one_line_and_still_shuts_the_sdk_down(
     def esplode(_settings: Settings) -> None:
         raise RuntimeError("chiave storta")
 
-    monkeypatch.setattr(cli, "tracker_from_settings", esplode)
-    monkeypatch.setattr(cli.telemetry, "shutdown", lambda: chiuso.append("shutdown"))
+    monkeypatch.setattr(cli_cron, "tracker_from_settings", esplode)
+    monkeypatch.setattr(telemetry, "shutdown", lambda: chiuso.append("shutdown"))
 
     assert cli.main(["digest", "--slug", UNO]) == 0
 
@@ -559,15 +561,15 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
         _env_file=None,  # type: ignore[call-arg]
     )
     monkeypatch.setattr(cli, "get_settings", lambda: rotto)
-    monkeypatch.setattr(cli, "sender_from_settings", lambda _settings: sender)
-    monkeypatch.setattr(cli, "tracker_from_settings", lambda _settings: None)
+    monkeypatch.setattr(cli_cron, "sender_from_settings", lambda _settings: sender)
+    monkeypatch.setattr(cli_cron, "tracker_from_settings", lambda _settings: None)
 
     assert cli.main(["digest"]) == 0
 
     captured = capsys.readouterr()
     assert "registro degli spazi non raggiungibile" in captured.err
     # The root is not in the registry, so it is still tried, and fails on its own line.
-    assert f"{cli.ROOT_LABEL}: saltato (OperationalError)" in captured.err
+    assert f"{ROOT_LABEL}: saltato (OperationalError)" in captured.err
     assert "segreta" not in captured.err
     assert sender.sent == []
 
@@ -647,7 +649,7 @@ def test_a_space_the_command_cannot_open_is_recorded_nowhere_and_says_so_once(
 ) -> None:
     """A database that does not answer cannot hold its own failure: the line on stderr is
     the whole record, and the clock simply stops moving, which reads as late."""
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     vero = tenants_database.tenant_database_url
     monkeypatch.setattr(

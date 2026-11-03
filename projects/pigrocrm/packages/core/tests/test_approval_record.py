@@ -146,10 +146,11 @@ def test_one_day_that_cannot_use_the_approval_refuses_all_and_writes_nothing(
     worked = _day(db_session, contract, date(2026, 3, 3), "approvato")
     document = _document(db_session, contract)
 
-    with pytest.raises(Conflict, match="2026-03-03 \\(approvato\\)"):
+    with pytest.raises(Conflict) as refused:
         ApprovalService(db_session).record(
             _record(contract, [fine, worked], document_id=document.id), WRITER
         )
+    assert refused.value.details["giornate"] == ["2026-03-03 (approvato)"]
 
     assert WorkUnitService(db_session).get(fine).stato == "proposto"
     assert db_session.scalars(select(Approval)).all() == []
@@ -172,8 +173,9 @@ def test_a_document_with_no_archived_file_cannot_be_the_proof(db_session: Sessio
     day = _day(db_session, contract, date(2026, 3, 2), "proposto")
     empty = _document(db_session, contract, filed=False)
 
-    with pytest.raises(ValidationFailed, match="non ha ancora un file"):
+    with pytest.raises(ValidationFailed) as refused:
         ApprovalService(db_session).record(_record(contract, [day], document_id=empty.id), WRITER)
+    assert refused.value.details["field"] == "document_id"
 
     assert WorkUnitService(db_session).get(day).stato == "proposto"
     assert db_session.scalars(select(Approval)).all() == []
@@ -184,10 +186,11 @@ def test_a_document_of_another_customer_is_refused(db_session: Session) -> None:
     other = _contract(db_session)
     day = _day(db_session, contract, date(2026, 3, 2), "proposto")
 
-    with pytest.raises(ValidationFailed, match="ne' del suo cliente"):
+    with pytest.raises(ValidationFailed) as refused:
         ApprovalService(db_session).record(
             _record(contract, [day], document_id=_document(db_session, other).id), WRITER
         )
+    assert refused.value.details["field"] == "document_id"
 
 
 def test_the_proof_is_exactly_one_of_a_document_and_a_message() -> None:
@@ -286,10 +289,11 @@ def test_an_email_of_another_customer_cannot_be_the_proof(db_session: Session, t
     )
     db_session.flush()
 
-    with pytest.raises(ValidationFailed, match="tra quelli di questo cliente"):
+    with pytest.raises(ValidationFailed) as refused:
         ApprovalService(db_session, LocalFileStorage(str(tmp_path / "d"))).record(
             _record(contract, [day], gmail_message_id=message.id), WRITER
         )
+    assert refused.value.details["field"] == "gmail_message_id"
 
 
 def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
@@ -321,10 +325,11 @@ def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
     )
     db_session.flush()
 
-    with pytest.raises(ValidationFailed, match="non e' archiviato"):
+    with pytest.raises(ValidationFailed) as refused:
         ApprovalService(db_session, LocalFileStorage(str(tmp_path / "d"))).record(
             _record(contract, [day], gmail_message_id=message.id), WRITER
         )
+    assert refused.value.details["field"] == "gmail_message_id"
 
 
 def test_an_agent_credential_and_a_reader_cannot_record_an_approval(

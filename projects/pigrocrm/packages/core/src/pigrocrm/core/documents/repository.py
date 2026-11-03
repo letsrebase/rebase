@@ -130,7 +130,7 @@ class DocumentRepository:
     def invoice_tipo_of_pdf(self, document_id: UUID) -> str | None:
         """The `tipo` (`fattura` or `proforma`) of the invoice row that names this
         document as its PDF, a soft-deleted one included, or `None` when no invoice does.
-        See `DocumentService._check_invoice_pdf` for why that is the test."""
+        See `DocumentUploads.check_invoice_pdf` for why that is the test."""
         # Through the definer function of migration 0048 rather than a query on
         # `invoices`: an invoice this session cannot see (another azienda's, named on a
         # document it can) must still answer, or the guard would fail open (REB-634).

@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from api_responses import ok
 from fakes_cards import CARD, PERSONA, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
@@ -73,6 +74,7 @@ def test_without_the_cookie_every_admin_route_is_a_401(client: TestClient, admin
         "/api/hub/freelancers",
         "/api/hub/companies",
         "/api/hub/signups",
+        f"/api/hub/signups/{MISSING}",
         "/api/hub/talent",
         "/api/hub/admins",
         "/api/hub/pigro/instances",
@@ -123,6 +125,11 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     assert latest["email"] == "ada@studio.it"
     assert latest["user_id"] == str(ada_user_id)
     assert people["ada@studio.it"] != str(ada_user_id)  # the freelancer id, not the user id
+    assert latest["freelancer_id"] == people["ada@studio.it"]
+    admin_user_id = api_session.scalar(select(User.id).where(User.role == "admin"))
+    perks.record_guide_download(admin_user_id)  # a person with no card: nothing to link to
+    again = client.get("/api/hub/perks/guide").json()["recenti"][0]
+    assert (again["user_id"], again["freelancer_id"]) == (str(admin_user_id), None)
     moments = [item["downloaded_at"] for item in stats["recenti"]]
     assert moments == sorted(moments, reverse=True)
 
@@ -369,9 +376,11 @@ def test_admins_list_stays_oldest_first_with_no_term(
 ) -> None:
     """ORB-123: REB-313's cursor keeps the admins list reading as a history."""
     _login(client, sender)
-    client.post(
-        "/api/hub/admins/promote",
-        json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+    ok(
+        client.post(
+            "/api/hub/admins/promote",
+            json={"email": "grace@rebase.it", "nome": "Grace", "cognome": "Hopper"},
+        )
     )
     listed = client.get("/api/hub/admins").json()["items"]
     assert [row["email"] for row in listed] == [ADMIN_EMAIL, "grace@rebase.it"]
@@ -898,6 +907,33 @@ def test_without_the_cookie_the_card_from_a_signup_is_a_401(
 ) -> None:
     response = client.post(f"/api/hub/signups/{MISSING}/card", json=DRAFT)
     assert response.status_code == 401
+
+
+def test_an_admin_reads_one_signup_as_the_row_the_talent_list_shows(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    signup_id = _signup(client, sender)
+
+    found = client.get(f"/api/hub/signups/{signup_id}")
+
+    assert found.status_code == 200, found.text
+    body = found.json()
+    assert body["id"] == signup_id
+    assert (body["nome"], body["cognome"], body["email"]) == ("Ada", "Lovelace", "ada@studio.it")
+    assert (body["stato"], body["origine"]) == ("lead", "form")
+    assert client.get(f"/api/hub/signups/{MISSING}").status_code == 404
+
+
+def test_a_signup_that_already_has_a_card_is_no_lead_any_more(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    signup_id = _signup(client, sender)
+    assert client.get(f"/api/hub/signups/{signup_id}").status_code == 200
+    created = client.post(f"/api/hub/signups/{signup_id}/card", json=DRAFT)
+    assert created.status_code == 201, created.text
+
+    # The list shows this person as the card, so the lead's page has nothing to open.
+    assert client.get(f"/api/hub/signups/{signup_id}").status_code == 404
 
 
 def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at_it(

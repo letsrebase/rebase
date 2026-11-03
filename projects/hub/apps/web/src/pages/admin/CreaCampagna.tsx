@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Input } from '@rebase/ui/input'
@@ -7,7 +7,8 @@ import { Loader } from '@rebase/ui/loader'
 import { admin, ApiError, type Campaign, type CampaignDraft, type CampaignMeta } from '@/lib/api'
 import { CAMPAIGN_MAX_LENGTH, defaultSchedule, romeTime } from '@/lib/campaigns'
 import { useMe } from '@/lib/me'
-import { Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Header } from './list-kit'
 import { Anteprima, Prova } from './crea-campagna/Anteprima'
 import { BarraInvio, type Quando } from './crea-campagna/BarraInvio'
 import { Destinatari } from './crea-campagna/Destinatari'
@@ -59,8 +60,9 @@ function SaveStatus({ saving, error, savedAt }: { saving: boolean; error: unknow
  *  edit route, `null` on «Nuova campagna». */
 function Editor({ initial }: { initial: Campaign | null }) {
   const navigate = useNavigate()
+  const client = useQueryClient()
   const me = useMe()
-  const templates = useQuery({ queryKey: ['campaignTemplates'], queryFn: admin.campaignTemplates })
+  const templates = useQuery({ queryKey: keys.campaignTemplates, queryFn: admin.campaignTemplates })
 
   const [form, setForm] = useState<CampaignForm>(() => (initial ? formFromCampaign(initial) : EMPTY_FORM))
   // Once the admin has written into the mail, picking another state must not overwrite
@@ -79,7 +81,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
   // The parent's name, for the sentence and the link in Destinatari (Task 6): a `lista`
   // never picks its own audience, so it names whose it inherited instead.
   const parent = useQuery({
-    queryKey: ['campaign', form.segueId],
+    queryKey: keys.campaign(form.segueId),
     queryFn: () => admin.campaign(form.segueId!),
     enabled: form.fonte === 'lista' && form.segueId !== null,
   })
@@ -105,7 +107,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
       : null
 
   const audience = useQuery({
-    queryKey: ['campaignAudience', campaign?.id, campaign ? audienceSource(campaign) : null],
+    queryKey: keys.campaignAudience(campaign?.id, campaign ? audienceSource(campaign) : null),
     queryFn: () => admin.campaignAudience(campaign!.id),
     enabled: campaign !== null,
     placeholderData: keepPreviousData,
@@ -176,7 +178,10 @@ function Editor({ initial }: { initial: Campaign | null }) {
       const moment = mode === 'programma' ? { giorno: when.giorno, ora: when.ora } : {}
       return save.run(key, (saved) => admin.scheduleCampaign(saved.id, { ...moment, esclusi: esclusiOra }))
     },
-    onSuccess: (sent) => void navigate({ to: '/admin/campaigns/$id', params: { id: sent.id } }),
+    onSuccess: (sent) => {
+      void client.invalidateQueries({ queryKey: keys.campaigns })
+      void navigate({ to: '/admin/campaigns/$id', params: { id: sent.id } })
+    },
   })
 
   function blockedReason(): string | null {
@@ -276,7 +281,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
 export function AdminCreaCampagna() {
   const { id } = useParams({ strict: false }) as { id?: string }
   const editing = useQuery({
-    queryKey: ['campaign', id],
+    queryKey: keys.campaign(id),
     queryFn: () => admin.campaign(id!),
     enabled: id !== undefined,
   })

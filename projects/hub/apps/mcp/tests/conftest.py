@@ -2,7 +2,8 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, text
+from hub_tables import wipe_hub
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.config import Settings
@@ -23,6 +24,5 @@ def factory(mcp_engine: Engine) -> Iterator[sessionmaker[Session]]:
     made = session_factory(mcp_engine)
     yield made
     session = made()
-    session.execute(text("DELETE FROM signups"))
-    session.commit()
+    wipe_hub(session)
     session.close()

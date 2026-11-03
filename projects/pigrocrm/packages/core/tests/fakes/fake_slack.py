@@ -93,7 +93,13 @@ class FakeSlack:
     # -- the seam `SlackClient` takes -------------------------------------------
 
     def http(
-        self, verb: str, url: str, headers: dict[str, str], body: bytes | None
+        self,
+        verb: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
     ) -> tuple[int, bytes, dict[str, str]]:
         assert verb == "POST", "every Slack Web API call here is a POST"
         path = urlparse(url).path

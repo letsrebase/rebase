@@ -1,0 +1,169 @@
+"""From the lines a caller typed to the lines and totals that are stored.
+
+Functions of their arguments (and, for `persist_lines`, of the repository they write
+through): the regime strategy is resolved once by the caller and passed in, so a write
+asks the fiscal pack one question once.
+"""
+
+from collections.abc import Sequence
+
+from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.fiscal.regime import RegimeStrategy
+from pigrocrm.core.fiscal.schemas import FiscalSnapshot
+from pigrocrm.core.invoices.constants import ENTITY
+from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.invoices.schemas import InvoiceLineIn
+from pigrocrm.core.invoices.totals import (
+    MONEY_MAX_EXCLUSIVE,
+    ComputedLine,
+    build_riepilogo,
+    line_total,
+    overflows_money_column,
+    sum_totals,
+)
+
+
+def compute_lines(
+    righe: Sequence[InvoiceLineIn],
+    profile: FiscalSnapshot,
+    strategy: RegimeStrategy,
+    *,
+    nazione_cliente: str,
+) -> tuple[ComputedLine, ...]:
+    """Caller input plus the regime's answer, renumbered from 1.
+
+    Renumbering here is what maintains contiguity: the unique constraint on
+    `(invoice_id, numero_linea)` and the `>= 1` check are the database's half, and
+    no single-row `CHECK` can see the other rows.
+
+    `nazione_cliente` is the customer's country as it is *now*: the `Natura` is
+    decided when the lines are computed and copied unchanged by `issue`, so a
+    proforma whose customer changed country is repaired by replacing its lines.
+    """
+    computed: list[ComputedLine] = []
+    for index, riga in enumerate(righe, start=1):
+        aliquota, natura, riferimento = strategy.resolve_line_vat(
+            riga.aliquota_iva, profile, nazione_cliente=nazione_cliente
+        )
+        prezzo_totale = line_total(
+            quantita=riga.quantita,
+            prezzo_unitario=riga.prezzo_unitario,
+            sconto_percentuale=riga.sconto_percentuale,
+            sconto_importo=riga.sconto_importo,
+        )
+        # The factors mirror `Numeric(12, 6)` in the schema; their product goes to
+        # `invoice_lines.prezzo_totale`, which is `Numeric(12, 2)`, and no Pydantic bound
+        # on two factors can express a bound on their product. Refused here, before
+        # anything is flushed: Postgres answers an overflow with `NumericValueOutOfRange`,
+        # which SQLAlchemy raises as `DataError` and not `IntegrityError`, so no handler
+        # catches it. The line is named because an invoice may carry `MAX_LINES` of them.
+        if overflows_money_column(prezzo_totale):
+            raise ValidationFailed(
+                ENTITY,
+                "righe",
+                f"l'importo della riga {index} non e' rappresentabile: quantita per "
+                "prezzo unitario, al netto degli sconti, supera il massimo",
+                expected=f"un importo con valore assoluto inferiore a {MONEY_MAX_EXCLUSIVE}",
+            )
+        computed.append(
+            ComputedLine(
+                numero_linea=index,
+                descrizione=riga.descrizione,
+                quantita=riga.quantita,
+                unita_misura=riga.unita_misura,
+                prezzo_unitario=riga.prezzo_unitario,
+                sconto_percentuale=riga.sconto_percentuale,
+                sconto_importo=riga.sconto_importo,
+                prezzo_totale=prezzo_totale,
+                aliquota_iva=aliquota,
+                natura=natura,
+                riferimento_normativo=riferimento,
+            )
+        )
+    return tuple(computed)
+
+
+def computed_from_stored(righe: Sequence[InvoiceLine]) -> tuple[ComputedLine, ...]:
+    """The stored lines as `ComputedLine`s, untouched: `issue` copies the amounts the
+    customer agreed to rather than recomputing them."""
+    return tuple(
+        ComputedLine(
+            numero_linea=r.numero_linea,
+            descrizione=r.descrizione,
+            quantita=r.quantita,
+            unita_misura=r.unita_misura,
+            prezzo_unitario=r.prezzo_unitario,
+            sconto_percentuale=r.sconto_percentuale,
+            sconto_importo=r.sconto_importo,
+            prezzo_totale=r.prezzo_totale,
+            aliquota_iva=r.aliquota_iva,
+            natura=r.natura,
+            riferimento_normativo=r.riferimento_normativo,
+        )
+        for r in righe
+    )
+
+
+def apply_totals(
+    invoice: Invoice,
+    computed: Sequence[ComputedLine],
+    profile: FiscalSnapshot,
+    strategy: RegimeStrategy,
+) -> None:
+    """Compute and **store**. Never recomputed by a client: a total computed in the
+    browser is the structural defect inherited from the previous system, and on an
+    invoice it costs more."""
+    riepilogo = build_riepilogo(computed)
+    imponibile, imposta, totale = sum_totals(riepilogo)
+    # The stamp duty is stored but does not enter the total: `DatiBollo` declares that
+    # the issuer settled it virtually (spec 7.2).
+    bollo = strategy.bollo(riepilogo, profile)
+
+    # Summation reaches the same overflow with no oversized line anywhere:
+    # `InvoiceCreate.righe` admits `MAX_LINES` of them, and two hundred lines of fifty
+    # million each are two hundred ordinary amounts whose sum is not. Checked before a
+    # single attribute is assigned, so a refused invoice leaves no unstorable value on a
+    # mapped object for the next autoflush to find.
+    for field, value in (
+        ("imponibile", imponibile),
+        ("imposta", imposta),
+        ("totale", totale),
+        ("bollo", bollo),
+    ):
+        if overflows_money_column(value):
+            raise ValidationFailed(
+                ENTITY,
+                field,
+                f"la somma delle righe non e' rappresentabile: {field} supera il massimo",
+                expected=f"un importo con valore assoluto inferiore a {MONEY_MAX_EXCLUSIVE}",
+            )
+
+    invoice.imponibile = imponibile
+    invoice.imposta = imposta
+    invoice.totale = totale
+    invoice.bollo = bollo
+
+
+def persist_lines(
+    repo: InvoiceRepository, invoice: Invoice, computed: Sequence[ComputedLine]
+) -> None:
+    """Replace the invoice's stored lines with `computed`."""
+    repo.clear_lines(invoice.id)
+    for riga in computed:
+        repo.add_line(
+            InvoiceLine(
+                invoice_id=invoice.id,
+                numero_linea=riga.numero_linea,
+                descrizione=riga.descrizione,
+                quantita=riga.quantita,
+                unita_misura=riga.unita_misura,
+                prezzo_unitario=riga.prezzo_unitario,
+                sconto_percentuale=riga.sconto_percentuale,
+                sconto_importo=riga.sconto_importo,
+                prezzo_totale=riga.prezzo_totale,
+                aliquota_iva=riga.aliquota_iva,
+                natura=riga.natura,
+                riferimento_normativo=riga.riferimento_normativo,
+            )
+        )

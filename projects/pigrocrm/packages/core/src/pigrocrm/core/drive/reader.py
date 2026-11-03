@@ -299,7 +299,10 @@ class DriveReader:
         defaults to `settings.drive_text_max_bytes`. See `DOWNLOAD_MAX_BYTES`.
         """
         checked = checked_outside_id(file_id, field="file_id")
-        limit = self._text_max_bytes if max_bytes is None else max_bytes
+        # A caller's `max_bytes` may raise the text limit above the configured default
+        # (that is what it is for) but, like `read_bytes`', only up to the download
+        # ceiling: `_ceiling` is the one bound on what a caller may ask this reader for.
+        limit = self._text_max_bytes if max_bytes is None else self._ceiling(max_bytes)
 
         def work() -> FileText:
             content, mime = self._read_bytes(checked, self._ceiling(None))
@@ -338,7 +341,7 @@ class DriveReader:
         written for -- `GDriveStorage` reaches Drive for the bytes of a CRM document --
         and wrong for every caller of this class. A Google 500 while listing a folder the
         titolare named arrived as «document_blob: elenco fallito (500)»: there is no CRM
-        document in that operation, `_resolve_original_pdf` documents the opposite, and an
+        document in that operation, `OriginalPdfResolver.resolve` documents the opposite, and an
         adapter routing on the entity would send somebody to the documents screen. So the
         transport's entity, and *only* it, is re-stamped as `ENTITY` on the way out.
 
@@ -415,25 +418,26 @@ class DriveReader:
 
         if mime == GOOGLE_DOC_MIME:
             content = self._transport.bytes(
-                "GET", file_export_url(file_id, PLAIN_TEXT_MIME), what=_WHAT_EXPORT
+                "GET",
+                file_export_url(file_id, PLAIN_TEXT_MIME),
+                what=_WHAT_EXPORT,
+                max_bytes=max_bytes,
             )
             mime = PLAIN_TEXT_MIME
         elif mime.startswith(_GOOGLE_NATIVE_PREFIX):
             raise Conflict(ENTITY, _NO_BYTES.format(mime=mime), file_id=file_id, mime=mime)
         else:
-            content = self._transport.bytes("GET", file_media_url(file_id), what=_WHAT_DOWNLOAD)
-
-        # Not a memory bound, and it would be dishonest to describe it as one: by the
-        # time this runs, `DriveTransport` has already buffered the whole response in
-        # memory (`urllib` reads it in one `response.read()`), so what this refuses is
-        # *returning* an oversized answer, not allocating it. The bound that actually
-        # limits allocation is the declared-size check above, and above that Google's
-        # own per-file limits. Kept regardless: an export declares no size at all, so
-        # without this a Google Doc of any length would come back whole.
-        if len(content) > max_bytes:
-            raise Conflict(
-                ENTITY, _TOO_BIG.format(max_bytes=max_bytes), file_id=file_id, size=len(content)
+            content = self._transport.bytes(
+                "GET", file_media_url(file_id), what=_WHAT_DOWNLOAD, max_bytes=max_bytes
             )
+
+        # The transport reads at most `max_bytes + 1` bytes off the socket, so an answer
+        # longer than the ceiling is told apart from one that fits without ever being
+        # buffered whole. The declared-size check above is the cheap refusal; this is the
+        # one that holds for an export, which declares no size at all. The size of an
+        # oversized answer is not reported: the read stopped one byte past the ceiling.
+        if len(content) > max_bytes:
+            raise Conflict(ENTITY, _TOO_BIG.format(max_bytes=max_bytes), file_id=file_id)
         return content, mime
 
     def _within_roots(self, file_id: str, cache: dict[str, list[str]]) -> bool:
@@ -487,7 +491,7 @@ class DriveReader:
                 "GET", file_meta_url(file_id, fields=_PARENT_FIELDS), what=_WHAT_META
             )
         except Conflict as refusal:
-            if refusal.details.get("status") != 404:
+            if refusal.details.get("upstream_status") != 404:
                 raise
             payload = {}
         parents = _parents(payload)
@@ -500,7 +504,7 @@ class DriveReader:
                 "GET", file_meta_url(file_id, fields=_ENTRY_FIELDS), what=_WHAT_META
             )
         except Conflict as refusal:
-            if refusal.details.get("status") == 404:
+            if refusal.details.get("upstream_status") == 404:
                 # Same sentence as a file outside the roots: see the module docstring.
                 raise NotFound(ENTITY, file_id) from refusal
             raise
@@ -520,7 +524,7 @@ class _AlreadyAuthorized:
 # What a caller passes as `action` to say "the agent ban for this operation has already
 # been applied, under a name this call cannot know".
 #
-# There is exactly one such caller -- `InvoiceService._drive_reader`, whose operation is
+# There is exactly one such caller -- `OriginalPdfResolver._drive_reader`, whose operation is
 # `import_issued_invoice`, checked by `import_issued` under that name before any of this
 # runs. Passing the name again here would check the same ban twice; passing anything else
 # would check the wrong one.
@@ -552,7 +556,7 @@ def drive_reader_for(
     before the next has anything to say:
 
     1. `action`: the operation the caller is about, checked against
-       `AGENT_FORBIDDEN_ACTIONS` before this function touches the database at all. An
+       `FULL_ACCESS_ACTIONS` before this function touches the database at all. An
        agent credential on an installation that has not opted in is refused here, so it
        never learns whether a Drive is even connected;
     2. `usable`, which holds no transport and therefore *cannot* have called Google, so
@@ -567,7 +571,7 @@ def drive_reader_for(
     `feature` is the name the refusal uses ("la lettura dei documenti da Drive"), so a
     missing scope reads as a feature that is off rather than as a broken credential.
 
-    `action` is the name `AGENT_FORBIDDEN_ACTIONS` lists the operation under -- the MCP
+    `action` is the name `FULL_ACCESS_ACTIONS` lists the operation under -- the MCP
     tool's own name, which is also what a REST route would pass. It is here, at the one
     point every reader of Drive is built from, rather than in each caller: the tool being
     unregistered protects the MCP transport only, and a personal access token is not
@@ -575,7 +579,7 @@ def drive_reader_for(
     composes a reader inherits the ban by passing its action.
 
     It is **required**, and one caller must not pass a real one:
-    `InvoiceService._drive_reader`, whose operation is `import_issued_invoice` -- already
+    `OriginalPdfResolver._drive_reader`, whose operation is `import_issued_invoice` -- already
     on the list, and already checked by `import_issued` under that name. Passing it here
     too would check the same ban twice, and passing anything else would check the wrong
     one. That caller passes `ALREADY_AUTHORIZED` instead, by name.
@@ -603,10 +607,10 @@ def drive_reader_for(
     discovered it, and then the exception continues.
 
     The `GoogleTokenClient` `user_transport_for` builds lives as long as the reader.
-    Unlike `routers/gmail.py`'s per-process cache, that means one token exchange per
-    reader rather than one per hour per process -- the price of `packages/core` not
-    owning a process-wide cache, and the same choice `apps/mcp`'s privileged tools
-    already make.
+    Unlike the API's per-process cache (`pigrocrm_api/google_tokens.py`), that means one
+    token exchange per reader rather than one per hour per process -- the price of
+    `packages/core` not owning a process-wide cache, and the same choice `apps/mcp`'s
+    privileged tools already make.
     """
     if isinstance(action, str):
         # Before the session is touched: a refusal here must not double as "there is a

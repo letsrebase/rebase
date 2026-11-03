@@ -1,16 +1,12 @@
-import logging
 from typing import Annotated, Any
-from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Depends, Path, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmRequest, InvoiceConfirmResult
 from pigrocrm.core.invoices.import_review import InvoiceReviewRequest, InvoiceReviewResult
 from pigrocrm.core.invoices.import_upload import (
@@ -19,6 +15,7 @@ from pigrocrm.core.invoices.import_upload import (
     UploadedInvoiceReviewResult,
     parse_decisions,
 )
+from pigrocrm.core.invoices.importing import CONFIRM_ACTION, REVIEW_ACTION
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
     ArtifactKind,
@@ -41,13 +38,19 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
     StatoPagamento,
 )
-from pigrocrm.core.invoices.service import CONFIRM_ACTION, REVIEW_ACTION, InvoiceService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
+from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import AZIENDA_QUERY_DESCRIPTION, KeysetParams
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/invoices", tags=["invoices"], responses=PROBLEM_RESPONSES)
-
-logger = logging.getLogger(__name__)
+router = APIRouter(
+    prefix="/api/invoices",
+    tags=["invoices"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 ANNO_MIN = 2000
 ANNO_MAX = 2999
@@ -68,49 +71,35 @@ def _service(session: SessionDep, storage: StorageDep, settings: SettingsDep) ->
     return InvoiceService(session, storage, settings)
 
 
+class InvoiceListParams(KeysetParams):
+    customer_id: UUID | None = None
+    deal_id: UUID | None = None
+    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
+    tipo: InvoiceTipo | None = None
+    stato: InvoiceStato | None = None
+    anno: int | None = Field(default=None, ge=ANNO_MIN, le=ANNO_MAX)
+    stato_pagamento: StatoPagamento | None = None
+    # The drill-through of the operational dashboard's "scaduto e non incassato" card
+    # (§6.2). The card links here and nowhere else, and the rows returned are counted by
+    # the same predicate function the card's `COUNT` uses.
+    scadute: bool = False
+    # The fattura a consumed proforma was issued as: the proforma's page asks for the
+    # one row whose `origine_proforma_id` is its own id (ORB-134).
+    origine_proforma_id: UUID | None = None
+    # Leave out the proformas that became a fattura: the list under «Tutte» otherwise
+    # shows each issued proforma twice, once as itself and once as its number (ORB-169).
+    escludi_consumate: bool = False
+
+
 @router.get("", response_model=InvoicePage)
 def list_invoices(
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    customer_id: Annotated[UUID | None, Query()] = None,
-    deal_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: Annotated[
-        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
-    ] = None,
-    tipo: Annotated[InvoiceTipo | None, Query()] = None,
-    stato: Annotated[InvoiceStato | None, Query()] = None,
-    anno: Annotated[int | None, Query(ge=ANNO_MIN, le=ANNO_MAX)] = None,
-    stato_pagamento: Annotated[StatoPagamento | None, Query()] = None,
-    # The drill-through of the operational dashboard's "scaduto e non incassato" card
-    # (§6.2). The card links here and nowhere else, and the rows returned are counted by
-    # the same predicate function the card's `COUNT` uses.
-    scadute: Annotated[bool, Query()] = False,
-    # The fattura a consumed proforma was issued as: the proforma's page asks for the
-    # one row whose `origine_proforma_id` is its own id (ORB-134).
-    origine_proforma_id: Annotated[UUID | None, Query()] = None,
-    # Leave out the proformas that became a fattura: the list under «Tutte» otherwise
-    # shows each issued proforma twice, once as itself and once as its number (ORB-169).
-    escludi_consumate: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[UUID | None, Query()] = None,
+    params: Annotated[InvoiceListParams, Query()],
 ) -> InvoicePage:
-    query = InvoiceListQuery(
-        customer_id=customer_id,
-        deal_id=deal_id,
-        azienda_id=azienda_id,
-        tipo=tipo,
-        stato=stato,
-        anno=anno,
-        stato_pagamento=stato_pagamento,
-        scadute=scadute,
-        origine_proforma_id=origine_proforma_id,
-        escludi_consumate=escludi_consumate,
-        limit=limit,
-        cursor=cursor,
-    )
-    return _service(session, storage, settings).list(query, actor)
+    return _service(session, storage, settings).list(params.to_query(InvoiceListQuery), actor)
 
 
 @router.post("", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
@@ -305,7 +294,7 @@ async def confirm_import_upload(
 # them exactly as before.
 @router.get("/register/{anno}/gaps", response_model=list[RegisterGapRead])
 def register_gaps(
-    anno: int,
+    anno: Annotated[int, Path(ge=ANNO_MIN, le=ANNO_MAX)],
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
@@ -317,7 +306,7 @@ def register_gaps(
 
 @router.post("/register/{anno}/gaps", response_model=list[RegisterGapRead])
 def declare_register_gaps(
-    anno: int,
+    anno: Annotated[int, Path(ge=ANNO_MIN, le=ANNO_MAX)],
     data: RegisterGapsDeclare,
     session: SessionDep,
     storage: StorageDep,
@@ -422,26 +411,7 @@ def issue(
     second transaction: `produce_artifacts` is called here, right after, so a caller
     of this endpoint never has to make a separate call to see the PDF/XML.
     """
-    service = _service(session, storage, settings)
-    result = service.issue(invoice_id, data, actor)
-    # Once `issue` has committed, the answer is the issued row whatever the render does
-    # (REB-143). The number is consumed and the invoice is a fiscal fact; a render that
-    # raised used to turn that into an error, and the person saw a failure for an
-    # invoice that was really issued. The failure is logged and the row is read back as
-    # it stands, so `pdf_document_id`/`xml_document_id` say which file exists and
-    # «Rigenera documenti» (`POST /artifacts`, below) is the retry. A comment and not
-    # the docstring, which is this route's OpenAPI description.
-    try:
-        service.produce_artifacts(result.id, actor)
-    except Exception:
-        # Anything, not only a `DomainError`: a Typst crash or a storage backend that
-        # refused the bytes is exactly the case, and none of them undoes the commit
-        # above. Logged first, so a rollback that fails too (a dead connection) cannot
-        # hide the render's own error. The rollback clears whatever the render left
-        # half-flushed or aborted, so the read below starts on a clean session.
-        logger.exception("invoice %s issued, its PDF/XML were not produced", result.id)
-        session.rollback()
-    return service.get(result.id, actor)
+    return _service(session, storage, settings).issue_and_render(invoice_id, data, actor)
 
 
 @router.post("/{invoice_id}/annul", response_model=InvoiceRead)
@@ -498,18 +468,7 @@ def _download(
     service: InvoiceService, invoice_id: UUID, kind: ArtifactKind, actor: ActorDep
 ) -> Response:
     data, content_type, filename = service.download(invoice_id, kind, actor)
-    return Response(
-        content=data,
-        media_type=content_type,
-        headers={
-            # RFC 5987, percent-encoded rather than interpolated: the XML name is built
-            # from a fiscal identifier and the PDF name from integers, so nothing
-            # dangerous should reach here -- encoding it anyway means a future change
-            # cannot turn a name into a response header.
-            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return attachment_response(data, content_type, filename)
 
 
 @router.get("/{invoice_id}/pdf")
@@ -536,11 +495,4 @@ def download_xml(
     return _download(_service(session, storage, settings), invoice_id, "xml", actor)
 
 
-@router.get("/{invoice_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    invoice_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    return ActivityService(session).timeline("invoice", invoice_id, limit)
+router.include_router(timeline_router("invoice", id_param="invoice_id"))

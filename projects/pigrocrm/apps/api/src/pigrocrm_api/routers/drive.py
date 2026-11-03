@@ -18,7 +18,7 @@ through it is 9C/9D's surface, built on the `usable()` gate `drive/account.py` a
 exposes.
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -31,43 +31,31 @@ from pigrocrm.core.drive.schemas import (
     GoogleDriveAccountRead,
     drive_health,
 )
-from pigrocrm.core.errors import Conflict
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, callback_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.oauth_relay import relay_to_space
-from pigrocrm_api.routers.gmail import token_client
-from pigrocrm_api.tenancy import cookie_path
+from pigrocrm_api.google_tokens import token_client
+from pigrocrm_api.oauth_callback import finish_consent
 
 router = APIRouter(prefix="/api/drive", tags=["drive"], responses=PROBLEM_RESPONSES)
+# The one public route is the OAuth callback: a browser navigation that decides for itself
+# what a missing session means (`oauth_callback.py`). Everything else sits behind
+# `get_actor`, so a handler added to `authenticated` cannot forget to ask who is calling.
+authenticated = APIRouter(dependencies=[Depends(get_actor)])
 
-# Where the SPA renders the outcome of a consent flow -- the same fixed table of four
-# codes as `routers/gmail.py`'s own constants, on Drive's own settings tab so that
-# nothing an attacker appends to this URL can put words of their own on the screen.
+# Where the SPA renders the outcome of a consent flow (`oauth_callback.py`), on Drive's own
+# settings tab.
 _SETTINGS_PAGE = "/app/settings/drive"
-_ESITO_COLLEGATO = "collegato"
-_ESITO_NEGATO = "negato"
-_ESITO_ERRORE = "errore"
-_ESITO_SESSIONE = "sessione"
 
 _ACCOUNT_PATH = "/account"
 _CALLBACK_ROUTE = "/oauth/callback"
 _CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
-
-# `token_client` is imported, not redefined: it is `routers/gmail.py`'s per-process
-# `GoogleTokenClient` cache, and one Google OAuth client authenticates both credentials,
-# so the access-token cache that client keeps is one cache -- the same reuse
-# `routers/email_drafts.py` already makes of it. A second, Drive-only dict here would
-# cold-start against tokens a Gmail sync had already warmed, and, worse, `forget()` on
-# one instance would leave the other's copy of the same token live, which is exactly
-# what `disconnect` calls it to prevent. Kept re-exported under this module's name so a
-# reader of the Drive surface finds it where they expect it.
 
 
 def _oauth(session: Session, settings: Settings) -> GoogleDriveOAuthService:
     return GoogleDriveOAuthService(session, settings=settings, tokens=token_client(settings))
 
 
-@router.get(_ACCOUNT_PATH, response_model=DriveHealth, response_model_exclude_unset=True)
+@authenticated.get(_ACCOUNT_PATH, response_model=DriveHealth, response_model_exclude_unset=True)
 def read_account(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> DriveHealth:
     """200 even when Drive is not configured -- see the module docstring.
 
@@ -97,7 +85,7 @@ def read_account(session: SessionDep, actor: ActorDep, settings: SettingsDep) ->
     return service.health(actor)
 
 
-@router.get("/oauth/start")
+@authenticated.get("/oauth/start")
 def start_oauth(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> RedirectResponse:
     # Snyk Code python/OR here is a false positive: the target is Google's fixed
     # GOOGLE_AUTH_URL, with every parameter urlencoded.
@@ -113,49 +101,34 @@ def finish_oauth(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    # Before the actor, for the same reason as Gmail's callback (`oauth_relay.py`).
-    relayed = relay_to_space(request, settings, _CALLBACK_PATH, code=code, state=state, error=error)
-    if relayed is not None:
-        return relayed
-    # The refresh cookie counts when the access cookie ran out on Google's screens, and
-    # no session at all is a page with a sentence, not a 401 (REB-446, as in Gmail's).
-    actor = callback_actor(request, session, settings)
-    if actor is None:
-        return _back_to_settings(request, _ESITO_SESSIONE)
-    if error is not None or code is None or state is None:
-        return _back_to_settings(request, _ESITO_NEGATO)
-    try:
-        _oauth(session, settings).complete(code=code, state=state, actor=actor)
-    except Conflict:
-        # Every refusal `complete` can produce is a `Conflict` -- a replayed or expired
-        # state, a Drive that points at a different Google identity than the connected
-        # mailbox, an account already connected to someone else, a grant Google answered
-        # with no identity. All of them arrive here through a browser redirect, so all
-        # of them end on the settings page, which re-reads `GET /account` and shows the
-        # true state.
-        return _back_to_settings(request, _ESITO_ERRORE)
-    return _back_to_settings(request, _ESITO_COLLEGATO)
+    # Every refusal `complete` can produce is a `Conflict` -- a replayed or expired state, a
+    # Drive that points at a different Google identity than the connected mailbox, an
+    # account already connected to someone else, a grant Google answered with no identity.
+    # `finish_consent` ends all of them on the settings page, which re-reads `GET /account`
+    # and shows the true state.
+    return finish_consent(
+        request,
+        session,
+        settings,
+        callback_path=_CALLBACK_PATH,
+        code=code,
+        state=state,
+        error=error,
+        complete=lambda code, state, actor: _oauth(session, settings).complete(
+            code=code, state=state, actor=actor
+        ),
+        page=_SETTINGS_PAGE,
+    )
 
 
-def _back_to_settings(request: Request, esito: str) -> RedirectResponse:
-    # Under the prefix the request wore: a space's consent must end on that space's
-    # settings page, not on the root's. `cookie_path` is the one place that already
-    # knows the prefix, and its `/` is the bare root.
-    prefix = cookie_path(request).rstrip("/")
-    # Snyk Code python/OR here is a false positive: a fixed page, under the request's own
-    # prefix (a slug that matched SLUG_PATTERN in `tenancy.py`, or none for the root),
-    # with one of the four constant esito codes.
-    return RedirectResponse(f"{prefix}{_SETTINGS_PAGE}?esito={esito}", status_code=307)
-
-
-@router.delete(_ACCOUNT_PATH, status_code=204)
+@authenticated.delete(_ACCOUNT_PATH, status_code=204)
 def disconnect(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> None:
     """No `elimina_messaggi` flag: Drive stores no correspondence of its own, so there is
     nothing here for one to name -- see `GoogleDriveOAuthService.disconnect`."""
     _oauth(session, settings).disconnect(actor)
 
 
-@router.patch("/account/roots", response_model=GoogleDriveAccountRead)
+@authenticated.patch("/account/roots", response_model=GoogleDriveAccountRead)
 def update_roots(
     payload: DriveRootsUpdate, session: SessionDep, actor: ActorDep, settings: SettingsDep
 ) -> GoogleDriveAccountRead:
@@ -164,3 +137,6 @@ def update_roots(
     person most likely to be on this screen is the one trying to recover from exactly
     that state, and the route must not add a gate the service deliberately omits."""
     return GoogleDriveAccountService(session, settings=settings).set_roots(payload, actor)
+
+
+router.include_router(authenticated)

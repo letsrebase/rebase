@@ -43,13 +43,14 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
 from pigrocrm_mcp.server import build_server
 
 # 32 bytes of "k", base64. Written out rather than imported from
@@ -301,6 +302,8 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
 
     rows = _payload(result)
     rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
+    # Mail written by somebody else: each item carries the marker, the list stays a list.
+    assert all(row["provenienza"] == PROVENIENZA_TESTO_LIBERO for row in rows)
     assert [row["id"] for row in rows] == [str(message_id)]
     assert rows[0]["da"] == CLIENT
     assert rows[0]["oggetto"] == "Preventivo per il rifacimento del sito"
@@ -528,7 +531,7 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
     `importo` travels as the invoice's own frozen decimal, as a string. A float here
     would be a demand for payment naming a figure the client's copy does not carry.
     """
-    scadenza = oggi_in_italia() - timedelta(days=40)
+    scadenza = today_local() - timedelta(days=40)
     invoice = Invoice(
         customer_id=customer.id,
         tipo="fattura",
@@ -549,6 +552,7 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
 
     rows = _payload(result)
     rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
+    assert all(row["provenienza"] == PROVENIENZA_TESTO_LIBERO for row in rows)
     mine = [row for row in rows if row["invoice_id"] == str(invoice.id)]
     assert len(mine) == 1
     assert mine[0]["importo"] == "1220.00"

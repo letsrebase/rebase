@@ -26,14 +26,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import pigrocrm_api.routers.gmail as gmail_router
+import pigrocrm_api.google_tokens as google_tokens
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.schemas import DRIVE_REQUESTED_SCOPES
 from pigrocrm.core.drive.transport import DriveTransport
 from pigrocrm.core.gmail.tokens import TokenGrant
 from pigrocrm_api.deps import ACCESS_COOKIE
-from pigrocrm_api.routers.gmail import token_client_key
+from pigrocrm_api.google_tokens import token_client_key
 
 TOKEN_KEY_B64 = "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s="  # 32 bytes of "k"
 CLIENT_SECRET = "il-segreto-del-client"
@@ -218,7 +218,7 @@ def test_an_agent_token_cannot_repoint_the_drive_roots(
     admin_user: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The route half of `AGENT_FORBIDDEN_ACTIONS`' three Drive-configuration entries,
+    """The route half of `FULL_ACCESS_ACTIONS`' three Drive-configuration entries,
     and the reason they are on that list at all.
 
     Every confinement slice 9C's reader enforces is a confinement to
@@ -359,7 +359,7 @@ class _Google:
 @pytest.fixture
 def google(drive_ready: TestClient, monkeypatch: pytest.MonkeyPatch) -> _Google:
     fake = _Google()
-    monkeypatch.setitem(gmail_router._token_clients, token_client_key(_configured()), fake)
+    monkeypatch.setitem(google_tokens._token_clients, token_client_key(_configured()), fake)
     return fake
 
 
@@ -467,11 +467,15 @@ def _stub_writable_folder(monkeypatch: pytest.MonkeyPatch, folder_id: str) -> No
             pass
 
     def stub_http(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
-        return 200, json.dumps(
-            {"id": folder_id, "mimeType": "application/vnd.google-apps.folder"}
-        ).encode()
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        payload = {"id": folder_id, "mimeType": "application/vnd.google-apps.folder"}
+        return 200, json.dumps(payload).encode(), {}
 
     def factory(_account: GoogleDriveAccount, _settings: Settings) -> DriveTransport:
         return DriveTransport(tokens=_StubTokens(), http=stub_http, sleep=lambda _: None)
@@ -716,21 +720,6 @@ def test_space_storage_survives_a_partially_configured_google_client(
         "in_effect": True,
         "holder": {"name": "Admin", "email": "io@example.it", "reachable": True},
     }
-
-
-# --- one token-client cache for both Google credentials --------------------------------
-
-
-def test_the_drive_router_shares_gmail_s_token_client_cache() -> None:
-    """One Google OAuth client authenticates both credentials, so the access-token cache
-    it keeps is one cache. A second, Drive-only dict would cold-start against tokens a
-    Gmail sync had already warmed, and `forget()` on one would leave the other's copy
-    of the same token live -- which is exactly what `disconnect` calls it to prevent.
-    """
-    from pigrocrm_api.routers import drive, gmail  # noqa: PLC0415
-
-    settings = _configured()
-    assert drive.token_client(settings) is gmail.token_client(settings)
 
 
 # --- disconnecting -----------------------------------------------------------------------

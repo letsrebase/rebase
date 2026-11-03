@@ -16,7 +16,8 @@ import {
   stallLine,
 } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
-import { Empty, Figure, Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Figure, Header } from './list-kit'
 
 /** An action behind an inline second click, in place of a browser `confirm()`: the
  *  first click swaps the button for the question, the second one runs it. «Annulla»,
@@ -179,14 +180,14 @@ export function AdminCampagna() {
   const { id } = useParams({ from: '/signedIn/admin/campaigns/$id' })
   const client = useQueryClient()
   const detail = useQuery({
-    queryKey: ['campaign', id],
+    queryKey: keys.campaign(id),
     queryFn: () => admin.campaign(id),
     refetchInterval: (query) => {
       const campagna = query.state.data?.campagna
       return campagna ? refetchEvery(campagna) : false
     },
   })
-  const invalidate = () => void client.invalidateQueries({ queryKey: ['campaign', id] })
+  const invalidate = () => void client.invalidateQueries({ queryKey: keys.campaign(id) })
   const toDraft = useMutation({
     mutationFn: () => admin.campaignToDraft(id),
     onSuccess: invalidate,
@@ -199,7 +200,7 @@ export function AdminCampagna() {
   const remove = useMutation({
     mutationFn: () => admin.deleteCampaign(id),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['campaigns'] })
+      void client.invalidateQueries({ queryKey: keys.campaigns })
       void navigate({ to: '/admin/campaigns' })
     },
   })

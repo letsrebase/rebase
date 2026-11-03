@@ -3,6 +3,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
 } from '@tanstack/react-router'
 import type {
@@ -17,47 +18,48 @@ import { periodParam } from '@/lib/report'
 import { parseSearch } from '@/lib/search'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
-import { CompanyWizard } from '@/pages/CompanyWizard'
-import { FreelancerWizard } from '@/pages/FreelancerWizard'
 import { SignedInLayout } from '@/pages/SignedInLayout'
-import { Team } from '@/pages/Team'
-import { TeamRisposta } from '@/pages/TeamRisposta'
-import { AdminAccessi } from '@/pages/admin/Accessi'
-import { AdminAdmins } from '@/pages/admin/Admins'
-import { AdminAgenti } from '@/pages/admin/Agenti'
-import { AdminModelliAi } from '@/pages/admin/ModelliAi'
-import { AdminGuard } from '@/pages/admin/AdminGuard'
-import { AdminGuida } from '@/pages/admin/Guida'
-import { AdminPigro } from '@/pages/admin/Pigro'
-import { AdminConsuntivo } from '@/pages/admin/Consuntivo'
-import { AdminContratti } from '@/pages/admin/Contratti'
-import { AdminCampagna } from '@/pages/admin/Campagna'
-import { AdminCampagne } from '@/pages/admin/Campagne'
-import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
-import { AdminCreaAzienda } from '@/pages/admin/CreaAzienda'
-import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
-import { AdminDuplicati } from '@/pages/admin/Duplicati'
-import { AdminMatches } from '@/pages/admin/Matches'
-import { AdminReferrals } from '@/pages/admin/Referrals'
-import { AdminProposteTeam } from '@/pages/admin/ProposteTeam'
-import { AdminRichiestaTeam } from '@/pages/admin/RichiestaTeam'
-import { AdminRichiesteTeam } from '@/pages/admin/RichiesteTeam'
-import { Disiscrizione } from '@/pages/Disiscrizione'
 import { Thanks } from '@/pages/Thanks'
-import {
-  AdminCompanies,
-  AdminCompanyDetail,
-  AdminFreelancerDetail,
-  AdminTalenti,
-  AdminTalentoLead,
-} from '@/pages/admin/lists'
-import { Accedi } from '@/pages/member/Accedi'
-import { Area } from '@/pages/member/Area'
-import { Cloud } from '@/pages/member/Cloud'
-import { Entra } from '@/pages/member/Entra'
-import { Modifica } from '@/pages/member/Modifica'
-import { ModificaAzienda } from '@/pages/member/ModificaAzienda'
-import { NuovaRichiestaAzienda } from '@/pages/member/NuovaRichiestaAzienda'
+
+// Every page but the chooser and the two frames is its own chunk: an anonymous visitor on
+// the wizard does not download the admin area (REB-890).
+const CompanyWizard = lazyRouteComponent(() => import('@/pages/CompanyWizard'), 'CompanyWizard')
+const FreelancerWizard = lazyRouteComponent(() => import('@/pages/FreelancerWizard'), 'FreelancerWizard')
+const Team = lazyRouteComponent(() => import('@/pages/Team'), 'Team')
+const TeamRisposta = lazyRouteComponent(() => import('@/pages/TeamRisposta'), 'TeamRisposta')
+const AdminAccessi = lazyRouteComponent(() => import('@/pages/admin/Accessi'), 'AdminAccessi')
+const AdminAdmins = lazyRouteComponent(() => import('@/pages/admin/Admins'), 'AdminAdmins')
+const AdminAgenti = lazyRouteComponent(() => import('@/pages/admin/Agenti'), 'AdminAgenti')
+const AdminModelliAi = lazyRouteComponent(() => import('@/pages/admin/ModelliAi'), 'AdminModelliAi')
+const AdminGuard = lazyRouteComponent(() => import('@/pages/admin/AdminGuard'), 'AdminGuard')
+const AdminGuida = lazyRouteComponent(() => import('@/pages/admin/Guida'), 'AdminGuida')
+const AdminPigro = lazyRouteComponent(() => import('@/pages/admin/Pigro'), 'AdminPigro')
+const AdminConsuntivo = lazyRouteComponent(() => import('@/pages/admin/Consuntivo'), 'AdminConsuntivo')
+const AdminContratti = lazyRouteComponent(() => import('@/pages/admin/Contratti'), 'AdminContratti')
+const AdminCampagna = lazyRouteComponent(() => import('@/pages/admin/Campagna'), 'AdminCampagna')
+const AdminCampagne = lazyRouteComponent(() => import('@/pages/admin/Campagne'), 'AdminCampagne')
+const AdminCreaCampagna = lazyRouteComponent(() => import('@/pages/admin/CreaCampagna'), 'AdminCreaCampagna')
+const AdminCreaAzienda = lazyRouteComponent(() => import('@/pages/admin/CreaAzienda'), 'AdminCreaAzienda')
+const AdminCreaMatch = lazyRouteComponent(() => import('@/pages/admin/CreaMatch'), 'AdminCreaMatch')
+const AdminDuplicati = lazyRouteComponent(() => import('@/pages/admin/Duplicati'), 'AdminDuplicati')
+const AdminMatches = lazyRouteComponent(() => import('@/pages/admin/Matches'), 'AdminMatches')
+const AdminReferrals = lazyRouteComponent(() => import('@/pages/admin/Referrals'), 'AdminReferrals')
+const AdminProposteTeam = lazyRouteComponent(() => import('@/pages/admin/ProposteTeam'), 'AdminProposteTeam')
+const AdminRichiestaTeam = lazyRouteComponent(() => import('@/pages/admin/RichiestaTeam'), 'AdminRichiestaTeam')
+const AdminRichiesteTeam = lazyRouteComponent(() => import('@/pages/admin/RichiesteTeam'), 'AdminRichiesteTeam')
+const Disiscrizione = lazyRouteComponent(() => import('@/pages/Disiscrizione'), 'Disiscrizione')
+const AdminCompanies = lazyRouteComponent(() => import('@/pages/admin/companies/CompanyList'), 'AdminCompanies')
+const AdminCompanyDetail = lazyRouteComponent(() => import('@/pages/admin/companies/CompanyDetail'), 'AdminCompanyDetail')
+const AdminFreelancerDetail = lazyRouteComponent(() => import('@/pages/admin/freelancer/FreelancerDetail'), 'AdminFreelancerDetail')
+const AdminTalenti = lazyRouteComponent(() => import('@/pages/admin/talent/TalentList'), 'AdminTalenti')
+const AdminTalentoLead = lazyRouteComponent(() => import('@/pages/admin/talent/LeadForm'), 'AdminTalentoLead')
+const Accedi = lazyRouteComponent(() => import('@/pages/member/Accedi'), 'Accedi')
+const Area = lazyRouteComponent(() => import('@/pages/member/Area'), 'Area')
+const Cloud = lazyRouteComponent(() => import('@/pages/member/Cloud'), 'Cloud')
+const Entra = lazyRouteComponent(() => import('@/pages/member/Entra'), 'Entra')
+const Modifica = lazyRouteComponent(() => import('@/pages/member/Modifica'), 'Modifica')
+const ModificaAzienda = lazyRouteComponent(() => import('@/pages/member/ModificaAzienda'), 'ModificaAzienda')
+const NuovaRichiestaAzienda = lazyRouteComponent(() => import('@/pages/member/NuovaRichiestaAzienda'), 'NuovaRichiestaAzienda')
 
 /** A present, non-empty string out of `Record<string, unknown>`'s raw search params,
  *  or `undefined` -- the shape every optional filter on `/admin/talent` and

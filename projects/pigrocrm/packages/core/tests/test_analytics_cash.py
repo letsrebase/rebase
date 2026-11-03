@@ -6,6 +6,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from orologio import OGGI_IN_ITALIA, congela
 from periodo_fiscale import OGGI
 from sqlalchemy import text
@@ -401,13 +402,6 @@ def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
 # --- REB-352 §1.6: contract-date markers on the cash calendar -----------------------
 
 
-def _customer(db_session: Session) -> Customer:
-    customer = Customer(ragione_sociale="ACME S.r.l.")
-    db_session.add(customer)
-    db_session.flush()
-    return customer
-
-
 def _contract(db_session: Session, customer: Customer, **overrides: object) -> Contract:
     payload: dict[str, object] = {
         "customer_id": customer.id,
@@ -432,7 +426,7 @@ def test_cash_overview_carries_an_irrevocability_marker_for_an_open_ended_contra
     own 30-day notice period, so the window closes 30 days out -- regardless of
     which `anno` is on screen, since the notice period is measured from today."""
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, preavviso_disdetta_giorni=30, fine=None)
 
     overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
@@ -449,7 +443,7 @@ def test_cash_overview_clips_the_irrevocability_marker_to_the_contracts_own_end(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, preavviso_disdetta_giorni=90, fine=date(2026, 1, 10))
 
     overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
@@ -462,7 +456,7 @@ def test_cash_overview_carries_a_renewal_deadline_marker(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(
         db_session,
         customer,
@@ -485,7 +479,7 @@ def test_cash_overview_has_no_renewal_marker_for_a_contract_with_no_renewal_clau
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, tipo_rinnovo="nessuno", fine=date(2026, 6, 1))
 
     overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
@@ -504,7 +498,7 @@ def test_cash_overview_excludes_a_marker_falling_outside_the_queried_year(
     year: absent from that year's calendar, present the moment the calendar reaches
     the year the window actually falls in."""
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, preavviso_disdetta_giorni=400, fine=None)
 
     this_year = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
@@ -519,7 +513,7 @@ def test_cash_overview_excludes_a_marker_for_a_soft_deleted_contract(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     congela(monkeypatch)
-    customer = _customer(db_session)
+    customer = make_customer(db_session)
     contract = _contract(db_session, customer, preavviso_disdetta_giorni=1, fine=None)
     contract.deleted_at = datetime.now(UTC)
     db_session.flush()

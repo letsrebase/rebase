@@ -1,0 +1,53 @@
+{
+  "_comment": "The Italian rate, article, band and rounding rules shared by projects/website (referral.js, team.js) and the hub web app (lib/referral.ts, lib/bands.ts). Both test suites load this file. Money in referralExample is whole cents; a null rate yields a null share. The non-breaking space and the en dash are written as escapes on purpose.",
+  "formatRate": [
+    { "rate": "0.1000", "text": "10%" },
+    { "rate": "0.3000", "text": "30%" },
+    { "rate": "0.1250", "text": "12,5%" },
+    { "rate": "0.0875", "text": "8,75%" },
+    { "rate": "0.0005", "text": "0,05%" },
+    { "rate": "0.10", "text": "10%" },
+    { "rate": "1", "text": "100%" },
+    { "rate": "1.0000", "text": "100%" },
+    { "rate": "0", "text": "0%" }
+  ],
+  "unreadableRates": [null, "", "abc", "-0.1", "-0.1000", "1.5", "1.5000"],
+  "rateWithArticle": [
+    { "rate": "0.1000", "text": "il 10%" },
+    { "rate": "0.3000", "text": "il 30%" },
+    { "rate": "0.0800", "text": "l'8%" },
+    { "rate": "0.0850", "text": "l'8,5%" },
+    { "rate": "0.1100", "text": "l'11%" },
+    { "rate": "0.1800", "text": "il 18%" },
+    { "rate": "0.0100", "text": "l'1%" },
+    { "rate": "0.8000", "text": "l'80%" },
+    { "rate": "0.8900", "text": "l'89%" },
+    { "rate": "0.9000", "text": "il 90%" },
+    { "rate": "1", "text": "il 100%" },
+    { "rate": "0.0050", "text": "lo 0,5%" }
+  ],
+  "roundedShare": [
+    { "cents": 1, "units": 5000, "expected": 0 },
+    { "cents": 3, "units": 5000, "expected": 2 },
+    { "cents": 5, "units": 5000, "expected": 2 },
+    { "cents": 7, "units": 5000, "expected": 4 }
+  ],
+  "referralExample": [
+    { "rate_freelancer": "0.1000", "rate_company": "0.3000", "margin": 200000, "freelancer": 20000, "company": 60000 },
+    { "rate_freelancer": "0.1250", "rate_company": "0.3500", "margin": 200000, "freelancer": 25000, "company": 70000 },
+    { "rate_freelancer": "0.1250", "rate_company": "0.3333", "margin": 200000, "freelancer": 25000, "company": 66660 },
+    { "rate_freelancer": "0.0875", "rate_company": "0.1234", "margin": 200000, "freelancer": 17500, "company": 24680 },
+    { "rate_freelancer": null, "rate_company": "0.3000", "margin": 200000, "freelancer": null, "company": 60000 }
+  ],
+  "bandLabel": [
+    { "band": { "min": 400, "max": 500 }, "unit": "giorno", "label": "400\u2013500\u00a0€ al giorno" },
+    { "band": { "min": 650, "max": 800 }, "unit": "giorno", "label": "650\u2013800\u00a0€ al giorno" },
+    { "band": { "min": 1000, "max": 1150 }, "unit": "giorno", "label": "1.000\u20131.150\u00a0€ al giorno" },
+    { "band": { "min": 0, "max": 300 }, "unit": "giorno", "label": "fino a 300\u00a0€ al giorno" },
+    { "band": { "min": 800, "max": null }, "unit": "giorno", "label": "oltre 800\u00a0€ al giorno" },
+    { "band": { "min": 8800, "max": 11000 }, "unit": "mese", "label": "8.800\u201311.000\u00a0€ al mese" },
+    { "band": { "min": 17600, "max": 23100 }, "unit": "mese", "label": "17.600\u201323.100\u00a0€ al mese" },
+    { "band": { "min": 0, "max": 6600 }, "unit": "mese", "label": "fino a 6.600\u00a0€ al mese" },
+    { "band": { "min": 1100000, "max": null }, "unit": "mese", "label": "oltre 1.100.000\u00a0€ al mese" }
+  ]
+}

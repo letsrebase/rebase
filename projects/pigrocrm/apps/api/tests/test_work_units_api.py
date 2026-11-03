@@ -536,7 +536,8 @@ def test_the_dispute_bundle_is_a_zip_download_with_the_summary_and_the_original(
     assert response.headers["content-type"] == "application/zip"
     disposition = response.headers["content-disposition"]
     assert (
-        disposition == f'attachment; filename="fascicolo-giornata-2026-03-02-{day["id"][:8]}.zip"'
+        disposition
+        == f"attachment; filename*=UTF-8''fascicolo-giornata-2026-03-02-{day['id'][:8]}.zip"
     )
     archive = zipfile.ZipFile(io.BytesIO(response.content))
     names = archive.namelist()

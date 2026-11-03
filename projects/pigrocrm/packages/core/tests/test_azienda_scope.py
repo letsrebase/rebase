@@ -703,7 +703,7 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
             LocalFileStorage(tmp_path),
             Settings(_env_file=None),  # type: ignore[call-arg]
         )
-        document = service._artifact_document(  # noqa: SLF001 - the one seam the render uses
+        document = service.artifacts.artifact_document(
             invoice, "fattura_xml", f"{_PREFIX} xml", Actor.system()
         )
         session.commit()
@@ -727,7 +727,7 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
                 LocalFileStorage(tmp_path),
                 Settings(_env_file=None),  # type: ignore[call-arg]
             )
-            pdf = scoped_service._artifact_document(  # noqa: SLF001
+            pdf = scoped_service.artifacts.artifact_document(
                 invoice,
                 "fattura",
                 f"{_PREFIX} pdf",

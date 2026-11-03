@@ -36,6 +36,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+import pigrocrm.core.cli.gmail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
@@ -43,6 +44,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.reminders.run import ROOT_LABEL
 
 # A registry of this module's own, so the walk finds it empty whatever else has
 # provisioned a space on this container.
@@ -89,7 +91,7 @@ def cli_gmail(
     fake = FakeGmail()
     monkeypatch.setattr(cli, "get_settings", settings_for)
     monkeypatch.setattr(
-        cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
+        gmail_cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
     )
     yield fake
     with db_engine.begin() as connection:
@@ -145,7 +147,7 @@ def test_gmail_sync_runs_a_cycle_and_says_so_in_one_line(
     assert out.count("\n") == 0
     # The installation first, as `pigrocrm digest` names it, then the mailbox: with the
     # spaces in the same log, an address alone no longer says whose database it is.
-    assert f"gmail-sync {cli.ROOT_LABEL} cron@example.it: " in out
+    assert f"gmail-sync {ROOT_LABEL} " in out
     # The counters, which are the only thing a cron log has to say. No subject, no
     # address of a correspondent, no body: a `SyncReport` has no room for one.
     assert "0 messaggi" in out
@@ -199,7 +201,6 @@ def test_gmail_sync_picks_the_mailbox_named_on_the_command_line(
     _connect(db_engine, email_address="seconda@example.it")
 
     assert _run("--email", "seconda@example.it") == 0
-    assert "seconda@example.it" in capsys.readouterr().out
 
 
 def test_two_mailboxes_and_no_email_are_both_synchronised_one_line_each(
@@ -217,8 +218,8 @@ def test_two_mailboxes_and_no_email_are_both_synchronised_one_line_each(
     assert captured.err == ""
     lines = captured.out.strip().splitlines()
     assert len(lines) == 2
-    assert f"gmail-sync {cli.ROOT_LABEL} prima@example.it: " in lines[0]
-    assert f"gmail-sync {cli.ROOT_LABEL} seconda@example.it: " in lines[1]
+    assert f"gmail-sync {ROOT_LABEL} " in lines[0]
+    assert f"gmail-sync {ROOT_LABEL} " in lines[1]
     with db_engine.connect() as connection:
         watermarks = connection.execute(
             text(
@@ -236,8 +237,9 @@ def test_an_email_that_is_not_connected_names_the_ones_that_are(
 
     assert _run("--email", "altra@example.it") == 1
     err = capsys.readouterr().err
-    assert "altra@example.it" in err
-    assert "cron@example.it" in err
+    # The count of connected mailboxes, never their addresses (B-16).
+    assert "altra@example.it non è una casella collegata (1 collegate)" in err
+    assert "cron@example.it" not in err
 
 
 def test_a_cycle_already_running_is_reported_and_is_not_a_failure(
@@ -293,7 +295,6 @@ def test_the_cron_does_not_act_for_a_deactivated_owner(
     assert _run() == 1
     err = capsys.readouterr().err
     assert "disattivato" in err
-    assert "cron@example.it" in err
 
 
 def test_the_cron_does_not_synchronise_for_an_owner_who_could_not_press_the_button(
@@ -307,7 +308,6 @@ def test_the_cron_does_not_synchronise_for_an_owner_who_could_not_press_the_butt
     assert _run() == 1
     err = capsys.readouterr().err
     assert "readonly" in err
-    assert "cron@example.it" in err
 
 
 def test_an_owner_who_can_write_still_runs(
@@ -318,7 +318,6 @@ def test_an_owner_who_can_write_still_runs(
     _connect(db_engine, email_address="cron@example.it", ruolo="collaboratore")
 
     assert _run() == 0
-    assert "cron@example.it" in capsys.readouterr().out
 
 
 def test_a_disconnected_mailbox_is_not_listed_as_connected(
@@ -332,7 +331,6 @@ def test_a_disconnected_mailbox_is_not_listed_as_connected(
 
     assert _run() == 0
     out = capsys.readouterr().out
-    assert "attiva@example.it" in out
     assert "scollegata@example.it" not in out
 
 
@@ -377,7 +375,12 @@ def test_a_refusal_from_gmail_is_one_line_too(
     _correspondent(db_engine)
 
     def exhausted(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
     ) -> tuple[int, bytes, dict[str, str]]:
         # By host, so the token refresh still succeeds through the fake: it is the
         # *listing* that has to fail here, and it is the first call after the refresh.
@@ -386,12 +389,12 @@ def test_a_refusal_from_gmail_is_one_line_too(
         return cli_gmail(method, url, headers, body)
 
     monkeypatch.setattr(
-        cli, "GmailTransport", lambda: GmailTransport(http=exhausted, sleep=lambda _: None)
+        gmail_cli, "GmailTransport", lambda: GmailTransport(http=exhausted, sleep=lambda _: None)
     )
 
     assert _run() == 1
     err = capsys.readouterr().err
-    assert "elenco dei messaggi fallita (429/RESOURCE_EXHAUSTED)" in err
+    assert "codice 429" in err
     assert "Traceback" not in err
 
 
@@ -408,7 +411,7 @@ def test_a_session_that_cannot_be_opened_costs_one_mailbox_and_not_the_run(
     listing's."""
     _connect(db_engine, email_address="prima@example.it")
     _connect(db_engine, email_address="seconda@example.it")
-    real = cli.session_factory
+    real = gmail_cli.session_factory
     # A name and not a literal at the `raise`: the frames printed after the line quote
     # the raising source line, and the assertion below is about the message.
     refusal = "the pool refused a connection"
@@ -426,14 +429,15 @@ def test_a_session_that_cannot_be_opened_costs_one_mailbox_and_not_the_run(
 
         return open_session
 
-    monkeypatch.setattr(cli, "session_factory", refusing_the_second)
+    monkeypatch.setattr(gmail_cli, "session_factory", refusing_the_second)
 
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert f"gmail-sync {cli.ROOT_LABEL} prima@example.it: saltato (RuntimeError)" in captured.err
+    assert f"gmail-sync {ROOT_LABEL} " in captured.err
+    assert "saltato (RuntimeError)" in captured.err
     # The frames of the traceback follow the line, for whoever has to find where it
     # broke; its message does not.
     assert 'File "' in captured.err
     assert refusal not in captured.err
-    assert f"gmail-sync {cli.ROOT_LABEL} seconda@example.it: " in captured.out
+    assert f"gmail-sync {ROOT_LABEL} " in captured.out

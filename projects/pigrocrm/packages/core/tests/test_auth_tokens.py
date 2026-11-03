@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
@@ -17,6 +17,7 @@ from pigrocrm.core.auth.schemas import InvitationCreate, UserCreate, UserUpdate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.auth.tokens import (
     ALGORITHM,
+    ROOT_AUDIENCE,
     decode_token,
     issue_access_token,
     issue_refresh_token,
@@ -106,7 +107,8 @@ def test_two_refresh_tokens_issued_in_the_same_instant_are_still_different(
 
 def test_expired_token_is_rejected(db_session: Session) -> None:
     user = _make_user(db_session)
-    expired = Settings(jwt_secret=SETTINGS.jwt_secret, access_token_minutes=-1)
+    # `model_copy` skips validation: `access_token_minutes` itself refuses anything below 1.
+    expired = SETTINGS.model_copy(update={"access_token_minutes": -1})
     token = issue_access_token(user.id, "admin", expired)
     with pytest.raises(ValidationFailed):
         decode_token(token, SETTINGS, expected_type="access")
@@ -119,6 +121,29 @@ def test_token_signed_with_another_secret_is_rejected(db_session: Session) -> No
     )
     with pytest.raises(ValidationFailed):
         decode_token(token, SETTINGS, expected_type="access")
+
+
+def test_an_access_token_names_the_space_it_was_minted_for() -> None:
+    """The root and every space share one signing secret: the `aud` claim is what says
+    which of them a token is for, and `decode_token(audience=...)` refuses any other."""
+    user_id = uuid4()
+    for space, audience in ((None, ROOT_AUDIENCE), ("studio", "studio")):
+        token = issue_access_token(user_id, "admin", SETTINGS, space=space)
+        payload = decode_token(token, SETTINGS, expected_type="access", audience=audience)
+        assert payload.aud == audience
+        other = "altro" if audience != "altro" else ROOT_AUDIENCE
+        with pytest.raises(ValidationFailed):
+            decode_token(token, SETTINGS, expected_type="access", audience=other)
+    # A caller that does not care which space still decodes it.
+    token = issue_access_token(user_id, "admin", SETTINGS, space="studio")
+    assert decode_token(token, SETTINGS, expected_type="access").sub == user_id
+
+
+def test_a_token_without_an_audience_is_refused_where_one_is_required() -> None:
+    legacy = _forge({"sub": str(uuid4()), "role": "admin", "type": "access", "exp": _future_exp()})
+    assert decode_token(legacy, SETTINGS, expected_type="access").aud is None
+    with pytest.raises(ValidationFailed):
+        decode_token(legacy, SETTINGS, expected_type="access", audience=ROOT_AUDIENCE)
 
 
 def test_access_token_expiry_matches_settings(db_session: Session) -> None:
@@ -171,7 +196,7 @@ def test_pat_is_returned_once_and_stored_only_as_a_hash(db_session: Session) -> 
     assert record.prefix == raw[: len(PAT_PREFIX) + 8]
     assert not hasattr(record, "token_hash"), "PatRead must never expose the hash"
 
-    stored = service.list(actor)[0]
+    stored = service.list_own(actor)[0]
     assert stored.prefix == record.prefix
     assert raw not in str(stored.model_dump())
 
@@ -191,7 +216,28 @@ def test_pat_resolves_to_an_actor_and_records_last_use(db_session: Session) -> N
     assert resolved.type == "mcp", "a PAT identifies an agent, not a browser session"
     assert resolved.role == "admin"
     assert resolved.full_access is False, "the default installation does not opt in"
-    assert service.list(actor)[0].last_used_at is not None
+    assert service.list_own(actor)[0].last_used_at is not None
+
+
+def test_last_use_is_written_at_most_once_a_minute(db_session: Session) -> None:
+    """PAPI-10: `resolve` runs on every request an agent makes, and a write per read would
+    lock the token's row once per parallel call."""
+    user = _make_user(db_session, "pat-minute@test.it")
+    actor = Actor(id=user.id, type="user", role="admin")
+    service = PatService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
+    _, raw = service.create("Claude locale", actor)
+
+    service.resolve(raw)
+    first = service.list_own(actor)[0].last_used_at
+    service.resolve(raw)
+    assert service.list_own(actor)[0].last_used_at == first
+
+    stale = datetime.now(UTC) - timedelta(minutes=2)
+    db_session.execute(update(PersonalAccessToken).values(last_used_at=stale))
+    db_session.commit()
+    service.resolve(raw)
+    refreshed = service.list_own(actor)[0].last_used_at
+    assert refreshed is not None and refreshed > stale
 
 
 def test_a_token_reaches_the_privileged_surface_only_where_it_and_the_space_both_say_so(
@@ -238,7 +284,7 @@ def test_a_token_cannot_be_made_with_what_the_space_does_not_offer(db_session: S
         PatService(db_session, chiusa).create("Fatturazione", actor, full_access=True)
 
     assert exc.value.details["field"] == "full_access"
-    assert PatService(db_session, chiusa).list(actor) == []
+    assert PatService(db_session, chiusa).list_own(actor) == []
 
 
 def test_an_agent_credential_cannot_mint_a_token_that_opens_the_privileged_surface(
@@ -513,7 +559,7 @@ def test_pat_hash_collision_becomes_a_domain_conflict_not_a_raw_integrity_error(
 
     # The session must still be usable right after -- a leftover PendingRollbackError
     # would blow up on the very next statement issued on it.
-    assert len(service.list(actor)) == 1
+    assert len(service.list_own(actor)) == 1
 
 
 # --- REB-295: the credential answers with the owner's CURRENT state -----------------

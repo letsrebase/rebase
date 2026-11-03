@@ -25,13 +25,19 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+import pigrocrm.core.cli.cron as cli_cron
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.attivita.models import Attivita
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
-from pigrocrm.core.reminders.run import REMINDERS_LOCK_NAMESPACE, ReminderOutcome, ReminderRun
+from pigrocrm.core.reminders.run import (
+    REMINDERS_LOCK_NAMESPACE,
+    ROOT_LABEL,
+    ReminderOutcome,
+    ReminderRun,
+)
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -183,7 +189,7 @@ def test_the_cron_raises_a_reminder_in_every_space_on_its_own(
     assert cli.main(["reminders"]) == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == f"{cli.ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
+    assert lines[0] == f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
     assert f"{UNO}: promemoria 1, nuovi 1, chiusi 0" in lines
     assert f"{DUE}: promemoria 1, nuovi 1, chiusi 0" in lines
     # Each space's owner has the reminder, with the time the pass put it in their list.
@@ -233,7 +239,7 @@ def test_one_space_by_name_and_the_root_by_its_label(
 
     assert cli.main(["reminders", "--slug", "root"]) == 0
     assert capsys.readouterr().out.splitlines() == [
-        f"{cli.ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
+        f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"
     ]
 
 
@@ -362,13 +368,13 @@ def test_an_unreachable_registry_is_a_line_and_the_root_still_runs(
     def broken(_settings: Settings) -> Engine:
         raise RuntimeError("down")
 
-    monkeypatch.setattr("pigrocrm.core.tenants.ensure_tenants_database", broken)
+    monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", broken)
 
     assert cli.main(["reminders"]) == 1
 
     captured = capsys.readouterr()
     assert "registro degli spazi non raggiungibile (RuntimeError)" in captured.err
-    assert captured.out.splitlines() == [f"{cli.ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"]
+    assert captured.out.splitlines() == [f"{ROOT_LABEL}: promemoria 1, nuovi 1, chiusi 0"]
 
 
 def test_the_reminder_arguments_reject_a_date_that_is_not_one() -> None:
@@ -384,14 +390,14 @@ def test_the_reminder_arguments_reject_a_date_that_is_not_one() -> None:
 def test_the_line_tells_what_the_other_channels_sent_only_when_they_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    cli._stampa_promemoria(
+    cli_cron._print_reminder_outcome(
         ReminderOutcome("acme", "eseguito", raised=3, delivered=2), dry_run=False
     )
-    cli._stampa_promemoria(
+    cli_cron._print_reminder_outcome(
         ReminderOutcome("acme", "eseguito", raised=3, delivered=2, pushes=2, emails=1),
         dry_run=False,
     )
-    cli._stampa_promemoria(
+    cli_cron._print_reminder_outcome(
         ReminderOutcome("acme", "eseguito", raised=3, delivered=2, emails=1), dry_run=True
     )
 

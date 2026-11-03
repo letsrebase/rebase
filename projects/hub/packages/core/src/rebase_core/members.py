@@ -21,21 +21,14 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.cloud import TalentCloudService
+from rebase_core.company_schemas import CompanyFields, CompanyUpdate
 from rebase_core.crm_words import DA_COLLEGARE
 from rebase_core.errors import NotFound
+from rebase_core.freelancer_schemas import CvFile, MemberUpdate
 from rebase_core.freelancers import check_cv, cv_of
+from rebase_core.member_schemas import MemberLookup, MemberProfile, MemberRequest, MeRead
 from rebase_core.models import Company, Freelancer, User
 from rebase_core.notes import NoteService
-from rebase_core.schemas import (
-    CompanyFields,
-    CompanyUpdate,
-    CvFile,
-    MemberLookup,
-    MemberProfile,
-    MemberRequest,
-    MemberUpdate,
-    MeRead,
-)
 from rebase_core.users import UserService, refuse_linkedin_conflict
 
 ENTITY = "freelancer"
@@ -265,7 +258,8 @@ class MemberService:
             else self.require_request(user_id, company_id)
         )
         user = self.session.get(User, user_id)
-        assert user is not None
+        if user is None:
+            raise NotFound("user", user_id)
         changed: list[str] = []
         for field, label in COMPANY_FIELD_LABELS.items():
             value = getattr(data, field)
@@ -352,7 +346,8 @@ class MemberService:
 
     def _owner(self, row: Freelancer) -> User:
         user = self.session.get(User, row.user_id)
-        assert user is not None
+        if user is None:
+            raise NotFound("user", row.user_id)
         return user
 
     def _note(self, user: User, row: Freelancer, text: str) -> None:

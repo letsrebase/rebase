@@ -18,6 +18,10 @@ from pigrocrm.core.emitter.schemas import (
     LegalEntityUpsert,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.invoices.fatturapa.normalise import (
+    normalise_fiscal_id,
+    normalise_foreign_fiscal_id,
+)
 from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
@@ -44,16 +48,7 @@ def _normalise_ids(data: dict[str, Any]) -> None:
     a foreign one through `normalise_foreign_fiscal_id`, which keeps a nine-digit
     British VAT number instead of emptying it. A value either function empties is
     refused rather than saved as `NULL`: a code the person typed does not vanish.
-
-    Imported lazily: `invoices.fatturapa` is the module that owns the two functions
-    and importing it at module level from here would make the issuer's own module
-    depend on the exporter's at import time.
     """
-    from pigrocrm.core.invoices.fatturapa import (
-        normalise_fiscal_id,
-        normalise_foreign_fiscal_id,
-    )
-
     normalise = (
         normalise_fiscal_id if data.get("nazione", "IT") == "IT" else normalise_foreign_fiscal_id
     )
@@ -74,7 +69,7 @@ def _normalise_ids(data: dict[str, Any]) -> None:
 
 def _check_fiscal(data: dict[str, Any]) -> None:
     # The country code upper-cased before anything reads it: the exporter compares it
-    # that way (`fatturapa.py`), and a lower-case «it» must not slip an Italian P.IVA
+    # that way (`fatturapa/normalise.py`), and a lower-case «it» must not slip an Italian P.IVA
     # past the Italian checks by looking foreign.
     data["nazione"] = (data.get("nazione") or "IT").strip().upper()
     for field in ("partita_iva", "codice_sdi", "codice_fiscale"):

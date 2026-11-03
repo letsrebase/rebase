@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from rebase_core.config import Settings
-from rebase_core.schemas import SignupUtm
+from rebase_core.signup_schemas import SignupUtm
 
 if TYPE_CHECKING:
     from posthog import Posthog

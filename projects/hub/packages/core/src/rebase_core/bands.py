@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from rebase_core.schema_common import ResponseModel
 
 CLIENT_MARKUP = Decimal("1.4")
 DAYS_PER_MONTH = 22
@@ -41,7 +41,7 @@ def _euro(amount: int) -> str:
     return f"{amount:,}".replace(",", ".")
 
 
-class Band(BaseModel):
+class Band(ResponseModel):
     """A band of euro: one of `BANDS` for a person per day, or a team's sum of them per
     day or per month. `max` is `None` for a band with no top («oltre»)."""
 

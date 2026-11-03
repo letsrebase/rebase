@@ -19,7 +19,7 @@ import {
   MATCH_STATE_LABELS,
   formatDate,
 } from '@/lib/format'
-import { Row } from '../lists'
+import { Row } from '../list-kit'
 
 /** What the page does when the admin picks one of the core's actions on a card. */
 export interface ActionHandle {

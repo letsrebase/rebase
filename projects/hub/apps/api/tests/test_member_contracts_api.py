@@ -25,7 +25,6 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_documenso, get_renderer, get_session_opener
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import ContractDocument, User
@@ -80,7 +79,6 @@ def test_a_freelancer_reads_their_contracts_and_downloads_the_signed_copy(
 ) -> None:
     match = draft_match(client, sender)
     assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
-    reset_rate_limit()
     enter(client, sender, FREELANCER_EMAIL)
 
     mine = client.get("/api/hub/me/contracts")
@@ -152,7 +150,6 @@ def test_a_previous_signed_framework_stays_visible_under_a_new_one(
     )
     assert delivered_again.status_code == 200
 
-    reset_rate_limit()
     enter(client, sender, FREELANCER_EMAIL)
     mine = client.get("/api/hub/me/contracts")
 
@@ -177,7 +174,6 @@ def test_someone_elses_document_is_a_404_never_a_403(
     match = draft_match(client, sender)
     assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
     ada_quadro = _quadro(api_session)
-    reset_rate_limit()
     applied = client.post(
         "/api/hub/freelancers",
         data={

@@ -4,7 +4,7 @@ a person's own."""
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Path, status
+from fastapi import APIRouter, Depends, Path, Query, status
 
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import (
@@ -19,10 +19,16 @@ from pigrocrm.core.reminders.schemas import (
 )
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import PAGE_LIMIT_MAX
 
-router = APIRouter(prefix="/api/reminders", tags=["reminders"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/reminders",
+    tags=["reminders"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 ScopePath = Annotated[
     Literal["space", "me"],
@@ -41,16 +47,20 @@ TypePath = Annotated[
 
 @router.get("", response_model=list[ReminderRead])
 def list_reminders(
-    session: SessionDep, actor: ActorDep, settings: SettingsDep
+    session: SessionDep,
+    actor: ActorDep,
+    settings: SettingsDep,
+    limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = PAGE_LIMIT_MAX,
 ) -> list[ReminderRead]:
     """I promemoria di chi chiede, ricalcolati adesso dai dati: i più gravi per primi.
     Quelli già chiusi o rimandati ci sono, con il loro `status`; sparisce solo ciò di cui
-    la causa è risolta."""
-    return ReminderService(session, settings).list(actor)
+    la causa è risolta. `limit` taglia la coda, cioè i meno gravi: il servizio li valuta
+    tutti, ma la risposta non cresce con loro."""
+    return ReminderService(session, settings).list(actor)[:limit]
 
 
 @router.get("/types", response_model=list[ReminderTypeRead])
-def list_types(session: SessionDep, actor: ActorDep) -> list[ReminderTypeRead]:
+def list_types(session: SessionDep) -> list[ReminderTypeRead]:
     """I tipi di promemoria di questo spazio, con le soglie predefinite."""
     return ReminderPreferenceService(session).catalogue()
 

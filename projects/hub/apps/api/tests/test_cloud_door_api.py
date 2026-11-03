@@ -12,7 +12,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
 
@@ -45,7 +44,6 @@ def admin(api_session: Session) -> Iterator[None]:
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     """Signs `email` in; the speed bump on the public routes is reset first, since one
     test here signs in four times beside a wizard's request."""
-    reset_rate_limit()
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
     match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match

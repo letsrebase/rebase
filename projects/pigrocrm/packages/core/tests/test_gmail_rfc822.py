@@ -287,6 +287,48 @@ def test_every_other_header_field_refuses_a_newline_too() -> None:
         assert caught.value.details["field"] == field
 
 
+def test_an_attachment_type_that_is_not_type_slash_subtype_is_refused_not_injected() -> None:
+    """`EmailMessage` takes the subtype verbatim: `pdf; name="evil"` would become a
+    header parameter, and a CRLF raises a bare `ValueError` that reaches the caller as
+    a 500. Both are a `ValidationFailed` naming the field."""
+    base = {
+        "from_address": "io@example.it",
+        "from_name": "Io",
+        "to": ["ada@acme.it"],
+        "cc": [],
+        "subject": "Offerta",
+        "body_text": "x",
+        "message_id": "<a.9@crm.example.it>",
+    }
+    for hostile in (
+        'application/pdf; name="evil"',
+        "application/pdf\r\nBcc: chiunque@altrove.it",
+        "application/pdf\n",
+        "pdf",
+        "",
+        "application/",
+        "/pdf",
+    ):
+        attachments = [OutgoingAttachment("offerta.pdf", hostile, b"%PDF")]
+        with pytest.raises(ValidationFailed) as caught:
+            build_rfc822(**{**base, "attachments": attachments})  # type: ignore[arg-type]
+        assert caught.value.details["field"] == "attachment_mime", repr(hostile)
+
+
+def test_an_attachment_type_is_case_insensitive() -> None:
+    raw = build_rfc822(
+        from_address="io@example.it",
+        from_name="Io",
+        to=["ada@acme.it"],
+        cc=[],
+        subject="Offerta",
+        body_text="x",
+        message_id="<a.10@crm.example.it>",
+        attachments=[OutgoingAttachment("offerta.pdf", "Application/PDF", b"%PDF")],
+    )
+    assert b"Content-Type: application/pdf" in raw
+
+
 def test_a_recipient_that_is_not_an_address_is_refused() -> None:
     with pytest.raises(ValidationFailed):
         build_rfc822(

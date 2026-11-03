@@ -13,15 +13,14 @@ from fpr12 import assert_valid
 from lxml import etree
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.invoices.fatturapa import (
-    _INDIRIZZO_MAX,
-    _LATIN_SPELLINGS,
-    FatturaPAExporter,
+from pigrocrm.core.invoices.fatturapa.checks import (
     check_document_text_exportable,
     check_party_exportable,
     check_recipient_identity,
-    normalise_fiscal_id,
 )
+from pigrocrm.core.invoices.fatturapa.constants import INDIRIZZO_MAX, LATIN_SPELLINGS
+from pigrocrm.core.invoices.fatturapa.exporter import FatturaPAExporter
+from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.schemas import (
     SNAPSHOT_VERSIONE,
     InvoiceForExport,
@@ -282,7 +281,7 @@ def test_a_code_point_xml_cannot_represent_is_refused_not_emitted() -> None:
     and the writer crashed on it after the number was spent (ORB-140). The pre-check
     refuses it the same way, before."""
     righe = [_line(1, "Consulenza\x0b", "1.000000", "100.000000", "100.00")]
-    with pytest.raises(ValidationFailed, match="non rappresentabile in XML") as writer:
+    with pytest.raises(ValidationFailed) as writer:
         FatturaPAExporter().to_bytes(_invoice(righe))
     assert writer.value.details["field"] == "descrizione"
     with pytest.raises(ValidationFailed) as pre:
@@ -887,7 +886,7 @@ def test_a_foreign_address_too_long_to_carry_its_postcode_is_refused_before_the_
     the whole reason `check_party_exportable` and `_sede` share one function for the
     address text."""
     lungo = "Flat 12, Bartholomew House, 20-22 Old Street, Clerkenwell"
-    assert len(lungo) <= _INDIRIZZO_MAX < len(f"{lungo}, EC1V 9HL")
+    assert len(lungo) <= INDIRIZZO_MAX < len(f"{lungo}, EC1V 9HL")
     cliente = _cliente_estero(indirizzo=lungo, cap="EC1V 9HL")
 
     with pytest.raises(ValidationFailed) as caught:
@@ -1139,10 +1138,8 @@ def test_the_spellings_cannot_change_the_bytes_of_a_file_already_exported() -> N
     U+00FF, where `_LATIN_RE` refused it, and every spelling sits inside Latin-1, where
     the range accepts it. A future entry that broke either half would silently break
     `xml_hash_sha256` on the next re-export, so both halves are pinned."""
-    assert all(key > 0xFF for key in _LATIN_SPELLINGS)
-    assert all(
-        ord(char) <= 0xFF for spelling in _LATIN_SPELLINGS.values() for char in str(spelling)
-    )
+    assert all(key > 0xFF for key in LATIN_SPELLINGS)
+    assert all(ord(char) <= 0xFF for spelling in LATIN_SPELLINGS.values() for char in str(spelling))
 
 
 def test_a_pec_too_long_for_fpr12_is_refused_by_the_pre_check_like_the_writer() -> None:

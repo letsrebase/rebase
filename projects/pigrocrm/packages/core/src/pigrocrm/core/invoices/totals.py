@@ -16,9 +16,8 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from pigrocrm.core.invoices.schemas import MONEY_DECIMAL_PLACES, MONEY_MAX_DIGITS
+from pigrocrm.core.money import FACTOR_QUANT, round_money
 
-MONEY_EXPONENT = Decimal("0.01")
-FACTOR_EXPONENT = Decimal("0.000001")
 RATE_EXPONENT = Decimal("0.01")
 _HUNDRED = Decimal("100")
 
@@ -52,16 +51,6 @@ def overflows_money_column(value: Decimal) -> bool:
     return abs(round_money(value)) >= MONEY_MAX_EXCLUSIVE
 
 
-def round_money(value: Decimal) -> Decimal:
-    """Two decimals, `ROUND_HALF_UP`.
-
-    Not `Decimal`'s own `ROUND_HALF_EVEN` default: Italian fiscal practice, and the
-    arithmetic the SdI's own checks perform, round a half away from zero. Banker's
-    rounding disagrees on alternate cents, which is enough for a file to be discarded.
-    """
-    return value.quantize(MONEY_EXPONENT, rounding=ROUND_HALF_UP)
-
-
 def format_amount_2(value: Decimal) -> str:
     r"""FPR12 `Amount2DecimalType`: `[\-]?[0-9]{1,11}\.[0-9]{2}` -- exactly two
     decimals, so a bare "1400" is schema-invalid and `str(Decimal("1400"))` cannot be
@@ -72,7 +61,7 @@ def format_amount_2(value: Decimal) -> str:
 def format_amount_8(value: Decimal) -> str:
     """FPR12 `Amount8DecimalType`: two to eight decimals. Six, matching the
     `Numeric(12, 6)` columns exactly, so the printed value is the stored value."""
-    return f"{value.quantize(FACTOR_EXPONENT, rounding=ROUND_HALF_UP):.6f}"
+    return f"{value.quantize(FACTOR_QUANT, rounding=ROUND_HALF_UP):.6f}"
 
 
 def format_rate(value: Decimal) -> str:

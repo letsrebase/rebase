@@ -71,7 +71,7 @@ PRIVILEGED_MODULES = (TOOLS_DIR / "privileged.py", TOOLS_DIR / "drive_privileged
 #     a real, correct addition -- in its place, while `tools/invoices.py` went on
 #     declaring it forbidden in a table nothing imported. The audit restored it. It left
 #     again with ORB-188 (2026-09-12), this time on purpose and in both halves at once
-#     (`AGENT_FORBIDDEN_ACTIONS` and here): the profile is one rewritable row, an
+#     (`FULL_ACCESS_ACTIONS` and here): the profile is one rewritable row, an
 #     issued invoice keeps its own copy of it, and in a space born empty setting it is
 #     the first thing a person asks their assistant. It is on the default surface with
 #     the emitter's write, admin-only through the service.
@@ -106,11 +106,11 @@ FORBIDDEN = (
     # The customers the connected mailbox proposes (REB-223): discovery's question over a
     # year of sent mail, so the same quota, the same consent and the same switch.
     "suggest_customers_from_gmail",
-    # Nemmeno questa e' fiscale: il testo di un allegato di una mail archiviata. Di un
-    # allegato il CRM conserva nome, tipo e peso e mai i byte (spec 5.4), quindi lo
-    # strumento va a prenderlo da Google al momento -- quota e consenso del titolare,
-    # contenuto scritto da un mittente esterno -- e non archivia niente. Stessa porta di
-    # `discover_gmail_correspondents`, per la stessa ragione.
+    # Not fiscal either: the text of an attachment of an archived mail. The CRM keeps an
+    # attachment's name, type and size and never its bytes (spec 5.4), so the tool fetches
+    # it from Google at call time -- the owner's quota and consent, content written by an
+    # outside sender -- and stores nothing. Same door as `discover_gmail_correspondents`,
+    # for the same reason.
     "read_gmail_attachment",
     # Fiscal again: writing a numbered, issued
     # row straight into the register (slice 9 §3), and declaring the numbers it will
@@ -138,7 +138,7 @@ FORBIDDEN = (
     "import_drive_file",
 )
 
-# The other half of `AGENT_FORBIDDEN_ACTIONS`: operations that are banned to an agent
+# The other half of `FULL_ACCESS_ACTIONS`: operations that are banned to an agent
 # credential and have **no MCP tool at all** -- not "not registered by default", but no
 # tool anywhere in `apps/mcp`, now or planned.
 #
@@ -159,28 +159,27 @@ FORBIDDEN = (
 # test_drive_api.py` pins all three at the route.
 #
 # Enumerated here, and this is why the equality above is a union rather than a plain
-# `==`: the two lists still have to be one list, but "in `AGENT_FORBIDDEN_ACTIONS` and
-# not in `FORBIDDEN`" now has exactly twelve admissible answers, written down with their
-# justification instead of left as slack in the assertion. A thirteenth added to the ban
-# list without a tool -- or one of these growing a tool and staying here -- fails. The last
-# five are the day ledger's writes (REB-745, REB-749): a person's acts, reached by the web app over
+# `==`: the two lists still have to be one list, but "in `FULL_ACCESS_ACTIONS` and
+# not in `FORBIDDEN`" has only the admissible answers below, written down with their
+# justification instead of left as slack in the assertion. One added to the ban list
+# without a tool -- or one of these growing a tool and staying here -- fails. The day
+# ledger's writes (REB-745, REB-749) are a person's acts, reached by the web app over
 # REST, which an agent token could reach too without the ban.
 #
-# Spelled as the action strings the services pass to `require_write`, which for a
-# settings operation are Italian sentences and not tool names: the string *is* the
-# identity of the operation for `_refuse_if_agent`, so a copy re-spelled prettily here
-# would be a ban that silently stopped matching.
+# Spelled as the action keys the services pass to `require_write`: the key *is* the
+# identity of the operation for `_refuse_if_agent`, so a copy re-spelled here would be a
+# ban that silently stopped matching.
 REST_ONLY_FORBIDDEN = frozenset(
     {
-        "impostare le cartelle Drive",
-        "collegare Google Drive",
-        "scollegare Google Drive",
-        # REB-745..747: the day ledger's five writes. They have no tool and never will
+        "set_drive_roots",
+        "set_drive_storage_folder",
+        "connect_drive",
+        "disconnect_drive",
+        # REB-745..747: the day ledger's writes. They have no tool and never will
         # (`test_mcp_surface_coverage.py`, `_COPERTE_O_UMANE`): an agent proposes, a person
         # confirms, and the web app reaches these over REST, which a token could too.
         "create_work_unit",
         "transition_work_unit",
-        "link_approval",
         "create_approval",
         # REB-749: the request for approval, prepared from the contract page.
         "request_approval",
@@ -218,7 +217,7 @@ FORBIDDEN_NEEDING_GMAIL = frozenset(
 # would pass a name check and defeat the point. A ban a bare name cannot express goes
 # in `FORBIDDEN_QUALIFIED_CALLS` below instead.
 FORBIDDEN_SERVICE_CALLS = (
-    "issue",
+    "issue_and_render",
     "annul",
     "mark_transmitted_externally",
     "export_xml",
@@ -231,18 +230,18 @@ FORBIDDEN_SERVICE_CALLS = (
     "unarchive_cost_category",
     "close_period",
     "reopen_period",
-    "bind_time_to_invoice",
+    "bind_to_invoice",
     "get_fiscal_estimate",
     "discover",
     # `GmailSyncService.suggest_customers`, behind `suggest_customers_from_gmail`
     # (REB-223): the same family as `discover`.
     "suggest_customers",
-    # `GmailAttachmentService.attachment_text`: scarica da Gmail, al momento, il file che
-    # la sincronizzazione non ha mai salvato (spec 5.4 conserva nome, tipo e peso e
-    # nient'altro). Stessa famiglia di `discover` -- quota e consenso del titolare, byte
-    # scritti da un mittente esterno -- quindi stessa porta: esiste solo dove
-    # l'installazione ha aperto `mcp_full_access`. Il nome e' unico in questo codice, ed
-    # e' unico di proposito: vedi `documents/service.py::extract_text`.
+    # `GmailAttachmentService.attachment_text`: fetches from Gmail, at call time, the file
+    # that sync never saved (spec 5.4 keeps name, type and size and nothing else). Same
+    # family as `discover` -- the owner's quota and consent, bytes written by an outside
+    # sender -- so the same door: it exists only where the installation opened
+    # `mcp_full_access`. The name is unique in this code, and on purpose: see
+    # `documents/service.py::extract_text`.
     "attachment_text",
     "import_issued",
     "declare_gaps",
@@ -284,7 +283,9 @@ FORBIDDEN_SERVICE_CALLS = (
 # The next qualified ban goes here as a `(service, method)` pair and is resolved to its
 # receiver; the tests below iterate the tuple so that an empty one asserts nothing
 # rather than parametrising into a skip.
-FORBIDDEN_QUALIFIED_CALLS: tuple[tuple[str, str], ...] = ()
+# `InvoiceService.issue` is the bare half of `issue_and_render`, the one name a tool calls: a
+# tool reaching `issue` directly would skip the render step, so the pair is banned too.
+FORBIDDEN_QUALIFIED_CALLS: tuple[tuple[str, str], ...] = (("InvoiceService", "issue"),)
 
 _REASON = (
     "e' un'operazione esclusa dalla superficie MCP per costruzione (slice 3 §11 per "
@@ -295,29 +296,27 @@ _REASON = (
 )
 
 
-# Gmail (slice 5B). Nomi di strumenti, non metodi di servizio, e per due ragioni
-# diverse fra loro.
+# Gmail (slice 5B). Tool names, not service methods, for two different reasons.
 #
-# I primi due non hanno ancora un metodo dietro: l'invio arriva in 5B-2, e il divieto e'
-# una decisione presa adesso -- come per `bind_time_to_invoice`, dichiarato qui prima
-# che `AnalyticsService` esistesse. Un'email partita dalla tua casella non si richiama e
-# il cliente la legge come parole tue; e un agente che tiene la *lettura* della posta e
-# l'*invio* sulla stessa cintura ha la sorgente di injection e il canale di
-# esfiltrazione sullo stesso canale. Il corpo di un'email che arriva a un agente e'
-# testo scritto da qualcun altro: quello che impedisce che sia un buco e' che non ci sia
-# niente con cui mandare fuori qualcosa. La persona preme Invia.
+# The first two have no method behind them yet: sending arrives in 5B-2, and the ban is a
+# decision taken now -- like `bind_time_to_invoice`, declared here before `AnalyticsService`
+# existed. An email sent from your mailbox cannot be recalled and the customer reads it as
+# your words; and an agent that holds the *reading* of mail and the *sending* on the same
+# belt has the injection source and the exfiltration channel on one channel. The body of an
+# email that reaches an agent is text written by somebody else: what keeps that from being
+# a hole is that there is nothing to send anything out with. The person presses Send.
 #
-# Gli altri quattro hanno un metodo dietro, gia' escluso in `test_mcp_surface_coverage.
-# py`, e sono ripetuti qui come *nomi* perche' le due liste rispondono a domande
-# diverse: quella e' "questo metodo e' raggiungibile", questa e' "questo strumento
-# esiste". Uno strumento chiamato `sync_gmail` che chiamasse qualcosa d'altro passerebbe
-# la prima e fallirebbe questa.
+# The other four have a method behind them, already excluded in
+# `test_mcp_surface_coverage.py`, and are repeated here as *names* because the two lists
+# answer different questions: that one is "is this method reachable", this one is "does
+# this tool exist". A tool called `sync_gmail` that called something else would pass the
+# first and fail this one.
 #
-# Non c'e' `FORBIDDEN_GMAIL_SERVICE_CALLS`: i metodi corrispondenti sono gia' coperti
-# dal divieto per costruzione dell'altro file, e aggiungerli qui romperebbe l'uguaglianza
-# fra `_VIETATE` e queste tuple che `test_the_forbidden_block_names_exactly_what_the_
-# ban_test_bans` verifica -- due liste che si ripetono divergono, ed e' esattamente il
-# difetto che quel test esiste per prendere.
+# There is no `FORBIDDEN_GMAIL_SERVICE_CALLS`: the matching methods are already covered by
+# the other file's ban by construction, and adding them here would break the equality
+# between `_VIETATE` and these tuples that
+# `test_the_forbidden_block_names_exactly_what_the_ban_test_bans` checks -- two lists that
+# repeat each other diverge, which is exactly the defect that test exists to catch.
 FORBIDDEN_GMAIL = (
     "send_email",
     "send_payment_reminder",
@@ -329,9 +328,9 @@ FORBIDDEN_GMAIL = (
     "search_gmail",
 )
 
-# Il substring che nessun nome di strumento puo' contenere. Piu' forte dell'elenco
-# sopra, che sa solo le grafie a cui qualcuno ha pensato: la garanzia e' che nessuno
-# strumento invii, non che quattro nomi particolari siano assenti.
+# The substring no tool name may contain. Stronger than the list above, which only knows the
+# spellings somebody thought of: the guarantee is that no tool sends, not that four
+# particular names are absent.
 FORBIDDEN_TOOL_NAME_FRAGMENTS = ("send", "invia")
 
 _REASON_GMAIL = (
@@ -622,13 +621,13 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
     Everything above proves these operations are unreachable over *this transport*. A
     personal access token is not confined to it: `PatService.resolve` answers with
     `Actor(type="mcp", role=<the owner's role>)`, and `apps/api`'s `get_actor` accepts
-    the same `Bearer pgc_...` header on every REST route. Until `AGENT_FORBIDDEN_ACTIONS`
+    the same `Bearer pgc_...` header on every REST route. Until `FULL_ACCESS_ACTIONS`
     existed nothing in that package read `actor.type`, so a token handed to an agent on
     the written promise that it "may prepare but may not emit" could issue an invoice
     with one curl -- spending a register number and producing a FatturaPA.
 
     So the two lists have to stay one list. This test is the seam: `FORBIDDEN` names the
-    tools that must not be registered, `AGENT_FORBIDDEN_ACTIONS` names the operations
+    tools that must not be registered, `FULL_ACCESS_ACTIONS` names the operations
     that must refuse an agent whatever transport it arrives on, and a name added to one
     and forgotten in the other is that gap coming back. The mapping is identity except
     for one pair, where the tool's advertised name and the action string the service
@@ -639,13 +638,12 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
     `REST_ONLY_FORBIDDEN` is the union's other term, and it is what keeps this a
     statement rather than a loose fit: the ban list is keyed on the *operation*, so it
     can legitimately hold one this package offers no tool for -- Drive's three
-    configuration operations and the day ledger's five writes, reachable only over REST
-    and only by a person. Those twelve are enumerated there with their justification, so
-    "banned but toolless" has twelve named answers instead of being slack in this
-    assertion. A thirteenth, or one of these growing a tool and staying in that set, fails
-    here.
+    configuration operations and the day ledger's writes, reachable only over REST and only
+    by a person. Those are enumerated there with their justification, so "banned but
+    toolless" has named answers instead of being slack in this assertion. One more, or one of
+    these growing a tool and staying in that set, fails here.
     """
-    from pigrocrm.core.actor import AGENT_FORBIDDEN_ACTIONS
+    from pigrocrm.core.agent_actions import AGENT_ALLOWED_ACTIONS, FULL_ACCESS_ACTIONS
 
     tool_name_to_action = {"mark_invoice_transmitted": "mark_transmitted_externally"}
     attesi = {tool_name_to_action.get(name, name) for name in FORBIDDEN}
@@ -657,19 +655,23 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
         "un'operazione elencata in REST_ONLY_FORBIDDEN ha ora un tool MCP: togliela da "
         f"quel set, la sua motivazione non vale piu' -- {sorted(REST_ONLY_FORBIDDEN & attesi)}"
     )
-    assert attesi | REST_ONLY_FORBIDDEN == set(AGENT_FORBIDDEN_ACTIONS), (
+    assert not (attesi & AGENT_ALLOWED_ACTIONS), (
+        "an operation with a banned tool is in AGENT_ALLOWED_ACTIONS: "
+        f"{sorted(attesi & AGENT_ALLOWED_ACTIONS)}"
+    )
+    assert attesi | REST_ONLY_FORBIDDEN == set(FULL_ACCESS_ACTIONS), (
         "le due meta' del divieto sono divergenti: FORBIDDEN vieta il tool, "
-        "AGENT_FORBIDDEN_ACTIONS vieta l'operazione a qualunque credenziale di tipo "
+        "FULL_ACCESS_ACTIONS vieta l'operazione a qualunque credenziale di tipo "
         "agente. Un nome aggiunto a una sola delle due lascia proprio il buco che la "
         "seconda e' stata scritta per chiudere -- l'assenza del tool non impedisce la "
         "stessa chiamata via REST con lo stesso token. Un'operazione vietata che non ha "
         "nessun tool va elencata e motivata in REST_ONLY_FORBIDDEN, non lasciata come "
         "gioco in questa asserzione.\n"
-        f"solo in FORBIDDEN: {sorted(attesi - set(AGENT_FORBIDDEN_ACTIONS))}\n"
-        "solo in AGENT_FORBIDDEN_ACTIONS: "
-        f"{sorted(set(AGENT_FORBIDDEN_ACTIONS) - attesi - REST_ONLY_FORBIDDEN)}\n"
+        f"solo in FORBIDDEN: {sorted(attesi - set(FULL_ACCESS_ACTIONS))}\n"
+        "solo in FULL_ACCESS_ACTIONS: "
+        f"{sorted(set(FULL_ACCESS_ACTIONS) - attesi - REST_ONLY_FORBIDDEN)}\n"
         "in REST_ONLY_FORBIDDEN ma non vietate: "
-        f"{sorted(REST_ONLY_FORBIDDEN - set(AGENT_FORBIDDEN_ACTIONS))}"
+        f"{sorted(REST_ONLY_FORBIDDEN - set(FULL_ACCESS_ACTIONS))}"
     )
 
 

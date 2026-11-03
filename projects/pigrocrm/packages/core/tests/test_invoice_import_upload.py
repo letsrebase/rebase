@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 
 import pytest
+from fakes.customer_fixtures import make_customer_with_address
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from test_invoice_import_confirm import (
@@ -23,7 +24,6 @@ from test_invoice_import_confirm import (
     CLIENTE_PIVA,
     CONSULENZA,
     LOTTO,
-    _customer,
     _fixture,
     _invoice_count,
     _svc,
@@ -132,8 +132,10 @@ def test_a_request_with_nothing_to_read_is_refused_not_answered_with_an_empty_li
 
 
 def test_a_broken_zip_is_refused_with_its_name() -> None:
-    with pytest.raises(ValidationFailed, match="rotto.zip"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("rotto.zip", b"PK\x03\x04 and then nothing a zip has")])
+    assert refused.value.details["field"] == "files"
+    assert "rotto.zip" in refused.value.details["reason"]
 
 
 def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
@@ -141,8 +143,9 @@ def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
 ) -> None:
     monkeypatch.setattr(import_upload, "UPLOAD_MAX_FILE_BYTES", 1024)
     honest = _zip({"grande.xml": b"a" * 5000})
-    with pytest.raises(ValidationFailed, match="supera"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("b.zip", honest)])
+    assert refused.value.details["field"] == "files"
 
     # The directory is written by whoever made the archive: lower both copies of the
     # size to a harmless 100 bytes and the read must still stop at the ceiling.
@@ -153,16 +156,19 @@ def test_a_zip_bomb_is_refused_by_what_it_decompresses_to_not_by_what_it_says(
     while (index := lying.find(real, index)) != -1:
         lying[index : index + 4] = fake
         index += 4
-    with pytest.raises(ValidationFailed, match="grande.xml"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("b.zip", bytes(lying))])
+    assert refused.value.details["field"] == "files"
+    assert "grande.xml" in refused.value.details["reason"]
 
 
 def test_the_total_of_a_zips_entries_counts_against_the_requests_ceiling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(import_upload, "UPLOAD_MAX_TOTAL_BYTES", 10)
-    with pytest.raises(ValidationFailed, match="in tutto"):
+    with pytest.raises(ValidationFailed) as refused:
         expand_uploads([("a.zip", _zip({"1.xml": b"123456", "2.xml": b"123456"}))])
+    assert refused.value.details["field"] == "files"
 
 
 def test_the_number_of_files_and_the_total_size_are_bounded(
@@ -201,7 +207,7 @@ def test_a_review_reads_every_verdict_and_writes_nothing(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    known = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    known = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     invoices, documents, customers = (
         _invoice_count(db_session),
         _document_count(db_session),
@@ -269,7 +275,7 @@ def test_a_single_invoice_file_is_written_and_its_xml_filed_under_the_customer(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    customer = _customer(db_session, partita_iva=CLIENTE_PIVA)
+    customer = make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     content = _fixture(CONSULENZA)
     documents = _document_count(db_session)
 
@@ -296,7 +302,7 @@ def test_the_same_file_confirmed_twice_is_written_once_and_files_one_xml(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    _customer(db_session, partita_iva=CLIENTE_PIVA)
+    make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     content = _fixture(CONSULENZA)
 
     [first] = service.confirm_upload([("fattura.xml", content)], {}, ADMIN)
@@ -335,7 +341,7 @@ def test_a_decision_names_the_customer_to_attach_by_the_partys_tax_id(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     service = _svc(db_session, local_storage)
-    chosen = _customer(db_session)
+    chosen = make_customer_with_address(db_session)
     content = _fixture(CONSULENZA)
 
     [row] = service.confirm_upload(
@@ -353,7 +359,7 @@ def test_a_skip_decision_leaves_the_invoice_out_even_when_its_customer_matches_n
     """The customer was created by somebody else after the review: matching would write the
     invoice, and the person had unticked it."""
     service = _svc(db_session, local_storage)
-    _customer(db_session, partita_iva=CLIENTE_PIVA)
+    make_customer_with_address(db_session, partita_iva=CLIENTE_PIVA)
     invoices = _invoice_count(db_session)
 
     [row] = service.confirm_upload(

@@ -4,10 +4,12 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.notes.service import NoteService
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
+from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.provenance import PROVENIENZA_TESTO_LIBERO
@@ -23,20 +25,18 @@ def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[s
 def _custom_lines(custom_fields: dict[str, object]) -> list[str]:
     if not custom_fields:
         return []
-    return ["", "## Campi personalizzati", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_", ""] + [
+    return ["", "## Campi personalizzati", ""] + [
         f"- **{key}**: {value}" for key, value in sorted(custom_fields.items())
     ]
 
 
 def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[str]:
     """The whole thread, newest first (the tools carry the latest 50): who wrote each note,
-    when, through which door and whether it was edited since. The text is free text somebody
-    else wrote, so the section opens with the same `Provenienza` sentence as the custom
-    fields."""
+    when, through which door and whether it was edited since."""
     notes = NoteService(context.session).list_for_entity(entity_type, entity_id, context.actor)
     if not notes:
         return []
-    lines = ["", "## Note", "", f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_"]
+    lines = ["", "## Note"]
     for note in notes:
         # A note from before the thread existed has no source and no author.
         who = note.autore or ("Nota precedente" if note.fonte is None else note.fonte)
@@ -83,18 +83,25 @@ def _address_line(customer: CustomerRead) -> str:
     return ", ".join(segments) if segments else "—"
 
 
+def _provenance_line() -> str:
+    """First line of every card: the names, notes and custom fields below were written by
+    somebody else (a person, or an agent that was reading a mail)."""
+    return f"_Provenienza: {PROVENIENZA_TESTO_LIBERO}_"
+
+
 def render_customer(context: McpContext, customer_id: UUID) -> str:
     customer = CustomerService(context.session).get(customer_id, context.actor)
     people = PersonService(context.session).list(
         PersonListQuery(customer_id=customer_id, limit=50), context.actor
     )
-    from pigrocrm.core.deals.schemas import DealListQuery
 
     deals = DealService(context.session).list(
         DealListQuery(customer_id=customer_id, limit=50), context.actor
     )
 
     lines = [
+        _provenance_line(),
+        "",
         f"# {customer.ragione_sociale}",
         "",
         "## Dati fiscali",
@@ -126,6 +133,8 @@ def render_customer(context: McpContext, customer_id: UUID) -> str:
 def render_person(context: McpContext, person_id: UUID) -> str:
     person = PersonService(context.session).get(person_id, context.actor)
     lines = [
+        _provenance_line(),
+        "",
         f"# {person.nome} {person.cognome or ''}".strip(),
         "",
         f"- Ruolo: {person.ruolo or '—'}",
@@ -148,11 +157,11 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
     deal = DealService(context.session).get(deal_id, context.actor)
     customer = CustomerService(context.session).get(deal.customer_id, context.actor)
 
-    from pigrocrm.core.pipeline.service import PipelineService
-
     stage = PipelineService(context.session).get(deal.pipeline_stage_id)
 
     lines = [
+        _provenance_line(),
+        "",
         f"# {deal.nome}",
         "",
         f"- Cliente: {customer.ragione_sociale} (`customer://{customer.id}`)",

@@ -12,21 +12,24 @@ owner's full role -- an admin's token would pass any check written inside a tool
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
-from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.automations.config_service import AutomationConfigService
+from pigrocrm.core.automations.runs import recent_runs
 from pigrocrm.core.automations.schemas import (
-    AUTOMATION_KINDS,
     AutomationConfigRead,
     AutomationConfigUpdate,
     AutomationRun,
     AutomationsDescription,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(tags=["automations"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    tags=["automations"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("/api/automation-config", response_model=AutomationConfigRead)
@@ -60,28 +63,11 @@ def describe(session: SessionDep, actor: ActorDep) -> AutomationsDescription:
 @router.get("/api/automation-runs", response_model=list[AutomationRun])
 def runs(
     session: SessionDep,
-    actor: ActorDep,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[AutomationRun]:
     """A read of `activities` by `kind`, never a new table (§9.4).
 
-    Bounded like every other list in the project. `actor` is unused beyond
-    authentication, which `ActorDep` has already performed -- the runs are the same
-    timeline entries every role can already read on the entity itself.
+    Bounded like every other list in the project. No role gate beyond authentication: the
+    runs are the same timeline entries every role can already read on the entity itself.
     """
-    return [
-        AutomationRun(
-            kind=activity.kind,
-            occurred_at=activity.occurred_at,
-            # `None` unless the activity really is about a deal: a bare `entity_id` would
-            # give the `automation_config` row's own id for a configuration change, which
-            # renders as a link to a deal that does not exist. Same rule as
-            # `AutomationConfigService.describe_automations`, which is where the shape is
-            # explained at length.
-            deal_id=activity.entity_id if activity.entity_type == "deal" else None,
-            regola=activity.payload.get("regola"),
-            motivo=activity.payload.get("motivo"),
-            payload=activity.payload,
-        )
-        for activity in ActivityRepository(session).by_kind(AUTOMATION_KINDS, limit)
-    ]
+    return recent_runs(session, limit)

@@ -3,10 +3,12 @@ sees who changed what and when, and can reverse any of those actions."""
 
 from datetime import date
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
+from admins import an_admin
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import (
@@ -17,15 +19,11 @@ from rebase_core.audit import (
     sanitize_payload,
 )
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate, CompanyOverride
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerOverride
 from rebase_core.freelancers import FreelancerService
 from rebase_core.models import Company, Freelancer, User
-from rebase_core.schemas import (
-    CompanyCreate,
-    CompanyOverride,
-    FreelancerCreate,
-    FreelancerOverride,
-)
 
 PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -73,13 +71,6 @@ def clean(hub_session: Session) -> Session:
     hub_session.execute(text("DELETE FROM companies"))
     hub_session.execute(text("DELETE FROM users"))
     hub_session.commit()
-
-
-def _an_admin(session: Session) -> UUID:
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin")
-    session.add(admin)
-    session.commit()
-    return admin.id
 
 
 # ---- the diff/sanitize/coerce building blocks ----------------------------------------
@@ -151,7 +142,7 @@ def test_coerce_stored_value_rebuilds_decimal_and_date_from_their_stored_strings
 def test_override_sets_a_field_and_records_who_changed_what(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     overridden = service.override(
         row.id,
@@ -175,7 +166,7 @@ def test_override_sets_a_field_and_records_who_changed_what(clean: Session) -> N
 def test_override_moves_identity_onto_the_linked_user_row(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     overridden = service.override(row.id, FreelancerOverride(nome="Grace"), admin_id)
     assert overridden.nome == "Grace"
@@ -188,7 +179,7 @@ def test_override_clears_a_nullable_field_and_refuses_to_clear_a_required_one(
 ) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     cleared = service.override(row.id, FreelancerOverride(posizione=None), admin_id)
     assert cleared.posizione is None
@@ -200,32 +191,47 @@ def test_override_clears_a_nullable_field_and_refuses_to_clear_a_required_one(
 def test_override_with_no_real_change_writes_no_audit_entry(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     service.override(row.id, FreelancerOverride(posizione="Backend developer"), admin_id)
     assert service.audit_timeline(row.id) == []
 
 
-def test_a_recording_failure_never_blocks_the_change_it_would_have_recorded(
+def test_a_recording_failure_never_blocks_a_change_that_is_not_sensitive(
     clean: Session,
 ) -> None:
     """`AdminActionService.record` commits on its own, after the caller's own change is
     already in the database: an admin id nobody can resolve (no such `users` row) fails
-    the audit insert on the foreign key, and the field change stands anyway."""
+    the audit insert on the foreign key, and a delete stands anyway. A sensitive change,
+    an override, is recorded in its own transaction instead and is refused with it
+    (`test_an_override_nobody_can_sign_is_refused_and_leaves_the_field_alone`)."""
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
     ghost_admin = uuid4()
 
-    overridden = service.override(row.id, FreelancerOverride(posizione="Tech lead"), ghost_admin)
-    assert overridden.posizione == "Tech lead"
-    assert clean.get(Freelancer, row.id).posizione == "Tech lead"
+    deleted = service.soft_delete(row.id, ghost_admin)
+    assert deleted.deleted_at is not None
+    assert clean.get(Freelancer, row.id).deleted_at is not None  # type: ignore[union-attr]
     assert AdminActionService(clean).timeline("freelancer", row.id) == []
+
+
+def test_an_override_nobody_can_sign_is_refused_and_leaves_the_field_alone(
+    clean: Session,
+) -> None:
+    service = FreelancerService(clean)
+    row, _ = service.apply(_application())
+
+    with pytest.raises(IntegrityError):
+        service.override(row.id, FreelancerOverride(posizione="Tech lead"), uuid4())
+    clean.rollback()
+
+    assert clean.get(Freelancer, row.id).posizione == "Backend developer"  # type: ignore[union-attr]
 
 
 def test_clear_cv_drops_the_bytes_and_never_puts_them_in_the_audit_entry(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application(), PDF, "Ada CV.pdf", "application/pdf")
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     cleared = service.clear_cv(row.id, admin_id)
     assert cleared.cv_filename is None
@@ -249,7 +255,7 @@ def test_clear_cv_drops_the_bytes_and_never_puts_them_in_the_audit_entry(clean: 
 def test_set_vetted_records_the_admin(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     vetted = service.set_vetted(row.id, True, admin_id)
     assert vetted.vetted_at is not None
@@ -274,7 +280,7 @@ def test_set_vetted_records_the_admin(clean: Session) -> None:
 
 
 def test_set_vetted_on_a_card_that_is_not_there_is_not_found(clean: Session) -> None:
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     with pytest.raises(NotFound):
         FreelancerService(clean).set_vetted(uuid4(), True, admin_id)
 
@@ -287,7 +293,7 @@ def test_a_deleted_freelancer_disappears_from_the_working_surfaces_until_restore
 ) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     deleted = service.soft_delete(row.id, admin_id)
     assert deleted.deleted_at is not None
@@ -306,7 +312,7 @@ def test_a_deleted_freelancer_disappears_from_the_working_surfaces_until_restore
 def test_restoring_a_freelancer_that_is_not_deleted_is_a_silent_no_op(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     service.restore(row.id, admin_id)
     assert service.audit_timeline(row.id) == []
@@ -315,7 +321,7 @@ def test_restoring_a_freelancer_that_is_not_deleted_is_a_silent_no_op(clean: Ses
 def test_the_audit_timeline_reads_a_deleted_freelancer_by_id(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     service.soft_delete(row.id, admin_id)
     assert len(service.audit_timeline(row.id)) == 1
 
@@ -323,7 +329,7 @@ def test_the_audit_timeline_reads_a_deleted_freelancer_by_id(clean: Session) -> 
 def test_revert_restores_a_field_to_its_value_before_the_named_action(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     service.override(row.id, FreelancerOverride(posizione="Tech lead"), admin_id)
     action_id = service.audit_timeline(row.id)[0].id
 
@@ -336,7 +342,7 @@ def test_revert_restores_a_field_to_its_value_before_the_named_action(clean: Ses
 def test_revert_refuses_on_a_delete_or_restore_entry(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     service.soft_delete(row.id, admin_id)
     service.restore(row.id, admin_id)
     delete_action = next(e for e in service.audit_timeline(row.id) if e.kind == "deleted")
@@ -349,7 +355,7 @@ def test_revert_refuses_an_action_that_belongs_to_a_different_entity(clean: Sess
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
     other, _ = service.apply(_application(email="bob@studio.it"))
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     service.override(other.id, FreelancerOverride(posizione="Tech lead"), admin_id)
     other_action = service.audit_timeline(other.id)[0].id
 
@@ -363,7 +369,7 @@ def test_revert_refuses_an_action_that_belongs_to_a_different_entity(clean: Sess
 def test_company_override_touches_the_row_and_the_referente_identity(clean: Session) -> None:
     service = CompanyService(clean)
     row, _ = service.request(_company_request())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     overridden = service.override(
         row.id, CompanyOverride(nome="Coyote", budget_giornaliero=Decimal("650")), admin_id
@@ -380,7 +386,7 @@ def test_company_override_refuses_a_giorni_presenza_remoto_mismatch(clean: Sessi
     `IntegrityError` at commit -- on either side of the pair, and whichever field
     the row already carried before this call."""
     service = CompanyService(clean)
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     remote_row, _ = service.request(_company_request(email="remote@acme.it"))
     with pytest.raises(ValidationFailed) as refused:
@@ -405,7 +411,7 @@ def test_company_override_refuses_a_giorni_presenza_remoto_mismatch(clean: Sessi
 def test_company_delete_restore_and_revert(clean: Session) -> None:
     service = CompanyService(clean)
     row, _ = service.request(_company_request())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
 
     service.override(row.id, CompanyOverride(progetto="Un progetto nuovo"), admin_id)
     action_id = service.audit_timeline(row.id)[0].id
@@ -429,7 +435,7 @@ def test_a_deleted_freelancer_is_invisible_to_its_own_member_area(clean: Session
 
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     user_id = clean.get(Freelancer, row.id).user_id
 
     service.soft_delete(row.id, admin_id)
@@ -447,7 +453,7 @@ def test_a_deleted_company_request_is_invisible_to_its_own_member_area(clean: Se
 
     service = CompanyService(clean)
     row, _ = service.request(_company_request())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     user_id = clean.get(Company, row.id).user_id
 
     service.soft_delete(row.id, admin_id)
@@ -466,13 +472,13 @@ def test_deleting_one_company_request_leaves_the_others_listed_and_editable(
     admin-editable-only once the newest is deleted: the member area lists every live
     request now and edits any of them by id, so a delete takes away that one request
     and no other. The deleted one is a 404 by id, and comes back on restore."""
+    from rebase_core.company_schemas import CompanyUpdate
     from rebase_core.members import MemberService
-    from rebase_core.schemas import CompanyUpdate
 
     service = CompanyService(clean)
     older, _ = service.request(_company_request())
     newest, _ = service.request(_company_request())
-    admin_id = _an_admin(clean)
+    admin_id = an_admin(clean)
     user_id = clean.get(Company, older.id).user_id
     update = CompanyUpdate(
         progetto="Un progetto",
@@ -496,3 +502,69 @@ def test_deleting_one_company_request_leaves_the_others_listed_and_editable(
 
     service.restore(newest.id, admin_id)
     assert [item.id for item in member.me_read(user_id).richieste] == [newest.id, older.id]
+
+
+# ---- the trail's two modes, and the width of a kind (HCORE-09) -----------------------------
+
+
+def test_every_known_kind_fits_its_column() -> None:
+    """`admin_actions.kind` holds 20 characters. `record` refuses a longer one rather than
+    cut it, so a kind that did not fit would turn its action into an error: this is where
+    a new kind that is too long is found."""
+    from rebase_core.models import ADMIN_ACTION_KINDS
+
+    assert [kind for kind in ADMIN_ACTION_KINDS if len(kind) > 20] == []
+
+
+def test_a_kind_or_entity_type_too_wide_for_its_column_is_refused_not_cut(clean: Session) -> None:
+    admin = an_admin(clean)
+
+    with pytest.raises(ValueError, match="20-character"):
+        AdminActionService(clean).record("freelancer", uuid4(), "k" * 21, admin)
+    with pytest.raises(ValueError, match="20-character"):
+        AdminActionService(clean).record("e" * 21, uuid4(), "overridden", admin)
+    with pytest.raises(ValueError, match="20-character"):
+        AdminActionService(clean).record("freelancer", uuid4(), "k" * 21, admin, commit=False)
+
+
+def test_the_default_trail_is_best_effort_and_the_transactional_one_is_not(clean: Session) -> None:
+    """A failure writing a default entry is logged and answered `None`: the change it
+    describes is already committed. With `commit=False` the same failure propagates, so a
+    change committed in the caller's own transaction cannot go without it."""
+    admin = an_admin(clean)
+    missing_admin = uuid4()
+
+    assert (
+        AdminActionService(clean).record("freelancer", uuid4(), "overridden", missing_admin) is None
+    )
+    with pytest.raises(Exception):  # noqa: B017 - the foreign key's own IntegrityError
+        AdminActionService(clean).record(
+            "freelancer", uuid4(), "overridden", missing_admin, commit=False
+        )
+    clean.rollback()
+
+    entry = AdminActionService(clean).record(
+        "freelancer", uuid4(), "overridden", admin, {"changed": ["posizione"]}, commit=False
+    )
+    assert entry is not None
+    clean.rollback()  # never committed: the caller's transaction decides
+    assert clean.execute(text("SELECT count(*) FROM admin_actions")).scalar() == 0
+
+
+def test_an_identity_override_and_its_entry_share_one_transaction(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the entry cannot be written the override is not applied either, instead of an
+    identity change that exists with no trail."""
+    admin = an_admin(clean)
+    read, _ = FreelancerService(clean).apply(_application(), PDF, "cv.pdf", "application/pdf")
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the trail is down")
+
+    monkeypatch.setattr(AdminActionService, "record", refuse)
+    with pytest.raises(RuntimeError):
+        FreelancerService(clean).override(read.id, FreelancerOverride(nome="Augusta"), admin)
+    clean.rollback()
+
+    assert clean.get(User, clean.get(Freelancer, read.id).user_id).nome == "Ada"  # type: ignore[union-attr]

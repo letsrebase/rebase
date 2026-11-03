@@ -1,6 +1,7 @@
 """Journey states (spec § 2) and the settings campaigns read."""
 
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
 
 HUB = Path(__file__).resolve().parents[3]
+CARD_STATES = ("completo", "manca_cv", "scheda_vuota_nuovi", "scheda_vuota_entrati")
 
 
 def test_the_campaign_settings_have_their_defaults_and_reach_the_container() -> None:
@@ -100,3 +102,37 @@ def test_the_pigro_state_waits_for_phase_three(clean: Session) -> None:  # noqa:
 )
 def test_display_name_fixes_only_all_lower_or_all_upper(raw: str | None, shown: str | None) -> None:
     assert display_name(raw) == shown
+
+
+def test_the_sql_states_agree_with_card_state_for_every_combination(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """`_cards` filters in SQL what `card_state` decides in Python: the same state for
+    every card whether the CV, the rate, the position and the work mode are there or not,
+    and whether the person has logged in."""
+    expected: dict[str, list[str]] = {state: [] for state in CARD_STATES}
+    for n, (cv, tariffa, posizione, remoto, entered) in enumerate(product((True, False), repeat=5)):
+        email = f"c{n}@studio.it"
+        person(
+            clean,
+            email,
+            cv=cv,
+            tariffa=tariffa,
+            posizione=posizione,
+            remoto=remoto,
+            logins=1 if entered else 0,
+        )
+        state = card_state(
+            4 if cv else None,
+            Decimal("450") if tariffa else None,
+            "Dev" if posizione else None,
+            "remoto" if remoto else None,
+        )
+        key = (
+            state
+            if state != "scheda"
+            else ("scheda_vuota_entrati" if entered else "scheda_vuota_nuovi")
+        )
+        expected[key].append(email)
+    for state, wanted in expected.items():
+        assert sorted(emails(candidates_for_state(clean, state))) == sorted(wanted), state

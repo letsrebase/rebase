@@ -2,9 +2,9 @@
 
 The in-flight authorisation state is not duplicated here: `google_oauth_states` serves
 both the Gmail and the Drive flow (see `GoogleOAuthState.purpose`), and
-`GmailRepository.add_state`/`consume_state` already implement the one-statement,
-race-safe redemption that a second copy of the same logic could only get wrong by
-drifting from it. This repository owns the one table that is Drive's alone.
+`google/states.py` implements the one-statement, race-safe redemption that a second copy
+of the same logic could only get wrong by drifting from it. This repository owns the one
+table that is Drive's alone.
 """
 
 from uuid import UUID

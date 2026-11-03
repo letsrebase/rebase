@@ -102,7 +102,7 @@ def run_tick(
     pause: Callable[[float], None] = time.sleep,
 ) -> TickResult:
     result = TickResult()
-    with session.get_bind().connect() as lock_conn:  # type: ignore[union-attr]
+    with session.get_bind().engine.connect() as lock_conn:
         got_lock = lock_conn.execute(
             text("SELECT pg_try_advisory_lock(:k)"), {"k": TICK_LOCK_KEY}
         ).scalar()

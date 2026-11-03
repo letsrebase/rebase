@@ -148,6 +148,15 @@ def test_a_datetime_cursor_carrying_something_that_is_not_a_date_is_refused() ->
     assert caught.value.details["field"] == "cursor"
 
 
+def test_a_datetime_cursor_without_an_offset_is_refused() -> None:
+    """The encoder always writes one: a naive value is forged, and against a `timestamptz`
+    column it would be read in the session's zone."""
+    with pytest.raises(ValidationFailed) as caught:
+        naive = {"k": "created_at", "v": "2026-08-21T14:30:05", "i": str(uuid7())}
+        decode_cursor(_STAMP, _forge(naive))
+    assert caught.value.details["field"] == "cursor"
+
+
 def test_a_cursor_encoded_for_one_sort_key_is_refused_by_another() -> None:
     """Changing `sort` mid-scan while replaying `next_cursor` would otherwise compare a
     surname against a timestamp and return an arbitrary page."""

@@ -36,8 +36,8 @@
   /* The same two rules as `shared/analytics/posthog.ts`: a developer's machine and the
      e2e suite (Playwright against `vite preview` on localhost) send nothing at all, and
      the preview stack's events are marked internal rather than counted as visitors.
-     The pixel has no such rule because it fires only on a signup, which the suite
-     never completes against a real API. */
+     The pixel loads on neither: it fires on a signup, and a developer's or a preview's
+     visit is not an ad conversion. */
   var SILENT_HOSTS = ['', 'localhost', '127.0.0.1', '[::1]', '0.0.0.0']
   var INTERNAL_HOSTS = /^preview\./
 
@@ -67,7 +67,7 @@
       window.localStorage.setItem(STORAGE_KEY, current)
       window.localStorage.removeItem(LEGACY_STORAGE_KEY)
     } catch {
-      /* Niente da fare: la scelta si legge da dove sta. */
+      /* Nothing to be done: the decision is read from where it already is. */
     }
     return current
   }
@@ -77,7 +77,7 @@
       window.localStorage.setItem(STORAGE_KEY, decision)
       window.localStorage.removeItem(LEGACY_STORAGE_KEY)
     } catch {
-      /* Niente da fare: la scelta vale per questa visita. */
+      /* Nothing to be done: the decision holds for this visit. */
     }
   }
 
@@ -86,6 +86,7 @@
      the init. Called only from `accept`. */
   function loadPixel() {
     if (window.oaiq) return
+    if (!measured(window.location.hostname) || internal(window.location.hostname)) return
     var queue = function () {
       queue.q.push(arguments)
     }
@@ -97,7 +98,7 @@
     var first = document.getElementsByTagName('script')[0]
     if (first && first.parentNode) first.parentNode.insertBefore(script, first)
     else document.head.appendChild(script)
-    window.oaiq('init', { pixelId: PIXEL_ID, debug: true })
+    window.oaiq('init', { pixelId: PIXEL_ID })
   }
 
   /* PostHog's own loader, written out: a stub that queues every call made before
@@ -226,29 +227,6 @@
     if (box && box.parentNode) box.parentNode.removeChild(box)
   }
 
-  /* Refusing costs one click; withdrawing used to cost a trip into the browser's own
-     site-data settings, which is not equally easy (GDPR art. 7(3) asks for it to be).
-     Only a stored yes: a refusal stays on record, or withdrawing would put the notice
-     back in front of somebody who already said no, which is the dark pattern `start`'s
-     own DENIED branch exists to rule out. Reloads on either outcome, so a click always
-     does something. No page calls this today -- the three pages that load this script
-     carry no withdraw control, and privacy.html, which does, cannot load this script
-     (it carries no tracker to gate) and reimplements the same steps against the same
-     key instead; renaming STORAGE_KEY here has to carry over there too, and
-     pixel.test.ts holds the two literals equal. This export is for the day one of the
-     three notice pages grows its own control. */
-  function withdraw() {
-    try {
-      if (remembered() === GRANTED) {
-        window.localStorage.removeItem(STORAGE_KEY)
-        window.localStorage.removeItem(LEGACY_STORAGE_KEY)
-      }
-    } catch {
-      /* Niente da fare: la scelta resta finché dura la sessione. */
-    }
-    window.location.reload()
-  }
-
   function start() {
     var decision = remembered()
     if (decision === GRANTED) return accept()
@@ -270,7 +248,6 @@
   window.__consent = {
     start: start,
     decide: decide,
-    withdraw: withdraw,
     measured: measured,
     internal: internal,
     STORAGE_KEY: STORAGE_KEY,

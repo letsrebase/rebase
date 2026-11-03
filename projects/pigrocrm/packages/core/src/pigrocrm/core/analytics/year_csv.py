@@ -26,13 +26,11 @@ from uuid import UUID
 
 from pigrocrm.core.analytics.schemas import YearOverview
 from pigrocrm.core.invoices.models import InvoiceLine
+from pigrocrm.core.spreadsheet import FORMULA_TRIGGERS
 
 BOM = "\ufeff"
 DELIMITER = ";"
 NEEDS_QUOTING = re.compile(r'["\r\n;]')
-# A cell a spreadsheet reads as a formula: the customer's name and the line description
-# are typed by people, and the accountant opens this file in Excel.
-FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
 
 LINE_COLUMNS = (
     "Numero",

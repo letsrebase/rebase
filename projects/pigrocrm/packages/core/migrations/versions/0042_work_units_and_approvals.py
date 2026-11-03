@@ -15,9 +15,11 @@ expressible without procedural SQL. A day's state machine cannot be, because a
 transition's legality depends on the owning contract's own
 `requires_prior_approval`, which a `CHECK` cannot subquery.
 
-**The three trigger functions** (`pigrocrm.core.work_units.triggers.WORK_UNIT_TRIGGER_SQL`,
-imported rather than typed out a second time -- see that module's own docstring for
-why): `work_unit_enforce_state_machine` (`BEFORE INSERT OR UPDATE` on `work_units`,
+**The three trigger functions** (frozen below as `_WORK_UNIT_TRIGGER_SQL`, the text
+`pigrocrm.core.work_units.triggers.WORK_UNIT_TRIGGER_SQL` rendered when this revision was
+written: a migration must give the same schema whatever the application constants become,
+and a later change to a trigger is a revision of its own):
+`work_unit_enforce_state_machine` (`BEFORE INSERT OR UPDATE` on `work_units`,
 rejecting any edge outside the graph in `work_units.models.WORK_UNIT_TRANSITIONS`,
 auto-redirecting an unapproved `'lavorato'` write on a contract that requires prior
 approval into `'lavorato_senza_approvazione'`, and recovering it the moment an
@@ -40,12 +42,163 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from pigrocrm.core.work_units.triggers import DROP_WORK_UNIT_TRIGGER_SQL, WORK_UNIT_TRIGGER_SQL
-
 revision: str = "0042"
 down_revision: str | Sequence[str] | None = "0041"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# Frozen (PCORE-A-19): the SQL this revision created, not an import of what the
+# application says today.
+_WORK_UNIT_TRIGGER_SQL = """
+CREATE OR REPLACE FUNCTION raise_immutable_violation() RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION '% on % is not allowed: rows in this table are immutable once written (id=%)',
+        TG_OP, TG_TABLE_NAME, COALESCE(NEW.id, OLD.id)
+        USING ERRCODE = 'check_violation';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION work_unit_enforce_state_machine() RETURNS TRIGGER AS $$
+DECLARE
+    v_requires_approval boolean;
+    -- What the caller actually asked for, captured before anything below rewrites
+    -- `NEW.stato` -- the edge check runs against this, not against the possibly
+    -- redirected value, so a state that was never allowed to reach 'lavorato' at
+    -- all cannot sneak into 'lavorato_senza_approvazione' by asking for the
+    -- unapproved write instead.
+    v_requested text := NEW.stato;
+BEGIN
+    SELECT requires_prior_approval INTO v_requires_approval
+    FROM contracts WHERE id = NEW.contract_id;
+
+    IF v_requires_approval IS NULL THEN
+        RAISE EXCEPTION 'work_units.contract_id % does not reference a contract', NEW.contract_id
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    IF TG_OP = 'INSERT' THEN
+        IF v_requested NOT IN ('proposto', 'approvato', 'lavorato') THEN
+            RAISE EXCEPTION
+                'a work_unit cannot be created directly in state %; '
+                'the legal entry states are proposto, approvato, lavorato',
+                v_requested
+                USING ERRCODE = 'check_violation';
+        END IF;
+    ELSIF v_requested <> OLD.stato
+        AND NOT ((OLD.stato || '->' || v_requested) = ANY (ARRAY[
+            'approvato->lavorato',
+            'approvato->revocato',
+            'contestato->lavorato',
+            'contestato->non_fatturabile',
+            'contestato->revocato',
+            'fatturato->contestato',
+            'fatturato->pagato',
+            'lavorato->contestato',
+            'lavorato->fatturato',
+            'lavorato->non_fatturabile',
+            'lavorato->revocato',
+            'lavorato_senza_approvazione->contestato',
+            'lavorato_senza_approvazione->fatturato',
+            'lavorato_senza_approvazione->lavorato',
+            'lavorato_senza_approvazione->non_fatturabile',
+            'lavorato_senza_approvazione->revocato',
+            'proposto->approvato',
+            'proposto->lavorato',
+            'proposto->revocato',
+            'proposto->rifiutato'
+        ]))
+    THEN
+        RAISE EXCEPTION 'work_unit % cannot move from % to %', NEW.id, OLD.stato, v_requested
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- The automatic redirect (0013): a 'lavorato' write with no approval on a
+    -- contract that requires one is never rejected outright -- it is recorded,
+    -- flagged, and recovered the moment an approval is linked (spec §5).
+    IF NEW.stato = 'lavorato' AND v_requires_approval AND NEW.approval_id IS NULL THEN
+        NEW.stato := 'lavorato_senza_approvazione';
+    END IF;
+
+    -- The recovery half: the flagged state returns to plain 'lavorato' the instant
+    -- an approval is linked, whether the caller asked for 'lavorato' explicitly
+    -- (already validated as a legal edge above) or only set approval_id while
+    -- leaving stato untouched (v_requested = OLD.stato, so the edge check above
+    -- was a same-state no-op and this is the only thing that moves it).
+    IF NEW.stato = 'lavorato_senza_approvazione' AND NEW.approval_id IS NOT NULL THEN
+        NEW.stato := 'lavorato';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION work_unit_log_transition() RETURNS TRIGGER AS $$
+DECLARE
+    v_actor jsonb;
+    v_motivo text;
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.stato = OLD.stato THEN
+        RETURN NEW;
+    END IF;
+
+    -- Session-local settings the repository layer sets immediately before the
+    -- write (`set_config(..., true)`, scoped to the transaction), falling back to
+    -- a system actor and a generic reason when unset rather than failing -- the log
+    -- must never go silently incomplete (spec §5, `0012...sql:97-105`).
+    v_actor := COALESCE(
+        NULLIF(current_setting('pigrocrm.actor', true), '')::jsonb,
+        '{"kind": "system"}'::jsonb
+    );
+    v_motivo := COALESCE(
+        NULLIF(current_setting('pigrocrm.motivo', true), ''),
+        'nessun motivo fornito'
+    );
+
+    INSERT INTO work_unit_transitions
+        (id, work_unit_id, stato_precedente, stato_nuovo, attore, motivo)
+    VALUES (
+        gen_random_uuid(),
+        NEW.id,
+        CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.stato END,
+        NEW.stato,
+        v_actor,
+        v_motivo
+    );
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_approvals_immutable ON approvals;
+CREATE TRIGGER trg_approvals_immutable
+    BEFORE UPDATE ON approvals
+    FOR EACH ROW EXECUTE FUNCTION raise_immutable_violation();
+
+DROP TRIGGER IF EXISTS trg_work_unit_transitions_immutable ON work_unit_transitions;
+CREATE TRIGGER trg_work_unit_transitions_immutable
+    BEFORE UPDATE OR DELETE ON work_unit_transitions
+    FOR EACH ROW EXECUTE FUNCTION raise_immutable_violation();
+
+DROP TRIGGER IF EXISTS trg_work_units_enforce_state_machine ON work_units;
+CREATE TRIGGER trg_work_units_enforce_state_machine
+    BEFORE INSERT OR UPDATE ON work_units
+    FOR EACH ROW EXECUTE FUNCTION work_unit_enforce_state_machine();
+
+DROP TRIGGER IF EXISTS trg_work_units_log_transition ON work_units;
+CREATE TRIGGER trg_work_units_log_transition
+    AFTER INSERT OR UPDATE ON work_units
+    FOR EACH ROW EXECUTE FUNCTION work_unit_log_transition();
+"""
+
+_DROP_WORK_UNIT_TRIGGER_SQL = """
+DROP TRIGGER IF EXISTS trg_work_units_log_transition ON work_units;
+DROP TRIGGER IF EXISTS trg_work_units_enforce_state_machine ON work_units;
+DROP TRIGGER IF EXISTS trg_work_unit_transitions_immutable ON work_unit_transitions;
+DROP TRIGGER IF EXISTS trg_approvals_immutable ON approvals;
+DROP FUNCTION IF EXISTS work_unit_log_transition();
+DROP FUNCTION IF EXISTS work_unit_enforce_state_machine();
+DROP FUNCTION IF EXISTS raise_immutable_violation();
+"""
 
 _TIMESTAMPS = (
     sa.Column(
@@ -143,13 +296,12 @@ def upgrade() -> None:
         ["work_unit_id", "seq"],
     )
 
-    # The three trigger functions and their CREATE TRIGGER calls (§12) -- see
-    # `pigrocrm.core.work_units.triggers` for the full text and why it lives there.
-    op.execute(WORK_UNIT_TRIGGER_SQL)
+    # The three trigger functions and their CREATE TRIGGER calls (§12).
+    op.execute(_WORK_UNIT_TRIGGER_SQL)
 
 
 def downgrade() -> None:
-    op.execute(DROP_WORK_UNIT_TRIGGER_SQL)
+    op.execute(_DROP_WORK_UNIT_TRIGGER_SQL)
 
     op.drop_index("ix_work_unit_transitions_work_unit_id_seq", "work_unit_transitions")
     op.drop_table("work_unit_transitions")

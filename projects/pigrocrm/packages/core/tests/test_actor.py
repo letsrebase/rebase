@@ -4,7 +4,7 @@ engagements door (spec 2026-09-25 § 2.5, REB-490).
 Milestone A opens a service-token door through which the hub sets up a freelancer's
 space, customer and deal for a signed engagement. Every write it makes through that
 door needs an actor to record in the timeline, and it must be an actor that can write
-and administer without tripping the agent ban in `AGENT_FORBIDDEN_ACTIONS`
+and administer without tripping the agent ban in `FULL_ACCESS_ACTIONS`
 (`actor.py`): `rebase` is not an agent working on someone's behalf, it is the hub
 itself, so `require_write`/`require_admin` must treat it exactly as they treat a human
 admin.

@@ -26,7 +26,7 @@ def test_engagements_token_defaults_empty_and_hides_from_repr() -> None:
     already lives in (REB-490)."""
     settings = Settings(_env_file=None)
     assert settings.engagements_token == ""
-    assert "engagements_token" not in repr(Settings(engagements_token="x", _env_file=None))
+    assert TOKEN not in repr(Settings(engagements_token=TOKEN, _env_file=None))
 
 
 def _settings(**overrides: object) -> Settings:

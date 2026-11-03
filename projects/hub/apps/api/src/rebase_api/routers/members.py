@@ -61,38 +61,30 @@ from rebase_api.deps import (
 )
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
-from rebase_core.cards import write_after_response
+from rebase_core.card_writer import write_after_response
+from rebase_core.company_schemas import CompanyFields, CompanyUpdate
 from rebase_core.contract_schemas import MemberContracts
-from rebase_core.mail import EmailSender, Mail
+from rebase_core.freelancer_schemas import MemberUpdate
+from rebase_core.mail import send_after_response
 from rebase_core.member_contracts import MemberContractService
+from rebase_core.member_schemas import (
+    EnterRequest,
+    LinkRequest,
+    MemberLookup,
+    MemberLookupRequest,
+    MeRead,
+)
 from rebase_core.members import MemberService
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
 from rebase_core.referral_schemas import MemberReferral
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    Ack,
-    CompanyFields,
-    CompanyUpdate,
-    EnterRequest,
-    LinkRequest,
-    MemberLookup,
-    MemberLookupRequest,
-    MemberUpdate,
-    MeRead,
-)
-from rebase_core.users import UserService
+from rebase_core.schema_common import Ack
+from rebase_core.users import VIA_LOGIN, UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub-member"])
 
 _log = logging.getLogger(__name__)
-
-
-def _send(sender: EmailSender, mail: Mail) -> None:
-    """Runs after the response. A refusal is logged without the address or the key: the
-    operator needs to know the provider said no, not to whom."""
-    if not sender.send(mail):
-        _log.warning("the magic link mail was refused by the provider")
 
 
 @router.post("/auth/link", response_model=Ack, status_code=status.HTTP_202_ACCEPTED)
@@ -110,9 +102,10 @@ def request_link(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "L'accesso via email non è ancora attivo. Riprova più avanti.",
         )
-    mail = UserService(session, settings).request_link(payload.email, utm=payload.utm)
+    users = UserService(session, settings)
+    mail = users.request_link(payload.email, utm=payload.utm, via=VIA_LOGIN)
     if mail is not None:
-        background.add_task(_send, sender, mail)
+        background.add_task(send_after_response, sender, mail, "the magic link mail")
     return Ack()
 
 
@@ -247,7 +240,9 @@ def my_referral(me: MeDep, session: SessionDep) -> MemberReferral:
     force now (REB-610), read live on every call. Never a euro figure of a real
     engagement -- rebase's own margin is an admin-only number the member area never
     shows, the same isolation `budget_giornaliero` already keeps."""
-    return ReferralService(session).for_user(me.id)
+    referral = ReferralService(session).for_user(me.id)
+    session.commit()  # `code_for` only flushes the code it issues
+    return referral
 
 
 @router.post("/members/lookup", response_model=MemberLookup)
@@ -266,14 +261,14 @@ def lookup_member(
     error: the hub says who is a member, not who is at the keyboard. A POST so the address
     travels in the body and not in a URL the access log would keep."""
     if not settings.pigro_registry_token:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     presented = authorization.removeprefix("Bearer ").strip() if authorization else ""
     # Bytes, not str: Starlette decodes headers as latin-1 and `compare_digest` refuses a
     # `str` with a non-ASCII character, which would turn a stray byte into a 500.
     if not presented or not secrets.compare_digest(
         presented.encode("utf-8"), settings.pigro_registry_token.encode("utf-8")
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token non valido")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_token")
     return MemberService(session).lookup(payload.email)
 
 

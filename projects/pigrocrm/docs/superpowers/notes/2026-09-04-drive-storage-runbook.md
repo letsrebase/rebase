@@ -126,10 +126,10 @@ verificare con il rapporto ore *reale* di un deal, generato con le sue ore effet
 via corretta è l'endpoint dedicato:
 
 ```
-GET /api/deals/{deal_id}/time-report?mese=AAAA-MM&formato=pdf
+POST /api/deals/{deal_id}/time-report/pdf?mese=AAAA-MM
 ```
 
-(`apps/api/src/pigrocrm_api/routers/deals.py`, `time_report` → `TimeReportService.render_pdf`),
+(`apps/api/src/pigrocrm_api/routers/deals.py`, `render_time_report_pdf` → `TimeReportService.render_pdf`),
 scegliendo un deal e un mese con almeno una voce di ore registrata. Entrambe le vie
 passano dallo stesso `DocumentService.create_from_template`, quindi entrambe esercitano
 lo stesso storage; la prima è più rapida da chiamare a mano, la seconda produce il
@@ -139,9 +139,9 @@ Verifiche dopo la generazione:
 
 1. Su Google Drive, sotto `PigroCRM/<slug-ragione-sociale>-<8 cifre dell'id cliente>/<id
    documento>/`, deve comparire il nuovo PDF (`storage_key_for`,
-   `packages/core/src/pigrocrm/core/documents/service.py`: la cartella è quella del
+   `packages/core/src/pigrocrm/core/documents/context.py`: la cartella è quella del
    *cliente proprietario del deal*, non del deal stesso — per un documento su deal,
-   `_customer_of` risale al cliente del deal prima di calcolare la chiave).
+   `customer_of` risale al cliente del deal prima di calcolare la chiave).
 2. `GET /api/documents/{id}/download` (`apps/api/src/pigrocrm_api/routers/documents.py`)
    deve restituire lo stesso PDF.
 
@@ -153,7 +153,7 @@ prima dell'import) diventa **facoltativo**: `import_issued_invoice` accetta
 (`packages/core/src/pigrocrm/core/invoices/schemas.py`, classe `PdfSorgente` — esattamente
 uno fra `document_id` e `drive_file_id`) e recupera i byte da Drive **dentro la stessa
 transazione** dell'import (`InvoiceService.import_issued`, commento «One transaction,
-Drive included» in `packages/core/src/pigrocrm/core/invoices/service.py`): non serve più
+Drive included» in `packages/core/src/pigrocrm/core/invoices/issued_import.py`): non serve più
 un `POST /api/documents` + upload separati prima di ogni riga.
 
 Per ciascuna delle 14 fatture:

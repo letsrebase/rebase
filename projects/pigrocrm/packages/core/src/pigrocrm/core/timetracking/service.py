@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.errors import (
@@ -18,6 +18,7 @@ from pigrocrm.core.errors import (
     NotFound,
     ValidationFailed,
 )
+from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
@@ -60,6 +61,7 @@ FROZEN_WHEN_BILLED: tuple[str, ...] = (
     "descrizione",
     "deal_id",
     "fatturabile",
+    "user_id",
 )
 
 
@@ -179,45 +181,21 @@ class TimeEntryService:
         remembered to write them -- an archive that lies about its only temporal
         field.
 
-        The comparison is against `oggi_in_italia()` and never a bare `date.today()`
-        (see `clock.py`): the day this refuses to go past is the day the person doing
+        The comparison is against `today_local()` and never a bare `date.today()`
+        (see `db/clock.py`): the day this refuses to go past is the day the person doing
         the work is living in, not the day the process's own timezone happens to be
         in. The API image runs in UTC, where `date.today()` is still yesterday between
         midnight and 01:00 CET (02:00 CEST), so logging this morning's hours would be
         refused as `data futura` -- a legal entry rejected with a message that reads as
         a product defect. Run the process east of Italy and the same check silently
         accepts tomorrow, which is the forecast this slice says it does not make."""
-        if giorno > oggi_in_italia():
+        if giorno > today_local():
             raise ValidationFailed(
                 ENTITY, "data", "data futura", expected="una data non successiva a oggi"
             )
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
-
-    def _update_custom_fields(self, entry: TimeEntry, provided: dict[str, Any]) -> dict[str, Any]:
-        """Copies `DealService._update_custom_fields`'s contract exactly -- see that
-        method's docstring for the full reasoning. Validates only the keys the caller
-        touches, against active definitions, never the union with what is stored; a
-        supplied `None` removes the entry unless its definition is active and
-        required."""
-        active_by_key = {spec.key: spec for spec in self.fields.specs_for(ENTITY)}
-        to_remove: set[str] = set()
-        for key, value in provided.items():
-            if value is not None:
-                continue
-            spec = active_by_key.get(key)
-            if spec is not None and spec.required:
-                raise ValidationFailed(
-                    ENTITY, key, "campo obbligatorio", expected="un valore non vuoto"
-                )
-            to_remove.add(key)
-        to_set = {k: v for k, v in provided.items() if v is not None}
-        touched = [spec for spec in active_by_key.values() if spec.key in to_set]
-        validated = validate_custom_fields(ENTITY, touched, to_set)
-        merged = {k: v for k, v in entry.custom_fields.items() if k not in to_remove}
-        merged.update(validated)
-        return merged
 
     def _require(self, entry_id: UUID, *, include_deleted: bool = False) -> TimeEntry:
         entry = self.repo.get(entry_id, include_deleted=include_deleted)
@@ -227,7 +205,10 @@ class TimeEntryService:
 
     # ---- writes -----------------------------------------------------------
 
-    def create(self, data: TimeEntryCreate, actor: Actor) -> TimeEntryRead:
+    def create(self, data: TimeEntryCreate, actor: Actor, *, commit: bool = True) -> TimeEntryRead:
+        """`commit=False` leaves the transaction to a caller that writes more than the entry
+        and needs the writes to stand or fall together (`TimerService.stop`); the entry is
+        flushed either way."""
         actor.require_write("log_time")
         deal = self._require_deal(data.deal_id)
         self._require_active_user(data.user_id)
@@ -281,7 +262,8 @@ class TimeEntryService:
             self.activities.record(
                 ENTITY, entry.id, "time_logged_on_closed_deal", actor, {"stage": stage.nome}
             )
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return to_read(entry)
 
     def update(self, entry_id: UUID, data: TimeEntryUpdate, actor: Actor) -> TimeEntryRead:
@@ -336,7 +318,9 @@ class TimeEntryService:
             )
 
         if data.custom_fields is not None:
-            changes["custom_fields"] = self._update_custom_fields(entry, data.custom_fields)
+            changes["custom_fields"] = merge_custom(
+                ENTITY, self.fields.specs_for(ENTITY), entry.custom_fields, data.custom_fields
+            )
         for key, value in changes.items():
             setattr(entry, key, value)
 
@@ -474,6 +458,9 @@ class TimeEntryService:
         would leave the interval in a state nobody chose, so the refusal happens before
         any assignment.
 
+        An entry whose rate (or cost) was written on the entry itself (`manuale`) keeps it:
+        that figure was chosen, not resolved, and is corrected on the entry.
+
         Returns how many entries were rewritten, so a caller can say "12 voci
         aggiornate" instead of "done".
         """
@@ -505,10 +492,18 @@ class TimeEntryService:
         touched = 0
         for entry in entries:
             resolved = self.rates.resolve(deal_id=entry.deal_id, user_id=entry.user_id)
-            if (
-                resolved.tariffa == entry.tariffa_applicata
-                and resolved.costo == entry.costo_applicato
-            ):
+            # A rate or a cost somebody wrote on the entry (`manuale`) is a decision, like an
+            # explicit zero (`rates.py`): the recalculation re-resolves only what the rate
+            # levels gave it, each of the two figures on its own.
+            if entry.tariffa_origine == "manuale":
+                tariffa, tariffa_origine = entry.tariffa_applicata, entry.tariffa_origine
+            else:
+                tariffa, tariffa_origine = resolved.tariffa, resolved.tariffa_origine
+            if entry.costo_origine == "manuale":
+                costo, costo_origine = entry.costo_applicato, entry.costo_origine
+            else:
+                costo, costo_origine = resolved.costo, resolved.costo_origine
+            if tariffa == entry.tariffa_applicata and costo == entry.costo_applicato:
                 # Nothing changed for this row: skip it rather than writing an activity
                 # claiming a change that did not happen -- the same honesty guard
                 # `restore` applies to its own "restored" entry.
@@ -520,15 +515,15 @@ class TimeEntryService:
                 actor,
                 {
                     "tariffa_prima": str(entry.tariffa_applicata),
-                    "tariffa_dopo": str(resolved.tariffa),
+                    "tariffa_dopo": str(tariffa),
                     "costo_prima": str(entry.costo_applicato),
-                    "costo_dopo": str(resolved.costo),
+                    "costo_dopo": str(costo),
                 },
             )
-            entry.tariffa_applicata = resolved.tariffa
-            entry.tariffa_origine = resolved.tariffa_origine
-            entry.costo_applicato = resolved.costo
-            entry.costo_origine = resolved.costo_origine
+            entry.tariffa_applicata = tariffa
+            entry.tariffa_origine = tariffa_origine
+            entry.costo_applicato = costo
+            entry.costo_origine = costo_origine
             touched += 1
 
         self.session.commit()

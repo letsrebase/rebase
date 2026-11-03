@@ -76,7 +76,7 @@ restated here:
 - **The mark.** The four tiles are `.glyph` in `src/system.css` here, used by
   `landing.css` alone now that the community page is gone (REB-72), a second, larger
   drawing of the same four colours in `pitch.css` for the deck's own chrome, and
-  Tailwind classes in the application's `BrandMark.tsx`. The first and third assert
+  Tailwind classes in `@rebase/ui`'s `brand-mark.tsx`. The first and third assert
   their order against
   `@rebase/brand/mark`, so those two cannot drift.
 

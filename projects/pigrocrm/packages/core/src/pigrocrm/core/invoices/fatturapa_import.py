@@ -8,15 +8,16 @@ no separate "raw XML shape" module here.
 `FORMAT_ID` is `"FPR12"`, the FatturaPA transmission-format code for an invoice
 addressed to a private party (as opposed to `FPA12`, addressed to a Public
 Administration) -- a consultant billing private clients always transmits under
-this code. `fatturapa.py`, next to this file, is the export direction: `InvoiceForExport`
+this code. `fatturapa/`, next to this file, is the export direction: `InvoiceForExport`
 in, `bytes` out. Nothing in that module reads a FatturaPA XML file, and nothing here
 writes one; the two are deliberately independent translations, not a round trip.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import TypedDict
 
 from lxml import etree
@@ -107,18 +108,20 @@ def _required_text(parent: etree._Element, tag: str, *, context: str) -> str:
     return value
 
 
+# The lexical forms accepted for a number, checked before `Decimal()`/`int()` see the
+# text: both of those accept things FPR12 never carries (an exponent, underscores,
+# non-ASCII digits, `NaN`), and a `Decimal` with an exponent such as `1E999999999`
+# raises `InvalidOperation` from `quantize` far from here. Wider than the schema's
+# `Amount2/8` patterns on purpose (real senders write `122` or `0.123456789`), but
+# bounded so a value always fits the default `Decimal` precision of 28 digits.
+_DECIMAL_RE = re.compile(r"[+-]?[0-9]{1,15}(\.[0-9]{1,12})?", re.ASCII)
+_INTEGER_RE = re.compile(r"[+-]?[0-9]{1,9}", re.ASCII)
+
+
 def _decimal(value: str, *, context: str) -> Decimal:
-    try:
-        result = Decimal(value)
-    except InvalidOperation as exc:
-        raise FatturaPaFormatError(f"{context}: {value!r} is not a valid decimal") from exc
-    # `Decimal("NaN")`/`Decimal("Infinity")` parse without raising `InvalidOperation` --
-    # Pydantic's own `finite_number` check on `ParsedInvoice`'s `Decimal` fields would
-    # catch these too, but as a bare `pydantic_core.ValidationError`, not the
-    # `FatturaPaFormatError` this module's every other malformed-value path raises.
-    if not result.is_finite():
-        raise FatturaPaFormatError(f"{context}: {value!r} is not a finite decimal")
-    return result
+    if not _DECIMAL_RE.fullmatch(value):
+        raise FatturaPaFormatError(f"{context}: {value!r} is not a valid decimal")
+    return Decimal(value)
 
 
 def _date(value: str, *, context: str) -> date:
@@ -129,10 +132,9 @@ def _date(value: str, *, context: str) -> date:
 
 
 def _int(value: str, *, context: str) -> int:
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise FatturaPaFormatError(f"{context}: {value!r} is not an integer") from exc
+    if not _INTEGER_RE.fullmatch(value):
+        raise FatturaPaFormatError(f"{context}: {value!r} is not an integer")
+    return int(value)
 
 
 def _root_element(content: bytes) -> etree._Element | None:

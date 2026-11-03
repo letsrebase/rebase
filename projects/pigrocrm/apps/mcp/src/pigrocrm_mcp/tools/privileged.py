@@ -41,7 +41,6 @@ Every docstring below says what the operation does that cannot be undone. That i
 decoration: it is the only warning an agent reads.
 """
 
-import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
@@ -67,6 +66,7 @@ from pigrocrm.core.invoices.schemas import (
     RegisterGapsDeclare,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import (
@@ -80,10 +80,9 @@ from pigrocrm.core.timetracking.schemas import (
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.provenance import marked_items
 from pigrocrm_mcp.tools.changes import refuse_nothing_given
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-
-logger = logging.getLogger(__name__)
+from pigrocrm_mcp.tools.params import parse_legal_entity_id
 
 
 def _day(value: str | None) -> date | None:
@@ -135,23 +134,16 @@ def register(
         fattura resta emessa e **non va emessa di nuovo**. L'XML si rigenera con
         `export_invoice_xml`, entrambi i file con «Rigenera documenti» nell'applicazione.
         """
-        service = InvoiceService(context.session, context.storage)
-        invoice = service.issue(
-            UUID(invoice_id), InvoiceIssue(data_emissione=_day(data_emissione)), context.actor
+        # A render failure after the number is consumed still answers the issued row
+        # (REB-143): an error here would tell the agent the emission failed, and an agent
+        # that believes that issues the invoice again.
+        return (
+            InvoiceService(context.session, context.storage)
+            .issue_and_render(
+                UUID(invoice_id), InvoiceIssue(data_emissione=_day(data_emissione)), context.actor
+            )
+            .model_dump(mode="json")
         )
-        # The artefacts are the caller's second transaction by design (slice 3 §3): a
-        # Typst compile inside the numbering lock would serialise every emission on it.
-        # Once `issue` has committed the number is consumed, so a render that raises is
-        # logged and the issued row is still the answer (REB-143), with the document
-        # ids saying which file exists; `export_invoice_xml` below or the web's
-        # «Rigenera documenti» is the retry. Answering an error here would tell the agent
-        # the emission failed, and an agent that believes that issues the invoice again.
-        try:
-            service.produce_artifacts(invoice.id, context.actor)
-        except Exception:
-            logger.exception("invoice %s issued, its PDF/XML were not produced", invoice.id)
-            service.session.rollback()
-        return service.get(invoice.id, context.actor).model_dump(mode="json")
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
@@ -448,15 +440,15 @@ def register(
         fatturare è una decisione commerciale: `entry_ids` è obbligatorio.
         """
         return (
-            # `context.storage`, never the default: `AnalyticsService` resolves a backend
+            # `context.storage`, never the default: `TimeBilling` resolves a backend
             # from `get_settings()` when it is handed none, and on an installation whose
             # documents live on the titolare's own Drive that resolution has no session
             # factory to reach the row the folder lives in -- so it refuses the whole
             # configuration by name and every call to this tool fails with a message
             # about service-account variables the operator deliberately does not have.
             # The adapter already holds the one backend this process writes through.
-            AnalyticsService(context.session, context.storage)
-            .bind_time_to_invoice(
+            TimeBilling(context.session, context.storage)
+            .bind_to_invoice(
                 UUID(deal_id),
                 BindTimeRequest(
                     entry_ids=[UUID(entry_id) for entry_id in entry_ids],
@@ -477,11 +469,7 @@ def register(
         Presentala sempre come tale.
         """
         return (
-            # No storage of its own is read by the estimate, but the argument is passed
-            # for the same reason it is above: which backend this process writes through
-            # is the adapter's answer, and a call site that omits it is one refactor away
-            # from resolving a second one from the environment (see `bind_time_to_invoice`).
-            AnalyticsService(context.session, context.storage)
+            AnalyticsService(context.session)
             .get_fiscal_estimate(anno, context.actor, azienda_id=parse_legal_entity_id(azienda_id))
             .model_dump(mode="json")
         )
@@ -533,10 +521,12 @@ def register(
                     transport=transport,
                 ),
             )
-            return [
-                proposal.model_dump(mode="json")
-                for proposal in service.suggest_customers(actor=context.actor, mesi=mesi)
-            ]
+            return marked_items(
+                [
+                    proposal.model_dump(mode="json")
+                    for proposal in service.suggest_customers(actor=context.actor, mesi=mesi)
+                ]
+            )
 
         @mcp.tool(annotations=READ_ONLY)
         @guard

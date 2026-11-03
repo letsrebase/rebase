@@ -21,6 +21,7 @@ below pins the fact that it carries nothing more.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import pytest
 from fakes.fake_gmail import FakeGmail, FakeMessage
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
 from sqlalchemy import select
@@ -30,6 +31,7 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.errors import AgentForbidden
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.roster import EntityRef
@@ -379,16 +381,13 @@ def test_the_sync_itself_is_recorded_once_per_cycle(db_session: Session) -> None
     assert rows[0].entity_id == account.id
 
 
-def test_an_mcp_actor_is_recorded_as_mcp(db_session: Session) -> None:
+def test_an_agent_credential_cannot_sync_the_mailbox(db_session: Session) -> None:
+    """Fetching mail spends the owner's quota under the owner's consent: the person's,
+    never a token's, whatever `full_access` says (PAPI-01)."""
     account = connected_account(db_session)
-    sync_service(db_session, FakeGmail()).sync(Actor(id=account.user_id, type="mcp", role="admin"))
-    db_session.commit()
-    row = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.sync_eseguito"))
-        .scalars()
-        .one()
-    )
-    assert row.actor_type == "mcp"
+    agent = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
+    with pytest.raises(AgentForbidden):
+        sync_service(db_session, FakeGmail()).sync(agent)
 
 
 # --- helpers -------------------------------------------------------------------------

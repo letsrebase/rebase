@@ -109,6 +109,25 @@ def test_upsert_and_issue_is_idempotent_on_the_row_but_mints_a_fresh_session_eac
     assert len(sessions) == 2 and all(row.revoked_at is None for row in sessions)
 
 
+def test_upsert_and_issue_removes_the_identitys_expired_sessions(
+    settings: Settings, registry_session: Session
+) -> None:
+    email = f"old-{uuid4()}@example.it"
+    service = IdentityService(registry_session, settings)
+    first = decode_token(service.upsert_and_issue(email) or "", settings, expected_type="identity")
+    registry_session.execute(
+        update(IdentitySession)
+        .where(IdentitySession.jti == first.jti)
+        .values(expires_at=datetime.now(UTC) - timedelta(days=1))
+    )
+    registry_session.commit()
+
+    second = decode_token(service.upsert_and_issue(email) or "", settings, expected_type="identity")
+
+    left = set(registry_session.scalars(select(IdentitySession.jti)).all())
+    assert first.jti not in left and second.jti in left
+
+
 def test_upsert_and_issue_recovers_from_a_racing_insert_on_the_same_address(
     settings: Settings, registry: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

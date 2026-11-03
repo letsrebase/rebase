@@ -1,10 +1,14 @@
 """The CRM's outbound mail: a seam, Resend behind it, and the one mail this slice sends."""
 
+import http.client
+import io
 import json
 import logging
+import urllib.error
 import urllib.request
 from datetime import date, timedelta
 from decimal import Decimal
+from email.message import Message
 from uuid import uuid4
 
 import pytest
@@ -473,19 +477,59 @@ def test_a_refused_send_leaves_a_line_behind_with_no_address_and_no_key(
     assert "re_secret" not in caplog.text
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        OSError("down"),
+        http.client.IncompleteRead(b"{"),
+        # `http.client` quotes the offending header value in this one: here, the bearer key.
+        ValueError("Invalid header value b'Bearer re_secret'"),
+    ],
+    ids=["socket", "unreadable-response", "refused-header"],
+)
 def test_a_send_that_never_reached_the_provider_leaves_a_line_too(
-    caplog: pytest.LogCaptureFixture,
+    failure: Exception, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The other silent path: no status at all, because the call itself failed."""
+    """The other silent path: no status at all, because the call itself failed. Every way
+    the call can fail is the same answer for `send` and for `status`, and none of them puts
+    the address or the key in the log."""
 
     def boom(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
-        raise OSError("down")
+        raise failure
 
+    sender = ResendSender("re_secret", "x", http=boom)
     with caplog.at_level(logging.WARNING):
-        assert ResendSender("re_secret", "x", http=boom).send(Mail("a@x.it", "s", "t")) is False
+        assert sender.send(Mail("a@x.it", "s", "t")) is False
+        assert sender.status("abc") is None
     assert caplog.text != ""
     assert "a@x.it" not in caplog.text
     assert "re_secret" not in caplog.text
+
+
+def test_a_bug_in_the_call_is_not_taken_for_a_refused_send() -> None:
+    """The seam answers for a call that failed, not for a defect in the code around it."""
+
+    def buggy(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        raise RuntimeError("a defect")
+
+    with pytest.raises(RuntimeError):
+        ResendSender("re_x", "x", http=buggy).send(Mail("a@x.it", "s", "t"))
+
+
+def test_a_refusal_with_a_status_comes_back_as_a_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`urlopen` raises `HTTPError` for a 4xx or 5xx; the sender wants the status and the
+    body, not the exception."""
+
+    def refuse(request: urllib.request.Request, timeout: float) -> _Response:
+        raise urllib.error.HTTPError(
+            request.full_url, 403, "Forbidden", Message(), io.BytesIO(b"error code: 1010")
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    assert urllib_call("POST", "https://api.example.test/x", {}, b"{}") == (
+        403,
+        b"error code: 1010",
+    )
 
 
 # --- what became of a mail the provider took (REB-678) -------------------------------

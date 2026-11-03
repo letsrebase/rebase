@@ -1,7 +1,7 @@
 """Web push: the browsers a person receives their reminders on (spec 2026-10-26 §6.1,
 REB-738). Every route is the caller's own, so every role has them, like the profile."""
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.reminders.push import push_public_key
@@ -11,10 +11,15 @@ from pigrocrm.core.reminders.push_subscriptions import (
     PushSubscriptionService,
     PushSubscriptionWrite,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/push", tags=["push"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/push",
+    tags=["push"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 class Unsubscribe(BaseModel):
@@ -24,7 +29,7 @@ class Unsubscribe(BaseModel):
 
 
 @router.get("/config", response_model=PushConfigRead)
-def read_config(settings: SettingsDep, actor: ActorDep) -> PushConfigRead:
+def read_config(settings: SettingsDep) -> PushConfigRead:
     """Se questa installazione può mandare notifiche push, e la chiave con cui il browser
     si iscrive."""
     key = push_public_key(settings)

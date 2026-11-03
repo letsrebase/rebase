@@ -280,3 +280,101 @@ def test_assemble_raises_not_found_for_an_unknown_contract(
         assemble_unbilled_contract_expenses_into_new_invoice(
             db_session, local_storage, uuid4(), ADMIN
         )
+
+
+def test_bind_refuses_an_expense_billed_in_the_meantime_instead_of_repointing_it(
+    db_session: Session,
+) -> None:
+    """Another transaction billed the expense after this session loaded it: the locked
+    re-read must overwrite the loaded copy and see the line, not repoint it."""
+    from sqlalchemy import update
+
+    from pigrocrm.core.errors import Conflict
+
+    contract = _contract(db_session)
+    category = _category(db_session)
+    expense = _expense(db_session, contract, category)
+    first = _bare_invoice_line(db_session, contract)
+    second = _bare_invoice_line(db_session, contract)
+    assert expense.invoice_line_id is None
+    db_session.execute(
+        update(ContractExpense)
+        .where(ContractExpense.id == expense.id)
+        .values(invoice_line_id=first.id)
+        .execution_options(synchronize_session=False)
+    )
+
+    with pytest.raises(Conflict):
+        bind_contract_expenses(db_session, [expense.id], [second.id])
+
+    db_session.refresh(expense)
+    assert expense.invoice_line_id == first.id
+
+
+def test_the_draft_is_issued_under_the_contracts_azienda_not_the_customers_current_one(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.emitter.schemas import LegalEntityCreate
+    from pigrocrm.core.emitter.service import LegalEntityService
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    category = _category(db_session)
+    _expense(db_session, contract, category)
+    default = LegalEntityRepository(db_session).default()
+    assert default is not None
+    second = LegalEntityService(db_session).create(
+        LegalEntityCreate(
+            nome="rebase ltd",
+            ragione_sociale="Rebase Ltd",
+            partita_iva="GB123456789",
+            nazione="GB",
+            fiscal_profile=FiscalProfileUpsert(
+                pack_id="non-it", aliquota_iva_default=Decimal("20.00")
+            ),
+        ),
+        ADMIN,
+    )
+    contract.azienda_id = default.id
+    customer = db_session.get(Customer, contract.customer_id)
+    assert customer is not None
+    customer.azienda_id = second.id  # the customer moved after the contract was made
+    db_session.flush()
+
+    invoice = assemble_unbilled_contract_expenses_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+
+    assert invoice.azienda_id == default.id
+
+
+def test_a_failed_binding_leaves_no_draft_and_the_expense_ready(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pigrocrm.core.contract_expenses import invoicing
+
+    _install_fiscal_and_emitter_profiles(db_session)
+    contract = _contract(db_session)
+    category = _category(db_session)
+    expense = _expense(db_session, contract, category)
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("binding failed")
+
+    monkeypatch.setattr(invoicing, "bind_contract_expenses", explode)
+    with pytest.raises(RuntimeError):
+        assemble_unbilled_contract_expenses_into_new_invoice(
+            db_session, local_storage, contract.id, ADMIN
+        )
+    monkeypatch.undo()
+
+    db_session.refresh(expense)
+    assert expense.invoice_line_id is None
+    drafts = db_session.scalars(
+        select(Invoice).where(Invoice.customer_id == contract.customer_id)
+    ).all()
+    assert drafts == []

@@ -35,7 +35,7 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds
-from pigrocrm.core.deals.repository import DealRepository
+from pigrocrm.core.deals.service import DealService
 from pigrocrm_mcp.context import McpContext
 
 # The caps. Each is the number of rows that is worth a place in the model's context window
@@ -268,18 +268,14 @@ def ore_da_registrare(context: McpContext, settimana: str | None = None) -> list
         lines.append("Nessun giorno scoperto: la settimana è completa.")
 
     lines += ["", "## Deal su cui si è lavorato di recente", ""]
-    # Names, not identifiers. A list of UUIDs is a section nobody can answer from, so it
-    # would be tax with no context in it -- which is the whole failure §10 is about. The
-    # feed carries fifty rows (fifteen for an agent) and can name the same deal many times,
-    # so it is deduplicated
-    # in order and capped before any row is resolved: the number of primary-key lookups is
-    # bounded by the constant, not by the length of the feed.
+    # Names, not identifiers: a list of UUIDs is a section nobody can answer from. The feed
+    # carries fifty rows and can name the same deal many times, so the names are resolved in
+    # one batch, deduplicated in feed order and capped.
+    feed = [a.entity_id for a in board.attivita_recenti if a.entity_type == "deal"]
+    deals = DealService(context.session).get_many(set(feed), context.actor)
     seen: list[str] = []
-    deals = DealRepository(context.session)
-    for activity in board.attivita_recenti:
-        if activity.entity_type != "deal":
-            continue
-        deal = deals.get(activity.entity_id)
+    for deal_id in feed:
+        deal = deals.get(deal_id)
         if deal is None or deal.nome in seen:
             continue
         seen.append(deal.nome)

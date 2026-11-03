@@ -11,14 +11,16 @@ value a user or an agent supplied is already inside `markdown`, already escaped 
 request-derived string becomes a command-line argument.
 """
 
+import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import ValidationFailed
@@ -27,6 +29,18 @@ from pigrocrm.core.templates.renderer import render_template
 
 ENTITY = "document"
 RENDER_TIMEOUT_SECONDS = 30
+# How many renders may run their two subprocesses at once in this process. A burst of
+# requests would otherwise fork as many Pandoc and Typst pairs as there are worker
+# threads; the rest wait for a slot.
+MAX_CONCURRENT_RENDERS = 2
+_RENDER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_RENDERS)
+# Ceilings on what a render hands back to this process. The PDF bound is well under the
+# 100 MiB the archive accepts; the intermediate Typst source of a real document is a few
+# kilobytes, so a large one is a runaway; diagnostics are read only up to their first
+# error.
+MAX_PDF_BYTES = 50 * 1024 * 1024
+MAX_INTERMEDIATE_BYTES = 16 * 1024 * 1024
+MAX_DIAGNOSTIC_BYTES = 64 * 1024
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 PANDOC_TEMPLATE = ASSETS_DIR / "pandoc-template.typst"
 HEADER_TEMPLATE = ASSETS_DIR / "header.typ.template"
@@ -51,10 +65,9 @@ def _png_chunk(kind: bytes, body: bytes) -> bytes:
     )
 
 
-# A 1x1 fully transparent PNG, built from its chunks rather than pasted as base64: a
-# pasted constant once turned out to be a half-opaque blue pixel (CodeRabbit, PR #510),
-# and a template that scales the signature would have drawn a blue square. One RGBA
-# pixel of zeros behind a zero filter byte; the test decodes it and reads the alpha.
+# A 1x1 fully transparent PNG, built from its chunks rather than pasted as base64 (a pasted
+# constant once turned out to be half opaque). One RGBA pixel of zeros behind a zero filter
+# byte; the test decodes it and reads the alpha.
 BLANK_PNG = (
     b"\x89PNG\r\n\x1a\n"
     + _png_chunk(b"IHDR", (1).to_bytes(4, "big") + (1).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]))
@@ -68,51 +81,21 @@ PANDOC_FROM = "markdown+link_attributes+pipe_tables+raw_attribute"
 # Typst 0.14 embeds Libertinus Serif, so no font package is needed in the image.
 MAIN_FONT = "Libertinus Serif"
 
-# Typst stamps the PDF's own `/CreationDate` with the wall-clock time of the compile
-# by default -- confirmed live: two `render_pdf` calls on byte-identical `markdown`
-# and `header_typst`, seconds apart, produced PDFs differing only in that one
-# metadata field, and therefore two different SHA-256 hashes (`DocumentVersion.
-# hash_sha256`). That silently breaks spec 11's whole reproducibility promise: a
-# `regenerate` that reproduces the same *source* but not the same *bytes* is not
-# reproduction, it is merely re-rendering. Pinned to a fixed value -- the
-# reproducible-builds.org SOURCE_DATE_EPOCH convention, which Typst implements
-# natively as this same flag -- rather than left to derive from `document.created_at`
-# or similar: the document's own true creation instant is already recorded, honestly,
-# in the database row and (via `{{offerta.data}}`-style declared variables) in the
-# document's own visible text; the PDF container's internal metadata field is not a
-# fact this project has ever promised to keep truthful, and making every render use
-# the same fixed value is what buys byte-for-byte reproducibility unconditionally,
-# for every render, not only a regeneration that remembers to thread the original
-# instant back through.
+# Typst stamps the PDF's `/CreationDate` with the wall clock unless told otherwise, which
+# gives byte-identical input two different hashes (`DocumentVersion.hash_sha256`) and
+# breaks the reproducibility `regenerate` promises (spec 11). A fixed value, through
+# Typst's SOURCE_DATE_EPOCH flag, makes every render reproducible.
 PDF_CREATION_TIMESTAMP = "0"
 
-# Typst's own markup grammar -- independent of Pandoc, and with no compile-time flag
-# to turn it off (checked against `typst compile --help` on the pinned version) --
-# unconditionally merges a bare run of two-or-more adjacent "-" into an en/em dash and
-# a bare run of three-or-more adjacent "." into an ellipsis, wherever such a run
-# occurs in *markup* text. That is exactly the residual `templates/escaping.py`
-# documents and cannot close itself: `escape_markdown`'s backslash protects a value
-# only up to Pandoc's own Markdown *reader*; Pandoc's Typst *writer* then re-serialises
-# the parsed text as bare characters with no memory of which run was an escaped
-# customer value and which was ordinary prose (confirmed live -- see
-# test_the_render_pipeline_closes_the_residual_dash_and_ellipsis_gap in
-# test_template_escaping.py), and Typst's lexer runs a second time, independently of
-# Pandoc, over whatever bare text the writer produced.
-#
-# The fix has to live here, between the two subprocesses, because this is the only
-# point where a bare run and a `\`-escaped one are still different byte sequences:
-# Typst treats a backslash-escaped character as a fully resolved literal, never a
-# candidate for the ligature rule, which only ever fires on unescaped runs (confirmed
-# live: `a-\-b` compiles to the two literal characters "--", not an en dash, and
-# `a\-\-b` -- every character escaped -- compiles the same way for a run of any
-# length). Applied to the *whole* intermediate file rather than only the parts Pandoc
-# generated from ordinary body text: the one thing that additionally suppresses is
-# Typst's own ligature for a hyphen/dot run a raw ```{=typst} block's author typed
-# directly as native Typst markup, a cosmetic trade-off this project's own template
-# assets (`assets/pandoc-template.typst`, `assets/header.typ.template`,
-# `assets/template-offer.md`) never rely on -- against the alternative of tracking
-# which byte ranges of Pandoc's *output* came from which input segment, which Pandoc's
-# own architecture does not preserve past the parse step.
+# Typst merges a bare run of two or more "-" into an en/em dash and a bare run of three
+# or more "." into an ellipsis in markup text, and has no flag to turn that off. A
+# backslash-escaped character is a resolved literal that never takes part in the rule.
+# `escape_markdown` protects a value only as far as Pandoc's Markdown reader: Pandoc's
+# Typst writer re-serialises the parsed text as bare characters, so the runs Typst sees
+# cannot be told apart from ordinary prose after that point. Between the two subprocesses
+# a bare run and an escaped one are still different bytes, so the protection is applied
+# here, to the whole intermediate file (this also suppresses the ligature for a run typed
+# inside a raw ```{=typst} block, which no template asset relies on).
 _BARE_HYPHEN_RUN = re.compile(r"-{2,}")
 _BARE_DOT_RUN = re.compile(r"\.{3,}")
 
@@ -164,21 +147,66 @@ def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
 _MEDIA_NAMES = frozenset({MEDIA_LOGO_PNG, MEDIA_LOGO_SVG, MEDIA_FIRMA})
 
 
-def _run(argv: list[str], workdir: Path) -> subprocess.CompletedProcess[bytes]:
-    """Always a list, never a string; never `shell=True`; always bounded.
+class _Outcome(NamedTuple):
+    returncode: int
+    stderr: bytes
+
+
+def _tool_environment(workdir: Path) -> dict[str, str]:
+    """The environment both tools run in.
+
+    Typst downloads an `@preview/...` package on first import, and `typst compile` has
+    no flag to turn that off (0.14.2). A template is admin-authored, but a compile that
+    can reach the network is still a compile that can be made to. Every proxy variable
+    Typst's downloader reads is pointed at a closed local port, `NO_PROXY` is dropped so
+    nothing bypasses it, and both package directories are empty ones inside the throwaway
+    workdir, so an `@preview` import fails fast with a diagnostic instead of fetching.
+    """
+    kept = {
+        name: value
+        for name, value in os.environ.items()
+        if name.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}
+    }
+    dead_proxy = "http://127.0.0.1:9"
+    packages = str(workdir / "no-packages")
+    return {
+        **kept,
+        "HTTP_PROXY": dead_proxy,
+        "HTTPS_PROXY": dead_proxy,
+        "ALL_PROXY": dead_proxy,
+        "http_proxy": dead_proxy,
+        "https_proxy": dead_proxy,
+        "all_proxy": dead_proxy,
+        "TYPST_PACKAGE_PATH": packages,
+        "TYPST_PACKAGE_CACHE_PATH": packages,
+    }
+
+
+def _run(argv: list[str], workdir: Path, stage: str) -> _Outcome:
+    """Always a list, never a string; never `shell=True`; always bounded in time and in
+    the diagnostics it keeps.
+
+    Neither tool writes its result to stdout (both take an output path), so stdout is
+    discarded. Stderr goes to a file in the workdir and only its first
+    `MAX_DIAGNOSTIC_BYTES` are read back, so a tool that prints without end cannot grow
+    this process's memory.
 
     `check=False` on purpose: the whole point is to read the compiler's diagnostics
     and translate them, which `check=True` would replace with a `CalledProcessError`
     nobody can render for a user.
     """
+    log = workdir / f"{stage}.log"
     try:
-        return subprocess.run(
-            argv,
-            cwd=workdir,
-            capture_output=True,
-            check=False,
-            timeout=RENDER_TIMEOUT_SECONDS,
-        )
+        with log.open("wb") as stderr:
+            completed = subprocess.run(
+                argv,
+                cwd=workdir,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+                check=False,
+                timeout=RENDER_TIMEOUT_SECONDS,
+                env=_tool_environment(workdir),
+            )
     except subprocess.TimeoutExpired as exc:
         raise ValidationFailed(
             ENTITY,
@@ -193,6 +221,21 @@ def _run(argv: list[str], workdir: Path) -> subprocess.CompletedProcess[bytes]:
             f"strumento di composizione non installato: {argv[0]}",
             expected="pandoc e typst nell'immagine dell'API",
         ) from exc
+    with log.open("rb") as stderr:
+        return _Outcome(completed.returncode, stderr.read(MAX_DIAGNOSTIC_BYTES))
+
+
+def _read_bounded(path: Path, limit: int) -> bytes:
+    """The file's bytes, refused when it is larger than `limit`: the size is read from
+    the file system before a single byte is loaded."""
+    if path.stat().st_size > limit:
+        raise ValidationFailed(
+            ENTITY,
+            "corpo_markdown",
+            f"il documento composto supera {limit} byte",
+            expected="un documento piu' semplice",
+        )
+    return path.read_bytes()
 
 
 def render_pdf(
@@ -219,6 +262,11 @@ def render_pdf(
     back) reach anything else living under that wider root. The compile root is
     exactly this one document's own throwaway directory and nothing else.
 
+    At most `MAX_CONCURRENT_RENDERS` renders run the two subprocesses at once in this
+    process; the others wait. A caller that holds a database transaction open while it
+    waits holds a pooled connection too, so read what the render needs, end the
+    transaction, then call this.
+
     `temp_root` is where that throwaway directory is created; `None` means the system
     temp directory, which is what every production caller uses. It exists so a test
     can watch a directory nobody else writes to: the system temp directory is shared
@@ -241,68 +289,67 @@ def render_pdf(
         source.write_text(markdown, encoding="utf-8")
         header.write_text(header_typst, encoding="utf-8")
 
-        pandoc = _run(
-            [
-                settings.pandoc_binary,
-                f"--from={PANDOC_FROM}",
-                "--to=typst",
-                "--standalone",
-                "--template",
-                str(PANDOC_TEMPLATE),
-                "--include-in-header",
-                str(header),
-                "--resource-path",
-                str(workdir),
-                "-V",
-                f"mainfont={MAIN_FONT}",
-                "-o",
-                str(intermediate),
-                str(source),
-            ],
-            workdir,
-        )
-        if pandoc.returncode != 0:
-            raise ValidationFailed(
-                ENTITY,
-                "corpo_markdown",
-                "il Markdown del documento non e' convertibile",
-                expected="Markdown valido",
+        with _RENDER_SLOTS:
+            pandoc = _run(
+                [
+                    settings.pandoc_binary,
+                    "--sandbox",
+                    f"--from={PANDOC_FROM}",
+                    "--to=typst",
+                    "--standalone",
+                    "--template",
+                    str(PANDOC_TEMPLATE),
+                    "--include-in-header",
+                    str(header),
+                    "--resource-path",
+                    str(workdir),
+                    "-V",
+                    f"mainfont={MAIN_FONT}",
+                    "-o",
+                    str(intermediate),
+                    str(source),
+                ],
+                workdir,
+                "pandoc",
             )
+            if pandoc.returncode != 0:
+                raise ValidationFailed(
+                    ENTITY,
+                    "corpo_markdown",
+                    "il Markdown del documento non e' convertibile",
+                    expected="Markdown valido",
+                )
 
-        # Between the two subprocesses, not before and not after: see
-        # `_defeat_typst_autotypography`'s own comment for why this is the only point
-        # where the fix can take effect at all.
-        typst_source = _defeat_typst_autotypography(intermediate.read_text(encoding="utf-8"))
-        intermediate.write_text(typst_source, encoding="utf-8")
-        typst = _run(
-            [
-                settings.typst_binary,
-                "compile",
-                "--root",
-                str(workdir),
-                "--creation-timestamp",
-                PDF_CREATION_TIMESTAMP,
-                str(intermediate),
-                str(output),
-            ],
-            workdir,
-        )
+            # Between the two subprocesses, not before and not after: see
+            # `_defeat_typst_autotypography` for why this is the only point where the
+            # fix can take effect at all.
+            typst_source = _defeat_typst_autotypography(
+                _read_bounded(intermediate, MAX_INTERMEDIATE_BYTES).decode("utf-8")
+            )
+            intermediate.write_text(typst_source, encoding="utf-8")
+            typst = _run(
+                [
+                    settings.typst_binary,
+                    "compile",
+                    "--root",
+                    str(workdir),
+                    "--creation-timestamp",
+                    PDF_CREATION_TIMESTAMP,
+                    str(intermediate),
+                    str(output),
+                ],
+                workdir,
+                "typst",
+            )
         if typst.returncode != 0 or not output.is_file():
-            # `translate_typst_failure` only ever reads the *line number* out of
-            # Typst's own "┌─ path:line:col" location, never the path text itself --
-            # but a hostile expression can also put the workdir's absolute path
-            # somewhere else in the message body, not only in that location line.
-            # Confirmed live: `#read("/etc/passwd")` fails with
-            # "file not found (searched at <workdir>/etc/passwd)" on the error's own
-            # first line, which `_ERROR_RE` captures as part of `message`, not as the
-            # location. Scrubbing the one absolute path this render's own subprocess
-            # could possibly have printed -- its own workdir, known here and nowhere
-            # else -- closes that regardless of which part of Typst's message it
-            # turns up in. Both spellings, not just one: on a host where the system
-            # temp directory is itself a symlink (confirmed live on macOS, `/var` ->
-            # `/private/var`), Typst reports the *resolved* path while `workdir` still
-            # holds the unresolved one Python handed back from `mkdtemp`, and
-            # scrubbing only one spelling left the other sitting in the message.
+            # A hostile expression can put the workdir's absolute path anywhere in
+            # Typst's message, not only in the "┌─ path:line:col" location that
+            # `translate_typst_failure` reads the line number from (`#read("/etc/passwd")`
+            # fails with "file not found (searched at <workdir>/etc/passwd)" on the first
+            # line). The one absolute path this render's own subprocess could have
+            # printed is its own workdir, so scrub it, both spellings: where the system
+            # temp directory is itself a symlink (macOS, `/var` -> `/private/var`) Typst
+            # reports the resolved path while `workdir` holds the unresolved one.
             stderr = typst.stderr.decode("utf-8", "replace")
             for spelling in {str(workdir), str(workdir.resolve())}:
                 stderr = stderr.replace(spelling, "")
@@ -312,7 +359,7 @@ def render_pdf(
                 translate_typst_failure(stderr, typst_source),
                 expected="un template Typst valido",
             )
-        return output.read_bytes()
+        return _read_bounded(output, MAX_PDF_BYTES)
     finally:
         # `ignore_errors=True`: a failed cleanup must never mask the real error, and
         # the directory is disposable by construction.

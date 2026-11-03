@@ -14,7 +14,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from pigrocrm.core.reminders.catalogue import Channel, EmailMode, Severity
+from pigrocrm.core.reminders.catalogue import ChannelName, EmailMode, Severity
 
 Scope = Literal["space", "me"]
 # The path segment for the settings that belong to no type (quiet hours, summary hour).
@@ -69,7 +69,7 @@ class ReminderPreferenceWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool | None = Field(default=None, description="Il tipo è attivo")
-    channels: list[Channel] | None = Field(
+    channels: list[ChannelName] | None = Field(
         default=None, description="I canali oltre all'app, che è sempre attiva"
     )
     ladder: dict[Severity, int] | None = Field(
@@ -105,7 +105,7 @@ class EffectiveReminderSettings(BaseModel):
 
     type: str
     enabled: bool
-    channels: list[Channel]
+    channels: list[ChannelName]
     ladder: dict[Severity, int]
     urgent_from: Severity
     email_mode: EmailMode | None

@@ -54,6 +54,7 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import TITOLO_MAX_LENGTH
@@ -64,7 +65,6 @@ from pigrocrm.core.drive.reader import drive_reader_for
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport
 from pigrocrm.core.errors import AgentForbidden, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.text import PROVENIENZA
 from pigrocrm_mcp.server import build_server
@@ -690,7 +690,7 @@ def test_the_reader_refuses_an_agent_credential_that_was_not_opened(
     fake_drive: FakeDrive,
     tool: str,
 ) -> None:
-    """`AGENT_FORBIDDEN_ACTIONS` has to *bind*, not merely list.
+    """`FULL_ACCESS_ACTIONS` has to *bind*, not merely list.
 
     Until `drive_reader_for` took an `action`, the three names sat on that frozenset
     while nothing ever passed them to a check -- the list said the operations were
@@ -795,7 +795,7 @@ async def test_import_drive_file_refuses_a_type_the_crm_does_not_store_before_do
     connected_drive: GoogleDriveAccount,
     fake_drive: FakeDrive,
 ) -> None:
-    """`DocumentService._check_upload` would refuse the same file a moment later, and
+    """`DocumentUploads.check_upload` would refuse the same file a moment later, and
     that is not good enough: by then a video has been pulled through this process and
     buffered whole in memory, spending the titolare's Drive quota and bandwidth to reach
     a refusal that one `files.get` had already decided.

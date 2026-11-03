@@ -6,8 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { admin, ApiError, type CampaignListItem } from '@/lib/api'
 import { campaignStateLabel, isStalled, listRefetchEvery, outcomeLine } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
+import { keys } from '@/lib/query-keys'
 import { ConfirmAction } from './Campagna'
-import { Empty, Header } from './lists'
+import { Empty, Header } from './list-kit'
 
 function when(item: CampaignListItem): string {
   const moment = item.inviata_at ?? item.programmata_per
@@ -19,7 +20,7 @@ function DeleteDraft({ id }: { id: string }) {
   const client = useQueryClient()
   const remove = useMutation({
     mutationFn: () => admin.deleteCampaign(id),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.campaigns }),
   })
   const failure =
     remove.error instanceof ApiError ? remove.error.message : remove.error ? 'Non riesco a eliminare la bozza.' : null
@@ -47,7 +48,7 @@ function DeleteDraft({ id }: { id: string }) {
  *  rereads itself every 30 s while a campaign is scheduled or sending. */
 export function AdminCampagne() {
   const list = useQuery({
-    queryKey: ['campaigns'],
+    queryKey: keys.campaigns,
     queryFn: admin.campaigns,
     refetchInterval: (query) => listRefetchEvery(query.state.data?.items ?? []),
   })

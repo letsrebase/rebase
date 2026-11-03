@@ -45,18 +45,17 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings, decode_google_token_key, require_gmail_configured
+from pigrocrm.core.config import Settings, require_gmail_configured
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.attach import resolve_attachments
-from pigrocrm.core.gmail.crypto import unseal
 from pigrocrm.core.gmail.drafts import read_draft
 from pigrocrm.core.gmail.errors import GoogleCallFailed
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.query import GMAIL_SEND_URL, messages_list_url, rfc822msgid_query
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.rfc822 import build_rfc822, to_base64url
-from pigrocrm.core.gmail.roster import AddressRoster, EntityRef
+from pigrocrm.core.gmail.roster import AddressRoster, EntityRef, address_key
 from pigrocrm.core.gmail.schemas import (
     EDITABLE_SEND_STATES,
     SCOPE_READONLY,
@@ -65,11 +64,12 @@ from pigrocrm.core.gmail.schemas import (
 )
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.google.credential import open_refresh_token
 from pigrocrm.core.storage.base import DocumentStorage
 
 ENTITY = "email_draft"
-_SEND_ACTION = "inviare un'email"
-_RECONCILE_ACTION = "verificare l'esito di un'email"
+_SEND_ACTION = "send_email"
+_RECONCILE_ACTION = "reconcile_email"
 _WHAT_SEND = "invio del messaggio"
 _WHAT_VERIFY = "verifica dell'invio"
 
@@ -252,7 +252,7 @@ class EmailSendService:
                     ENTITY,
                     "Gmail ha rifiutato il messaggio: il testo è rimasto nella bozza",
                     send_state="fallito",
-                    status=failed.failure.status,
+                    upstream_status=failed.failure.status,
                 ) from failed
             # (3b) We do not know. The message MAY be in the user's Sent folder. Neither
             # assumption is made -- `reconcile` settles it by asking.
@@ -270,7 +270,7 @@ class EmailSendService:
                 ENTITY,
                 "esito dell'invio da verificare: Gmail non ha risposto",
                 send_state="incerto",
-                status=failed.failure.status,
+                upstream_status=failed.failure.status,
             ) from failed
 
         return self._record_sent(
@@ -488,10 +488,8 @@ class EmailSendService:
         return self.tokens.access_token(
             account_id=account.id,
             email_address=account.email_address,
-            refresh_token=unseal(
-                account.refresh_token_ciphertext,
-                account.refresh_token_nonce,
-                decode_google_token_key(self.settings),
+            refresh_token=open_refresh_token(
+                account.refresh_token_ciphertext, account.refresh_token_nonce, self.settings
             ),
         )
 
@@ -691,8 +689,10 @@ class EmailSendService:
         in.
         """
         refs = [EntityRef(draft.entity_type, draft.entity_id)]
-        for address in [*draft.to_addresses, *draft.cc_addresses]:
-            for ref in self.roster.resolve(address):
+        addresses = [*draft.to_addresses, *draft.cc_addresses]
+        resolved = self.roster.resolve_many(addresses)
+        for address in addresses:
+            for ref in resolved.get(address_key(address), ()):
                 if ref not in refs:
                     refs.append(ref)
         return refs

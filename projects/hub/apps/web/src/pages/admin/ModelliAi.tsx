@@ -18,11 +18,12 @@ import {
   type AiStaleCards,
   type AiTask,
 } from '@/lib/api'
-import { formatDateTime, formatEuro, formatSmallEuro } from '@/lib/format'
+import { formatDateTime, formatSmallEuro } from '@/lib/format'
+import { formatMoney } from '@rebase/ui/format'
 import { noteSourceLabel, regenerationReason, STOP_REASON_LABELS } from '@/lib/notes'
-import { Empty, Header } from './lists'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header } from './list-kit'
 
-const KEY = ['ai-config'] as const
 const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
 const TASK_LABELS: Record<string, string> = {
   card: 'Scheda anonima',
@@ -31,9 +32,6 @@ const TASK_LABELS: Record<string, string> = {
   crm_lead: 'Bozza del deal nel CRM',
 }
 const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
-const STALE_KEY = ['ai-stale-cards'] as const
-// A prefix of `KEY`, so a change of the configuration reads the trail again too.
-const AUDIT_KEY = [...KEY, 'audit'] as const
 const OPEN_REFRESH_MS = 10_000
 const OPEN_WATCH_MS = 3 * 24 * 60 * 60 * 1000
 const BATCH_REFRESH_MS = 30_000
@@ -59,11 +57,11 @@ function problem(error: unknown, fallback: string): string {
 
 function useInvalidate() {
   const client = useQueryClient()
-  return () => client.invalidateQueries({ queryKey: KEY })
+  return () => client.invalidateQueries({ queryKey: keys.aiConfig })
 }
 
 export function AdminModelliAi() {
-  const config = useQuery({ queryKey: KEY, queryFn: () => admin.aiConfig() })
+  const config = useQuery({ queryKey: keys.aiConfig, queryFn: () => admin.aiConfig() })
   return (
     <div>
       <Header title="Modelli AI" />
@@ -166,7 +164,7 @@ function SourceRow({ source }: { source: AiSourceSwitch }) {
     // Turning a source off deletes its stored text, and the cards that read it turn stale:
     // the list below, its count and its cost are read again too.
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: STALE_KEY })
+      void client.invalidateQueries({ queryKey: keys.aiStaleCards })
       void invalidate()
     },
   })
@@ -217,15 +215,15 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
     onSuccess: (started) => {
       // The start is signed after the response: the «Registro» looks for it (`StartWatch`).
       if (started.queued > 0) onStarted()
-      void client.invalidateQueries({ queryKey: AUDIT_KEY })
-      return client.invalidateQueries({ queryKey: STALE_KEY })
+      void client.invalidateQueries({ queryKey: keys.aiAudit })
+      return client.invalidateQueries({ queryKey: keys.aiStaleCards })
     },
   })
   // The batch's row is written after the response, so the first read after a start can miss
   // it: keep reading for a short while after a start that queued cards, and for as long as a
   // batch is on. The `cards` service applies it, not this page.
   const stale = useQuery({
-    queryKey: STALE_KEY,
+    queryKey: keys.aiStaleCards,
     queryFn: () => admin.aiStaleCards(),
     refetchInterval: (query) => {
       if (query.state.data?.batch) return BATCH_REFRESH_MS
@@ -242,11 +240,11 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
   }
   if (!stale.data) return <p className="px-6 py-4 text-sm text-muted-foreground">Caricamento…</p>
   const data: AiStaleCards = stale.data
+  // A start while a run or an unapplied batch is on is a 409: the API's sentence is shown by
+  // the form's own error line below, so only a success is told here.
   const queued = start.isSuccess && (
     <p role="status" className="px-6 pt-4 text-sm">
-      {start.data.queued === 0
-        ? 'Una rigenerazione è già in corso: attendi che finisca prima di avviarne un’altra.'
-        : `${start.data.queued} ${start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in background.`}
+      {`${start.data.queued} ${start.data.queued === 1 ? 'scheda messa' : 'schede messe'} in coda: si scrivono in background.`}
     </p>
   )
   const running = data.batch && (
@@ -453,8 +451,8 @@ function TaskForm({ task, config }: { task: AiTask; config: AiConfig }) {
         <p className="font-medium">
           {TASK_LABELS[task.task] ?? task.task}
           <span className="ml-2 text-sm font-normal text-muted-foreground">
-            oggi {formatEuro(task.spent_today_eur)}
-            {task.daily_cap_eur !== null ? ` su ${formatEuro(task.daily_cap_eur)}` : ''}
+            oggi {formatMoney(task.spent_today_eur)}
+            {task.daily_cap_eur !== null ? ` su ${formatMoney(task.daily_cap_eur)}` : ''}
           </span>
         </p>
         {task.reason && (
@@ -686,7 +684,7 @@ function Prices({ config }: { config: AiConfig }) {
 
 function Registro({ watch }: { watch: StartWatch | null }) {
   const trail = useQuery({
-    queryKey: AUDIT_KEY,
+    queryKey: keys.aiAudit,
     queryFn: () => admin.aiAudit(),
     refetchInterval: (query) => {
       const data = query.state.data ?? []
@@ -760,7 +758,7 @@ function registroLabel(entry: AiAuditAction): string {
     case 'ai_key':
       return p.azione === 'seed' ? `Chiave ${provider} importata dalla configurazione precedente` : `Chiave ${provider} sostituita`
     case 'ai_switch': {
-      const on = p.after?.enabled === true
+      const on = typeof p.after === 'object' && p.after.enabled === true
       return p.source
         ? `Fonte «${SOURCE_LABELS[p.source] ?? p.source}» ${on ? 'accesa' : 'spenta'}`
         : `${provider} ${on ? 'acceso' : 'spento'}`
@@ -817,6 +815,8 @@ function registroLabel(entry: AiAuditAction): string {
       }
       return `Rigenerazione conclusa: ${parts.join(', ')}`
     }
+    default:
+      return entry.kind
   }
 }
 
@@ -838,7 +838,7 @@ function Spend({ config }: { config: AiConfig }) {
           <TableRow key={`${row.task}/${row.provider}`}>
             <TableCell>{TASK_LABELS[row.task] ?? row.task}</TableCell>
             <TableCell>{PROVIDER_LABELS[row.provider] ?? row.provider}</TableCell>
-            <TableCell>{formatEuro(row.cost_eur)}</TableCell>
+            <TableCell>{formatMoney(row.cost_eur)}</TableCell>
             <TableCell>{row.calls}</TableCell>
             <TableCell>{row.unpriced_calls}</TableCell>
           </TableRow>

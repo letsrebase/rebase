@@ -1,12 +1,14 @@
 """Rows the campaign tests build on: people in every state, leads, company requests,
 and a clean table after each test. Imported by name, like `fakes_contracts.py`."""
 
+import base64
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import text
+from admins import an_admin
+from hub_tables import wipe_hub
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
@@ -15,8 +17,9 @@ from rebase_core.campaigns.states import Candidate
 from rebase_core.config import Settings
 from rebase_core.models import Campaign, Company, Freelancer, Login, Signup, User
 
-CAMPAIGN_TABLES = ("campaign_optouts", "campaign_recipients", "campaigns")
-PEOPLE_TABLES = ("logins", "notes", "freelancers", "companies", "signups", "users")
+# The Svix secret every Resend webhook test signs with and every settings object carries:
+# `whsec_` and 24 bytes of base64, which is what Resend shows. Not a real secret.
+RESEND_TEST_SECRET = "whsec_" + base64.b64encode(b"s" * 24).decode()
 
 T0 = datetime(2026, 9, 25, 7, 30, tzinfo=UTC)
 
@@ -25,9 +28,7 @@ T0 = datetime(2026, 9, 25, 7, 30, tzinfo=UTC)
 def clean(hub_session: Session) -> Iterator[Session]:
     yield hub_session
     hub_session.rollback()
-    for table in (*CAMPAIGN_TABLES, *PEOPLE_TABLES):
-        hub_session.execute(text(f"DELETE FROM {table}"))
-    hub_session.commit()
+    wipe_hub(hub_session)
 
 
 def person(
@@ -107,16 +108,10 @@ def emails(candidates: list[Candidate]) -> list[str]:
     return [c.email for c in candidates]
 
 
-ADMIN_EMAIL = "ivan@rebase.it"
-
-
 def admin(session: Session) -> User:
     """The admin every campaign test acts as: one row, whoever asks first makes it."""
-    user = session.query(User).filter(User.email == ADMIN_EMAIL).one_or_none()
-    if user is None:
-        user = User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin")
-        session.add(user)
-        session.commit()
+    user = session.get(User, an_admin(session, cognome="Sala"))
+    assert user is not None
     return user
 
 

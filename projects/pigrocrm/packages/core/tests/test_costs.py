@@ -131,3 +131,12 @@ def test_the_list_is_ordered_by_date_descending(
     for day in (5, 20, 12):
         _create(service, seeded_category_id, data=date(2026, 3, day))
     assert [c.data.day for c in service.list(CostListQuery(), READER).items] == [20, 12, 5]
+
+
+def test_a_cursor_that_names_no_cost_is_refused_not_read_as_the_first_page(
+    db_session: Session,
+) -> None:
+    with pytest.raises(ValidationFailed) as refused:
+        CostService(db_session).list(CostListQuery(cursor=uuid4()), READER)
+
+    assert refused.value.details["field"] == "cursor"

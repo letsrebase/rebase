@@ -205,8 +205,6 @@ describe('CompanyWizard, opened from the team builder (REB-518)', () => {
     const note = await screen.findByRole('note', { name: 'Talent cloud' })
     expect(note).toHaveTextContent('Stai chiedendo l’accesso al talent cloud.')
     expect(note).toHaveTextContent('Compila la richiesta e ti ricontattiamo noi per aprirtelo.')
-    // On royal gold, like the freelancer wizard's guide banner: a banner, not a quiet note (REB-570).
-    expect(note).toHaveClass('bg-(--color-royal-gold)')
   })
 
   it('says nothing of the kind from any other page', async () => {

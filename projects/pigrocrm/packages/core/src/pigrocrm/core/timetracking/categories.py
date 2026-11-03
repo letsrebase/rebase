@@ -1,11 +1,11 @@
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.timetracking.models import Cost, CostCategory
@@ -102,16 +102,13 @@ class CostCategoryService:
             raise _conflicting_nome(nome)
 
         category = CostCategory(nome=nome, posizione=data.posizione, code=None, archiviata=False)
-        try:
+        # The pre-check above cannot cover a race between two concurrent requests: there the
+        # functional unique index is the only authority, and the savepoint keeps its failure
+        # from touching the rest of the caller's session.
+        with savepoint(self.session, lambda exc: _conflicting_nome(nome)):
             self.repo.add(category)
-            self.activities.record(ENTITY, category.id, "created", actor, {"nome": nome})
-            self.session.commit()
-        except IntegrityError as exc:
-            # The pre-check above cannot cover a race between two concurrent requests:
-            # there the functional unique index is the only authority. The rollback is
-            # mandatory -- without it the caller's session is unusable.
-            self.session.rollback()
-            raise _conflicting_nome(nome) from exc
+        self.activities.record(ENTITY, category.id, "created", actor, {"nome": nome})
+        self.session.commit()
         return CostCategoryRead.model_validate(category)
 
     def update_cost_category(
@@ -129,17 +126,14 @@ class CostCategoryService:
             if existing is not None and existing.id != category.id:
                 raise _conflicting_nome(nome)
             changes["nome"] = nome
-        for key, value in changes.items():
-            setattr(category, key, value)
-
-        try:
-            self.activities.record(
-                ENTITY, category.id, "updated", actor, {"changed": sorted(changes)}
-            )
-            self.session.commit()
-        except IntegrityError as exc:
-            self.session.rollback()
-            raise _conflicting_nome(str(changes.get("nome", category.nome))) from exc
+        # The savepoint holds the write that can lose the race on the unique name, so only
+        # it is rolled back and the caller's session stays usable.
+        shown = str(changes.get("nome", category.nome))
+        with savepoint(self.session, lambda exc: _conflicting_nome(shown)):
+            for key, value in changes.items():
+                setattr(category, key, value)
+        self.activities.record(ENTITY, category.id, "updated", actor, {"changed": sorted(changes)})
+        self.session.commit()
         return CostCategoryRead.model_validate(category)
 
     def archive_cost_category(self, category_id: UUID, actor: Actor) -> CostCategoryRead:

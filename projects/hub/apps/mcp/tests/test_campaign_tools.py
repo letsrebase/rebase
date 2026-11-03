@@ -1,17 +1,18 @@
 """The campaigns, read over the hub's MCP server (P-REB-41 phase 2): the list with its
 numbers, one campaign with each person's outcome, and nothing that sends."""
 
+import base64
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from mcp import Client
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
-from rebase_core.models import Campaign, CampaignRecipient, User
+from rebase_core.models import AdminAction, Campaign, CampaignRecipient, User
 from rebase_mcp.server import build_server
 
 IVAN = AdminRead(
@@ -169,3 +170,150 @@ async def test_a_link_campaign_shows_where_its_button_leads(
             "https://lu.ma/rebase-house",
             "clic",
         )
+
+
+def _add_recipients(factory: sessionmaker[Session], campaign_id: UUID, count: int) -> list[str]:
+    session = factory()
+    try:
+        emails = [f"persona{n:02d}@studio.it" for n in range(count)]
+        for email in emails:
+            session.add(
+                CampaignRecipient(
+                    campaign_id=campaign_id,
+                    email=email,
+                    tipo="freelancer",
+                    codice="1",
+                    prima={},
+                    disiscrizione_token=f"t-{email}",
+                    stato="in_coda",
+                )
+            )
+        session.commit()
+        return emails
+    finally:
+        session.close()
+
+
+def _add_campaigns(factory: sessionmaker[Session], owner_id: UUID, count: int) -> list[UUID]:
+    session = factory()
+    try:
+        made = []
+        for n in range(count):
+            campaign = Campaign(
+                created_by=owner_id,
+                nome=f"Altra {n}",
+                slug=f"c-mcp-altra-{n}",
+                fonte="stato",
+                stato_percorso="manca_cv",
+                oggetto="o",
+                testo="t",
+                bottone_testo="b",
+                bottone_meta="area",
+                azione="cv",
+                stato="bozza",
+                contenuto_at=SENT,
+            )
+            session.add(campaign)
+            session.flush()
+            made.append(campaign.id)
+        session.commit()
+        return made
+    finally:
+        session.close()
+
+
+async def test_the_campaign_tools_are_paged_in_a_fixed_order(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-804: `list_campagne` and `get_campagna` take `limit` and `cursor`; walking the
+    cursors visits every campaign and every recipient once, in the same order as one big
+    read, and the counts stay those of the whole campaign."""
+    campaign_id, owner_id = _seed(factory)
+    others = _add_campaigns(factory, owner_id, 2)
+    emails = _add_recipients(factory, campaign_id, 3)
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            whole = _payload(await client.call_tool("list_campagne", {}))
+            seen: list[str] = []
+            cursor = None
+            while True:
+                args: dict[str, Any] = {"limit": 1}
+                if cursor:
+                    args["cursor"] = cursor
+                page = _payload(await client.call_tool("list_campagne", args))
+                assert len(page["items"]) == 1
+                seen += [item["id"] for item in page["items"]]
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    break
+            walked: list[str] = []
+            cursor = None
+            while True:
+                args = {"campagna_id": str(campaign_id), "limit": 2}
+                if cursor:
+                    args["cursor"] = cursor
+                page = _payload(await client.call_tool("get_campagna", args))
+                assert page["conteggi"]["destinatari"] == 5
+                walked += [p["email"] for p in page["destinatari"]]
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    break
+            everything = _payload(
+                await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
+            )
+            foreign = await client.call_tool(
+                "get_campagna",
+                {"campagna_id": str(others[0]), "cursor": _foreign_cursor()},
+            )
+            garbage = await client.call_tool(
+                "get_campagna", {"campagna_id": str(campaign_id), "cursor": "non-un-cursore"}
+            )
+            bad_list_cursor = await client.call_tool("list_campagne", {"cursor": "xx"})
+    finally:
+        for other in others:
+            session = factory()
+            session.execute(delete(Campaign).where(Campaign.id == other))
+            session.commit()
+            session.close()
+        _drop(factory, campaign_id, owner_id)
+    assert seen == [item["id"] for item in whole["items"]] and len(seen) == 3
+    assert walked == sorted(["ada@studio.it", "bob@studio.it", *emails])
+    assert [p["email"] for p in everything["destinatari"]] == walked
+    assert foreign.is_error and "cursore non valido" in foreign.content[0].text
+    assert garbage.is_error and "cursore non valido" in garbage.content[0].text
+    assert bad_list_cursor.is_error
+
+
+def _foreign_cursor() -> str:
+    """A well-formed cursor naming a recipient that is in no campaign: the tool must
+    refuse it rather than read it as «from the start»."""
+    return base64.urlsafe_b64encode(uuid4().bytes).decode().rstrip("=")
+
+
+async def test_reading_a_campaigns_recipients_leaves_a_line_in_the_trail(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-803: names and addresses of a campaign's recipients are personal data; the
+    read is an `AdminAction` of the admin behind the token, without any of them."""
+    campaign_id, owner_id = _seed(factory)
+    admin = AdminRead(
+        id=owner_id, email="campagne-mcp@rebase.it", nome="Ivan", attivo=True, created_at=SENT
+    )
+    try:
+        async with Client(build_server(factory, lambda: admin)) as client:
+            await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
+            await client.call_tool("list_campagne", {})
+        with factory() as session:
+            [action] = session.scalars(
+                select(AdminAction).where(AdminAction.kind == "recipients_read")
+            ).all()
+            session.execute(delete(AdminAction))
+            session.commit()
+    finally:
+        _drop(factory, campaign_id, owner_id)
+    assert (action.entity_type, action.entity_id, action.admin_id) == (
+        "campaign",
+        campaign_id,
+        owner_id,
+    )
+    assert action.payload == {"fonte": "mcp", "righe": 2}

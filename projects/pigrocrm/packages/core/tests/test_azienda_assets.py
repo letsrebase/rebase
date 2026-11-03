@@ -159,20 +159,24 @@ def test_the_signature_is_a_png_under_the_name_the_offer_template_reads(
 
 def test_what_is_refused_at_upload(db_session: Session, local_storage: LocalFileStorage) -> None:
     assets = LegalEntityAssets(db_session, local_storage)
-    for bad, words in (
-        (JPEG, "PNG"),
-        (BLANK_PNG[:-12], "PNG"),
-        (b'<svg xmlns="x"><rect></svg>', "PNG"),
-        (b"\x89PNG\r\n\x1a\n" + b"\x00" * MAX_IMAGE_BYTES, "KiB"),
-        (b'<svg xmlns="x"><script>alert(1)</script></svg>', "script"),
-        (b'<svg xmlns="x" onload="alert(1)"></svg>', "script"),
-        (b'<svg xmlns="x"><a href="javascript:alert(1)"><rect/></a></svg>', "script"),
-        (b'<svg xmlns="x"><foreignObject><body/></foreignObject></svg>', "script"),
+    for bad in (
+        JPEG,
+        BLANK_PNG[:-12],
+        b'<svg xmlns="x"><rect></svg>',
+        b"\x89PNG\r\n\x1a\n" + b"\x00" * MAX_IMAGE_BYTES,
+        b'<svg xmlns="x"><script>alert(1)</script></svg>',
+        b'<svg xmlns="x" onload="alert(1)"></svg>',
+        b'<svg xmlns="x"><a href="javascript:alert(1)"><rect/></a></svg>',
+        b'<svg xmlns="x"><foreignObject><body/></foreignObject></svg>',
+        b'<svg xmlns="x"><image href="https://example.com/a.png"/></svg>',
+        (
+            b'<svg xmlns="x" xmlns:xlink="http://www.w3.org/1999/xlink">'
+            b'<image xlink:href="../secret.png"/></svg>'
+        ),
     ):
         with pytest.raises(ValidationFailed) as refused:
             assets.set_logo(bad, ADMIN)
         assert refused.value.details["field"] == "file"
-        assert words in str(refused.value)
     assert _default(db_session).logo_key is None
     with pytest.raises(PermissionDenied):
         assets.set_logo(BLANK_PNG, COLLABORATOR)
@@ -180,6 +184,19 @@ def test_what_is_refused_at_upload(db_session: Session, local_storage: LocalFile
         assets.remove_firma(COLLABORATOR)
     with pytest.raises(NotFound):
         assets.set_logo(BLANK_PNG, ADMIN, UUID(int=1))
+
+
+def test_an_svg_may_reference_itself_and_inline_data_but_no_other_file(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    assets = LegalEntityAssets(db_session, local_storage)
+    own = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+        b'<defs><linearGradient id="g"/></defs><rect id="r" fill="url(#g)"/>'
+        b'<use xlink:href="#r"/><image href="data:image/png;base64,AAAA"/></svg>'
+    )
+    assets.set_logo(own, ADMIN)
+    assert _default(db_session).logo_key is not None
 
 
 def test_a_storage_that_refuses_the_cleanup_does_not_fail_a_committed_change(

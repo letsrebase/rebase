@@ -556,6 +556,35 @@ def test_a_day_billed_in_the_meantime_is_refused_not_repointed(
     assert day.invoice_line_id == first.id
 
 
+def test_a_day_billed_behind_the_sessions_back_is_refused_not_read_stale(
+    db_session: Session,
+) -> None:
+    """Another transaction billed the day after this session loaded it: the locked re-read
+    must overwrite the loaded copy (`populate_existing`), not hand back the stale one that
+    still says `lavorato` with no line."""
+    from sqlalchemy import update
+
+    from pigrocrm.core.errors import Conflict
+
+    contract = _contract(db_session)
+    day = _work_unit(db_session, contract)
+    first = _bare_invoice_line(db_session, contract)
+    second = _bare_invoice_line(db_session, contract)
+    assert (day.stato, day.invoice_line_id) == ("lavorato", None)
+    db_session.execute(
+        update(WorkUnit)
+        .where(WorkUnit.id == day.id)
+        .values(stato="fatturato", invoice_line_id=first.id)
+        .execution_options(synchronize_session=False)
+    )
+
+    with pytest.raises(Conflict):
+        bind_work_units(db_session, [[day.id]], [second.id], ADMIN)
+
+    db_session.refresh(day)
+    assert day.invoice_line_id == first.id
+
+
 def test_a_failed_binding_takes_the_draft_back_out_and_leaves_the_days_ready(
     db_session: Session,
     local_storage: LocalFileStorage,

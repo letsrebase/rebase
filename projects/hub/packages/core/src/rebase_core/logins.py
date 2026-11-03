@@ -23,9 +23,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.login_schemas import LoginRead, LoginStats
 from rebase_core.models import ATTRIBUTION_COLUMNS, Freelancer, Login, User
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
-from rebase_core.schemas import LoginRead, LoginStats
 from rebase_core.search import matches_any, similarity_score
 
 LOGIN_LIST_LIMIT_DEFAULT = 100

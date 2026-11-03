@@ -67,7 +67,7 @@ def _require_root_door(
     it into the links this service builds (`space_url`/`deal_url`).
 
     Reads `get_settings` directly, not `SettingsDep`: that dependency opens a session
-    scoped to whatever slug the URL wears (`deps.get_session` -> `_tenant_session_factory`),
+    scoped to whatever slug the URL wears (`deps.get_session` -> `space_session_factory`),
     and for a slug that happens to name a real tenant it would succeed rather than
     refuse -- handing the route that tenant's own, slug-doubled settings instead of
     the root's. Checked as a router-level dependency, not inside the route body, so it
@@ -86,16 +86,22 @@ router = APIRouter(
 )
 
 
+def _registry_engine(registry: Session) -> Engine:
+    """The engine behind a request-scoped registry session. `TenantsRegistryDep` binds a
+    session to an Engine, never a bare Connection."""
+    bind = registry.get_bind()
+    if not isinstance(bind, Engine):
+        raise TypeError(f"the registry session is bound to {type(bind).__name__}, not an Engine")
+    return bind
+
+
 def _service(
     registry: Session, settings: Settings, sender: EmailSender | None
 ) -> EngagementService:
     """`EngagementService` opens its own engine per space and keeps none between calls
     (its own docstring), so a request-scoped `Session` lends it only the engine behind
     it -- never a session already inside this request's own transaction."""
-    bind = registry.get_bind()
-    # `TenantsRegistryDep` binds a session to an Engine, never a bare Connection.
-    assert isinstance(bind, Engine)
-    return EngagementService(bind, settings, sender)
+    return EngagementService(_registry_engine(registry), settings, sender)
 
 
 def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> T:
@@ -260,8 +266,7 @@ def file_lead(
     stesso `request_id` ritrova il deal e non scrive nulla; con `deal_id` la richiesta si
     collega a un deal già presente e non si crea altro. Lo spazio è quello di
     `PIGROCRM_LEADS_SPACE`, mai uno scelto da chi chiama."""
-    bind = registry.get_bind()
-    assert isinstance(bind, Engine)
+    bind = _registry_engine(registry)
     answer = _run(
         request_id,
         lambda: LeadService(bind, settings).file(request_id, data),

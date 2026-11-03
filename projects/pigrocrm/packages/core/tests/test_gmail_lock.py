@@ -20,12 +20,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from threading import Barrier, Event
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from fakes.fake_gmail import FakeGmail, FakeMessage, RecordedRequest
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
-from sqlalchemy import Engine, delete, select, text
+from sqlalchemy import Connection, Engine, delete, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -186,14 +187,12 @@ def test_the_lock_is_released_even_when_the_cycle_raises(
 def test_the_lock_is_released_even_when_the_transaction_is_beyond_saving(
     db_session: Session, db_engine: Engine
 ) -> None:
-    """The nastiest leak, and the reason `release_sync_lock` is not a bare `execute`.
-
-    Postgres refuses every statement on a failed transaction until it is rolled back --
-    and the unlock is a statement. A release that ran straight into that would raise
-    from inside the `finally`, mask the original failure, *and* leak the lock onto a
-    connection which then goes back to the pool still holding it. That account can then
-    never sync again for the life of the process.
-    """
+    """The lock does not live on the caller's transaction, so a transaction Postgres has
+    aborted (every statement refused until a rollback) cannot stop it being handed back:
+    the unlock runs on the lock's own connection, which nothing else ever touches. A
+    release that depended on the aborted transaction would raise from inside the
+    `finally`, mask the original failure, and leave the account unable to sync again for
+    the life of the process."""
     account = connected_account(db_session)
     db_session.flush()
     repo = GmailRepository(db_session)
@@ -206,6 +205,75 @@ def test_the_lock_is_released_even_when_the_transaction_is_beyond_saving(
 
     repo.release_sync_lock(account.id)
     with Session(db_engine) as other:
+        assert GmailRepository(other).try_sync_lock(account.id) is True
+        GmailRepository(other).release_sync_lock(account.id)
+
+
+def test_the_lock_is_released_after_the_session_gave_its_connection_back_to_the_pool(
+    db_engine: Engine, committed_account: tuple[UUID, UUID, str]
+) -> None:
+    """A `Session` returns its connection to the pool at every commit and checks out the
+    next one in line for its following statement, so with several idle connections the
+    unlock used to run on a *different* backend, answer `false`, and leave the lock on
+    the first until the process restarted. The lock now lives on a connection of its own,
+    and the unlock goes to that one whatever the pool does in between.
+
+    Built to bite: the pool is first filled with idle connections, which is the state in
+    which the old code lost the lock."""
+    _, account_id, _ = committed_account
+    idle = [db_engine.connect() for _ in range(3)]
+    for connection in idle:
+        connection.close()
+
+    with Session(db_engine) as syncing:
+        repo = GmailRepository(syncing)
+        assert repo.try_sync_lock(account_id) is True
+        syncing.execute(text("SELECT 1"))
+        syncing.commit()  # the session's connection goes back to the pool here
+        repo.release_sync_lock(account_id)
+
+    with Session(db_engine) as other:
+        assert GmailRepository(other).try_sync_lock(account_id) is True
+        GmailRepository(other).release_sync_lock(account_id)
+
+
+def test_a_connection_that_cannot_unlock_is_invalidated_and_never_raises(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the unlock itself fails the connection is broken, and a broken connection that
+    goes back to the pool is one that may still hold the lock. It is invalidated instead,
+    which closes it for good (Postgres drops a session's advisory locks when the session
+    ends), and the failure is not raised: this runs in a `finally`, over whatever failed
+    first.
+
+    The failure is injected at the one statement that matters, on a fake of the driver's
+    answer, and the invalidation is observed rather than assumed."""
+    account = connected_account(db_session)
+    db_session.flush()
+    repo = GmailRepository(db_session)
+    assert repo.try_sync_lock(account.id) is True
+    events: list[str] = []
+    real_execute, real_invalidate = Connection.execute, Connection.invalidate
+
+    def execute(self: Connection, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        if "pg_advisory_unlock" in str(statement):
+            events.append("unlock failed")
+            raise DBAPIError("SELECT pg_advisory_unlock", {}, Exception("server closed"))
+        return real_execute(self, statement, *args, **kwargs)
+
+    def invalidate(self: Connection, *args: Any, **kwargs: Any) -> None:
+        events.append("invalidated")
+        real_invalidate(self, *args, **kwargs)
+
+    monkeypatch.setattr(Connection, "execute", execute)
+    monkeypatch.setattr(Connection, "invalidate", invalidate)
+
+    repo.release_sync_lock(account.id)  # must not raise
+
+    assert events == ["unlock failed", "invalidated"]
+    monkeypatch.undo()
+    # Invalidated, not unlocked: the backend is gone and with it the lock.
+    with Session(db_session.get_bind().engine) as other:
         assert GmailRepository(other).try_sync_lock(account.id) is True
         GmailRepository(other).release_sync_lock(account.id)
 
@@ -322,10 +390,16 @@ class _GatedGmail(FakeGmail):
     gate: Callable[[], None] = field(default=_noop)
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
     ) -> tuple[int, bytes, dict[str, str]]:
         self.gate()
-        return super().__call__(method, url, headers, body)
+        return super().__call__(method, url, headers, body, max_bytes=max_bytes)
 
 
 def test_two_overlapping_syncs_leave_exactly_one_doing_the_work(

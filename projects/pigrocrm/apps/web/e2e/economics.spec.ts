@@ -126,7 +126,7 @@ test.describe('economics', () => {
     // for the same reason.
     test.setTimeout(240_000)
 
-    // Never a literal year anywhere in this file: `InvoiceService._check_issue_date`
+    // Never a literal year anywhere in this file: `invoices.checks.check_issue_date`
     // refuses a `data_emissione` outside the current year, so a hard-coded `2026-03-10`
     // would be a spec that starts failing on the first of January. Everything is derived
     // from `new Date()` -- the hours and the emission land in the same calendar month, and

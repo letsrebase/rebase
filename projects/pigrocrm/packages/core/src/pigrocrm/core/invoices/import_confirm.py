@@ -47,7 +47,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
+from pigrocrm.core.invoices.fatturapa.normalise import normalise_fiscal_id
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
 from pigrocrm.core.invoices.schemas import InvoiceImport, InvoiceLineImport, InvoiceRead
 

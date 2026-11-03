@@ -2,9 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import { WebLink } from '@/components/WebLink'
 import { ApiError, type Company } from '@/lib/api'
 import { dealIdOf } from '@/lib/crm'
 import { formatDate } from '@/lib/format'
+import { isHttpUrl } from '@/lib/url'
 
 const STATE_WORDS: Record<string, string> = {
   da_collegare: 'In attesa di essere registrata nel CRM',
@@ -62,11 +64,9 @@ export function CrmLink({
           {company.crm_situazione}
         </p>
       )}
-      {linked && company.crm_deal_url && (
+      {linked && company.crm_deal_url && isHttpUrl(company.crm_deal_url) && (
         <p className="text-sm">
-          <a className="underline underline-offset-2" href={company.crm_deal_url} target="_blank" rel="noreferrer">
-            Apri il deal nel CRM
-          </a>
+          <WebLink href={company.crm_deal_url}>Apri il deal nel CRM</WebLink>
         </p>
       )}
       {!linked && (

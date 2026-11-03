@@ -13,8 +13,14 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
     timetracking,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import Anno, BoundedLimit, IsoDateStr, OptionalFactor, iso_date
+from pigrocrm_mcp.tools.params import (
+    Anno,
+    BoundedLimit,
+    IsoDateStr,
+    OptionalFactor,
+    iso_date,
+    parse_legal_entity_id,
+)
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -52,11 +58,13 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         """
         return timetracking.get_period_pnl(
             context,
-            PeriodPnlQuery(
-                da=da,  # type: ignore[arg-type]
-                a=a,  # type: ignore[arg-type]
-                customer_id=UUID(customer_id) if customer_id else None,
-                base=base,  # type: ignore[arg-type]
+            PeriodPnlQuery.model_validate(
+                {
+                    "da": da,
+                    "a": a,
+                    "customer_id": UUID(customer_id) if customer_id else None,
+                    "base": base,
+                }
             ),
         )
 
@@ -86,12 +94,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         """
         return timetracking.get_budget_vs_actual(
             context,
-            BudgetQuery(
-                da=da,  # type: ignore[arg-type]
-                a=a,  # type: ignore[arg-type]
-                customer_id=UUID(customer_id) if customer_id else None,
-                limit=cast(int, limit),
-                cursor=UUID(cursor) if cursor else None,
+            BudgetQuery.model_validate(
+                {
+                    "da": da,
+                    "a": a,
+                    "customer_id": UUID(customer_id) if customer_id else None,
+                    "limit": limit,
+                    "cursor": UUID(cursor) if cursor else None,
+                }
             ),
         )
 

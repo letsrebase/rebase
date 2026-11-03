@@ -14,6 +14,7 @@ covered by completed engagements, overlapping ones counted once.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
@@ -146,15 +147,35 @@ def _union_days(spans: list[tuple[date, date]]) -> int:
 def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) -> HubFacts:
     """The hub's facts about the freelancer, read now. `today` is the day an engagement
     `in corso` is measured to."""
-    freelancer = session.get(Freelancer, freelancer_id)
-    if freelancer is None:
+    found = hub_facts_many(session, [freelancer_id], today)
+    if freelancer_id not in found:
         raise NotFound("Freelancer", freelancer_id)
+    return found[freelancer_id]
+
+
+def hub_facts_many(
+    session: Session, freelancer_ids: Sequence[UUID], today: date | None = None
+) -> dict[UUID, HubFacts]:
+    """`hub_facts` for several people in three queries (the people, their engagements, the
+    days an admin closed them) instead of three per person: the same facts for each, which
+    the stale list's batched read relies on. A person who does not exist is not in the answer."""
     today = today or utcnow().date()
+    wanted = list(dict.fromkeys(freelancer_ids))
+    if not wanted:
+        return {}
+    people = {
+        row.id: (row.seniority_admin, row.anni_admin)
+        for row in session.execute(
+            select(Freelancer.id, Freelancer.seniority_admin, Freelancer.anni_admin).where(
+                Freelancer.id.in_(wanted)
+            )
+        )
+    }
     rows = session.execute(
         select(Match, Company)
         .join(Company, Company.id == Match.company_id)
         .where(
-            Match.freelancer_id == freelancer_id,
+            Match.freelancer_id.in_(list(people)),
             Match.stato.in_(("attivo", "concluso")),
             Match.lettera_data_inizio.is_not(None),
         )
@@ -176,6 +197,21 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
             .group_by(AdminAction.entity_id)
         )
     }
+    engagements: dict[UUID, list[tuple[Match, Company]]] = {person: [] for person in people}
+    for match, company in rows:
+        engagements[match.freelancer_id].append((match, company))
+    return {
+        person: _facts_of(people[person], engagements[person], closed_on, today)
+        for person in people
+    }
+
+
+def _facts_of(
+    person: tuple[str | None, int | None],
+    rows: list[tuple[Match, Company]],
+    closed_on: dict[UUID, date],
+    today: date,
+) -> HubFacts:
     facts: list[MatchFact] = []
     completed: list[tuple[date, date]] = []
     clients: set[str] = set()
@@ -212,8 +248,8 @@ def hub_facts(session: Session, freelancer_id: UUID, today: date | None = None) 
         if esito == "completato":
             completed.append((start, end))
     return HubFacts(
-        seniority_admin=freelancer.seniority_admin,
-        anni_admin=freelancer.anni_admin,
+        seniority_admin=person[0],
+        anni_admin=person[1],
         matches=facts,
         completed_months=_span_months(_union_days(completed)),
         clients=sorted(clients),

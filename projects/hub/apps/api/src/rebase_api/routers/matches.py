@@ -30,6 +30,7 @@ from rebase_api.deps import (
     SigningDep,
 )
 from rebase_api.downloads import pdf_response
+from rebase_api.params import LIST_LIMIT_DEFAULT, Limit, Offset, SearchQ
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
     ContractDocumentRead,
@@ -48,24 +49,15 @@ from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
+from rebase_core.match_reads import MatchReads
 from rebase_core.match_words import PIGRO_NOT_CONFIGURED
-from rebase_core.matches import (
-    LIST_LIMIT_DEFAULT,
-    LIST_LIMIT_MAX,
-    MatchService,
-    require_live_document,
-    require_live_match,
-)
-from rebase_core.pigro import PigroUnavailable
-from rebase_core.search import SEARCH_MAX_LENGTH
+from rebase_core.matches import MatchService, require_live_document, require_live_match
+from rebase_core.pigro_door import PigroUnavailable
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
 NO_SIGNED_COPY = "Questo documento non ha ancora una copia firmata."
 
-Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
-Offset = Annotated[int, Query(ge=0)]
-SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
 Stato = Annotated[str | None, Query(max_length=20)]
 
 
@@ -76,11 +68,11 @@ def _require_pigro(settings: Settings) -> None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, PIGRO_NOT_CONFIGURED)
 
 
-def _reading(session: Session, settings: Settings) -> MatchService:
+def _reading(session: Session, settings: Settings) -> MatchReads:
     """The service as the routes that answer a match's words need it: whether this
     environment has the CRM's token, so an active match's card says «Consuntivo non
     configurato su questo ambiente.» and offers no «Riprova» without it (spec § 3.2)."""
-    return MatchService(session, pigro_configurato=bool(settings.pigro_engagements_token))
+    return MatchReads(session, pigro_configurato=bool(settings.pigro_engagements_token))
 
 
 def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchService:
@@ -119,7 +111,7 @@ def list_freelancer_matches(
 def prefill_match(
     _: AdminDep, session: SessionDep, freelancer_id: UUID, company_id: UUID
 ) -> MatchPrefill:
-    return MatchService(session).prefill(freelancer_id, company_id)
+    return MatchService(session).drafts.prefill(freelancer_id, company_id)
 
 
 @router.post("/freelancers/{freelancer_id}/matches/preview")
@@ -134,7 +126,7 @@ def preview_match_document(
 ) -> Response:
     """The previews of «Controlla e invia», step 3 of «Crea match»: one document,
     typeset now, saved nowhere, numbered never."""
-    pdf = _writing(session, settings, renderer).preview(freelancer_id, payload, documento)
+    pdf = _writing(session, settings, renderer).drafts.preview(freelancer_id, payload, documento)
     return pdf_response(pdf.filename, pdf.content)
 
 
@@ -146,7 +138,7 @@ def check_match(
     sentences, with nothing written and no number taken. 422 naming the field as
     `create` does, `company_id` for a closed request; missing tax data are reported
     (`dati_fiscali_mancanti`), not refused."""
-    return MatchService(session).check(freelancer_id, payload)
+    return MatchService(session).drafts.check(freelancer_id, payload)
 
 
 @router.post(
@@ -200,7 +192,7 @@ def cancel_match(
     """A draft; or a match in signature, whose letter's envelope is cancelled on
     Documenso too (REB-407)."""
     require_live_match(session, match_id)
-    return signing(session).cancel_match(match_id, admin.id)
+    return signing(session).admin.cancel_match(match_id, admin.id)
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
@@ -208,7 +200,9 @@ def close_match(
     admin: AdminDep, session: SessionDep, settings: SettingsDep, match_id: UUID
 ) -> MatchRead:
     require_live_match(session, match_id)
-    return _reading(session, settings).close(match_id, admin.id)
+    return MatchService(session, pigro_configurato=bool(settings.pigro_engagements_token)).close(
+        match_id, admin.id
+    )
 
 
 @router.post("/matches/{match_id}/pigro/link", response_model=MatchRead)
@@ -276,7 +270,7 @@ def refresh_contract(
     """«Aggiorna stato»: what Documenso says about the envelope, applied as the webhook
     would, and whatever a signature still leaves to do (REB-407)."""
     require_live_document(session, document_id)
-    return signing(session).refresh(document_id)
+    return signing(session).admin.refresh(document_id)
 
 
 @router.post("/contract-documents/{document_id}/resend", response_model=ContractDocumentRead)
@@ -285,7 +279,7 @@ def resend_contract(
 ) -> ContractDocumentRead:
     """«Reinvia email»: the signing mail again, for a document still waiting."""
     require_live_document(session, document_id)
-    return signing(session).resend_mail(document_id, admin.id)
+    return signing(session).admin.resend_mail(document_id, admin.id)
 
 
 @router.post("/contract-documents/{document_id}/cancel", response_model=ContractDocumentRead)
@@ -294,7 +288,7 @@ def cancel_contract(
 ) -> ContractDocumentRead:
     """«Annulla» on a framework agreement not signed yet; a letter goes with its match."""
     require_live_document(session, document_id)
-    return signing(session).cancel_document(document_id, admin.id)
+    return signing(session).admin.cancel_document(document_id, admin.id)
 
 
 @router.post("/contract-documents/{document_id}/notice", response_model=ContractDocumentRead)
@@ -303,7 +297,7 @@ def record_contract_notice(
 ) -> ContractDocumentRead:
     """«Registra disdetta» on an active framework agreement."""
     require_live_document(session, document_id)
-    return signing(session).record_notice(document_id, admin.id)
+    return signing(session).admin.record_notice(document_id, admin.id)
 
 
 @router.get("/contract-documents/{document_id}/pdf")
@@ -316,7 +310,7 @@ def download_contract(
     to an admin."""
     require_live_document(session, document_id)
     try:
-        pdf = MatchService(session).document_pdf(document_id, signed=firmato)
+        pdf = MatchReads(session).document_pdf(document_id, signed=firmato)
     except NotFound as exc:
         if firmato:
             raise HTTPException(status.HTTP_404_NOT_FOUND, NO_SIGNED_COPY) from exc

@@ -13,7 +13,7 @@ retries at once, three times within about 160 ms, then never again (probe § 5):
 route only locks the freelancer's row, its match and the document, in that order, and
 commits (`SigningService.apply`), and the slow part (the sealed copy's download, the two
 mails, the letters a framework agreement releases) runs after the response, in a session
-of its own (`SigningService.finish`). A completion is not moved by `apply`: the secret
+of its own (`SigningRecovery.finish`). A completion is not moved by `apply`: the secret
 above travels in clear, so a `DOCUMENT_COMPLETED` only tells `apply` which document to
 hand to `finish`, which confirms it with Documenso itself, over the hub's own API token,
 before it counts as `firmato` (REB-431) -- a forged event then needs the token too.
@@ -37,7 +37,7 @@ from rebase_api.deps import (
 )
 from rebase_core.db import SessionOpener
 from rebase_core.documenso import WebhookBody, outcome_from_webhook
-from rebase_core.schemas import Ack
+from rebase_core.schema_common import Ack
 from rebase_core.signing import SigningFactory
 
 router = APIRouter(prefix="/api/hub", tags=["hub-documenso"])
@@ -51,24 +51,21 @@ def verify_secret(
 ) -> None:
     expected = settings.documenso_webhook_secret
     if not expected:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "La firma elettronica non è attiva su questo ambiente.",
-        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "webhook_disabled")
     presented = x_documenso_secret or ""
     # Bytes, not str: `compare_digest` refuses a `str` with a non-ASCII character, and
     # Starlette decodes headers as latin-1 (the same care as `/members/lookup`).
     if not presented or not secrets.compare_digest(
         presented.encode("utf-8"), expected.encode("utf-8")
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "segreto non valido")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_secret")
 
 
 def _finish(open_session: SessionOpener, build: SigningFactory, document_id: UUID) -> None:
     """After the response: it never raises, since nobody is left to read it."""
     try:
         with open_session() as session:
-            build(session).finish(document_id)
+            build(session).recovery.finish(document_id)
     except Exception:
         _log.exception("finishing the signature of document %s failed", document_id)
 

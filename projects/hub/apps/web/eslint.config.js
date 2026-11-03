@@ -18,12 +18,6 @@ export default defineConfig([
     languageOptions: { ecmaVersion: 2020, globals: globals.browser },
   },
   {
-    // The primitives are shadcn's shapes copied from PigroCRM: a component beside its
-    // cva() variants, which the rule flags and which is how the generator ships them.
-    files: ['src/components/ui/**/*.{ts,tsx}'],
-    rules: { 'react-refresh/only-export-components': 'off' },
-  },
-  {
     // The route tree is code, not files: `router.tsx` exports the router and the pages
     // it mounts; `wizard/Wizard.tsx` exports the engine's component beside the step
     // type it takes; the two wizard pages export their step lists beside the page, so

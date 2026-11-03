@@ -12,14 +12,11 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from fakes_cards import CARD, card_response
+from freelancer_fixtures import backdate_prompt, written_cards
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
-from test_card_staleness import (
-    _admin,
-    _backdate,
-    _cards,
-)
 
 from rebase_core.card_batch import (
     ACTIVE_GIVEN_UP_AFTER,
@@ -28,16 +25,17 @@ from rebase_core.card_batch import (
     CardBatches,
     active_batch,
 )
-from rebase_core.cards import PROMPT_VERSION, CardWriter
+from rebase_core.card_prompt import PROMPT_VERSION
+from rebase_core.card_writer import CardWriter
 from rebase_core.errors import LlmCapReached, LlmUnavailable
-from rebase_core.llm import BatchOutcome, RecordingBatch, RecordingCall
+from rebase_core.llm import RecordingCall
+from rebase_core.llm_batch import BatchOutcome, RecordingBatch
 from rebase_core.models import (
     AdminAction,
     AiUsage,
     CardBatch,
     CardBatchItem,
     FreelancerCard,
-    User,
 )
 from rebase_core.team_schemas import CardsRefreshed
 
@@ -48,8 +46,8 @@ GENDERED = {**CARD, "sintesi": "Lei è una sviluppatrice con nove anni di esperi
 
 def _stale(session: Session, count: int = 3) -> list[UUID]:
     """`count` people with a card of prompt version 1: stale, listed for a start."""
-    people = _cards(session, count)
-    _backdate(session, 1)
+    people = written_cards(session, count)
+    backdate_prompt(session, 1)
     return people
 
 
@@ -72,13 +70,8 @@ def _writer(
     )
 
 
-def _an_admin(session: Session) -> UUID:
-    found = session.scalar(select(User.id).where(User.role == "admin"))
-    return found or _admin(session)
-
-
 def _start(session: Session, call: RecordingBatch, limit: int = 50) -> CardsRefreshed:
-    return _writer(session, call).regenerate_stale(_an_admin(session), limit, fonte="web")
+    return _writer(session, call).regenerate_stale(an_admin(session), limit, fonte="web")
 
 
 def _poll(session: Session, call: RecordingBatch, llm: object = NO_ANSWERS) -> BatchPolled:
@@ -143,7 +136,7 @@ def test_below_the_threshold_the_workers_write_it(clean_hub: Session) -> None:
     call = RecordingBatch()
     llm = RecordingCall([card_response(), card_response()])
 
-    result = _writer(clean_hub, call, llm).regenerate_stale(_an_admin(clean_hub), 50, fonte="web")
+    result = _writer(clean_hub, call, llm).regenerate_stale(an_admin(clean_hub), 50, fonte="web")
 
     assert result == CardsRefreshed(written=2, failed=0)
     assert call.submissions == 0 and clean_hub.scalars(select(CardBatch)).all() == []

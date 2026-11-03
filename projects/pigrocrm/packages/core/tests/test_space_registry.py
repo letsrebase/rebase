@@ -67,6 +67,9 @@ def test_the_root_has_no_slug_and_opens_the_configured_database(settings: Settin
 
 
 def test_an_unknown_slug_is_not_found(settings: Settings) -> None:
+    # The registry database is the boot's to create (`ensure-space-defaults`): the
+    # request path never runs DDL.
+    ensure_tenants_database(settings).dispose()
     registry = SpaceRegistry(settings)
     try:
         with pytest.raises(NotFound):
@@ -99,38 +102,107 @@ def test_space_base_settings_blank_google_and_scope_the_public_url(settings: Set
     assert space_base_settings(settings, None) is settings
 
 
-def test_overrides_are_cached_for_the_ttl_and_dropped_on_invalidate(
+def test_effective_settings_are_cached_for_the_ttl_and_dropped_on_invalidate(
     settings: Settings, provisioned: str
 ) -> None:
     registry = SpaceRegistry(settings, overrides_ttl=1000.0)
     try:
         with registry.session_factory(provisioned)() as session:
-            assert registry.overrides(provisioned, session) == {}
+            before = registry.effective_settings(provisioned, session)
+            assert before.mcp_full_access is False
             admin = Actor(id=None, type="system", role="admin")
             SpaceSettingsService(session, registry.settings).update(
                 SpaceSettingsUpdate(mcp_full_access=True), admin, spazio=provisioned
             )
             session.commit()
-            # Still the cached answer: the TTL has not run out.
-            assert registry.overrides(provisioned, session) == {}
-            assert registry.effective_settings(provisioned, session).mcp_full_access is False
+            # Still the cached answer, the very same object: the TTL has not run out.
+            assert registry.effective_settings(provisioned, session) is before
             registry.invalidate(provisioned)
-            assert registry.overrides(provisioned, session) == {"mcp_full_access": "true"}
             assert registry.effective_settings(provisioned, session).mcp_full_access is True
     finally:
         registry.dispose()
 
 
-def test_a_zero_ttl_reads_the_rows_every_time(settings: Settings, provisioned: str) -> None:
+def test_a_zero_ttl_reads_the_rows_every_time_and_keeps_the_object_while_they_are_the_same(
+    settings: Settings, provisioned: str
+) -> None:
     registry = SpaceRegistry(settings, overrides_ttl=0.0)
     try:
         with registry.session_factory(provisioned)() as session:
-            assert registry.overrides(provisioned, session) == {}
+            before = registry.effective_settings(provisioned, session)
+            # The rows are unchanged, so the answer is the same object: the MCP server
+            # compares them with `is` to decide whether its tools are stale.
+            assert registry.effective_settings(provisioned, session) is before
             admin = Actor(id=None, type="system", role="admin")
             SpaceSettingsService(session, registry.settings).update(
                 SpaceSettingsUpdate(mcp_full_access=True), admin, spazio=provisioned
             )
             session.commit()
-            assert registry.overrides(provisioned, session) == {"mcp_full_access": "true"}
+            after = registry.effective_settings(provisioned, session)
+            assert after is not before
+            assert after.mcp_full_access is True
+    finally:
+        registry.dispose()
+
+
+def test_the_cache_is_per_root_settings_so_a_caller_with_its_own_never_reads_anothers(
+    settings: Settings, provisioned: str
+) -> None:
+    registry = SpaceRegistry(settings, overrides_ttl=1000.0)
+    other = settings.model_copy(update={"solleciti_grace_days": 99})
+    try:
+        with registry.session_factory(provisioned)() as session:
+            mine = registry.effective_settings(provisioned, session)
+            theirs = registry.effective_settings(provisioned, session, other)
+            assert theirs is not mine
+            assert theirs.solleciti_grace_days == 99
+            assert mine.solleciti_grace_days != 99
+    finally:
+        registry.dispose()
+
+
+def test_a_space_pool_is_small_and_the_least_recently_used_engine_is_disposed(
+    settings: Settings, provisioned: str
+) -> None:
+    second = "registro-prova-due"
+    registry_engine = ensure_tenants_database(settings)
+    with session_factory(registry_engine)() as session:
+        TenantService(session, settings).provision(
+            TenantSignup(slug=second, nome="Bea", email="bea@studio.it")
+        )
+    registry = SpaceRegistry(settings, max_open_spaces=1)
+    try:
+        first_factory = registry.session_factory(provisioned)
+        assert first_factory.kw["bind"].pool.size() == 4
+        # One request may hold two connections at once (the dashboards' snapshot session):
+        # neither waits for the other.
+        with first_factory() as one, first_factory() as two:
+            assert one.execute(text("select 1")).scalar_one() == 1
+            assert two.execute(text("select 1")).scalar_one() == 1
+        second_factory = registry.session_factory(second)
+        # One space may stay open: the first was the least recently used and went.
+        assert list(registry._spaces) == [second]
+        assert registry.session_factory(provisioned) is not first_factory
+        assert list(registry._spaces) == [provisioned]
+        assert second_factory is not None
+    finally:
+        registry.dispose()
+        with session_factory(registry_engine)() as session:
+            session.execute(text("delete from tenants where slug = :s"), {"s": second})
+            session.commit()
+        drop_database(settings, tenant_database_url(settings, tenant_database_name(second)))
+        registry_engine.dispose()
+
+
+def test_an_engine_idle_past_the_limit_is_dropped_and_built_again_on_demand(
+    settings: Settings, provisioned: str
+) -> None:
+    registry = SpaceRegistry(settings, idle_seconds=-1.0)
+    try:
+        first = registry.session_factory(provisioned)
+        second = registry.session_factory(provisioned)
+        assert second is not first
+        with second() as session:
+            assert session.execute(text("select 1")).scalar_one() == 1
     finally:
         registry.dispose()

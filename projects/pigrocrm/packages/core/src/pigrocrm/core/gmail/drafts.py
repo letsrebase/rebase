@@ -43,6 +43,7 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.rfc822 import new_message_id
 from pigrocrm.core.gmail.schemas import (
     EDITABLE_SEND_STATES,
+    MAX_RECIPIENTS,
     EmailDraftCreate,
     EmailDraftListQuery,
     EmailDraftPage,
@@ -181,13 +182,23 @@ class EmailDraftService:
             raise NotFound("gmail_message", message_id)
 
     @staticmethod
-    def _check_recipients(addresses: list[str]) -> None:
-        """One recipient at least, checked before the row is written rather than at send
-        time: a draft that cannot be sent is not a draft, it is a trap with a Send
-        button. The *shape* of each address is `build_rfc822`'s job (B2-2) and is checked
-        again there, because that is the point at which the string becomes a header."""
-        if not addresses:
+    def _check_recipients(to: list[str], cc: list[str]) -> None:
+        """One recipient at least, and not more than `MAX_RECIPIENTS` in To and Cc
+        together, checked before the row is written rather than at send time: a draft
+        that cannot be sent is not a draft, it is a trap with a Send button. The schemas
+        cap each list; this is the cap on the two together, which no single field can
+        express. The *shape* of each address is `build_rfc822`'s job (B2-2) and is
+        checked again there, because that is the point at which the string becomes a
+        header."""
+        if not to:
             raise ValidationFailed(ENTITY, "to", "serve almeno un destinatario")
+        if len(to) + len(cc) > MAX_RECIPIENTS:
+            raise ValidationFailed(
+                ENTITY,
+                "to",
+                f"al massimo {MAX_RECIPIENTS} destinatari tra A e Cc",
+                expected=f"al massimo {MAX_RECIPIENTS} destinatari",
+            )
 
     def _require_editable(self, draft: EmailDraft) -> None:
         if draft.send_state not in _EDITABLE:
@@ -204,7 +215,7 @@ class EmailDraftService:
         actor.require_write("create_email_draft")
         self._check_entity(data.entity_type, data.entity_id)
         self._check_reply_target(data.in_reply_to_message_id)
-        self._check_recipients(list(data.to_addresses))
+        self._check_recipients(list(data.to_addresses), list(data.cc_addresses))
         attachments = self._check_attachments(list(data.attachment_version_ids))
 
         draft = EmailDraft(
@@ -246,11 +257,14 @@ class EmailDraftService:
         self._require_editable(draft)
 
         values: dict[str, Any] = {}
-        if data.to_addresses is not None:
-            self._check_recipients(list(data.to_addresses))
-            values["to_addresses"] = list(data.to_addresses)
-        if data.cc_addresses is not None:
-            values["cc_addresses"] = list(data.cc_addresses)
+        if data.to_addresses is not None or data.cc_addresses is not None:
+            to = list(draft.to_addresses if data.to_addresses is None else data.to_addresses)
+            cc = list(draft.cc_addresses if data.cc_addresses is None else data.cc_addresses)
+            self._check_recipients(to, cc)
+            if data.to_addresses is not None:
+                values["to_addresses"] = to
+            if data.cc_addresses is not None:
+                values["cc_addresses"] = cc
         if data.subject is not None:
             values["subject"] = data.subject
         if data.body_markdown is not None:

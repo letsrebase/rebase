@@ -4,12 +4,13 @@ import re
 from datetime import UTC, datetime
 from uuid import UUID
 
+from admins import an_admin
 from campaign_api_flow import (  # noqa: F401  (fixture)
-    admin_user,
     recipient_row,
     recipient_rows,
     tidy,
 )
+from campaign_fixtures import RESEND_TEST_SECRET
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -19,8 +20,6 @@ from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient, Freelancer, User
-
-WEBHOOK_SECRET = "whsec_" + "c2VncmV0bw=="
 
 
 def test_the_header_url_fetched_by_get_only_redirects_to_the_page(
@@ -81,7 +80,7 @@ def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
 
 
 def login_admin(client: TestClient, sender: RecordingSender, session: Session) -> None:
-    admin_user(session)
+    an_admin(session, cognome="Sala")
     assert client.post("/api/hub/auth/link", json={"email": "ivan@rebase.it"}).status_code == 202
     token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200
@@ -109,7 +108,7 @@ def with_webhook(client: TestClient) -> None:
     """This environment has Resend's webhook secret, as production does."""
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined]
         _env_file=None,  # type: ignore[call-arg]
-        resend_webhook_secret=WEBHOOK_SECRET,
+        resend_webhook_secret=RESEND_TEST_SECRET,
     )
 
 

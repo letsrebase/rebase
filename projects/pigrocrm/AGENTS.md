@@ -109,6 +109,43 @@ session cookie: login answers 200 and every request after it is unauthenticated.
 you are debugging "the login works but nothing else does", this is it — and in
 production it means TLS has to be configured *before* anyone tries to log in.
 
+**The API's throttles trust `X-Real-IP`, so nothing but nginx may reach port 8000.**
+`pigrocrm_api.ratelimit` keys its buckets on the client address nginx writes into
+`X-Real-IP`; a deployment that publishes the API's port directly lets any caller mint a
+fresh bucket per request by typing the header. Compose publishes none: keep it so. The
+limiter is in-process and per worker (one uvicorn worker today), the floor under nginx's
+`limit_req`, not a substitute. It covers the signup (per client, a global rate, a cap on
+signups in flight and `PIGROCRM_MAX_SPACES`), login (per client, and a backoff on one
+client trying one account), `/auth/verify`, `/auth/refresh`, `/identity/enter`, bad PAT
+bearers, and the mails these public routes send (per recipient address). Refusals are
+logged on `pigrocrm_api.security` with the scope and the address, never an email or a
+token. The API refuses to boot with the published placeholder `PIGROCRM_JWT_SECRET` unless
+`cookie_secure` is off, and an access token carries the space it was minted for (`aud`),
+which `get_actor` checks: the root and every space share one signing secret.
+
+**An agent credential does only what `core/agent_actions.py` classifies.** A personal access
+token is `Actor(type="mcp")` on MCP and on every REST route alike, and `Actor.require_write`
+and its siblings refuse it any action that is not in `AGENT_ALLOWED_ACTIONS` (what a tool does),
+in `FULL_ACCESS_ACTIONS` with a token that carries `full_access` under the space's ceiling
+(REB-810), or never: `PERSON_ONLY_ACTIONS` (accounts and tokens, the space settings, the Google
+and Slack connections, mail in the owner's name, the shape of the CRM). An action in none of
+the three is refused, so a new `require_*` string is closed to agents until it is classified
+(`packages/core/tests/test_agent_actions.py` fails first), and a route with no service behind it
+takes `person_only(action)`. Action keys are English snake_case; the Italian sentence a person
+reads is a label in `ACTION_LABELS`. `apps/api/tests/test_role_matrix.py` walks every writing
+route with an administrator's token and lists the ones it reaches (`AGENT_REACHABLE`).
+
+**A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
+handler that never names the actor is still behind it, and `test_routes_authenticate.py`
+asks every route of the OpenAPI document once with no credential. The open routes are the
+session mechanics, the signup, the identity cookie, the service-token engagements and the
+OAuth callbacks (`oauth_callback.finish_consent`, one helper for Gmail, Drive and Slack).
+An upload takes the `Request` and checks the role *before* `read_upload` parses the
+multipart body (`uploads.py`): a declared `File()` makes Starlette spool the body to disk
+before any check. A list route declares one `*ListParams` model from `query_params.py`
+(FastAPI takes a query model only as the route's single query parameter), and a file
+download goes through `downloads.attachment_response`.
+
 **`pg_trgm` is created by the migrations at API start-up.** On a managed Postgres
 where the user cannot create extensions, the deploy fails at boot with
 `permission denied to create extension "pg_trgm"`. That is the wanted behaviour: the
@@ -175,6 +212,19 @@ door are not text any more: they are `deals.rebase_refs`, written only through
 `DealRepository.find_by_rebase_ref`; the door's human sentence is the deal's (or the customer's)
 first note, written by `Actor.rebase()`. The hub's lead payload still sends `deal.note`.
 
+**A space's own Google client secret and token key are sealed, with a key derived from
+`PIGROCRM_JWT_SECRET` (PCORE-B-02).** `space_settings` stores `google_client_secret` and
+`google_token_key` as `sealed:v1:...`, never plain (`space_settings/sealing.py`, migration 0065).
+Secret rotation: rotating the JWT secret therefore also unsets every space's own Google
+client (a space on the root's shared client is untouched): the two rows read as not set until
+the space re-enters its client secret and reconnects Gmail and Drive. A row written before
+migration 0065 and not yet sealed is read as it is. A process holds at most a dozen
+space engines with a pool of four each (`tenants/registry.py`), and its request path never
+creates a database or a table: `ensure-space-defaults` at boot is what creates the registry.
+The `pigrocrm` command is the package `core/cli/` (`python -m pigrocrm.core.cli` works as
+well): one module per family of commands and one walk over the root and the registry's spaces
+(`cli/spaces_walk.py`).
+
 **`--no-sync` on the container's `uv run` calls is load-bearing.** Without it, uv
 re-evaluates the environment against the default group selection — which includes
 `dev` — decides the image's venv is out of date, and downloads mypy and ruff into a
@@ -201,7 +251,7 @@ it on `pnpm --filter web build` plus `vite preview` or the compose stack.
 or a prompt keeps the text and the code of an `MCPError` (a JSON-RPC error); anything else
 becomes a generic «Error executing tool <name>», «Error rendering prompt <name>» or
 «Internal server error», and the domain sentence is lost. `apps/mcp`'s `server.py`
-translates a `DomainError` in one place, the guard (`_guard` for tools, `_protocol_guard`
+translates a `DomainError` in one place, the guards `_make_guards` returns (`guard` for tools, `protocol_guard`
 for resources and prompts); a new tool, resource or prompt goes through it, never through
 its own `try`. The codes follow one rule: `-32602` for a record that does not exist (the
 MCP spec's own code for a bad prompt name or a missing argument, and for a missing resource),

@@ -8,7 +8,7 @@
    Tailwind on purpose (its `@theme` has to win).
 
    Neither is a design choice. `tw-animate-css` backs the `animate-in`/`animate-out`
-   transitions of dialog, sheet, popover, dropdown-menu, select and tooltip;
+   transitions of dialog, sheet, popover, dropdown-menu and select;
    `shadcn/tailwind.css` defines the `data-open`, `data-checked` and sibling custom
    variants their class names use. An application that imports the primitives and not
    this file renders them with no transitions and with those variants dead.

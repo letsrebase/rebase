@@ -9,10 +9,10 @@ stored twice.
 **The endpoint is a URL this server will call**, and the person who registers it chooses
 it, so it is checked twice: `accepts_endpoint` accepts only the hosts of the browser
 vendors' push services (`PUSH_SERVICES`) when it is stored, so nobody can have the server
-call an address of their choosing, and the sender checks again what the name resolves to
-when it sends (`reminders/push.py`). **One person has at most `MAX_PER_USER` browsers**: the
-oldest goes when another is added, so a person cannot make a pass call a thousand
-endpoints.
+call an address of their choosing, and the sender connects only to public addresses, which
+it resolves itself when it connects (`reminders/push.py`). **One person has at most
+`MAX_PER_USER` browsers**: the oldest goes when another is added, so a person cannot make a
+pass call a thousand endpoints.
 
 **The endpoint belongs to a browser, not to a person**: when somebody signs in on a
 browser another person subscribed from, subscribing again moves the row to them, so the
@@ -90,7 +90,7 @@ def _decoded(value: str) -> bytes:
 def accepts_endpoint(endpoint: str) -> bool:
     """Whether this is the endpoint of one of the browser vendors' push services: HTTPS, no
     credentials, and a host that is a push service or one of its subdomains. The sender
-    resolves the name again before every send."""
+    still resolves the name itself and refuses any address that is not public."""
     if len(endpoint) > ENDPOINT_MAX_LENGTH:
         return False
     try:

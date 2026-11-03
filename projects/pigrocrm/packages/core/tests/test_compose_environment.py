@@ -50,13 +50,16 @@ NOT_FORWARDED: dict[str, str] = {
     "gmail_body_max_bytes": "quanto corpo si conserva: default",
     "gmail_attachment_max_bytes": "peso massimo di un allegato: default",
     "gmail_send_grace_minutes": "finestra di annullo di un invio: default",
-    "gmail_reconcile_by_message_id": "strategia di riconciliazione: default, vedi la nota",
+    "gmail_reconcile_by_message_id": "reconciliation strategy: default, see the note",
     "drive_text_max_bytes": "quanto testo torna da un file Drive: default",
     "document_text_max_bytes": "quanto testo torna da un documento archiviato: default",
     "storage_local_root": "percorso dentro l'immagine, montato dal volume",
     "tenants_database_url": "vuoto significa lo stesso server del CRM, che e' cio' che serve",
     "tenants_alembic_ini": "vuoto risolve all'alembic.ini che l'immagine contiene",
     "gmail_sync_address_batch_size": "quante query per ciclo: default",
+    # A ceiling on the public signup's total, not an installation's choice: the default is
+    # generous for a single-owner server.
+    "max_spaces": "the ceiling on spaces: the default holds on every deploy",
     # Paths inside the image. The Dockerfile installs both under these names, so a
     # deployment able to change them could only break rendering.
     "pandoc_binary": "il nome con cui l'immagine installa Pandoc",

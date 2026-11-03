@@ -69,7 +69,12 @@ Copy `.env.example` into the repository root **on the server** (not only locally
 
 - `POSTGRES_PASSWORD` — required: `docker compose` refuses to start without it.
 - `PIGROCRM_JWT_SECRET` — generate a real secret (`openssl rand -hex 32`), different from
-  any value used in local development.
+  any value used in local development. The API and the MCP server refuse to start on the
+  published placeholder. **Rotating it logs everyone out and also unsets every space's own
+  Google client**: the two secrets a space keeps in its database (`google_client_secret`,
+  `google_token_key`) are sealed with a key derived from it, so after a rotation each space
+  re-enters its client secret and reconnects Gmail and Drive (a space on the root's shared
+  Google client is not affected).
 - Leave `PIGROCRM_COOKIE_SECURE` as it is: `docker-compose.yml` never forwards it to the
   `api` container, on purpose (see the comment there) — it only concerns the local
   development flow further up in the same file.

@@ -170,9 +170,13 @@ class Attivita(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # Null means «whoever opens the list», not «nobody» -- the spec's own words.
     assegnata_a: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customers.id"), default=None)
-    person_id: Mapped[UUID | None] = mapped_column(ForeignKey("people.id"), default=None)
+    person_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("people.id"), default=None, index=True
+    )
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None)
-    invoice_id: Mapped[UUID | None] = mapped_column(ForeignKey("invoices.id"), default=None)
+    invoice_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("invoices.id"), default=None, index=True
+    )
     origine: Mapped[str] = mapped_column(String(20), nullable=False, default="manuale")
     regola: Mapped[str | None] = mapped_column(String(50), default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

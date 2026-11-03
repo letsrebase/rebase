@@ -11,12 +11,10 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Connection, create_engine, text
-from sqlalchemy.orm import Session
 
 import rebase_core.models  # noqa: F401
 from rebase_core.db import Base
 from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
-from rebase_core.models import Freelancer, User
 
 REVISION = "0039"
 
@@ -95,14 +93,23 @@ def test_the_people_and_the_earlier_results_stay_and_the_expected_cards_go(
         command.upgrade(config, _parent(config))
         engine = create_engine(url, future=True)
         run_id = uuid4()
-        with Session(engine) as session:
-            user = User(email="a@b.it", nome="A", cognome="B", role="member")
-            session.add(user)
-            session.flush()
-            freelancer = Freelancer(user_id=user.id, posizione="dev")
-            session.add(freelancer)
-            session.commit()
-            freelancer_id = freelancer.id
+        # Raw SQL: the ORM models describe the head schema, and this one is at 0038's.
+        user_id, freelancer_id = uuid4(), uuid4()
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, nome, cognome, role, attivo) "
+                    "VALUES (:id, 'a@b.it', 'A', 'B', 'member', true)"
+                ),
+                {"id": user_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO freelancers (id, user_id, posizione, links, stato, compilata_da) "
+                    "VALUES (:id, :u, 'dev', '[]', 'nuovo', 'persona')"
+                ),
+                {"id": freelancer_id, "u": user_id},
+            )
         with engine.begin() as connection:
             connection.execute(
                 text(

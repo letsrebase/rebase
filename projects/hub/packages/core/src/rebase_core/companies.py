@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import (
     TIMELINE_LIMIT_DEFAULT,
     AdminActionRead,
@@ -19,20 +20,19 @@ from rebase_core.audit import (
     utcnow,
 )
 from rebase_core.cloud import TalentCloudService
+from rebase_core.company_schemas import (
+    CompanyAdminCreate,
+    CompanyCreate,
+    CompanyList,
+    CompanyOverride,
+    CompanyRead,
+)
 from rebase_core.crm_words import DA_COLLEGARE, crm_state_sentence
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
 from rebase_core.notes import NoteService
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    CompanyAdminCreate,
-    CompanyCreate,
-    CompanyList,
-    CompanyOverride,
-    CompanyRead,
-    StatusChange,
-)
 from rebase_core.search import matches_any, similarity_score
 from rebase_core.users import UserService
 
@@ -282,15 +282,17 @@ class CompanyService:
         row, user = self._require(company_id)
         before = row.stato
         row.stato = change.stato
-        self.session.commit()
         if before != change.stato:
+            # In the transaction of the change itself (HCORE-09).
             AdminActionService(self.session).record(
                 ENTITY,
                 row.id,
                 "status_changed",
                 admin_id,
                 {"before": before, "after": change.stato, "fonte": fonte},
+                commit=False,
             )
+        self.session.commit()
         return _to_read(row, user)
 
     def override(self, company_id: UUID, data: CompanyOverride, admin_id: UUID) -> CompanyRead:
@@ -329,14 +331,18 @@ class CompanyService:
             setattr(user, field, value)
         for field, value in row_changes.items():
             setattr(row, field, value)
-        self.session.commit()
+        self.session.flush()
         after = {
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},
         }
         delta = field_changes(before, after)
         if delta:
-            AdminActionService(self.session).record(ENTITY, row.id, "overridden", admin_id, delta)
+            # In the transaction of the override itself (HCORE-09).
+            AdminActionService(self.session).record(
+                ENTITY, row.id, "overridden", admin_id, delta, commit=False
+            )
+        self.session.commit()
         return _to_read(row, user)
 
     def soft_delete(self, company_id: UUID, admin_id: UUID) -> CompanyRead:

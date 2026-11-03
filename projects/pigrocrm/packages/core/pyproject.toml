@@ -62,6 +62,9 @@ dependencies = [
   # `cryptography` above is, and pinned to what `uv.lock` already resolves.
   "py-vapid==1.9.6",
   "requests==2.34.2",
+  # The push sender pins the address it checked at the connect (B-13), which is
+  # `urllib3`'s connection classes: declared for the allowlist, pinned to the lock.
+  "urllib3==2.8.0",
 ]
 
 [project.scripts]

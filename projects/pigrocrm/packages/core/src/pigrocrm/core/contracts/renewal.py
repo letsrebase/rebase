@@ -16,10 +16,11 @@ count of days or of calendar months from its first day: `1 Jan` plus twelve mont
 (`31 Jan` plus one month) steps onto its last day rather than overflowing.
 """
 
-import calendar
 from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Literal, Protocol
+
+from pigrocrm.core.db.clock import month_bounds
 
 RenewalUnit = Literal["giorni", "settimane", "mesi", "anni"]
 
@@ -38,7 +39,7 @@ def add_months(giorno: date, months: int) -> date:
     """`giorno` moved by whole calendar months, clamped to the target month's last day."""
     total = giorno.year * 12 + (giorno.month - 1) + months
     year, month = divmod(total, 12)
-    return date(year, month + 1, min(giorno.day, calendar.monthrange(year, month + 1)[1]))
+    return date(year, month + 1, min(giorno.day, month_bounds(year, month + 1)[1].day))
 
 
 def _span(start: date, count: int, unit: RenewalUnit) -> date:
@@ -54,7 +55,7 @@ def _span(start: date, count: int, unit: RenewalUnit) -> date:
 def _whole_months(inizio: date, fine: date) -> int | None:
     """How many calendar months `inizio`..`fine` is, when it is exactly that many: it
     begins on the 1st and ends on the last day of a month. `None` otherwise."""
-    if inizio.day != 1 or fine.day != calendar.monthrange(fine.year, fine.month)[1]:
+    if inizio.day != 1 or fine != month_bounds(fine.year, fine.month)[1]:
         return None
     return (fine.year * 12 + fine.month) - (inizio.year * 12 + inizio.month) + 1
 
@@ -78,9 +79,9 @@ def renewed_term(
     """
     try:
         return _renewed_term(inizio, fine, nuovo_inizio, nuova_fine, durata)
+    except RenewalRefused:
+        raise
     except (OverflowError, ValueError) as error:
-        if isinstance(error, RenewalRefused):
-            raise
         raise RenewalRefused(
             "fine", "la data cade fuori dall'intervallo ammesso", "una data prima del 9999"
         ) from error

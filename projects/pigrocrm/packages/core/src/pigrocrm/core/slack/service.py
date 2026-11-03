@@ -41,7 +41,9 @@ from pigrocrm.core.slack.token import bot_token, mark_revoked
 
 _T = TypeVar("_T")
 
-_MANAGE = "gestire Slack"
+_MANAGE = "manage_slack"
+# `health` has an MCP tool (an agent may diagnose the connection); the writes do not.
+_READ_HEALTH = "read_slack_health"
 
 
 class SlackService:
@@ -55,7 +57,7 @@ class SlackService:
     # -- reads -----------------------------------------------------------------
 
     def health(self, actor: Actor) -> SlackHealth:
-        actor.require_unscoped_admin(_MANAGE)
+        actor.require_unscoped_admin(_READ_HEALTH)
         if not slack_configured(self.settings):
             return SlackHealth(configured=False, workspace=None)
         workspace = self.repo.workspace()

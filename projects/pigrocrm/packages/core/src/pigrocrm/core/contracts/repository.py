@@ -32,16 +32,27 @@ class ContractRepository:
             return None
         return contract
 
-    def list_active(self) -> list[Contract]:
+    def list_active(self, azienda_id: UUID | None = None) -> list[Contract]:
         """Every non-deleted contract, unpaginated -- read by REB-352 §1.6's cash
         calendar overlay, which needs every contract's own dates, and by REB-352
         §1.5's concentration cap indirectly through `get`. A contract's own `stato`
         stays out of this filter: a contract that is not `attivo` still has dates the
         calendar overlay reads, and which states count is that overlay's decision, not
-        this list's. Never enough contracts in one practice to need keyset pagination,
-        the same reasoning `RateCardRepository.list_for_contract` gives.
+        this list's. `azienda_id` narrows it in SQL to one azienda's contracts. Never
+        enough contracts in one practice to need keyset pagination, the same
+        reasoning `RateCardRepository.list_for_contract` gives.
         """
         stmt = select(Contract).where(Contract.deleted_at.is_(None))
+        if azienda_id is not None:
+            stmt = stmt.where(Contract.azienda_id == azienda_id)
+        return list(self.session.execute(stmt).scalars())
+
+    def list_for_customer(self, customer_id: UUID) -> list[Contract]:
+        """Every non-deleted contract of one customer, unpaginated, whatever its `stato`
+        (same reasoning as `list_active`)."""
+        stmt = select(Contract).where(
+            Contract.deleted_at.is_(None), Contract.customer_id == customer_id
+        )
         return list(self.session.execute(stmt).scalars())
 
     def add(self, contract: Contract) -> Contract:

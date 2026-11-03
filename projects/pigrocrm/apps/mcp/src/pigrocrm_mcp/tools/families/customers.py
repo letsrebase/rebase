@@ -13,8 +13,7 @@ from pigrocrm_mcp.tools import (
     customers,
     invoices,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import BoundedLimit, CustomerChanges
+from pigrocrm_mcp.tools.params import BoundedLimit, CustomerChanges, parse_legal_entity_id
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
