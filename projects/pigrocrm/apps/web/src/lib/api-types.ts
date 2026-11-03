@@ -9427,15 +9427,17 @@ export interface components {
         };
         /**
          * LeadDeal
-         * @description The deal as the hub built it, AI draft included. `hourly_rate` and
-         *     `budgeted_hours` are deliberately not here: in the CRM they value the hours logged
-         *     on a deal, and a prospect's typed budget is not that.
+         * @description The deal as the hub built it, AI draft included. Its value is the list of lines, the
+         *     deals' own (`DealValueLineIn`, so the same limits): the deal's total is derived from
+         *     them and never sent. `hourly_rate` and `budgeted_hours` are deliberately not here: in
+         *     the CRM they value the hours logged on a deal, and a prospect's typed budget is not
+         *     that.
          */
         LeadDeal: {
             /** Name */
             name: string;
-            /** Expected Value */
-            expected_value?: number | string | null;
+            /** Value Lines */
+            value_lines?: components["schemas"]["DealValueLineIn"][] | null;
             /** Expected Close Date */
             expected_close_date?: string | null;
             /** Notes */

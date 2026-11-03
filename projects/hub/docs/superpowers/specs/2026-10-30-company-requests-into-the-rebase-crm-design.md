@@ -146,6 +146,17 @@ A fourth task in the hub's AI system, `crm_lead`, beside `card`, `team_proposal`
   - `valore_previsto`: `budget_giornaliero` × `giorni_settimana` × `durata_settimane` ×
     `numero_risorse`, only when every input is present, dropped when it does not fit the
     column.
+    **Superseded 2026-11-03 (REB-936).** The CRM prices a deal with value lines (its spec
+    `2026-11-03-deal-value-lines-design.md` § 9), so the hub no longer sends
+    `valore_previsto` (`expected_value`). It sends one `day` line priced at
+    `budget_giornaliero` and starting on `periodo_da`, always, even when that date is
+    past. With `durata_settimane` the line is `one_off`, `quantity` = `giorni_settimana` ×
+    `durata_settimane` × `numero_risorse` and `duration_months` = ⌈`durata_settimane` × 12
+    / 52⌉, so the CRM's total is the figure above. With no duration it is `monthly` and
+    open-ended, `quantity` = `giorni_settimana` × `numero_risorse` × 52 / 12 to two places,
+    which the CRM counts at 12 months. No `budget_giornaliero` or no `giorni_settimana`: no
+    line. No line either when the price, the quantity or the line's total would not fit
+    the CRM's columns. The paragraph above stays as the record of the first design.
   - `data_chiusura_prevista`: `periodo_da` when it is in the future (the company wants to
     start then, so the deal has to be closed by then).
   - `tariffa_oraria` and `ore_preventivate` stay empty. In the CRM they are what hours
