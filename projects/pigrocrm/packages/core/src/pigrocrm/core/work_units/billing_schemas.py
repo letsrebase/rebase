@@ -54,11 +54,15 @@ class InvoiceDaysRequest(BaseModel):
     """Which days to put on the draft: every ready day, or those in `[da, a]`, both
     inclusive. A month is `da` the first and `a` the last."""
 
-    da: date | None = None
-    a: date | None = None
+    date_from: date | None = None
+    date_to: date | None = None
 
     @model_validator(mode="after")
     def _ordered(self) -> Self:
-        if self.da is not None and self.a is not None and self.a < self.da:
+        if (
+            self.date_from is not None
+            and self.date_to is not None
+            and self.date_to < self.date_from
+        ):
             raise ValueError("a non può precedere da")
         return self

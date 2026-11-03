@@ -328,7 +328,7 @@ def test_date_window_scopes_work_units_by_their_own_data(db_session: Session) ->
     _work_unit(db_session, contract, status="approved", data=date(2026, 4, 5))
 
     _, value, _, entries = AnalyticsRepository(db_session).unbilled_backlog(
-        da=date(2026, 3, 1), a=date(2026, 3, 31)
+        date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)
     )
     assert value == Decimal("500.00")
     assert entries == 1

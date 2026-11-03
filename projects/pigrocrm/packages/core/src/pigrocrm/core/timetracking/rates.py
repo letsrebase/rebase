@@ -84,7 +84,7 @@ class RateResolver:
         *,
         deal_id: UUID,
         user_id: UUID,
-        rate_esplicita: Decimal | None = None,
+        explicit_rate: Decimal | None = None,
         cost_explicit: Decimal | None = None,
     ) -> ResolvedRates:
         """Stops at the first level that yields a value.
@@ -100,8 +100,8 @@ class RateResolver:
 
         rate: Decimal | None
         rate_source: RateOrigin
-        if rate_esplicita is not None:
-            rate, rate_source = rate_esplicita, "manual"
+        if explicit_rate is not None:
+            rate, rate_source = explicit_rate, "manual"
         elif deal.hourly_rate is not None:
             rate, rate_source = deal.hourly_rate, "deal"
         elif user.default_hourly_rate is not None:

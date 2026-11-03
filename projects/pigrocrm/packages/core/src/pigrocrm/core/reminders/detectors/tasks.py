@@ -1,12 +1,12 @@
 """`task_due` and `task_overdue` (spec 2026-10-26 §3.2).
 
-An attività with no `due_date` is not late and not due, ever: «a NULL is not zero days»
+An task with no `due_date` is not late and not due, ever: «a NULL is not zero days»
 (`attivita/models.py`), so both detectors read only the dated ones. Only an **open** one
-counts: a completed or cancelled attività is done with, and an archived one was a mistake.
+counts: a completed or cancelled task is done with, and an archived one was a mistake.
 
-Recipients are the attività' assignee, plus the owners of the deal and the customer it
-hangs on (`links.py`); an attività linked to nothing and assigned to nobody goes to the
-space's owner (`Directory.recipients`). The azienda it is read under is its record's, so a
+Recipients are the task' assignee, plus the owners of the deal and the customer it
+hangs on (`links.py`); an task linked to nothing and assigned to nobody goes to the
+space's owner (`Directory.recipients`). The legal entity it is read under is its record's, so a
 scoped member is told only about what their scope covers.
 """
 
@@ -90,7 +90,7 @@ def _open_dated() -> Select[Task]:
 
 
 def detect_due(ctx: DetectorContext) -> list[Detection]:
-    """Open attività falling due from today to `bound` days ahead. Today is the lowest
+    """Open task falling due from today to `bound` days ahead. Today is the lowest
     measure: yesterday's is `task_overdue`'s."""
     horizon = ctx.today + timedelta(days=max(ctx.bound(DUE), 0))
     rows = list(
@@ -104,8 +104,8 @@ def detect_due(ctx: DetectorContext) -> list[Detection]:
 
 
 def detect_overdue(ctx: DetectorContext) -> list[Detection]:
-    """Open attività past their `due_date` by at least `bound` days, never fewer than one:
-    on the day itself an attività is due, not late."""
+    """Open task past their `due_date` by at least `bound` days, never fewer than one:
+    on the day itself an task is due, not late."""
     cutoff = ctx.today - timedelta(days=max(ctx.bound(OVERDUE), 1))
     rows = list(
         ctx.session.scalars(

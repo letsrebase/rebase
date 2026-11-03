@@ -28,7 +28,7 @@ from pigrocrm.core.errors import (
 )
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
-from pigrocrm.core.invoices.due_date import due_date_from_termini
+from pigrocrm.core.invoices.due_date import due_date_from_terms
 from pigrocrm.core.invoices.schemas import (
     SNAPSHOT_VERSION,
     InvoiceCreate,
@@ -278,7 +278,7 @@ def test_the_due_date_follows_the_customer_terms(
     25 days) and the scadenziario, the digest and the reminders all read that date."""
     emisfera = _customer(db_session, payment_days=30, payment_end_of_month=True)
     invoice = service.issue(_draft(service, emisfera), InvoiceIssue(), ADMIN)
-    assert invoice.due_date == due_date_from_termini(TODAY, 30, fine_mese=True)
+    assert invoice.due_date == due_date_from_terms(TODAY, 30, month_end=True)
     assert invoice.due_date != TODAY + timedelta(days=30)
 
     # Days without the switch: the profile's rule with the customer's number.
@@ -310,7 +310,7 @@ def test_a_due_date_written_on_the_draft_wins_over_the_terms(
     service.update(draft, InvoiceUpdate(due_date=date(2026, 12, 1)), ADMIN)
     service.update(draft, InvoiceUpdate(due_date=None), ADMIN)
     issued = service.issue(draft, InvoiceIssue(), ADMIN)
-    assert issued.due_date == due_date_from_termini(TODAY, 30, fine_mese=True)
+    assert issued.due_date == due_date_from_terms(TODAY, 30, month_end=True)
 
     # Frozen with the rest of the header once issued.
     with pytest.raises(ImmutableField):
@@ -326,7 +326,7 @@ def test_an_editable_document_says_when_it_would_be_due(
     emisfera = _customer(db_session, payment_days=30, payment_end_of_month=True)
     draft = service.get(_draft(service, emisfera), ADMIN)
     assert draft.due_date is None
-    assert draft.expected_due_date == due_date_from_termini(TODAY, 30, fine_mese=True)
+    assert draft.expected_due_date == due_date_from_terms(TODAY, 30, month_end=True)
 
     service.update(draft.id, InvoiceUpdate(due_date=date(2026, 12, 1)), ADMIN)
     assert service.get(draft.id, ADMIN).expected_due_date == date(2026, 12, 1)

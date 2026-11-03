@@ -127,7 +127,10 @@ def test_issuing_the_invoice_freezes_the_bound_hour(
         assert excinfo.value.details["field"] == field
 
     # `internal_notes` stays mutable: it appears on no artefact.
-    assert service.update(entry_id, TimeEntryUpdate(internal_notes="ok"), WRITER).internal_notes == "ok"
+    assert (
+        service.update(entry_id, TimeEntryUpdate(internal_notes="ok"), WRITER).internal_notes
+        == "ok"
+    )
 
     with pytest.raises(Conflict):
         service.soft_delete(entry_id, WRITER)

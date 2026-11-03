@@ -45,8 +45,8 @@ def createadmin(settings: Settings, email: str | None, name: str | None) -> int:
     default password — the direct lesson from the previous system's hardcoded credentials.
 
     On the application role (`PIGROCRM_DATABASE_URL`, `NOBYPASSRLS`), so the session binds
-    the system actor's scope first: the first azienda's row policy reads the scope and an
-    unbound session sees no azienda and may write none."""
+    the system actor's scope first: the first legal entity's row policy reads the scope and an
+    unbound session sees no legal entity and may write none."""
     email = email or input("Email: ").strip()
     name = name or input("Nome: ").strip()
     password = _read_new_password("Password: ")
@@ -76,13 +76,13 @@ def createadmin(settings: Settings, email: str | None, name: str | None) -> int:
 
 
 def _bootstrap_root_legal_entity(session: Session, name: str) -> bool:
-    """The root installation's first azienda, written with its first admin.
+    """The root installation's first legal entity, written with its first admin.
 
     The root is not in the registry, so `ensure_defaults` never reaches it, and the API
-    updates an azienda by id and creates none (REB-615): a root migrated from an empty
+    updates a legal entity by id and creates none (REB-615): a root migrated from an empty
     database would have no issuer to configure from Impostazioni. The first admin's own
     name is the row's, as a space's name is at provisioning; a root that already has its
-    azienda keeps it, whoever is created after.
+    legal entity keeps it, whoever is created after.
 
     Insert-only, never through `upsert_default`: two `createadmin` runs racing on an
     empty root would both pass the count, and the second's upsert would rename the

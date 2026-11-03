@@ -449,7 +449,9 @@ def test_list_is_newest_first_filtered_and_says_when_it_cut(db_session: Session)
     assert everything.truncated is False
     assert {row.contract_title for row in everything.items} == {"Consulenza"}
 
-    window = service.list(WorkUnitListQuery(da=date(2026, 3, 3), a=date(2026, 3, 3)), WRITER)
+    window = service.list(
+        WorkUnitListQuery(date_from=date(2026, 3, 3), date_to=date(2026, 3, 3)), WRITER
+    )
     assert {row.contract_id for row in window.items} == {contract.id, other.id}
 
     cut = service.list(WorkUnitListQuery(contract_id=contract.id, limit=2), WRITER)
@@ -465,7 +467,9 @@ def test_list_refuses_an_unbounded_or_inverted_query(db_session: Session) -> Non
     with pytest.raises(ValidationFailed):
         service.list(WorkUnitListQuery(), WRITER)
     with pytest.raises(ValidationFailed):
-        service.list(WorkUnitListQuery(da=date(2026, 3, 5), a=date(2026, 3, 4)), WRITER)
+        service.list(
+            WorkUnitListQuery(date_from=date(2026, 3, 5), date_to=date(2026, 3, 4)), WRITER
+        )
 
 
 # ---- WorkUnitService.move: the person's door --------------------------------------------

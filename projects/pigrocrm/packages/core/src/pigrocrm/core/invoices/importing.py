@@ -64,7 +64,7 @@ class _GapTracker:
 
     Each imported invoice reports the holes its register still has after it. Reloading
     the whole year's number set for every invoice made a batch quadratic in the register;
-    here a (azienda, anno) register is loaded on first use and then follows the batch,
+    here a (legal entity, anno) register is loaded on first use and then follows the batch,
     adding each number as its invoice is written, which gives every row the same answer a
     fresh read would.
     """
@@ -91,7 +91,7 @@ class _GapTracker:
 @dataclass
 class _Batch:
     """What outlives one file of a confirmation request: `created_customers`, keyed by
-    the azienda and the `party_key`, so a counterparty created for one invoice is the
+    the legal entity and the `party_key`, so a counterparty created for one invoice is the
     customer of every later invoice of it in the request, and the gap tracker."""
 
     gaps: _GapTracker
@@ -121,7 +121,7 @@ class InvoiceImporter:
         self.issued = issued
 
     def _importing_legal_entities(self) -> list[LegalEntity]:
-        """The aziende a FatturaPA file can have been issued by (REB-619, spec §1.5):
+        """The legal entities a FatturaPA file can have been issued by (REB-619, spec §1.5):
         the active Italian ones. A space with none has nothing to classify against,
         and the refusal names the screen to go to."""
         legal_entities = self.ctx.legal_entity.repo.active_italian()
@@ -213,7 +213,7 @@ class InvoiceImporter:
         attaches to. When omitted, the current exact tax-id match
         (`import_review.match_customer`, re-run against the database's current state,
         never review time's) is used. A `customer_id` that is archived, or that is not on
-        the azienda the invoice's issuer resolves to, is a `ValidationFailed` naming the
+        the legal entity the invoice's issuer resolves to, is a `ValidationFailed` naming the
         counterparty, raised before any invoice is written (REB-783).
 
         `create_customer` (REB-367, design §7 item 5): when still unresolved and true,
@@ -273,7 +273,7 @@ class InvoiceImporter:
         `party_key`, and a customer created for one invoice is the customer of every
         later invoice of that counterparty in this request, whether or not the register
         could match it again by tax id. A `customer_id` that is archived, or that is not
-        on the azienda the invoice's issuer resolves to, is a `ValidationFailed` naming
+        on the legal entity the invoice's issuer resolves to, is a `ValidationFailed` naming
         the counterparty, raised before the first invoice of the request is written
         (REB-783).
 
@@ -443,8 +443,8 @@ class InvoiceImporter:
                 if customer_id is None:
                     customer_id = cached_id
                 if customer_id is None:
-                    # On the azienda the file landed on (§1.5), not the one the nation
-                    # would propose: the customer was billed by this azienda already.
+                    # On the legal entity the file landed on (§1.5), not the one the nation
+                    # would propose: the customer was billed by this legal entity already.
                     new_customer = ctx.customers._insert(
                         map_parsed_party_to_customer(invoice.customer).model_copy(
                             update={"legal_entity_id": legal_entity.id}
@@ -452,7 +452,7 @@ class InvoiceImporter:
                         actor,
                     )
                     customer_id = new_customer_id = new_customer.id
-                fattura = self._write(invoice, year, number, customer_id, legal_entity, file, actor)
+                written = self._write(invoice, year, number, customer_id, legal_entity, file, actor)
         except _Refused:
             return ConfirmedInvoice(
                 outcome="conflict", legal_entity_id=legal_entity.id, party_key=party
@@ -465,7 +465,7 @@ class InvoiceImporter:
         return ConfirmedInvoice(
             outcome="imported",
             legal_entity_id=legal_entity.id,
-            invoice=fattura,
+            invoice=written,
             undeclared_gaps=batch.gaps.holes_after(legal_entity.id, year, number),
             party_key=party,
         )

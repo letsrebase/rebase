@@ -238,9 +238,13 @@ def _add_invoice(
     )
 
 
-def _dashboard(engine: Engine, da: date | None = _DA, a: date | None = _A) -> EconomicDashboard:
+def _dashboard(
+    engine: Engine, date_from: date | None = _DA, date_to: date | None = _A
+) -> EconomicDashboard:
     with session_factory(engine)() as session:
-        return DashboardService(session).get_economic_dashboard(PeriodQuery(da=da, a=a), READONLY)
+        return DashboardService(session).get_economic_dashboard(
+            PeriodQuery(date_from=date_from, date_to=date_to), READONLY
+        )
 
 
 # --- criterion 1 downward: the dashboard against the service that owns the figure ----
@@ -249,7 +253,9 @@ def _dashboard(engine: Engine, da: date | None = _DA, a: date | None = _A) -> Ec
 def test_the_revenue_equals_the_owning_service_to_the_cent(rf01_corpus: Corpus) -> None:
     result = _dashboard(rf01_corpus.engine)
     with session_factory(rf01_corpus.engine)() as session:
-        pnl = AnalyticsService(session).period_pnl(PeriodPnlQuery(da=_DA, a=_A), READONLY)
+        pnl = AnalyticsService(session).period_pnl(
+            PeriodPnlQuery(date_from=_DA, date_to=_A), READONLY
+        )
     assert result.pnl.closed.revenue == pnl.closed.revenue
     assert result.pnl.in_progress.revenue == pnl.in_progress.revenue
     assert isinstance(result.pnl.closed.revenue, Decimal)
@@ -261,7 +267,9 @@ def test_the_pnl_is_embedded_verbatim_and_not_flattened(rf01_corpus: Corpus) -> 
     a field to be renamed or recombined on the way through."""
     result = _dashboard(rf01_corpus.engine)
     with session_factory(rf01_corpus.engine)() as session:
-        pnl = AnalyticsService(session).period_pnl(PeriodPnlQuery(da=_DA, a=_A), READONLY)
+        pnl = AnalyticsService(session).period_pnl(
+            PeriodPnlQuery(date_from=_DA, date_to=_A), READONLY
+        )
     assert result.pnl == pnl
 
 
@@ -271,9 +279,9 @@ def test_the_period_reaches_the_owning_service_unchanged(rf01_corpus: Corpus) ->
     here and nowhere else. `customer_id` is `None` because §5 has no customer filter -- the
     dashboard is the whole business."""
     result = _dashboard(rf01_corpus.engine)
-    assert (result.pnl.da, result.pnl.a) == (_DA, _A)
-    assert result.period.da == _DA
-    assert result.period.a == _A
+    assert (result.pnl.date_from, result.pnl.date_to) == (_DA, _A)
+    assert result.period.date_from == _DA
+    assert result.period.date_to == _A
     assert result.pnl.customer_id is None
 
 
@@ -381,8 +389,11 @@ def test_an_annulled_invoice_is_in_no_figure(rf01_corpus: Corpus) -> None:
 def test_the_period_defaults_to_the_current_month(rf01_corpus: Corpus) -> None:
     result = _dashboard(rf01_corpus.engine, None, None)
     today = today_local()
-    assert (result.period.da, result.period.a) == month_bounds(today.year, today.month)
-    assert (result.pnl.da, result.pnl.a) == (result.period.da, result.period.a)
+    assert (result.period.date_from, result.period.date_to) == month_bounds(today.year, today.month)
+    assert (result.pnl.date_from, result.pnl.date_to) == (
+        result.period.date_from,
+        result.period.date_to,
+    )
 
 
 def test_calculated_at_is_the_instant_of_one_transaction(rf01_corpus: Corpus) -> None:
@@ -402,7 +413,9 @@ def test_the_service_runs_in_repeatable_read(rf01_corpus: Corpus) -> None:
     a second connection committing mid-flight; asserted here because this page adds a
     second *service* to the same transaction and the level must survive that."""
     with session_factory(rf01_corpus.engine)() as session:
-        DashboardService(session).get_economic_dashboard(PeriodQuery(da=_DA, a=_A), READONLY)
+        DashboardService(session).get_economic_dashboard(
+            PeriodQuery(date_from=_DA, date_to=_A), READONLY
+        )
         level = session.execute(text("SHOW transaction_isolation")).scalar_one()
     assert level == "repeatable read"
 

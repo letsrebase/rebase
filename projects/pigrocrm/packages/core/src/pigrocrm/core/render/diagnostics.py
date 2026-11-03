@@ -1,7 +1,8 @@
-"""Turn a Typst compiler error into "riga N del template".
+"""Turn a Typst compiler error into a template line number, shown to the user as
+"riga N del template".
 
-Spec 6: "Se Typst fallisce, l'errore che torna all'utente contiene la riga del
-template che l'ha causato, non lo stderr grezzo del compilatore."
+Spec 6: when Typst fails, the error that goes back to the user contains the line of
+the template that caused it, not the compiler's raw stderr.
 
 The mechanism is arithmetic, not guesswork. `templates/parser.py` inserts
 `// pigrocrm:line=<N>` as the first line inside every raw ```{=typst} block. Pandoc

@@ -24,7 +24,7 @@ class Note(Base, PrimaryKeyMixin, SoftDeleteMixin):
 
     Polymorphic like `activities` and the Gmail links: `entity_type` names the table
     `entity_id` points at, so there is no foreign key, and the row-level policy reaches
-    the azienda through `entity_visible` (migration 0064), the way the timeline's does.
+    the legal entity through `entity_visible` (migration 0064), the way the timeline's does.
 
     It says who wrote it and when, so its text carries neither: `author_id` is the member
     (the owner of the token, for an agent) and `author` their name as it read then, kept

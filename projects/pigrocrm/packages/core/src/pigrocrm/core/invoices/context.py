@@ -29,7 +29,7 @@ from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.checks import is_editable
 from pigrocrm.core.invoices.constants import ENTITY
-from pigrocrm.core.invoices.due_date import due_date_from_termini
+from pigrocrm.core.invoices.due_date import due_date_from_terms
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import InvoiceRead
@@ -114,21 +114,21 @@ class InvoiceContext:
             )
         return customer
 
-    # ---- fiscal and azienda ---------------------------------------------------
+    # ---- fiscal and legal entity ---------------------------------------------------
 
     def regime(self, legal_entity_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
-        """The strategy and the parameters of one azienda, read together so a caller
-        cannot pair a profile with the wrong strategy; `None` is the default azienda
+        """The strategy and the parameters of one legal entity, read together so a caller
+        cannot pair a profile with the wrong strategy; `None` is the default legal entity
         (REB-619). Raises `NotFound("fiscal_profile", ...)` when nothing is configured,
         which tells the user which screen to go to."""
         profile = self.fiscal.snapshot(legal_entity_id)
         return resolve_regime(profile.regime_code, profile.pack_id), profile
 
     def legal_entity_of_parent(self, customer: Customer, deal_id: UUID | None) -> UUID:
-        """The azienda a new document is born under (REB-623, spec §1.7): the deal's
+        """The legal entity a new document is born under (REB-623, spec §1.7): the deal's
         when it hangs on one, the customer's otherwise. Copied now and kept, so a
         customer moved later leaves this document where it was issued. Refused when
-        that azienda is deactivated (spec §3): a proforma born on it could never issue."""
+        that legal entity is deactivated (spec §3): a proforma born on it could never issue."""
         if deal_id is not None:
             deal = self.session.get(Deal, deal_id)
             if deal is None:  # pragma: no cover - `check_owner` has already answered NotFound
@@ -137,9 +137,9 @@ class InvoiceContext:
         return self.legal_entity.inherited(customer.legal_entity_id, ENTITY)
 
     def writing_legal_entity(self, legal_entity_id: UUID | None) -> LegalEntity:
-        """The azienda a register write goes on: the one named, the default when none,
+        """The legal entity a register write goes on: the one named, the default when none,
         and never an inactive one (REB-619). A read may still answer for a deactivated
-        azienda, since its history stays readable; a number consumed or a gap declared
+        legal entity, since its history stays readable; a number consumed or a gap declared
         on it would be a register nobody can see moving."""
         legal_entity = self.legal_entity.resolve(legal_entity_id)
         if not legal_entity.active:
@@ -152,7 +152,7 @@ class InvoiceContext:
 
     @staticmethod
     def issues_abroad(profile: FiscalSnapshot) -> bool:
-        """A foreign azienda (REB-619, spec §1.3): its documents are never FatturaPA,
+        """A foreign legal entity (REB-619, spec §1.3): its documents are never FatturaPA,
         so the SdI's own checks on parties and text do not apply to them and no XML is
         ever produced; the PDF is the document."""
         return profile.pack_id == PACK_NON_IT
@@ -162,10 +162,10 @@ class InvoiceContext:
     def due_date_from_terms(self, issue_date: date, customer_id: UUID, profile_days: int) -> date:
         """The due date the customer's terms give from `issue_date` (REB-326). The
         customer's days when it has them, the profile's otherwise; the end-of-month slide
-        is the customer's alone. One arithmetic, `due_date_from_termini`, for every caller."""
+        is the customer's alone. One arithmetic, `due_date_from_terms`, for every caller."""
         days, month_end = self.repo.payment_terms({customer_id}).get(customer_id, (None, False))
-        return due_date_from_termini(
-            issue_date, profile_days if days is None else days, fine_mese=month_end
+        return due_date_from_terms(
+            issue_date, profile_days if days is None else days, month_end=month_end
         )
 
     def expected_due_date(self, invoice: Invoice) -> date | None:
@@ -189,7 +189,7 @@ class InvoiceContext:
                 days = self.fiscal.snapshot().due_days
             except NotFound:
                 return None
-        return due_date_from_termini(today_local(), days, fine_mese=month_end)
+        return due_date_from_terms(today_local(), days, month_end=month_end)
 
     # ---- reads ----------------------------------------------------------------
 

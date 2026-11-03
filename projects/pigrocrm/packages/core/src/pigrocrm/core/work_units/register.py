@@ -90,8 +90,8 @@ class ContractRegister(BaseModel):
     contract_id: UUID
     title: str
     customer: str
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
     entries: list[RegisterEntry]
     quantity_total: Decimal
     without_approval: int
@@ -136,8 +136,8 @@ class ContractRegisterService:
     def build(
         self,
         contract_id: UUID,
-        da: dt.date,
-        a: dt.date,
+        date_from: dt.date,
+        date_to: dt.date,
         actor: Actor,
         *,
         invoice_id: UUID | None = None,
@@ -145,9 +145,9 @@ class ContractRegisterService:
         """`invoice_id` narrows it to the days on that one invoice, for the register that is
         attached to it: a period can hold days billed on another, and the total has to be
         the invoice's."""
-        if a < da:
+        if date_to < date_from:
             raise ValidationFailed(
-                ENTITY, "a", "il periodo finisce prima di iniziare", expected="a >= da"
+                ENTITY, "to", "il periodo finisce prima di iniziare", expected="to >= from"
             )
         contract = self.session.get(Contract, contract_id)
         if contract is None or contract.deleted_at is not None:
@@ -164,8 +164,8 @@ class ContractRegisterService:
             .outerjoin(Invoice, Invoice.id == InvoiceLine.invoice_id)
             .where(
                 WorkUnit.contract_id == contract_id,
-                WorkUnit.date >= da,
-                WorkUnit.date <= a,
+                WorkUnit.date >= date_from,
+                WorkUnit.date <= date_to,
                 WorkUnit.invoice_line_id.is_not(None),
             )
             .order_by(WorkUnit.date, WorkUnit.id)
@@ -199,8 +199,8 @@ class ContractRegisterService:
             contract_id=contract.id,
             title=contract.title,
             customer=customer.legal_name if customer is not None else "",
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
             entries=entries,
             quantity_total=sum((v.quantity for v in entries), start=Decimal("0")),
             without_approval=sum(1 for v in entries if v.approval is None),
@@ -209,7 +209,7 @@ class ContractRegisterService:
     def variables_for(self, register: ContractRegister) -> dict[str, Any]:
         """Everything the PDF needs, finished: no cell is computed by the template."""
         return {
-            "periodo": f"{_italian_date(register.da)} - {_italian_date(register.a)}",
+            "periodo": f"{_italian_date(register.date_from)} - {_italian_date(register.date_to)}",
             "oggi": _italian_date(today_local()),
             "contratto": {"titolo": register.title},
             "voci": [
@@ -227,7 +227,9 @@ class ContractRegisterService:
         }
 
     def csv_filename(self, register: ContractRegister) -> str:
-        return f"registro-giornate-{register.da.isoformat()}-{register.a.isoformat()}.csv"
+        return (
+            f"registro-giornate-{register.date_from.isoformat()}-{register.date_to.isoformat()}.csv"
+        )
 
     def build_csv(self, register: ContractRegister) -> bytes:
         """RFC 4180: CRLF row endings, a field quoted only when it needs to be, a header
@@ -286,8 +288,8 @@ class ContractRegisterService:
     def render_pdf(
         self,
         contract_id: UUID,
-        da: dt.date,
-        a: dt.date,
+        date_from: dt.date,
+        date_to: dt.date,
         actor: Actor,
         *,
         invoice_id: UUID | None = None,
@@ -303,7 +305,7 @@ class ContractRegisterService:
             raise ValidationFailed(
                 ENTITY, "storage", "nessun backend di storage configurato", expected="uno storage"
             )
-        register = self.build(contract_id, da, a, actor, invoice_id=invoice_id)
+        register = self.build(contract_id, date_from, date_to, actor, invoice_id=invoice_id)
         contract = self.session.get(Contract, contract_id)
         if contract is None:
             raise NotFound("contract", contract_id)
@@ -311,12 +313,15 @@ class ContractRegisterService:
         return DocumentService(self.session, self.storage).create_from_template(
             DocumentFromTemplate(
                 template_id=template.id,
-                title=f"Registro giornate {register.title} {da.isoformat()} {a.isoformat()}",
+                title=(
+                    f"Registro giornate {register.title} "
+                    f"{date_from.isoformat()} {date_to.isoformat()}"
+                ),
                 customer_id=contract.customer_id,
                 deal_id=None,
                 variables=self.variables_for(register),
-                # The contract's own azienda, not the customer's current one: a customer
-                # moved to another azienda keeps its contracts where they were.
+                # The contract's own legal entity, not the customer's current one: a customer
+                # moved to another legal entity keeps its contracts where they were.
                 legal_entity_id=contract.legal_entity_id,
             ),
             actor,

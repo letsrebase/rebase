@@ -22,7 +22,7 @@ from typing import TypedDict
 
 from lxml import etree
 
-from pigrocrm.core.invoices.due_date import due_date_from_termini
+from pigrocrm.core.invoices.due_date import due_date_from_terms
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
 from pigrocrm.core.invoices.import_schemas import (
     ParsedInvoice,
@@ -222,9 +222,9 @@ class _PartyAddress(TypedDict):
 
 def _party_address(headquarters: etree._Element) -> _PartyAddress:
     address = _required_text(headquarters, "Indirizzo", context="Sede")
-    number_civico = _text(headquarters, "NumeroCivico")
+    street_number = _text(headquarters, "NumeroCivico")
     return {
-        "address": f"{address} {number_civico}" if number_civico else address,
+        "address": f"{address} {street_number}" if street_number else address,
         "city": _required_text(headquarters, "Comune", context="Sede"),
         "cap": _required_text(headquarters, "CAP", context="Sede"),
         "province": _text(headquarters, "Provincia"),
@@ -394,14 +394,14 @@ def _map_instalment(detail: etree._Element) -> ParsedInvoicePaymentInstallment:
         # instead of an explicit `DataScadenzaPagamento`. The due date still
         # comes from the document, never invented -- it is computed here from
         # the document's own reference date and day count, reusing
-        # `due_date_from_termini`, the same "net N days" arithmetic every other due
+        # `due_date_from_terms`, the same "net N days" arithmetic every other due
         # date in this product already goes through, applied to the document's
         # own terms instead of a contract's (mirrors mastro's `mapPaymentTerms`,
         # `map.ts:147-194`).
-        due = due_date_from_termini(
+        due = due_date_from_terms(
             _date(reference, context="DettaglioPagamento.DataRiferimentoTerminiPagamento"),
             _int(days, context="DettaglioPagamento.GiorniTerminiPagamento"),
-            fine_mese=False,
+            month_end=False,
         )
         return ParsedInvoicePaymentInstallment(
             due_date=due,

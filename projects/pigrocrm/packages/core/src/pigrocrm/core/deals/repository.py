@@ -20,7 +20,7 @@ from pigrocrm.core.timetracking.repository import won_with_unbilled_hours_predic
 
 
 def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's deals, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
+    """One legal entity's deals, or every legal entity's (REB-630, spec 2026-10-03 §1.9): the
     deal's own column, which a deal keeps when its customer moves (§1.7)."""
     return () if legal_entity_id is None else (Deal.legal_entity_id == legal_entity_id,)
 
@@ -178,9 +178,9 @@ class DealRepository:
             .select_from(PipelineStage)
             .outerjoin(
                 Deal,
-                # The azienda goes in the join condition, never in a `where` (REB-630):
+                # The legal entity goes in the join condition, never in a `where` (REB-630):
                 # a `where` on a column of the outer side turns the join inner, and a
-                # stage with none of this azienda's deals would vanish instead of
+                # stage with none of this legal entity's deals would vanish instead of
                 # reading zero, which is the one thing the outer join is here for.
                 (Deal.pipeline_stage_id == PipelineStage.id)
                 & Deal.deleted_at.is_(None)
@@ -211,7 +211,7 @@ class DealRepository:
         ]
 
     def closed_in_period(
-        self, da: date, a: date, legal_entity_id: UUID | None = None
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
     ) -> ClosedInPeriod:
         """Deals won and lost in the period, by `closed_at`.
 
@@ -238,8 +238,8 @@ class DealRepository:
                 Deal.deleted_at.is_(None),
                 *_legal_entity_filter(legal_entity_id),
                 Deal.closed_at.is_not(None),
-                Deal.closed_at >= da,
-                Deal.closed_at <= a,
+                Deal.closed_at >= date_from,
+                Deal.closed_at <= date_to,
                 PipelineStage.type.in_(("won", "lost")),
             )
             .group_by(PipelineStage.type)
@@ -247,16 +247,18 @@ class DealRepository:
         by_type = {row.type: row for row in self.session.execute(stmt).all()}
         won = by_type.get("won")
         lost = by_type.get("lost")
-        vinti = won.number if won is not None else 0
-        persi = lost.number if lost is not None else 0
+        won_count = won.number if won is not None else 0
+        lost_count = lost.number if lost is not None else 0
         return ClosedInPeriod(
-            won=vinti,
-            lost=persi,
+            won=won_count,
+            lost=lost_count,
             won_value=(round_money(Decimal(won.value)) if won is not None else Decimal("0.00")),
-            conversion_rate=percentage_of(Decimal(vinti), Decimal(vinti + persi)),
+            conversion_rate=percentage_of(Decimal(won_count), Decimal(won_count + lost_count)),
         )
 
-    def expected_closures(self, da: date, a: date, legal_entity_id: UUID | None = None) -> int:
+    def expected_closures(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> int:
         """Open deals whose `expected_close_date` falls in the window.
 
         `type='open'` only: a deal already won with a future expected date is not an
@@ -271,8 +273,8 @@ class DealRepository:
                     *_legal_entity_filter(legal_entity_id),
                     PipelineStage.type == "open",
                     Deal.expected_close_date.is_not(None),
-                    Deal.expected_close_date >= da,
-                    Deal.expected_close_date <= a,
+                    Deal.expected_close_date >= date_from,
+                    Deal.expected_close_date <= date_to,
                 )
             )
             or 0

@@ -117,7 +117,7 @@ def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRe
         return set()
     # Still one query: every line this session can see, with whether its invoice is
     # issued. A line the session cannot see at all freezes its entry as an issued one
-    # would (REB-634): since the row-level policies, an entry of a deal in one azienda
+    # would (REB-634): since the row-level policies, an entry of a deal in one legal entity
     # may be bound to an invoice of another, which a member scoped to the first cannot
     # read. Open, the guard would let them edit hours already billed; closed, the worst
     # case is a draft line of an invoice out of their sight that they cannot touch until
@@ -218,7 +218,7 @@ class TimeEntryService:
         resolved = self.rates.resolve(
             deal_id=data.deal_id,
             user_id=data.user_id,
-            rate_esplicita=data.applied_rate,
+            explicit_rate=data.applied_rate,
             cost_explicit=data.applied_cost,
         )
         entry = self.repo.add(
@@ -457,16 +457,16 @@ class TimeEntryService:
         An entry whose rate (or cost) was written on the entry itself (`manual`) keeps it:
         that figure was chosen, not resolved, and is corrected on the entry.
 
-        Returns how many entries were rewritten, so a caller can say "12 voci
-        aggiornate" instead of "done".
+        Returns how many entries were rewritten, so a caller can say "12 voci aggiornate"
+        (the Italian copy) instead of "done".
         """
         actor.require_unscoped_admin("recalculate_rates")
-        if data.a < data.da:
+        if data.date_to < data.date_from:
             raise ValidationFailed(
-                ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
+                ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
             )
         self._require_deal(deal_id)
-        entries = self.repo.in_range(deal_id, data.da, data.a)
+        entries = self.repo.in_range(deal_id, data.date_from, data.date_to)
 
         billed = billed_entry_ids(self.session, entries)
         if billed:

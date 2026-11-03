@@ -70,7 +70,7 @@ def build_snapshot(
     actor: Actor,
     legal_entity_id: UUID,
 ) -> InvoiceSnapshot:
-    """The frozen identities, from an id rather than from a row, for one azienda.
+    """The frozen identities, from an id rather than from a row, for one legal entity.
 
     `customer_id` and not an `Invoice` on purpose: reading the issuer raises
     `NotFound("legal_entities")` whenever the issuer's own profile is missing -- the
@@ -78,7 +78,7 @@ def build_snapshot(
     to be able to hit that refusal *before* it flushes anything. `issue` and the proforma
     PDF pass `invoice.customer_id`.
 
-    The issuer is the azienda the document belongs to (REB-619).
+    The issuer is the legal entity the document belongs to (REB-619).
     `legal_entities.tax_regime` is deliberately not read: it is a human-readable
     caption for the PDF header, free text, and the machine value the SdI validates is
     `fiscal_profile.regime_code`. Two columns, two jobs.

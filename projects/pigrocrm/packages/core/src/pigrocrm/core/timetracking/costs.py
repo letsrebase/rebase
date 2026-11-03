@@ -44,9 +44,9 @@ class CostService:
     an hour has a quantity comparable with an estimate while a cost has only money.
 
     The labour cost never produces a row here and is never counted twice: an external
-    consultant who invoices you their hours is a `cost` in category "Consulenza
-    esterna", and their hours -- if you record them at all -- carry
-    `costo_applicato = NULL`. The two sets are disjoint by construction, and Task
+    consultant who invoices you their hours is a `cost` in the category named
+    "Consulenza esterna", and their hours -- if you record them at all --
+    carry `applied_cost = NULL`. The two sets are disjoint by construction, and Task
     4B-4's test proves no path lets the same expense in from both sides (§7.2).
     """
 
@@ -95,14 +95,14 @@ class CostService:
     def _legal_entity_for(
         self, deal_id: UUID | None, wanted: UUID | None, *, kept: UUID | None = None
     ) -> UUID | None:
-        """A cost's azienda (REB-623, spec §1.7): the deal's when it has a deal, and a
+        """A cost's legal entity (REB-623, spec §1.7): the deal's when it has a deal, and a
         different one named beside it is refused rather than overruled in silence;
         without a deal, the one named, which must exist and be active, or `None`, a
-        shared cost. `kept` is the azienda the cost already has: an edit that leaves it
-        where it is passes even once that azienda is deactivated, so the history of a
-        closed azienda stays editable while nothing new is filed under it (spec §3)."""
+        shared cost. `kept` is the legal entity the cost already has: an edit that leaves it
+        where it is passes even once that legal entity is deactivated, so the history of a
+        closed legal entity stays editable while nothing new is filed under it (spec §3)."""
         if deal_id is not None:
-            # The deal a cost already hangs on may be archived since: its azienda still
+            # The deal a cost already hangs on may be archived since: its legal entity still
             # answers, and an update of such a cost is a domain error at worst, never
             # an assertion.
             deal = self.deals.get(deal_id, include_deleted=True)
@@ -115,7 +115,7 @@ class CostService:
                     "un costo su un deal prende l'azienda del deal",
                     expected=f"nessuna azienda, oppure {deal.legal_entity_id}",
                 )
-            # The deal's azienda may be closed since the deal was created: a cost already
+            # The deal's legal entity may be closed since the deal was created: a cost already
             # there stays editable, a new one is refused like a deal or a document.
             if deal.legal_entity_id == kept:
                 return deal.legal_entity_id
@@ -192,18 +192,18 @@ class CostService:
         # becoming a lookup for `None`.
         self._check_refs(changes.get("deal_id"), changes.get("document_id"))
         if "deal_id" in changes or "legal_entity_id" in changes:
-            # Moved to another deal, off a deal, or given an azienda of its own: the
-            # azienda follows the deal when there is one and the request otherwise.
+            # Moved to another deal, off a deal, or given a legal entity of its own: the
+            # legal entity follows the deal when there is one and the request otherwise.
             deal_id = changes.get("deal_id", cost.deal_id)
             # A move is a `deal_id` that differs from the cost's: one sent back unchanged,
             # as a client echoing the row does, is no move, and neither is `null` echoed
             # on a cost that had no deal (Greptile and CodeRabbit, PR #509).
             moved = "deal_id" in changes and changes["deal_id"] != cost.deal_id
-            # Off a deal with no azienda named: shared, not the old deal's. Not moved and
-            # nothing named: the azienda it has.
+            # Off a deal with no legal entity named: shared, not the old deal's. Not moved and
+            # nothing named: the legal entity it has.
             wanted = changes.get("legal_entity_id", None if moved else cost.legal_entity_id)
-            # And the allowance for a closed azienda holds only while the cost stays where
-            # it is: a move is a new assignment, and a closed azienda takes none.
+            # And the allowance for a closed legal entity holds only while the cost stays where
+            # it is: a move is a new assignment, and a closed legal entity takes none.
             changes["legal_entity_id"] = self._legal_entity_for(
                 deal_id, wanted, kept=None if moved else cost.legal_entity_id
             )

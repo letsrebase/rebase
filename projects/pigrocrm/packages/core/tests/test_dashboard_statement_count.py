@@ -119,7 +119,7 @@ def _statements_for(engine: Engine, deals: int) -> int:
     try:
         with factory() as session:
             result = DashboardService(session).get_economic_dashboard(
-                PeriodQuery(da=_DA, a=_A), READONLY
+                PeriodQuery(date_from=_DA, date_to=_A), READONLY
             )
     finally:
         event.remove(engine, "before_cursor_execute", count)

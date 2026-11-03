@@ -1,4 +1,4 @@
-"""The year of one azienda as an accountant reads it (`AnalyticsService.year_overview`
+"""The year of one legal entity as an accountant reads it (`AnalyticsService.year_overview`
 and `build_year_csv`)."""
 
 from collections import defaultdict
@@ -30,8 +30,9 @@ def build_year(
     The invoices first, then the lines of exactly those: an invoice issued between the
     two statements is in neither, so the register and the file always agree.
 
-    The rivalsa is read off the lines any pack tags as its own charge, whatever pack the
-    azienda is on today: an invoice keeps the lines it was issued with.
+    The social security surcharge is read off the lines any pack tags as its own charge, whatever
+    pack the
+    legal entity is on today: an invoice keeps the lines it was issued with.
     """
     invoices = repo.year_invoices(year, legal_entity.id)
     lines_by_invoice: dict[UUID, list[InvoiceLine]] = defaultdict(list)
@@ -51,7 +52,7 @@ def build_year(
         # What the document printed, as frozen at issue. A customer who had no partita
         # IVA then has none here, whatever the customer record says today; the live
         # record is only the fallback for an invoice with no snapshot at all.
-        cliente = snapshot.get("customer")
+        customer_snapshot = snapshot.get("customer")
         tax = snapshot.get("tax") or {}
         social_security_surcharge = sum_money(
             line.total_price
@@ -66,15 +67,15 @@ def build_year(
                 issue_date=invoice.issue_date,
                 customer_id=invoice.customer_id,
                 legal_name=(
-                    cliente["legal_name"]
-                    if cliente is not None
+                    customer_snapshot["legal_name"]
+                    if customer_snapshot is not None
                     else customer.legal_name
                     if customer is not None
                     else "Cliente non disponibile"
                 ),
                 vat_number=(
-                    cliente.get("vat_number")
-                    if cliente is not None
+                    customer_snapshot.get("vat_number")
+                    if customer_snapshot is not None
                     else customer.vat_number
                     if customer is not None
                     else None

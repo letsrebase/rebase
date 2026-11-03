@@ -31,7 +31,7 @@ class Actor(BaseModel):
     # presenting a PAT behave exactly like the MCP transport -- the asymmetry that let a
     # `curl` issue an invoice while the tool was unregistered (commit 086c561).
     full_access: bool = False
-    # The aziende this actor may see and write (REB-633, spec 2026-10-03 §1.11, §4):
+    # The legal entities this actor may see and write (REB-633, spec 2026-10-03 §1.11, §4):
     # `None` for an unscoped actor (`users.limited_scope` false, `system`, `rebase`),
     # the tuple of `user_legal_entities` rows, possibly empty, for a scoped one. Carried on the
     # actor so the one place that binds it (`db/scope.py`) needs nothing but the actor;

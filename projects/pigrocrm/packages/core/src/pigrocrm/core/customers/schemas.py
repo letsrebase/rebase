@@ -63,7 +63,7 @@ class CustomerCreate(BaseModel):
     city: SafeStr | None = Field(default=None, max_length=CITY_MAX_LENGTH)
     province: SafeStr | None = Field(default=None, max_length=PROVINCE_MAX_LENGTH)
     country: SafeStr = Field(default="IT", max_length=COUNTRY_MAX_LENGTH)
-    # The azienda that bills this customer (REB-623, spec §1.6). `None` asks the
+    # The legal entity that bills this customer (REB-623, spec §1.6). `None` asks the
     # service for the one `country` proposes; an id names one, which must be active.
     legal_entity_id: UUID | None = None
     # The owner (REB-773). Omitted, it is whoever creates the customer; naming someone
@@ -170,7 +170,7 @@ class CustomerListQuery(BaseModel):
     # psycopg as query parameters, and a NUL byte there raises a raw `ValueError` out
     # of the driver rather than any exception this project handles.
     search: SafeStr | None = None
-    # One azienda's customers (REB-623); `None` is every azienda the caller may see.
+    # One legal entity's customers (REB-623); `None` is every legal entity the caller may see.
     legal_entity_id: UUID | None = None
     status: SafeStr | None = None
     custom: dict[str, Any] | None = None

@@ -68,7 +68,7 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     customer_id: Mapped[UUID] = mapped_column(
         ForeignKey("customers.id"), nullable=False, index=True
     )
-    # The azienda the deal was born under: the customer's at creation (REB-623, §1.7),
+    # The legal entity the deal was born under: the customer's at creation (REB-623, §1.7),
     # kept whatever the customer does afterwards. The column default serves a row built
     # without one.
     legal_entity_id: Mapped[UUID] = mapped_column(

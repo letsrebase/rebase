@@ -5,11 +5,11 @@ section are `space_fiscal.py`.
 **Recipients are admins and nobody else** (§3.5, §4): `Directory.admins()`, and never the
 space's owner as a fallback, so a space with no admin who may read the subject raises
 nothing. A scoped admin is the one question the card leaves open, and it is decided the way
-the rest of the product decides it: a subject of one azienda goes to the admins whose scope
+the rest of the product decides it: a subject of one legal entity goes to the admins whose scope
 covers it (`Person.sees`, the rule of §4), and a subject of the space as a whole, which
-has no azienda, goes to the unscoped admins, which is exactly who may close a period
+has no legal entity, goes to the unscoped admins, which is exactly who may close a period
 (`PeriodLockService.close_period` requires an unscoped admin) and who may read a connection
-that belongs to nobody's azienda. `admins_seeing` is that decision, written once.
+that belongs to nobody's legal entity. `admins_seeing` is that decision, written once.
 
 **Nothing here is stored and nothing is invented.** A job can be late only if something
 records when it last ran: the reminder pass, the automations' daily pass and the weekly
@@ -53,7 +53,7 @@ LATE = REMINDER_TYPES["job_late"]
 
 
 def admins_seeing(ctx: DetectorContext, legal_entity_id: UUID | None) -> frozenset[UUID]:
-    """The admins who may be told about a subject of this azienda, or of the space as a
+    """The admins who may be told about a subject of this legal entity, or of the space as a
     whole when `legal_entity_id` is `None` (only an unscoped admin reads that). No fallback to
     the space's owner: an empty set raises nothing."""
     directory = ctx.directory
@@ -248,7 +248,9 @@ def detect_failing(ctx: DetectorContext) -> list[Detection]:
                 continue
             measure = float(hours)
             title = f"Gmail non si sincronizza da {format_hours(hours)}"
-            detail = f"L'ultima sincronizzazione della casella {email} è di {format_hours(hours)} fa"
+            detail = (
+                f"L'ultima sincronizzazione della casella {email} è di {format_hours(hours)} fa"
+            )
         else:
             # Without `gmail.readonly` the sync is switched off and says so in its own
             # banner; there is nothing here that failed.

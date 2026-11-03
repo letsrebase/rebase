@@ -13,11 +13,11 @@ So this reads one attachment, on demand, named by whoever is asking, and returns
 
   * nothing is written -- not the bytes, not the extracted text, not an activity row.
     The read leaves no trace in the CRM, which is what keeps spec 5.4 true;
-  * it goes to Google live, on the titolare's own OAuth grant and quota, which is why
+  * it goes to Google live, on the owner's own OAuth grant and quota, which is why
     the tool that exposes it lives among the privileged ones, beside
     `discover_gmail_correspondents`;
   * the answer carries the provenance sentence of a *received* mail. These bytes were
-    written by whoever sent the message, not by the titolare, and they reach an agent
+    written by whoever sent the message, not by the owner, and they reach an agent
     that reads its own instructions as text.
 
 The extractor is `core/text.py`, the same one Drive and the document archive use, with
@@ -128,7 +128,7 @@ class GmailAttachmentService:
         require_gmail_configured(self.settings)
         # `require_write`, for a read: the same gate `discover_gmail_correspondents`
         # applies, and for its reason. This does not change the CRM, but it does spend
-        # the titolare's Google quota under their OAuth grant and pulls content that
+        # the owner's Google quota under their OAuth grant and pulls content that
         # was deliberately never stored -- which is not something a `readonly` actor is
         # given.
         actor.require_write(_ACTION)

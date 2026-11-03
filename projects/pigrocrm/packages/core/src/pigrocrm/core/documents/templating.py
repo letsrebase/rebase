@@ -83,7 +83,7 @@ class DocumentTemplating:
         pressed the button typed.
         """
         scope: dict[str, Any] = dict(variables)
-        # The document's own azienda (REB-627, spec §1.8), read live: `regenerate` re-reads
+        # The document's own legal entity (REB-627, spec §1.8), read live: `regenerate` re-reads
         # it the way it re-read the one emitter before, so a corrected address reaches
         # the next version and a customer moved since does not.
         scope["emittente"] = self.ctx.legal_entity.as_template_values(actor, legal_entity_id)[

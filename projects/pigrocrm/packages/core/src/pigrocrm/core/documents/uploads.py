@@ -341,8 +341,8 @@ class DocumentUploads:
                 title=title,
             ),
             actor,
-            # The record's own azienda when the caller names it (an imported invoice's
-            # original PDF is the invoice's, whatever azienda its customer is in now).
+            # The record's own legal entity when the caller names it (an imported invoice's
+            # original PDF is the invoice's, whatever legal entity its customer is in now).
             legal_entity_id=legal_entity_id,
         )
         self.add_version_row(document, data, content_type, actor)

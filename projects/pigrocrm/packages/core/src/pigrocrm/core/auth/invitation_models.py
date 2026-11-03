@@ -39,7 +39,7 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     # every invitation is until milestone 6 writes a list. An array and not a join
     # table, because an invitation is spent once and its rows would be orphans the
     # moment it is accepted or revoked; it carries no foreign key, so accepting drops
-    # any id that no longer names an active azienda.
+    # any id that no longer names an active legal entity.
     legal_entities: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
     # What became of the mail that carries this invitation (REB-678). A provider's 2xx is
     # only «I took it»: the mail can still bounce, and the Team panel is the one place an

@@ -1,4 +1,4 @@
-"""The SQL fragments the analytics queries share: what counts as revenue, which azienda,
+"""The SQL fragments the analytics queries share: what counts as revenue, which legal entity,
 which date puts a document in a period."""
 
 from datetime import UTC, date, datetime, time, timedelta
@@ -32,9 +32,9 @@ def revenue_filter() -> tuple[ColumnElement[bool], ...]:
 
 
 def invoice_legal_entity(legal_entity_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's invoices, or every azienda's (REB-630, spec 2026-10-03 §1.9):
-    the one extra predicate the sums below take, so an azienda's figure reads that
-    azienda's register alone and «tutte» stays the unfiltered sum."""
+    """One legal entity's invoices, or every legal entity's (REB-630, spec 2026-10-03 §1.9):
+    the one extra predicate the sums below take, so a legal entity's figure reads that
+    legal entity's register alone and «tutte» stays the unfiltered sum."""
     return () if legal_entity_id is None else (Invoice.legal_entity_id == legal_entity_id,)
 
 

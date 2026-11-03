@@ -1,4 +1,4 @@
-"""A member's azienda scope: read off the row, checked on the way in, written as the
+"""A member's legal entity scope: read off the row, checked on the way in, written as the
 flag and the rows (REB-633, spec 2026-10-03 §1.11)."""
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def check_scope(
 ) -> list[UUID] | None:
     """The scope a request names, as the row will hold it: `None` stays `None`; a list
     must not be empty («nessuna azienda» is a deactivation, not a scope) and must name
-    active aziende of this space, each once. Refuses by field, so the Team panel puts
+    active legal entities of this space, each once. Refuses by field, so the Team panel puts
     the sentence under the right control."""
     if legal_entities is None:
         return None
@@ -91,7 +91,7 @@ def apply_scope(session: Session, user: User, legal_entities: list[UUID] | None)
 
 
 def active_only(session: Session, legal_entities: list[UUID]) -> list[UUID]:
-    """The ids among `legal_entities` that still name an active azienda: what an invitation
+    """The ids among `legal_entities` that still name an active legal entity: what an invitation
     accepted after a deactivation keeps (spec §1.11), possibly nothing."""
     if not legal_entities:
         return []

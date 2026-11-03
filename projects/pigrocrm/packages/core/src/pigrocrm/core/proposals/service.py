@@ -273,7 +273,7 @@ class ProposalService:
                 "di questo contratto",
             ),
         ):
-            # The customer's azienda at acceptance, as `ContractService.create` copies it.
+            # The customer's legal entity at acceptance, as `ContractService.create` copies it.
             contract = Contract(
                 **contract_payload,
                 legal_entity_id=LegalEntityService(self.session).inherited(

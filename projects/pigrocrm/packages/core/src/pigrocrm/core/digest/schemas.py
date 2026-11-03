@@ -165,8 +165,8 @@ class WeeklyDigest(BaseModel):
     """
 
     week: str
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
 
     # 1. Da incassare.
     overdue: list[DigestInvoice]
@@ -179,15 +179,15 @@ class WeeklyDigest(BaseModel):
     # is the invoice, and this is what has not been invoiced yet.
     accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
 
-    # 3. Emesse questa settimana, with the running month beside the one before it.
+    # 3. Issued this week, with the running month beside the one before it.
     issued: list[DigestInvoice]
     total_month_current: Decimal = Field(max_digits=12, decimal_places=2)
     total_month_previous: Decimal = Field(max_digits=12, decimal_places=2)
 
-    # 4. Incassate questa settimana.
+    # 4. Collected this week.
     paid: list[DigestInvoice]
 
-    # 5. Le ore. `None` when the week has none at all.
+    # 5. The hours. `None` when the week has none at all.
     hours: WeekHours | None
 
     # 6. In pipeline.

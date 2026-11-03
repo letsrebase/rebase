@@ -91,11 +91,11 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
 
     legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # The azienda this customer is billed by (REB-623, spec 2026-10-03 §1.6): proposed
+    # The legal entity this customer is billed by (REB-623, spec 2026-10-03 §1.6): proposed
     # from `country` at creation, editable afterwards, and copied onto every deal,
     # contract, document and invoice born under the customer from then on; changing it
     # moves nothing already created (§1.7). The column default is the space's default
-    # azienda, for a row built without one; the service always names it.
+    # legal entity, for a row built without one; the service always names it.
     legal_entity_id: Mapped[UUID] = mapped_column(
         ForeignKey("legal_entities.id"),
         nullable=False,

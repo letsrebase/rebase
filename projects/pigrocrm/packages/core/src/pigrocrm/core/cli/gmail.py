@@ -207,7 +207,7 @@ def _sync_mailbox(
             actor = _cron_actor(session, account)
             # The owner's own scope, never «tutte» (spec 2026-10-03 §4): a scoped
             # owner's mailbox is matched against the customers and people their scope
-            # can see, so the sync writes no link on another azienda's customer.
+            # can see, so the sync writes no link on another legal entity's customer.
             bind_scope(session, actor)
             report = GmailSyncService(
                 session, settings=settings, transport=transport, tokens=tokens
@@ -247,7 +247,7 @@ def _cron_actor(session: Session, account: GoogleAccount) -> Actor:
 
     **A deactivated owner.** Deactivating somebody is, everywhere else in this product,
     the moment they stop being able to make the CRM do anything. A cron that kept
-    synchronising would go on spending the Google consent of a person the titolare has
+    synchronising would go on spending the Google consent of a person the owner has
     just switched off, quietly, every fifteen minutes.
 
     **The owner's real role.** Whether the sync may run is a decision this installation

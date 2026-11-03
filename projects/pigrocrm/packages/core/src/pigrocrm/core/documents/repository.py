@@ -132,7 +132,7 @@ class DocumentRepository:
         document as its PDF, a soft-deleted one included, or `None` when no invoice does.
         See `DocumentUploads.check_invoice_pdf` for why that is the test."""
         # Through the definer function of migration 0048 rather than a query on
-        # `invoices`: an invoice this session cannot see (another azienda's, named on a
+        # `invoices`: an invoice this session cannot see (another legal entity's, named on a
         # document it can) must still answer, or the guard would fail open (REB-634).
         return self.session.execute(
             text("SELECT invoice_type_of_pdf(:document_id)"), {"document_id": document_id}

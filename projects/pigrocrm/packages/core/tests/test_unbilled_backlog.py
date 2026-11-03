@@ -221,7 +221,7 @@ def test_the_period_pnl_carries_the_same_three_figures_for_its_period(
     time_entry_factory(data=date(2026, 6, 10), hours="4.00", rate="50.000000")
 
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(2026, 3, 1), a=date(2026, 3, 31)), READONLY
+        PeriodPnlQuery(date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)), READONLY
     )
     assert pnl.billable_uninvoiced_hours == Decimal("4.00")
     assert pnl.accrued_value == Decimal("200.00")
@@ -245,7 +245,7 @@ def test_the_period_rows_count_their_own_unpriced_hours(
     time_entry_factory(data=date(2026, 6, 10), hours="7.00", rate=None)
 
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(2026, 3, 1), a=date(2026, 3, 31)), READONLY
+        PeriodPnlQuery(date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)), READONLY
     )
     assert pnl.hours_without_rate == 1
     assert pnl.billable_uninvoiced_hours == Decimal("4.00")
@@ -277,7 +277,9 @@ def test_the_period_rows_honour_the_customer_filter(
     )
 
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(2026, 3, 1), a=date(2026, 3, 31), customer_id=mine.customer_id),
+        PeriodPnlQuery(
+            date_from=date(2026, 3, 1), date_to=date(2026, 3, 31), customer_id=mine.customer_id
+        ),
         READONLY,
     )
     assert pnl.billable_uninvoiced_hours == Decimal("4.00")

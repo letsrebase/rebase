@@ -154,7 +154,7 @@ class DigestService:
         The dashboard call is first because it opens the snapshot the rest of the method
         reads inside -- see the module docstring. Everything after it is a copy.
         """
-        da, a = week
+        date_from, date_to = week
 
         # 1. The snapshot, and with it the backlog and the signals (§3.1 sections 2, 7).
         operational = DashboardService(self.session).get_operational_dashboard(actor)
@@ -171,10 +171,10 @@ class DigestService:
         today = today_local(self.settings)
         invoices = InvoiceRepository(self.session)
         overdue_rows = invoices.list_overdue(today)
-        issued_rows = invoices.list_issued_in_period(da, a)
-        paid_rows = invoices.list_paid_in_period(da, a)
+        issued_rows = invoices.list_issued_in_period(date_from, date_to)
+        paid_rows = invoices.list_paid_in_period(date_from, date_to)
         in_due_date_rows = invoices.list_in_due_date(
-            a + timedelta(days=1), a + timedelta(days=IN_DUE_DATE_DAYS)
+            date_to + timedelta(days=1), date_to + timedelta(days=IN_DUE_DATE_DAYS)
         )
         # One invoice, one line. The two windows meet on the day the cron runs -- `a + 1`
         # is today -- and overlap entirely for a week recomputed with `--date`, whose
@@ -184,7 +184,7 @@ class DigestService:
         in_due_date_rows = [row for row in in_due_date_rows if row.id not in overdue_ids]
         # One lookup for all four lists, after the rows are chosen: a label query per row
         # is the N+1 `customer_names` exists to prevent.
-        nomi = invoices.customer_names(
+        names = invoices.customer_names(
             {
                 row.customer_id
                 for row in (*overdue_rows, *issued_rows, *paid_rows, *in_due_date_rows)
@@ -196,13 +196,13 @@ class DigestService:
         # The `is not None` guard is `list_overdue`'s own `WHERE` restated -- the column is
         # nullable and `mypy` reads it as such.
         overdue = [
-            riga
+            line
             for row in overdue_rows
             if (due_date := row.due_date) is not None
-            and (riga := self._line(row, nomi, due_date, days_of_delay=(today - due_date).days))
+            and (line := self._line(row, names, due_date, days_of_delay=(today - due_date).days))
             is not None
         ]
-        month_from, month_to = month_bounds(a.year, a.month)
+        month_from, month_to = month_bounds(date_to.year, date_to.month)
         # The last day of the previous month is the day before this one's first, which is
         # the only way to name it without a calendar branch on January.
         previous = month_from - timedelta(days=1)
@@ -211,7 +211,7 @@ class DigestService:
         # 4. Le ore, for the closed week -- not the dashboard's `week`, which is the
         #    *current* one and would report the days since the report's own subject ended.
         entries = TimeEntryRepository(self.session)
-        week_hours = entries.week_hours(da, a)
+        week_hours = entries.week_hours(date_from, date_to)
         # Absent, not zero: §3.1 drops the section entirely rather than printing a flat
         # line, because "no hours" and "seven days of nothing" read differently.
         hours = week_hours if week_hours.total_hours > 0 else None
@@ -230,23 +230,23 @@ class DigestService:
             for row in deals.pipeline_summary()
             if row.number > 0
         ]
-        deal_mossi = self._movements(deals, da, a)
+        deal_mossi = self._movements(deals, date_from, date_to)
         offers = DocumentRepository(self.session).pending_offers(_OFFERS_SHOWN)
 
         backlog = operational.backlog
         return WeeklyDigest(
-            week=iso_week(da),
-            da=da,
-            a=a,
+            week=iso_week(date_from),
+            date_from=date_from,
+            date_to=date_to,
             overdue=overdue,
-            in_due_date=self._lines(in_due_date_rows, nomi, lambda row: row.due_date),
+            in_due_date=self._lines(in_due_date_rows, names, lambda row: row.due_date),
             won_to_invoice=won_to_invoice,
             hours_uninvoiced=backlog.billable_uninvoiced_hours,
             accrued_value=backlog.accrued_value,
-            issued=self._lines(issued_rows, nomi, lambda row: row.issue_date),
+            issued=self._lines(issued_rows, names, lambda row: row.issue_date),
             total_month_current=invoices.sum_issued_in_period(month_from, month_to),
             total_month_previous=invoices.sum_issued_in_period(previous_from, previous_to),
-            paid=self._lines(paid_rows, nomi, lambda row: row.payment_date),
+            paid=self._lines(paid_rows, names, lambda row: row.payment_date),
             hours=hours,
             pipeline=pipeline,
             deal_mossi=deal_mossi,
@@ -330,16 +330,16 @@ class DigestService:
     def _lines(
         self,
         rows: Sequence[Invoice],
-        nomi: dict[UUID, str],
+        names: dict[UUID, str],
         date_of: Callable[[Invoice], date | None],
     ) -> list[DigestInvoice]:
         """`_line` over a list, leaving out the rows it declines to print."""
-        return [riga for row in rows if (riga := self._line(row, nomi, date_of(row))) is not None]
+        return [line for row in rows if (line := self._line(row, names, date_of(row))) is not None]
 
     def _line(
         self,
         invoice: Invoice,
-        nomi: dict[UUID, str],
+        names: dict[UUID, str],
         data: date | None,
         *,
         days_of_delay: int | None = None,
@@ -372,7 +372,7 @@ class DigestService:
         return DigestInvoice(
             invoice_id=invoice.id,
             number=number_complete(invoice.year or 0, invoice.number or 0),
-            customer=nomi.get(invoice.customer_id, ""),
+            customer=names.get(invoice.customer_id, ""),
             amount=invoice.total,
             date=day,
             status=invoice.status,
@@ -385,7 +385,9 @@ class DigestService:
             days_of_delay=days_of_delay,
         )
 
-    def _movements(self, deals: DealRepository, da: date, a: date) -> list[DigestDealMove]:
+    def _movements(
+        self, deals: DealRepository, date_from: date, date_to: date
+    ) -> list[DigestDealMove]:
         """The deals that changed stage inside the week (§3.1, section 6).
 
         Read by kind **and by window**, never by kind alone: `by_kind` answers the newest
@@ -408,8 +410,8 @@ class DigestService:
         zona = ZoneInfo(self.settings.timezone)
         rows = ActivityRepository(self.session).by_kind_between(
             [_STAGE_CHANGED],
-            datetime.combine(da, time.min, tzinfo=zona),
-            datetime.combine(a + timedelta(days=1), time.min, tzinfo=zona),
+            datetime.combine(date_from, time.min, tzinfo=zona),
+            datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=zona),
             limit=_MOVEMENTS_READ,
         )
         lines = [

@@ -62,7 +62,8 @@ class CalendarService:
         user_id: UUID | None = None,
         legal_entity_id: UUID | None = None,
     ) -> CalendarMonth:
-        """Every day of `month` that has hours, activities, a contract day or an invoice falling due.
+        """Every day of `month` that has hours, activities, a contract day or an invoice falling
+        due.
 
         `user_id` scopes the hours to one person. The default is `actor.id`, which is
         what «my calendar» means and what every caller wants; passing `None` explicitly
@@ -70,14 +71,14 @@ class CalendarService:
         about somebody else -- a decision this method does not second-guess, because
         reading hours is not gated anywhere else in this product either.
         """
-        da, a = month_bounds(month)
+        date_from, date_to = month_bounds(month)
         today = today_local()
 
-        # `legal_entity_id` narrows both reads to one azienda's deals and invoices (REB-623).
+        # `legal_entity_id` narrows both reads to one legal entity's deals and invoices (REB-623).
         hours = self.repo.hours_by_day_and_deal(
-            da, a, user_id=user_id, legal_entity_id=legal_entity_id
+            date_from, date_to, user_id=user_id, legal_entity_id=legal_entity_id
         )
-        etichette = self.repo.deal_labels({deal_id for _, deal_id, _ in hours})
+        labels = self.repo.deal_labels({deal_id for _, deal_id, _ in hours})
 
         days: dict[date, CalendarDay] = {}
 
@@ -89,7 +90,7 @@ class CalendarService:
             return days.setdefault(when, CalendarDay(day=when, hours=ZERO_HOURS))
 
         for when, deal_id, hours_of_deal in hours:
-            name, customer = etichette.get(deal_id, ("(deal archiviato)", None))
+            name, customer = labels.get(deal_id, ("(deal archiviato)", None))
             bucket = day(when)
             bucket.per_deal.append(
                 DayDealHours(
@@ -103,7 +104,7 @@ class CalendarService:
         for bucket in days.values():
             bucket.hours = sum_hours(riga.hours for riga in bucket.per_deal)
 
-        for row in self.tasks.in_range(da, a):
+        for row in self.tasks.in_range(date_from, date_to):
             # `in_range` filters on `scadenza IS NOT NULL`, so this is never None -- and
             # the guard is here rather than an `assert` because an assert that fires in
             # production is a traceback shown to somebody who can only read it as a
@@ -113,7 +114,9 @@ class CalendarService:
                 continue
             day(due_date_task).tasks.append(TaskRead.model_validate(row))
 
-        for invoice, customer in self.repo.invoices_due(da, a, legal_entity_id=legal_entity_id):
+        for invoice, customer in self.repo.invoices_due(
+            date_from, date_to, legal_entity_id=legal_entity_id
+        ):
             due_date = invoice.due_date
             if due_date is None:  # pragma: no cover - excluded by the query itself
                 continue
@@ -130,7 +133,7 @@ class CalendarService:
             )
 
         for work_unit, contract_title, customer_name in self.repo.work_units_in_window(
-            da, a, legal_entity_id=legal_entity_id
+            date_from, date_to, legal_entity_id=legal_entity_id
         ):
             day(work_unit.date).work_units.append(
                 DayWorkUnit(
@@ -145,8 +148,8 @@ class CalendarService:
 
         return CalendarMonth(
             month=month,
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
             today=today,
             total_hours=sum_hours(bucket.hours for bucket in days.values()),
             days=[days[when] for when in sorted(days)],

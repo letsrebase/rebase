@@ -12,8 +12,8 @@ file is sent, the proforma is invoiced or the hours land on an issued invoice.
 Due today is not late. The measure is the days past the due date.
 
 **`invoice_not_transmitted`** applies where the space exports FatturaPA: at least one
-azienda whose fiscal profile is not the `non-it` pack. It leaves out what this CRM never
-produced an XML for, the invoices of an azienda that was abroad when they were issued (the
+legal entity whose fiscal profile is not the `non-it` pack. It leaves out what this CRM never
+produced an XML for, the invoices of a legal entity that was abroad when they were issued (the
 frozen snapshot's `tax.pack_id`, as `InvoiceArtifacts.frozen_abroad` reads it) and the
 imported ones (`imported_from`). The measure is the days since `issue_date`, and what
 clears it is `transmitted_externally_at`.
@@ -259,7 +259,7 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
         .exists()
     )
     # An entry whose line this session cannot see at all is not unbilled either: an import
-    # may bind a deal's hours to an invoice of another azienda, and «no issued invoice
+    # may bind a deal's hours to an invoice of another legal entity, and «no issued invoice
     # found» under the row policies must not read as «not yet invoiced» (the same guard as
     # `AnalyticsRepository.unbilled_backlog`).
     visible_line = select(InvoiceLine.id).where(InvoiceLine.id == TimeEntry.invoice_line_id)
@@ -292,7 +292,8 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
                 recipients=ctx.directory.recipients(link.owners, deal.legal_entity_id),
                 title=f"Ore da fatturare: {deal.name}",
                 detail=(
-                    f"{format_hours(total)} in {format_entries(entries)} non sono su una fattura emessa, "
+                    f"{format_hours(total)} in {format_entries(entries)} "
+                    "non sono su una fattura emessa, "
                     f"la più vecchia è del {day_short(first)} ({format_days(age)}){_who(link)}"
                 ),
                 entity="deal",

@@ -6,7 +6,7 @@ amount is only ever a `Decimal` computed from other `Decimal`s, and text is prod
 at the very end by `format_amount_*` for the XML and the PDF, never parsed back.
 
 Kept free of the database, the regime and the exporter on purpose: rules 2 and 3 below
-disagree by cents, the disagreement is invisible under the forfettario the product
+disagree by cents, the disagreement is invisible under the flat-rate regime the product
 ships with, and the only way to pin them is a test with rates nobody uses -- which
 needs no session, no container and no XML.
 """

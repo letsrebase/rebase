@@ -468,7 +468,7 @@ def test_renewal_assumption_get_before_any_upsert_is_not_found(db_session: Sessi
 
 def test_project_rejects_an_unknown_contract(db_session: Session) -> None:
     projections = ContractProjectionService(db_session)
-    query = ContractProjectionQuery(da=date(2026, 1, 1), a=date(2027, 1, 1))
+    query = ContractProjectionQuery(date_from=date(2026, 1, 1), date_to=date(2027, 1, 1))
     with pytest.raises(NotFound):
         projections.project(uuid4(), query, ADMIN)
 
@@ -514,7 +514,9 @@ def test_the_projected_figure_combines_the_schedule_and_the_renewal_assumption(
 
     result = projections.project(
         contract.id,
-        ContractProjectionQuery(da=date(2026, 1, 1), a=date(2027, 6, 1), come_di=date(2026, 6, 1)),
+        ContractProjectionQuery(
+            date_from=date(2026, 1, 1), date_to=date(2027, 6, 1), come_di=date(2026, 6, 1)
+        ),
         ADMIN,
     )
 
@@ -557,7 +559,9 @@ def test_the_projected_figure_is_independent_of_cash_overviews_own_projected(
 
     result = projections.project(
         contract.id,
-        ContractProjectionQuery(da=date(2026, 1, 1), a=date(2027, 6, 1), come_di=date(2026, 6, 1)),
+        ContractProjectionQuery(
+            date_from=date(2026, 1, 1), date_to=date(2027, 6, 1), come_di=date(2026, 6, 1)
+        ),
         ADMIN,
     )
     assert result.total > Decimal("0.00")

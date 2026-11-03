@@ -14,9 +14,9 @@ class LegalEntityRepository:
         self.session = session
 
     def active_italian(self) -> list[LegalEntity]:
-        """The aziende a FatturaPA file can name as its `CedentePrestatore` (REB-619,
+        """The legal entities a FatturaPA file can name as its `CedentePrestatore` (REB-619,
         spec §1.5): active, established in Italy. The import classifier matches the
-        file's supplier against these and no other; a foreign azienda never issued a
+        file's supplier against these and no other; a foreign legal entity never issued a
         file the SdI carried."""
         return [a for a in self.list(only_active=True) if (a.country or "").upper() == "IT"]
 
@@ -35,8 +35,8 @@ class LegalEntityRepository:
         return self.session.get(LegalEntity, legal_entity_id)
 
     def default(self) -> LegalEntity | None:
-        """The one row with `predefinita`, or `None` on a space that has no azienda
-        yet (between signup and `ensure_defaults`). With one azienda this is the row
+        """The one row with `predefinita`, or `None` on a space that has no legal entity
+        yet (between signup and `ensure_defaults`). With one legal entity this is the row
         every consumer that used to ask for «the» emitter now gets."""
         return (
             self.session.execute(select(LegalEntity).where(LegalEntity.is_default.is_(True)))

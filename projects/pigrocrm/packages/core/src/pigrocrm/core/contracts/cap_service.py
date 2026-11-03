@@ -53,8 +53,8 @@ class ContractCapService:
         threshold_from_contract = threshold is None and contract.customer_share_cap is not None
         if threshold is None and contract.customer_share_cap is not None:
             threshold = percent_to_share(contract.customer_share_cap)
-        # Within the contract's own azienda (REB-630, spec 2026-10-03 §1.9): a share of
-        # revenue is a share of one azienda's revenue, and the contract names which.
+        # Within the contract's own legal entity (REB-630, spec 2026-10-03 §1.9): a share of
+        # revenue is a share of one legal entity's revenue, and the contract names which.
         # Per currency, never converted (REB-776): the contract's own `currency` says what
         # its fees are in, not what the customer's invoices were issued in.
         revenue = self.analytics.revenue_for_customer_in_window(

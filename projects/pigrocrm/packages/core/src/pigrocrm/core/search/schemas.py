@@ -39,8 +39,8 @@ class SearchQuery(BaseModel):
 
     term: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
     limit: int = Field(default=PER_CLASS_LIMIT, ge=1, le=20)
-    # One azienda's records (REB-623): customers, deals, documents and invoices by their
-    # own column, people through their customer. `None` is every azienda.
+    # One legal entity's records (REB-623): customers, deals, documents and invoices by their
+    # own column, people through their customer. `None` is every legal entity.
     legal_entity_id: UUID | None = None
 
 

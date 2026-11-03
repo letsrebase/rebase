@@ -396,7 +396,7 @@ class InvoicePaExporter:
         self._directory(master_data, legal_entity, "legal_entity")
         regime = etree.SubElement(master_data, "RegimeFiscale")
         # From `fiscal_profile.regime_code`, never a constant in the source: the
-        # whole point of the profile. `None` is a foreign azienda's profile (REB-619),
+        # whole point of the profile. `None` is a foreign legal entity's profile (REB-619),
         # which `InvoiceService.export_xml` refuses before this writer runs; refused
         # again here, since a writer that emitted an empty `RegimeFiscale` would hand
         # the SdI a file it rejects with a message nobody can act on.
@@ -602,7 +602,7 @@ class InvoicePaExporter:
         """Sequence: NumeroLinea, TipoCessionePrestazione?, CodiceArticolo*,
         Descrizione, Quantita?, UnitaMisura?, DataInizioPeriodo?, DataFinePeriodo?,
         PrezzoUnitario, ScontoMaggiorazione*, PrezzoTotale, AliquotaIVA, Ritenuta?,
-        Natura?, RiferimentoAmministrazione?, AltriDatiGestionali*.
+        VAT nature?, RiferimentoAmministrazione?, AltriDatiGestionali*.
 
         `UnitaMisura` comes *after* `Quantita` and *before* `PrezzoUnitario`: getting
         that wrong is a schema-invalid file with every value correct. The two period
@@ -658,7 +658,7 @@ class InvoicePaExporter:
             vat_nature.text = riga.vat_nature
 
     def _summary_data(self, parent: etree._Element, group: RecapGroup) -> None:
-        """Sequence: AliquotaIVA, Natura?, SpeseAccessorie?, Arrotondamento?,
+        """Sequence: AliquotaIVA, VAT nature?, SpeseAccessorie?, Arrotondamento?,
         ImponibileImporto, Imposta, EsigibilitaIVA?, RiferimentoNormativo?."""
         recap = etree.SubElement(parent, "DatiRiepilogo")
         rate = etree.SubElement(recap, "AliquotaIVA")

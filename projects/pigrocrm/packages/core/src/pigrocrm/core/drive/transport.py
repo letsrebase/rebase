@@ -61,7 +61,7 @@ DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 # instead: share only PIGROCRM_GDRIVE_ROOT_FOLDER_ID (and nothing else) with this
 # service account's address, and never reuse the same service account for any other
 # integration. A `UserTokens` installation has no such note to read: its scopes are
-# the ones the titolare granted on the consent screen (`DRIVE_REQUESTED_SCOPES`).
+# the ones the owner granted on the consent screen (`DRIVE_REQUESTED_SCOPES`).
 TOKEN_LIFETIME_SECONDS = 3600
 # Refresh a minute early rather than discovering expiry mid-upload.
 TOKEN_REFRESH_MARGIN_SECONDS = 60
@@ -71,7 +71,7 @@ TOKEN_REFRESH_MARGIN_SECONDS = 60
 # would change what a user reads for a Google outage during an upload or a download.
 #
 # It is no longer the only subject. Slice 9C reaches the same transport for a file the
-# titolare *named*, where "document_blob" is wrong twice over -- there is no CRM document
+# owner *named*, where "document_blob" is wrong twice over -- there is no CRM document
 # involved, and an adapter routing on the entity would point at the wrong thing. The
 # reader owns that correction rather than this module: it re-stamps exactly this entity
 # on its way out (`reader.py::_guarded`), so the rule holds for any transport it was

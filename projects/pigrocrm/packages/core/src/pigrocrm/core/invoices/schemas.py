@@ -46,8 +46,8 @@ SNAPSHOT_VERSION = 1
 SDI_DOCUMENT_TYPE = "TD01"
 CURRENCY = "EUR"
 
-# FPR12 widths, which the columns mirror: Descrizione is String1000Type, Causale is
-# String200Type, UnitaMisura is String10Type, Natura is 2-4 characters.
+# FPR12 widths, which the columns mirror: `Descrizione` is String1000Type, `Causale` is
+# String200Type, `UnitaMisura` is String10Type, VAT nature is 2-4 characters.
 DESCRIPTION_MAX_LENGTH = 1000
 MEMO_MAX_LENGTH = 200
 
@@ -147,7 +147,7 @@ class InvoiceLineIn(BaseModel):
     `RegimeStrategy`'s answer, and accepting them here would put the table constraint
     `(aliquota_iva = 0) = (natura IS NOT NULL)` within reach of a request body.
     `vat_rate` is optional and means "use the regime's default"; under the
-    forfettario the regime refuses anything but zero anyway.
+    flat-rate regime the regime refuses anything but zero anyway.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -232,7 +232,7 @@ class InvoiceUpdate(BaseModel):
     they are frozen afterwards by `InvoiceService.update`, which raises `ImmutableField`
     -- not by leaving them off the schema, which would have made a draft's own subject line
     unfixable. The period is cleared as a pair and a proforma's date is never cleared;
-    a fattura's `issue_date` is refused here outright, since `issue` owns it.
+    an invoice's `issue_date` is refused here outright, since `issue` owns it.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -241,7 +241,7 @@ class InvoiceUpdate(BaseModel):
     internal_notes: SafeStr | None = None
     issue_date: dt.date | None = None
     # The due date, written by hand on a document that is still editable (REB-326).
-    # Set, it is what `issue` prints and what the fattura born from a proforma carries;
+    # Set, it is what `issue` prints and what the invoice born from a proforma carries;
     # cleared (an explicit null), `issue` derives it again from the customer's terms.
     # Frozen with the rest of the header afterwards, like the three dates above.
     due_date: dt.date | None = None
@@ -315,7 +315,7 @@ class InvoiceLineImport(BaseModel):
 
 class PdfSource(BaseModel):
     """Where the original PDF already is: a `documents` row with an uploaded version
-    (9A), or a file on the titolare's Drive (9C).
+    (9A), or a file on the owner's Drive (9C).
 
     Exactly one of the two, and the `model_validator` is what says so rather than a
     check in the service: two sources would leave "which one is the original?" to be
@@ -354,7 +354,7 @@ class PdfSource(BaseModel):
 
 
 class InvoiceImport(BaseModel):
-    """A fattura issued by the previous system, declared field by field (spec 9 §3.3).
+    """An invoice issued by the previous system, declared field by field (spec 9 §3.3).
 
     `year`/`number` come from the caller because they are facts about a document that
     exists; the counter follows them (§3.2 rule 3). Totals are declared **and** verified,
@@ -457,8 +457,8 @@ class InvoiceRead(BaseModel):
     id: UUID
     customer_id: UUID
     deal_id: UUID | None
-    # The azienda that issues or issued it (REB-619): read-only here, the default
-    # azienda on creation until the customer chain of milestone 3 decides it.
+    # The legal entity that issues or issued it (REB-619): read-only here, the default
+    # legal entity on creation until the customer chain of milestone 3 decides it.
     legal_entity_id: UUID
     type: str
     status: str
@@ -526,7 +526,7 @@ class InvoiceListQuery(BaseModel):
     status: InvoiceStatus | None = None
     year: int | None = Field(default=None, ge=YEAR_MIN, le=YEAR_MAX)
     # `unpaid` selects the receivables as the dashboard counts them: an issued
-    # fattura nobody has paid, never a draft or a proforma, though every row carries the
+    # invoice nobody has paid, never a draft or a proforma, though every row carries the
     # value from birth (REB-325, `InvoiceRepository.list`). `paid` is the column.
     payment_status: PaymentStatus | None = None
     # The drill-through of the operational dashboard's "scaduto e non incassato" card
@@ -535,7 +535,7 @@ class InvoiceListQuery(BaseModel):
     # (`_overdue_predicate`), so the two cannot drift apart. Same shape as
     # `DocumentListQuery.only_unwon_deals`.
     overdue: bool = False
-    # The way back from a consumed proforma to the fattura it became. The fattura carries
+    # The way back from a consumed proforma to the invoice it became. The invoice carries
     # `origin_proforma_id`; the proforma carries nothing, by design (a row is written
     # once at emission and the proforma is frozen at the same moment), so the page of a
     # consumed proforma asks the list for the row that points at it (ORB-134).
