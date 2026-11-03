@@ -72,7 +72,7 @@ function answers(overrides: Record<string, unknown> = {}, failing: Record<string
   )
 }
 
-const SEARCH: HomeSearch = { tab: 'economic', da: '2026-09-01', a: '2026-09-30', base: 'accrual' }
+const SEARCH: HomeSearch = { tab: 'economic', from: '2026-09-01', to: '2026-09-30', base: 'accrual' }
 
 function renderHome(search: HomeSearch = SEARCH, prepare?: (client: QueryClient) => void): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

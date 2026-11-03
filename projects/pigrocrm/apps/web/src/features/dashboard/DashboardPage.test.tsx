@@ -38,7 +38,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const EMPTY_DASHBOARD = {
-  period: { da: '2026-03-01', a: '2026-03-31' },
+  period: { from: '2026-03-01', to: '2026-03-31' },
   calculated_at: '2026-03-15T10:00:00Z',
   pipeline: [],
   closings: { won: 0, lost: 0, won_value: '0.00', conversion_rate: null },
@@ -134,8 +134,8 @@ const BY_PATH: Record<string, unknown> = {
 
 const SEARCH: DashboardSearch = {
   tab: 'commercial',
-  da: '2026-03-01',
-  a: '2026-03-31',
+  from: '2026-03-01',
+  to: '2026-03-31',
   base: 'accrual',
 }
 
@@ -182,10 +182,10 @@ describe('DashboardPage', () => {
   })
 
   it('passes the period from the URL through to the request', async () => {
-    renderPage({ tab: 'commercial', da: '2024-06-01', a: '2024-06-30', base: 'accrual' })
+    renderPage({ tab: 'commercial', from: '2024-06-01', to: '2024-06-30', base: 'accrual' })
     expect(await screen.findByText(/nessun dato nel periodo/i)).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
-      params: { query: { da: '2024-06-01', a: '2024-06-30' } },
+      params: { query: { from: '2024-06-01', to: '2024-06-30' } },
     })
   })
 
@@ -245,7 +245,7 @@ describe('DashboardPage', () => {
     // keystrokes the way a text input does, and a typing simulation would assert nothing.
     const { onSearchChange } = renderPage()
     fireEvent.change(screen.getByLabelText('Dal'), { target: { value: '2025-02-01' } })
-    expect(onSearchChange).toHaveBeenLastCalledWith({ da: '2025-02-01', a: '2026-03-31' })
+    expect(onSearchChange).toHaveBeenLastCalledWith({ from: '2025-02-01', to: '2026-03-31' })
   })
 
 })

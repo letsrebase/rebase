@@ -102,7 +102,7 @@ function renderTab(legalEntity: LegalEntityValue = ONE) {
   return render(
     <QueryClientProvider client={client}>
       <LegalEntityContext value={legalEntity}>
-        <YearTab period={{ da: '2026-01-01', a: '2026-12-31' }} />
+        <YearTab period={{ from: '2026-01-01', to: '2026-12-31' }} />
       </LegalEntityContext>
     </QueryClientProvider>,
   )

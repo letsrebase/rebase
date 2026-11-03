@@ -11,7 +11,7 @@
  * the wrong month. Every date built here comes from the browser's *local* calendar parts.
  */
 
-export type Period = { da: string; a: string }
+export type Period = { from: string; to: string }
 
 function iso(year: number, monthIndex: number, day: number): string {
   const month = `${monthIndex + 1}`.padStart(2, '0')
@@ -27,7 +27,7 @@ export function currentMonth(): Period {
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
-  return { da: iso(year, month, 1), a: iso(year, month, lastDayOfMonth(year, month)) }
+  return { from: iso(year, month, 1), to: iso(year, month, lastDayOfMonth(year, month)) }
 }
 
 export function presetQuarter(): Period {
@@ -36,12 +36,12 @@ export function presetQuarter(): Period {
   const firstMonthOfQuarter = Math.floor(now.getMonth() / 3) * 3
   const lastMonthOfQuarter = firstMonthOfQuarter + 2
   return {
-    da: iso(year, firstMonthOfQuarter, 1),
-    a: iso(year, lastMonthOfQuarter, lastDayOfMonth(year, lastMonthOfQuarter)),
+    from: iso(year, firstMonthOfQuarter, 1),
+    to: iso(year, lastMonthOfQuarter, lastDayOfMonth(year, lastMonthOfQuarter)),
   }
 }
 
 export function presetYear(): Period {
   const year = new Date().getFullYear()
-  return { da: iso(year, 0, 1), a: iso(year, 11, 31) }
+  return { from: iso(year, 0, 1), to: iso(year, 11, 31) }
 }

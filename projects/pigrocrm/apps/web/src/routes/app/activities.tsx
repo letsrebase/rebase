@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { attributionOf } from '@/lib/attribution'
 import { TaskPage } from '@/features/tasks/TaskPage'
 import { EVERYONE, ME } from '@/features/tasks/filters'
 import { isVista, vistaOf, type Vista } from '@/features/tasks/vista'
@@ -45,7 +46,7 @@ export const Route = createFileRoute('/app/activities')({
   // `?view=` is the tab: «oggi» or «tutte» (`vistaOf` says what an address without it means).
   validateSearch: (
     search: Record<string, unknown>,
-  ): { open?: string; assigned?: string; view?: Vista; da?: string } => ({
+  ): { open?: string; assigned?: string; view?: Vista; from?: string } => ({
     open: typeof search.open === 'string' && UUID_RE.test(search.open) ? search.open : undefined,
     assigned:
       typeof search.assigned === 'string' &&
@@ -53,7 +54,8 @@ export const Route = createFileRoute('/app/activities')({
         ? search.assigned
         : undefined,
     view: isVista(search.view) ? search.view : undefined,
-    // `?da=digest` rides along from `/app/tasks?view=today`, where the digest mail's link lands.
-    da: typeof search.da === 'string' ? search.da : undefined,
+    // `?from=digest` rides along from the digest mail's link (`?da=digest` in mails sent before
+    // the English rename), where PostHog reads the return.
+    from: attributionOf(search),
   }),
 })

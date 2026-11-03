@@ -23,7 +23,7 @@ import type { Period } from './period'
 /** The year the picker's start date names, the same reading the economic tab has: a
  *  date, not an amount, so going through `Date` is not the coercion criterion 14 bans. */
 function yearOf(period: Period): number {
-  return new Date(`${period.da}T00:00:00`).getFullYear()
+  return new Date(`${period.from}T00:00:00`).getFullYear()
 }
 
 /** The regime an invoice froze at issue, in the words the settings screen uses. A code

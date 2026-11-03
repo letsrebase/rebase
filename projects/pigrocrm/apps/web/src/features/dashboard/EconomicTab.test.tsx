@@ -172,7 +172,7 @@ const RESPONSE = {
   projected_net: '23785.60',
 }
 
-const PERIOD = { da: '2026-09-01', a: '2026-09-30' }
+const PERIOD = { from: '2026-09-01', to: '2026-09-30' }
 
 function renderTab(period = PERIOD, base: 'accrual' | 'collection' = 'accrual') {
   const onBaseChange = vi.fn()
@@ -193,7 +193,7 @@ beforeEach(() => {
 describe('EconomicTab', () => {
   it('asks for the year the period names, because cash and taxes are told by the year', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
-    renderTab({ da: '2025-03-01', a: '2025-03-31' })
+    renderTab({ from: '2025-03-01', to: '2025-03-31' })
     await screen.findByText(/Vista economica 2025/)
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', {
       params: { query: { year: 2025, base: 'accrual' } },
@@ -392,7 +392,7 @@ describe('EconomicTab', () => {
 
   it('asks the estimate for the year the period names', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE, { ...TAX, year: 2025 }) as never)
-    renderTab({ da: '2025-03-01', a: '2025-03-31' })
+    renderTab({ from: '2025-03-01', to: '2025-03-31' })
 
     // Same doubled chain as the card test above (REB-416): the default one-second
     // asyncUtilTimeout is not enough here either, observed failing on a loaded full run.

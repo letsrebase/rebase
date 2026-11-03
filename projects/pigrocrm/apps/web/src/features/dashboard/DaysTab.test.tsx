@@ -43,8 +43,8 @@ function month(yearMonth: string, over: Record<string, unknown> = {}, given: Rec
 }
 
 const analysis = (over: Record<string, unknown> = {}) => ({
-  da: '2026-08-01',
-  a: '2026-09-30',
+  from: '2026-08-01',
+  to: '2026-09-30',
   legal_entity_id: null,
   today: '2026-10-26',
   months: [
@@ -101,7 +101,7 @@ function renderTab() {
   return render(
     <QueryClientProvider client={client}>
       <LegalEntityContext value={ONE}>
-        <DaysTab period={{ da: '2026-08-01', a: '2026-09-30' }} />
+        <DaysTab period={{ from: '2026-08-01', to: '2026-09-30' }} />
       </LegalEntityContext>
     </QueryClientProvider>,
   )
@@ -132,7 +132,7 @@ describe('DaysTab', () => {
       within(screen.getByRole('group', { name: 'Tariffa reale al giorno' })).getByText('481,62 €'),
     ).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/days', {
-      params: { query: { da: '2026-08-01', a: '2026-09-30' } },
+      params: { query: { from: '2026-08-01', to: '2026-09-30' } },
     })
   })
 

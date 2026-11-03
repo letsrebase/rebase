@@ -46,7 +46,17 @@ export const CASH_BASES: readonly { id: CashBase; label: string; phrase: string 
   { id: 'collection', label: 'Incasso', phrase: 'per incasso' },
 ]
 
-export type DashboardSearch = { tab: TabId; da: string; a: string; base: CashBase }
+const LEGACY_TABS: Record<string, TabId> = {
+  economica: 'economic',
+  commerciale: 'commercial',
+  scadenziario: 'receivables',
+  anno: 'year',
+  giornate: 'work_units',
+}
+
+const LEGACY_BASES: Record<string, CashBase> = { competenza: 'accrual', incasso: 'collection' }
+
+export type DashboardSearch = { tab: TabId; from: string; to: string; base: CashBase }
 
 /**
  * A `YYYY-MM-DD` that names a day that exists.
@@ -91,8 +101,8 @@ function isCalendarDate(value: unknown): value is string {
  * default period" — this function and the validator both call `currentMonth()`.
  */
 export function defaultDashboardSearch(): DashboardSearch {
-  const { da, a } = currentMonth()
-  return { tab: 'economic', da, a, base: 'accrual' }
+  const { from, to } = currentMonth()
+  return { tab: 'economic', from, to, base: 'accrual' }
 }
 
 /**
@@ -111,14 +121,21 @@ export function validateHomeSearch(search: Record<string, unknown>): HomeSearch 
 
 export function validateDashboardSearch(search: Record<string, unknown>): DashboardSearch {
   const fallback = currentMonth()
-  const tab = DASHBOARD_TABS.find((candidate) => candidate.id === search.tab)?.id ?? 'economic'
+  // Links already sent (the Monday digest, bookmarks) carry the Italian words of before the
+  // English rename of 2026-11-02: `tab=anno`, `da=`, `a=`, `base=competenza`. They keep
+  // opening the same view, so each is read as the word it became.
+  const tabId = LEGACY_TABS[String(search.tab)] ?? search.tab
+  const baseId = LEGACY_BASES[String(search.base)] ?? search.base
+  const from = search.from ?? search.da
+  const to = search.to ?? search.a
+  const tab = DASHBOARD_TABS.find((candidate) => candidate.id === tabId)?.id ?? 'economic'
   // The same fill-in-rather-than-reject as the tab: a link carrying `base=issue`
   // (the P&L's reading, not this view's) opens on the default rather than on a 422.
-  const base = CASH_BASES.find((candidate) => candidate.id === search.base)?.id ?? 'accrual'
+  const base = CASH_BASES.find((candidate) => candidate.id === baseId)?.id ?? 'accrual'
   return {
     tab,
-    da: isCalendarDate(search.da) ? search.da : fallback.da,
-    a: isCalendarDate(search.a) ? search.a : fallback.a,
+    from: isCalendarDate(from) ? from : fallback.from,
+    to: isCalendarDate(to) ? to : fallback.to,
     base,
   }
 }

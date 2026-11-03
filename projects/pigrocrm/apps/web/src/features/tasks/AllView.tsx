@@ -34,7 +34,7 @@ const StatusLabels: Record<Status, string> = {
   cancelled: 'Annullata',
 }
 
-const StatusTone: Record<Status, StatusTone> = {
+const STATUS_TONE: Record<Status, StatusTone> = {
   open: 'gold',
   completed: 'ink',
   cancelled: 'muted',
@@ -172,7 +172,7 @@ export function AllView({
         id: 'status',
         header: 'Stato',
         cell: ({ row }) => (
-          <StatusPill tone={StatusTone[row.original.status]}>
+          <StatusPill tone={STATUS_TONE[row.original.status]}>
             {StatusLabels[row.original.status]}
           </StatusPill>
         ),

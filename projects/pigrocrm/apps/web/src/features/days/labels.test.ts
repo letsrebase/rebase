@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTIONS,
   StatusLabels,
-  StatusTone,
+  STATUS_TONE,
   actorLabel,
   reasonLabel,
   activeRateCard,
@@ -28,7 +28,7 @@ describe('the ledger’s states', () => {
   it('has a label and a tone for every state, and tells a worked-without-approval day from a worked one', () => {
     for (const status of Object.keys(StatusLabels)) {
       expect(statusLabel(status)).toBe(StatusLabels[status as keyof typeof StatusLabels])
-      expect(statusTone(status)).toBe(StatusTone[status as keyof typeof StatusTone])
+      expect(statusTone(status)).toBe(STATUS_TONE[status as keyof typeof STATUS_TONE])
     }
     expect(statusLabel('worked_without_approval')).toBe('Lavorata senza approvazione')
     expect(statusTone('worked_without_approval')).toBe('gold')

@@ -60,7 +60,7 @@ export function notificationOptions(message: ReminderNotification, icon: string)
 /** Where a tap opens: the message's path or URL when it is inside this space, the space's
  *  list of reminders otherwise. `scope` is the worker's (`https://host/acme/app`). */
 export function clickTarget(data: unknown, scope: string): string {
-  const fallback = `${scope}/avvisi`
+  const fallback = `${scope}/reminders`
   const url = (data as { url?: unknown } | null)?.url
   if (typeof url !== 'string') return fallback
   try {

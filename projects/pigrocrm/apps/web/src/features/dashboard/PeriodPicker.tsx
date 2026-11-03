@@ -26,8 +26,8 @@ export function PeriodPicker({
       <input
         id="period-from"
         type="date"
-        value={period.da}
-        onChange={(event) => onChange({ ...period, da: event.target.value })}
+        value={period.from}
+        onChange={(event) => onChange({ ...period, from: event.target.value })}
         className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
       <label className="text-sm text-muted-foreground" htmlFor="period-to">
@@ -36,8 +36,8 @@ export function PeriodPicker({
       <input
         id="period-to"
         type="date"
-        value={period.a}
-        onChange={(event) => onChange({ ...period, a: event.target.value })}
+        value={period.to}
+        onChange={(event) => onChange({ ...period, to: event.target.value })}
         className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
       <Button variant="outline" size="sm" onClick={() => onChange(currentMonth())}>

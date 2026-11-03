@@ -25,7 +25,7 @@ import { CASH_BASES, type CashBase } from './search'
 /** The year the picker's start date names: cash and taxes are told by the year. A date,
  *  not an amount, so reading it through `Date` is not the coercion criterion 14 bans. */
 function yearOf(period: Period): number {
-  return new Date(`${period.da}T00:00:00`).getFullYear()
+  return new Date(`${period.from}T00:00:00`).getFullYear()
 }
 
 function due(estimate: FiscalEstimate | null): string {

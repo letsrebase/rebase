@@ -35,7 +35,7 @@ export function DashboardPage({
    *  card (REB-222), which belongs to the page and not to any one tab. */
   notice?: ReactNode
 }) {
-  const { tab, da, a, base } = search
+  const { tab, from, to, base } = search
 
   // The page owns its own intestazione since the 2026-09-08 revision: §4 draws the tabs
   // closed by their rule, and the period picker is the one control this screen puts top
@@ -50,7 +50,7 @@ export function DashboardPage({
         // control that changed nothing on screen would be a promise the page does not keep.
         actions={
           tab === 'receivables' ? undefined : (
-            <PeriodPicker period={{ da, a }} onChange={(next) => onSearchChange(next)} />
+            <PeriodPicker period={{ from, to }} onChange={(next) => onSearchChange(next)} />
           )
         }
         // The late and due-today tasks (REB-874): the first thing under the title, with
@@ -74,13 +74,13 @@ export function DashboardPage({
             pooled connections on the API side -- to draw one screen. §17's placeholders that
             stood here until 6C landed are gone: both dashboards exist now, so a paragraph
             explaining their absence would be the untrue thing on the page. */}
-        {tab === 'commercial' && <CommercialTab period={{ da, a }} />}
+        {tab === 'commercial' && <CommercialTab period={{ from, to }} />}
         {tab === 'receivables' && <ReceivablesTab />}
-        {tab === 'year' && <YearTab period={{ da, a }} />}
-        {tab === 'work_units' && <DaysTab period={{ da, a }} />}
+        {tab === 'year' && <YearTab period={{ from, to }} />}
+        {tab === 'work_units' && <DaysTab period={{ from, to }} />}
         {tab === 'economic' && (
           <EconomicTab
-            period={{ da, a }}
+            period={{ from, to }}
             base={base}
             onBaseChange={(next) => onSearchChange({ base: next })}
           />
