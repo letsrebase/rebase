@@ -1,19 +1,15 @@
 packages:
-  # A project is usually a directory of deployables (`apps/*`) and libraries
-  # (`packages/*`), which is what PigroCRM is. A project small enough to be a single
-  # artifact is allowed to be one package at its own root instead of growing an
-  # `apps/` directory with exactly one entry in it: `projects/landing` is four HTML
-  # pages and three scripts. A directory without a package.json is not a package and
-  # pnpm skips it, so `projects/*` does not accidentally make `projects/pigrocrm` one.
+  # A project is a directory of deployables (`apps/*`) and libraries (`packages/*`), or a
+  # single package at its own root (`projects/website`). A directory without a package.json
+  # is not a package and pnpm skips it, so `projects/*` does not accidentally make
+  # `projects/pigrocrm` one.
   - 'projects/*'
   - 'projects/*/apps/*'
   - 'projects/*/packages/*'
-  # Cross-project libraries: anything two projects must agree on rather than each
-  # keep a copy of. `shared/brand` is the first, and it exists because the CRM and
-  # the community landing are the same brand: one palette, one typeface, one mark,
-  # read by an application built with Tailwind and by a landing that deliberately has
-  # no Tailwind at all. `tooling/*` is for shared build and lint configuration and is
-  # still empty; a glob matching nothing is not an error.
+  # Cross-project libraries: anything two projects must agree on rather than each keep a copy
+  # of (`shared/brand`: one palette, one typeface, one mark, read by applications built with
+  # Tailwind and by a site that deliberately has none). `tooling/*` matches nothing today,
+  # which is not an error.
   - 'shared/*'
   - 'tooling/*'
 

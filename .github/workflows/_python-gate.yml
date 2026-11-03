@@ -77,17 +77,28 @@ jobs:
     name: ${{ inputs.job-name }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    # The renderer pair, pinned once for the download and the install below: the same
-    # pair projects/pigrocrm/Dockerfile.api installs and that the renderer was verified
-    # against. Typst's diagnostic format and the auto-typography workaround were both
-    # confirmed against 0.14.2 specifically, so a runner on some other version proves
-    # less than nothing.
-    env:
-      PANDOC_VERSION: 3.8.2.1
-      TYPST_VERSION: 0.14.2
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
+      # The renderer pair and its digests, read from the one place that decides them:
+      # the ARGs of the CRM's Dockerfile, which the production image installs and the
+      # renderer was verified against. Typst's diagnostic format and the
+      # auto-typography workaround were both confirmed against that exact version, so a
+      # runner on some other version proves less than nothing.
+      - name: Read the renderer pins
+        if: inputs.renderer && inputs.test
+        run: |
+          set -euo pipefail
+          for name in PANDOC_VERSION TYPST_VERSION PANDOC_SHA256 TYPST_SHA256; do
+            value=$(sed -nE "s/^ARG ${name}=([^[:space:]]+).*/\1/p" projects/pigrocrm/Dockerfile.api | head -n1)
+            if [ -z "$value" ]; then
+              echo "::error::ARG ${name} not found in projects/pigrocrm/Dockerfile.api"
+              exit 1
+            fi
+            echo "${name}=${value}" >> "$GITHUB_ENV"
+          done
       # The test database image, pulled while the toolchain installs (REB-585). On a
       # fresh runner nothing has pulled it before the Test step, so the four xdist
       # workers all wait on the same first pull, 5 to 8s at the top of every worker's
@@ -129,15 +140,22 @@ jobs:
         run: |
           dir="$RUNNER_TEMP/renderer"
           mkdir -p "${dir}"
+          # Each archive is checked against the digest the Dockerfile pins before it is
+          # unpacked: this binary runs in the test job and is what the production image
+          # ships, so it is verified the same way.
           {
-            curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" | tar -xz -C "${dir}" \
-            && curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" | tar -xJ -C "${dir}" \
+            curl -fsSLo "${dir}/pandoc.tar.gz" "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
+            && echo "${PANDOC_SHA256}  ${dir}/pandoc.tar.gz" | sha256sum -c - \
+            && tar -xzf "${dir}/pandoc.tar.gz" -C "${dir}" \
+            && curl -fsSLo "${dir}/typst.tar.xz" "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+            && echo "${TYPST_SHA256}  ${dir}/typst.tar.xz" | sha256sum -c - \
+            && tar -xJf "${dir}/typst.tar.xz" -C "${dir}" \
             && { sudo apt-get install -y -qq --no-install-recommends poppler-utils \
                  || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils; }; } \
             && touch "${dir}/done" || touch "${dir}/failed"
           } > "${dir}/log" 2>&1 &
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: '0.9.24'
           enable-cache: true
@@ -153,11 +171,17 @@ jobs:
       # fail, and the cheapest to have failed. A retry is a whole round trip.
       - name: Lint
         if: inputs.lint
-        run: uv run ruff check ${{ inputs.lint-path }} && uv run ruff format --check ${{ inputs.lint-path }}
+        env:
+          LINT_PATH: ${{ inputs.lint-path }}
+        run: uv run ruff check "$LINT_PATH" && uv run ruff format --check "$LINT_PATH"
 
       - name: Type check
         if: inputs.typecheck
-        run: uv run mypy ${{ inputs.sources }}
+        env:
+          SOURCES: ${{ inputs.sources }}
+        run: |
+          read -r -a sources <<< "$SOURCES"
+          uv run mypy "${sources[@]}"
 
       # Whole files, never single tests, so `--dist loadfile` and the module-scoped
       # fixtures behind it hold inside a shard exactly as they do in a full run. The
@@ -262,6 +286,7 @@ jobs:
         env:
           SHARD_FILES_PATH: ${{ steps.shard.outputs.files-path }}
           TEST_ROOTS: ${{ inputs.tests }}
+          PYTEST_ARGS: ${{ inputs.pytest-args }}
           TESTCONTAINERS_RYUK_DISABLED: "true"
         run: |
           set -euo pipefail
@@ -270,4 +295,9 @@ jobs:
           else
             read -r -a paths <<< "$TEST_ROOTS"
           fi
-          uv run pytest -q ${{ inputs.pytest-args }} "${paths[@]}"
+          # `pytest-args` is a caller-written shell fragment (it carries a quoted
+          # `-m "not slow"`), split the way a shell would but never executed.
+          # `print` of an empty join would still emit one empty line, which `mapfile` turns into
+          # an empty-string argument for pytest: an empty `pytest-args` yields no argument.
+          mapfile -t extra < <(python3 -c 'import shlex, sys; [print(a) for a in shlex.split(sys.argv[1])]' "$PYTEST_ARGS")
+          uv run pytest -q "${extra[@]}" "${paths[@]}"

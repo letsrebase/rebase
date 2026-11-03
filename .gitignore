@@ -32,14 +32,21 @@ test-results/
 .env
 .env.local
 
-# Storage locale dei documenti (LocalFileStorage)
+# Key material: the Documenso signing PKCS#12, the backup certificates' private keys and any
+# other secret file never belongs in the tree.
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Local document storage (LocalFileStorage)
 var/
 # Postgres data if an installation points PIGROCRM_DATA_DIR inside the checkout
 data/
 
-# Playwright MCP snapshots and console logs written while I look at pages
+# Playwright MCP snapshots and console logs written while reviewing pages
 .playwright-mcp/
-# Screenshots I take while reviewing pages
+# Screenshots taken while reviewing pages
 *.png
 !**/public/*.png
 # The site's share card, drawn by projects/website/scripts/share-card.mjs and

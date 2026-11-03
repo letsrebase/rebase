@@ -338,3 +338,14 @@ test("a Linear outage comments on the open issue, touches no card, and fails the
 test("a GitHub error stops the run", async () => {
   await assert.rejects(run({ github: fakeGithub({ failOn: "create" }), linear: fakeLinear() }), /github create failed/);
 });
+
+test("the GitHub issue gets the public report and the Linear card the whole one", async () => {
+  const github = fakeGithub();
+  const linear = fakeLinear();
+  await run({ github, linear, report: "FULL with file:line", publicReport: "PUBLIC counts only" });
+  assert.ok(linear.calls[0][1].description.includes("FULL with file:line"));
+  const issueBody = github.calls[1][2].body ?? github.calls[1][2];
+  assert.ok(String(JSON.stringify(github.calls[1])).includes("PUBLIC counts only"));
+  assert.ok(!JSON.stringify(github.calls).includes("FULL with file:line"));
+  assert.ok(issueBody);
+});

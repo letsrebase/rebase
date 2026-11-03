@@ -1,6 +1,7 @@
 # Restoring the hub's databases from the off-host backups
 
-Two databases are backed up every night, and this page restores either: the **hub's own**
+(PigroCRM's whole-server backup shares this runbook: see «PigroCRM: the whole server» at the
+end.) Two databases are backed up every night, and this page restores either: the **hub's own**
 (`rebase-db-1`: the members, the companies, the matches, the contracts and their signed
 copies, REB-717) and **Documenso's** (`rebase-documenso-db-1`: every uploaded and sealed
 PDF, REB-715). It is for two situations, which differ only in what you do with the result: a
@@ -194,3 +195,41 @@ holds the backup key is the one who keeps the password manager item current.
    trailing slash), is its secret.
 4. **Release**: the next `hub-v*` tag starts the services; each one's first backup is a
    minute after its container starts.
+
+## PigroCRM: the whole server
+
+The CRM's backup (`projects/pigrocrm/docker-compose.backup.yml`, service `db-backup`, 03:00 UTC,
+production only and opt-in: it runs when the host's `.env` sets `COMPOSE_FILE=docker-compose.yml:docker-compose.backup.yml`
+and the `PIGROCRM_BACKUP_*` values) is the same script and image as the two above, in its
+`BACKUP_ALL_DATABASES` mode. It does not save one database: the register and every space live in
+a database of their own (`pigro_t_*`), opened at run time, so each run lists the server's
+databases afresh and a space opened this afternoon is in tonight's object.
+
+| | `db-backup` |
+|---|---|
+| Server | `pigrocrm-db-1` (the CRM's `db`), bootstrap superuser |
+| Object in the bucket | `pigrocrm/pigrocrm-<UTC stamp>.tar.cms`, in `rebase-hub-backup` |
+| Inside | `globals.sql` (the roles, `pg_dumpall --globals-only`), one `<database>.dump` per database, `SHA256SUMS`, `MANIFEST` (which lists the databases) |
+| Schema version in the `MANIFEST` | the Alembic revision of the register |
+| Monitor | the check behind `PIGROCRM_BACKUP_PING_URL` |
+
+Steps 1 and 2 above are the same with `<name>` = `pigrocrm`. `restore.sh` checks every file against
+`SHA256SUMS` (it refuses the bundle when one differs) and leaves all of them in the target
+directory. To restore, on a scratch or a replacement server and in this order: create the
+roles with `psql -f globals.sql` (the bootstrap role already exists; its `CREATE ROLE` errors are
+expected), then for each database `createdb <database>` and
+`pg_restore --exit-on-error --no-owner --no-acl -d <database> <database>.dump`. The register is the database
+named in `POSTGRES_DB` (`pigrocrm` by default); the rest are spaces, and a space missing from the
+registry is not reachable. `pigrocrm_app`'s password is not trusted from the dump: the API's boot
+(`migrate`) sets it again from `PIGROCRM_APP_PASSWORD`. As for the hub, the application's keys
+(`PIGROCRM_GOOGLE_TOKEN_KEY` and the Google and Slack client secrets) are not in the dump: without
+them the stored Gmail and Drive tokens cannot be read and each member reconnects.
+
+Provisioning, once, before setting `COMPOSE_FILE`: `PIGROCRM_BACKUP_CERT_B64` (the same line as
+`HUB_BACKUP_CERT_B64`), `PIGROCRM_BACKUP_R2_ACCOUNT_ID` and `PIGROCRM_BACKUP_BUCKET` in the host's
+`.env`; `PIGROCRM_BACKUP_ACCESS_KEY_ID`, `PIGROCRM_BACKUP_SECRET_ACCESS_KEY` and
+`PIGROCRM_BACKUP_PING_URL` as secrets of the `pigrocrm-production` GitHub Environment (the deploy
+templates them into the `.env` when they exist and skips them when they do not: `optional-env-secrets`
+in `deploy-pigrocrm.yml`); a healthchecks.io check with a period of one day. The old
+`projects/pigrocrm/scripts/backup-db.sh` is gone: stop any host cron that still calls it only after the
+first object has appeared under `pigrocrm/`.

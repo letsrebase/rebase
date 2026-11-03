@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Open one encrypted database backup, Documenso's or the hub's (REB-715, REB-717): decrypt
-# it with a private key and unpack it into an empty directory, which then holds the
-# archive (`documenso.dump` or `hub.dump`) and its `MANIFEST` (docs/restore-from-backup.md
-# is the whole procedure, including loading the dump into a Postgres).
+# Open one encrypted database backup, Documenso's, the hub's or PigroCRM's (REB-715, REB-717):
+# decrypt it with a private key and unpack it into an empty directory, which then holds the
+# archive (`documenso.dump` or `hub.dump`; for PigroCRM's whole-server backup `globals.sql` and
+# one `<database>.dump` for each) and its `MANIFEST` (docs/restore-from-backup.md is the whole
+# procedure, including loading the dump into a Postgres).
 #
 #   restore.sh <backup.tar.cms> <private-key.pem> <target-dir> [<certificate.pem>]
 #
@@ -55,19 +56,28 @@ if [ "${status[0]}" -ne 0 ] || [ "${status[1]}" -ne 0 ]; then
   fi
   exit 1
 fi
-# The archive is the one `.dump` the bundle holds, whatever the backup is called.
-shopt -s nullglob
-dumps=("$target"/*.dump)
-shopt -u nullglob
-if [ "${#dumps[@]}" -ne 1 ] || [ ! -s "${dumps[0]}" ]; then
-  echo "restore: the bundle does not hold exactly one archive" >&2
-  exit 1
-fi
-recorded=$(sed -n 's/^dump_sha256=//p' "$target/MANIFEST")
-actual=$(sha256sum "${dumps[0]}" | cut -d' ' -f1)
-if [ -z "$recorded" ] || [ "$recorded" != "$actual" ]; then
-  echo "restore: the archive does not match the SHA-256 in its MANIFEST" >&2
-  exit 1
+# A whole-server backup (PigroCRM's) carries a `SHA256SUMS` of every file and is verified
+# against it; any other holds exactly one `.dump`, whatever the backup is called, checked
+# against the SHA-256 its MANIFEST recorded.
+if [ -f "$target/SHA256SUMS" ]; then
+  (cd "$target" && sha256sum --check --quiet SHA256SUMS >&2) || {
+    echo "restore: a file does not match the SHA-256 in SHA256SUMS" >&2
+    exit 1
+  }
+else
+  shopt -s nullglob
+  dumps=("$target"/*.dump)
+  shopt -u nullglob
+  if [ "${#dumps[@]}" -ne 1 ] || [ ! -s "${dumps[0]}" ]; then
+    echo "restore: the bundle does not hold exactly one archive" >&2
+    exit 1
+  fi
+  recorded=$(sed -n 's/^dump_sha256=//p' "$target/MANIFEST")
+  actual=$(sha256sum "${dumps[0]}" | cut -d' ' -f1)
+  if [ -z "$recorded" ] || [ "$recorded" != "$actual" ]; then
+    echo "restore: the archive does not match the SHA-256 in its MANIFEST" >&2
+    exit 1
+  fi
 fi
 cat "$target/MANIFEST"
 echo "restore: unpacked into $target"

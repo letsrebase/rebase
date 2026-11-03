@@ -7,13 +7,14 @@
 # drift: a `pg_dump` older than its server refuses to run, and a newer one writes an
 # archive an older `pg_restore` cannot read.
 #
-# The digest is what the origin's `postgres:17-alpine` is today, and it has to be there.
-# The deploy runs `docker compose build --pull`, which fetches a build's base image; by
-# tag alone that would move the host's `postgres:17-alpine` to whatever Docker Hub has
-# built since 2026-08-13, and the next `up -d` would recreate every database container
-# that names the tag (the hub's, Documenso's and the CRM's) on a Postgres nobody chose for
-# them. Pulled by digest, nothing moves. Bumping it is a
-# change to this line, made on purpose, in a pull request.
+# The digest is what the origin's `postgres:17-alpine` is today, and it has to be there, in
+# this line and in the three compose files' `db` services. The deploy runs `docker compose
+# build --pull` and `pull`, which fetch by tag; by tag alone that would move the host's
+# `postgres:17-alpine` to whatever Docker Hub has built since 2026-08-13, and the next `up -d`
+# would recreate every database container that names the tag (the hub's, Documenso's and the
+# CRM's) on a Postgres nobody chose for them. Pulled by digest, nothing moves. Bumping it is a
+# change to these four lines, made on purpose, in a pull request (Dependabot's docker and
+# docker-compose entries open it).
 #
 # The scripts are copied in rather than mounted, so a deploy that changes one is a
 # changed image and compose recreates the container; a bind-mounted file would be a

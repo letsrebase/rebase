@@ -8,8 +8,7 @@
 # the new one. Setting the hash to a fake value forces a rebuild, and the
 # failure names the real one, on the "got:" line.
 #
-# There is no Linux builder for this repository any more (qasimodo.com is
-# gone, Ivan, 2026-09-25). This script builds inside a `nixos/nix` container
+# There is no Linux builder for this repository. This script builds inside a `nixos/nix` container
 # on the local machine instead. The hash does not depend on the CPU
 # architecture: aarch64-linux and x86_64-linux reproduce the same value, so
 # it runs on whichever one the container gives it (aarch64-linux on Apple
@@ -50,7 +49,8 @@ set -euo pipefail
 FAKE_HASH='sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 DOCKER_VOLUME='rebase-nix-store'
 MIN_FREE_GB=5
-IMAGE='nixos/nix:latest'
+# Pinned by digest so the builder cannot change under a hash; bump deliberately.
+IMAGE='nixos/nix:latest@sha256:f159a58f390677f41e8e900a74b6e2f9c7f27b364122ae6acf7a652ce6c551c0'
 HASH_LINE_RE='^[[:space:]]*hash = "sha256-[^"]*";'
 
 write=0

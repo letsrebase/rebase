@@ -9,15 +9,7 @@
 # after deliberately killing it mid-suite. Sourcing the same file from both places
 # is what keeps the two copies from ever drifting apart.
 #
-# Lives under apps/web/ (not a repo-root scripts/) because the rule in force when
-# this was written was narrower than usual: "Only apps/web/ may change" -- this
-# worktree is one of several sibling slices sharing the same repo, and a repo-root
-# scripts/ is exactly the kind of shared directory that would collide with another
-# one on merge. That rule was itself scoped to this slice's own frontend-only
-# tasks; the deploy task later in this same branch ships root-level files by
-# design (.github/, Dockerfile.*, docker-compose.yml, deploy/), and did not move
-# this file when it did -- there is no reason to, once a repo-root scripts/ is no
-# longer the merge hazard it was.
+# Lives under apps/web/ with the e2e suite it serves.
 
 # Two roles, as the compose stack runs (REB-634): the API as `pigrocrm_app`, which the
 # row-level policies bind, and the container's superuser as the owner for the migration
@@ -31,28 +23,13 @@ export PIGROCRM_ADMIN_DATABASE_URL="postgresql+psycopg://pigrocrm:pigrocrm@local
 # Europe/Rome; pinned here so a `PIGROCRM_TIMEZONE` left in the caller's shell cannot
 # move the API's «today» away from the spec's.
 export PIGROCRM_TIMEZONE="Europe/Rome"
-# The brief's own literal value here ("e2e-secret-not-for-production") is 29
-# characters -- one short of `MIN_JWT_SECRET_LENGTH = 32`
-# (packages/core/src/pigrocrm/core/config.py). `Settings`' own field validator
-# rejects anything shorter at import time, so the API would fail to even start
-# with that exact string: confirmed by trying it first. This is the same string
-# with a few words appended so the requirement is actually met.
+# At least 32 characters: `Settings` rejects a shorter secret at import time, so the API would
+# not even start.
 export PIGROCRM_JWT_SECRET="e2e-secret-not-for-production-but-long-enough"
-# Fix round 1: this was previously left unset (default `true`) on the
-# reasoning that Chrome/Chromium treats "localhost" as a secure context and
-# sends a `Secure` cookie over plain HTTP there, and `playwright.config.ts`
-# only ever runs the `chromium` project. True as far as it went, but a trap
-# for whoever adds a second browser project later: WebKit does *not* extend
-# "localhost" that same trust and silently discards the cookie instead -- and
-# the failure is vicious, not loud. `auth.spec.ts`'s login test would still
-# pass under WebKit (it only asserts the client-side redirect right after
-# submitting the form, which happens regardless of whether the browser kept
-# the cookie), while every *other* spec would die on a bare 30-second timeout
-# with no diagnostic, since every request after that first one looks
-# unauthenticated. `.env.example` (repo root) documents this exact Safari/
-# WebKit behaviour and sets the same `false` for the same reason; this mirrors
-# it instead of relying on a browser-specific exception that only one of the
-# two obvious future projects (webkit) actually needs.
+# Set false, not left to the default `true`: Chromium treats "localhost" as a secure context
+# and keeps a `Secure` cookie over plain HTTP, but WebKit does not, and the failure there is
+# silent (every request after login looks unauthenticated and each spec dies on a bare
+# timeout). `.env.example` documents the same Safari/WebKit behaviour and the same `false`.
 export PIGROCRM_COOKIE_SECURE=false
 # The suite logs in once per spec, forty-one times in under three minutes at the
 # preview server's speed, and the product's budget for one address is ten a minute

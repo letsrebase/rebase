@@ -27,7 +27,7 @@ COMPOSE = Path(__file__).resolve().parents[3] / "docker-compose.yml"
 PREFIX = "PIGROCRM_"
 
 # Fields that are deliberately **not** in the shared `x-api-environment` anchor block
-# (docker-compose.yml, consumed by both the `api` and `mcp` services), each with the
+# (docker-compose.yml, consumed by the `api` and `migrate` services), each with the
 # reason. Two kinds only: a value the compose file computes itself, and a value that must
 # not be configurable in a container.
 NOT_FORWARDED: dict[str, str] = {
@@ -222,9 +222,45 @@ def test_refresh_token_days_is_forwarded_with_its_documented_default() -> None:
     assert _shared_environment()[variable] == f"${{{variable}:-{default}}}"
 
 
-def test_both_python_services_share_the_one_environment_block() -> None:
-    """One block, two consumers: `api` and `mcp` must both resolve `environment:` to
-    the same anchor, so the forwarded set checked above is checked once and holds
-    for both containers."""
-    for name in ("api", "mcp"):
+def _mcp_environment() -> dict[str, str]:
+    """The `PIGROCRM_*` lines of the `x-mcp-environment` block, which is what the `mcp`
+    service reads: a subset of the api's, so the container that parses agent-supplied
+    input holds no JWT secret, registry or engagements bearer, mail key or push key."""
+    text = COMPOSE.read_text()
+    block = text[text.index("\nx-mcp-environment:") + 1 :]
+    after_header = block.index("\n") + 1
+    end = re.search(r"^[a-z][a-z0-9_-]*:", block[after_header:], re.MULTILINE)
+    block = block[: after_header + end.start()] if end else block
+    return {match.group(1): match.group(2) for match in _LINE.finditer(block)}
+
+
+def test_api_and_migrate_read_the_full_environment_block_and_mcp_its_own() -> None:
+    """`api` and `migrate` (the one-shot that migrates every space before `api` starts)
+    resolve `environment:` to the full anchor, so the forwarded set checked above holds
+    for both; `mcp` resolves to its own, smaller one."""
+    for name in ("api", "migrate"):
         assert "environment: *api-environment" in _service_block(name), name
+    assert "environment: *mcp-environment" in _service_block("mcp")
+
+
+def test_the_mcp_environment_is_a_subset_of_the_api_one_with_the_same_lines() -> None:
+    mcp = _mcp_environment()
+    assert mcp, "the x-mcp-environment block is not being read"
+    api = _shared_environment()
+    assert set(mcp) <= set(api), sorted(set(mcp) - set(api))
+    assert {key: value for key, value in mcp.items() if api[key] != value} == {}
+
+
+def test_the_mcp_environment_holds_none_of_the_apis_own_secrets() -> None:
+    """The point of a block of its own (PMCP-03): none of these is read by the MCP
+    server, and each would be a credential in a container that handles agent input."""
+    assert not set(_mcp_environment()) & {
+        f"{PREFIX}{name}"
+        for name in (
+            "JWT_SECRET",
+            "REGISTRY_TOKEN",
+            "ENGAGEMENTS_TOKEN",
+            "RESEND_API_KEY",
+            "VAPID_PRIVATE_KEY",
+        )
+    }

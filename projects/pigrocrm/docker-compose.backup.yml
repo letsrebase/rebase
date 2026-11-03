@@ -1,0 +1,75 @@
+# Production's overlay: the nightly, encrypted, off-host backup of the CRM's whole Postgres
+# server (INFRA-A-07). The register holds customers' fiscal data and every space has a
+# database of its own, so what it saves is the server and not one database: the roles, the
+# register and every `pigro_t_*` space, listed afresh at each run. A file of its own, which
+# only production's `.env` loads:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.backup.yml
+#
+# Compose interpolates the required variables of every service of every file it reads,
+# profiles or not, so this service in docker-compose.yml would fail the preview's deploy and
+# CI's image build, neither of which runs a backup (the hub does the same with
+# ../hub/docker-compose.documenso.yml).
+#
+# The service is the hub's, not a copy of it: the same image (../hub/db-backup, built from the
+# databases' own `postgres:17-alpine` digest so `pg_dump` matches the server), the same loop,
+# the same script, the same certificate and the same bucket (`rebase-hub-backup`, here under
+# `pigrocrm/`). What differs is configuration: BACKUP_ALL_DATABASES, the name, the schema
+# query and its own monitor. Its schedule is 03:00 UTC, before the hub's 03:15, Vaultwarden's
+# 03:30 and Documenso's 03:45, so the four never dump at once on a 3.8 GiB machine.
+# `../hub/db-backup/tests/backup-restore.sh` is the drill (backup, encrypt, restore, compare);
+# docs/restore-from-backup.md is the runbook.
+#
+# The work directory is a tmpfs: the archive is the database in clear until the envelope is
+# made, and a container killed in the middle must leave it nowhere a disk keeps it. The dump
+# of every space together is a few tens of MiB today; an archive of more than about 380 MiB
+# fails the run with a full disk, which the monitor hears; the size here is the line to change.
+services:
+  db-backup:
+    build:
+      context: ../hub/db-backup
+    restart: unless-stopped
+    init: true
+    entrypoint: ['/bin/bash', '/scripts/backup-loop.sh']
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    tmpfs:
+      - /scratch:mode=0700,size=768m
+    depends_on:
+      db:
+        condition: service_healthy
+    # Whether the last backup finished less than 26 hours ago, so `docker compose ps` shows
+    # `unhealthy` for a backup that is failing quietly. It does not fail a deploy: only a
+    # container that is not `running` does. The loop also pings the monitor, which is what a
+    # person actually receives.
+    healthcheck:
+      test: ['CMD-SHELL', 'test -n "$$(find /tmp/last-backup-ok -mmin -1560 2>/dev/null)"']
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 15m
+    environment:
+      TMPDIR: /scratch
+      BACKUP_CERT_B64: ${PIGROCRM_BACKUP_CERT_B64:?set it in .env, one or more PEM certificates as one line of base64}
+      BACKUP_S3_ENDPOINT: https://${PIGROCRM_BACKUP_R2_ACCOUNT_ID:?set it in .env, the Cloudflare account id}.r2.cloudflarestorage.com
+      BACKUP_BUCKET: ${PIGROCRM_BACKUP_BUCKET:?set it in .env, the R2 bucket the backups are written to}
+      BACKUP_ACCESS_KEY_ID: ${PIGROCRM_BACKUP_ACCESS_KEY_ID:?an Environment secret, written by the deploy}
+      BACKUP_SECRET_ACCESS_KEY: ${PIGROCRM_BACKUP_SECRET_ACCESS_KEY:?an Environment secret, written by the deploy}
+      BACKUP_NAME: pigrocrm
+      BACKUP_ALL_DATABASES: 'true'
+      # The CRM applies its Alembic migrations when `migrate` runs; the revision of the
+      # register says which version wrote the dump.
+      BACKUP_HEAD_SQL: SELECT version_num FROM alembic_version
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-pigrocrm}
+      PGDATABASE: ${POSTGRES_DB:-pigrocrm}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set it in .env, the password of the bootstrap superuser}
+      BACKUP_AT: ${PIGROCRM_BACKUP_AT:-03:00}
+      BACKUP_PING_URL: ${PIGROCRM_BACKUP_PING_URL:?an Environment secret, written by the deploy}

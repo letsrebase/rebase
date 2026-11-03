@@ -30,6 +30,13 @@
 #      `before` at all, so it falls into the same "no usable base commit" branch a
 #      force push already takes below, rather than a fourth branch written for it.
 #
+#      The nightly run, and a manual `workflow_dispatch`, also run the `nightly-*` jobs:
+#      the Playwright suites of the CRM and of `shared/ui`, the hub's compose shapes,
+#      the wordmark and the vhosts' robots answers. Each is too slow or too host-bound
+#      for a PR and had lived only in `preflight.json`, so no server proved it. `infra`
+#      (Terraform, nginx) and `secrets-scan` (gitleaks) are path-scoped and unscoped
+#      respectively, like every other job.
+#
 # A check that stops running on a PR must appear in preflight.json. Verification did
 # not get cheaper here, it moved; a heavy check in neither tier is a hole.
 #
@@ -121,13 +128,16 @@ jobs:
       tooling: ${{ steps.tag.outputs.tooling || steps.filter.outputs.tooling }}
       vaultwarden: ${{ steps.tag.outputs.vaultwarden || steps.filter.outputs.vaultwarden }}
       hub_db_backup: ${{ steps.tag.outputs.hub_db_backup || steps.filter.outputs.hub_db_backup }}
+      hub_api_types: ${{ steps.tag.outputs.hub_api_types || steps.filter.outputs.hub_api_types }}
+      infra: ${{ steps.tag.outputs.infra || steps.filter.outputs.infra }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event_name != 'pull_request'
         with:
           # The filter diffs locally on a push, and a shallow clone would make every
           # base commit unreachable and every run a full one.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Is there a base commit to diff against
         id: base
@@ -190,12 +200,12 @@ jobs:
           set -euo pipefail
           case "$PROJECT" in
             website)  on='website website_image website_deploy shared_analytics' ;;
-            hub)      on='hub_py hub_web hub_image hub_deploy hub_db_backup shared_ui shared_analytics' ;;
-            pigrocrm) on='pigrocrm_py pigrocrm_web pigrocrm_image pigrocrm_deploy shared_ui shared_analytics' ;;
+            hub)      on='hub_py hub_web hub_image hub_deploy hub_db_backup hub_api_types shared_ui shared_analytics' ;;
+            pigrocrm) on='pigrocrm_py pigrocrm_web pigrocrm_image pigrocrm_deploy hub_db_backup shared_ui shared_analytics' ;;
             vaultwarden) on='vaultwarden' ;;
             *) echo "::error::no job list for project '${PROJECT}'"; exit 1 ;;
           esac
-          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden hub_db_backup; do
+          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling vaultwarden hub_db_backup infra hub_api_types; do
             case " $on " in *" $key "*) value=true ;; *) value=false ;; esac
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -204,7 +214,7 @@ jobs:
       # Underscores, never dashes: `needs.changes.outputs.pigrocrm-web` is invalid
       # expression syntax and the run dies in seconds with no job started, which
       # reads as a broken workflow rather than as a typo.
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         if: steps.base.outputs.all != 'true' && steps.base.outputs.project == ''
         with:
@@ -392,6 +402,13 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-vaultwarden.yml'
               - '.github/workflows/_deploy-compose.yml'
+            # The hub's generated `api-types.ts` and what generates it.
+            hub_api_types:
+              - 'projects/hub/apps/api/**'
+              - 'projects/hub/packages/core/**'
+              - 'projects/hub/apps/web/src/lib/api-types.ts'
+              - 'projects/hub/apps/web/scripts/**'
+              - '.github/workflows/ci.yml'
             # The database backups' drill (REB-715, REB-717): the services' image and
             # scripts, the drill that runs them and the compose files that wire them. It
             # builds the Postgres image tag of Documenso's database and of the hub's `db`,
@@ -400,6 +417,18 @@ jobs:
               - 'projects/hub/db-backup/**'
               - 'projects/hub/docker-compose.documenso.yml'
               - 'projects/hub/docker-compose.yml'
+              # The CRM's own backup service reuses the hub's image and scripts, so its
+              # compose file is what wires them.
+              - 'projects/pigrocrm/docker-compose.yml'
+              - 'projects/pigrocrm/docker-compose.backup.yml'
+              - '.github/workflows/ci.yml'
+            # Terraform, every nginx file the repository carries and the scripts that
+            # check them (CI-A-08). Release tags do not touch it: `infra` is `false` on
+            # a tag run, which has nothing to say about the origin host.
+            infra:
+              - 'infra/**'
+              - 'projects/*/deploy/**'
+              - 'scripts/**'
               - '.github/workflows/ci.yml'
 
       # The deploy workflows used to answer "did this push touch my project?" for
@@ -421,7 +450,7 @@ jobs:
           JSON
           cat changed-paths.json
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: github.event_name == 'push'
         with:
           name: changed-paths
@@ -594,22 +623,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          node-version: 22
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: '0.9.24'
           enable-cache: true
 
-      - run: uv sync --frozen
+      - run: uv sync --locked
 
       - run: pnpm install --frozen-lockfile --filter web...
 
@@ -744,23 +775,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - name: Build both images from the repository root context
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4
+      - name: Build every image from the repository root context
         working-directory: projects/pigrocrm
         # The compose file's own build definitions, so this proves the same context
         # and the same Dockerfiles a deploy will use, rather than a parallel
-        # invocation that can drift from them. POSTGRES_PASSWORD, PIGROCRM_JWT_SECRET,
-        # (since REB-258) PIGROCRM_DATA_DIR and (since REB-634) PIGROCRM_APP_PASSWORD
-        # are all `:?` there; a build reads none of them, but compose interpolates the
-        # whole file before building, so all four need a throwaway value, and the
-        # data directory has to stay path-shaped or compose reads the word as a named
-        # volume and refuses the project.
+        # invocation that can drift from them. Compose interpolates the whole file
+        # before building, so every `:?` variable needs a throwaway value (a build
+        # reads none of them), and the data directory has to stay path-shaped or
+        # compose reads the word as a named volume and refuses the project. The layer
+        # cache is the GitHub Actions one (see `hub-images`).
         env:
           POSTGRES_PASSWORD: build-only-never-used
           PIGROCRM_APP_PASSWORD: build-only-never-used
           PIGROCRM_JWT_SECRET: build-only-never-used-and-long-enough-for-the-validator
           PIGROCRM_DATA_DIR: ./build-only-never-mounted
-        run: docker compose build
+          COMPOSE_BAKE: 'true'
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/scripts/ci-build-cache-override.sh" pigrocrm > "$RUNNER_TEMP/cache.yml"
+          docker compose -f docker-compose.yml -f "$RUNNER_TEMP/cache.yml" build
 
   website-image:
     name: website · image build
@@ -769,13 +807,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4
       - name: Build the image from the repository root context
         working-directory: projects/website
         # Through compose rather than `docker build`, so this proves the same context
         # and the same file the deploy uses. Nothing here needs a secret: the site has
-        # no state and the one variable is a host port.
-        run: docker compose build
+        # no state and the one variable is a host port. The layer cache is the GitHub
+        # Actions one (see `hub-images`).
+        env:
+          COMPOSE_BAKE: 'true'
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/scripts/ci-build-cache-override.sh" website > "$RUNNER_TEMP/cache.yml"
+          docker compose -f docker-compose.yml -f "$RUNNER_TEMP/cache.yml" build
 
   # Tier 3 for the one suite that drives the built site in a real browser (REB-663):
   # cookie notice, UTM carry-through, the typewriter, and the order of the landing's
@@ -793,20 +841,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          node-version: 22
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile --filter website...
 
-      # The browser version is whatever the locked @playwright/test wants; `--with-deps`
-      # adds the system libraries a bare runner image may lack.
+      # The browser version is whatever the locked @playwright/test wants, so the lock
+      # is the cache key; on a hit only the system libraries `--with-deps` adds are
+      # installed again.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium
         run: pnpm --filter website exec playwright install --with-deps chromium
 
@@ -820,7 +875,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4
       - name: Build both images from the repository root context
         working-directory: projects/hub
         # Through compose, so this proves the same context and the same files the
@@ -829,11 +888,17 @@ jobs:
         # builds too). The two variables exist because compose interpolates the whole
         # file before a build and both are `:?` there; a build reads neither, and the
         # data directory has to stay path-shaped or compose reads the word as a named
-        # volume and refuses the project.
+        # volume and refuses the project. The layer cache is the GitHub Actions one,
+        # wired by an override that `scripts/ci-build-cache-override.sh` writes from
+        # the compose file itself (CI-A-10).
         env:
           POSTGRES_PASSWORD: build-only-never-used
           REBASE_DATA_DIR: ./build-only-never-mounted
-        run: docker compose -p rebase build
+          COMPOSE_BAKE: 'true'
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/scripts/ci-build-cache-override.sh" hub -p rebase > "$RUNNER_TEMP/cache.yml"
+          docker compose -p rebase -f docker-compose.yml -f "$RUNNER_TEMP/cache.yml" build
       - name: Typeset both contracts inside the image
         # REB-387: the API renders contracts at request time, so an image that builds
         # but lacks pandoc, Typst, fontTools or the brand files is a broken deploy.
@@ -850,10 +915,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
       - run: node --test tooling/client-repo-starter/*.test.mjs tooling/snyk-weekly/*.test.mjs
       - name: Workflow kit
         run: python3 -m unittest discover -s tooling/workflow-kit/tests
@@ -874,7 +941,9 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: The kit's copy is intact
         run: python3 .github/kit/bin/kit.py check
       - name: The PR's title and body follow .github/workflow.json
@@ -893,10 +962,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
       - name: Scripts
         run: shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh
       - name: Compose resolves, and publishes on the loopback only
@@ -911,17 +982,50 @@ jobs:
           VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: x
           VAULTWARDEN_BACKUP_PING_URL: https://hc-ping.example.test/x
         run: |
-          docker compose -p vaultwarden config --services | sort | tr '\n' ' ' | grep -qx 'backup vaultwarden '
-          docker compose -p vaultwarden config | grep -q 'host_ip: 127.0.0.1'
-          if docker compose -p vaultwarden config | grep -q 'host_ip: 0.0.0.0'; then exit 1; fi
+          set -euo pipefail
+          services=$(docker compose -p vaultwarden config --services | sort | tr '\n' ' ')
+          test "$services" = 'backup vaultwarden '
+          rendered=$(docker compose -p vaultwarden config)
+          grep -q 'host_ip: 127.0.0.1' <<< "$rendered"
+          if grep -q 'host_ip: 0.0.0.0' <<< "$rendered"; then exit 1; fi
       - name: The host vhost is valid nginx
         run: |
           docker run --rm -v "$PWD/projects/vaultwarden/deploy/vault.letsrebase.conf:/etc/nginx/conf.d/vault.conf:ro" \
-            nginx:1.31-alpine nginx -t
+            nginx:1.31-alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606 nginx -t
       - name: The look is the brand's and readable
         run: node --experimental-strip-types --no-warnings projects/vaultwarden/tests/branding.mjs
       - name: Backup and restore drill
         run: projects/vaultwarden/tests/backup-restore.sh
+
+  # The hub's committed `api-types.ts` is generated from the API's OpenAPI document
+  # (`pnpm --filter hub generate:api` dumps `app.openapi()`, so no API is booted); a
+  # route or schema change without a regeneration fails here.
+  hub-api-types:
+    name: hub · api types
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.hub_api_types == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.24'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: pnpm install --frozen-lockfile --filter hub...
+      - name: Regenerate api-types.ts
+        run: pnpm --filter hub generate:api
+      - name: Fail if the committed file drifted from the API
+        run: git diff --exit-code -- projects/hub/apps/web/src/lib/api-types.ts
 
   # REB-715, REB-717: the backup and restore drill of Documenso's database and of the
   # hub's. Needs Docker, openssl and shellcheck, all on the hosted runner. It builds the
@@ -936,11 +1040,163 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Scripts
         run: shellcheck projects/hub/db-backup/scripts/*.sh projects/hub/db-backup/tests/*.sh
       - name: Backup and restore drill
         run: projects/hub/db-backup/tests/backup-restore.sh
+
+  # The checks that are too slow, too host-bound or too network-bound for a pull
+  # request and used to live only in `.github/preflight.json`, so that no server ever
+  # ran them. They run on the nightly `schedule` and on a manual `workflow_dispatch`,
+  # nothing else: the trunk and the PRs keep their latency (CI-A-07).
+  nightly-pigrocrm-e2e:
+    name: nightly · pigrocrm e2e
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.24'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: pnpm install --frozen-lockfile --filter web...
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      # Boots its own Postgres, migrates, seeds, serves the SPA and drives it.
+      - name: End-to-end suite against a real API and Postgres
+        run: bash projects/pigrocrm/apps/web/scripts/e2e.sh
+
+  nightly-ui-e2e:
+    name: nightly · ui e2e
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --filter @rebase/ui...
+      - name: Install Chromium
+        run: pnpm --filter @rebase/ui exec playwright install --with-deps chromium
+      - name: Gallery in a real browser
+        run: pnpm --filter @rebase/ui test:e2e
+
+  # The three checks below run the very command `preflight.json` names, read from it,
+  # so the local lane and this one cannot drift apart.
+  nightly-checks:
+    name: nightly · compose, wordmark, vhosts
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.24'
+          enable-cache: true
+      - name: The hub's two compose shapes resolve
+        run: jq -r '.checks[] | select(.id == "hub-documenso-compose") | .run' .github/preflight.json | bash -euo pipefail
+      - name: The CRM's production shape (backup overlay) resolves
+        if: ${{ !cancelled() }}
+        working-directory: projects/pigrocrm
+        env:
+          POSTGRES_PASSWORD: x
+          PIGROCRM_APP_PASSWORD: x
+          PIGROCRM_JWT_SECRET: config-only-never-used-and-long-enough-for-the-validator
+          PIGROCRM_DATA_DIR: ./config-only-never-mounted
+          PIGROCRM_BACKUP_CERT_B64: x
+          PIGROCRM_BACKUP_R2_ACCOUNT_ID: x
+          PIGROCRM_BACKUP_BUCKET: x
+          PIGROCRM_BACKUP_ACCESS_KEY_ID: x
+          PIGROCRM_BACKUP_SECRET_ACCESS_KEY: x
+          PIGROCRM_BACKUP_PING_URL: https://hc-ping.example.test/x
+        run: |
+          set -euo pipefail
+          services=$(docker compose -f docker-compose.yml -f docker-compose.backup.yml config --services | sort | tr '\n' ' ')
+          test "$services" = 'api db db-backup mcp migrate web '
+      - name: The brand's generated SVGs match their source
+        if: ${{ !cancelled() }}
+        run: jq -r '.checks[] | select(.id == "wordmark") | .run' .github/preflight.json | bash -euo pipefail
+      - name: The live vhosts tell crawlers what the repository says
+        if: ${{ !cancelled() }}
+        run: jq -r '.checks[] | select(.id == "check-unindexable") | .run' .github/preflight.json | bash -euo pipefail
+
+  # Terraform and every nginx file the repository carries (CI-A-08). `infra/cloudflare`
+  # had no check at all; the resource-count rule is the one its README asks a person to
+  # run by hand, and the one that failed unnoticed for eight days (REB-195).
+  infra:
+    name: infra · terraform and nginx
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.infra == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TERRAFORM_IMAGE: hashicorp/terraform:1.13@sha256:6bbb82d575aa7bd4f0a2c6e3a0838ab9590426c08a71d7a2783643f01004d356
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Terraform formatting, init and validate
+        working-directory: infra/cloudflare
+        run: |
+          set -euo pipefail
+          tf() { docker run --rm -v "$PWD":/w -w /w "$TERRAFORM_IMAGE" "$@"; }
+          tf fmt -check -diff
+          tf init -backend=false -input=false
+          tf validate
+      - name: Every DNS record has an import block
+        working-directory: infra/cloudflare
+        run: |
+          set -euo pipefail
+          resources=$(grep -c '^resource "cloudflare_dns_record"' rebase.tf)
+          imports=$(grep -c '^  to ' rebase-imports.tf)
+          echo "resources=${resources} imports=${imports}"
+          test "$resources" = "$imports"
+      - name: The scripts
+        run: shellcheck scripts/*.sh
+      - name: Every nginx file is valid
+        run: bash scripts/check-nginx.sh
+
+  # A committed secret is in a public repository's history for good, so this runs on
+  # every event, with the whole history on a push and a PR (INFRA-A-19). The rules and
+  # the few allowed fixtures are `.github/gitleaks.toml`.
+  secrets-scan:
+    name: secrets · gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan the history
+        # `safe.directory`: the container's root user does not own the runner's checkout.
+        run: |
+          docker run --rm -v "$PWD":/repo -w /repo \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9 \
+            git --no-banner --redact -c .github/gitleaks.toml .
 
   ci:
     name: ci
@@ -948,14 +1204,16 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, kit, vaultwarden, hub-db-backup]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, hub-api-types, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter, kit, vaultwarden, hub-db-backup, infra, secrets-scan, nightly-pigrocrm-e2e, nightly-ui-e2e, nightly-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: A needed job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          printf '%s\n' '${{ toJSON(needs) }}'
-          printf '%s' '${{ toJSON(needs) }}' | jq -e '
+          printf '%s\n' "$NEEDS"
+          printf '%s' "$NEEDS" | jq -e '
             to_entries
             | map(select(.value.result == "failure" or .value.result == "cancelled"))
             | length == 0'

@@ -45,6 +45,11 @@
 data/
 var/
 
+# Python tests: no Python image runs them (CI does, on the checkout), and they are the
+# largest part of what a source change would otherwise re-copy into the image layers.
+projects/*/packages/*/tests/
+projects/*/apps/*/tests/
+
 # Editor / tooling noise, and documentation no image reads
 .superpowers/
 .claude/

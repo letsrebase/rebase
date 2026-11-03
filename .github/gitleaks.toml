@@ -1,0 +1,22 @@
+# Allow-list for the secret scan in ci.yml (`secrets-scan`) and preflight. The default
+# gitleaks rules stay on; only paths that hold fixtures or a public key are excused.
+title = "rebase gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures and dev-only docs hold made-up keys, tokens and passwords."
+paths = [
+  '''(^|/)tests?/''',
+  '''\.test\.[jt]sx?$''',
+  '''(^|/)conftest\.py$''',
+  '''projects/pigrocrm/docs/superpowers/''',
+  # Old repository layout, history only: a comment about colour "tokens" that the
+  # generic-api-key rule reads as a key.
+  '''^apps/web/src/features/dashboard/charts\.tsx$''',
+]
+
+[[allowlists]]
+description = "PostHog project keys (phc_...) ship in the public bundle by design."
+regexes = ['''phc_[A-Za-z0-9]+''']
