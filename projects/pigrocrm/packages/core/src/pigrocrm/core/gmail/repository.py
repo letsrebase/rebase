@@ -748,21 +748,21 @@ class GmailRepository:
         ).scalar_one_or_none()
 
     def legal_entities(self) -> LegalEntity | None:
-        """The default azienda, or `None` on an installation that has not filled it in.
+        """The default legal entity, or `None` on an installation that has not filled it in.
 
         Read through the repository rather than by constructing `LegalEntityService`, which
         would pull a whole service (and its `actor` checks) into a path that needs one
         string. Since REB-627 it is the fallback of `legal_entity_for`, for a mail about a
-        record that has no azienda of its own (a contact with no customer).
+        record that has no legal entity of its own (a contact with no customer).
         """
         return self.session.execute(
             select(LegalEntity).where(LegalEntity.is_default.is_(True))
         ).scalar_one_or_none()
 
     def legal_entity_for_draft(self, draft: EmailDraft) -> LegalEntity | None:
-        """The azienda a draft speaks for: for a payment reminder the invoice's, which
+        """The legal entity a draft speaks for: for a payment reminder the invoice's, which
         the body and the IBAN already use, even when its customer has since moved to
-        another azienda (Greptile, PR #510); for any other draft the record's
+        another legal entity (Greptile, PR #510); for any other draft the record's
         (`legal_entity_for`)."""
         if draft.payment_reminder_id is not None:
             legal_entity_id = self.session.execute(
@@ -775,10 +775,10 @@ class GmailRepository:
         return self.legal_entity_for(draft.entity_type, draft.entity_id)
 
     def legal_entity_for(self, entity_type: str, entity_id: UUID) -> LegalEntity | None:
-        """The azienda a mail speaks for (REB-627, spec 2026-10-03 §1.8): a customer's own,
+        """The legal entity a mail speaks for (REB-627, spec 2026-10-03 §1.8): a customer's own,
         a person's through its customer, a deal's own; the default when the record has
         none, or names none. It supplies the `From` display name and the Message-ID
-        domain, so a letter about azienda X's customer leaves in X's name."""
+        domain, so a letter about legal entity X's customer leaves in X's name."""
         legal_entity_id: UUID | None = None
         if entity_type == "customer":
             legal_entity_id = self.session.execute(

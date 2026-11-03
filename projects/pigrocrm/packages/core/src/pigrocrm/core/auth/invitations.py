@@ -337,7 +337,7 @@ class InvitationService:
 
         Bound to the system actor's scope first (REB-634): this runs on a public route,
         with no actor and nothing bound, and `active_only` reads `legal_entities`, a
-        policied table. Unbound, the application role would read no azienda at all and
+        policied table. Unbound, the application role would read no legal entity at all and
         every scoped invitation would open an account that sees nothing.
         """
         bind_scope(self.session, Actor.system())
@@ -348,8 +348,8 @@ class InvitationService:
                 "invitation", "name", "obbligatorio quando l'invito non porta un nome"
             )
         role = as_role(row.role)
-        # The scope the invitation carried, kept to the aziende still active at the
-        # click (spec §1.11): an invitation whose every azienda was deactivated
+        # The scope the invitation carried, kept to the legal entities still active at the
+        # click (spec §1.11): an invitation whose every legal entity was deactivated
         # meanwhile opens an account that sees nothing, and the Team panel says so.
         # Nothing turns an empty scope into «tutte». Written in the same transaction
         # as the row (CodeRabbit on PR #513): between a commit of the row and a commit

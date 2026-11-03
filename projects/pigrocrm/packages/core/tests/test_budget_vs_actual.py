@@ -26,7 +26,7 @@ READER = Actor(id=None, type="user", role="readonly")
 # invoice, and `issue()` refuses a `issue_date` outside the current fiscal year, so a
 # literal `2026-03` was a date on which every test in this file would begin failing at
 # once. See `periodo_fiscale.py` -- "this year, March" would not have been a fix either.
-PERIOD = BudgetQuery(da=FIRST_OF_MONTH, a=TODAY)
+PERIOD = BudgetQuery(date_from=FIRST_OF_MONTH, a=TODAY)
 
 BudgetedDeal = Callable[..., UUID]
 
@@ -250,7 +250,9 @@ def test_the_list_is_paginated_from_the_first_commit(
             nome=f"Deal {index}",
         )
     service = AnalyticsService(db_session)
-    page = service.budget_vs_actual(BudgetQuery(da=PERIOD.da, a=PERIOD.a, limit=2), READER)
+    page = service.budget_vs_actual(
+        BudgetQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to, limit=2), READER
+    )
     assert len(page.items) == 2
     assert page.next_cursor is not None
 
@@ -260,7 +262,10 @@ def test_the_list_is_paginated_from_the_first_commit(
     seen = [row.deal_id for row in page.items]
     while page.next_cursor is not None:
         page = service.budget_vs_actual(
-            BudgetQuery(da=PERIOD.da, a=PERIOD.a, limit=2, cursor=page.next_cursor), READER
+            BudgetQuery(
+                date_from=PERIOD.date_from, date_to=PERIOD.date_to, limit=2, cursor=page.next_cursor
+            ),
+            READER,
         )
         seen.extend(row.deal_id for row in page.items)
     assert len(seen) == 5
@@ -281,7 +286,7 @@ def test_a_cursor_that_names_no_deal_is_refused_rather_than_read_as_the_first_pa
     )
     with pytest.raises(ValidationFailed) as excinfo:
         AnalyticsService(db_session).budget_vs_actual(
-            BudgetQuery(da=PERIOD.da, a=PERIOD.a, cursor=uuid4()), READER
+            BudgetQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to, cursor=uuid4()), READER
         )
     assert excinfo.value.details["field"] == "cursor"
 
@@ -292,6 +297,6 @@ def test_an_inverted_window_is_refused(db_session: Session) -> None:
     an answer."""
     with pytest.raises(ValidationFailed) as excinfo:
         AnalyticsService(db_session).budget_vs_actual(
-            BudgetQuery(da=date(2026, 3, 31), a=date(2026, 3, 1)), READER
+            BudgetQuery(date_from=date(2026, 3, 31), date_to=date(2026, 3, 1)), READER
         )
     assert excinfo.value.details["field"] == "a"

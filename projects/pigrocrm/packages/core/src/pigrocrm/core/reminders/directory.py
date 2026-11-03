@@ -6,8 +6,8 @@ space-wide types every admin. Three rules then apply to every set, in this one p
 detector only names who it would like to tell:
 
 - **A recipient is shown only what they may read.** A user is dropped from a subject's
-  set, the owner fallback included, when their azienda scope does not cover the subject's
-  azienda. A subject with no azienda at all (an attività linked to nothing) is visible
+  set, the owner fallback included, when their legal entity scope does not cover the subject's
+  legal entity. A subject with no legal entity at all (an task linked to nothing) is visible
   only to an unscoped member, as the row-level policy has it (`0048`). Assigning a deal
   never widens who can read its customer's invoices.
 - **A user who cannot be told is dropped.** An archived user, or one with no address,
@@ -47,8 +47,8 @@ class Person:
     legal_entities: tuple[UUID, ...] | None
 
     def sees(self, legal_entity_id: UUID | None) -> bool:
-        """Whether the user's scope covers a subject of this azienda. `None` is a subject
-        no azienda owns, which only an unscoped member may read."""
+        """Whether the user's scope covers a subject of this legal entity. `None` is a subject
+        no legal entity owns, which only an unscoped member may read."""
         if self.legal_entities is None:
             return True
         return legal_entity_id is not None and legal_entity_id in self.legal_entities

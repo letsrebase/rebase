@@ -194,8 +194,8 @@ class DealService:
         if customer is None:
             raise NotFound("customer", payload["customer_id"])
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
-        # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
-        # refused when that azienda is deactivated, since nothing new is born on one.
+        # The customer's legal entity at this moment, kept from now on (REB-623, spec §1.7);
+        # refused when that legal entity is deactivated, since nothing new is born on one.
         payload["legal_entity_id"] = LegalEntityService(self.session).inherited(
             customer.legal_entity_id, ENTITY
         )
@@ -391,12 +391,12 @@ class DealService:
         if deal is None:
             raise NotFound(ENTITY, deal_id)
 
-        hours_attive = self.repo.count_active_time_entries(deal_id)
-        if hours_attive:
+        active_hours = self.repo.count_active_time_entries(deal_id)
+        if active_hours:
             raise Conflict(
                 ENTITY,
                 "il deal ha ore registrate: fatturale o archiviale prima",
-                hours_attive=hours_attive,
+                active_hours=active_hours,
             )
 
         deal.deleted_at = datetime.now(UTC)
@@ -419,7 +419,7 @@ class DealService:
         if deal is None:
             raise NotFound(ENTITY, deal_id)
 
-        # Past the row-level policies (REB-634): the customer may sit in an azienda the
+        # Past the row-level policies (REB-634): the customer may sit in a legal entity the
         # deal's reader cannot see, and «not found» must not read as «not archived».
         archived = self.session.execute(
             text("SELECT customer_archived(:customer_id)"), {"customer_id": deal.customer_id}

@@ -46,17 +46,17 @@ def round_hours(value: Decimal) -> Decimal:
     return value.quantize(HOURS_QUANT, rounding=ROUND_HALF_UP)
 
 
-def line_value(hours: Decimal, fattore: Decimal | None) -> Decimal | None:
-    """`ROUND(ore x fattore, 2)`, or `None` when there is no factor.
+def line_value(hours: Decimal, factor: Decimal | None) -> Decimal | None:
+    """`ROUND(hours x factor, 2)`, or `None` when there is no factor.
 
     `None`, never `0.00`: an hour with no rate is an hour nobody has priced, and a
     silent zero would say the work was free -- a lie that sums. The caller excludes
-    `None` from money aggregates and counts those rows separately as "ore senza
-    tariffa" (§5.1).
+    `None` from money aggregates and counts those rows separately as the "ore senza tariffa"
+    figure (§5.1).
     """
-    if fattore is None:
+    if factor is None:
         return None
-    return round_money(hours * fattore)
+    return round_money(hours * factor)
 
 
 def sum_money(values: Iterable[Decimal | None]) -> Decimal:

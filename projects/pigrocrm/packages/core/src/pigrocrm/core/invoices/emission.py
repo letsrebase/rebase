@@ -115,8 +115,8 @@ class InvoiceEmission:
         from_proforma = source.type == "proforma"
         check_issuable(source, from_proforma=from_proforma)
 
-        # Step 2. From here on, every other emission of this azienda for this year
-        # waits; another azienda's register has a lock of its own (REB-619).
+        # Step 2. From here on, every other emission of this legal entity for this year
+        # waits; another legal entity's register has a lock of its own (REB-619).
         counter = ctx.repo.lock_counter(source.legal_entity_id, year)
         # Native issuing must not resume on top of a silent gap in an imported register.
         # Checked inside the lock that protects the increment below, so a concurrent
@@ -134,7 +134,7 @@ class InvoiceEmission:
         snapshot = build_snapshot(ctx, source.customer_id, profile, actor, source.legal_entity_id)
         abroad = ctx.issues_abroad(profile)
         # The SdI's own rules on the two parties, and below on the text: what the XML
-        # writer would refuse after the number is spent. A foreign azienda issues no XML
+        # writer would refuse after the number is spent. A foreign legal entity issues no XML
         # (REB-619), so none of them applies to its document.
         if not abroad:
             check_party_exportable(snapshot.legal_entity, "legal_entity")
@@ -244,7 +244,9 @@ class InvoiceEmission:
                     f"la riga {r.line_number} porta natura {r.vat_nature} e un riferimento "
                     "normativo che non corrispondono al cliente e al profilo fiscale "
                     "attuali: sostituisci le righe prima di emettere",
-                    expected=f"natura {vat_nature_pending} con il riferimento {reference_expected!r}",
+                    expected=(
+                        f"natura {vat_nature_pending} con il riferimento {reference_expected!r}"
+                    ),
                 )
         # The document's own text, by the writer's rules, before the counter moves: an em
         # dash in a causale used to spend a number whose XML was then refused on every

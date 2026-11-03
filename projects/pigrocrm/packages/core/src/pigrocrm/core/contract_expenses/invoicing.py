@@ -90,8 +90,8 @@ def assemble_unbilled_contract_expenses_into_new_invoice(
 ) -> InvoiceRead:
     """The end-to-end common case: every unbilled, reimbursable expense on
     `contract_id` becomes one line each on a fresh draft invoice for the
-    contract's own customer, under the contract's own azienda (a customer billed by
-    another azienda than the contract does not move the draft), and each expense is
+    contract's own customer, under the contract's own legal entity (a customer billed by
+    another legal entity than the contract does not move the draft), and each expense is
     bound to the line it produced. The draft, its lines and the binding are one
     transaction (`assemble_draft`): an expense billed in the meantime refuses the whole
     thing and no draft is left behind."""

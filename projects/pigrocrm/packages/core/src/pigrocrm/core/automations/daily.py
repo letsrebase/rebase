@@ -5,36 +5,36 @@ rule like «an offer sent a week ago has had no answer» has no change to react 
 fact that becomes true on a day nobody touched anything. So these rules are **evaluated, not
 triggered**: once a day, per space, `pigrocrm automations` (the host's crontab, like the
 digest and the Gmail sync) asks each switched-on rule which subjects match today and opens
-one attivita for each that has none open. The runner and this pass share the configuration
+one task for each that has none open. The runner and this pass share the configuration
 row and nothing else; there is one place a rule is switched off.
 
-**Idempotent by the database.** `uq_tasks_rule_open` allows one open, live attivita
+**Idempotent by the database.** `uq_tasks_rule_open` allows one open, live task
 per `(regola, subject)`. The pass reads which subjects already have one and skips them (so
 the log can say «già aperta» instead of failing), and still inserts under a savepoint and
 treats that index's violation as the same answer: two passes at the same instant both pass
-the read, and only the index decides. Closing the attivita, or cancelling it, frees the
+the read, and only the index decides. Closing the task, or cancelling it, frees the
 subject and the rule may open the next one on a later pass: «chase Rossi» closed without
 Rossi paying means «I spoke to him», and a month on the reminder is needed again (§6.1).
 
-**An automation-opened attivita and a reminder do not double up.** A reminder (spec
-2026-10-26) is a notice about a cause, recomputed on every pass; an attivita is a to-do, with
+**An automation-opened task and a reminder do not double up.** A reminder (spec
+2026-10-26) is a notice about a cause, recomputed on every pass; an task is a to-do, with
 a state. They are different objects and both exist, so the places where they would say the
 same thing twice are decided here rather than left to happen:
 
 * `overdue_invoice` and the reminder `invoice_overdue` have the same cause (an issued, unpaid
   invoice past its due date, strictly) and the reminder already climbs its own ladder. The
-  attivita is the to-do the reminder points at, so the reminder engine does not raise
+  task is the to-do the reminder points at, so the reminder engine does not raise
   `task_due` or `task_overdue` for what this rule opened to a person who is already
   told of the invoice by `invoice_overdue`; to anybody else it is the only notice.
 * `stalled_deal` and the reminder `deal_stale` measure different things: the reminder is the
-  absence of any mail, attivita or hours for 21 days, the rule is a deal that has not changed
-  stage. The attivita this rule opens is itself an attivita created on the deal, so it
+  absence of any mail, task or hours for 21 days, the rule is a deal that has not changed
+  stage. The task this rule opens is itself an task created on the deal, so it
   restarts `deal_stale`'s clock: the two never speak about the same stretch twice.
-* `sent_offer_follow_up` has no reminder of its own: the attivita is the only notice, so
+* `sent_offer_follow_up` has no reminder of its own: the task is the only notice, so
   its `task_due` reminder is wanted.
 
 **What it never does.** It sends nothing to anybody: the sollecito stays an act (slice 7 §9),
-and an attivita is a row in somebody's list. It writes through no actor's authority: the
+and an task is a row in somebody's list. It writes through no actor's authority: the
 system opens them, `actor_type = 'system'` on the timeline entry, `origine = 'automazione'`
 and `rule` on the row.
 
@@ -78,7 +78,7 @@ from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tasks.schemas import TITLE_MAX_LENGTH
 
-# The offer is called back this many days after it was sent, and the attivita falls due then.
+# The offer is called back this many days after it was sent, and the task falls due then.
 OFFER_PENDING_DAYS: Final = 7
 # And stops being the follow-up of that sending this many days after the wait is over.
 OFFER_WINDOW_DAYS: Final = 30
@@ -99,7 +99,7 @@ _SUBJECT_COLUMNS = {
 class RuleReport:
     """What one rule did in one space, as three counters that cannot be mistaken for each
     other: `disattivata` says the switch is off and nothing was looked at, `already_open` the
-    subjects that matched and already had their attivita, `open` the ones opened now."""
+    subjects that matched and already had their task, `open` the ones opened now."""
 
     rule: TaskRule
     disabled: bool
@@ -140,7 +140,7 @@ class AutomationPass:
 
     def run(self, *, today: date | None = None, dry_run: bool = False) -> PassReport:
         """Every switched-on rule, once. Commits after each rule, so one that fails does not
-        take the others' attivita with it. `dry_run` does the same reads and writes inside a
+        take the others' task with it. `dry_run` does the same reads and writes inside a
         savepoint and rolls that back, which is what makes the rehearsal's counters the real
         ones and leaves nothing behind, the configuration row's first creation included."""
         day = today if today is not None else today_local(self.settings)
@@ -212,7 +212,7 @@ class AutomationPass:
                 return self._invoices_overdue(today)
 
     def _already_open(self, rule: TaskRule, subjects: set[UUID]) -> set[UUID]:
-        """Which of these subjects have an open, live attivita of this rule: the reading
+        """Which of these subjects have an open, live task of this rule: the reading
         half of the idempotency, which the index backs."""
         if not subjects:
             return set()
@@ -229,8 +229,8 @@ class AutomationPass:
         )
 
     def _active_users(self, ids: set[UUID]) -> set[UUID]:
-        """An attivita cannot be assigned to a disabled account (`TaskService`), and the
-        pass would be the one writer to break that: a rule's attivita for a deal whose owner
+        """An task cannot be assigned to a disabled account (`TaskService`), and the
+        pass would be the one writer to break that: a rule's task for a deal whose owner
         left goes to «whoever opens the list» instead."""
         if not ids:
             return set()
@@ -276,7 +276,7 @@ class AutomationPass:
 
     def _offers(self, today: date) -> list[_Candidate]:
         """Offers sent at least seven days ago, still waiting, and not older than thirty
-        days past that. The attivita hangs on the offer's deal, or on its customer when the
+        days past that. The task hangs on the offer's deal, or on its customer when the
         offer has none, and falls due seven days after the sending: if the pass is late, it
         is born late, which is the truth."""
         sent_before = today - timedelta(days=OFFER_PENDING_DAYS)

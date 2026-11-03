@@ -91,11 +91,11 @@ CashBase = Literal["accrual", "collection"]
 
 
 class PeriodPnlQuery(BaseModel):
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
     customer_id: UUID | None = None
     base: RevenueBase = "issue"
-    # One azienda's deals, costs and hours, or every azienda's (REB-630, spec
+    # One legal entity's deals, costs and hours, or every legal entity's (REB-630, spec
     # 2026-10-03 §1.9). A cost without a deal is shared and counts only in «tutte».
     legal_entity_id: UUID | None = None
 
@@ -117,13 +117,13 @@ class PeriodPnl(BaseModel):
     reportable number is `closed`.
     """
 
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
     customer_id: UUID | None
     # Echoed from the query, so a reader of the figure knows which of the two readings
     # of revenue produced it (ORB-61) without keeping the request beside the response.
     base: RevenueBase
-    # Echoed too (REB-630): `None` is every azienda, which is what «tutte» shows.
+    # Echoed too (REB-630): `None` is every legal entity, which is what «tutte» shows.
     legal_entity_id: UUID | None = None
     closed: PnlTotals
     in_progress: PnlTotals
@@ -139,8 +139,8 @@ class PeriodPnl(BaseModel):
     # field name, and §5 forbids the two ever being rendered side by side.
     #
     # One difference from `DealPnl` is deliberate and is recorded here because the names
-    # are identical: `DealPnl.accrued_value` is `ricavi + valore delle ore non
-    # fatturate`, an estimate of what the deal will finally have been worth. There is no
+    # are identical: `DealPnl.accrued_value` is `revenue + value of the unbilled hours`,
+    # an estimate of what the deal will finally have been worth. There is no
     # such reading for a period -- a period's revenue is already its own reported row, and
     # adding it in again would put revenue under a heading that says "non sono ricavi".
     # So this one is the accrued value of the unbilled billable hours **alone**, which is
@@ -184,8 +184,8 @@ class UnbilledBacklog(BaseModel):
 
 
 class BudgetQuery(BaseModel):
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
     customer_id: UUID | None = None
     # Mandatory pagination from the first commit (residual B3): the margins view is by
     # its nature a list of *closed* deals, so unbounded growth stops being invisible here.
@@ -236,8 +236,8 @@ class FiscalEstimate(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     year: int
-    # The azienda whose profile and invoices this was computed on (REB-630): an
-    # estimate is one azienda's, never the space's, and the card says whose.
+    # The legal entity whose profile and invoices this was computed on (REB-630): an
+    # estimate is one legal entity's, never the space's, and the card says whose.
     legal_entity_id: UUID
     estimate: Literal[True] = True
     warning: str
@@ -323,7 +323,7 @@ class CashOverview(BaseModel):
     year: int
     # Echoed from the request, so the page can label the reading it shows (ORB-133).
     base: CashBase
-    # Echoed as well (REB-630): one azienda's cash, or `None` for every azienda added
+    # Echoed as well (REB-630): one legal entity's cash, or `None` for every legal entity added
     # up, which is the sum «tutte» exists to show.
     legal_entity_id: UUID | None = None
     paid: Decimal = Field(max_digits=12, decimal_places=2)
@@ -370,7 +370,7 @@ class CeilingHeadroom(BaseModel):
     year -- `evaluate_pack`'s own list, unmodified."""
 
     year: int
-    # The azienda whose pack these ceilings belong to (REB-630).
+    # The legal entity whose pack these ceilings belong to (REB-630).
     legal_entity_id: UUID
     pack_id: str
     pack_version: str
@@ -446,8 +446,9 @@ class CeilingSimulation(BaseModel):
 
 
 class YearTotals(BaseModel):
-    """The register of one azienda's year, summed. `taxable_amount` is `annual_revenue`'s
-    figure over the same invoices, and `social_security_surcharge` is already inside it: the rivalsa line
+    """The register of one legal entity's year, summed. `taxable_amount` is `annual_revenue`'s
+    figure over the same invoices, and `social_security_surcharge` is already inside it: the social
+    security surcharge line
     is a line of the invoice like any other (REB-352 §2)."""
 
     invoices: int
@@ -459,7 +460,7 @@ class YearTotals(BaseModel):
 
 class YearRegime(BaseModel):
     """Revenue of the year under one regime, read from what each invoice froze at issue
-    (`snapshot.tax`), never from today's profile: an azienda that changed regime in
+    (`snapshot.tax`), never from today's profile: a legal entity that changed regime in
     the year has two rows, and each invoice is counted under the one it was issued in."""
 
     regime_code: str | None
@@ -502,8 +503,8 @@ class YearRegisterRow(BaseModel):
 
 
 class YearOverview(BaseModel):
-    """The year of one azienda as the accountant reads it: what was issued, under which
-    regime and tax treatment, with the stamp duty and the rivalsa kept apart.
+    """The year of one legal entity as the accountant reads it: what was issued, under which
+    regime and tax treatment, with the stamp duty and the social security surcharge kept apart.
 
     Scoped by the register year (`Invoice.year`), the same `invoice`/`issued` universe
     `annual_revenue` sums, so `totali.taxable_amount` is the revenue figure of the year and
@@ -540,24 +541,24 @@ class RevenueByCustomer(BaseModel):
     revenue: Decimal = Field(max_digits=12, decimal_places=2)
     invoices: int
     share: float
-    # The azienda whose revenue `share` is a share of (REB-630, spec 2026-10-03 §1.9):
-    # a share of revenue is a share of one azienda's revenue, so in «tutte» the rows
-    # come grouped by it and a customer billed by two aziende appears twice, once per
-    # share. With one azienda every row carries the same id and nothing changes.
+    # The legal entity whose revenue `share` is a share of (REB-630, spec 2026-10-03 §1.9):
+    # a share of revenue is a share of one legal entity's revenue, so in «tutte» the rows
+    # come grouped by it and a customer billed by two legal entities appears twice, once per
+    # share. With one legal entity every row carries the same id and nothing changes.
     legal_entity_id: UUID
 
 
 class EconomicOverview(BaseModel):
-    """Impostazioni economiche della dashboard: la cassa dell'anno e, per un admin con
-    un profilo fiscale configurato, la stima fiscale calcolata due volte -- sui ricavi
-    incassati e sui ricavi proiettati -- con i netti che ne seguono. Per chi non e'
-    admin, o senza profilo, la parte fiscale e' `None` e la pagina mostra solo la cassa."""
+    """Economic settings of the dashboard: the year's cash and, for an admin with a
+    configured fiscal profile, the tax estimate computed twice -- on collected revenue
+    and on projected revenue -- with the nets that follow. For anyone who is not an
+    admin, or has no profile, the fiscal part is `None` and the page shows only the cash."""
 
     calculated_at: datetime
-    # The azienda the whole answer speaks for, or `None` for every azienda (REB-630).
+    # The legal entity the whole answer speaks for, or `None` for every legal entity (REB-630).
     # In that case the fiscal block below is empty when the space has several, because
     # two regimes' taxes do not add: the page then asks `/api/analytics/fiscal` once per
-    # azienda instead (spec 2026-10-03 §1.9).
+    # legal entity instead (spec 2026-10-03 §1.9).
     legal_entity_id: UUID | None = None
     pension_fund: CashOverview
     tax: FiscalEstimate | None
@@ -635,8 +636,8 @@ class DaysAnalysis(BaseModel):
     worked without the approval the contract asks for. The period is echoed back, rounded
     out to whole months for the monthly figures; the rate reads the exact `da`..`a`."""
 
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
     legal_entity_id: UUID | None
     today: dt.date
     months: list[DaysMonth]

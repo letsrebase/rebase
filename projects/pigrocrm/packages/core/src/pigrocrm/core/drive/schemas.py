@@ -26,7 +26,7 @@ from pigrocrm.core.validation import SafeStr
 # comment there warns about: two spellings of one rule diverge silently in both
 # directions -- a looser one here would let a query reach `checked_outside_id` and be
 # refused from three levels down instead of by this schema, and a stricter one would
-# refuse a root the titolare configured legitimately. Same rule, same source, whether it
+# refuse a root the owner configured legitimately. Same rule, same source, whether it
 # arrives on a PATCH body (here) or as an MCP tool argument (`drive_privileged.py`, which
 # imports the same name).
 _DriveId = Annotated[SafeStr, Field(pattern=OUTSIDE_ID_PATTERN)]
@@ -113,11 +113,11 @@ class GoogleDriveSpaceStorage(BaseModel):
 
     Always a concrete answer for an admin, never `None`: `in_effect` is whether
     `DriveRepository.storage_account` currently finds a row (an admin's, active, naming
-    a folder), and `holder` is set if and only if `in_effect` is `True`. A collaboratore
+    a folder), and `holder` is set if and only if `in_effect` is `True`. A collaborator
     gets neither -- `GoogleDriveAccountService.space_storage` returns `None` for them,
     and `DriveHealth.space_storage`'s own docstring is where that `None` actually goes:
     the field is left **unset** on the wire, not carried as `null`, which is what fix
-    round 1 replaced a genuinely ambiguous `None` with (Greptile: a collaboratore's
+    round 1 replaced a genuinely ambiguous `None` with (Greptile: a collaborator's
     absence and "no admin has chosen a folder yet" must never be the same value).
 
     `holder`'s own default exists only so `in_effect=True`'s branch can omit it in

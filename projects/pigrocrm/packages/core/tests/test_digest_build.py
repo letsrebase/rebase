@@ -64,8 +64,8 @@ _PREFIX = "DIGEST"
 
 class Corpus(NamedTuple):
     engine: Engine
-    da: date
-    a: date
+    date_from: date
+    date_to: date
     # `(data_emissione, totale)` of every issued invoice this file writes, so the two
     # month totals can be checked against the corpus instead of against a second call to
     # the same sum.
@@ -127,7 +127,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         halves of «Da incassare» must not name the same invoice twice (REB-618).
     """
     factory = session_factory(db_engine)
-    da, a = _week_scorsa()
+    date_from, date_to = _week_scorsa()
     today = today_local(SETTINGS)
     emissioni: list[tuple[date, Decimal]] = []
     with factory() as session:
@@ -204,8 +204,8 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         _invoice(
             1,
             total="1000.00",
-            issue_date=da + timedelta(days=1),
-            due_date=a + timedelta(days=40),
+            issue_date=date_from + timedelta(days=1),
+            due_date=date_to + timedelta(days=40),
             deal=deal_open,
         )
         # Issued long before, collected inside the week: the row that makes «Incassate»
@@ -213,9 +213,9 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         _invoice(
             2,
             total="1500.00",
-            issue_date=da - timedelta(days=60),
-            due_date=da - timedelta(days=30),
-            payment_date=da + timedelta(days=2),
+            issue_date=date_from - timedelta(days=60),
+            due_date=date_from - timedelta(days=30),
+            payment_date=date_from + timedelta(days=2),
         )
         # Overdue by thirty days: the reminder candidate.
         _invoice(
@@ -231,15 +231,15 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         _invoice(
             4,
             total="600.00",
-            issue_date=da - timedelta(days=10),
-            due_date=max(a + timedelta(days=7), today + timedelta(days=1)),
+            issue_date=date_from - timedelta(days=10),
+            due_date=max(date_to + timedelta(days=7), today + timedelta(days=1)),
         )
 
         session.add(
             TimeEntry(
                 deal_id=deal_open.id,
                 user_id=user.id,
-                data=da + timedelta(days=1),
+                data=date_from + timedelta(days=1),
                 hours=Decimal("6.00"),
                 description=f"{_PREFIX} lavorazione",
                 billable=True,
@@ -257,7 +257,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
                 type="offer",
                 title=f"{_PREFIX} Offerta",
                 status="sent",
-                status_since=da - timedelta(days=10),
+                status_since=date_from - timedelta(days=10),
                 custom_fields={},
             )
         )
@@ -277,12 +277,12 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
                 + timedelta(hours=12),
             )
 
-        session.add(_stage_changed(da + timedelta(days=2)))
+        session.add(_stage_changed(date_from + timedelta(days=2)))
         # The same movement three days before the week opened: the filter must drop it.
-        session.add(_stage_changed(da - timedelta(days=3)))
+        session.add(_stage_changed(date_from - timedelta(days=3)))
         session.commit()
     try:
-        yield Corpus(db_engine, da, a, tuple(emissioni))
+        yield Corpus(db_engine, date_from, date_to, tuple(emissioni))
     finally:
         with factory() as session:
             corpus_customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
@@ -353,17 +353,17 @@ def test_an_empty_space_builds_an_empty_digest(db_engine: Engine) -> None:
     assert digest.empty is True
     assert digest.week_stalled is True
     assert digest.week == "2026-W37"
-    assert (digest.da, digest.a) == (date(2026, 9, 7), date(2026, 9, 13))
+    assert (digest.date_from, digest.date_to) == (date(2026, 9, 7), date(2026, 9, 13))
 
 
 # --- the week that had something in it ------------------------------------------------
 
 
 def test_the_week_lists_issued_collected_overdue_and_due(corpus: Corpus) -> None:
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
 
     assert [i.amount for i in digest.issued] == [Decimal("1000.00")]
-    assert [i.data for i in digest.issued] == [corpus.da + timedelta(days=1)]
+    assert [i.data for i in digest.issued] == [corpus.date_from + timedelta(days=1)]
     assert [i.number for i in digest.issued] == ["2026/1"]
     assert [i.customer for i in digest.issued] == [f"{_PREFIX} Cliente"]
     assert [i.status for i in digest.issued] == ["issued"]
@@ -371,7 +371,7 @@ def test_the_week_lists_issued_collected_overdue_and_due(corpus: Corpus) -> None
 
     assert [i.amount for i in digest.paid] == [Decimal("1500.00")]
     # Attributed to the day the money arrived, not to the day the invoice was written.
-    assert [i.data for i in digest.paid] == [corpus.da + timedelta(days=2)]
+    assert [i.data for i in digest.paid] == [corpus.date_from + timedelta(days=2)]
     assert [i.payment_status for i in digest.paid] == ["paid"]
 
     assert [i.days_of_delay for i in digest.overdue] == [30]
@@ -383,25 +383,25 @@ def test_the_week_lists_issued_collected_overdue_and_due(corpus: Corpus) -> None
     # The window is `a + 1` to `a + 7`, minus whatever `overdue` already names (due on
     # or before today). On the Sunday that is `a + 7` nothing in it is still to come,
     # and the corpus's invoice sits on `a + 8` (REB-618): both readings are asserted.
-    if corpus.a + timedelta(days=7) > today_local(SETTINGS):
+    if corpus.date_to + timedelta(days=7) > today_local(SETTINGS):
         assert [i.amount for i in digest.in_due_date] == [Decimal("600.00")]
-        assert [i.data for i in digest.in_due_date] == [corpus.a + timedelta(days=7)]
+        assert [i.data for i in digest.in_due_date] == [corpus.date_to + timedelta(days=7)]
     else:
         assert digest.in_due_date == []
 
     assert digest.hours is not None
     assert digest.hours.total_hours == Decimal("6.00")
-    assert (digest.hours.da, digest.hours.a) == (corpus.da, corpus.a)
+    assert (digest.hours.date_from, digest.hours.date_to) == (corpus.date_from, corpus.date_to)
 
     assert [m.stage_name for m in digest.deal_mossi] == [f"{_PREFIX} Vinto"]
     assert [m.title for m in digest.deal_mossi] == [f"{_PREFIX} Deal mosso"]
-    assert [m.when for m in digest.deal_mossi] == [corpus.da + timedelta(days=2)]
+    assert [m.when for m in digest.deal_mossi] == [corpus.date_from + timedelta(days=2)]
 
     assert len(digest.offers_pending) == 1
     assert digest.offers_pending[0].title == f"{_PREFIX} Offerta"
     assert (
         digest.offers_pending[0].days
-        == (today_local(SETTINGS) - (corpus.da - timedelta(days=10))).days
+        == (today_local(SETTINGS) - (corpus.date_from - timedelta(days=10))).days
     )
 
     assert digest.week_stalled is False
@@ -412,8 +412,8 @@ def test_the_months_are_the_register_sums_and_not_a_second_count(corpus: Corpus)
     """§3.1: the running month beside the one before it. Both come from
     `sum_issued_in_period`, so they are checked against the corpus's own emission dates
     rather than against another call to the same sum."""
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
-    current_from, current_to = month_bounds(corpus.a.year, corpus.a.month)
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
+    current_from, current_to = month_bounds(corpus.date_to.year, corpus.date_to.month)
     previous = current_from - timedelta(days=1)
     previous_from, previous_to = month_bounds(previous.year, previous.month)
 
@@ -442,7 +442,7 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
     makes this also a test of the `conteggio > 0` filter carrying that fourth signal
     exactly the way it already carries the first two.
     """
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
     assert digest.hours_uninvoiced == Decimal("6.00")
     assert digest.accrued_value == Decimal("300.00")
     # The won deal has no unbilled hours, so «vinto ma da fatturare» is zero -- which is
@@ -480,7 +480,7 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
             TimeEntry(
                 deal_id=deal.id,
                 user_id=user_id,
-                data=corpus.da + timedelta(days=3),
+                data=corpus.date_from + timedelta(days=3),
                 hours=Decimal("4.00"),
                 description=f"{_PREFIX} da fatturare",
                 billable=True,
@@ -494,13 +494,13 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
         )
         session.commit()
 
-    aggiornato = _build(corpus.engine, (corpus.da, corpus.a))
+    aggiornato = _build(corpus.engine, (corpus.date_from, corpus.date_to))
     assert aggiornato.won_to_invoice == 1
     assert "vinto_da_fatturare" in [s.code for s in aggiornato.signals]
 
 
 def test_the_pipeline_carries_only_the_stages_that_hold_something(corpus: Corpus) -> None:
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
     assert [(s.stage_name, s.number) for s in digest.pipeline] == [
         (f"{_PREFIX} Aperto", 1),
         (f"{_PREFIX} Vinto", 1),
@@ -532,16 +532,16 @@ def test_a_movement_just_after_midnight_belongs_to_the_week_it_opens(corpus: Cor
                 actor_type="system",
                 payload={"from": f"{_PREFIX} Aperto", "to": f"{_PREFIX} Vinto"},
                 occurred_at=datetime.combine(
-                    corpus.da - timedelta(days=1), datetime.min.time(), tzinfo=UTC
+                    corpus.date_from - timedelta(days=1), datetime.min.time(), tzinfo=UTC
                 )
                 + timedelta(hours=23, minutes=30),
             )
         )
         session.commit()
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
     assert sorted(m.when for m in digest.deal_mossi) == [
-        corpus.da,
-        corpus.da + timedelta(days=2),
+        corpus.date_from,
+        corpus.date_from + timedelta(days=2),
     ]
 
 
@@ -560,7 +560,7 @@ def test_a_week_keeps_its_movements_however_many_came_after_it(corpus: Corpus) -
             select(Deal.id).where(Deal.nome == f"{_PREFIX} Deal mosso")
         ).scalar_one()
         after = datetime.combine(
-            corpus.a + timedelta(days=1), datetime.min.time(), tzinfo=UTC
+            corpus.date_to + timedelta(days=1), datetime.min.time(), tzinfo=UTC
         ) + timedelta(hours=12)
         for i in range(_MOVEMENTS_READ + 1):
             session.add(
@@ -576,9 +576,9 @@ def test_a_week_keeps_its_movements_however_many_came_after_it(corpus: Corpus) -
             )
         session.commit()
 
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
 
-    assert [m.when for m in digest.deal_mossi] == [corpus.da + timedelta(days=2)]
+    assert [m.when for m in digest.deal_mossi] == [corpus.date_from + timedelta(days=2)]
 
 
 def test_an_invoice_that_fell_due_inside_the_week_is_money_to_collect(corpus: Corpus) -> None:
@@ -598,14 +598,14 @@ def test_an_invoice_that_fell_due_inside_the_week_is_money_to_collect(corpus: Co
         corpus.engine,
         number=10,
         total="900.00",
-        issue_date=corpus.da - timedelta(days=20),
-        due_date=corpus.a,
+        issue_date=corpus.date_from - timedelta(days=20),
+        due_date=corpus.date_to,
     )
-    delay = (today_local(SETTINGS) - corpus.a).days
+    delay = (today_local(SETTINGS) - corpus.date_to).days
     # The grace period the old source applied, and the proof this row was inside it.
     assert 1 <= delay <= SETTINGS.payment_reminders_grace_days
 
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
 
     lines = {riga.invoice_id: riga for riga in digest.overdue}
     assert invoice in lines
@@ -635,11 +635,15 @@ def test_an_invoice_due_today_is_overdue_with_no_days_of_delay(corpus: Corpus) -
         due_date=today,
     )
 
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
 
     lines = {riga.invoice_id: riga for riga in digest.overdue}
     assert lines[invoice].days_of_delay == 0
-    assert corpus.a + timedelta(days=1) <= today <= corpus.a + timedelta(days=IN_DUE_DATE_DAYS)
+    assert (
+        corpus.date_to + timedelta(days=1)
+        <= today
+        <= corpus.date_to + timedelta(days=IN_DUE_DATE_DAYS)
+    )
     assert invoice not in [riga.invoice_id for riga in digest.in_due_date]
 
 
@@ -661,7 +665,7 @@ def test_an_invoice_chased_to_the_ceiling_is_still_owed(corpus: Corpus) -> None:
             )
         session.commit()
 
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
 
     lines = {riga.invoice_id: riga for riga in digest.overdue}
     assert overdue in lines
@@ -761,22 +765,22 @@ def test_previous_week_and_iso_week() -> None:
 
 
 def test_previous_week_is_the_current_one_shifted_back_seven_days() -> None:
-    da, a = previous_week(SETTINGS)
-    assert (da, a) == _week_scorsa()
-    assert a - da == timedelta(days=6)
-    assert da.isoweekday() == 1
+    date_from, date_to = previous_week(SETTINGS)
+    assert (date_from, date_to) == _week_scorsa()
+    assert date_to - date_from == timedelta(days=6)
+    assert date_from.isoweekday() == 1
 
 
 def test_the_week_the_digest_reports_is_the_one_it_was_given(corpus: Corpus) -> None:
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
-    assert (digest.da, digest.a) == (corpus.da, corpus.a)
-    assert digest.week == iso_week(corpus.da)
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
+    assert (digest.date_from, digest.date_to) == (corpus.date_from, corpus.date_to)
+    assert digest.week == iso_week(corpus.date_from)
 
 
 def test_deal_ids_and_invoice_ids_are_the_real_rows(corpus: Corpus) -> None:
     """Every row carries the id of the thing it describes, because §3.1 requires every
     line of the mail to link to the record it came from."""
-    digest = _build(corpus.engine, (corpus.da, corpus.a))
+    digest = _build(corpus.engine, (corpus.date_from, corpus.date_to))
     with session_factory(corpus.engine)() as session:
         issued = session.execute(
             select(Invoice.id).where(Invoice.year == 2026, Invoice.number == 1)

@@ -36,7 +36,7 @@ class LegalEntityFields(BaseModel):
     carries since REB-622, and the body `LegalEntityCreate` extends, since a row being
     created has no version to have been built on.
 
-    `nome` is optional on purpose: a space with one azienda never typed one, and the
+    `nome` is optional on purpose: a space with one legal entity never typed one, and the
     service derives it from `legal_name` (cut to the column width) when it is
     missing, which is also what the migration did for the row every space already had.
 
@@ -90,14 +90,14 @@ class LegalEntityUpsert(LegalEntityFields):
 
 
 class LegalEntityCreate(LegalEntityFields):
-    """A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
+    """A second legal entity, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
     milestone 5): the upsert's fields, a required short name, and the profile body
     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
-    azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
+    legal entity ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
 
-    `nome` is required here where the whole-row upsert derives it: the first azienda of a
+    `name` is required here where the whole-row upsert derives it: the first legal entity of a
     space was never named, but the second is created to be told apart from the first,
-    in the sidebar and on every list, and a derived name is a ragione sociale cut to
+    in the sidebar and on every list, and a derived name is a legal name cut to
     eighty characters."""
 
     name: SafeStr = Field(max_length=NAME_MAX_LENGTH)

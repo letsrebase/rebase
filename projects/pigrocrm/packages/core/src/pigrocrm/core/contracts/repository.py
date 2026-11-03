@@ -38,7 +38,7 @@ class ContractRepository:
         §1.5's concentration cap indirectly through `get`. A contract's own `status`
         stays out of this filter: a contract that is not `active` still has dates the
         calendar overlay reads, and which states count is that overlay's decision, not
-        this list's. `legal_entity_id` narrows it in SQL to one azienda's contracts. Never
+        this list's. `legal_entity_id` narrows it in SQL to one legal entity's contracts. Never
         enough contracts in one practice to need keyset pagination, the same
         reasoning `RateCardRepository.list_for_contract` gives.
         """

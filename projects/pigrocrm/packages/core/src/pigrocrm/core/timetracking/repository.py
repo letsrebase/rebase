@@ -71,20 +71,22 @@ class TimeEntryRepository:
     def for_deal(self, deal_id: UUID) -> list[TimeEntry]:
         return list(self.session.execute(self._live_for_deal(deal_id)).scalars())
 
-    def in_range(self, deal_id: UUID, da: date, a: date) -> list[TimeEntry]:
+    def in_range(self, deal_id: UUID, date_from: date, date_to: date) -> list[TimeEntry]:
         return list(
             self.session.execute(
                 self._live_for_deal(deal_id)
-                .where(TimeEntry.date >= da, TimeEntry.date <= a)
+                .where(TimeEntry.date >= date_from, TimeEntry.date <= date_to)
                 .order_by(TimeEntry.date, TimeEntry.created_at)
             ).scalars()
         )
 
     def for_month(self, deal_id: UUID, year: int, month: int) -> list[TimeEntry]:
-        da, a = month_bounds(year, month)
-        return self.in_range(deal_id, da, a)
+        date_from, date_to = month_bounds(year, month)
+        return self.in_range(deal_id, date_from, date_to)
 
-    def week_hours(self, da: date, a: date, legal_entity_id: UUID | None = None) -> WeekHours:
+    def week_hours(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> WeekHours:
         """`SUM(ore) GROUP BY data` over the window, filled out to **every** day in it.
 
         Assembled here rather than in the dashboard for two reasons that agree: it is a
@@ -119,13 +121,13 @@ class TimeEntryRepository:
             select(TimeEntry.date, func.sum(TimeEntry.hours))
             .where(
                 TimeEntry.deleted_at.is_(None),
-                TimeEntry.date >= da,
-                TimeEntry.date <= a,
+                TimeEntry.date >= date_from,
+                TimeEntry.date <= date_to,
             )
             .group_by(TimeEntry.date)
         )
         if legal_entity_id is not None:
-            # An entry's azienda is its deal's (REB-623, REB-630): the same subquery
+            # An entry's legal entity is its deal's (REB-623, REB-630): the same subquery
             # `list` below uses, so the week and the filtered list agree on the rows.
             stmt = stmt.where(
                 TimeEntry.deal_id.in_(
@@ -138,12 +140,12 @@ class TimeEntryRepository:
         # prudent would instead hide a column becoming nullable.
         logged: dict[date, Decimal] = {row[0]: round_hours(Decimal(row[1])) for row in rows}
 
-        span = (a - da).days + 1
-        days_window = [da + timedelta(days=offset) for offset in range(span)]
+        span = (date_to - date_from).days + 1
+        days_window = [date_from + timedelta(days=offset) for offset in range(span)]
         days = [DayHours(day=day, hours=logged.get(day, ZERO_HOURS)) for day in days_window]
         return WeekHours(
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
             days=days,
             # Membership by presence in `logged`, not by `ore == 0`: the zero-hour day is
             # exactly the case the two readings disagree on, and this is the one that is
@@ -198,7 +200,7 @@ class TimeEntryRepository:
         if query.deal_id is not None:
             stmt = stmt.where(TimeEntry.deal_id == query.deal_id)
         if query.legal_entity_id is not None:
-            # An entry's azienda is its deal's (REB-623): a subquery on `deals`, served
+            # An entry's legal entity is its deal's (REB-623): a subquery on `deals`, served
             # by `ix_deals_legal_entity_id`, rather than a column this table would copy.
             stmt = stmt.where(
                 TimeEntry.deal_id.in_(
@@ -207,10 +209,10 @@ class TimeEntryRepository:
             )
         if query.user_id is not None:
             stmt = stmt.where(TimeEntry.user_id == query.user_id)
-        if query.da is not None:
-            stmt = stmt.where(TimeEntry.date >= query.da)
-        if query.a is not None:
-            stmt = stmt.where(TimeEntry.date <= query.a)
+        if query.date_from is not None:
+            stmt = stmt.where(TimeEntry.date >= query.date_from)
+        if query.date_to is not None:
+            stmt = stmt.where(TimeEntry.date <= query.date_to)
         if query.billable is not None:
             stmt = stmt.where(TimeEntry.billable.is_(query.billable))
         if query.invoiced is not None:
@@ -279,14 +281,14 @@ class CostRepository:
             stmt = stmt.where(Cost.deal_id == query.deal_id)
         if query.legal_entity_id is not None:
             # A shared cost (`NULL`) is nobody's in particular: it answers only the
-            # view over every azienda (REB-623, spec §1.7).
+            # view over every legal entity (REB-623, spec §1.7).
             stmt = stmt.where(Cost.legal_entity_id == query.legal_entity_id)
         if query.category_id is not None:
             stmt = stmt.where(Cost.category_id == query.category_id)
-        if query.da is not None:
-            stmt = stmt.where(Cost.date >= query.da)
-        if query.a is not None:
-            stmt = stmt.where(Cost.date <= query.a)
+        if query.date_from is not None:
+            stmt = stmt.where(Cost.date >= query.date_from)
+        if query.date_to is not None:
+            stmt = stmt.where(Cost.date <= query.date_to)
         if query.custom:
             stmt = stmt.where(Cost.custom_fields.contains(query.custom))
         if query.cursor is not None:

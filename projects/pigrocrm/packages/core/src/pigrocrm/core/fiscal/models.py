@@ -8,7 +8,7 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
 
 class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
-    """The fiscal parameters of one azienda. At most one row per azienda.
+    """The fiscal parameters of one legal entity. At most one row per legal entity.
 
     `legal_entities` (slice 2) holds the issuer's *identity*; this holds the numbers
     and codes the SdI validates. They are not duplicates, and
@@ -23,8 +23,8 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     parameters. A `valid_from`/`valid_to` pair would only answer a question the
     per-invoice `snapshot` already answers, and answers better.
 
-    One per azienda is enforced by the database (REB-615, spec 2026-10-03 §1.2):
-    `legal_entity_id` is `unique=True`, so a second insert for the same azienda fails on
+    One per legal entity is enforced by the database (REB-615, spec 2026-10-03 §1.2):
+    `legal_entity_id` is `unique=True`, so a second insert for the same legal entity fails on
     the constraint, which is what turns two concurrent first-time saves into one row
     and one `Conflict`. A space whose owner never saved this profile has no row, which
     `issue` answers with `NotFound`.
@@ -66,19 +66,19 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # FORFETTARIO_SUBSTITUTE_TAX_RATE (0.05) and FORFETTARIO_INPS_RATE (0.2607) out of
     # App.jsx and into the service layer, which slice 1 §14 assigns to this slice.
     #
-    # Nullable, unlike the bollo values of law next to them, because a regime that is
-    # not the forfettario computes income by a different arithmetic entirely: for those
+    # Nullable, unlike the stamp duty values of law next to them, because a regime that is
+    # not the flat-rate regime computes income by a different arithmetic entirely: for those
     # the honest value is "not applicable", which is NULL, and not a zero that a report
     # would quietly multiply by.
     #
     # No Python-side default on the three since REB-619: `FiscalProfileUpsert` owns the
-    # forfettario's values (67, 5, 26.07) and every write goes through it, while a
+    # flat-rate regime's values (67, 5, 26.07) and every write goes through it, while a
     # foreign profile sets them to `None` on purpose, which an ORM default would
-    # silently turn back into the forfettario's on the insert.
+    # silently turn back into the flat-rate regime's on the insert.
     profitability_coefficient: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     substitute_tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     social_security_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
-    # REB-361: which jurisdiction pack governs the ceiling and rivalsa arithmetic
+    # REB-361: which jurisdiction pack governs the ceiling and social security surcharge arithmetic
     # (`pigrocrm.core.fiscal.pack`) -- a pointer, not a duplication of the pack's own
     # data, and `NOT NULL` on purpose: every space this product has ever provisioned
     # is on this one regime today, so there is no real "which pack" question for an

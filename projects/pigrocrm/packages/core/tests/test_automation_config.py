@@ -210,9 +210,7 @@ def test_every_change_writes_an_activity(db_session: Session) -> None:
     AutomationConfigService(db_session).update_automation_config(
         AutomationConfigUpdate(a1_wins_accepted_offer_deal=False), ADMIN
     )
-    rows = ActivityRepository(db_session).by_kind(
-        ["automation.config_changed"], limit=10
-    )
+    rows = ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10)
     assert len(rows) == 1
     assert rows[0].actor_id == ADMIN.id
     assert rows[0].payload["a1_wins_accepted_offer_deal"] == {"da": True, "a": False}
@@ -229,10 +227,7 @@ def test_a_no_op_update_writes_no_activity(db_session: Session) -> None:
     service.update_automation_config(
         AutomationConfigUpdate(a1_wins_accepted_offer_deal=True), ADMIN
     )
-    assert (
-        ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10)
-        == []
-    )
+    assert ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10) == []
 
 
 def test_describe_returns_the_recent_runs(db_session: Session) -> None:

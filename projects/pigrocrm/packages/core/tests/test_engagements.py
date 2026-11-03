@@ -979,7 +979,7 @@ def test_report_lists_entries_with_their_invoice(
             issue_date=second,
         )
 
-    report = door.service().report(match_id, da=first)
+    report = door.service().report(match_id, date_from=first)
 
     assert report.slug == "ada-lovelace"
     assert report.deal_url == linked.deal_url
@@ -1056,7 +1056,7 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
             deleted_at=datetime.now(UTC),
         )
 
-    report = door.service().report(match_id, da=days[0])
+    report = door.service().report(match_id, date_from=days[0])
 
     assert [(g.description, g.invoice.id if g.invoice else None) for g in report.days] == [
         ("Analisi", proforma),
@@ -1108,12 +1108,12 @@ def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.Mon
 
     assert [g.data for g in report.days] == [date(2026, 10, 2), date(2026, 10, 31)]
 
-    for da, a, reason in (
+    for date_from, date_to, reason in (
         (date(2024, 1, 1), date(2024, 1, 1) + timedelta(days=801), "al massimo 800 giorni"),
         (date(2026, 10, 2), date(2026, 10, 1), REVERSED),
     ):
         with pytest.raises(ValidationFailed) as refused:
-            door.service().report(match_id, da=da, a=a)
+            door.service().report(match_id, date_from=date_from, date_to=date_to)
         assert refused.value.details == {
             "entity": "engagement",
             "field": "period",
@@ -1121,7 +1121,7 @@ def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.Mon
         }
     # `a` alone before the deal's first day is the same reversed period.
     with pytest.raises(ValidationFailed) as refused:
-        door.service().report(match_id, a=date(2026, 10, 1))
+        door.service().report(match_id, date_to=date(2026, 10, 1))
     assert refused.value.details["reason"] == REVERSED
 
 
@@ -1130,14 +1130,14 @@ def test_report_accepts_exactly_800_days(door: Door) -> None:
     a span of exactly 800 days is accepted, and both of its ends are in it."""
     match_id = uuid4()
     linked = door.service().ensure(match_id, _upsert())
-    a = today_local(door.settings)
-    da = a - timedelta(days=800)
+    date_to = today_local(door.settings)
+    date_from = date_to - timedelta(days=800)
     with _space(door, linked.slug) as space:
-        _log(space, linked.deal_id, da - timedelta(days=1), "Prima")
-        _log(space, linked.deal_id, da, "Il primo giorno")
-        _log(space, linked.deal_id, a, "L'ultimo giorno")
+        _log(space, linked.deal_id, date_from - timedelta(days=1), "Prima")
+        _log(space, linked.deal_id, date_from, "Il primo giorno")
+        _log(space, linked.deal_id, date_to, "L'ultimo giorno")
 
-    report = door.service().report(match_id, da=da, a=a)
+    report = door.service().report(match_id, date_from=date_from, date_to=date_to)
 
     assert [g.description for g in report.days] == ["Il primo giorno", "L'ultimo giorno"]
     assert report.hours_total == Decimal("16.00")

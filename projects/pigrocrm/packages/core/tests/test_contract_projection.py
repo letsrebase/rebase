@@ -275,8 +275,8 @@ def test_project_combines_the_schedule_and_the_renewal_assumption() -> None:
         [card],
         assumption,
         come_di=date(2026, 6, 1),
-        da=date(2026, 1, 1),
-        a=date(2027, 6, 1),
+        date_from=date(2026, 1, 1),
+        date_to=date(2027, 6, 1),
     )
 
     assert result.contract_id == contract.id
@@ -295,7 +295,12 @@ def test_project_with_no_renewal_assumption_is_the_schedule_alone() -> None:
     card = _rate_card(valid_from=date(2026, 1, 1), delivery_period="monthly")
 
     result = project(
-        contract, [card], None, come_di=date(2026, 6, 1), da=date(2026, 1, 1), a=date(2027, 6, 1)
+        contract,
+        [card],
+        None,
+        come_di=date(2026, 6, 1),
+        date_from=date(2026, 1, 1),
+        date_to=date(2027, 6, 1),
     )
 
     assert result.scheduled == Decimal("5000.00")
@@ -306,7 +311,12 @@ def test_project_with_no_renewal_assumption_is_the_schedule_alone() -> None:
 def test_project_with_no_rate_cards_and_no_assumption_is_zero() -> None:
     contract = _contract(end=date(2026, 12, 31), termination_notice_days=30)
     result = project(
-        contract, [], None, come_di=date(2026, 6, 1), da=date(2026, 1, 1), a=date(2027, 6, 1)
+        contract,
+        [],
+        None,
+        come_di=date(2026, 6, 1),
+        date_from=date(2026, 1, 1),
+        date_to=date(2027, 6, 1),
     )
     assert result.scheduled == ZERO_MONEY
     assert result.from_renewal == ZERO_MONEY
@@ -322,12 +332,24 @@ def test_an_open_ended_contracts_projection_does_not_depend_on_where_the_window_
     assumption = _assumption(probability=50, expected_volume=Decimal("36500.00"))
     kwargs = {"come_di": date(2026, 6, 1)}
 
-    whole = project(contract, [card], assumption, da=date(2026, 8, 1), a=date(2028, 1, 1), **kwargs)
+    whole = project(
+        contract, [card], assumption, date_from=date(2026, 8, 1), date_to=date(2028, 1, 1), **kwargs
+    )
     first = project(
-        contract, [card], assumption, da=date(2026, 8, 1), a=date(2027, 3, 15), **kwargs
+        contract,
+        [card],
+        assumption,
+        date_from=date(2026, 8, 1),
+        date_to=date(2027, 3, 15),
+        **kwargs,
     )
     second = project(
-        contract, [card], assumption, da=date(2027, 3, 15), a=date(2028, 1, 1), **kwargs
+        contract,
+        [card],
+        assumption,
+        date_from=date(2027, 3, 15),
+        date_to=date(2028, 1, 1),
+        **kwargs,
     )
 
     assert first.total + second.total == whole.total

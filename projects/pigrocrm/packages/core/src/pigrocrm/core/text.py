@@ -2,7 +2,7 @@
 
 Under `core/` and not under `drive/`, where this started: the bytes of a PDF do not
 know which door they came in by. The same four extractors now answer for a file the
-titolare pointed at on Drive, for a document archived in the CRM (`documents/service.py`
+owner pointed at on Drive, for a document archived in the CRM (`documents/service.py`
 `extract_text`) and for the attachment of a received mail -- and a second copy per source
 would be four parsers of somebody else's malformed PDF to keep in step.
 
@@ -151,7 +151,7 @@ def _is_xml(mime: str) -> bool:
     Not covered by the `text/` prefix below, and worth its own branch because of one
     file in particular: a FatturaPA XML is archived beside the PDF of the same invoice
     (`documents/schemas.py` allows `application/xml` for exactly that), and it is the
-    copy that holds the fields the PDF only prints -- the codice destinatario, the PEC,
+    copy that holds the fields the PDF only prints -- the SdI recipient code, the PEC,
     the fiscal regime. Refusing it as "a type this does not read" would send a reader to
     the rendered page for a value that is written, unambiguously, in the source.
 

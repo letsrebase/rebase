@@ -67,7 +67,7 @@ YEAR = TODAY.year
 # One day of the year every invoice is dated and paid on: inside `YEAR` for the yearly
 # sums, whichever month the suite runs in.
 DAY = date(YEAR, 3, 10)
-PERIOD = PeriodQuery(da=date(YEAR, 3, 1), a=date(YEAR, 3, 31))
+PERIOD = PeriodQuery(date_from=date(YEAR, 3, 1), a=date(YEAR, 3, 31))
 
 # The figures, by hand, from the rows the fixture writes.
 P_PAID = Decimal("1000.00")  # the studio's paid invoice
@@ -334,9 +334,13 @@ def test_the_cash_overview_in_all_is_the_sum_of_the_legal_entities(corpus: Corpu
 def test_the_period_pnl_keeps_the_shared_cost_out_of_each_legal_entity(corpus: Corpus) -> None:
     with session_factory(corpus.engine)() as session:
         service = AnalyticsService(session)
-        all = service.period_pnl(PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a), READONLY)  # type: ignore[arg-type]
+        all = service.period_pnl(
+            PeriodPnlQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to), READONLY
+        )  # type: ignore[arg-type]
         foreign = service.period_pnl(
-            PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a, legal_entity_id=corpus.foreign),  # type: ignore[arg-type]
+            PeriodPnlQuery(
+                date_from=PERIOD.date_from, date_to=PERIOD.date_to, legal_entity_id=corpus.foreign
+            ),  # type: ignore[arg-type]
             READONLY,
         )
     assert all.general_expenses == COST_SHARED
@@ -417,7 +421,12 @@ def test_the_commercial_dashboard_keeps_every_stage_and_sums_the_pipeline(
     def _run(legal_entity_id: UUID | None) -> dict[str, tuple[int, Decimal]]:
         with session_factory(corpus.engine)() as session:
             result = DashboardService(session).get_commercial_dashboard(
-                PeriodQuery(da=PERIOD.da, a=PERIOD.a, legal_entity_id=legal_entity_id), READONLY
+                PeriodQuery(
+                    date_from=PERIOD.date_from,
+                    date_to=PERIOD.date_to,
+                    legal_entity_id=legal_entity_id,
+                ),
+                READONLY,
             )
         assert result.legal_entity_id == legal_entity_id
         return {
@@ -449,7 +458,12 @@ def test_the_closures_and_the_receivables_follow_the_legal_entity(corpus: Corpus
             return (
                 DashboardService(session)
                 .get_commercial_dashboard(
-                    PeriodQuery(da=PERIOD.da, a=PERIOD.a, legal_entity_id=legal_entity_id), READONLY
+                    PeriodQuery(
+                        date_from=PERIOD.date_from,
+                        date_to=PERIOD.date_to,
+                        legal_entity_id=legal_entity_id,
+                    ),
+                    READONLY,
                 )
                 .closings.won
             )

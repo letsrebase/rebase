@@ -19,7 +19,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.schemas import PdfSource
 from pigrocrm.core.text import PDF_MIME
 
-# The original of a fattura has to be a `PDF_MIME` and nothing else is accepted from Drive:
+# The original of an invoice has to be a `PDF_MIME` and nothing else is accepted from Drive:
 # the point of §3.5 is the document the customer received, and a `.docx` or a scan-shaped
 # `image/jpeg` is not that document even when it looks like it.
 # The name a Drive refusal uses when the grant is missing a scope ("<feature> non è
@@ -65,7 +65,7 @@ class OriginalPdfResolver:
 
         `NotFound("drive_file")` becomes `Conflict`, not `NotFound`: nothing about the
         *invoice* is missing, and `DriveReader` answers in those same words for a file
-        that does not exist, one in an unconfigured corner of the titolare's Drive and
+        that does not exist, one in an unconfigured corner of the owner's Drive and
         one in a stranger's Drive -- a distinction this method must not redraw.
 
         **The reader's other refusals pass through untouched, deliberately.** A file over
@@ -92,7 +92,7 @@ class OriginalPdfResolver:
         `drive_reader_for` is the gate as well as the constructor: it refuses before any
         HTTP call when Drive is not connected, when the grant was revoked or when
         `drive.readonly` was never granted, and it takes the roots from the account row
-        so a reader cannot be pointed at a folder the titolare did not configure.
+        so a reader cannot be pointed at a folder the owner did not configure.
         """
         ctx = self.ctx
         if ctx.drive_reader_factory is not None:

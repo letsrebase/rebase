@@ -66,10 +66,10 @@ class InvoiceDrafting:
         cannot burn one -- not as a matter of care, but because there is nothing to
         burn until `issue` runs.
 
-        `legal_entity_id` names the azienda the draft is issued under when it is not its
-        parent's: a contract's days are billed under the contract's own azienda, which a
+        `legal_entity_id` names the legal entity the draft is issued under when it is not its
+        parent's: a contract's days are billed under the contract's own legal entity, which a
         customer moved since no longer shares. In-process only, never on `InvoiceCreate`,
-        so the REST surface keeps taking its azienda from the customer or the deal.
+        so the REST surface keeps taking its legal entity from the customer or the deal.
 
         `commit=False` only flushes, for a caller that composes the draft with its own
         writes in one transaction (`assembly.assemble_draft`)."""

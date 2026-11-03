@@ -4,7 +4,7 @@ A deal counts while its pipeline stage is of type `open` and it is not archived:
 lost one is finished, and a closing date on it means nothing. Recipients are the deal's
 owner and the owner of its customer (`links.py`).
 
-**«Stale» is the absence of anything**: no mail linked to the deal, no attività created or
+**«Stale» is the absence of anything**: no mail linked to the deal, no task created or
 completed on it and no hours booked to it for the threshold's days. The deal's own
 creation counts as the first activity, so a deal born today is not stale tomorrow, and
 editing its fields does not count: a deal somebody keeps retouching and never works is the
@@ -42,7 +42,7 @@ def _open_deals() -> Select[Deal, str | None, UUID | None]:
         select(Deal, Customer.legal_name, Customer.owner_id)
         .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
         # Outer: a deal stays readable when its customer is not, which happens once a
-        # customer moves to another azienda and the deal's owner is scoped to the old one.
+        # customer moves to another legal entity and the deal's owner is scoped to the old one.
         .outerjoin(Customer, Customer.id == Deal.customer_id)
         .where(PipelineStage.type == "open", Deal.deleted_at.is_(None))
     )
@@ -95,7 +95,10 @@ def detect_past_close(ctx: DetectorContext) -> list[Detection]:
                 type_key="deal_past_close",
                 measure=late,
                 title=f"Deal oltre la chiusura prevista: {deal.name}",
-                detail=(f"Doveva chiudere {day_short(deal.expected_close_date)}, {format_days_ago(late)}"),
+                detail=(
+                    f"Doveva chiudere {day_short(deal.expected_close_date)}, "
+                    f"{format_days_ago(late)}"
+                ),
             )
         )
     return found
@@ -109,7 +112,7 @@ def _local_day(column: Any, zone: str) -> ColumnElement[date]:
 
 def _last_activity(zone: str) -> ColumnElement[date]:
     """The most recent thing that happened on a deal: its creation, a mail linked to it,
-    an attività created or completed on it, hours booked to it."""
+    an task created or completed on it, hours booked to it."""
     mail = (
         select(func.max(_local_day(GmailMessage.internal_date, zone)))
         .select_from(GmailMessageLink)

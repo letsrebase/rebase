@@ -51,7 +51,7 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, index=True
     )
-    # The azienda of whichever owner the document hangs on at creation (REB-623, §1.7):
+    # The legal entity of whichever owner the document hangs on at creation (REB-623, §1.7):
     # the customer's, the deal's or the contract's, since exactly one is set.
     legal_entity_id: Mapped[UUID] = mapped_column(
         ForeignKey("legal_entities.id"),

@@ -138,10 +138,12 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
 
 
 def _dashboard(
-    engine: Engine, da: date | None = None, a: date | None = None
+    engine: Engine, date_from: date | None = None, date_to: date | None = None
 ) -> CommercialDashboard:
     with session_factory(engine)() as session:
-        return DashboardService(session).get_commercial_dashboard(PeriodQuery(da=da, a=a), READONLY)
+        return DashboardService(session).get_commercial_dashboard(
+            PeriodQuery(date_from=date_from, date_to=date_to), READONLY
+        )
 
 
 def _this_month() -> tuple[date, date]:
@@ -154,15 +156,15 @@ def _this_month() -> tuple[date, date]:
 
 def test_the_period_defaults_to_the_current_month(seeded: Seeded) -> None:
     result = _dashboard(seeded.engine)
-    assert (result.period.da, result.period.a) == _this_month()
+    assert (result.period.date_from, result.period.date_to) == _this_month()
 
 
 def test_the_period_is_echoed_back_normalised(seeded: Seeded) -> None:
     """Always echoed, because a screenshot of a dashboard with no explicit period is a
     number with no unit (§4)."""
     result = _dashboard(seeded.engine, date(2026, 3, 1), date(2026, 3, 31))
-    assert result.period.da == date(2026, 3, 1)
-    assert result.period.a == date(2026, 3, 31)
+    assert result.period.date_from == date(2026, 3, 1)
+    assert result.period.date_to == date(2026, 3, 31)
 
 
 def test_an_inverted_period_is_a_named_validation_error(seeded: Seeded) -> None:
@@ -182,12 +184,12 @@ def test_an_absurdly_long_period_is_refused(seeded: Seeded) -> None:
 def test_the_ceiling_is_at_max_period_days_exactly(seeded: Seeded) -> None:
     """The boundary, because a limit tested only from a thousand years away is a limit
     whose off-by-one nobody has looked at."""
-    da = date(2020, 1, 1)
-    accepted = _dashboard(seeded.engine, da, da + timedelta(days=MAX_PERIOD_DAYS))
-    assert accepted.period.da == da
+    date_from = date(2020, 1, 1)
+    accepted = _dashboard(seeded.engine, date_from, date_from + timedelta(days=MAX_PERIOD_DAYS))
+    assert accepted.period.date_from == date_from
 
     with pytest.raises(ValidationFailed) as caught:
-        _dashboard(seeded.engine, da, da + timedelta(days=MAX_PERIOD_DAYS + 1))
+        _dashboard(seeded.engine, date_from, date_from + timedelta(days=MAX_PERIOD_DAYS + 1))
     assert caught.value.details["field"] == "a"
 
 
@@ -196,14 +198,14 @@ def test_the_ceiling_is_at_max_period_days_exactly(seeded: Seeded) -> None:
     [(date(2026, 3, 1), None), (None, date(2026, 3, 31))],
 )
 def test_supplying_only_one_bound_is_refused(
-    seeded: Seeded, da: date | None, a: date | None
+    seeded: Seeded, date_from: date | None, date_to: date | None
 ) -> None:
     """Half a period is not a period, and guessing the other half would silently answer a
     different question from the one asked. Both halves are checked: a rule written as
     `if self.da is None` alone accepts the other spelling."""
     with pytest.raises(ValidationFailed) as caught:
-        _dashboard(seeded.engine, da, a)
-    assert caught.value.details["field"] == ("da" if da is None else "a")
+        _dashboard(seeded.engine, date_from, date_to)
+    assert caught.value.details["field"] == ("da" if date_from is None else "a")
 
 
 # -- one instant -----------------------------------------------------------------
@@ -257,7 +259,7 @@ def test_every_figure_comes_from_one_instant(
     original = DealRepository.closed_in_period
 
     def intruding(
-        self: DealRepository, da: date, a: date, legal_entity_id: UUID | None = None
+        self: DealRepository, date_from: date, date_to: date, legal_entity_id: UUID | None = None
     ) -> object:
         with session_factory(seeded.engine)() as outside:
             outside.add(
@@ -272,11 +274,11 @@ def test_every_figure_comes_from_one_instant(
                 )
             )
             outside.commit()
-        return original(self, da, a, legal_entity_id)
+        return original(self, date_from, date_to, legal_entity_id)
 
     monkeypatch.setattr(DealRepository, "closed_in_period", intruding)
-    da, a = _this_month()
-    result = _dashboard(seeded.engine, da, a)
+    date_from, date_to = _this_month()
+    result = _dashboard(seeded.engine, date_from, date_to)
 
     assert result.closings.won == 1, "the dashboard saw a deal committed after its snapshot"
     assert result.closings.won_value == Decimal("5000.00")
@@ -350,10 +352,10 @@ def test_the_closed_stages_count_what_sits_there_today_whatever_the_period(
 
 
 def test_the_closures_match_the_repository_verbatim(seeded: Seeded) -> None:
-    da, a = _this_month()
-    result = _dashboard(seeded.engine, da, a)
+    date_from, date_to = _this_month()
+    result = _dashboard(seeded.engine, date_from, date_to)
     with session_factory(seeded.engine)() as session:
-        expected = DealRepository(session).closed_in_period(da, a)
+        expected = DealRepository(session).closed_in_period(date_from, date_to)
     assert result.closings == expected
     assert result.closings.won == 1
     assert result.closings.lost == 1
@@ -378,7 +380,7 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
     Only the middle one is imminent -- an implementation that starts the window at the
     period's start counts the first as well, and one that widens it counts the last.
     """
-    da, a = _this_month()
+    date_from, date_to = _this_month()
     with session_factory(seeded.engine)() as session:
         # The seeded open deal expects to close *today*, which is inside the period and
         # outside the window; clearing it keeps this assertion independent of which day of
@@ -387,9 +389,9 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
             text("UPDATE deals SET data_chiusura_prevista = NULL WHERE nome = 'DASH aperto'")
         )
         for nome, when in (
-            ("DASH dentro", da + timedelta(days=1)),
-            ("DASH vicino", a + timedelta(days=20)),
-            ("DASH lontano", a + timedelta(days=50)),
+            ("DASH dentro", date_from + timedelta(days=1)),
+            ("DASH vicino", date_to + timedelta(days=20)),
+            ("DASH lontano", date_to + timedelta(days=50)),
         ):
             session.add(
                 Deal(
@@ -404,7 +406,7 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
             )
         session.commit()
 
-    result = _dashboard(seeded.engine, da, a)
+    result = _dashboard(seeded.engine, date_from, date_to)
     assert result.expected_closings_30_days == 1
 
 

@@ -160,8 +160,8 @@ class WorkUnitListQuery(BaseModel):
 
     contract_id: UUID | None = None
     legal_entity_id: UUID | None = None
-    da: dt.date | None = None
-    a: dt.date | None = None
+    date_from: dt.date | None = None
+    date_to: dt.date | None = None
     status: WorkUnitStatus | None = None
     limit: int = Field(default=LIST_LIMIT_DEFAULT, ge=1, le=LIST_LIMIT_MAX)
 

@@ -49,7 +49,7 @@ class RevenueByCustomerRow(NamedTuple):
     # different question ("who owes the most"). A concentration figure caps a share of
     # the total, so the denominator is `annual_revenue(year)` itself.
     share: float
-    # The azienda whose `annual_revenue` is the denominator (REB-630): with one azienda
+    # The legal entity whose `annual_revenue` is the denominator (REB-630): with one legal entity
     # it is the same id on every row, in «tutte» it is what groups them.
     legal_entity_id: UUID
 
@@ -62,7 +62,7 @@ class AnalyticsRepository:
         """`(Σ imponibile, count)` for one deal.
 
         `taxable_amount`, never `total`: the total includes VAT, which is not revenue but
-        money collected on the State's behalf. Under the forfettario the two coincide,
+        money collected on the State's behalf. Under the flat-rate regime the two coincide,
         which is exactly why the choice is made here and tested against a synthetic
         `RF01` profile rather than left to be noticed.
 
@@ -110,8 +110,8 @@ class AnalyticsRepository:
     def _legal_entity_scope[*Ts](
         self, stmt: Select[*Ts], legal_entity_id: UUID | None, column: InstrumentedAttribute[Any]
     ) -> Select[*Ts]:
-        """A deal-keyed table narrowed to one azienda through its deal (REB-630): an
-        hour's azienda is the deal's, so the predicate is the same subquery
+        """A deal-keyed table narrowed to one legal entity through its deal (REB-630): an
+        hour's legal entity is the deal's, so the predicate is the same subquery
         `TimeEntryRepository.list` uses rather than a column that table would copy. A
         cost has its own `legal_entity_id` (equal to its deal's by `CostService`, indexed)
         and every cost read in this file uses that column instead."""
@@ -123,8 +123,8 @@ class AnalyticsRepository:
 
     def revenue_in_range(
         self,
-        da: date,
-        a: date,
+        date_from: date,
+        date_to: date,
         customer_id: UUID | None,
         base: RevenueBase = "issue",
         legal_entity_id: UUID | None = None,
@@ -139,7 +139,9 @@ class AnalyticsRepository:
         when = revenue_date(base)
         stmt = (
             select(Invoice.deal_id, func.coalesce(func.sum(Invoice.taxable_amount), 0))
-            .where(Invoice.deal_id.isnot(None), when >= da, when <= a, *revenue_filter())
+            .where(
+                Invoice.deal_id.isnot(None), when >= date_from, when <= date_to, *revenue_filter()
+            )
             .group_by(Invoice.deal_id)
         )
         if deal_ids is not None:
@@ -147,8 +149,8 @@ class AnalyticsRepository:
         stmt = self._customer_scope(stmt, customer_id, Invoice.deal_id)
         # Through the deal, not the invoice's own column: the period P&L is a report
         # per deal, and `deals_in_range`, the costs and the hours all read the deal's
-        # azienda, so a deal and its revenue can never land on two sides of the line
-        # (an import may put an invoice on another azienda than its deal's).
+        # legal entity, so a deal and its revenue can never land on two sides of the line
+        # (an import may put an invoice on another legal entity than its deal's).
         stmt = self._legal_entity_scope(stmt, legal_entity_id, Invoice.deal_id)
         # `deal_id is not None` restates the `WHERE` for the type checker: the column is
         # nullable on the model and the statement already keeps only the rows that have one.
@@ -159,15 +161,19 @@ class AnalyticsRepository:
         }
 
     def costs_in_range(
-        self, da: date, a: date, customer_id: UUID | None, legal_entity_id: UUID | None = None
+        self,
+        date_from: date,
+        date_to: date,
+        customer_id: UUID | None,
+        legal_entity_id: UUID | None = None,
     ) -> tuple[dict[UUID, Decimal], Decimal]:
         """`({deal_id: total}, general_expenses)`. Costs are attributed by `costs.date`.
 
         General expenses -- `deal_id IS NULL` -- come back separately and are never
         distributed: any apportionment key would make a deal's margin move when a
         different deal was invoiced (§7.4). A customer filter excludes them entirely,
-        because a general expense belongs to no customer by definition. An azienda
-        filter keeps the ones written for that azienda and drops the shared ones
+        because a general expense belongs to no customer by definition. A legal entity
+        filter keeps the ones written for that legal entity and drops the shared ones
         (`azienda_id IS NULL`), which appear only in «tutte» (REB-630, spec §1.7).
         """
         per_deal: dict[UUID, Decimal] = {}
@@ -175,8 +181,8 @@ class AnalyticsRepository:
             select(Cost.deal_id, func.coalesce(func.sum(Cost.amount), 0))
             .where(
                 Cost.deal_id.isnot(None),
-                Cost.date >= da,
-                Cost.date <= a,
+                Cost.date >= date_from,
+                Cost.date <= date_to,
                 Cost.deleted_at.is_(None),
             )
             .group_by(Cost.deal_id)
@@ -190,19 +196,23 @@ class AnalyticsRepository:
 
         if customer_id is not None:
             return per_deal, ZERO_MONEY
-        generali = select(func.coalesce(func.sum(Cost.amount), 0)).where(
+        general_costs = select(func.coalesce(func.sum(Cost.amount), 0)).where(
             Cost.deal_id.is_(None),
-            Cost.date >= da,
-            Cost.date <= a,
+            Cost.date >= date_from,
+            Cost.date <= date_to,
             Cost.deleted_at.is_(None),
         )
         if legal_entity_id is not None:
-            generali = generali.where(Cost.legal_entity_id == legal_entity_id)
-        general = round_money(Decimal(self.session.execute(generali).scalar_one()))
+            general_costs = general_costs.where(Cost.legal_entity_id == legal_entity_id)
+        general = round_money(Decimal(self.session.execute(general_costs).scalar_one()))
         return per_deal, general
 
     def labour_cost_in_range(
-        self, da: date, a: date, customer_id: UUID | None, legal_entity_id: UUID | None = None
+        self,
+        date_from: date,
+        date_to: date,
+        customer_id: UUID | None,
+        legal_entity_id: UUID | None = None,
     ) -> dict[UUID, Decimal]:
         """`Σ ROUND(ore × costo_applicato, 2)`, summed **per row** and then added -- never
         `ROUND(Σ ore × costo, 2)`.
@@ -213,8 +223,8 @@ class AnalyticsRepository:
         printed column and the total come to disagree.
         """
         stmt = select(TimeEntry.deal_id, TimeEntry.hours, TimeEntry.applied_cost).where(
-            TimeEntry.date >= da,
-            TimeEntry.date <= a,
+            TimeEntry.date >= date_from,
+            TimeEntry.date <= date_to,
             TimeEntry.deleted_at.is_(None),
             TimeEntry.applied_cost.isnot(None),
         )
@@ -227,15 +237,19 @@ class AnalyticsRepository:
 
     def hours_in_range(
         self,
-        da: date,
-        a: date,
+        date_from: date,
+        date_to: date,
         customer_id: UUID | None,
         legal_entity_id: UUID | None = None,
         deal_ids: Collection[UUID] | None = None,
     ) -> dict[UUID, Decimal]:
         stmt = (
             select(TimeEntry.deal_id, func.coalesce(func.sum(TimeEntry.hours), 0))
-            .where(TimeEntry.date >= da, TimeEntry.date <= a, TimeEntry.deleted_at.is_(None))
+            .where(
+                TimeEntry.date >= date_from,
+                TimeEntry.date <= date_to,
+                TimeEntry.deleted_at.is_(None),
+            )
             .group_by(TimeEntry.deal_id)
         )
         if deal_ids is not None:
@@ -246,8 +260,8 @@ class AnalyticsRepository:
 
     def _committed_work_units_backlog(
         self,
-        da: date | None,
-        a: date | None,
+        date_from: date | None,
+        date_to: date | None,
         customer_id: UUID | None,
         legal_entity_id: UUID | None = None,
     ) -> tuple[Decimal, int, int]:
@@ -270,12 +284,12 @@ class AnalyticsRepository:
             WorkUnit.status.in_(WORK_UNIT_COMMITTED_STATUSES),
             WorkUnit.invoice_line_id.is_(None),
         )
-        if da is not None:
-            stmt = stmt.where(WorkUnit.date >= da)
-        if a is not None:
-            stmt = stmt.where(WorkUnit.date <= a)
+        if date_from is not None:
+            stmt = stmt.where(WorkUnit.date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(WorkUnit.date <= date_to)
         if customer_id is not None or legal_entity_id is not None:
-            # A day's azienda is its contract's (REB-630), as its customer is.
+            # A day's legal entity is its contract's (REB-630), as its customer is.
             stmt = stmt.join(Contract, Contract.id == WorkUnit.contract_id)
         if customer_id is not None:
             stmt = stmt.where(Contract.customer_id == customer_id)
@@ -311,8 +325,8 @@ class AnalyticsRepository:
 
     def unbilled_backlog(
         self,
-        da: date | None = None,
-        a: date | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         customer_id: UUID | None = None,
         legal_entity_id: UUID | None = None,
     ) -> tuple[Decimal, Decimal, int, int]:
@@ -359,7 +373,7 @@ class AnalyticsRepository:
             .where(InvoiceLine.id == TimeEntry.invoice_line_id, *revenue_filter())
         )
         # An entry whose line this session cannot see at all is not backlog either: an
-        # import may bind a deal's hours to an invoice of another azienda, and under the
+        # import may bind a deal's hours to an invoice of another legal entity, and under the
         # policies «no issued invoice found» must not read as «not yet invoiced»
         # (REB-634; the freeze guard of `billed_entry_ids` reads it the same way).
         visible_line = select(InvoiceLine.id).where(InvoiceLine.id == TimeEntry.invoice_line_id)
@@ -371,16 +385,16 @@ class AnalyticsRepository:
                 and_(visible_line.exists(), ~billed.exists()),
             ),
         )
-        if da is not None:
-            stmt = stmt.where(TimeEntry.date >= da)
-        if a is not None:
-            stmt = stmt.where(TimeEntry.date <= a)
+        if date_from is not None:
+            stmt = stmt.where(TimeEntry.date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(TimeEntry.date <= date_to)
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
         stmt = self._legal_entity_scope(stmt, legal_entity_id, TimeEntry.deal_id)
 
         rows = self.session.execute(stmt).all()
         wu_value, wu_entries, wu_without_rate = self._committed_work_units_backlog(
-            da, a, customer_id, legal_entity_id
+            date_from, date_to, customer_id, legal_entity_id
         )
         return (
             sum_hours([hours for hours, _ in rows]),
@@ -389,20 +403,22 @@ class AnalyticsRepository:
             len(rows) + wu_entries,
         )
 
-    def late_entry_count(self, da: date, a: date, legal_entity_id: UUID | None = None) -> int:
+    def late_entry_count(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> int:
         """How many rows dated inside the period were written **after** it ended
         (`created_at > a`). It is what tells a reader whether the figure can still move,
         and it is free: a COUNT over two columns that already exist (§6.4). Under an
-        azienda the hours are its deals' and the costs the ones that carry its id
+        legal entity the hours are its deals' and the costs the ones that carry its id
         (REB-630): a cost with a deal copied the deal's, a shared one stays out."""
         hours = (
             select(func.count())
             .select_from(TimeEntry)
             .where(
-                TimeEntry.date >= da,
-                TimeEntry.date <= a,
+                TimeEntry.date >= date_from,
+                TimeEntry.date <= date_to,
                 TimeEntry.deleted_at.is_(None),
-                TimeEntry.created_at >= day_after(a),
+                TimeEntry.created_at >= day_after(date_to),
             )
         )
         hours = self._legal_entity_scope(hours, legal_entity_id, TimeEntry.deal_id)
@@ -410,10 +426,10 @@ class AnalyticsRepository:
             select(func.count())
             .select_from(Cost)
             .where(
-                Cost.date >= da,
-                Cost.date <= a,
+                Cost.date >= date_from,
+                Cost.date <= date_to,
                 Cost.deleted_at.is_(None),
-                Cost.created_at >= day_after(a),
+                Cost.created_at >= day_after(date_to),
             )
         )
         if legal_entity_id is not None:
@@ -500,7 +516,7 @@ class AnalyticsRepository:
 
     def monthly_costs(self, year: int, legal_entity_id: UUID | None = None) -> dict[int, Decimal]:
         """`Σ importo` of costs by the month they were incurred, deal or no deal. Under
-        one azienda, the costs that carry its id: a cost with a deal copied the deal's,
+        one legal entity, the costs that carry its id: a cost with a deal copied the deal's,
         a shared one (`NULL`) is nobody's and shows only in «tutte» (REB-630, §1.7)."""
         month = func.extract("month", Cost.date)
         stmt = (
@@ -516,7 +532,7 @@ class AnalyticsRepository:
     def annual_revenue(self, year: int, legal_entity_id: UUID | None = None) -> Decimal:
         """Every issued invoice of the year, deal or no deal: the fiscal estimate is
         about the person's income, so an invoice with no `deal_id` counts too. Of one
-        azienda when named (REB-630): the estimate is one azienda's, and its caller
+        legal entity when named (REB-630): the estimate is one legal entity's, and its caller
         always names one."""
         return round_money(
             Decimal(
@@ -533,9 +549,9 @@ class AnalyticsRepository:
     def annual_revenue_by_legal_entity(
         self, year: int, legal_entity_id: UUID | None = None
     ) -> dict[UUID, Decimal]:
-        """`annual_revenue`, grouped by the issuing azienda: the denominators of
-        `revenue_by_customer` in «tutte» (REB-630), one per azienda, since a share of
-        revenue is a share of one azienda's revenue."""
+        """`annual_revenue`, grouped by the issuing legal entity: the denominators of
+        `revenue_by_customer` in «tutte» (REB-630), one per legal entity, since a share of
+        revenue is a share of one legal entity's revenue."""
         rows = self.session.execute(
             select(Invoice.legal_entity_id, func.coalesce(func.sum(Invoice.taxable_amount), 0))
             .where(Invoice.year == year, *revenue_filter(), *invoice_legal_entity(legal_entity_id))
@@ -563,12 +579,13 @@ class AnalyticsRepository:
         A customer with no invoice this year is simply absent, the same way
         `receivables_by_customer` omits one with nothing outstanding.
 
-        Per azienda since REB-630 (spec 2026-10-03 §1.9): the denominator is the
-        issuing azienda's own `annual_revenue`, never the space's, because a customer
+        Per legal entity since REB-630 (spec 2026-10-03 §1.9): the denominator is the
+        issuing legal entity's own `annual_revenue`, never the space's, because a customer
         who is a third of the SRL and a tenth of the whole has to read as a third. With
-        `legal_entity_id` the rows are that azienda's; without, every azienda's, grouped in
+        `legal_entity_id` the rows are that legal entity's; without, every legal entity's, grouped
+        in
         the order the selector lists them (the default first) and ranked inside each
-        group, so a one-azienda space reads exactly what it read before.
+        group, so a one-legal entity space reads exactly what it read before.
         """
         total = self.annual_revenue_by_legal_entity(year, legal_entity_id)
         revenue = func.coalesce(func.sum(Invoice.taxable_amount), 0)
@@ -632,9 +649,9 @@ class AnalyticsRepository:
         with their own filtered lists.
 
         In «tutte» (REB-630) the count is of distinct customers over the threshold in
-        any azienda, each share read against its own azienda's revenue: never a
-        space-wide share, which would hide the customer who is a third of one azienda
-        and a tenth of the whole, and never twice for a customer two aziende both
+        any legal entity, each share read against its own legal entity's revenue: never a
+        space-wide share, which would hide the customer who is a third of one legal entity
+        and a tenth of the whole, and never twice for a customer two legal entities both
         depend on, since the signal counts people to talk to.
         """
         return len(
@@ -647,8 +664,8 @@ class AnalyticsRepository:
 
     def deals_in_range(
         self,
-        da: date,
-        a: date,
+        date_from: date,
+        date_to: date,
         customer_id: UUID | None,
         base: RevenueBase = "issue",
         legal_entity_id: UUID | None = None,
@@ -666,16 +683,20 @@ class AnalyticsRepository:
         when = revenue_date(base)
         active = (
             select(Invoice.deal_id.label("deal_id"))
-            .where(Invoice.deal_id.isnot(None), when >= da, when <= a, *revenue_filter())
+            .where(
+                Invoice.deal_id.isnot(None), when >= date_from, when <= date_to, *revenue_filter()
+            )
             .union(
                 select(Cost.deal_id.label("deal_id")).where(
                     Cost.deal_id.isnot(None),
-                    Cost.date >= da,
-                    Cost.date <= a,
+                    Cost.date >= date_from,
+                    Cost.date <= date_to,
                     Cost.deleted_at.is_(None),
                 ),
                 select(TimeEntry.deal_id.label("deal_id")).where(
-                    TimeEntry.date >= da, TimeEntry.date <= a, TimeEntry.deleted_at.is_(None)
+                    TimeEntry.date >= date_from,
+                    TimeEntry.date <= date_to,
+                    TimeEntry.deleted_at.is_(None),
                 ),
             )
             .subquery()
@@ -688,7 +709,7 @@ class AnalyticsRepository:
         if customer_id is not None:
             stmt = stmt.where(Deal.customer_id == customer_id)
         if legal_entity_id is not None:
-            # The deal's own column, not the invoice's: a deal keeps its azienda when its
+            # The deal's own column, not the invoice's: a deal keeps its legal entity when its
             # customer moves (spec §1.7), and this list is of deals.
             stmt = stmt.where(Deal.legal_entity_id == legal_entity_id)
         return list(self.session.execute(stmt.order_by(Deal.name, Deal.id).limit(limit)).scalars())
@@ -696,8 +717,8 @@ class AnalyticsRepository:
     def revenue_for_customer_in_window(
         self,
         customer_id: UUID,
-        da: date,
-        a: date,
+        date_from: date,
+        date_to: date,
         base: RevenueBase = "issue",
         legal_entity_id: UUID | None = None,
     ) -> list[tuple[str, Decimal, Decimal]]:
@@ -706,8 +727,8 @@ class AnalyticsRepository:
         statement so the two sides of the ratio can never read a different snapshot.
         Same revenue definition `annual_revenue` uses (`revenue_filter`), windowed by
         `da`/`a` rather than by `Invoice.year`: a contract's own anniversary year rarely
-        lines up with the calendar one `year` names. Within one azienda when named
-        (REB-630): the cap is the contract's azienda's, so both sides of the ratio
+        lines up with the calendar one `year` names. Within one legal entity when named
+        (REB-630): the cap is the contract's legal entity's, so both sides of the ratio
         read that register alone.
 
         Grouped by `Invoice.currency` and never converted (REB-776): a sum across
@@ -721,7 +742,12 @@ class AnalyticsRepository:
         total = func.coalesce(func.sum(Invoice.taxable_amount), 0)
         rows = self.session.execute(
             select(Invoice.currency, customer, total)
-            .where(when >= da, when <= a, *revenue_filter(), *invoice_legal_entity(legal_entity_id))
+            .where(
+                when >= date_from,
+                when <= date_to,
+                *revenue_filter(),
+                *invoice_legal_entity(legal_entity_id),
+            )
             .group_by(Invoice.currency)
             .order_by(Invoice.currency)
         ).all()
@@ -733,10 +759,10 @@ class AnalyticsRepository:
     def year_invoices(
         self, year: int, legal_entity_id: UUID
     ) -> list[tuple[Invoice, Customer | None]]:
-        """Every invoice of the year's register, in register order: `year`, one azienda,
+        """Every invoice of the year's register, in register order: `year`, one legal entity,
         and `revenue_filter`'s definition of an invoice that is revenue, so the list and
         `annual_revenue` can never read a different universe. The customer is an outer
-        join: a member scoped to this azienda cannot read a customer who moved to another
+        join: a member scoped to this legal entity cannot read a customer who moved to another
         one, and an invoice they can read must not drop out of the register for it."""
         rows = self.session.execute(
             select(Invoice, Customer)

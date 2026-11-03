@@ -124,7 +124,7 @@ class InvoiceRepository:
         )
 
     def lock_counter(self, legal_entity_id: UUID, year: int) -> InvoiceCounter:
-        """The azienda's counter row for the year, locked for the rest of this
+        """The legal entity's counter row for the year, locked for the rest of this
         transaction.
 
         Two statements, in this order and for these reasons:
@@ -134,7 +134,7 @@ class InvoiceRepository:
            on. Without `ON CONFLICT` the loser would take a `UniqueViolation` and have
            to be retried by the caller.
         2. `SELECT ... FOR UPDATE` -- from here on every other emission for the same
-           azienda and year waits, and no other azienda's does (REB-619): the row is
+           legal entity and year waits, and no other legal entity's does (REB-619): the row is
            the lock, and there is one per register. This is deliberately **the first
            row lock the emission transaction takes**, and no later statement in that
            transaction takes a lock a concurrent emission could already hold, so two
@@ -166,7 +166,7 @@ class InvoiceRepository:
         return self.session.execute(stmt).scalars().one()
 
     def last_issued_date(self, legal_entity_id: UUID, year: int) -> date | None:
-        """The `issue_date` of the azienda's highest-numbered invoice of `year`.
+        """The `issue_date` of the legal entity's highest-numbered invoice of `year`.
 
         Safe to read only *after* `lock_counter` has run, which is the one place it is
         called from: without the lock, a concurrent emission could commit a later
@@ -185,8 +185,8 @@ class InvoiceRepository:
 
     @staticmethod
     def _register(legal_entity_id: UUID, year: int) -> tuple[ColumnElement[bool], ...]:
-        """The numbered rows of one register: one azienda, one year (REB-619). Every
-        read below starts from this, so none can forget the azienda and answer with
+        """The numbered rows of one register: one legal entity, one year (REB-619). Every
+        read below starts from this, so none can forget the legal entity and answer with
         another register's numbers."""
         return (
             Invoice.legal_entity_id == legal_entity_id,
@@ -199,7 +199,7 @@ class InvoiceRepository:
     def neighbour_dates(
         self, legal_entity_id: UUID, year: int, number: int
     ) -> tuple[date | None, date | None]:
-        """The dates on either side of `number` in the azienda's register of `year`.
+        """The dates on either side of `number` in the legal entity's register of `year`.
 
         `last_issued_date` answers "what came last"; an import inserts *between*
         existing numbers, so monotonicity has to be checked against the nearest lower
@@ -232,7 +232,7 @@ class InvoiceRepository:
         return cast(set[int], set(self.session.execute(stmt).scalars().all()))
 
     def first_native_number(self, legal_entity_id: UUID, year: int) -> int | None:
-        """The lowest number this CRM itself issued for the azienda in `year` (§3.2
+        """The lowest number this CRM itself issued for the legal entity in `year` (§3.2
         rule 6)."""
         stmt = select(func.min(Invoice.number)).where(
             *self._register(legal_entity_id, year), Invoice.imported_from.is_(None)
@@ -246,7 +246,7 @@ class InvoiceRepository:
         return set(self.session.execute(stmt).scalars().all())
 
     def existing_by_number(self, legal_entity_id: UUID, year: int, number: int) -> Invoice | None:
-        """The invoice already on the azienda's register at `(anno, numero)`, if any
+        """The invoice already on the legal entity's register at `(anno, numero)`, if any
         -- the same set `numbers_present` answers, read one row at a time for
         REB-364's duplicate check, which needs the row itself (specifically its
         `xml_hash_sha256`), not merely whether the number is taken.
@@ -287,7 +287,7 @@ class InvoiceRepository:
         **`total`, not `taxable_amount`, and that is not an inconsistency with the revenue
         figure.** Revenue is `Σ imponibile` (slice 4 §7.1, and this slice introduces no
         third meaning); a receivable is what must arrive in the bank, which includes VAT --
-        money collected on the State's behalf. Under the forfettario regime the two
+        money collected on the State's behalf. Under the flat-rate regime regime the two
         coincide and the difference is unobservable, which is exactly why it is written
         down now: the same condition, and the same answer, as slice 4 §7.1.
 
@@ -318,7 +318,9 @@ class InvoiceRepository:
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def count_issued_in_period(self, da: date, a: date, legal_entity_id: UUID | None = None) -> int:
+    def count_issued_in_period(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> int:
         """A `COUNT` on the same predicate the revenue figure uses, so the two cannot
         describe different sets -- "6 fatture emesse" beside a revenue total that included
         a seventh, or a proforma, is the shape of that defect.
@@ -332,13 +334,13 @@ class InvoiceRepository:
                     *_issued_filter(),
                     *_legal_entity_filter(legal_entity_id),
                     Invoice.issue_date.is_not(None),
-                    Invoice.issue_date >= da,
-                    Invoice.issue_date <= a,
+                    Invoice.issue_date >= date_from,
+                    Invoice.issue_date <= date_to,
                 )
             ).scalar_one()
         )
 
-    def list_issued_in_period(self, da: date, a: date) -> list[Invoice]:
+    def list_issued_in_period(self, date_from: date, date_to: date) -> list[Invoice]:
         """Issued invoices whose own date falls in the window, oldest first: the rows the
         weekly report lists under «Emesse questa settimana» (spec 2026-09-16 §3.1, §3.2).
 
@@ -349,12 +351,14 @@ class InvoiceRepository:
         """
         stmt = (
             select(Invoice)
-            .where(*_issued_filter(), Invoice.issue_date >= da, Invoice.issue_date <= a)
+            .where(
+                *_issued_filter(), Invoice.issue_date >= date_from, Invoice.issue_date <= date_to
+            )
             .order_by(Invoice.issue_date, Invoice.number)
         )
         return list(self.session.execute(stmt).scalars())
 
-    def list_paid_in_period(self, da: date, a: date) -> list[Invoice]:
+    def list_paid_in_period(self, date_from: date, date_to: date) -> list[Invoice]:
         """Issued, collected invoices whose `payment_date` falls in the window, in payment
         order: the rows behind «Incassate questa settimana» (spec 2026-09-16 §3.1, §3.2).
 
@@ -368,8 +372,8 @@ class InvoiceRepository:
                 *_issued_filter(),
                 Invoice.payment_status == "paid",
                 Invoice.payment_date.is_not(None),
-                Invoice.payment_date >= da,
-                Invoice.payment_date <= a,
+                Invoice.payment_date >= date_from,
+                Invoice.payment_date <= date_to,
             )
             .order_by(Invoice.payment_date)
         )
@@ -411,7 +415,7 @@ class InvoiceRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
-    def list_in_due_date(self, da: date, a: date) -> list[Invoice]:
+    def list_in_due_date(self, date_from: date, date_to: date) -> list[Invoice]:
         """Receivables due within the window, soonest first: the «in scadenza nei prossimi
         sette giorni» half of §3.1's «Da incassare» section, once the caller passes that
         window instead of the register's whole horizon.
@@ -426,14 +430,14 @@ class InvoiceRepository:
             .where(
                 *_receivable_filter(),
                 Invoice.due_date.is_not(None),
-                Invoice.due_date >= da,
-                Invoice.due_date <= a,
+                Invoice.due_date >= date_from,
+                Invoice.due_date <= date_to,
             )
             .order_by(Invoice.due_date)
         )
         return list(self.session.execute(stmt).scalars())
 
-    def sum_issued_in_period(self, da: date, a: date) -> Decimal:
+    def sum_issued_in_period(self, date_from: date, date_to: date) -> Decimal:
         """`Σ totale` over `list_issued_in_period`'s own predicate: the total the weekly
         report prints beside «Emesse questa settimana», and the same call `DigestService`
         reuses unchanged for the running month and the one before it (spec 2026-09-16
@@ -441,7 +445,7 @@ class InvoiceRepository:
         """
         total = self.session.execute(
             select(func.coalesce(func.sum(Invoice.total), 0)).where(
-                *_issued_filter(), Invoice.issue_date >= da, Invoice.issue_date <= a
+                *_issued_filter(), Invoice.issue_date >= date_from, Invoice.issue_date <= date_to
             )
         ).scalar_one()
         return round_money(Decimal(total))
@@ -463,10 +467,10 @@ class InvoiceRepository:
                 .select_from(Invoice)
                 .join(Deal, Deal.id == Invoice.deal_id)
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-                # The deal's azienda, not the invoice's: this counts deals and its
+                # The deal's legal entity, not the invoice's: this counts deals and its
                 # drill-through (`DealRepository.list`, `?invoiced_unwon=true`)
                 # narrows by `Deal.legal_entity_id`, so the card and the list must read the
-                # same column or an invoice imported onto another azienda than its
+                # same column or an invoice imported onto another legal entity than its
                 # deal's would make them disagree (criterion 2).
                 .where(
                     *invoiced_not_won_predicate(),
@@ -559,10 +563,10 @@ class InvoiceRepository:
         out: list[BandRow] = []
         for code in BANDS_RECEIVABLES:
             amount, number = found.get(code, zero)
-            da, a = bounds.get(code, (None, None))
+            date_from, date_to = bounds.get(code, (None, None))
             if code == "oltre_90":
-                da = bounds["da_61_a_90"][1] + timedelta(days=1)
-            out.append(BandRow(code, da, a, amount, number, share(amount, largest)))
+                date_from = bounds["da_61_a_90"][1] + timedelta(days=1)
+            out.append(BandRow(code, date_from, date_to, amount, number, share(amount, largest)))
         return out
 
     def receivables_by_due_month(self, legal_entity_id: UUID | None = None) -> list[MonthRow]:
@@ -639,13 +643,13 @@ class InvoiceRepository:
             .where(PaymentReminder.invoice_id == Invoice.id, PaymentReminder.sent_at.is_not(None))
             .scalar_subquery()
         )
-        ultimo = (
+        last_sent = (
             select(func.max(PaymentReminder.sent_at))
             .where(PaymentReminder.invoice_id == Invoice.id, PaymentReminder.sent_at.is_not(None))
             .scalar_subquery()
         )
         rows = self.session.execute(
-            select(Invoice, Customer.legal_name, sent, ultimo)
+            select(Invoice, Customer.legal_name, sent, last_sent)
             .join(Customer, Customer.id == Invoice.customer_id)
             .where(
                 *_receivable_filter(),

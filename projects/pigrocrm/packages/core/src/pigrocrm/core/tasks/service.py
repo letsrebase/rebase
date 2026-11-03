@@ -118,7 +118,7 @@ class TaskService:
     def _flush_or_conflict(self, task_id: UUID) -> None:
         """Flush, answering the automation index as a `Conflict` and not a 500.
 
-        `uq_tasks_rule_open` allows one open attivita per automation rule and
+        `uq_tasks_rule_open` allows one open task per automation rule and
         subject, and the daily pass opens a new one as soon as the old one is closed. So
         reopening, restoring or re-linking an old one can collide with it, and that is a
         sentence for the person («chiudi o annulla l'altra»), not a database error."""
@@ -304,7 +304,7 @@ class TaskService:
         """The four sections of the Oggi panel, cut on the emitter's today.
 
         `query.assigned_to` narrows every section to one person's; `None` is the whole space.
-        With `query.include_unassigned` it keeps the attività nobody holds too.
+        With `query.include_unassigned` it keeps the task nobody holds too.
         The day is read once and every section is cut on it, so a request that straddles
         midnight cannot list the same commitment under two headings.
         """

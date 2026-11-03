@@ -33,8 +33,8 @@ class Period(BaseModel):
     """Normalised and echoed back, always. A screenshot of a dashboard with no explicit
     period is a number with no unit (§4)."""
 
-    da: date
-    a: date
+    date_from: date
+    date_to: date
 
 
 class PeriodQuery(BaseModel):
@@ -47,9 +47,9 @@ class PeriodQuery(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    da: date | None = None
-    a: date | None = None
-    # One azienda's figures, or every azienda's added up (REB-630, spec 2026-10-03
+    date_from: date | None = None
+    date_to: date | None = None
+    # One legal entity's figures, or every legal entity's added up (REB-630, spec 2026-10-03
     # §1.9): the sidebar's selection, which the SPA sends and «tutte» leaves out.
     legal_entity_id: UUID | None = None
 
@@ -59,23 +59,23 @@ class PeriodQuery(BaseModel):
         The `field` of every error here is the bound the caller must change, because
         `fieldErrorFrom` in the web client and an MCP agent both read it.
         """
-        if (self.da is None) != (self.a is None):
+        if (self.date_from is None) != (self.date_to is None):
             raise ValidationFailed(
                 "period",
-                "da" if self.da is None else "a",
+                "from" if self.date_from is None else "to",
                 "il periodo richiede entrambe le date, o nessuna",
                 expected="da e a insieme, oppure nessuna delle due",
             )
-        if self.da is None or self.a is None:
+        if self.date_from is None or self.date_to is None:
             today = today_local()
             first, last = month_bounds(today.year, today.month)
-            return Period(da=first, a=last)
-        if self.da > self.a:
+            return Period(date_from=first, date_to=last)
+        if self.date_from > self.date_to:
             raise ValidationFailed(
                 "period",
-                "da",
+                "from",
                 "la data iniziale è successiva a quella finale",
-                expected=f"da <= {self.a.isoformat()}",
+                expected=f"da <= {self.date_to.isoformat()}",
             )
         # The ceiling is expressed as "the last day still admitted" rather than as
         # `(self.a - self.da).days`, for two reasons that happen to agree: a `-` anywhere
@@ -84,15 +84,15 @@ class PeriodQuery(BaseModel):
         # includes this file), and `window_from` is the same inclusive convention every
         # other period in slices 4 and 6 uses. A period of exactly MAX_PERIOD_DAYS days'
         # difference is admitted; the next day is not.
-        _, last_allowed = window_from(self.da, MAX_PERIOD_DAYS)
-        if self.a > last_allowed:
+        _, last_allowed = window_from(self.date_from, MAX_PERIOD_DAYS)
+        if self.date_to > last_allowed:
             raise ValidationFailed(
                 "period",
-                "a",
+                "to",
                 "periodo troppo lungo",
                 expected=f"al massimo {MAX_PERIOD_DAYS} giorni",
             )
-        return Period(da=self.da, a=self.a)
+        return Period(date_from=self.date_from, date_to=self.date_to)
 
 
 class PipelineStageSummary(BaseModel):
@@ -150,7 +150,7 @@ class CommercialDashboard(BaseModel):
 
     period: Period
     calculated_at: datetime
-    # Echoed from the query (REB-630): `None` is every azienda, which «tutte» shows.
+    # Echoed from the query (REB-630): `None` is every legal entity, which «tutte» shows.
     legal_entity_id: UUID | None = None
     pipeline: list[PipelineStageSummary]
     closings: ClosedInPeriod
@@ -226,8 +226,8 @@ class WeekHours(BaseModel):
     figure can be actively unhelpful.
     """
 
-    da: date
-    a: date
+    date_from: date
+    date_to: date
     days: list[DayHours]
     # The real failure slice 4 §13 names when it refuses a stopwatch: "non ho mai inserito
     # martedì". This is the figure that attacks it, and the `hours-to-log` prompt of
@@ -297,8 +297,8 @@ class BandDueDate(BaseModel):
 
     code: str
     label: str
-    da: date | None
-    a: date | None
+    date_from: date | None
+    date_to: date | None
     amount: Decimal = Field(max_digits=12, decimal_places=2)
     number: int
     share: float

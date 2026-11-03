@@ -64,18 +64,18 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     def legal_entities(self) -> list[UUID] | None:
         """The scope as the API and the actor carry it (spec 2026-10-03 §1.11): `None`
         for an unscoped member, the ids otherwise, an empty list for a scope whose every
-        azienda was deactivated, which sees nothing and is never read as «tutte»."""
+        legal entity was deactivated, which sees nothing and is never read as «tutte»."""
         if not self.limited_scope:
             return None
         return [row.legal_entity_id for row in self.scopes]
 
 
 class UserLegalEntity(Base):
-    """One row per azienda a scoped member may see (spec 2026-10-03 §1.11, §2 step
+    """One row per legal entity a scoped member may see (spec 2026-10-03 §1.11, §2 step
     6). Empty until milestone 6: the table exists now so the migration that gives
     every later table its `legal_entity_id` finds it, and so `users.limited_scope` has
     the rows it will point at. `ON DELETE CASCADE` both ways: a scope dies with its
-    user and with its azienda, and nothing else references it."""
+    user and with its legal entity, and nothing else references it."""
 
     __tablename__ = "user_legal_entities"
 

@@ -45,10 +45,10 @@ ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 PANDOC_TEMPLATE = ASSETS_DIR / "pandoc-template.typst"
 HEADER_TEMPLATE = ASSETS_DIR / "header.typ.template"
 
-# The names a Typst job writes an azienda's images under, which are the names the
+# The names a Typst job writes a legal entity's images under, which are the names the
 # header templates and the seeded offer template reference (REB-627, spec 2026-10-03
 # §6). The bundle carries no logo and no signature any more: REB-48 called shipping
-# one person's assets a defect, and a per-azienda upload is what finally removed the
+# one person's assets a defect, and a per-legal entity upload is what finally removed the
 # need. A job that is handed no signature still gets `sign_is.png`, a transparent
 # pixel, so an offer template seeded before the upload existed keeps compiling.
 MEDIA_LOGO_PNG = "logo.png"
@@ -111,7 +111,7 @@ def _defeat_typst_autotypography(typst_source: str) -> str:
 
 def logo_flags(logo: str | None) -> dict[str, bool]:
     """The three flags a header template branches on: which logo file the job carries,
-    or none, in which case the header sets the azienda's name in type instead."""
+    or none, in which case the header sets the legal entity's name in type instead."""
     return {
         "png": logo == MEDIA_LOGO_PNG,
         "svg": logo == MEDIA_LOGO_SVG,
@@ -121,7 +121,7 @@ def logo_flags(logo: str | None) -> dict[str, bool]:
 
 def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
     """The Typst page header, filled from the emitter profile. `logo` is the media file
-    the job carries for this azienda (`MEDIA_LOGO_PNG`, `MEDIA_LOGO_SVG`) or `None`,
+    the job carries for this legal entity (`MEDIA_LOGO_PNG`, `MEDIA_LOGO_SVG`) or `None`,
     which draws the `legal_name` in type where the image would be.
 
     Rendered through the same engine as the document body, so the issuer's own values
@@ -249,7 +249,7 @@ def render_pdf(
     """Compiled Markdown in, PDF bytes out.
 
     `media` is what the job's `media/` directory holds beyond the signature placeholder:
-    the azienda's logo under `MEDIA_LOGO_PNG` or `MEDIA_LOGO_SVG` and its signature under
+    the legal entity's logo under `MEDIA_LOGO_PNG` or `MEDIA_LOGO_SVG` and its signature under
     `MEDIA_SIGNATURE`, as `LegalEntityAssets.media_for` builds it. The names are a fixed set
     (`_MEDIA_NAMES`): a caller cannot write an arbitrary file into the compile root.
 

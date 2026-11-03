@@ -32,7 +32,7 @@ from pigrocrm.core.people.models import Person
 
 ENTITY = "note"
 # The parent table per `entity_type`: what a write looks up first, so a note can never
-# point at a row that is not there, is archived, or is outside the caller's aziende (the
+# point at a row that is not there, is archived, or is outside the caller's legal entities (the
 # row-level policy of the parent answers «not there» for it).
 _PARENTS: dict[str, type[Deal | Customer | Person]] = {
     "deal": Deal,
@@ -170,7 +170,7 @@ class NoteService:
         note = self.session.get(Note, note_id)
         if note is None or note.deleted_at is not None:
             raise NotFound(ENTITY, note_id)
-        # The parent's policy hides a note of a record outside the caller's aziende: it
+        # The parent's policy hides a note of a record outside the caller's legal entities: it
         # is not there for them, and reads as so rather than as a refusal.
         _parent(self.session, note.entity_type, note.entity_id)
         if not may_change(note, actor):

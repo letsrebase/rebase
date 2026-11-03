@@ -61,9 +61,9 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ForeignKey("customers.id"), nullable=False, index=True
     )
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
-    # The azienda that issues, or issued, this document (REB-619, spec 2026-10-03 §1.4):
+    # The legal entity that issues, or issued, this document (REB-619, spec 2026-10-03 §1.4):
     # the register below is keyed by it, and so is the fiscal profile the snapshot is
-    # built from. The service names it on every row it writes (the default azienda
+    # built from. The service names it on every row it writes (the default legal entity
     # until the customer chain of milestone 3 decides it); the column default is for a
     # row built without one, see `default_legal_entity_id`.
     legal_entity_id: Mapped[UUID] = mapped_column(
@@ -209,7 +209,8 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # to belong to (REB-693).
         CheckConstraint(
             "purchase_order_number IS NOT NULL "
-            "OR (purchase_order_date IS NULL AND purchase_order_tender_code IS NULL AND purchase_order_project_code IS NULL)",
+            "OR (purchase_order_date IS NULL AND purchase_order_tender_code IS NULL "
+            "AND purchase_order_project_code IS NULL)",
             name="ck_invoices_order_needs_number",
         ),
         # Spec 4: what never consumed a number is deletable; what consumed one is not,
@@ -222,9 +223,9 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # The net under the row lock, not the mechanism (spec 3): it turns any future
         # path that bypasses the lock -- a direct INSERT, an importer, a second service
         # -- into an error instead of a duplicate. Partial, because every unnumbered
-        # draft would otherwise be a duplicate of every other. Per azienda since
-        # REB-619: two aziende of one space each keep a register of their own, so
-        # `2026/1` exists once per azienda and never twice for one.
+        # draft would otherwise be a duplicate of every other. Per legal entity since
+        # REB-619: two legal entities of one space each keep a register of their own, so
+        # `2026/1` exists once per legal entity and never twice for one.
         Index(
             "uq_invoices_legal_entity_year_number",
             "legal_entity_id",
@@ -234,8 +235,8 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             postgresql_where=text("number IS NOT NULL"),
         ),
         # The lookup path the unique index above no longer offers: a number searched
-        # across the space's aziende (`SearchRepository._invoices_by_number`, «2026/7»
-        # typed in the palette) filters on `(anno, numero)` with no azienda, and a
+        # across the space's legal entities (`SearchRepository._invoices_by_number`, «2026/7»
+        # typed in the palette) filters on `(anno, numero)` with no legal entity, and a
         # B-tree led by `legal_entity_id` cannot serve it. Partial like its sibling, since an
         # unnumbered draft is never what a number search looks for.
         Index(
@@ -303,7 +304,7 @@ class InvoiceLine(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("invoice_id", "line_number", name="uq_invoice_lines_invoice_number"),
         # The two checks the SdI applies as a pair, as one table constraint: a zero
-        # rate without a Natura is rejected, and a Natura with a non-zero rate is
+        # rate without a VAT nature is rejected, and a VAT nature with a non-zero rate is
         # rejected. The invalid combination is therefore not storable, so it is not
         # exportable either.
         CheckConstraint(
@@ -315,7 +316,7 @@ class InvoiceLine(Base, PrimaryKeyMixin, TimestampMixin):
 
 
 class InvoiceCounter(Base):
-    """One row per azienda and year, locked with `SELECT ... FOR UPDATE` inside the
+    """One row per legal entity and year, locked with `SELECT ... FOR UPDATE` inside the
     emission transaction (spec 3).
 
     **Not a `SEQUENCE`**, and the reason is the property a sequence proudly does not
@@ -325,9 +326,9 @@ class InvoiceCounter(Base):
     and prohibits the one property that is actually required here.
 
     Keyed by `(azienda_id, anno)` rather than by a UUID: the pair *is* the identity,
-    and a surrogate key would need a uniqueness constraint on it anyway. Per azienda
+    and a surrogate key would need a uniqueness constraint on it anyway. Per legal entity
     since REB-619 (spec 2026-10-03 §1.4): the lock is narrower, which is a property
-    and not a cost, since issuing for one azienda never waits on the other's lock. No
+    and not a cost, since issuing for one legal entity never waits on the other's lock. No
     `TimestampMixin` either -- this row is a lock target, not a record of anything.
     """
 
@@ -339,9 +340,7 @@ class InvoiceCounter(Base):
     year: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    __table_args__ = (
-        CheckConstraint("last_number >= 0", name="ck_invoice_counters_non_negative"),
-    )
+    __table_args__ = (CheckConstraint("last_number >= 0", name="ck_invoice_counters_non_negative"),)
 
 
 class InvoiceRegisterGap(Base, PrimaryKeyMixin):

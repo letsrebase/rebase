@@ -208,8 +208,8 @@ def test_the_preview_renders_the_invoices_own_figures_and_suggests_the_customers
     assert preview.body.rstrip().endswith("Studio Rossi")
     assert "\\/" not in preview.body  # the plain context, not the markdown one
     assert preview.to_suggested == ["mario@acme.example"]
-    assert [a.type for a in preview.attachments] == ["invoice_pdf", "register_pdf"]
-    assert (preview.da, preview.a) == (date(2026, 10, 7), date(2026, 10, 8))
+    assert [date_to.type for date_to in preview.attachments] == ["invoice_pdf", "register_pdf"]
+    assert (preview.date_from, preview.date_to) == (date(2026, 10, 7), date(2026, 10, 8))
 
 
 def test_a_draft_invoice_is_not_sent(db_session: Session, local_storage: LocalFileStorage) -> None:

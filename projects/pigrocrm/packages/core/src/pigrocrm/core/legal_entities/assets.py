@@ -1,12 +1,12 @@
-"""The two images an azienda owns: its logo and its signature (REB-627, spec 2026-10-03
+"""The two images a legal entity owns: its logo and its signature (REB-627, spec 2026-10-03
 §1.8, §3, §6).
 
 Until this module existed every PDF drew one person's logo and one person's signature
 copied from the bundle (REB-48 called that a defect), and `logo_key` and `signature_key` on
-`legal_entities` were columns nobody read. Now each azienda uploads its own, stored in
+`legal_entities` were columns nobody read. Now each legal entity uploads its own, stored in
 `DocumentStorage` under `legal_entities/{id}/`, and the Typst job of a document or an invoice
 copies the right one into its own directory under the name the templates expect
-(`render/pdf.py`). An azienda with no logo sets its name in type; one with no signature
+(`render/pdf.py`). A legal entity with no logo sets its name in type; one with no signature
 leaves a transparent placeholder where the seeded offer template draws it.
 
 The keys are server-managed: `LegalEntityUpsert` no longer takes them, so a whole-row `PUT`
@@ -324,9 +324,9 @@ class LegalEntityAssets:
         return self._read(self._row(legal_entity_id).signature_key)
 
     def media_for(self, legal_entity_id: UUID | None = None) -> dict[str, bytes]:
-        """The files a Typst job writes under `media/` for this azienda, by name: the
+        """The files a Typst job writes under `media/` for this legal entity, by name: the
         logo under `logo.png` or `logo.svg` and the signature under `sign_is.png`,
-        each only when the azienda has one. `render_pdf` supplies the placeholder for
+        each only when the legal entity has one. `render_pdf` supplies the placeholder for
         a missing signature."""
         row = self._row(legal_entity_id)
         media: dict[str, bytes] = {}

@@ -76,7 +76,7 @@ INVOICE_ENTITY = "invoice"
 _PREPARE_ACTION = "prepare_payment_reminder"
 
 
-def _data_italiana(value: date | None) -> str:
+def _italian_date(value: date | None) -> str:
     """`31/07/2026`. The way the recipient of this letter reads a date.
 
     Not `invoices.totals`' formatters and not `.isoformat()`: those two are the *fiscal*
@@ -246,8 +246,8 @@ class PaymentRemindersService:
         # Everything the body needs, resolved before anything is written: a reminder with
         # no IBAN is a reminder nobody can act on, and discovering that after the row
         # exists would burn a position in the sequence.
-        # The invoice's azienda, not the default (REB-627, spec §1.8): the letter signs
-        # as whoever issued and names that azienda's IBAN.
+        # The invoice's legal entity, not the default (REB-627, spec §1.8): the letter signs
+        # as whoever issued and names that legal entity's IBAN.
         legal_entity = self._legal_entity_scope(actor, invoice.legal_entity_id)
         # Resolved before the body is rendered, because the body's own wording depends on
         # it: `invoice_pdf_version_ids` legitimately answers `[]` for an invoice whose PDF
@@ -261,8 +261,8 @@ class PaymentRemindersService:
                 **legal_entity,
                 "cliente": customer.legal_name,
                 "numero_fattura": self._number(invoice),
-                "data_fattura": _data_italiana(invoice.issue_date),
-                "scadenza": _data_italiana(invoice.due_date),
+                "data_fattura": _italian_date(invoice.issue_date),
+                "scadenza": _italian_date(invoice.due_date),
                 "importo": _euro(invoice.total),
                 "iban": self._iban(invoice.legal_entity_id),
                 # The free-text block. Read from the same scope rather than from a second
@@ -310,7 +310,7 @@ class PaymentRemindersService:
                 in_reply_to_message_id=self._thread_of(invoice, actor),
             ),
             actor,
-            # The invoice's azienda, which the body and the IBAN already speak for.
+            # The invoice's legal entity, which the body and the IBAN already speak for.
             legal_entity_id=invoice.legal_entity_id,
         )
 

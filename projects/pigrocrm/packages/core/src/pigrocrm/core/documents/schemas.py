@@ -81,7 +81,7 @@ class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    # The owner's azienda when the document was created (REB-623); read-only.
+    # The owner's legal entity when the document was created (REB-623); read-only.
     legal_entity_id: UUID
     customer_id: UUID | None
     deal_id: UUID | None
@@ -162,8 +162,8 @@ class DocumentFromTemplate(BaseModel):
     template_id: UUID
     customer_id: UUID | None = None
     deal_id: UUID | None = None
-    # The azienda the document speaks for when it is not its owner's: a contract's register
-    # signs as the contract's azienda, which a customer moved since no longer shares.
+    # The legal entity the document speaks for when it is not its owner's: a contract's register
+    # signs as the contract's legal entity, which a customer moved since no longer shares.
     legal_entity_id: UUID | None = None
     title: SafeStr = Field(max_length=TITLE_MAX_LENGTH)
     # The values for the template's declared variables. Free-form by nature -- the

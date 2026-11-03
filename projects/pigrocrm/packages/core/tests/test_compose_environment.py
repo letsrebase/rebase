@@ -73,7 +73,7 @@ NOT_FORWARDED: dict[str, str] = {
     "payment_reminders_max_reminders": "come sopra, e il tetto e' il numero di registri del template",
     # The preferred-share concentration threshold (REB-371): a practitioner's own
     # preference about their client mix, not a deployment choice, exactly the same
-    # reasoning as the three `solleciti_*` thresholds just above -- and, like them,
+    # reasoning as the three `payment_reminders_*` thresholds just above -- and, like them,
     # reachable per space through `space_settings` instead.
     "preferred_concentration_threshold": "quota preferita di un cliente: scelta del praticante",
     # Computed per space by `space_base_settings` while the root lends its Google client

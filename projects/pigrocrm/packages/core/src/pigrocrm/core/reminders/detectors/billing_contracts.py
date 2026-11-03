@@ -376,7 +376,8 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
                 recipients=recipients,
                 title=f"Contratto concluso da fatturare: {contract.title}",
                 detail=(
-                    f"Concluso {day_short(end)} ({format_days_ago(late)}): {' e '.join(what)}{customer}"
+                    f"Concluso {day_short(end)} ({format_days_ago(late)}): "
+                    f"{' e '.join(what)}{customer}"
                 ),
                 entity="contract",
                 entity_id=contract.id,

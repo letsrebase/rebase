@@ -17,8 +17,8 @@ answers `in_progress`, which is the system working as designed and not a failure
 **Reads first, then the network, then writes.** The detectors and the channels' plans read;
 the read transaction is then ended, and only after that do the other channels send (push,
 email), so no transaction is held across a network call. The ledger writes, what the
-channels accepted and the job clock (`reminder_job_run`, which `job_late` and Impostazioni →
-Esecuzioni read) follow in one transaction (`ReminderEngine.record_pass`), so a pass that
+channels accepted and the job clock (`reminder_job_run`, which `job_late` and the settings job-runs
+screen read) follow in one transaction (`ReminderEngine.record_pass`), so a pass that
 fails halfway writes nothing and the next one sends again, which is the contract of §8.3:
 a duplicate message after a crash between the send and the write, never a missing one. A
 real run on a space that has nothing to raise still touches the clock: a pass that ran and

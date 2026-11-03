@@ -70,7 +70,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     customer_id: Mapped[UUID] = mapped_column(
         ForeignKey("customers.id"), nullable=False, index=True
     )
-    # The customer's azienda at creation (REB-623, §1.7), kept from then on.
+    # The customer's legal entity at creation (REB-623, §1.7), kept from then on.
     legal_entity_id: Mapped[UUID] = mapped_column(
         ForeignKey("legal_entities.id"),
         nullable=False,
@@ -100,12 +100,13 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     requires_prior_approval: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    # The rivalsa INPS election (spec §9), read at invoice-line-construction time by a
+    # The social security surcharge election (spec §9), read at invoice-line-construction time by a
     # later issue; nothing here consumes it yet.
     applies_social_charge: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    # REB-761: the share of the azienda's invoiced revenue its customer must not reach over this
+    # REB-761: the share of the legal entity's invoiced revenue its customer must not reach over
+    # this
     # contract's own anniversary year, as a percentage the way its owner reads it
     # (`50.00`, the `FiscalProfile` rates' own shape), `NULL` for no cap. A clause of the
     # contract and not of the regime (mastro's invariant 2): it survives a change of pack.
@@ -146,8 +147,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         CheckConstraint('"end" IS NULL OR start <= "end"', name="ck_contracts_end_ordered"),
         # A cap of 0 forbids the customer and one of 100 never binds: neither is a clause.
         CheckConstraint(
-            "customer_share_cap IS NULL "
-            "OR (customer_share_cap > 0 AND customer_share_cap < 100)",
+            "customer_share_cap IS NULL OR (customer_share_cap > 0 AND customer_share_cap < 100)",
             name="ck_contracts_customer_share_cap_range",
         ),
         Index("ix_contracts_custom_fields", "custom_fields", postgresql_using="gin"),

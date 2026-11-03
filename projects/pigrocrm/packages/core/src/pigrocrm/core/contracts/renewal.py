@@ -65,20 +65,20 @@ def renewed_term(
     start: date,
     end: date | None,
     new_start: date | None = None,
-    nuova_fine: date | None = None,
+    new_end: date | None = None,
     duration: tuple[int, RenewalUnit] | None = None,
 ) -> tuple[date, date]:
     """The `(inizio, fine)` of the contract that renews one running `start`..`end`.
 
     The start is the day after `end` unless `new_start` names one, which has to be
     later than `end`: a renewal that overlaps the term it renews is a second contract
-    for the same days. The end is `nuova_fine`, or `duration` counted from the start, or,
+    for the same days. The end is `new_end`, or `duration` counted from the start, or,
     when neither is given, as long as the term renewed: the same number of calendar months
     when that was whole months and the new start is a 1st, else the same number of days.
     A contract with no end has no expiry to renew from.
     """
     try:
-        return _renewed_term(start, end, new_start, nuova_fine, duration)
+        return _renewed_term(start, end, new_start, new_end, duration)
     except RenewalRefused:
         raise
     except (OverflowError, ValueError) as error:
@@ -91,7 +91,7 @@ def _renewed_term(
     start: date,
     end: date | None,
     new_start: date | None,
-    nuova_fine: date | None,
+    new_end: date | None,
     duration: tuple[int, RenewalUnit] | None,
 ) -> tuple[date, date]:
     if end is None:
@@ -107,10 +107,10 @@ def _renewed_term(
             "il contratto rinnovato deve cominciare dopo la fine di quello che rinnova",
             f"> {end.isoformat()}",
         )
-    if nuova_fine is not None:
-        if nuova_fine < start:
+    if new_end is not None:
+        if new_end < start:
             raise RenewalRefused("end", "non può precedere inizio", f">= {start.isoformat()}")
-        return start, nuova_fine
+        return start, new_end
     if duration is not None:
         count, unit = duration
         return start, _span(start, count, unit)

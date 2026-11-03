@@ -2,7 +2,7 @@
 §3.4, REB-768): `worked_without_approval`, `approval_unanswered`,
 `approval_requirement_unmet` and `work_unit_outside_term`. The subject of each is the day
 (`work_unit`), the thing somebody has to open and fix; recipients are the owner of the
-contract's customer (`links.py`), scoped to the contract's azienda.
+contract's customer (`links.py`), scoped to the contract's legal entity.
 
 **What «approval» is in this schema.** A contract says one thing, `requires_prior_approval`;
 an approval (`approvals`) is a received written approval with a `received_at`, linked from

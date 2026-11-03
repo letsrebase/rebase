@@ -110,7 +110,7 @@ def test_archiving_a_deal_with_live_hours_is_refused(
     with pytest.raises(Conflict) as caught:
         DealService(db_session).soft_delete(won_deal_id, ADMIN)
     assert caught.value.details["entity"] == "deal"
-    assert caught.value.details["hours_attive"] == 1
+    assert caught.value.details["active_hours"] == 1
 
 
 def test_the_two_figures_agree_whatever_the_archive_does(

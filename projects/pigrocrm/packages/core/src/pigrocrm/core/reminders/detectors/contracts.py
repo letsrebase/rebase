@@ -21,7 +21,7 @@ contract with no renewal clause or no end date has no deadline and is not raised
 deadline has passed has no window left and is not either. `irrevocability_window_end` is
 about the notice a termination would serve, not a date to act by, and is not read.
 
-Recipients are the owner of the customer (`links.py`), scoped to the contract's azienda.
+Recipients are the owner of the customer (`links.py`), scoped to the contract's legal entity.
 """
 
 from __future__ import annotations

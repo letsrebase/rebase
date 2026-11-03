@@ -144,7 +144,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
     should hear it: the owner, a colleague who wants it, one who switched it off, and one
     who has been deactivated."""
     factory = session_factory(db_engine)
-    da, a = _week_scorsa()
+    date_from, date_to = _week_scorsa()
     with factory() as session:
         _require_empty(session)
         legal_entity_id = committed_default_legal_entity(session)
@@ -202,8 +202,8 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                 vat_amount=Decimal("0.00"),
                 stamp_duty=Decimal("0.00"),
                 total=Decimal("1000.00"),
-                issue_date=da + timedelta(days=1),
-                due_date=a + timedelta(days=120),
+                issue_date=date_from + timedelta(days=1),
+                due_date=date_to + timedelta(days=120),
                 payment_date=None,
                 sdi_document_type="TD01",
                 currency="EUR",
@@ -214,7 +214,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             TimeEntry(
                 deal_id=deal.id,
                 user_id=owner.id,
-                data=da + timedelta(days=1),
+                data=date_from + timedelta(days=1),
                 hours=Decimal("6.00"),
                 description=f"{_PREFIX} lavorazione",
                 billable=True,
@@ -230,9 +230,11 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         ids = (owner.id, collega.id)
         session.commit()
     try:
-        yield Corpus(db_engine, (da, a), iso_week(da), indirizzi[0], indirizzi[1], ids)
+        yield Corpus(
+            db_engine, (date_from, date_to), iso_week(date_from), indirizzi[0], indirizzi[1], ids
+        )
     finally:
-        _pulisci(factory, iso_week(da), legal_entity_id)
+        _pulisci(factory, iso_week(date_from), legal_entity_id)
 
 
 def _pulisci(factory: Any, iso: str, legal_entity_id: UUID | None = None) -> None:

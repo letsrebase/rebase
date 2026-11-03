@@ -76,7 +76,7 @@ class ActivityRepository:
         return self._newest(kinds, limit)
 
     def by_kind_between(
-        self, kinds: Sequence[str], da: datetime, a: datetime, limit: int = 20
+        self, kinds: Sequence[str], date_from: datetime, date_to: datetime, limit: int = 20
     ) -> list[Activity]:
         """The same read as `by_kind`, restricted to the instants `[da, a)`.
 
@@ -94,7 +94,7 @@ class ActivityRepository:
         """
         if not kinds:
             return []
-        return self._newest(kinds, limit, window=(da, a))
+        return self._newest(kinds, limit, window=(date_from, date_to))
 
     def _newest(
         self,
@@ -107,8 +107,8 @@ class ActivityRepository:
         tie-break is the property both of them are relied on for."""
         stmt = select(Activity).where(Activity.kind.in_(list(kinds)))
         if window is not None:
-            da, a = window
-            stmt = stmt.where(Activity.occurred_at >= da, Activity.occurred_at < a)
+            date_from, date_to = window
+            stmt = stmt.where(Activity.occurred_at >= date_from, Activity.occurred_at < date_to)
         return list(
             self.session.execute(
                 stmt.order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(limit)

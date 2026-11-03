@@ -31,8 +31,8 @@ class RegisterGaps:
         actor: Actor,
         legal_entity_id: UUID | None = None,
     ) -> list[RegisterGapRead]:
-        """Name the numbers the azienda's register will never carry, and why (spec 9
-        §3.2 rule 4); `None` is the default azienda (REB-619).
+        """Name the numbers the legal entity's register will never carry, and why (spec 9
+        §3.2 rule 4); `None` is the default legal entity (REB-619).
 
         A declared gap is the honest alternative to two dishonest ones: inventing a row
         to fill it, or leaving it silent so that it looks like a lost invoice. It is
@@ -89,7 +89,7 @@ class RegisterGaps:
                     )
                 )
                 # The register has no row of its own to hang a timeline entry on, so the
-                # entity id is derived deterministically from the azienda and the year:
+                # entity id is derived deterministically from the legal entity and the year:
                 # `ActivityService.record` accepts any `entity_type` string, and `uuid5`
                 # gives the same id every time this register is touched again.
                 ctx.activities.record(
@@ -117,8 +117,8 @@ class RegisterGaps:
         ]
 
     def undeclared_gaps(self, year: int, legal_entity_id: UUID | None = None) -> list[int]:
-        """Numbers from 1 to the highest in the azienda's register that are neither an
-        invoice nor a declared gap; `None` is the default azienda (REB-619). Empty is
+        """Numbers from 1 to the highest in the legal entity's register that are neither an
+        invoice nor a declared gap; `None` is the default legal entity (REB-619). Empty is
         the only state in which native issuing may resume (spec 9 §3.2 rule 4): an
         import can arrive in any order, so a hole is expected until the operator has
         looked at every one of them and either imported or declared it.

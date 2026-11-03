@@ -369,7 +369,7 @@ def test_one_bound_without_the_other_and_a_backwards_period_are_refused_by_name(
 ) -> None:
     service = AnalyticsService(db_session)
     with pytest.raises(ValidationFailed) as only_from:
-        service.days_analysis(READER, da=date(YEAR, 1, 1))
+        service.days_analysis(READER, date_from=date(YEAR, 1, 1))
     assert only_from.value.details["field"] == "a"
     with pytest.raises(ValidationFailed) as backwards:
         service.days_analysis(READER, date(YEAR, 3, 1), date(YEAR, 1, 1))

@@ -65,7 +65,7 @@ _FIELDS: tuple[tuple[str, str, bool, str], ...] = (
 TEMPLATE_VARIABLES: tuple[DeclaredVariable, ...] = tuple(
     DeclaredVariable(name, label, "text", required) for name, label, required, _ in _FIELDS
 )
-# `emittente.*` is the azienda's own identity, the same scope every template reads.
+# `emittente.*` is the legal entity's own identity, the same scope every template reads.
 _LEGAL_ENTITY_SAMPLE = {"legal_name": "Studio Rossi", "phone": "", "website": ""}
 LEGAL_ENTITY_VARIABLES = tuple(f"emittente.{name}" for name in _LEGAL_ENTITY_SAMPLE)
 
@@ -226,8 +226,8 @@ class ContractEmailService:
         self,
         contract: Contract,
         invoice: Invoice,
-        da: date,
-        a: date,
+        date_from: date,
+        date_to: date,
         quantity: Decimal,
         actor: Actor,
     ) -> dict[str, Any]:
@@ -245,7 +245,7 @@ class ContractEmailService:
         return {
             "cliente": customer.legal_name if customer is not None else "",
             "contratto": contract.title,
-            "periodo": f"{_italian_date(da)} - {_italian_date(a)}",
+            "periodo": f"{_italian_date(date_from)} - {_italian_date(date_to)}",
             "numero_fattura": number_complete(invoice.year, invoice.number),
             "data_fattura": _italian_date(invoice.issue_date),
             "importo": _money(invoice.total, invoice.currency),
@@ -274,8 +274,8 @@ class ContractEmailService:
         contract = self._contract(contract_id)
         template = self._template(contract_id, template_id)
         invoice = self._invoice_of(contract, invoice_id)
-        da, a, quantity = self._days_of(contract_id, invoice)
-        values = self._values(contract, invoice, da, a, quantity, actor)
+        date_from, date_to, quantity = self._days_of(contract_id, invoice)
+        values = self._values(contract, invoice, date_from, date_to, quantity, actor)
         attachments = [
             ContractEmailAttachment(type="invoice_pdf", name=f"Fattura {values['invoice_number']}")
             for kind in template.attachments
@@ -292,8 +292,8 @@ class ContractEmailService:
             body=_render(template.body, values),
             to_suggested=self._suggested(contract),
             attachments=attachments,
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     def prepare(
@@ -316,8 +316,8 @@ class ContractEmailService:
         if not template.active:
             raise Conflict(ENTITY, "questo modello è archiviato", template_id=str(template_id))
         invoice = self._invoice_of(contract, invoice_id)
-        da, a, quantity = self._days_of(contract_id, invoice)
-        values = self._values(contract, invoice, da, a, quantity, actor)
+        date_from, date_to, quantity = self._days_of(contract_id, invoice)
+        values = self._values(contract, invoice, date_from, date_to, quantity, actor)
 
         documents = DocumentRepository(self.session)
         version_ids: list[UUID] = []
@@ -343,7 +343,7 @@ class ContractEmailService:
             # connection is not held while the render waits for one of its slots.
             self.session.commit()
             archived = ContractRegisterService(self.session, storage).render_pdf(
-                contract_id, da, a, actor, invoice_id=invoice.id
+                contract_id, date_from, date_to, actor, invoice_id=invoice.id
             )
             version = documents.version(archived.id, archived.current_version)
             if version is None:

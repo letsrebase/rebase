@@ -100,8 +100,8 @@ TASK_FIELDS: tuple[ScoredField, ...] = (
 _Model = Any
 
 
-# The clauses that narrow a search to one azienda (REB-623): empty for the search over
-# every azienda, the model's own `legal_entity_id` otherwise.
+# The clauses that narrow a search to one legal entity (REB-623): empty for the search over
+# every legal entity, the model's own `legal_entity_id` otherwise.
 Scope = tuple[ColumnElement[bool], ...]
 
 
@@ -144,7 +144,7 @@ class SearchRepository:
         (`_Matches.keep`, applied by the caller) because the tail of a trigram match is
         noise, and a palette that shows noise teaches the user to ignore the palette.
         """
-        # `scope` is the azienda's own clause when a search is narrowed to one (REB-623):
+        # `scope` is the legal entity's own clause when a search is narrowed to one (REB-623):
         # a clause of the same set of matches, so the page and the count agree on it.
         rows = (
             select(model, *field_scores(fields, term))
@@ -249,8 +249,8 @@ class SearchRepository:
     def people(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
         # `last_name` is nullable, so the label is joined from the parts that exist rather
         # than formatted with a placeholder: "Ludovica" and not "Ludovica None".
-        # A person has no azienda of their own: narrowed through their customer, so a
-        # contact with no customer answers only the search over every azienda.
+        # A person has no legal entity of their own: narrowed through their customer, so a
+        # contact with no customer answers only the search over every legal entity.
         scope: Scope = ()
         if legal_entity_id is not None:
             scope = (
@@ -362,13 +362,13 @@ class SearchRepository:
         )
 
     def tasks(self, term: str, limit: int) -> SearchGroup:
-        """§10.9: an attività by its title and its notes, whatever state it is in.
+        """§10.9: an task by its title and its notes, whatever state it is in.
 
         Closed ones are found too, and say so in the subtitle: a search that hid what was
         done would answer «did I ever do that» with «no». The subtitle is the state, or the
         deadline for an open one (`gg/mm/aaaa`), which is what tells two tasks of the same
-        name apart on a palette row. There is no azienda clause: an attività has no azienda
-        of its own (the calendar keeps them whatever azienda is selected).
+        name apart on a palette row. There is no legal entity clause: an task has no legal entity
+        of its own (the calendar keeps them whatever legal entity is selected).
         """
         return self._group(
             "task",
@@ -428,16 +428,16 @@ class SearchRepository:
     def _invoices_by_number(
         self, year: int | None, number: int, *, limit: int, scope: Scope = ()
     ) -> SearchGroup:
-        """The equality half. At most one row per year and azienda (REB-619: two aziende
+        """The equality half. At most one row per year and legal entity (REB-619: two legal entities
         of one space each have their own `2026/1`, listed one after the other and told
-        apart by the azienda's name once milestone 3 shows it), so the ceiling is never
+        apart by the legal entity's name once milestone 3 shows it), so the ceiling is never
         reached in practice -- and the bounded count is used anyway, because "in
         practice" is not a property and this way both paths report `total` by the same
         rule.
 
         `ORDER BY anno DESC` is §8.5's "what was touched most recently is more likely what
         is wanted", expressed in the only ordering a number has. `id DESC` closes it into a
-        total order: since REB-619 two aziende of one space may share `(anno, numero)`,
+        total order: since REB-619 two legal entities of one space may share `(anno, numero)`,
         so it is what orders their rows, and it costs nothing to not depend on a
         constraint in another package for criterion 4's byte-identical guarantee.
         """
@@ -466,8 +466,8 @@ class SearchRepository:
                 id=row.id,
                 label=self._invoice_label(row),
                 subtitle=None,
-                # An exact fiscal-number match is a code match -- §8.5's own "un match su un
-                # codice è voluto" -- so weight 1.00 and score 1.00, exactly what an exact
+                # An exact fiscal-number match is a code match -- §8.5 says a match on a
+                # code is wanted -- so weight 1.00 and score 1.00, exactly what an exact
                 # `vat_number` match produces. Quantized to the declared scale because
                 # `SearchHit.score` is `Numeric(6, 4)` and a `Decimal("1.00")` would be
                 # a different value on the wire from every other exact match in the payload.

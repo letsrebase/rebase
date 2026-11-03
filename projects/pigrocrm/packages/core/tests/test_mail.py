@@ -237,8 +237,8 @@ def digest_with(
     )
     hours = (
         WeekHours(
-            da=_WEEK_START,
-            a=_WEEK_START + timedelta(days=6),
+            date_from=_WEEK_START,
+            date_to=_WEEK_START + timedelta(days=6),
             days=[
                 DayHours(day=_WEEK_START + timedelta(days=i), hours=Decimal("2.00"))
                 for i in range(7)
@@ -251,8 +251,8 @@ def digest_with(
     )
     return WeeklyDigest(
         week="2026-W37",
-        da=_WEEK_START,
-        a=_WEEK_START + timedelta(days=6),
+        date_from=_WEEK_START,
+        date_to=_WEEK_START + timedelta(days=6),
         overdue=overdue,
         in_due_date=[],
         won_to_invoice=won_to_invoice,

@@ -100,7 +100,7 @@ _BUSINESS_ENTITIES: frozenset[str] = frozenset(
 )
 # Slice 8 §2.1's six buckets, labelled once here: the code is the contract, the label is
 # copy, and the page prints the label it is sent rather than keeping a second table.
-_BANDS_ETICHETTE: dict[str, str] = {
+_BAND_LABELS: dict[str, str] = {
     "expired": "Scaduto",
     "entro_30": "Entro 30 giorni",
     "da_31_a_60": "Da 31 a 60 giorni",
@@ -218,21 +218,21 @@ class DashboardService:
         # where it begins: on a January dashboard the imminent closures are February's, not
         # January's own. `window_from` lives in `db/clock.py` because a date offset is still
         # a `BinOp` and this package may not contain one -- see the module docstring.
-        _, window_to = window_from(period.a, _EXPECTED_CLOSURE_WINDOW_DAYS)
-        # The azienda is one more argument of every read and nothing else (REB-630, spec
+        _, window_to = window_from(period.date_to, _EXPECTED_CLOSURE_WINDOW_DAYS)
+        # The legal entity is one more argument of every read and nothing else (REB-630, spec
         # 2026-10-03 §1.9): each repository adds it as a predicate, so «tutte», which
-        # sends none, is the sum of the per-azienda answers by construction.
+        # sends none, is the sum of the per-legal entity answers by construction.
         legal_entity = query.legal_entity_id
         return CommercialDashboard(
             period=period,
             calculated_at=calculated_at,
             legal_entity_id=legal_entity,
             pipeline=self._deals.pipeline_summary(legal_entity),
-            closings=self._deals.closed_in_period(period.da, period.a, legal_entity),
+            closings=self._deals.closed_in_period(period.date_from, period.date_to, legal_entity),
             offers_pending=self._documents.pending_offers(_PENDING_OFFERS_SHOWN, legal_entity),
             offers_pending_total=self._documents.count_pending_offers(legal_entity),
             expected_closings_30_days=self._deals.expected_closures(
-                period.a, window_to, legal_entity
+                period.date_to, window_to, legal_entity
             ),
             closings_not_attributable=self._deals.unattributable_closures(legal_entity),
             accepted_offers_deal_not_won=(
@@ -275,14 +275,17 @@ class DashboardService:
             legal_entity_id=legal_entity,
             pnl=self._analytics.period_pnl(
                 PeriodPnlQuery(
-                    da=period.da, a=period.a, customer_id=None, legal_entity_id=legal_entity
+                    date_from=period.date_from,
+                    date_to=period.date_to,
+                    customer_id=None,
+                    legal_entity_id=legal_entity,
                 ),
                 actor,
             ),
             unpaid=self._invoices.sum_unpaid(legal_entity),
             expired=self._invoices.sum_expired(legal_entity),
             issued_invoices=self._invoices.count_issued_in_period(
-                period.da, period.a, legal_entity
+                period.date_from, period.date_to, legal_entity
             ),
         )
 
@@ -337,18 +340,18 @@ class DashboardService:
         count, and the links do not carry it: each drill-through list already follows
         the sidebar's selection on its own. The concentration signal is the one count
         whose «tutte» is not a plain sum: `count_over_concentration_threshold` reads
-        each share against its own azienda's revenue and counts the distinct customers
+        each share against its own legal entity's revenue and counts the distinct customers
         over the threshold in any of them, so a customer who is a third of the SRL and
         a tenth of the whole still counts. The recent feed stays the space's: an
-        activity row has no azienda.
+        activity row has no legal entity.
         """
-        da, a = current_week()
+        date_from, date_to = current_week()
         year = today_local().year
         calculated_at = self._open_snapshot()
         return OperationalDashboard(
             calculated_at=calculated_at,
             legal_entity_id=legal_entity_id,
-            week=self._entries.week_hours(da, a, legal_entity_id),
+            week=self._entries.week_hours(date_from, date_to, legal_entity_id),
             backlog=self._analytics.unbilled_backlog(actor, legal_entity_id),
             signals=[
                 Signal(
@@ -395,9 +398,9 @@ class DashboardService:
         bands = [
             BandDueDate(
                 code=row.code,
-                label=_BANDS_ETICHETTE[row.code],
-                da=row.da,
-                a=row.a,
+                label=_BAND_LABELS[row.code],
+                date_from=row.date_from,
+                date_to=row.date_to,
                 amount=row.amount,
                 number=row.number,
                 share=row.share,

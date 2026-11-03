@@ -242,8 +242,8 @@ class ApprovalRequestService:
         live = WorkUnitRepository(self.session).list_labelled(
             WorkUnitListQuery(
                 contract_id=contract_id,
-                da=min(asked),
-                a=max(asked),
+                date_from=min(asked),
+                date_to=max(asked),
                 limit=LIST_LIMIT_MAX,
             )
         )

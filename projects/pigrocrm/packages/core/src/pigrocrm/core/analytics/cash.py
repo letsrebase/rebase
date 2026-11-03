@@ -20,7 +20,7 @@ def contract_date_markers(
     contract. The irrevocability date is measured "as of" today regardless of
     `year` -- a notice period is a forward-looking promise, never a fact about a
     past year -- so a past `year` never grows one and a future one only does
-    once today's window actually reaches into it. One azienda's calendar carries its
+    once today's window actually reaches into it. One legal entity's calendar carries its
     own contracts' dates (REB-630).
     """
     year_start = date(year, 1, 1)
@@ -66,7 +66,7 @@ def cash_overview(
     document falls in (ORB-133). The year's totals agree under the two readings except
     for a document whose declared period and whose money fall in different years: that
     one is in one year's view and not the other's. `legal_entity_id` narrows every sum to
-    one azienda (REB-630, spec 2026-10-03 §1.9); without it the cash of every azienda
+    one legal entity (REB-630, spec 2026-10-03 §1.9); without it the cash of every legal entity
     adds up, which is what «tutte» exists to show, and a cost without a deal is counted
     there alone (§1.7)."""
     paid = repo.monthly_paid(year, base, legal_entity_id)
@@ -84,7 +84,7 @@ def cash_overview(
         default=zero,
     )
 
-    mesi = [
+    cash_months = [
         CashMonth(
             year=year,
             month=m,
@@ -125,6 +125,6 @@ def cash_overview(
         costs=tot_costs,
         actual_gross=round_money(tot_paid - tot_costs),
         projected_gross=round_money(projected - tot_costs),
-        months=mesi,
+        months=cash_months,
         contractual_due_dates=contract_date_markers(contracts, year, legal_entity_id),
     )

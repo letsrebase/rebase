@@ -1,4 +1,4 @@
-"""Drive as a `DocumentStorage`, on the titolare's own credential, resolved late.
+"""Drive as a `DocumentStorage`, on the owner's own credential, resolved late.
 
 **Why late.** The service-account backend is fully described by two environment
 variables, so `storage_from_settings` can build it, verify its root folder, and refuse
@@ -14,7 +14,7 @@ answer is either found or refused with `StorageNotConfigured`.
 **Why it re-reads the row.** The folder is a settings field a person edits while the
 process is running. A storage that resolved once and cached forever would keep writing
 into the folder that was configured at the time of the first upload -- after the
-titolare moved it, after they disconnected Drive, after Google revoked the grant -- with
+owner moved it, after they disconnected Drive, after Google revoked the grant -- with
 nothing on any screen to say why the documents are not where they should be. So every
 operation reads the row (one indexed statement on a single-tenant table) and rebuilds
 the transport only when `updated_at` says the row changed. That distinction is what
@@ -73,9 +73,9 @@ _REVOKED_REASON = (
 )
 
 # The names the missing-scope refusal gives what it is refusing. A *feature*, not a
-# call: `missing_scope_conflict` writes "<feature> non è disponibile: manca
-# l'autorizzazione ...", so the noun has to be one the person reading it recognises as
-# the thing they were trying to do.
+# call: `missing_scope_conflict` writes the Italian sentence "<feature> non è disponibile"
+# followed by the missing-authorization explanation, so the noun has to be one the person
+# reading it recognises as the thing they were trying to do.
 #
 # Two of them, because `drive.file` gates every operation of this backend while the
 # operations are not the same thing to whoever met the refusal. On a `put` or a `delete`

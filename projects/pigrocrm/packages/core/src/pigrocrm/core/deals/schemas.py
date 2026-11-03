@@ -122,7 +122,7 @@ class DealRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    # The customer's azienda when the deal was created (REB-623); read-only.
+    # The customer's legal entity when the deal was created (REB-623); read-only.
     legal_entity_id: UUID
     name: str
     customer_id: UUID

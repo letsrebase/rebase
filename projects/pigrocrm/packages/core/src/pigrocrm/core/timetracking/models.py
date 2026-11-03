@@ -238,8 +238,8 @@ class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
 
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
-    # The deal's azienda when the cost has a deal, `NULL` when it has none: a shared
-    # cost («condivisa», REB-623, spec §1.7), which only the view over every azienda
+    # The deal's legal entity when the cost has a deal, `NULL` when it has none: a shared
+    # cost («condivisa», REB-623, spec §1.7), which only the view over every legal entity
     # shows. No column default: `NULL` is a meaning here, not an omission.
     legal_entity_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("legal_entities.id"), default=None, index=True

@@ -37,7 +37,7 @@ def test_an_explicit_value_wins_and_is_marked_manual(
     resolved = RateResolver(db_session).resolve(
         deal_id=seeded_deal_id,
         user_id=seeded_user_id,
-        rate_esplicita=Decimal("99.500000"),
+        explicit_rate=Decimal("99.500000"),
         cost_explicit=Decimal("10.250000"),
     )
     assert resolved.rate == Decimal("99.500000")
@@ -99,7 +99,7 @@ def test_an_explicit_zero_is_a_choice_and_survives(
     not fall through to a deal rate behind their back."""
     _set_deal_rate(db_session, seeded_deal_id, Decimal("150.000000"))
     resolved = RateResolver(db_session).resolve(
-        deal_id=seeded_deal_id, user_id=seeded_user_id, rate_esplicita=Decimal("0.000000")
+        deal_id=seeded_deal_id, user_id=seeded_user_id, explicit_rate=Decimal("0.000000")
     )
     assert resolved.rate == Decimal("0.000000")
     assert resolved.rate_source == "manual"

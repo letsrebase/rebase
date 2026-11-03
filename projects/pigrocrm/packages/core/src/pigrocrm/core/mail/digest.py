@@ -141,7 +141,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
             return
         text_parts.append("")
         text_parts.append(title)
-        text_parts.extend(f"- {testo}" for testo, _ in lines)
+        text_parts.extend(f"- {line_text}" for line_text, _ in lines)
         html_parts.append(f"<p {heading}>{e(title)}</p>")
         html_parts.append(
             '<ul style="margin:0;padding:0 0 0 18px;">'
@@ -175,12 +175,12 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     section(title_unpaid, lines_unpaid)
 
     # 2. «Da emettere»: won deals with no invoice, billable hours not yet invoiced.
-    lines_emettere: list[tuple[str, str]] = []
+    lines_to_issue: list[tuple[str, str]] = []
     if digest.won_to_invoice:
         text_deal_won = _count(
             digest.won_to_invoice, "deal vinto da fatturare", "deal vinti da fatturare"
         )
-        lines_emettere.append(
+        lines_to_issue.append(
             _row(
                 text_deal_won,
                 url=link("/app/deal/list?to_invoice=true"),
@@ -188,7 +188,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
             )
         )
     if digest.hours_uninvoiced or digest.accrued_value:
-        lines_emettere.append(
+        lines_to_issue.append(
             _row(
                 f"{_hours_it(digest.hours_uninvoiced)} ore fatturabili non fatturate — "
                 f"{euro(digest.accrued_value)} maturati",
@@ -200,7 +200,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
                 label="Vai alle ore",
             )
         )
-    section("Da emettere", lines_emettere)
+    section("Da emettere", lines_to_issue)
 
     # 3. «Emesse questa settimana», with this month's total next to last month's.
     lines_issued = [_row(_invoice_line(inv, _status_readable(inv))) for inv in digest.issued]
@@ -271,7 +271,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # another mail.
     tasks = digest.tasks
     lines_fare: list[tuple[str, str]] = []
-    for group, totale, delay in (
+    for group, group_total, delay in (
         (tasks.overdue, tasks.overdue_total, True),
         (tasks.in_week, tasks.in_week_total, False),
     ):
@@ -286,8 +286,8 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
                     label="Apri",
                 )
             )
-        if totale > len(group):
-            other = _count(totale - len(group), "altra", "altre")
+        if group_total > len(group):
+            other = _count(group_total - len(group), "altra", "altre")
             more = f"…e {other} {'in ritardo' if delay else 'questa settimana'}"
             lines_fare.append((more, e(more)))
     if lines_fare:

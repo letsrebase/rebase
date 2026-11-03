@@ -279,7 +279,7 @@ class TemplateService:
         "already there".
         """
         actor.require_unscoped_admin("seed_templates")
-        from pigrocrm.core.gmail.payment_reminders_template import (  # local: avoids a package cycle
+        from pigrocrm.core.gmail.payment_reminders_template import (  # noqa: E501 -- local: avoids a package cycle
             PAYMENT_REMINDER_TEMPLATE_NAME,
             PAYMENT_REMINDER_TEMPLATE_SOURCE,
             PAYMENT_REMINDER_TEMPLATE_VARIABLES,
@@ -298,7 +298,7 @@ class TemplateService:
             ),
             # The reminder body of spec 7.3, seeded so a user can edit the wording that
             # goes out in their name without touching Python. Its source lives in
-            # `gmail/solleciti_template.py` rather than in `ASSETS_DIR` because the
+            # `gmail/payment_reminders_template.py` rather than in `ASSETS_DIR` because the
             # reminder path renders that constant directly -- a reminder must go out
             # even on an install where nobody ran `seed_defaults`, and the row here is
             # the editable copy, not the only copy.

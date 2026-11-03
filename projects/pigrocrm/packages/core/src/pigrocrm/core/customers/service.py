@@ -187,7 +187,7 @@ class CustomerService:
         return customer
 
     def _legal_entity_for(self, legal_entity_id: UUID | None, country: str | None) -> UUID:
-        """The azienda a customer is billed by: the one named, which must exist and be
+        """The legal entity a customer is billed by: the one named, which must exist and be
         active, or the one its nation proposes (REB-623, spec §1.6)."""
         if legal_entity_id is None:
             return self.legal_entities.propose(country).id
@@ -285,7 +285,10 @@ class CustomerService:
                     first_name, last_name = _person_name(display, address)
                     persons._insert(
                         PersonCreate(
-                            first_name=first_name, last_name=last_name, email=address, customer_id=customer.id
+                            first_name=first_name,
+                            last_name=last_name,
+                            email=address,
+                            customer_id=customer.id,
                         ),
                         actor,
                     )
@@ -341,7 +344,10 @@ class CustomerService:
         try:
             person = persons._insert(
                 PersonCreate(
-                    first_name=first_name, last_name=last_name, email=address, customer_id=customer.id
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=address,
+                    customer_id=customer.id,
                 ),
                 actor,
             )
@@ -402,7 +408,7 @@ class CustomerService:
 
         # Decided on every active deal, the ones out of this member's sight included
         # (REB-634); said with the ones they see, since the number of the others is a
-        # fact about another azienda (Greptile on PR #513).
+        # fact about another legal entity (Greptile on PR #513).
         if self.repo.count_active_deals(customer_id):
             visible = self.repo.count_visible_active_deals(customer_id)
             raise Conflict(

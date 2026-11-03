@@ -13,8 +13,8 @@ from datetime import date, timedelta
 from pigrocrm.core.db.clock import month_bounds
 
 
-def due_date_from_termini(issue_date: date, days: int, *, fine_mese: bool) -> date:
-    """`issue_date` plus `days`, then the last day of that month when `fine_mese`.
+def due_date_from_terms(issue_date: date, days: int, *, month_end: bool) -> date:
+    """`issue_date` plus `days`, then the last day of that month when `month_end`.
 
     The days come first and the month is the one they land in: 22 September plus thirty
     is 22 October, so end of month is 31 October. Applying the slide before the days
@@ -23,6 +23,6 @@ def due_date_from_termini(issue_date: date, days: int, *, fine_mese: bool) -> da
     February.
     """
     due_date = issue_date + timedelta(days=days)
-    if not fine_mese:
+    if not month_end:
         return due_date
     return month_bounds(due_date.year, due_date.month)[1]

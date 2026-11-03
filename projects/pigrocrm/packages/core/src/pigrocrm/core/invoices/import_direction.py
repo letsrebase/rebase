@@ -8,7 +8,7 @@ because mastro is one deployment for one consultant. PigroCRM has no equivalent
 config, and needs none: whichever space's database a request opened holds the
 `LegalEntity` rows this classifier can see, and since REB-619 (spec 2026-10-03 §1.5)
 there may be several, so "the account holder's own tax id" is the set of the active
-Italian aziende's ids, and a match names *which* azienda the file lands on.
+Italian legal entities's ids, and a match names *which* legal entity the file lands on.
 
 Reads only the supplier (`supplier`), never `transmission`: an invoicing agent
 transmitting on the account holder's own behalf appears as `transmission`, and the
@@ -37,7 +37,7 @@ PigroCRM has no representation for today, parsed and reported but never written
 def match_legal_entity(
     supplier: ParsedInvoiceParty, legal_entities: Sequence[LegalEntity]
 ) -> LegalEntity | None:
-    """The azienda `supplier` -- the party the parsed document names as having issued
+    """The legal entity `supplier` -- the party the parsed document names as having issued
     it -- *is*, compared by fiscal identifier, case- and punctuation-insensitively
     (mirrors mastro's `classifyDirection`, `direction.ts:38-49`), or `None` when it is
     none of them: a supplier's invoice.
@@ -47,7 +47,7 @@ def match_legal_entity(
     `ParsedInvoiceParty`/`LegalEntity` both carry `vat_number` and `tax_code` as
     separate, independently optional fields (mirrors `import_schemas.
     ParsedInvoiceParty`'s own docstring). A match on *either* channel means the
-    fornitore is that azienda: a document can carry only a VAT number, only a fiscal
+    supplier is that legal entity: a document can carry only a VAT number, only a fiscal
     code, or both, and the two rows being compared are free to have populated a
     different one of the two.
 
@@ -57,18 +57,18 @@ def match_legal_entity(
     than re-implemented, so a VAT number stored as `"01234567890"` on `LegalEntity` and
     read as `"IT01234567890"` off a document's `IdFiscaleIVA` compare equal.
 
-    Two aziende matched by different channels (X by P.IVA, Y by codice fiscale) is a
+    Two legal entities matched by different channels (X by P.IVA, Y by codice fiscale) is a
     configuration the unique indexes on each id cannot rule out, and it is refused
     rather than resolved by picking one: nothing is written on a file whose issuer is
-    ambiguous (spec §1.5). Two aziende matched by the same channel cannot exist, since
+    ambiguous (spec §1.5). Two legal entities matched by the same channel cannot exist, since
     `uq_legal_entities_vat_number` and `_codice_fiscale` refuse the second row.
 
-    Raises `ValidationFailed` if no azienda carries either identifier in a
+    Raises `ValidationFailed` if no legal entity carries either identifier in a
     recognisable shape: there is then no fact to classify against, and guessing
     would be worse than refusing. Deliberately a looser condition than
     `fatturapa/exporter.py`'s own `_supplier`, which refuses to *emit* whenever `vat_number`
     alone is missing (mandatory for a `CedentePrestatore`, `fatturapa/exporter.py`):
-    this classifier only needs *some* fact to compare against, so an azienda
+    this classifier only needs *some* fact to compare against, so a legal entity
     configured with only a `tax_code` still classifies, even though the same
     row could not itself emit a FatturaPA document.
     """

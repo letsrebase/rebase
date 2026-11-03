@@ -600,7 +600,9 @@ def test_the_internal_notes_of_an_issued_invoice_can_still_be_changed(
     """They appear on no artefact, so they are not part of the document (spec 4)."""
     invoice = _issued_row(db_session, customer_id)
     assert (
-        service.update(invoice.id, InvoiceUpdate(internal_notes="sollecitato"), ADMIN).internal_notes
+        service.update(
+            invoice.id, InvoiceUpdate(internal_notes="sollecitato"), ADMIN
+        ).internal_notes
         == "sollecitato"
     )
 

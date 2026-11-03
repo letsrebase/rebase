@@ -93,7 +93,7 @@ def test_an_empty_month_is_an_empty_answer_and_not_an_error(
 
     assert month.days == []
     assert month.total_hours == Decimal("0.00")
-    assert (month.da, month.a) == (date(2026, 9, 1), date(2026, 9, 30))
+    assert (month.date_from, month.date_to) == (date(2026, 9, 1), date(2026, 9, 30))
 
 
 def test_only_the_days_that_have_something_are_returned(

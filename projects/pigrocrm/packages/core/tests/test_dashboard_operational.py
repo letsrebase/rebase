@@ -363,7 +363,7 @@ def test_it_takes_no_period() -> None:
 
 def test_the_week_is_the_current_one(seeded: Seeded) -> None:
     result = _dashboard(seeded.engine)
-    assert (result.week.da, result.week.a) == current_week()
+    assert (result.week.date_from, result.week.date_to) == current_week()
     assert len(result.week.days) == 7
     # The corpus's own hours land in this week, so the card is not being checked empty --
     # and the days around them are still present at zero.

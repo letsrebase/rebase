@@ -96,8 +96,8 @@ def test_current_week_is_seven_days_across_the_dst_transition(
     days -- which is why this arithmetic is on `date` and not on `datetime`, where the
     week would be 167 hours long and a naive division would lose the Sunday."""
     _frozen(monkeypatch, date(2026, 3, 26))
-    da, a = current_week(ROMA)
-    assert (da, a) == (date(2026, 3, 23), date(2026, 3, 29))
+    date_from, date_to = current_week(ROMA)
+    assert (date_from, date_to) == (date(2026, 3, 23), date(2026, 3, 29))
 
 
 def test_current_week_uses_the_legal_entity_day_and_not_the_utc_day(
@@ -198,7 +198,7 @@ def test_the_window_is_echoed_back(db_session: Session) -> None:
     """A series with no stated window is a chart with no x-axis: the caller must be able to
     label the first and last point without recomputing them."""
     week = TimeEntryRepository(db_session).week_hours(_LUN, _DOM)
-    assert (week.da, week.a) == (_LUN, _DOM)
+    assert (week.date_from, week.date_to) == (_LUN, _DOM)
 
 
 def test_a_window_crossing_a_month_boundary_is_still_dense(

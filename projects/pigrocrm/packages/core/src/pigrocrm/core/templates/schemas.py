@@ -2,8 +2,8 @@
 
 No brief exists for this task (task-8-brief.md was never written to
 `.superpowers/sdd/2026-08-10-slice-2-documenti-e-template/`); these shapes are
-derived directly from `Template`'s own committed columns (nome String(120), tipo
-String(20), corpo_markdown Text, variabili_dichiarate JSONB, attivo Boolean) and from
+derived directly from `Template`'s own committed columns (name String(120), type
+String(20), body_markdown Text, declared_variables JSONB, active Boolean) and from
 the conventions every sibling domain in this package already follows (`customers/
 schemas.py`, `fields/schemas.py`, `pipeline/schemas.py`).
 """
@@ -22,7 +22,7 @@ from pigrocrm.core.validation import SafeStr
 # extended, because no `documents` row is ever an email, and appending these two there
 # would make them legal document types on every document endpoint in the API. The
 # document-only values (`invoice`, `invoice_xml`, `proforma`, `hours_report`) are not
-# mirrored back the other way either, with one exception: `hours_report` is the tipo
+# mirrored back the other way either, with one exception: `hours_report` is the type
 # `TemplateService.seed_defaults` already stores on the shipped timesheet template, so
 # dropping it here would make a shipped row unreadable through `TemplateRead`.
 # `Template.type` is already `String(20)` with no constraint, so there is no migration.

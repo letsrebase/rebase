@@ -128,7 +128,7 @@ class EmailDraftService:
 
         `public_url` first, because that is the origin this CRM answers on and the one
         Google already compares character by character for the OAuth redirect. The
-        website of the azienda the draft speaks for second (REB-627, spec §1.8), because
+        website of the legal entity the draft speaks for second (REB-627, spec §1.8), because
         an installation reachable only on a LAN still has an identity its clients
         recognise. `localhost.invalid` last, and it is a deliberate admission rather
         than a default that looks plausible.
@@ -211,9 +211,9 @@ class EmailDraftService:
     def create(
         self, data: EmailDraftCreate, actor: Actor, *, legal_entity_id: UUID | None = None
     ) -> EmailDraftRead:
-        """`legal_entity_id` names the azienda the draft speaks for when it is not the
+        """`legal_entity_id` names the legal entity the draft speaks for when it is not the
         record's own: a payment reminder is filed under the customer but signs as the
-        invoice's azienda, and its Message-ID domain follows (REB-627)."""
+        invoice's legal entity, and its Message-ID domain follows (REB-627)."""
         actor.require_write("create_email_draft")
         self._check_entity(data.entity_type, data.entity_id)
         self._check_reply_target(data.in_reply_to_message_id)

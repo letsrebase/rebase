@@ -25,18 +25,18 @@ class AutomationConfig(Base, PrimaryKeyMixin, TimestampMixin):
         ),
     )
 
-    # A1 -- offerta accettata -> deal vinto. Default on: an automation nobody switched on
+    # A1 -- accepted offer -> won deal. Default on: an automation nobody switched on
     # is an automation nobody knows exists.
     a1_wins_accepted_offer_deal: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default="true"
     )
-    # A2 -- offerta inviata -> il deal avanza allo stage `code='offer'`, only if its
+    # A2 -- sent offer -> the deal advances to the stage `code='offer'`, only if its
     # current `position` is lower. Never backwards: see `AutomationRunner`.
     a2_advances_sent_offer_deal: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default="true"
     )
 
-    # A3, A4, A5 -- the three rules of slice 7 §6 that open an attivita, run by the daily
+    # A3, A4, A5 -- the three rules of slice 7 §6 that open an task, run by the daily
     # pass (`daily.py`) and named after the `rule` they write. Default on, like A1 and A2.
     a3_sent_offer_follow_up: Mapped[bool] = mapped_column(
         nullable=False, default=True, server_default="true"

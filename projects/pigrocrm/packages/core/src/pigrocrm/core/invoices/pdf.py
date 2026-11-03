@@ -13,7 +13,7 @@ The layout is the one of the register this product inherited (ORB-102). Ivan's i
 invoices are the previous system's own PDFs, kept through `import_issued`, and a
 document rendered here sits next to them in the same list: a full emitter block top
 right, a `TD01 fattura | Numero | Data` line, the customer on two bar-separated lines,
-a three-column detail table with the Natura where there is no rate, the payment code
+a three-column detail table with the VAT nature where there is no rate, the payment code
 with its words, a rule, a «Thank you!» with the contacts, `1.760,00 €` and `dd-mm-yyyy`.
 Where this file departs from that layout it says so at the value that departs.
 """
@@ -134,9 +134,9 @@ def format_data(value: date) -> str:
 
 
 def format_vat(rate: Decimal, vat_nature: str | None) -> str:
-    """What the %IVA column shows for a line: the Natura when the line carries one
-    (`N2.2` on a forfettario line, the way the register always printed it), the rate
-    otherwise (`22%`, `4,5%`). A rate of zero with no Natura is not a line FPR12 lets
+    """What the %IVA column shows for a line: the VAT nature when the line carries one
+    (`N2.2` on a flat-rate regime line, the way the register always printed it), the rate
+    otherwise (`22%`, `4,5%`). A rate of zero with no VAT nature is not a line FPR12 lets
     through, so `0%` is printed rather than guessed at."""
     if vat_nature:
         return vat_nature
@@ -157,7 +157,8 @@ def address_display(party: dict[str, Any]) -> str:
 
     Italy keeps the shape it always had, `CAP Comune (PR)`. Outside it, the postcode is
     printed as the record holds it (`EC1V 9HL`, not the `00000` the XML carries -- see
-    `fatturapa.constants.POSTAL_CODE_FOREIGN`) and the province is not printed at all. An Italian record
+    `fatturapa.constants.POSTAL_CODE_FOREIGN`) and the province is not printed at all. An Italian
+    record
     with no province yet, which a proforma may well have, loses the parentheses rather
     than printing them empty: the same defect in the domestic case.
     """
@@ -286,7 +287,7 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
             "totale": format_euro(export.total),
             # The register printed no totals block: the payment table carries the
             # amount. It comes back only when there is something the payment row does
-            # not say, VAT to show, so a forfettario invoice matches the register and an
+            # not say, VAT to show, so a flat-rate regime invoice matches the register and an
             # ordinario one still shows its tax. The stamp is never a row here: the total
             # does not include it (`totals.py`) and the emitter bears it, so a `2,00 €`
             # line under Imposta would read as charged to the customer; the declaration
@@ -348,7 +349,7 @@ def _declaration_regime(export: InvoiceForExport) -> str:
     with no reference at all, which is what an `RF01` invoice has.
 
     The register this layout follows printed no declaration at all. This one stays,
-    small and under the rule: a forfettario invoice has to say why it carries no VAT.
+    small and under the rule: a flat-rate regime invoice has to say why it carries no VAT.
     """
     distinct: list[str] = []
     for riga in export.lines:
@@ -386,7 +387,7 @@ def render_invoice_pdf(
     """
     scope = build_scope(export, reference=reference)
     markdown = render_template(INVOICE_TEMPLATE.read_text(encoding="utf-8"), scope)
-    # The identity in the header is the frozen snapshot's; the logo is the azienda's
+    # The identity in the header is the frozen snapshot's; the logo is the legal entity's
     # live one (REB-627, spec §1.8), the way `regenerate` re-reads a live profile: a logo
     # is not a fiscal fact, and a re-render after a rebrand should carry the new mark.
     header = build_invoice_header(scope, logo=logo_file_in(dict(media or {})))

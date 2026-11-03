@@ -222,7 +222,7 @@ def _one_invoice(settings: Settings, slug: str, week: tuple[date, date]) -> None
 def _write_invoice(engine: Engine, week: tuple[date, date]) -> None:
     """One customer and one invoice issued inside the week: enough that the space is not
     empty (§2) and that the report has a section in it. Disposes of `engine`."""
-    da, a = week
+    date_from, date_to = week
     try:
         with session_factory(engine)() as session:
             customer = Customer(legal_name="Cliente Uno", country="IT", custom_fields={})
@@ -240,8 +240,8 @@ def _write_invoice(engine: Engine, week: tuple[date, date]) -> None:
                     vat_amount=Decimal("0.00"),
                     stamp_duty=Decimal("0.00"),
                     total=Decimal("1000.00"),
-                    issue_date=da + timedelta(days=1),
-                    due_date=a + timedelta(days=120),
+                    issue_date=date_from + timedelta(days=1),
+                    due_date=date_to + timedelta(days=120),
                     payment_date=None,
                     sdi_document_type="TD01",
                     currency="EUR",

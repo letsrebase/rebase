@@ -99,7 +99,7 @@ class ConfirmedInvoiceRead(BaseModel):
 
     document_id: UUID
     outcome: InvoiceConfirmOutcome
-    # The azienda the file landed on, or was checked against (REB-619, spec §1.5);
+    # The legal entity the file landed on, or was checked against (REB-619, spec §1.5);
     # `None` for `incoming_skipped` and `unclaimed`, which land nowhere.
     legal_entity_id: UUID | None = None
     invoice: InvoiceRead | None = None

@@ -100,13 +100,13 @@ class Task(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "due_date",
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        # Slice 7 §6.1, REB-727: a rule never has two open attivita on one subject, and
+        # Slice 7 §6.1, REB-727: a rule never has two open task on one subject, and
         # the database is what says so, not a SELECT before the INSERT. The subject is
-        # the one reference an attivita carries (`ck_tasks_single_reference` allows
+        # the one reference an task carries (`ck_tasks_single_reference` allows
         # one at most), so `coalesce` over the four columns is that reference whichever
         # column holds it, and the index needs no `NULLS NOT DISTINCT`: four nullable
         # columns in one unique key would let every row through, a NULL being distinct
-        # from a NULL. An attivita with no reference at all has no subject to repeat on
+        # from a NULL. An task with no reference at all has no subject to repeat on
         # and is out of the index. Closing it (done or cancelled) or archiving it takes
         # it out, and the rule may open the next one on a later pass.
         Index(

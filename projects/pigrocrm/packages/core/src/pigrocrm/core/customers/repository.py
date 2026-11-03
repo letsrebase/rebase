@@ -63,7 +63,7 @@ class CustomerRepository:
         reliable, since either side is free to have populated only one of the two.
         `None` when neither identifier is given (nothing to match on) or neither
         matches an active customer. `legal_entity_id` narrows the match to the customers of one
-        azienda, which is what an invoice written on that azienda's register can attach to
+        legal entity, which is what an invoice written on that legal entity's register can attach to
         (REB-783); `None` looks across all of them.
         """
         if vat_number is None and tax_code is None:
@@ -142,11 +142,11 @@ class CustomerRepository:
         )
 
     def count_active_deals(self, customer_id: UUID) -> int:
-        """The customer's live deals, whoever's azienda they sit in: what `soft_delete`
+        """The customer's live deals, whoever's legal entity they sit in: what `soft_delete`
         decides on. `deals` is named as a bare table and not imported as the model:
         `deals` imports this package's neighbours, which import this one."""
         # Past the row-level policies, through the definer function of migration 0048
-        # (REB-634): a deal of an azienda this session cannot see still keeps its
+        # (REB-634): a deal of a legal entity this session cannot see still keeps its
         # customer from being archived, or the invariant `soft_delete` guards would
         # hold only for the deals the archiver happens to see.
         return int(
@@ -158,7 +158,7 @@ class CustomerRepository:
     def count_visible_active_deals(self, customer_id: UUID) -> int:
         """The active deals of the customer this session may see: what a refusal may
         say out loud, where `count_active_deals` is what it decides on (a count of
-        rows out of the caller's sight is a fact about another azienda)."""
+        rows out of the caller's sight is a fact about another legal entity)."""
         stmt = (
             select(func.count())
             .select_from(_DEALS)
