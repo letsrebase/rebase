@@ -50,8 +50,11 @@ export type SimulatorFields = {
   value: string
   hours: string
   rate: string
-  /** The chosen deal's own three estimate columns, as the API sent them. */
+  /** The chosen deal as the API sent it: its id and total (null while it has no value
+   *  lines), and its own three estimate columns. */
   deal: {
+    id: string
+    expected_value: string | null
     budgeted_value: string | null
     budgeted_hours: string | null
     hourly_rate: string | null
@@ -67,6 +70,7 @@ export type SimulatorRequest =
   | {
       ok: true
       input: {
+        deal_id?: string
         budgeted_value?: string
         budgeted_hours?: string
         hourly_rate?: string
@@ -79,12 +83,15 @@ export type SimulatorRequest =
 /**
  * The request the typed fields make, or what keeps them from making one. The estimate is
  * a value, or hours with a rate: the two shapes `CeilingSimulationQuery` takes, and the
- * value wins when both are given, as it does on the server.
+ * value wins when both are given, as it does on the server. A saved deal that has value
+ * lines (REB-931) is asked by its id instead, and never together with an estimate: the
+ * server reads when its money falls, which a typed total cannot say.
  */
 function estimateRequest(fields: SimulatorFields): SimulatorRequest {
   if (fields.source === 'deal') {
     const deal = fields.deal
     if (deal === null) return { ok: false, errors: { deal: 'Scegli un deal.' } }
+    if (deal.expected_value !== null) return { ok: true, input: { deal_id: deal.id } }
     if (deal.budgeted_value !== null) {
       return { ok: true, input: { budgeted_value: deal.budgeted_value } }
     }
@@ -96,7 +103,9 @@ function estimateRequest(fields: SimulatorFields): SimulatorRequest {
     }
     return {
       ok: false,
-      errors: { deal: 'Questo deal non ha una stima: scegli «Un importo» e scrivila qui.' },
+      errors: {
+        deal: 'Questo deal non ha un valore: aggiungi le righe di valore al deal, oppure scegli «Un importo» e scrivilo qui.',
+      },
     }
   }
   const value = parseValue(fields.value)

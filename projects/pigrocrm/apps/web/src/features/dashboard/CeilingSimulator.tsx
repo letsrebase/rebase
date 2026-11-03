@@ -14,15 +14,20 @@ import { money } from './format'
 import { useCeilingSimulation } from './queries'
 import { simulatorRequest, yearOfIso, type SimulatorFields } from './simulatorInput'
 
-/** The estimate a deal carries, if it carries one: the same two shapes the simulator takes. */
+/** What a deal can be simulated by: its value lines (REB-931), else the estimate it
+ *  carries, in the same two shapes the simulator takes. */
 function hasEstimate(deal: Deal): boolean {
   return (
+    deal.expected_value !== null ||
     deal.budgeted_value !== null ||
     (deal.budgeted_hours !== null && deal.hourly_rate !== null)
   )
 }
 
 function estimateOf(deal: Deal): string {
+  if (deal.expected_value !== null) {
+    return `${money(deal.expected_value)}, letto riga per riga: conta la parte che cade nell’anno`
+  }
   if (deal.budgeted_value !== null) return money(deal.budgeted_value)
   return `${deal.budgeted_hours?.replace('.', ',')} ore a ${money(deal.hourly_rate ?? '0')}`
 }
@@ -82,13 +87,13 @@ function DealPicker({
             <SelectItem key={deal.id} value={deal.id} disabled={!hasEstimate(deal)}>
               {deal.name}
               {deal.customer_legal_name ? ` · ${deal.customer_legal_name}` : ''}
-              {hasEstimate(deal) ? '' : ' (senza stima)'}
+              {hasEstimate(deal) ? '' : ' (senza valore)'}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       {chosen ? (
-        <p className="text-xs text-muted-foreground">Stima del deal: {estimateOf(chosen)}</p>
+        <p className="text-xs text-muted-foreground">Valore del deal: {estimateOf(chosen)}</p>
       ) : null}
     </div>
   )
@@ -152,8 +157,9 @@ const SOURCES = [
 
 /**
  * «Ci sta?»: a not-yet-won job's estimate, added to the year's real receipts and read
- * against every ceiling, with nothing saved. The estimate is a deal's own, or an amount
- * (or hours and a rate) typed here; the date is when the money would arrive, because the
+ * against every ceiling, with nothing saved. The estimate is a saved deal's own value lines
+ * (the server reads which of its payments fall in the year, REB-931), or an amount (or
+ * hours and a rate) typed here; the date is when the money would arrive, because the
  * ceiling counts what is collected in a calendar year, and its year is the year asked.
  *
  * A contract with a cap on the customer's share (REB-761) can be chosen too: the same

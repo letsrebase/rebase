@@ -40,6 +40,7 @@ from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.money import HOURS_QUANT, MONEY_QUANT
 from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -126,7 +127,16 @@ def _check_lines(lines: list[DealValueLineIn], close_date: date | None) -> Value
                     expected="tariffe a giorni o a ore non sovrapposte",
                 )
     for index, (line, term) in enumerate(pairs):
-        if term_total(term) >= VALUE_LIMIT:
+        try:
+            line_total = term_total(term)
+        except (ValueError, OverflowError):
+            # An occurrence stepped past year 9999.
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{_line_label(index, line)}: la data è fuori dal calendario",
+            ) from None
+        if line_total >= VALUE_LIMIT:
             raise ValidationFailed(
                 ENTITY,
                 "value_lines",
@@ -281,7 +291,9 @@ class DealService:
         """
         return self._reads([deal])[0]
 
-    def _reads(self, deals: list[Deal]) -> list[DealRead]:
+    def _reads(
+        self, deals: list[Deal], lines: dict[UUID, list[DealValueLine]] | None = None
+    ) -> list[DealRead]:
         """The batched form, and the reason `customer_legal_name` is resolved here
         and not inside `DealRead` itself: one lookup for the whole page (see
         `DealRepository.customer_names`), so a page of deals costs two queries rather
@@ -293,7 +305,8 @@ class DealService:
         read -- and the value comes from a `String` column, already the right type.
         """
         names = self.repo.customer_names({deal.customer_id for deal in deals})
-        lines = self.repo.value_lines({deal.id for deal in deals})
+        if lines is None:
+            lines = self.repo.value_lines({deal.id for deal in deals})
         reads: list[DealRead] = []
         for deal in deals:
             figures = self._figures(deal, lines.get(deal.id, []))
@@ -317,10 +330,12 @@ class DealService:
             "monthly_recurring_value": summary.monthly_recurring,
         }
 
-    def _detail(self, deal: Deal) -> DealDetailRead:
-        """The single-deal read: the list shape plus the lines behind its figures."""
-        read = self._read(deal)
-        lines = self.repo.value_lines([deal.id]).get(deal.id, [])
+    def _detail(self, deal: Deal, lines: list[DealValueLine] | None = None) -> DealDetailRead:
+        """The single-deal read: the list shape plus the lines behind its figures. `lines`
+        are the ones the caller already holds; without them they are read."""
+        if lines is None:
+            lines = self.repo.value_lines([deal.id]).get(deal.id, [])
+        read = self._reads([deal], {deal.id: lines})[0]
         return DealDetailRead(
             **read.model_dump(),
             value_lines=[DealValueLineRead.model_validate(line) for line in lines],
@@ -340,16 +355,28 @@ class DealService:
             monthly_recurring_value=summary.monthly_recurring,
         )
 
-    def _write_lines(self, deal: Deal, lines: list[DealValueLineIn], summary: ValueSummary) -> None:
-        """Replaces the deal's lines and writes its total, in the caller's transaction."""
-        self.repo.replace_value_lines(
-            deal.id,
-            [
-                DealValueLine(deal_id=deal.id, position=position, **line.model_dump())
-                for position, line in enumerate(lines)
-            ],
-        )
+    def _write_lines(
+        self, deal: Deal, lines: list[DealValueLineIn], summary: ValueSummary
+    ) -> list[DealValueLine]:
+        """Replaces the deal's lines and writes its total, in the caller's transaction;
+        answers the rows written."""
+        rows = [
+            DealValueLine(
+                deal_id=deal.id,
+                position=position,
+                **{
+                    **line.model_dump(),
+                    # At the column's scale, as the database will answer them: these rows
+                    # are read back without a round trip.
+                    "unit_price": line.unit_price.quantize(MONEY_QUANT),
+                    "quantity": line.quantity.quantize(HOURS_QUANT),
+                },
+            )
+            for position, line in enumerate(lines)
+        ]
+        self.repo.replace_value_lines(deal.id, rows)
         deal.expected_value = summary.total if lines else None
+        return rows
 
     def create(
         self, data: DealCreate, actor: Actor, *, rebase_ref: str | None = None
@@ -395,14 +422,13 @@ class DealService:
         payload["rebase_refs"] = [rebase_ref] if rebase_ref is not None else []
 
         deal = self.repo.add(Deal(**payload))
-        if lines:
-            self._write_lines(deal, lines, summary)
+        rows = self._write_lines(deal, lines, summary) if lines else []
         self.activities.record(
             ENTITY, deal.id, "created", actor, {"name": deal.name, "stage": stage.name}
         )
         append_first_note(self.session, ENTITY, deal.id, first_note, actor)
         self.session.commit()
-        return self._detail(deal)
+        return self._detail(deal, rows)
 
     def attach_rebase_ref(self, deal_id: UUID, rebase_ref: str, actor: Actor) -> DealRead:
         """Adds a reference of the engagements door to a deal the CRM already had (the leads
@@ -472,12 +498,12 @@ class DealService:
         for key, value in changes.items():
             setattr(deal, key, value)
         if lines_changed and new_lines is not None and summary is not None:
-            self._write_lines(deal, new_lines, summary)
+            stored = self._write_lines(deal, new_lines, summary)
 
         changed = sorted([*changes, *(["value_lines"] if lines_changed else [])])
         self.activities.record(ENTITY, deal.id, "updated", actor, {"changed": changed})
         self.session.commit()
-        return self._detail(deal)
+        return self._detail(deal, stored)
 
     def move_stage(self, deal_id: UUID, stage_id: UUID, actor: Actor) -> DealRead:
         """The only supported way to change a deal's stage -- see `DealUpdate`'s own

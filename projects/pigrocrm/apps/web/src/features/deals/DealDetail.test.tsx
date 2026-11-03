@@ -70,6 +70,9 @@ const DEAL = {
   customer_legal_name: 'ACME Srl',
   pipeline_stage_id: 's1',
   expected_value: '4500.00',
+  one_off_value: '4500.00',
+  monthly_recurring_value: null,
+  value_lines: [],
   probability: 50,
   expected_close_date: null,
   budgeted_hours: null,
@@ -272,5 +275,60 @@ describe('the azienda in the header (REB-626)', () => {
     mockPage()
     renderWithClient(<DealDetail />)
     expect(await screen.findByText(/^ACME Srl · 4\.500,00\s€$/)).toBeInTheDocument()
+  })
+
+  /** The deal the spec uses: 20.000 up front plus a 500 fee with no end, which counts 12 months. */
+  const MIXED = {
+    ...(DEAL as object),
+    expected_value: '26000.00',
+    one_off_value: '20000.00',
+    monthly_recurring_value: '500.00',
+    value_lines: [
+      {
+        id: 'l1', position: 0, description: 'Sviluppo', unit: 'flat', delivery_period: 'one_off',
+        unit_price: '20000.00', quantity: '1.00', start: null, duration_months: null,
+      },
+      {
+        id: 'l2', position: 1, description: 'Manutenzione', unit: 'flat', delivery_period: 'monthly',
+        unit_price: '500.00', quantity: '1.00', start: null, duration_months: null,
+      },
+    ],
+  }
+
+  it('shows the lines and the three figures, and says an open-ended fee counts 12 months', async () => {
+    mockGet.mockImplementation(
+      ((path: string) =>
+        path === '/api/deals/{deal_id}' ? ok(MIXED) : path === '/api/pipeline-stages' ? ok([]) : ok([])) as never,
+    )
+    renderWithClient(<DealDetail />)
+
+    const lines = await screen.findByRole('list', { name: 'Righe di valore' })
+    expect(within(lines).getByText('Sviluppo')).toBeInTheDocument()
+    expect(within(lines).getByText(/^500,00\s€ · ogni mese · senza scadenza$/)).toBeInTheDocument()
+    expect(screen.getByText(/^26\.000,00\s€$/)).toBeInTheDocument()
+    expect(screen.getByText(/^20\.000,00\s€$/)).toBeInTheDocument()
+    expect(screen.getByText(/^500,00\s€\/mese$/)).toBeInTheDocument()
+    expect(screen.getByText(/conta 12 mesi/)).toBeInTheDocument()
+  })
+
+  it('starts the proforma at the one-off value, never at the total', async () => {
+    auth.canWrite = true
+    mockGet.mockImplementation(
+      ((path: string) => (path === '/api/deals/{deal_id}' ? ok(MIXED) : ok([]))) as never,
+    )
+    renderWithClient(<DealDetail />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuova fattura' }))
+    expect(await screen.findByLabelText('Prezzo unitario riga 1')).toHaveDisplayValue('20000.00')
+  })
+
+  it('starts the proforma empty when the deal has nothing one-off', async () => {
+    auth.canWrite = true
+    const feesOnly = { ...MIXED, one_off_value: '0.00', expected_value: '6000.00' }
+    mockGet.mockImplementation(
+      ((path: string) => (path === '/api/deals/{deal_id}' ? ok(feesOnly) : ok([]))) as never,
+    )
+    renderWithClient(<DealDetail />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuova fattura' }))
+    expect(await screen.findByLabelText('Prezzo unitario riga 1')).toHaveDisplayValue('')
   })
 })

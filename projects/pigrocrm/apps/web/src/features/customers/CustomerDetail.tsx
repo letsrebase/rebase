@@ -8,7 +8,6 @@ import { EntityTask } from '@/features/tasks/EntityTask'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
@@ -25,6 +24,7 @@ import {
   type RelatedDeal,
   type RelatedPerson,
 } from '@/features/customers/queries'
+import { formatDealValue } from '@/features/deals/columns'
 import { ContractsTab } from '@/features/contracts/ContractsTab'
 import { DocumentsTab } from '@/features/documents/DocumentsTab'
 import { EmailTab } from '@/features/gmail/EmailTab'
@@ -59,10 +59,6 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-right font-medium">{value}</span>
     </div>
   )
-}
-
-function formatCurrency(value: string | null): string {
-  return value === null ? EMPTY : formatEuro(value)
 }
 
 /** A short preview list, not a paginated table: this tab exists so a customer's
@@ -305,7 +301,7 @@ export function CustomerDetail() {
                   query={deals}
                   emptyMessage="Nessun deal collegato."
                   renderItem={(deal) => (
-                    <Row key={deal.id} label={deal.name} value={formatCurrency(deal.expected_value)} />
+                    <Row key={deal.id} label={deal.name} value={formatDealValue(deal)} />
                   )}
                 />
               </CardContent>

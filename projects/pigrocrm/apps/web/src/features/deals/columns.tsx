@@ -44,6 +44,18 @@ export function formatMoney(value: string | null): string {
   return value === null ? EMPTY : formatEuro(value)
 }
 
+/**
+ * The deal's value as a list or a card shows it: the total, and `+ 500 € /mese` beside it
+ * when the deal has a monthly recurring figure. Zero is compared as scaled integer cents,
+ * never as a float, and the server's figures are only formatted here, never combined.
+ */
+export function formatDealValue(deal: Pick<Deal, 'expected_value' | 'monthly_recurring_value'>): string {
+  const total = formatMoney(deal.expected_value)
+  const monthly = deal.monthly_recurring_value
+  if (monthly == null || scaledFromDecimalString(monthly, MONEY_SCALE) === 0) return total
+  return `${total} + ${formatEuro(monthly)}/mese`
+}
+
 /** Same reasoning as `formatMoney`, for the one native column that is a plain
  *  quantity rather than money: `budgeted_hours` (`Numeric(8, 2)`, deals/
  *  models.py). Kept distinct from `formatMoney` rather than reusing it with a
@@ -120,11 +132,11 @@ export function buildDealColumns(
     {
       header: 'Valore previsto',
       id: 'expected_value',
-      accessorFn: (row) => formatMoney(row.expected_value),
+      accessorFn: (row) => formatDealValue(row),
       // `meta.align` right-aligns the header over the digits too; `MoneyCell` alone
       // could only align what is inside the cell.
       meta: { align: 'right' },
-      cell: ({ row }) => <MoneyCell>{formatMoney(row.original.expected_value)}</MoneyCell>,
+      cell: ({ row }) => <MoneyCell>{formatDealValue(row.original)}</MoneyCell>,
     },
     {
       header: 'Probabilità',

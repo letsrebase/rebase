@@ -154,15 +154,16 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         legal_entity_id: str | None = None,
         contract_id: str | None = None,
         expected_date: IsoDateStr = None,
+        deal_id: str | None = None,
     ) -> dict[str, Any]:
-        """The «does it fit?» simulator: adds the estimate of a deal not yet won to the year's real
-        revenue and
-        re-evaluates every active threshold, without saving. Requires `budgeted_value`, or
-        `budgeted_hours` with `hourly_rate`. `legal_entity_id` as in `get_ceiling_headroom`.
-        With `contract_id` the estimate is also read against the cap on the customer's share
-        (`customer_share_cap`) in the anniversary year of the contract that contains
-        `expected_date` (YYYY-MM-DD, default today): `contract_cap` gives the share before and
-        after and whether it `rientra` (fits).
+        """The «does it fit?» simulator: adds a deal's estimate to the year's real revenue and
+        re-evaluates every active threshold, without saving. Give `budgeted_value`, or
+        `budgeted_hours` with `hourly_rate`, or a saved deal's `deal_id` (its value lines' share
+        in `year`), never both. `legal_entity_id` as in `get_ceiling_headroom`. With
+        `contract_id` it is also read against the contract's cap on the customer's share
+        (`customer_share_cap`), over the anniversary year containing `expected_date`
+        (default today): `contract_cap` gives the share before and after and
+        whether it `rientra`.
         """
         return timetracking.simulate_ceiling(
             context,
@@ -175,6 +176,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 if budgeted_value is not None
                 else None,
                 hourly_rate=cast(Decimal, hourly_rate) if hourly_rate is not None else None,
+                deal_id=UUID(deal_id) if deal_id else None,
                 contract_id=UUID(contract_id) if contract_id else None,
                 expected_date=iso_date(expected_date),
             ),

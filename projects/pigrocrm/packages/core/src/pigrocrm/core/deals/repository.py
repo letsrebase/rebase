@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import ClosedInPeriod, PipelineStageSummary
-from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
+from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by, today_local
 from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.schemas import DEAL_SORTS, DealListQuery
+from pigrocrm.core.deals.value import line_term, summarize
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.receivables import invoiced_not_won_predicate
 from pigrocrm.core.money import percentage_of, round_money
@@ -91,7 +92,9 @@ class DealRepository:
 
     def replace_value_lines(self, deal_id: UUID, lines: list[DealValueLine]) -> None:
         """Replaces the whole list. The old rows are deleted and flushed before the new ones
-        go in, so `(deal_id, position)` stays unique."""
+        go in, so `(deal_id, position)` stays unique. The deal row is locked first: two
+        writers replacing one deal's lines take turns instead of colliding on that key."""
+        self.session.execute(select(Deal.id).where(Deal.id == deal_id).with_for_update())
         self.session.execute(delete(DealValueLine).where(DealValueLine.deal_id == deal_id))
         self.session.flush()
         self.session.add_all(lines)
@@ -156,7 +159,7 @@ class DealRepository:
         the deal domain tool and the dashboard tool -- which is exactly the duplication
         this slice exists not to introduce.
 
-        `weighted_value` is the first of §3's two declared exceptions: a product of two
+        `weighted_value` is the first of §3's three declared exceptions: a product of two
         columns of `deals`, rounded per row and then summed, HALF_UP. Allowed because both
         operands are columns of this one table and the result is not money received. It is
         labelled *stima* in every rendering and never added to revenue.
@@ -249,6 +252,8 @@ class DealRepository:
         percentage, `None` and never `0.00` on a zero denominator, so it is one rule with
         one rounding mode and not two that agree today. A local `quantize` would silently
         be HALF_EVEN, the context default this project never sets.
+
+        `won_monthly_recurring` is the third exception, declared on `monthly_recurring_of`.
         """
         stmt = (
             select(
@@ -276,8 +281,44 @@ class DealRepository:
             won=won_count,
             lost=lost_count,
             won_value=(round_money(Decimal(won.value)) if won is not None else Decimal("0.00")),
+            won_monthly_recurring=self.monthly_recurring_of(
+                PipelineStage.type == "won",
+                Deal.closed_at.is_not(None),
+                Deal.closed_at >= date_from,
+                Deal.closed_at <= date_to,
+                *_legal_entity_filter(legal_entity_id),
+            ),
             conversion_rate=percentage_of(Decimal(won_count), Decimal(won_count + lost_count)),
         )
+
+    def open_monthly_recurring(self, legal_entity_id: UUID | None = None) -> Decimal:
+        """The monthly recurring value of the deals sitting in an open stage today."""
+        return self.monthly_recurring_of(
+            PipelineStage.type == "open", *_legal_entity_filter(legal_entity_id)
+        )
+
+    def monthly_recurring_of(self, *conditions: ColumnElement[bool]) -> Decimal:
+        """**§3's third declared exception** (REB-931, spec 2026-11-03 §6): the monthly
+        recurring value of the live deals `conditions` pick out, summed over their value
+        lines. Unlike the other two it is not one SQL expression: a line's monthly figure
+        depends on its period and unit, so the lines are read and priced by
+        `deals.value.summarize`, the one function that prices a deal anywhere, and what
+        comes back is a figure per month, never added to `total_value` or `won_value`
+        and labelled as monthly in every rendering. A deal with no lines contributes
+        nothing, as it always counted nothing here.
+
+        The caller's conditions are over `Deal` and `PipelineStage`, both joined here.
+        """
+        rows = self.session.execute(
+            select(DealValueLine, Deal.expected_close_date)
+            .join(Deal, Deal.id == DealValueLine.deal_id)
+            .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
+            .where(Deal.deleted_at.is_(None), *conditions)
+        ).all()
+        today = today_local()
+        return summarize(
+            line_term(line, close_date or today) for line, close_date in rows
+        ).monthly_recurring
 
     def expected_closures(
         self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
