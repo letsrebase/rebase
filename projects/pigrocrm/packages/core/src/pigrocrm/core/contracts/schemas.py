@@ -147,6 +147,8 @@ class ContractFromDeal(BaseModel):
     termination_notice_days: int = Field(ge=0)
     billing_cadence: SafeStr = Field(max_length=BILLING_CADENCE_MAX_LENGTH)
     expense_policy: dict[str, Any]
+    # The space's own fields of a contract, validated as `ContractCreate`'s are.
+    custom_fields: dict[str, Any] = {}
 
     @field_validator("expense_policy")
     @classmethod

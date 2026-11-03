@@ -52,7 +52,8 @@ def test_the_deals_figures_and_the_contracts_are_the_same_over_random_mixes() ->
     for mix in range(MIXES):
         lines = [_line(rng) for _ in range(rng.randrange(1, 6))]
         close_date = _date(rng)
-        start = proposed_start(lines, _date(rng))
+        # The start the deal proposes, or one the person moved it to: the end follows either.
+        start = rng.choice([proposed_start(lines, _date(rng)), _date(rng)])
         terms = terms_of(lines, start)
         end = proposed_end(terms)
         cards = [card_from_term(term) for term in terms]

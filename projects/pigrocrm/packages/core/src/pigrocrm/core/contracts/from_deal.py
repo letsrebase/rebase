@@ -32,15 +32,18 @@ def proposed_end(terms: Sequence[ValueTerm]) -> date | None:
     """`None` when any term has no end (an open-ended recurring line, or a day or hour line
     with no duration), else the latest last day among them. A flat one-off line has no end of
     its own and never sets one, so a deal of lump sums alone proposes none and the person
-    enters the delivery date."""
+    enters the delivery date. When other lines do give an end, it is never before the date a
+    flat one-off line falls on: an end ahead of a card's first day is refused."""
     ends: list[date] = []
+    one_off_days: list[date] = []
     for term in terms:
         if term.unit == "flat" and term.delivery_period == "one_off":
+            one_off_days.append(term.start)
             continue
         if term.end is None:
             return None
         ends.append(term.end)
-    return max(ends, default=None)
+    return max([*ends, *one_off_days]) if ends else None
 
 
 def card_from_term(term: ValueTerm) -> ProposedRateCard:

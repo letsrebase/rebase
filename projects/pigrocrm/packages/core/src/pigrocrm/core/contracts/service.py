@@ -226,10 +226,12 @@ class ContractService:
         """The contract that renews `contract_id`. See `ContractRenewalService.renew`."""
         return ContractRenewalService(self.session).renew(contract_id, data, actor)
 
-    def proposal_from_deal(self, deal_id: UUID, actor: Actor) -> ContractFromDealProposal:
+    def proposal_from_deal(
+        self, deal_id: UUID, actor: Actor, start: date | None = None
+    ) -> ContractFromDealProposal:
         """What converting a won deal would start from. See
         `ContractConversionService.propose`."""
-        return ContractConversionService(self.session).propose(deal_id, actor)
+        return ContractConversionService(self.session).propose(deal_id, actor, start)
 
     def create_from_deal(self, deal_id: UUID, data: ContractFromDeal, actor: Actor) -> ContractRead:
         """The contract a won deal becomes. See `ContractConversionService.create`."""

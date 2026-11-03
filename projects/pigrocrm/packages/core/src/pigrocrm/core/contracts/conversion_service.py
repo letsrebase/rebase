@@ -31,6 +31,8 @@ from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.value import ValueTerm, terms_overlap
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.pipeline.service import PipelineService
 
@@ -69,6 +71,37 @@ def _terms_or_refuse(lines: Sequence[DealValueLine], start: date) -> list[ValueT
         ) from None
 
 
+def _refuse_meeting_rates(terms: Sequence[ValueTerm]) -> None:
+    """Lines with no start follow the contract's, so two day or hour rates that never met on
+    the deal's dates may meet on these; the database would refuse them anyway, and the person
+    should read why."""
+    rated = [term for term in terms if term.unit != "flat"]
+    for position, term in enumerate(rated):
+        if any(terms_overlap(term, other) for other in rated[position + 1 :]):
+            raise ValidationFailed(
+                ENTITY,
+                "start",
+                "con questa data di inizio due tariffe a giorni o a ore del deal si "
+                "sovrappongono: un contratto ne ha al più una in vigore in ogni data",
+                expected="una data di inizio che le tenga separate",
+            )
+
+
+def _refuse_end_before_a_card(terms: Sequence[ValueTerm], end: date | None) -> None:
+    """A contract that ends before one of its cards begins prices nothing for that card: the
+    end moves with the start in the dialog, and a caller who sends the old one is told."""
+    if end is None:
+        return
+    latest = max((term.start for term in terms), default=None)
+    if latest is not None and end < latest:
+        raise ValidationFailed(
+            ENTITY,
+            "end",
+            "la fine precede l'inizio di una scheda tariffaria del deal",
+            expected=f">= {latest.isoformat()}",
+        )
+
+
 class ContractConversionService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -77,6 +110,7 @@ class ContractConversionService:
         self.customers = CustomerRepository(session)
         self.pipeline = PipelineService(session)
         self.legal_entity = LegalEntityService(session)
+        self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
 
     def _convertible(self, deal: Deal) -> list[DealValueLine]:
@@ -103,15 +137,19 @@ class ContractConversionService:
             )
         return lines
 
-    def propose(self, deal_id: UUID, actor: Actor) -> ContractFromDealProposal:
+    def propose(
+        self, deal_id: UUID, actor: Actor, start: date | None = None
+    ) -> ContractFromDealProposal:
         """What the conversion would start from, refused for the deals it would refuse. A
-        read: nothing is written."""
+        read: nothing is written. `start` is the start the person moved the contract to: the
+        lines with no start of their own follow it, and so do the end and the cards that come
+        back, which a proposal for the earliest line start would have wrong."""
         del actor
         deal = self.deals.get(deal_id)
         if deal is None:
             raise NotFound(DEAL, deal_id)
         lines = self._convertible(deal)
-        start = proposed_start(lines, today_local())
+        start = start or proposed_start(lines, today_local())
         terms = _terms_or_refuse(lines, start)
         return ContractFromDealProposal(
             deal_id=deal.id,
@@ -134,6 +172,11 @@ class ContractConversionService:
             raise NotFound(DEAL, deal_id)
         payload = data.model_dump()
         check_renewal_notice(payload)
+        # As `ContractService.create` does: the contract's custom fields are validated against
+        # every active definition, so a required one cannot be skipped by converting a deal.
+        payload["custom_fields"] = validate_custom_fields(
+            ENTITY, self.fields.specs_for(ENTITY), payload["custom_fields"]
+        )
         lines = self._convertible(deal)
         if self.customers.get(deal.customer_id) is None:
             raise NotFound("customer", deal.customer_id)
@@ -142,16 +185,8 @@ class ContractConversionService:
         # Lines with no start follow the contract's, so two day or hour rates that never
         # met on the deal's dates may meet on these; the database would refuse them anyway,
         # and the person should read why.
-        rated = [term for term in terms if term.unit != "flat"]
-        for position, term in enumerate(rated):
-            if any(terms_overlap(term, other) for other in rated[position + 1 :]):
-                raise ValidationFailed(
-                    ENTITY,
-                    "start",
-                    "con questa data di inizio due tariffe a giorni o a ore del deal si "
-                    "sovrappongono: un contratto ne ha al più una in vigore in ogni data",
-                    expected="una data di inizio che le tenga separate",
-                )
+        _refuse_meeting_rates(terms)
+        _refuse_end_before_a_card(terms, data.end)
 
         contract = Contract(
             **payload,

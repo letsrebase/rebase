@@ -11,15 +11,18 @@ from sqlalchemy.orm import Session
 from test_deal_value_lines import line
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.contracts.models import RateCard
+from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.renewal_service import ContractRenewalService
 from pigrocrm.core.contracts.schemas import ContractFromDeal, ContractRenew
 from pigrocrm.core.contracts.service import ContractService
+from pigrocrm.core.contracts.value import value_summary
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate, DealDetailRead, DealUpdate, DealValueLineIn
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.fields.schemas import FieldDefinitionCreate
+from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -137,6 +140,67 @@ def test_a_deal_of_lump_sums_alone_proposes_no_end(db_session: Session, customer
     proposal = ContractService(db_session).proposal_from_deal(deal.id, ADMIN)
 
     assert (proposal.start, proposal.end) == (date(2026, 4, 1), None)
+
+
+def test_moving_the_start_moves_the_end_and_the_cards_and_the_figures_still_match(
+    db_session: Session, customer_id: UUID
+) -> None:
+    # A year of a day rate with no start of its own: it begins where the contract does.
+    deal = _deal(
+        db_session,
+        customer_id,
+        line(unit="day", period="monthly", price="450.50", quantity="18.5", months=12),
+        expected_close_date=date(2026, 3, 1),
+    )
+    service = ContractService(db_session)
+
+    moved = service.proposal_from_deal(deal.id, ADMIN, date(2026, 9, 15))
+
+    assert (moved.start, moved.end) == (date(2026, 9, 15), date(2027, 9, 14))
+    assert [(c.valid_from, c.valid_to) for c in moved.cards] == [
+        (date(2026, 9, 15), date(2027, 9, 14))
+    ]
+    default = service.proposal_from_deal(deal.id, ADMIN)
+    assert default.start != moved.start and default.end != moved.end
+    for proposal in (moved, default):
+        summary = value_summary(proposal.cards, proposal.end)
+        assert summary.total == deal.expected_value
+        assert summary.monthly_recurring == deal.monthly_recurring_value
+
+
+def test_a_flat_one_off_line_after_the_other_ends_keeps_the_proposed_end_after_it(
+    db_session: Session, customer_id: UUID
+) -> None:
+    deal = _deal(
+        db_session,
+        customer_id,
+        line(period="monthly", price="500", start=date(2026, 1, 1), months=3),
+        line(price="3000", start=date(2026, 6, 1)),
+    )
+
+    proposal = ContractService(db_session).proposal_from_deal(deal.id, ADMIN)
+
+    assert proposal.end == date(2026, 6, 1)
+    ContractService(db_session).create_from_deal(
+        deal.id, _confirm(start=proposal.start, end=proposal.end), ADMIN
+    )
+
+
+def test_an_end_before_the_start_of_a_card_is_refused_naming_the_end(
+    db_session: Session, customer_id: UUID
+) -> None:
+    deal = _deal(
+        db_session,
+        customer_id,
+        line(period="monthly", price="500", start=date(2026, 1, 1), months=3),
+        line(price="3000", start=date(2026, 6, 1)),
+    )
+
+    with pytest.raises(ValidationFailed, match="precede l'inizio") as refused:
+        ContractService(db_session).create_from_deal(
+            deal.id, _confirm(start=date(2026, 1, 1), end=date(2026, 3, 31)), ADMIN
+        )
+    assert refused.value.details["field"] == "end"
 
 
 # ---- what the conversion refuses ------------------------------------------------------
@@ -419,3 +483,31 @@ def test_a_converted_contract_renews_keeping_its_day_forecast_and_not_its_deal(
     assert ("fixed_recurring", None, "monthly") in carried
     # The upfront fee was closed on its own day, so the next term does not carry it.
     assert not any(kind == "one_off" for kind, _quantity, _period in carried)
+
+
+# ---- the contract's custom fields -----------------------------------------------------------
+
+
+def test_a_required_custom_field_of_a_contract_cannot_be_skipped_by_converting(
+    db_session: Session, customer_id: UUID
+) -> None:
+    FieldDefinitionService(db_session).create(
+        FieldDefinitionCreate(
+            entity_type="contract",
+            key="po_number",
+            label="PO number",
+            field_type="text",
+            required=True,
+        ),
+        ADMIN,
+    )
+    deal = _deal(db_session, customer_id, line())
+
+    with pytest.raises(ValidationFailed, match="po_number"):
+        ContractService(db_session).create_from_deal(deal.id, _confirm(), ADMIN)
+
+    contract = ContractService(db_session).create_from_deal(
+        deal.id, _confirm(custom_fields={"po_number": "PO-7"}), ADMIN
+    )
+    stored = db_session.get(Contract, contract.id)
+    assert stored is not None and stored.custom_fields == {"po_number": "PO-7"}
