@@ -28,7 +28,7 @@ from pigrocrm.core.templates.ast import EachNode, IfNode, Node, TextNode, Variab
 from pigrocrm.core.templates.escaping import RenderContext
 
 ENTITY = "template"
-FIELD = "corpo_markdown"
+FIELD = "body_markdown"
 
 # The five regions that are not ordinary Markdown body text, in one alternation so a
 # single left-to-right scan cannot produce overlapping or out-of-order segments:

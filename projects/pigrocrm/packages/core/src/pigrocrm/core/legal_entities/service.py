@@ -22,31 +22,12 @@ from pigrocrm.core.legal_entities.schemas import (
     LegalEntityRead,
     LegalEntityUpsert,
 )
+from pigrocrm.core.templates.scope import LEGAL_ENTITY_KEYS, italian_keys
 from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
 # every row already written under it stays readable as history.
 ENTITY = "legal_entity"
-
-# The Italian names users type in a template (`{{emittente.ragione_sociale}}`) for the
-# English fields of `LegalEntityRead`. Fields not listed (cap, email, logo_key) keep their name.
-TEMPLATE_KEYS: dict[str, str] = {
-    "name": "nome",
-    "legal_name": "ragione_sociale",
-    "vat_number": "partita_iva",
-    "tax_code": "codice_fiscale",
-    "address": "indirizzo",
-    "city": "comune",
-    "province": "provincia",
-    "country": "nazione",
-    "certified_email": "pec",
-    "sdi_code": "codice_sdi",
-    "phone": "telefono",
-    "website": "sito_web",
-    "signature_key": "firma_key",
-    "email_signature": "firma_email",
-    "tax_regime": "regime_fiscale",
-}
 # `.fullmatch()`, not `.match()`: `$` matches before a trailing newline, so
 # "01234567890\n" -- 12 characters, one more than the String(11) column -- would pass
 # a `.match()` check and reach flush() as a raw, session-poisoning DataError. The same
@@ -233,9 +214,7 @@ class LegalEntityService:
         """
         profile = self.get(actor, legal_entity_id)
         fields = profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
-        return {
-            "emittente": {TEMPLATE_KEYS.get(name, name): value for name, value in fields.items()}
-        }
+        return {"emittente": italian_keys(fields, LEGAL_ENTITY_KEYS)}
 
     # -- writes --------------------------------------------------------------
 

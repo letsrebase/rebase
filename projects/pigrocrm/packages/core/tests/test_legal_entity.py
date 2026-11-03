@@ -115,8 +115,8 @@ def test_as_template_values_exposes_the_profile_under_legal_entity(db_session: S
     service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     values = service.as_template_values(ADMIN)
-    assert values["emittente"]["legal_name"] == "Studio Rossi"
-    assert values["emittente"]["vat_number"] == "01234567890"
+    assert values["emittente"]["ragione_sociale"] == "Studio Rossi"
+    assert values["emittente"]["partita_iva"] == "01234567890"
     assert "singleton" not in values["emittente"]
 
 
@@ -178,7 +178,7 @@ def test_email_signature_reaches_to_template_scope_under_legal_entity(db_session
     service = LegalEntityService(db_session)
     service.upsert_default(_upsert(email_signature="Mario Rossi\nConsulente"), ADMIN)
     scope = service.as_template_values(ADMIN)
-    assert scope["emittente"]["email_signature"] == "Mario Rossi\nConsulente"
+    assert scope["emittente"]["firma_email"] == "Mario Rossi\nConsulente"
 
 
 def test_email_signature_is_bounded_and_rejects_to_nul_byte() -> None:

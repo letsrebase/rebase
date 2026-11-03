@@ -54,9 +54,9 @@ ENTITY = "contract_register"
 REGISTER_TEMPLATE_NAME = "Registro giornate"
 
 REGISTER_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"name": "period", "label": "Periodo", "type": "text", "required": True},
+    {"name": "periodo", "label": "Periodo", "type": "text", "required": True},
     {
-        "name": "quantity_total",
+        "name": "totale_quantita",
         "label": "Totale quantità",
         "type": "number",
         "required": True,

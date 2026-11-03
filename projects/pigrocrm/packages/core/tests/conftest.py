@@ -30,11 +30,11 @@ def db_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
     per worker, and why.
     """
     engine = create_engine_from_settings(Settings(database_url=pigrocrm_postgres.clone("core")))
-    # The one committed default azienda every world on this engine shares (REB-623):
+    # The one committed default legal entity every world on this engine shares (REB-623):
     # the rows a committed test builds by hand take it through the column default.
     from fakes.legal_entity_fixtures import ensure_committed_default
 
-    ensure_committed_default(engine, nome="Studio di prova")
+    ensure_committed_default(engine, name="Studio di prova")
     yield engine
     engine.dispose()
 
@@ -44,9 +44,9 @@ def db_session(db_engine: Engine) -> Iterator[Session]:
     """Each test runs in a transaction that is rolled back, so tests never see each other."""
     connection = db_engine.connect()
     transaction = connection.begin()
-    # The space starts with its default azienda, as every provisioned space does
-    # (REB-615): the fiscal profile belongs to an azienda, so a test that saves one or
-    # issues anything needs the row first; the few tests about a space with no azienda
+    # The space starts with its default legal entity, as every provisioned space does
+    # (REB-615): the fiscal profile belongs to an legal entity, so a test that saves one or
+    # issues anything needs the row first; the few tests about a space with no legal entity
     # at all delete it (`test_emitter.py`'s `_bare` fixture).
     _seed_default_legal_entity(connection)
     session = session_factory(db_engine)(bind=connection, join_transaction_mode="create_savepoint")
@@ -63,7 +63,7 @@ def seeded_user_id(db_session: Session) -> UUID:
     user = User(
         email=f"tester-{uuid4()}@example.test",
         password_hash="x",
-        nome="Tester",
+        name="Tester",
         role="collaborator",
     )
     db_session.add(user)
@@ -73,7 +73,7 @@ def seeded_user_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def seeded_open_stage_id(db_session: Session) -> UUID:
-    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
+    stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     db_session.add(stage)
     db_session.flush()
     return stage.id
@@ -81,7 +81,7 @@ def seeded_open_stage_id(db_session: Session) -> UUID:
 
 @pytest.fixture
 def seeded_won_stage_id(db_session: Session) -> UUID:
-    stage = PipelineStage(nome=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
+    stage = PipelineStage(name=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
     db_session.add(stage)
     db_session.flush()
     return stage.id
@@ -93,7 +93,7 @@ def seeded_deal_id(db_session: Session, seeded_open_stage_id: UUID) -> UUID:
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
-        nome="Progetto di prova",
+        name="Progetto di prova",
         customer_id=customer.id,
         pipeline_stage_id=seeded_open_stage_id,
         probability=10,
@@ -105,7 +105,7 @@ def seeded_deal_id(db_session: Session, seeded_open_stage_id: UUID) -> UUID:
 
 @pytest.fixture
 def seeded_category_id(db_session: Session) -> UUID:
-    category = CostCategory(nome=f"Categoria {uuid4()}", position=0, code=None)
+    category = CostCategory(name=f"Categoria {uuid4()}", position=0, code=None)
     db_session.add(category)
     db_session.flush()
     return category.id
@@ -116,7 +116,7 @@ def seeded_entry_id(db_session: Session, seeded_deal_id: UUID, seeded_user_id: U
     entry = TimeEntry(
         deal_id=seeded_deal_id,
         user_id=seeded_user_id,
-        data=date(2026, 3, 10),
+        date=date(2026, 3, 10),
         hours=Decimal("8.00"),
         description="Analisi",
         applied_rate=Decimal("80.000000"),
@@ -151,7 +151,7 @@ def time_entry_factory(
 
     def _make(
         *,
-        data: date,
+        date: date,
         hours: str = "8.00",
         rate: str | None = "50.000000",
         cost: str | None = None,
@@ -162,7 +162,7 @@ def time_entry_factory(
         entry = TimeEntry(
             deal_id=seeded_deal_id if deal_id is None else deal_id,
             user_id=seeded_user_id,
-            data=data,
+            date=date,
             hours=Decimal(hours),
             description="Lavorazione",
             billable=billable,
@@ -246,11 +246,11 @@ def _seed_default_legal_entity(connection: Connection) -> None:
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none (a test that removed it and left the worker without).
-    if connection.execute(select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))).first():
+    if connection.execute(select(LegalEntity.id).where(LegalEntity.is_default.is_(True))).first():
         return
     connection.execute(
         LegalEntity.__table__.insert().values(
-            nome="Studio di prova", legal_name="Studio di prova", predefinita=True
+            name="Studio di prova", legal_name="Studio di prova", is_default=True
         )
     )
 
@@ -265,7 +265,7 @@ def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
     from pigrocrm.core.legal_entities.service import LegalEntityService
 
     admin = Actor(id=None, type="system", role="admin")
-    # The azienda first, since REB-615 a fiscal profile belongs to one. The session
+    # The legal entity first, since REB-615 a fiscal profile belongs to one. The session
     # seeds a bare default («Studio di prova», nothing fiscal) and `upsert_default`
     # fills in the identity the issue, export and import paths need, but only when no
     # test has already given the default an identity of its own: a fixture must not
@@ -423,7 +423,7 @@ def annulled_invoice_line_id(
 
 
 def _deal_of_fiscal_customer(
-    session: Session, nome: str, *, type: str = "open"
+    session: Session, name: str, *, type: str = "open"
 ) -> tuple[UUID, UUID]:
     """`(deal_id, customer_id)`, on an **open** stage so the state starts at "in corso".
 
@@ -434,14 +434,14 @@ def _deal_of_fiscal_customer(
     """
     customer_id = _fiscal_customer_id(session)
     stage = PipelineStage(
-        nome=f"{'Vinto' if type == 'won' else 'Aperto'} {uuid4()}",
+        name=f"{'Vinto' if type == 'won' else 'Aperto'} {uuid4()}",
         position=9 if type == "won" else 0,
         default_probability=100 if type == "won" else 10,
         type=type,
     )
     session.add(stage)
     session.flush()
-    deal = Deal(nome=nome, customer_id=customer_id, pipeline_stage_id=stage.id, probability=10)
+    deal = Deal(name=name, customer_id=customer_id, pipeline_stage_id=stage.id, probability=10)
     session.add(deal)
     session.flush()
     return deal.id, customer_id
@@ -659,7 +659,7 @@ def open_deal_with_hours(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=seeded_user_id,
-            data=TODAY,
+            date=TODAY,
             hours=Decimal("10.00"),
             description="Sviluppo",
             applied_rate=Decimal("100.000000"),
@@ -671,7 +671,7 @@ def open_deal_with_hours(
         CostCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
-            data=TODAY,
+            date=TODAY,
             amount=Decimal("150.00"),
             description="Licenze",
         ),
@@ -711,7 +711,7 @@ def closed_deal_with_invoice(
         CostCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
-            data=TODAY,
+            date=TODAY,
             amount=Decimal("200.00"),
             description="Stampa",
         ),
@@ -749,9 +749,9 @@ def budgeted_deal(
         budgeted_value: str | None,
         hours_logged: str | None = None,
         revenue: str | None = None,
-        nome: str = "Progetto preventivato",
+        name: str = "Progetto preventivato",
     ) -> UUID:
-        deal_id, customer_id = _deal_of_fiscal_customer(db_session, nome)
+        deal_id, customer_id = _deal_of_fiscal_customer(db_session, name)
         deal = db_session.get(Deal, deal_id)
         assert deal is not None
         deal.budgeted_hours = None if budgeted_hours is None else Decimal(budgeted_hours)
@@ -775,7 +775,7 @@ def budgeted_deal(
                     TimeEntryCreate(
                         deal_id=deal_id,
                         user_id=seeded_user_id,
-                        data=TODAY,
+                        date=TODAY,
                         hours=share,
                         description="Lavorazione",
                     ),

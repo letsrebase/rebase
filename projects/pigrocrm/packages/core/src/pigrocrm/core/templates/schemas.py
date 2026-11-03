@@ -152,10 +152,10 @@ class TemplateDescription(BaseModel):
     # declared_paths's `root`), each as a list of segments: describe answers "what
     # must the caller supply", and a caller supplies root-level values, never a
     # loop-relative one -- `{{nome}}` inside an `#each righe` body describes the
-    # shape of each element of `lines`, not something provided directly. That split
+    # shape of each element of `righe`, not something provided directly. That split
     # belongs to `declared_paths` and stays there; this field never mixes the two
     # back together. A superset of `variables`'s own names, since it also includes
-    # context paths like `customer.legal_name` or `emittente.vat_number` that a
+    # context paths like `cliente.ragione_sociale` or `emittente.partita_iva` that a
     # caller must supply even though no compilation-form field exists for them.
     used_journeys: list[list[str]]
     # Declared (in `variables`) but never referenced by any root-level path: a

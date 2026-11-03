@@ -195,7 +195,7 @@ def _check_declared(
 ) -> None:
     """`field` is the variable's own name and `reason` names
     the line of its first root-level reference, when it has one -- both were
-    previously missing (`field` was the constant "corpo_markdown", the generic
+    previously missing (`field` was the constant "body_markdown", the generic
     template-body field; `reason` had no line at all, because this check used to
     run *before* `parse_template`, when no tree existed yet to search). `entity`
     stays the constant "template": this function has no notion of *which*
@@ -319,7 +319,7 @@ def _render_variable(
     path: tuple[str, ...], context: RenderContext, line: int, scopes: list[dict[str, Any]]
 ) -> str:
     # `field` is the dotted path itself, not the constant
-    # "corpo_markdown" -- naming *which* variable failed via the same structured
+    # "body_markdown" -- naming *which* variable failed via the same structured
     # detail `_check_declared`'s error uses (`variable.name` there), rather than
     # leaving that fact recoverable only by parsing the free-text `reason`.
     dotted = ".".join(path)
@@ -382,7 +382,7 @@ def _render_each(
         # Anything else -- a string, a number, a dict -- is not "no rows", it is
         # the wrong shape entirely, and worth surfacing rather than silently
         # iterating zero (or, for a string, character-by-character) times.
-        # `field` is the dotted path, not the generic "corpo_markdown" constant --
+        # `field` is the dotted path, not the generic "body_markdown" constant --
         # same as `_render_variable`'s two errors above.
         dotted = ".".join(path)
         raise ValidationFailed(
