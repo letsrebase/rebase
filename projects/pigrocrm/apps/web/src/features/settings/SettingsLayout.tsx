@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/drive/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { canSeeSettingsTab } from '@/lib/permissions'
 
@@ -83,11 +83,7 @@ export function SettingsLayout() {
       <div className="p-8">
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 pt-16 text-center">
           {driveEsito ? (
-            <ConsentOutcome
-              messaggio={messaggioEsito(driveEsito)}
-              riprova={riprovaEsito(driveEsito)}
-              className="mb-4 text-left"
-            />
+            <ConsentOutcome {...consentOutcome('drive', driveEsito)} className="mb-4 text-left" />
           ) : null}
           <ShieldAlert className="size-10 text-muted-foreground" aria-hidden="true" />
           <h1 className="text-xl font-semibold tracking-tight">Accesso riservato</h1>

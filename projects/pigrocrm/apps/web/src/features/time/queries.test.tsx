@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import {
-  timeReportXlsxUrl,
+  timeReportXlsxPath,
   useDealRates,
   useDealTimeSummary,
   useDeleteTimeEntry,
@@ -160,18 +160,9 @@ describe('useDeleteTimeEntry', () => {
   })
 })
 
-describe('timeReportXlsxUrl', () => {
-  /**
-   * The XLSX, and only the XLSX. The endpoint streams those bytes with a
-   * `Content-Disposition`, so a same-origin anchor the browser follows itself is
-   * exactly right -- the bytes never pass through JavaScript and the session cookie
-   * travels without a token in the query string.
-   *
-   * There is deliberately no PDF URL builder: the PDF is a `POST` that archives a document
-   * and answers `201 application/json`, so no anchor can reach it.
-   */
-  it('builds a same-origin download URL the browser can follow itself', () => {
-    expect(timeReportXlsxUrl('d-1', '2026-08')).toBe(
+describe('timeReportXlsxPath', () => {
+  it('builds the API path of the XLSX, to download through the refreshing fetch', () => {
+    expect(timeReportXlsxPath('d-1', '2026-08')).toBe(
       '/api/deals/d-1/time-report?mese=2026-08',
     )
   })

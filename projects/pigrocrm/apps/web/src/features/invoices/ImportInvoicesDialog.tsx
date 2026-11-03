@@ -14,7 +14,6 @@ import {
 } from '@rebase/ui/dialog'
 import { Label } from '@rebase/ui/label'
 import { Loader } from '@rebase/ui/loader'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import {
   Table,
@@ -24,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@rebase/ui/table'
-import { useCustomers } from '@/features/customers/queries'
+import { CustomerPicker } from '@/features/customers/CustomerPicker'
 import { UploadDropzone } from '@/features/documents/UploadDropzone'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -405,17 +404,15 @@ function ReviewPanel({
   )
 }
 
-/** The value of the picker's «create it» entry: a Radix item cannot carry an empty value. */
-const CREATE_NEW = '__crea__'
-
 /**
  * Attach a new party to a customer already on file (REB-777). `match_customer` finds one by
  * an Italian VAT number or tax code, so a customer without one (a foreign customer, a
  * private person with no tax code stated) is offered for creation on every import; this is
- * the way to say it is somebody already known. `useCustomers({ limit: 200 })` is the
- * picker every dialog here uses (`NewProformaDialog`): a one-shot cap for a dropdown, one
- * request shared by every party through the query cache. A list that cannot be read leaves
- * only «crea un nuovo cliente», which is the default and the old behaviour.
+ * the way to say it is somebody already known. It is the app's customer search
+ * (`CustomerPicker`), limited to the azienda the invoice is written on: the server takes
+ * any `customer_id` it is sent, and an invoice on one azienda's register for another's
+ * customer is a state nothing else in the product can produce. Left empty, the party is
+ * created as a new customer, which is the default and the old behaviour.
  */
 function ExistingCustomerPicker({
   party,
@@ -432,55 +429,31 @@ function ExistingCustomerPicker({
   disabled: boolean
   onChange: (customer: ChosenCustomer | undefined) => void
 }) {
-  const customers = useCustomers({ limit: 200 })
-  // Only the customers of the azienda the invoice is written on: the server takes any
-  // `customer_id` it is sent, and an invoice on one azienda's register for another's
-  // customer is a state nothing else in the product can produce. With the sidebar on
-  // another azienda the list is that one's, and a party of this one finds nobody here.
-  const items = (customers.data?.items ?? []).filter(
-    (customer) => aziendaId === null || customer.azienda_id === aziendaId,
-  )
-  // `limit` is a page, not the whole list, and the purpose of this picker is to not create
-  // a second customer: when the page is not all of them, it says so.
-  const partial = customers.data?.next_cursor != null
   const id = useId()
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Label htmlFor={id} className="text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-start gap-2">
+      <Label htmlFor={id} className="pt-2 text-sm text-muted-foreground">
         Cliente
       </Label>
-      <Select
-        value={value?.id ?? CREATE_NEW}
-        disabled={disabled}
-        onValueChange={(next) => {
-          const picked = items.find((customer) => customer.id === next)
-          onChange(picked === undefined ? undefined : { id: picked.id, name: picked.ragione_sociale })
-        }}
-      >
-        <SelectTrigger id={id} aria-label={`Cliente di ${party}`} className="w-64">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={CREATE_NEW}>Crea un nuovo cliente</SelectItem>
-          {/* A customer picked before the list reloaded stays selectable by its own entry. */}
-          {value !== undefined && !items.some((customer) => customer.id === value.id) ? (
-            <SelectItem value={value.id}>{value.name}</SelectItem>
-          ) : null}
-          {items.map((customer) => (
-            <SelectItem key={customer.id} value={customer.id}>
-              {customer.ragione_sociale}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="w-72">
+        <CustomerPicker
+          id={id}
+          value={value?.id ?? null}
+          selectedName={value?.name}
+          aziendaId={aziendaId}
+          ariaLabel={`Cliente di ${party}`}
+          placeholder="Crea un nuovo cliente, o cerca uno già in anagrafica…"
+          disabled={disabled}
+          onChange={(customer) =>
+            onChange(
+              customer === null ? undefined : { id: customer.id, name: customer.ragione_sociale },
+            )
+          }
+        />
+      </div>
       {mixedAziende ? (
-        <span className="text-xs text-muted-foreground">
+        <span className="pt-2 text-xs text-muted-foreground">
           Le sue fatture sono di più aziende: non si può collegare a un cliente che hai già.
-        </span>
-      ) : null}
-      {partial ? (
-        <span className="text-xs text-muted-foreground">
-          Elenco parziale: solo i primi 200 clienti.
         </span>
       ) : null}
     </div>

@@ -16,9 +16,10 @@ const EXPLANATION: Record<Exclude<PushState, 'loading' | 'off' | 'on'>, string> 
 }
 
 /**
- * Notifiche push su questo browser (REB-738): chiede il permesso, iscrive il browser e dice
- * in che stato è. Vale per il browser in cui sei, per te soltanto: su un altro telefono o
- * computer si attiva da lì. Quali promemoria arrivano, e a che ora, si sceglie qui sotto.
+ * Push notifications on this browser (REB-738): asks for permission, subscribes the browser
+ * and says what state it is in. It applies to the browser you are in, for you alone: on
+ * another phone or computer it is switched on from there. Which reminders arrive, and at
+ * what time, is chosen below.
  */
 export function PushNotifications() {
   const { state, busy, error, subscribe, unsubscribe } = usePush()

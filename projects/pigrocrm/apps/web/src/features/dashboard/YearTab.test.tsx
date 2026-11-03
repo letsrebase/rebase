@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
 import { YearTab } from './YearTab'
 
@@ -9,6 +11,8 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, api: { GET: vi.fn() } }
 })
+
+vi.mock('@/lib/download', () => ({ downloadFromApi: vi.fn().mockResolvedValue(undefined) }))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
@@ -105,6 +109,7 @@ function renderTab(legalEntity: LegalEntityValue = ONE) {
 }
 
 beforeEach(() => {
+  vi.mocked(downloadFromApi).mockClear()
   vi.mocked(api.GET).mockReset()
 })
 
@@ -164,12 +169,14 @@ describe('YearTab', () => {
     expect(within(total).getByText('80,00 €')).toBeInTheDocument()
   })
 
-  it('offers the CSV of the year, from the space\'s own API path', async () => {
+  it('downloads the CSV of the year through the API', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(overview()))
     renderTab()
 
-    const link = await screen.findByRole('link', { name: /scarica il csv per il commercialista/i })
-    expect(link).toHaveAttribute('href', '/api/analytics/year/csv?anno=2026')
+    await userEvent.click(
+      await screen.findByRole('button', { name: /scarica il csv per il commercialista/i }),
+    )
+    expect(downloadFromApi).toHaveBeenCalledWith('/api/analytics/year/csv?anno=2026')
   })
 
   it('says a year with nothing issued has nothing, and still offers the file', async () => {
@@ -213,11 +220,13 @@ describe('YearTab', () => {
       )) as never)
     renderTab({ ...ONE, aziende, several: true, selected: null })
 
-    await waitFor(() => expect(screen.getAllByRole('link', { name: /scarica il csv/i })).toHaveLength(2))
-    const hrefs = screen
-      .getAllByRole('link', { name: /scarica il csv/i })
-      .map((link) => link.getAttribute('href'))
-    expect(hrefs).toEqual([
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /scarica il csv/i })).toHaveLength(2),
+    )
+    for (const button of screen.getAllByRole('button', { name: /scarica il csv/i })) {
+      await userEvent.click(button)
+    }
+    expect(vi.mocked(downloadFromApi).mock.calls.map(([path]) => path)).toEqual([
       '/api/analytics/year/csv?anno=2026&azienda_id=a1',
       '/api/analytics/year/csv?anno=2026&azienda_id=a2',
     ])
@@ -251,8 +260,8 @@ describe('YearTab', () => {
     vi.mocked(api.GET).mockImplementation(() => ok(overview()))
     renderTab({ ...ONE, several: true, selected: 'a2' })
 
-    const link = await screen.findByRole('link', { name: /scarica il csv/i })
-    expect(link).toHaveAttribute('href', '/api/analytics/year/csv?anno=2026&azienda_id=a2')
+    await userEvent.click(await screen.findByRole('button', { name: /scarica il csv/i }))
+    expect(downloadFromApi).toHaveBeenCalledWith('/api/analytics/year/csv?anno=2026&azienda_id=a2')
   })
 
   it('shows the server\'s own words when the year cannot be read', async () => {

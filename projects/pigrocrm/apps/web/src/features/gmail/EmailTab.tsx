@@ -2,7 +2,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { CustomerCorrespondents } from './CustomerCorrespondents'
 import { EmailThread } from './EmailThread'
 import { PendingDrafts } from './PendingDrafts'
-import { useGmailMessages, type GmailEntityType, type GmailMessageRead } from './queries'
+import { useGmailHealth, useGmailMessages, type GmailEntityType, type GmailMessageRead } from './queries'
 
 /** The most recent instant in a thread. Computed rather than read off the last element:
  *  the API's ordering is `(gmail_thread_id, internal_date)`, which this code should not
@@ -71,6 +71,7 @@ function Correspondence({
   entityId: string
 }) {
   const messages = useGmailMessages({ entityType, entityId })
+  const accountEmail = useGmailHealth().data?.account?.email_address
 
   // The failure branch first. On an error `isPending` is false while `data` is still
   // undefined, so a `isPending || !data` guard would answer a failed request with
@@ -92,7 +93,7 @@ function Correspondence({
         </p>
       ) : (
         byThread(messages.data).map(([threadId, thread]) => (
-          <EmailThread key={threadId} messages={thread} />
+          <EmailThread key={threadId} messages={thread} accountEmail={accountEmail} />
         ))
       )}
     </section>

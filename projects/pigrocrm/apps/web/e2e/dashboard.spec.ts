@@ -339,7 +339,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByText('Registro delle fatture emesse')).toBeVisible()
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('link', { name: /Scarica il CSV per il commercialista/ }).click(),
+      page.getByRole('button', { name: /Scarica il CSV per il commercialista/ }).click(),
     ])
     expect(download.suggestedFilename()).toMatch(/^registro-\d{4}-.+\.csv$/)
     const path = await download.path()

@@ -772,7 +772,7 @@ describe('AppShell', () => {
   /**
    * «Primi passi» left the sidebar for the profile menu (REB-873), and only once the space
    * has data: until then the Home is that very page. The predicate is the Home's own, the
-   * four work reads (`useSpaceEmpty`), so a customer, a deal, an hour or a document is
+   * four work reads (`useSpaceHasData`), so a customer, a deal, an hour or a document is
    * what turns the entry on.
    */
   const WORK_PATHS = ['/api/customers', '/api/deals', '/api/time-entries', '/api/documents']

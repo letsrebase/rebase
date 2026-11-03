@@ -1,21 +1,21 @@
-import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Download, FileSpreadsheet } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toIsoMonth } from '@/lib/dates'
-import { timeReportXlsxUrl, useRenderTimeReportPdf } from './queries'
+import { DownloadButton } from '@/components/DownloadButton'
+import { timeReportXlsxPath, useRenderTimeReportPdf } from './queries'
 
 /**
  * Two formats, two recipients (§2.1): the PDF is attached to the invoice, the XLSX gets
  * filtered by whoever has to check it.
  *
- * They are not two variants of one control, and the first version of this component
- * treated them as though they were -- two anchors at the same endpoint with a different
- * `formato`. The XLSX is a working copy and the endpoint streams its bytes with a
- * `Content-Disposition`, so an anchor is exactly right there. The PDF is an *artefact*:
+ * They are not two variants of one control. The XLSX is a working copy and the endpoint
+ * streams its bytes with a `Content-Disposition`, so a download button is right there. The PDF is an *artefact*:
  * `render_pdf` archives it as a `document`, and the endpoint answers `201` with that
  * document's JSON, because slice 2's rule is that archived bytes are fetched from the
  * document download endpoint and nowhere else. Clicking «PDF» therefore navigated the
@@ -51,26 +51,19 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           }
         >
           {render.isPending ? (
-            <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+            <Loader className="mr-2 size-4" />
           ) : (
             <Download className="mr-2 size-4" aria-hidden="true" />
           )}
           PDF
         </Button>
-        <Button asChild variant="outline">
-          <a
-            // Snyk Code javascript/DOMXSS here is a false positive: always a same-origin
-            // path under /api/deals/, with the month passed through URLSearchParams.
-            href={timeReportXlsxUrl(dealId, mese)}
-          >
-            <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
-            XLSX
-          </a>
-        </Button>
+        <DownloadButton variant="outline" path={timeReportXlsxPath(dealId, mese)}>
+          <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
+          XLSX
+        </DownloadButton>
       </div>
       {/* A refused render -- a month with no hours, a deal the actor cannot read -- has
-          to say so here. The anchor beside it can only ever fail as a browser error
-          page, which is the other half of why these two are not the same control. */}
+          to say so here. */}
       {render.isError ? <QueryErrorBanner error={render.error} /> : null}
     </div>
   )

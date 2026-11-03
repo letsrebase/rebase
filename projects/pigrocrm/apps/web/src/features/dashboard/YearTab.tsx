@@ -4,7 +4,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { toProblem } from '@/lib/api'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { Button } from '@rebase/ui/button'
+import { DownloadButton } from '@/components/DownloadButton'
 import { Skeleton } from '@rebase/ui/skeleton'
 import {
   Table,
@@ -17,7 +17,7 @@ import {
 } from '@rebase/ui/table'
 import { BigNumber } from './charts'
 import { money } from './format'
-import { useYearOverview, yearCsvUrl, type YearOverview, type YearRegisterRow } from './queries'
+import { useYearOverview, yearCsvPath, type YearOverview, type YearRegisterRow } from './queries'
 import type { Periodo } from './periodo'
 
 /** The year the picker's start date names, the same reading the economic tab has: a
@@ -210,16 +210,10 @@ export function YearPanel({
             ? ` ${overview.annullate === 1 ? 'Una fattura annullata resta fuori' : `${overview.annullate} fatture annullate restano fuori`} dai totali.`
             : ''}
         </p>
-        <Button asChild variant="outline">
-          <a
-            // Snyk Code javascript/DOMXSS here is a false positive: always a same-origin
-            // path under /api/analytics/, the query built with URLSearchParams.
-            href={yearCsvUrl(anno, csvAzienda)}
-          >
-            <Download className="mr-2 size-4" aria-hidden="true" />
-            Scarica il CSV per il commercialista
-          </a>
-        </Button>
+        <DownloadButton variant="outline" path={yearCsvPath(anno, csvAzienda)}>
+          <Download className="mr-2 size-4" aria-hidden="true" />
+          Scarica il CSV per il commercialista
+        </DownloadButton>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

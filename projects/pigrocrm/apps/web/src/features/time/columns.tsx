@@ -3,6 +3,7 @@ import { DateCell, MoneyCell, NumberCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { StatusPill, type StatusTone } from '@/components/StatusPill'
+import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { formatIsoDateItalian } from '@/lib/dates'
 import type { FieldDefinition } from '@/lib/schema'
 import type { TimeEntry } from './queries'
@@ -15,11 +16,6 @@ const EMPTY = '—'
 // four-figure total silently losing its separator on one screen is exactly the
 // inconsistency this product forces grouping on to avoid -- `features/deals/columns.tsx`
 // and `DynamicFieldRenderer`'s `renderFieldValue` already force it for the same reason.
-const euro = new Intl.NumberFormat('it-IT', {
-  style: 'currency',
-  currency: 'EUR',
-  useGrouping: 'always',
-})
 const hours = new Intl.NumberFormat('it-IT', { useGrouping: 'always' })
 // Six places, because a rate is Numeric(12,6): "33,333333 €/h" is not expressible at
 // two, which is the whole reason the third scale exists (§6.1).
@@ -41,7 +37,7 @@ const rate = new Intl.NumberFormat('it-IT', {
  * compares; it only formats one already-final value at a time.
  */
 export function formatMoneyValue(value: string | null): string {
-  return value === null ? EMPTY : euro.format(Number(value))
+  return value === null ? EMPTY : formatEuro(value)
 }
 
 export function formatHoursValue(value: string | null): string {

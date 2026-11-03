@@ -7,7 +7,6 @@ import {
   formatPeriod,
   formatPurchaseOrder,
   formatQuantity,
-  formatRate,
   previewImponibile,
   sumLineTotals,
 } from './format'
@@ -45,15 +44,10 @@ describe('sumLineTotals', () => {
   })
 })
 
-describe('formatQuantity and formatRate', () => {
+describe('formatQuantity', () => {
   it('shows a quantity with its six decimals trimmed to what matters', () => {
     expect(formatQuantity('3.000000')).toBe('3')
     expect(formatQuantity('3.500000')).toBe('3,5')
-  })
-
-  it('shows a rate as a percentage', () => {
-    expect(formatRate('0.00')).toBe('0%')
-    expect(formatRate('22.00')).toBe('22%')
   })
 })
 

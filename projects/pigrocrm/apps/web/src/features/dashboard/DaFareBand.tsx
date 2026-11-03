@@ -19,7 +19,7 @@ export const BAND_ROWS = 5
  * counts in the heading are the server's real totals; the rows are the first
  * `BAND_ROWS` of «in ritardo» then «oggi», each an `AttivitaItem`, so «Fatto», «Modifica»
  * and the link to the record work here exactly as on the Attività page. Every attività
- * write invalidates the `['attivita']` prefix this reads under, so «Fatto» takes the row
+ * write invalidates the `queryKeys.activitiesAll` prefix this reads under, so «Fatto» takes the row
  * out, and the sidebar count with it, in one refetch.
  *
  * With nothing to do it is one line and not an empty card: a panel that says «0» in a box

@@ -12,6 +12,7 @@ import {
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toProblem, type ProblemDetail } from '@/lib/api'
+import { isBlank } from '@/lib/formValues'
 import type { FieldDefinition, FieldType } from '@/lib/schema'
 import {
   useCreateFromTemplate,
@@ -56,16 +57,6 @@ export interface TemplateFormValues {
 }
 
 const TITLE_FIELD_KEY = 'titolo'
-
-/** Mirrors `is_blank` in packages/core/src/pigrocrm/core/fields/validator.py:
- *  `null`/`undefined`, a whitespace-only string, or an empty array mean "no value".
- *  `false` and `0` do not -- they are real answers. */
-function isBlank(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim() === ''
-  if (Array.isArray(value)) return value.length === 0
-  return false
-}
 
 interface Props {
   open: boolean

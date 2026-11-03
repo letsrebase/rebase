@@ -1,15 +1,9 @@
+import { formatMoney as formatEuro } from '@rebase/ui/format'
 import { decimalStringFromScaled, MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
 import type { Invoice, InvoiceLine } from './queries'
 
 export const EMPTY = '—'
 
-// `useGrouping: 'always'` is mandatory: the default withholds the thousands separator
-// below five integer digits, so 1500.00 would print as "1500,00 €".
-const euro = new Intl.NumberFormat('it-IT', {
-  style: 'currency',
-  currency: 'EUR',
-  useGrouping: 'always',
-})
 const quantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 6 })
 const italianDate = new Intl.DateTimeFormat('it-IT')
 
@@ -29,15 +23,11 @@ function centsFromDecimalString(value: string): number {
 }
 
 export function formatMoney(value: string | null): string {
-  return value === null ? EMPTY : euro.format(centsFromDecimalString(value) / 100)
+  return value === null ? EMPTY : formatEuro(value)
 }
 
 export function formatQuantity(value: string | null): string {
   return value === null ? EMPTY : quantity.format(Number(value))
-}
-
-export function formatRate(value: string | null): string {
-  return value === null ? EMPTY : `${quantity.format(Number(value))}%`
 }
 
 /**

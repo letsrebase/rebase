@@ -36,14 +36,14 @@ export function useCalendarMonth(mese: string) {
  * Everything a write to a commitment invalidates: the month it is in, every other month
  * (moving a date takes it out of one and puts it into another), and the flat list.
  *
- * The wildcard `['calendario']` prefix rather than the one month the caller happens to
+ * The wildcard `queryKeys.calendarAll` prefix rather than the one month the caller happens to
  * be looking at: a commitment whose date moved is stale in two months at once, and a
  * grid still drawing it in the old cell is the shape of bug that makes people stop
  * trusting the screen.
  */
 function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: ['calendario'] })
-  void queryClient.invalidateQueries({ queryKey: ['attivita'] })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.activitiesAll })
   // The palette caches a term for ten seconds and now finds attività: a task archived or
   // renamed a moment ago must not be offered under its old state.
   void queryClient.invalidateQueries({ queryKey: ['search'] })

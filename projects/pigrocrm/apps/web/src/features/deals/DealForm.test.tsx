@@ -9,8 +9,8 @@ import { api } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
-// `PersonForm.test.tsx`: `DealForm` calls `useCustomers` (for the "Cliente"
-// picker) through the real `unwrap`, so what is under test is this form's own
+// `PersonForm.test.tsx`: `DealForm` mounts `CustomerPicker` (for the "Cliente"
+// picker), which calls `useCustomers` through the real `unwrap`, so what is under test is this form's own
 // handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 
@@ -287,7 +287,7 @@ describe('DealForm', () => {
         <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={vi.fn()} />,
       )
       expect(screen.getByText('Cliente')).toBeInTheDocument()
-      expect(screen.getByRole('combobox')).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Cerca un cliente' })).toBeInTheDocument()
     })
 
     it('hides the Cliente picker on edit -- a deal cannot be reassigned to a different customer', () => {
@@ -302,19 +302,19 @@ describe('DealForm', () => {
         />,
       )
       expect(screen.queryByText('Cliente')).not.toBeInTheDocument()
-      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+      expect(screen.queryByRole('textbox', { name: 'Cerca un cliente' })).not.toBeInTheDocument()
     })
 
     /**
-     * A fix-round defect: `isCreate` used to gate only the JSX, while
-     * `useCustomers({limit: 200})` itself ran unconditionally at `DealForm`'s
-     * own top level -- so every deal detail page (which mounts `DealForm`
-     * behind `open={false}` for as long as it is simply being viewed) fired
-     * a `GET /api/customers?limit=200` nobody could ever see the result of.
-     * The picker is now its own component (`CustomerPicker`), mounted -- and
-     * therefore only ever calling `useCustomers` -- inside the same
-     * `{isCreate && ...}` branch the previous test already covers visually;
-     * this test covers the network side of the identical branch.
+     * A fix-round defect: `isCreate` used to gate only the JSX, while the
+     * customer request itself ran unconditionally at `DealForm`'s own top
+     * level -- so every deal detail page (which mounts `DealForm` behind
+     * `open={false}` for as long as it is simply being viewed) fired a
+     * `GET /api/customers` nobody could ever see the result of. The picker is
+     * its own component (`CustomerPicker`), mounted -- and therefore only ever
+     * searching customers -- inside the same `{isCreate && ...}` branch the
+     * previous test already covers visually; this test covers the network side
+     * of the identical branch.
      */
     it('does not fetch the customer list while editing -- the picker is not rendered there', () => {
       renderWithClient(
@@ -330,13 +330,13 @@ describe('DealForm', () => {
       expect(mockGet).not.toHaveBeenCalled()
     })
 
-    it('does fetch the customer list on create -- there is a picker to fill', () => {
+    it('asks the server for a few customers on create, not for all of them', () => {
       renderWithClient(
         <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={vi.fn()} />,
       )
       expect(mockGet).toHaveBeenCalledWith(
         '/api/customers',
-        expect.objectContaining({ params: expect.objectContaining({ query: expect.objectContaining({ limit: 200 }) }) }),
+        expect.objectContaining({ params: expect.objectContaining({ query: expect.objectContaining({ limit: 8 }) }) }),
       )
     })
 
@@ -361,8 +361,7 @@ describe('DealForm', () => {
       )
 
       await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto ACME')
-      await userEvent.click(screen.getByRole('combobox'))
-      await userEvent.click(await screen.findByRole('option', { name: 'ACME Srl' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'ACME Srl' }))
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       expect(submitted(onSubmit)).toEqual({

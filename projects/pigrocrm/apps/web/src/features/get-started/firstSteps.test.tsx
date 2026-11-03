@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useDeals, useMoveDeal } from '@/features/deals/queries'
-import { useSpaceEmpty } from './firstSteps'
+import { useSpaceEmpty, useSpaceHasData } from './firstSteps'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -78,5 +78,32 @@ describe('useSpaceEmpty', () => {
     result.current.move.mutate({ dealId: 'd-1', stageId: 's-offerta' })
     await waitFor(() => expect(result.current.move.isSuccess).toBe(true))
     expect(api.PATCH).toHaveBeenCalled()
+  })
+})
+
+describe('useSpaceHasData', () => {
+  it('is false for an empty space and true once any read finds work', async () => {
+    vi.mocked(api.GET).mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useSpaceHasData(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(client.isFetching()).toBe(0))
+    expect(result.current).toBe(false)
+
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      ok({ items: path === '/api/deals' ? [DEAL] : [], next_cursor: null })) as never)
+    await client.invalidateQueries()
+    await waitFor(() => expect(result.current).toBe(true))
+  })
+
+  it('holds the answer and stops reading once the space has data', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useSpaceHasData(), { wrapper: wrapper(client) })
+    await waitFor(() => expect(result.current).toBe(true))
+    const reads = vi.mocked(api.GET).mock.calls.length
+
+    await client.invalidateQueries()
+    expect(result.current).toBe(true)
+    expect(api.GET).toHaveBeenCalledTimes(reads)
   })
 })

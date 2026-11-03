@@ -7,31 +7,19 @@ import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { DataTable, type DataTableFeatures } from '@/components/DataTable'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@rebase/ui/dialog'
-import { Input } from '@rebase/ui/input'
-import { Label } from '@rebase/ui/label'
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { Checkbox } from '@rebase/ui/checkbox'
-import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
+import { toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { useLegalEntity, type LegalEntityRecord } from '@/lib/legalEntity'
-import { scopeBody, scopeLabel } from './scope'
+import { useLegalEntity } from '@/lib/legalEntity'
+import { scopeLabel } from './scope'
 import { MAIL_HINT, MAIL_LABEL, MAIL_TONE } from './inviteMail'
 import { roleLabel } from '@/lib/roles'
 import {
-  useInviteUser,
   usePendingInvites,
   useResendInvite,
   useRevokeInvite,
@@ -40,97 +28,28 @@ import {
   type InvitationRecord,
   type UserRecord,
 } from './queries'
-
-const ROLES: { value: UserRecord['ruolo']; label: string }[] = [
-  { value: 'admin', label: 'Amministratore' },
-  { value: 'collaboratore', label: 'Collaboratore' },
-  { value: 'readonly', label: 'Sola lettura' },
-]
-
-const KNOWN_FIELDS = ['email', 'nome', 'ruolo', 'aziende']
-
-function LegalEntitiesChecklist({
-  aziende,
-  checked,
-  onChange,
-  idPrefix,
-  error,
-}: {
-  aziende: LegalEntityRecord[]
-  checked: string[]
-  onChange: (next: string[]) => void
-  idPrefix: string
-  error?: string
-}) {
-  return (
-    <fieldset className="space-y-2">
-      <legend className="text-sm font-medium">Aziende</legend>
-      <p className="text-sm text-muted-foreground">
-        Vedrà solo le aziende selezionate: clienti, deal, documenti, fatture e cruscotti. Tutte
-        selezionate significa tutto lo spazio, anche le aziende che aggiungerai.
-      </p>
-      {aziende.map((azienda) => {
-        const id = `${idPrefix}-${azienda.id}`
-        return (
-          <div key={azienda.id} className="flex items-center gap-2">
-            <Checkbox
-              id={id}
-              checked={checked.includes(azienda.id)}
-              onCheckedChange={(value) =>
-                onChange(
-                  value === true
-                    ? [...checked, azienda.id]
-                    : checked.filter((item) => item !== azienda.id),
-                )
-              }
-            />
-            <Label htmlFor={id}>{azienda.nome}</Label>
-          </div>
-        )
-      })}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-    </fieldset>
-  )
-}
+import { InviteUserDialog, RenameUserDialog, ScopeUserDialog } from './UserDialogs'
+import { ROLES } from './userRoles'
 
 /** «gg/mm/aaaa, hh:mm»: date and short time, shared by the invitation's «Scade il…»
  *  (spec §2's seven-day window made visible) and the member's «Ultimo accesso»
  *  (REB-297) -- one instant read the same way everywhere this panel shows one. */
 const shortDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })
 
-function unattributed(problem: ProblemDetail | null): string | null {
-  if (!problem) return null
-  const fieldError = fieldErrorFrom(problem)
-  if (fieldError && KNOWN_FIELDS.includes(fieldError.field)) return null
-  return problem.detail
-}
-
 export function UsersPanel() {
   const { user: currentUser } = useAuth()
-  const [open, setOpen] = useState(false)
-  const [email, setEmail] = useState('')
-  const [nome, setNome] = useState('')
-  const [ruolo, setRuolo] = useState<UserRecord['ruolo']>('collaboratore')
-  const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  // The scope (REB-635): the checked aziende of the invite, and the member whose scope
-  // is being edited with theirs. Drawn from the second azienda on, like the selector.
+  // Each dialog is mounted while it is open, with its own form state: `inviting`, and the
+  // member whose name is being corrected (REB-796) or whose aziende are being edited
+  // (REB-635), which is drawn from the second azienda on, like the selector.
+  const [inviting, setInviting] = useState(false)
+  const [renameOf, setRenameOf] = useState<UserRecord | null>(null)
+  const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
   const azienda = useLegalEntity()
   const several = azienda.aziende.length > 1
-  const [inviteAziende, setInviteAziende] = useState<string[]>([])
-  const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
-  const [scopeAziende, setScopeAziende] = useState<string[]>([])
-  const [scopeProblem, setScopeProblem] = useState<ProblemDetail | null>(null)
-  // The member whose name is being corrected (REB-796): a space's founder is stored
-  // under whatever the signup form asked for, often the space's own name, and that is
-  // the name every assignee and owner picker then shows.
-  const [renameOf, setRenameOf] = useState<UserRecord | null>(null)
-  const [renameNome, setRenameNome] = useState('')
-  const [renameProblem, setRenameProblem] = useState<ProblemDetail | null>(null)
   const byId = (id: string) => azienda.byId(id)
 
   const users = useUsers()
   const invites = usePendingInvites()
-  const invite = useInviteUser()
   const resend = useResendInvite()
   const revoke = useRevokeInvite()
   const update = useUpdateUser()
@@ -142,97 +61,6 @@ export function UsersPanel() {
     several ||
     (users.data ?? []).some((u) => Array.isArray(u.aziende)) ||
     (invites.data ?? []).some((i) => Array.isArray(i.aziende))
-
-  const fieldError = problem ? fieldErrorFrom(problem) : null
-  const banner = unattributed(problem)
-
-  function openDialog() {
-    setProblem(null)
-    setEmail('')
-    setNome('')
-    setRuolo('collaboratore')
-    setInviteAziende(azienda.aziende.map((a) => a.id))
-    setOpen(true)
-  }
-
-  function openScope(user: UserRecord) {
-    setScopeProblem(null)
-    setScopeOf(user)
-    // Only the ids the checklist draws: an azienda deactivated since the scope was set
-    // is not there to uncheck, and sending it back would be refused as inactive.
-    setScopeAziende(
-      Array.isArray(user.aziende)
-        ? user.aziende.filter((id) => azienda.byId(id) !== undefined)
-        : azienda.aziende.map((a) => a.id),
-    )
-  }
-
-  function saveScope() {
-    if (!scopeOf) return
-    setScopeProblem(null)
-    update.mutate(
-      { userId: scopeOf.id, body: { aziende: scopeBody(scopeAziende, azienda.aziende) } },
-      {
-        onSuccess: () => {
-          toast.success('Aziende aggiornate')
-          setScopeOf(null)
-        },
-        onError: (error) => setScopeProblem(toProblem(error)),
-      },
-    )
-  }
-
-  function openRename(user: UserRecord) {
-    setRenameProblem(null)
-    setRenameOf(user)
-    setRenameNome(user.nome)
-  }
-
-  function saveRename() {
-    if (!renameOf) return
-    setRenameProblem(null)
-    update.mutate(
-      { userId: renameOf.id, body: { nome: renameNome.trim() } },
-      {
-        onSuccess: () => {
-          toast.success('Nome aggiornato')
-          setRenameOf(null)
-        },
-        onError: (error) => setRenameProblem(toProblem(error)),
-      },
-    )
-  }
-
-  function submit() {
-    setProblem(null)
-    invite.mutate(
-      // The empty optional name is sent as null, the shape the API's own schema
-      // answers `InvitationCreate.nome` with: the acceptance page asks for one when
-      // the invitation carried none (spec §1), so "blank" here means "not known yet".
-      // The scope only from the second azienda on: a one-azienda space sends none.
-      {
-        email,
-        nome: nome.trim() === '' ? null : nome.trim(),
-        ruolo,
-        ...(several ? { aziende: scopeBody(inviteAziende, azienda.aziende) } : {}),
-      },
-      {
-        onSuccess: (sent) => {
-          // The invitation exists either way; what the toast owes the admin is whether
-          // the mail left (REB-678: it used to say «inviato» for one that never did).
-          if (sent.mail_status === 'failed') {
-            toast.error(
-              'Invito creato, ma la mail non è partita. Usa «Reinvia il link» nella lista.',
-            )
-          } else {
-            toast.success('Invito inviato')
-          }
-          setOpen(false)
-        },
-        onError: (error) => setProblem(toProblem(error)),
-      },
-    )
-  }
 
   const columns: ColumnDef<DataTableFeatures, UserRecord>[] = [
     { header: 'Nome', accessorKey: 'nome' },
@@ -330,14 +158,14 @@ export function UsersPanel() {
               {
                 label: 'Rinomina…',
                 disabled: update.isPending,
-                onSelect: () => openRename(user),
+                onSelect: () => setRenameOf(user),
               },
               ...(showScope
                 ? [
                     {
                       label: 'Aziende…',
                       disabled: update.isPending,
-                      onSelect: () => openScope(user),
+                      onSelect: () => setScopeOf(user),
                     },
                   ]
                 : []),
@@ -458,7 +286,7 @@ export function UsersPanel() {
             disponibile in questa versione — disattiva e invita di nuovo se serve.
           </p>
         </div>
-        <Button onClick={openDialog}>
+        <Button onClick={() => setInviting(true)}>
           <MailPlus className="mr-2 size-4" />
           Invita
         </Button>
@@ -487,163 +315,13 @@ export function UsersPanel() {
         />
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invita</DialogTitle>
-            <DialogDescription>
-              Riceverà una mail con un link che vale 7 giorni e funziona una volta sola: niente
-              password da comunicare tu. Il nome è opzionale, la pagina dell&apos;invito glielo
-              chiede se non lo inserisci.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {banner && (
-              <p
-                role="alert"
-                className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {banner}
-              </p>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                aria-invalid={fieldError?.field === 'email'}
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              {fieldError?.field === 'email' && (
-                <p className="text-sm text-destructive">{fieldError.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-nome">Nome (opzionale)</Label>
-              <Input
-                id="invite-nome"
-                aria-invalid={fieldError?.field === 'nome'}
-                value={nome}
-                onChange={(event) => setNome(event.target.value)}
-              />
-              {fieldError?.field === 'nome' && (
-                <p className="text-sm text-destructive">{fieldError.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-ruolo">Ruolo</Label>
-              <Select value={ruolo} onValueChange={(value) => setRuolo(value as typeof ruolo)}>
-                <SelectTrigger id="invite-ruolo" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLES.map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      {role.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {several && (
-              <LegalEntitiesChecklist
-                aziende={azienda.aziende}
-                checked={inviteAziende}
-                onChange={setInviteAziende}
-                idPrefix="invite-azienda"
-                error={fieldError?.field === 'aziende' ? fieldError.message : undefined}
-              />
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Annulla
-            </Button>
-            <Button
-              onClick={submit}
-              disabled={invite.isPending || (several && inviteAziende.length === 0)}
-            >
-              {invite.isPending ? 'Invio…' : 'Invia invito'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={renameOf !== null} onOpenChange={(next) => !next && setRenameOf(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nome di {renameOf?.nome}</DialogTitle>
-            <DialogDescription>
-              È il nome che compare nei selettori di assegnatario e responsabile e nello storico.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="rename-nome">Nome</Label>
-            <Input
-              id="rename-nome"
-              aria-invalid={renameProblem !== null}
-              aria-describedby={renameProblem ? 'rename-nome-error' : undefined}
-              value={renameNome}
-              onChange={(event) => setRenameNome(event.target.value)}
-            />
-            {renameProblem && (
-              <p id="rename-nome-error" role="alert" className="text-sm text-destructive">
-                {renameProblem.detail}
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenameOf(null)}>
-              Annulla
-            </Button>
-            <Button onClick={saveRename} disabled={update.isPending || renameNome.trim() === ''}>
-              {update.isPending ? 'Salvataggio…' : 'Salva'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={scopeOf !== null} onOpenChange={(next) => !next && setScopeOf(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Aziende di {scopeOf?.nome}</DialogTitle>
-            <DialogDescription>
-              La modifica vale dalla prossima richiesta. Lo spazio tiene sempre almeno un
-              amministratore che vede tutte le aziende.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {scopeProblem && fieldErrorFrom(scopeProblem)?.field !== 'aziende' && (
-              <p
-                role="alert"
-                className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {scopeProblem.detail}
-              </p>
-            )}
-            <LegalEntitiesChecklist
-              aziende={azienda.aziende}
-              checked={scopeAziende}
-              onChange={setScopeAziende}
-              idPrefix="scope-azienda"
-              error={
-                scopeProblem && fieldErrorFrom(scopeProblem)?.field === 'aziende'
-                  ? fieldErrorFrom(scopeProblem)?.message
-                  : undefined
-              }
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setScopeOf(null)}>
-              Annulla
-            </Button>
-            <Button onClick={saveScope} disabled={update.isPending || scopeAziende.length === 0}>
-              {update.isPending ? 'Salvataggio…' : 'Salva'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {inviting && <InviteUserDialog onClose={() => setInviting(false)} />}
+      {renameOf && (
+        <RenameUserDialog user={renameOf} update={update} onClose={() => setRenameOf(null)} />
+      )}
+      {scopeOf && (
+        <ScopeUserDialog user={scopeOf} update={update} onClose={() => setScopeOf(null)} />
+      )}
     </div>
   )
 }

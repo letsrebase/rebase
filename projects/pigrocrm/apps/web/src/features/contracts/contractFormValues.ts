@@ -1,3 +1,4 @@
+import { isBlank } from '@/lib/formValues'
 import {
   expensePolicyBody,
   readExpensePolicy,
@@ -83,13 +84,6 @@ export function contractToFormValues(contract: Contract): ContractFormValues {
     note: contract.note ?? '',
     custom: { ...contract.custom_fields },
   }
-}
-
-function isBlank(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim() === ''
-  if (Array.isArray(value)) return value.length === 0
-  return false
 }
 
 /** An input's text as the integer the API wants, or `null` for an empty box. A value

@@ -22,7 +22,8 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
-import { useCustomer, useCustomers } from '@/features/customers/queries'
+import { CustomerPicker } from '@/features/customers/CustomerPicker'
+import { useCustomer } from '@/features/customers/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -109,43 +110,6 @@ interface Errors {
   data?: string
   competenza?: string
   righe?: string
-}
-
-/**
- * Split out so `useCustomers` is mounted -- and therefore requested -- only while the
- * dialog is actually open, the same reasoning `features/deals/DealForm.tsx`'s
- * `CustomerPicker` documents at length. `limit: 200` mirrors it too: a one-shot cap for
- * a dropdown, not a paginated list of its own.
- */
-function CustomerPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (value: string) => void
-}) {
-  const customers = useCustomers({ limit: 200 })
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor="proforma-cliente">
-        Cliente
-        <span className="ml-1 text-destructive">*</span>
-      </Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id="proforma-cliente" className="w-full">
-          <SelectValue placeholder="Seleziona un cliente…" />
-        </SelectTrigger>
-        <SelectContent>
-          {customers.data?.items.map((customer) => (
-            <SelectItem key={customer.id} value={customer.id}>
-              {customer.ragione_sociale}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
 }
 
 /**
@@ -411,7 +375,17 @@ function NewProformaDialog({
               the one read the deal page has already made. */}
           {fixedCustomerId === undefined ? (
             <>
-              <CustomerPicker value={customerId} onChange={chooseCustomer} />
+              <div className="space-y-2">
+                <Label htmlFor="proforma-cliente">
+                  Cliente
+                  <span className="ml-1 text-destructive">*</span>
+                </Label>
+                <CustomerPicker
+                  id="proforma-cliente"
+                  value={customerId === '' ? null : customerId}
+                  onChange={(customer) => chooseCustomer(customer?.id ?? '')}
+                />
+              </div>
               {errors.customer ? (
                 <p className="text-sm text-destructive">{errors.customer}</p>
               ) : null}
@@ -571,8 +545,7 @@ function NewProformaDialog({
  * all three.
  *
  * The dialog is *mounted* only while open rather than kept behind `open={false}`, so
- * the customer list is fetched when someone actually wants to pick from it -- the same
- * fix, for the same reason, that `DealForm`'s `CustomerPicker` documents.
+ * customers are searched when someone actually wants to pick one.
  */
 export function NewProformaButton(props: { prefill?: ProformaPrefill } & FixedParties) {
   const [open, setOpen] = useState(false)
