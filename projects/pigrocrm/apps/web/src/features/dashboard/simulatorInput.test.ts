@@ -78,30 +78,53 @@ describe('the request the fields make', () => {
     })
   })
 
-  it('takes a deal\'s own estimate: its value, else its hours at its rate', () => {
-    const deal = { budgeted_value: '9000.00', budgeted_hours: null, hourly_rate: null }
-    expect(simulatorRequest({ ...BLANK, source: 'deal', deal })).toEqual({
+  it('asks for a deal that has value lines by its id, and sends no estimate beside it', () => {
+    const deal = {
+      id: 'd1',
+      expected_value: '12000.00',
+      budgeted_value: '9000.00',
+      budgeted_hours: null,
+      hourly_rate: null,
+    }
+    expect(simulatorRequest({ ...BLANK, source: 'deal', deal, date: '2026-12-31' })).toEqual({
       ok: true,
-      input: { budgeted_value: '9000.00' },
+      input: { deal_id: 'd1', expected_date: '2026-12-31' },
     })
+  })
+
+  it('takes the own estimate of a deal with no lines: its value, else its hours at its rate', () => {
+    const none = { id: 'd2', expected_value: null }
     expect(
       simulatorRequest({
         ...BLANK,
         source: 'deal',
-        deal: { budgeted_value: null, budgeted_hours: '40.00', hourly_rate: '75.000000' },
+        deal: { ...none, budgeted_value: '9000.00', budgeted_hours: null, hourly_rate: null },
+      }),
+    ).toEqual({ ok: true, input: { budgeted_value: '9000.00' } })
+    expect(
+      simulatorRequest({
+        ...BLANK,
+        source: 'deal',
+        deal: { ...none, budgeted_value: null, budgeted_hours: '40.00', hourly_rate: '75.000000' },
       }),
     ).toEqual({ ok: true, input: { budgeted_hours: '40.00', hourly_rate: '75.000000' } })
   })
 
-  it('refuses a deal with no estimate, and no deal at all', () => {
+  it('refuses a deal with no value at all, and no deal at all', () => {
     expect(simulatorRequest({ ...BLANK, source: 'deal' })).toMatchObject({
       ok: false,
       errors: { deal: 'Scegli un deal.' },
     })
-    const empty = { budgeted_value: null, budgeted_hours: '40.00', hourly_rate: null }
+    const empty = {
+      id: 'd3',
+      expected_value: null,
+      budgeted_value: null,
+      budgeted_hours: '40.00',
+      hourly_rate: null,
+    }
     expect(simulatorRequest({ ...BLANK, source: 'deal', deal: empty })).toMatchObject({
       ok: false,
-      errors: { deal: expect.stringContaining('non ha una stima') },
+      errors: { deal: expect.stringContaining('non ha un valore') },
     })
   })
 

@@ -401,6 +401,7 @@ describe('CeilingPanel, simulating a deal', () => {
     name: 'Sito vetrina',
     customer_legal_name: 'Acme Srl',
     pipeline_stage_id: 's-open',
+    expected_value: null,
     budgeted_value: '12000.00',
     budgeted_hours: null,
     hourly_rate: null,
@@ -430,12 +431,12 @@ describe('CeilingPanel, simulating a deal', () => {
     await user.click(screen.getByRole('radio', { name: 'Un deal' }))
     await user.click(await screen.findByRole('combobox', { name: 'Deal' }))
     expect(screen.queryByRole('option', { name: /già vinto/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /idea.*senza stima/i })).toHaveAttribute(
+    expect(screen.getByRole('option', { name: /idea.*senza valore/i })).toHaveAttribute(
       'aria-disabled',
       'true',
     )
     await user.click(screen.getByRole('option', { name: /sito vetrina · acme srl/i }))
-    expect(screen.getByText('Stima del deal: 12.000,00 €')).toBeInTheDocument()
+    expect(screen.getByText('Valore del deal: 12.000,00 €')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Simula' }))
 
     await waitFor(() =>
@@ -444,6 +445,31 @@ describe('CeilingPanel, simulating a deal', () => {
       }),
     )
     expect(await screen.findByText('Ci sta.')).toBeInTheDocument()
+  })
+
+  it('asks for a deal that has value lines by its id, and sends no estimate beside it', async () => {
+    const LINED = { ...DEAL, id: 'd4', name: 'Manutenzione', expected_value: '12000.00' }
+    route({
+      '/api/analytics/ceilings': () => ok(headroom()),
+      '/api/analytics/ceilings/simulate': () => ok(simulation({ brief_addition: '3000.00' })),
+      '/api/deals': () => ok({ items: [LINED], next_cursor: null }),
+      '/api/pipeline-stages': () => ok([{ id: 's-open', name: 'Trattativa', type: 'open' }]),
+    })
+    renderPanel()
+    await screen.findByRole('group', { name: REVENUE.label })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('radio', { name: 'Un deal' }))
+    await user.click(await screen.findByRole('combobox', { name: 'Deal' }))
+    await user.click(screen.getByRole('option', { name: /manutenzione/i }))
+    expect(screen.getByText(/letto riga per riga/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Simula' }))
+
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/analytics/ceilings/simulate', {
+        params: { query: { deal_id: 'd4', expected_date: '2026-12-31', year: 2026 } },
+      }),
+    )
   })
 
   it('says so when the pipeline stages cannot be read, instead of waiting for them', async () => {

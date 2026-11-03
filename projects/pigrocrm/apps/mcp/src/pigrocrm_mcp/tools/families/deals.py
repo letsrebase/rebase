@@ -19,6 +19,7 @@ from pigrocrm_mcp.tools.params import (
     IsoDateStr,
     OptionalMoney,
     OptionalProbability,
+    OptionalValueLines,
     parse_legal_entity_id,
 )
 
@@ -31,7 +32,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def create_deal(
         name: str,
         customer_id: str,
-        expected_value: OptionalMoney = None,
+        value_lines: OptionalValueLines = None,
         probability: OptionalProbability = None,
         expected_close_date: IsoDateStr = None,
         note: str | None = None,
@@ -44,13 +45,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         `YYYY-MM-DD` format. `owner_id` is the active user who follows the deal and receives
         reminders: if omitted, it is the creator. `note` is the first note (without date or
         author: the CRM signs it).
+
+        The value is `value_lines`, never `expected_value`.
         """
         return deals.create(
             context,
             {
                 "name": name,
                 "customer_id": UUID(customer_id),
-                "expected_value": expected_value,
+                "value_lines": value_lines,
                 "probability": probability,
                 "expected_close_date": expected_close_date,
                 "note": note,
@@ -65,17 +68,29 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def update_deal(deal_id: str, changes: DealChanges) -> dict[str, Any]:
         """Update a deal. To change its stage use `move_deal`. `owner_id` changes who follows the
-        deal (an active user); `null` removes them.
+        deal (an active user); `null` removes them. `changes.value_lines` replaces the whole list
+        (`[]` clears the value).
         """
         return deals.update(context, deal_id, changes)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal(deal_id: str) -> dict[str, Any]:
-        """Read a deal, with the latest 50 notes (`note`, most recent first; `note_total`
-        counts them, all of them are in `deal://<id>`).
+        """Read a deal, with its `value_lines` and the latest 50 notes (`note`, most recent
+        first; `note_total` counts them, all of them are in `deal://<id>`).
         """
         return deals.get(context, deal_id)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def preview_deal_value(
+        value_lines: list[dict[str, Any]] | None = None, expected_close_date: IsoDateStr = None
+    ) -> dict[str, Any]:
+        """The `expected_value`, `one_off_value` and `monthly_recurring_value` that `value_lines`
+        (as in `create_deal`) would give a deal, checked as a write is, saving nothing.
+        `expected_close_date` is where lines with no `start` begin.
+        """
+        return deals.preview_value(context, value_lines, expected_close_date)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard

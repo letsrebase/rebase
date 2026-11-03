@@ -203,6 +203,16 @@ def simulate_ceiling(
     budgeted_hours: Annotated[Decimal | None, Query(ge=0)] = None,
     budgeted_value: Annotated[Decimal | None, Query(ge=0)] = None,
     hourly_rate: Annotated[Decimal | None, Query(ge=0)] = None,
+    deal_id: Annotated[
+        UUID | None,
+        Query(
+            description=(
+                "A saved deal (REB-931): the addition is its value lines' share in `year`,"
+                " instead of the raw estimate, which is then refused. In the contract cap the"
+                " addition is its share in the contract anniversary year."
+            )
+        ),
+    ] = None,
     contract_id: Annotated[
         UUID | None,
         Query(
@@ -222,13 +232,15 @@ def simulate_ceiling(
     """The «ci sta?» (does it fit?) simulator (REB-352 §1.4): the estimate of a deal not yet won,
     added to the actual revenue and re-evaluated against every active threshold, without
     saving anything. Needs `budgeted_value`, or `budgeted_hours` together with
-    `hourly_rate`. With `contract_id` it also answers on that contract's cap."""
+    `hourly_rate`, or a saved deal's `deal_id` (never both): the deal's value lines give the
+    share that falls in `year`. With `contract_id` it also answers on that contract's cap."""
     return AnalyticsService(session).simulate_ceiling(
         year,
         CeilingSimulationQuery(
             budgeted_hours=budgeted_hours,
             budgeted_value=budgeted_value,
             hourly_rate=hourly_rate,
+            deal_id=deal_id,
             contract_id=contract_id,
             expected_date=expected_date,
         ),

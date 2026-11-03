@@ -56,6 +56,14 @@ allow it (`update_task` has its own flags). Paginated lists and searches answer
 `next_cursor`: pass it as `cursor` for the next page, without interpreting it. The `custom` of a
 search filters by exact equality on the custom fields (keys in `describe_schema`);
 `dir` is `asc` or `desc`.
+A deal's value is its `value_lines`, never a number of its own: `expected_value` is their total
+and a call that sends it is refused. A line is a `flat` lump sum or a `day`/`hour` rate times
+`quantity` (1 on `flat`), paid `one_off`, `monthly` or `annual`, from `start` (default the deal's
+`expected_close_date`) for `duration_months` (none: open-ended, counted at 12 months); at most
+one `day`/`hour` line is in force on a date. Upfront 20000 plus 500 a month open-ended is
+`[{"unit": "flat", "delivery_period": "one_off", "unit_price": 20000}, {"unit": "flat",
+"delivery_period": "monthly", "unit_price": 500}]`. A deal answers `expected_value`,
+`one_off_value` and `monthly_recurring_value`; `preview_deal_value` computes them unsaved.
 """
 
 

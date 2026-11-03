@@ -23,6 +23,7 @@ from pigrocrm.core.deals.schemas import (
     DealCreate,
     DealListQuery,
     DealUpdate,
+    DealValueLineIn,
 )
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
@@ -33,6 +34,11 @@ from pigrocrm.core.pipeline.service import PipelineService
 ADMIN = Actor(id=None, type="system", role="admin")
 COLLAB = Actor(id=None, type="user", role="collaborator")
 READONLY = Actor(id=None, type="user", role="readonly")
+
+
+def lump(price: Decimal | str) -> DealValueLineIn:
+    """A single flat, one-off line: what a deal valued with one number is now."""
+    return DealValueLineIn(unit="flat", delivery_period="one_off", unit_price=Decimal(price))
 
 
 @pytest.fixture
@@ -101,7 +107,7 @@ def test_money_keeps_two_decimals_and_does_not_drift(
 ) -> None:
     """Float would turn 1234.56 into 1234.5599999. On an invoice that is a bug."""
     deal = DealService(db_session).create(
-        DealCreate(name="X", customer_id=customer_id, expected_value=Decimal("1234.56")), ADMIN
+        DealCreate(name="X", customer_id=customer_id, value_lines=[lump("1234.56")]), ADMIN
     )
     assert deal.expected_value == Decimal("1234.56")
 
@@ -114,11 +120,9 @@ def test_probability_outside_range_is_rejected(db_session: Session, customer_id,
     assert exc.value.details["field"] == "probability"
 
 
-def test_negative_value_is_rejected(db_session: Session, customer_id, stages) -> None:
-    with pytest.raises(ValidationFailed):
-        DealService(db_session).create(
-            DealCreate(name="X", customer_id=customer_id, expected_value=Decimal("-1")), ADMIN
-        )
+def test_negative_value_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        lump("-1")
 
 
 def test_move_stage_updates_the_deal_and_the_timeline(
@@ -684,7 +688,7 @@ def test_a_new_deal_can_specify_an_explicit_stage(db_session: Session, customer_
 # --- Fix round 1 -----------------------------------------------------------------
 
 # (field, at_limit, over_limit) for every Numeric(p, s) column: Numeric(12, 2) for
-# expected_value/budgeted_value, Numeric(8, 2) for budgeted_hours. Derived
+# budgeted_value, Numeric(8, 2) for budgeted_hours. Derived
 # from the schema's own constants rather than hardcoded twice, so a future change to
 # a column's width changes these test values along with it.
 _MONEY_INTEGER_DIGITS = VALUE_MAX_DIGITS - DECIMAL_PLACES
@@ -695,7 +699,6 @@ _HOURS_AT_LIMIT = Decimal("9" * _HOURS_INTEGER_DIGITS + "." + "9" * DECIMAL_PLAC
 _HOURS_OVER_LIMIT = Decimal("9" * (_HOURS_INTEGER_DIGITS + 1) + "." + "9" * DECIMAL_PLACES)
 
 NUMERIC_FIELD_LIMITS = [
-    ("expected_value", _MONEY_AT_LIMIT, _MONEY_OVER_LIMIT),
     ("budgeted_value", _MONEY_AT_LIMIT, _MONEY_OVER_LIMIT),
     ("budgeted_hours", _HOURS_AT_LIMIT, _HOURS_OVER_LIMIT),
 ]
@@ -745,10 +748,11 @@ def test_value_at_the_numeric_column_limit_round_trips_through_the_database(
     bound and the column's real capacity: this proves the exact boundary value
     survives create() -> Postgres -> DealRead with no truncation or rejection."""
     deal = DealService(db_session).create(
-        DealCreate(name="X", customer_id=customer_id, expected_value=_MONEY_AT_LIMIT),
+        DealCreate(name="X", customer_id=customer_id, value_lines=[lump(_MONEY_AT_LIMIT)]),
         ADMIN,
     )
     assert deal.expected_value == _MONEY_AT_LIMIT
+    assert deal.value_lines[0].unit_price == _MONEY_AT_LIMIT
 
 
 # --- Item 3 (IMPORTANT): a sub-cent value is rejected, not silently rounded ------
@@ -764,7 +768,7 @@ def test_a_sub_cent_value_is_rejected_instead_of_silently_rounded() -> None:
     decimal_places=2 declaration as item 1 above -- no separate code path exists to
     round money, so closing item 1 already closes this."""
     with pytest.raises(ValidationError):
-        DealCreate(name="X", customer_id=uuid4(), expected_value=Decimal("0.005"))
+        lump("0.005")
 
 
 # --- Item 2 (IMPORTANT): "won at 60%" must be unreachable through every gate -----
@@ -1010,8 +1014,9 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Sessio
         event.remove(connection, "after_cursor_execute", record)
 
     assert len(page.items) == 3
-    # The list itself, plus exactly one lookup for the three customer names.
-    assert len(statements) == 2, statements
+    # The list itself, plus one lookup for the three customer names and one for the lines
+    # behind the figures of the three deals.
+    assert len(statements) == 3, statements
     assert sorted(d.customer_legal_name or "" for d in page.items) == [
         "ACME 0",
         "ACME 1",

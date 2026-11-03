@@ -378,19 +378,30 @@ class CeilingHeadroom(BaseModel):
 
 
 class CeilingSimulationQuery(BaseModel):
-    """A not-yet-won deal's own estimate, in the shape its three columns already
-    carry (`deals/schemas.py`'s own `DealCreate`) -- accepted raw and never by
-    `deal_id`, so REB-352 §1.4's "would this fit?" simulator answers before the
-    deal is ever saved. `budgeted_value` is the synthetic addition directly
-    when typed; with only `budgeted_hours` and `hourly_rate` set, the service
-    derives it as their product, the same two columns `budget_vs_actual` already
-    reads plus the one it does not.
+    """What the «does it fit?» simulator adds to the year, in one of two shapes, never both
+    (`ValidationFailed` otherwise).
+
+    **Raw**: a deal not yet saved, in the shape its three columns already carry
+    (`deals/schemas.py`'s own `DealCreate`): `budgeted_value` is the addition directly when
+    typed; with only `budgeted_hours` and `hourly_rate` set, the service derives it as their
+    product. The question can be asked before the deal is ever saved, which is why this path
+    stays.
+
+    **`deal_id`** (REB-931): a saved deal, read through its value lines instead of typed
+    again. The addition to the simulated year is the deal's share in that calendar year,
+    that is the occurrences of its lines dated in it (`deals.value.share_in`), so a monthly
+    fee starting in October adds three months and an annual one its one payment, where the
+    raw figure could only say «all of it». A line with no start follows the deal's
+    `expected_close_date`, else `expected_date`, else today.
 
     `contract_id` (REB-761) names a contract whose cap on its customer's share the same
     addition is also read against, over the contract's own anniversary year containing
     `expected_date` (the day the money is expected, today when absent): the addition goes
-    to that contract's customer. The pack's ceilings are asked either way."""
+    to that contract's customer. With `deal_id` the addition read against the cap is the
+    deal's share in that anniversary year, not in the calendar one. The pack's ceilings are
+    asked either way."""
 
+    deal_id: UUID | None = None
     budgeted_hours: Decimal | None = Field(
         default=None,
         max_digits=CEILING_HOURS_MAX_DIGITS,

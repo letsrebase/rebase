@@ -1,15 +1,32 @@
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.deals.schemas import DealCreate, DealListQuery, DealUpdate
+from pigrocrm.core.deals.schemas import DealCreate, DealListQuery, DealUpdate, ValuePreviewIn
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import notes
 from pigrocrm_mcp.tools.changes import refuse_empty, report
+from pigrocrm_mcp.tools.params import iso_date
+
+
+def _refuse_expected_value(data: dict[str, Any]) -> None:
+    """A deal's value is its lines; the total is derived and nobody sets it."""
+    if "expected_value" in data:
+        raise ValidationFailed(
+            "input",
+            "expected_value",
+            "the deal's value cannot be set directly: it is the total of its `value_lines`",
+            expected=(
+                "`value_lines`, a list of lines, e.g. "
+                '[{"unit": "flat", "delivery_period": "one_off", "unit_price": 20000}]; '
+                "`preview_deal_value` shows the total they give"
+            ),
+        )
 
 
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
+    _refuse_expected_value(data)
     return (
         DealService(context.session)
         .create(DealCreate(**data), context.actor)
@@ -21,6 +38,7 @@ def update(context: McpContext, deal_id: str, data: dict[str, Any]) -> dict[str,
     service = DealService(context.session)
     identifier = UUID(deal_id)
     notes.refuse_note_in_changes(data, "add_note")
+    _refuse_expected_value(data)
     changes = DealUpdate(**data)
     refuse_empty(data)
     before = service.get(identifier, context.actor)
@@ -31,6 +49,18 @@ def get(context: McpContext, deal_id: str) -> dict[str, Any]:
     identifier = UUID(deal_id)
     deal = DealService(context.session).get(identifier, context.actor)
     return {**deal.model_dump(mode="json"), **notes.thread(context, "deal", identifier)}
+
+
+def preview_value(
+    context: McpContext, value_lines: list[dict[str, Any]] | None, expected_close_date: str | None
+) -> dict[str, Any]:
+    request = ValuePreviewIn.model_validate(
+        {
+            "value_lines": value_lines or [],
+            "expected_close_date": iso_date(expected_close_date, "expected_close_date"),
+        }
+    )
+    return DealService(context.session).preview_value(request).model_dump(mode="json")
 
 
 def search(context: McpContext, query: DealListQuery) -> dict[str, Any]:

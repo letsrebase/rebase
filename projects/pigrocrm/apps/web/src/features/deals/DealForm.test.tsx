@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import type { FieldDefinition } from '@/lib/schema'
 // picker), which calls `useCustomers` through the real `unwrap`, so what is under test is this form's own
 // handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
+const mockPost = vi.spyOn(api, 'POST')
 
 function customerPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
@@ -24,6 +25,12 @@ function customerPage(items: { id: string; legal_name: string }[]) {
 beforeEach(() => {
   mockGet.mockReset()
   mockGet.mockReturnValue(customerPage([]))
+  mockPost.mockReset()
+  mockPost.mockImplementation((() =>
+    Promise.resolve({
+      data: { expected_value: '26000.00', one_off_value: '20000.00', monthly_recurring_value: '500.00' },
+      response: new Response(null, { status: 200 }),
+    })) as never)
 })
 
 function renderWithClient(ui: ReactElement) {
@@ -38,6 +45,8 @@ const BASE_DEAL: Deal = {
   customer_id: 'cust-1',
   pipeline_stage_id: 's1',
   expected_value: null,
+  one_off_value: null,
+  monthly_recurring_value: null,
   probability: 10,
   expected_close_date: null,
   owner_id: null,
@@ -488,5 +497,176 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
     await userEvent.click(screen.getByLabelText('Responsabile'))
     await screen.findByRole('option', { name: 'Giulia' })
     expect(screen.queryByRole('option', { name: 'Nessuno' })).not.toBeInTheDocument()
+  })
+
+  describe('value lines', () => {
+    it('opens a new deal with one lump sum, and sends nothing for a price left empty', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+      expect(screen.getByRole('group', { name: 'Riga 1' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Unità riga 1')).toHaveTextContent('A corpo')
+      expect(screen.getByLabelText('Periodo riga 1')).toHaveTextContent('Una tantum')
+      // A lump sum is its price: no quantity, and paid once it has no duration either.
+      expect(screen.queryByLabelText('Quantità riga 1')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Durata (mesi) riga 1')).not.toBeInTheDocument()
+
+      await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto nuovo')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      const body = submitted(onSubmit)
+      expect(body).not.toHaveProperty('value_lines')
+      expect(body).not.toHaveProperty('expected_value')
+      expect(mockPost).not.toHaveBeenCalled()
+    })
+
+    it('sends the lines, never expected_value, and shows the three figures the server previewed', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+      await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto nuovo')
+      await userEvent.type(screen.getByLabelText('Importo (€) riga 1'), '20000')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi riga' }))
+      await userEvent.type(screen.getByLabelText('Descrizione riga 2'), 'Manutenzione')
+      await userEvent.type(screen.getByLabelText('Importo (€) riga 2'), '500')
+      await userEvent.click(screen.getByLabelText('Periodo riga 2'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Mensile' }))
+
+      // The figures are the server's answer to the lines as typed, not a sum made here.
+      await waitFor(() => {
+        const sent = (mockPost.mock.calls.at(-1) as unknown as [string, { body: { value_lines: unknown[] } }] | undefined)
+        expect(sent?.[1].body.value_lines).toHaveLength(2)
+      })
+      await waitFor(() => expect(screen.getByTestId('preview-total')).toHaveTextContent('26.000,00'))
+      expect(screen.getByTestId('preview-one-off')).toHaveTextContent('20.000,00')
+      expect(screen.getByTestId('preview-monthly')).toHaveTextContent('500,00')
+      expect(screen.getByTestId('preview-monthly')).toHaveTextContent('/mese')
+      const lastCall = mockPost.mock.calls.at(-1) as unknown as [string, { body: unknown }]
+      expect(lastCall[0]).toBe('/api/deals/value-preview')
+      expect(lastCall[1].body).toEqual({
+        value_lines: [
+          { description: null, unit: 'flat', delivery_period: 'one_off', unit_price: '20000', quantity: '1', start: null, duration_months: null },
+          { description: 'Manutenzione', unit: 'flat', delivery_period: 'monthly', unit_price: '500', quantity: '1', start: null, duration_months: null },
+        ],
+        expected_close_date: null,
+      })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      const body = submitted(onSubmit)
+      expect(body).not.toHaveProperty('expected_value')
+      expect(body.value_lines).toEqual((lastCall[1].body as { value_lines: unknown }).value_lines)
+    })
+
+    it('asks for a quantity only on a day or hour line', async () => {
+      renderWithClient(
+        <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={vi.fn()} />,
+      )
+      await userEvent.click(screen.getByLabelText('Unità riga 1'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Giorni' }))
+      expect(screen.getByLabelText('Quantità riga 1')).toBeInTheDocument()
+      expect(screen.getByLabelText('Durata (mesi) riga 1')).toBeInTheDocument()
+    })
+
+    it('puts the server sentence on the line it names', async () => {
+      const problem = {
+        type: 'about:blank', title: 'Dati non validi', status: 422, code: 'validation_failed',
+        field: 'value_lines', detail: 'riga 2 (Canone): il totale della riga è troppo grande',
+      }
+      renderWithClient(
+        <DealForm
+          title="Modifica deal"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          problem={problem}
+          initial={dealToFormValues({
+            ...BASE_DEAL,
+            value_lines: [
+              { id: 'a', position: 0, description: null, unit: 'flat', delivery_period: 'one_off', unit_price: '10.00', quantity: '1.00', start: null, duration_months: null },
+              { id: 'b', position: 1, description: 'Canone', unit: 'flat', delivery_period: 'monthly', unit_price: '99999999.00', quantity: '1.00', start: null, duration_months: null },
+            ],
+          })}
+          onSubmit={vi.fn()}
+        />,
+      )
+      const second = screen.getByRole('group', { name: 'Riga 2' })
+      expect(second).toHaveTextContent('il totale della riga è troppo grande')
+      expect(screen.getByRole('group', { name: 'Riga 1' })).not.toHaveTextContent('troppo grande')
+    })
+
+    it('resends the lines on edit only when they changed', async () => {
+      const onSubmit = vi.fn()
+      const line = { id: 'a', position: 0, description: null, unit: 'flat' as const, delivery_period: 'one_off' as const, unit_price: '10.00', quantity: '1.00', start: null, duration_months: null }
+      renderWithClient(
+        <DealForm
+          title="Modifica deal"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={dealToFormValues({ ...BASE_DEAL, value_lines: [line] })}
+          onSubmit={onSubmit}
+        />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(submitted(onSubmit)).not.toHaveProperty('value_lines')
+
+      await userEvent.clear(screen.getByLabelText('Importo (€) riga 1'))
+      await userEvent.type(screen.getByLabelText('Importo (€) riga 1'), '12')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect((onSubmit.mock.calls[1]![0] as Record<string, unknown>).value_lines).toEqual([
+        { description: null, unit: 'flat', delivery_period: 'one_off', unit_price: '12', quantity: '1', start: null, duration_months: null },
+      ])
+    })
+
+    const LINE = { id: 'a', position: 0, description: null, unit: 'flat' as const, delivery_period: 'one_off' as const, unit_price: '10.00', quantity: '1.00', start: null, duration_months: null }
+
+    it('shows no figures once every line is gone, while the save sends an empty list', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <DealForm
+          title="Modifica deal"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={dealToFormValues({ ...BASE_DEAL, value_lines: [LINE] })}
+          onSubmit={onSubmit}
+        />,
+      )
+      await waitFor(() => expect(screen.getByTestId('preview-total')).toHaveTextContent('26.000,00'))
+
+      await userEvent.click(screen.getByRole('button', { name: 'Rimuovi riga 1' }))
+      // Immediately, not after the debounce: the old total must not outlive its lines.
+      expect(screen.getByTestId('preview-total')).toHaveTextContent('—')
+      expect(screen.getByTestId('preview-monthly')).toHaveTextContent('—')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(submitted(onSubmit).value_lines).toEqual([])
+    })
+
+    it("does not show another deal's figures when the form is opened again", async () => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const form = (open: boolean, price: string) => (
+        <QueryClientProvider client={client}>
+          <DealForm
+            title="Modifica deal"
+            open={open}
+            onOpenChange={vi.fn()}
+            customFields={[]}
+            initial={dealToFormValues({ ...BASE_DEAL, value_lines: [{ ...LINE, unit_price: price }] })}
+            onSubmit={vi.fn()}
+          />
+        </QueryClientProvider>
+      )
+      const { rerender } = render(form(true, '10.00'))
+      await waitFor(() => expect(screen.getByTestId('preview-total')).toHaveTextContent('26.000,00'))
+
+      rerender(form(false, '10.00'))
+      // The next deal's answer never arrives: what shows meanwhile must not be the last one's.
+      mockPost.mockImplementation((() => new Promise(() => {})) as never)
+      rerender(form(true, '77.00'))
+      expect(screen.getByTestId('preview-total')).toHaveTextContent('—')
+    })
   })
 })

@@ -40,7 +40,7 @@ from pigrocrm.core.dashboard.schemas import (
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import month_bounds, session_factory, today_local
 from pigrocrm.core.db.base import uuid7
-from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.errors import ValidationFailed
@@ -206,6 +206,64 @@ def test_supplying_only_one_bound_is_refused(
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date_from, date_to)
     assert caught.value.details["field"] == ("from" if date_from is None else "to")
+
+
+# -- the monthly recurring value -------------------------------------------------
+
+
+def test_the_monthly_recurring_value_of_the_open_and_the_won_deals_is_on_the_dashboard(
+    seeded: Seeded,
+) -> None:
+    """500 a month on an open deal and 6.000 a year on a deal won in the period are two
+    figures of 500 a month, and neither is in a total: the totals are the ones the seed
+    gave, 1.000 in the pipeline's lead and 5.000 won."""
+    factory = session_factory(seeded.engine)
+    with factory() as session:
+        for name, stage, closed_at, period, price in (
+            ("DASH canone", "lead", None, "monthly", "500.00"),
+            ("DASH licenza", "won", today_local(), "annual", "6000.00"),
+        ):
+            deal = Deal(
+                name=name,
+                customer_id=seeded.customer_id,
+                pipeline_stage_id=seeded.stages[stage].id,
+                probability=50,
+                closed_at=closed_at,
+                custom_fields={},
+            )
+            session.add(deal)
+            session.flush()
+            session.add(
+                DealValueLine(
+                    deal_id=deal.id,
+                    position=0,
+                    unit="flat",
+                    delivery_period=period,
+                    unit_price=Decimal(price),
+                    quantity=Decimal(1),
+                    start=today_local(),
+                )
+            )
+        session.commit()
+    try:
+        result = _dashboard(seeded.engine)
+    finally:
+        with factory() as session:
+            session.execute(
+                delete(DealValueLine).where(
+                    DealValueLine.deal_id.in_(select(Deal.id).where(Deal.name.like("DASH %")))
+                )
+            )
+            session.commit()
+
+    assert result.open_monthly_recurring == Decimal("500.00")
+    assert result.closings.won_monthly_recurring == Decimal("500.00")
+
+
+def test_a_dashboard_with_no_recurring_line_reads_zero_not_null(seeded: Seeded) -> None:
+    result = _dashboard(seeded.engine)
+    assert result.open_monthly_recurring == Decimal("0.00")
+    assert result.closings.won_monthly_recurring == Decimal("0.00")
 
 
 # -- one instant -----------------------------------------------------------------

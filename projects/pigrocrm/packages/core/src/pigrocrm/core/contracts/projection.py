@@ -34,7 +34,7 @@ from uuid import UUID
 
 from pigrocrm.core.contracts.dates import irrevocability_window_end
 from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
-from pigrocrm.core.contracts.renewal import add_months
+from pigrocrm.core.db.clock import stepped_dates
 from pigrocrm.core.money import ZERO_MONEY, round_money
 
 # The disbursement periods that repeat -- see RateCard.periodo_erogazione
@@ -106,16 +106,10 @@ def generate_recurring_fee_occurrences(
             occurrences.append(RecurringFeeOccurrence(date=card.valid_from, amount=card.amount))
             continue
 
-        # Each date is counted from the card's own `valid_from`, never from the previous
-        # occurrence: stepping from a clamped date would carry the clamp forward, and a
-        # fee anchored on 31 January would fall on the 28th of every later month.
-        step = _PERIOD_STEP_MONTHS[card.delivery_period]
-        index = 0
-        occurrence_date = card.valid_from
-        while occurrence_date <= bound:
+        for occurrence_date in stepped_dates(
+            card.valid_from, bound, _PERIOD_STEP_MONTHS[card.delivery_period]
+        ):
             occurrences.append(RecurringFeeOccurrence(date=occurrence_date, amount=card.amount))
-            index += 1
-            occurrence_date = add_months(card.valid_from, index * step)
     return occurrences
 
 

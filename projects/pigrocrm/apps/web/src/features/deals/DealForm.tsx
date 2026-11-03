@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { DynamicForm } from '@/components/DynamicForm'
 import { Button } from '@rebase/ui/button'
 import {
@@ -20,11 +20,22 @@ import { CustomerPicker } from '@/features/customers/CustomerPicker'
 import type { ProblemDetail } from '@/lib/api'
 import { toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
 import type { FieldDefinition } from '@/lib/schema'
-import type { Deal } from './queries'
+import { useDebounced } from '@/hooks/useDebounced'
+import { DealValueLines } from './DealValueLines'
+import {
+  emptyLine,
+  linesToBody,
+  linesToDrafts,
+  lineProblem,
+  type LineDraft,
+} from './valueLines'
+import { useValuePreview, type Deal, type DealDetailData } from './queries'
+
+/** How long the lines sit still before the server is asked for their figures. */
+const PREVIEW_DEBOUNCE_MS = 400
 
 const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'name', label: 'Nome', type: 'text', required: true, options: [] },
-  { key: 'expected_value', label: 'Valore previsto', type: 'currency', required: false, options: [] },
   { key: 'probability', label: 'Probabilità (%)', type: 'number', required: false, options: [] },
   {
     key: 'expected_close_date',
@@ -88,7 +99,16 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
  */
 export type DealFormValues = FormValues
 
-const DEFAULT_CREATE_VALUES: DealFormValues = { native: {}, custom: {} }
+/** The value lines live in `native.value_lines` as drafts (`LineDraft[]`): they are the one
+ *  native key that is a list, drawn by `DealValueLines` rather than by `DynamicForm`, and
+ *  turned into the request's `value_lines` by `submit`. A new deal opens with one lump sum. */
+function createValues(): DealFormValues {
+  return { native: { value_lines: [emptyLine()] }, custom: {} }
+}
+
+function draftsOf(values: DealFormValues): LineDraft[] {
+  return (values.native.value_lines as LineDraft[] | undefined) ?? []
+}
 
 /**
  * Builds the form's starting state from a real, already-saved deal.
@@ -97,9 +117,10 @@ const DEFAULT_CREATE_VALUES: DealFormValues = { native: {}, custom: {} }
  * `updated_at`, none of which `DealUpdate` accepts (`extra="forbid"`), so only
  * `NATIVE_FIELD_KEYS` and the owner are seeded -- see `toFormValues`.
  */
-export function dealToFormValues(deal: Deal): DealFormValues {
+export function dealToFormValues(deal: Deal | DealDetailData): DealFormValues {
   const values = toFormValues(deal, NATIVE_FIELD_KEYS)
   values.native.owner_id = deal.owner_id
+  values.native.value_lines = linesToDrafts('value_lines' in deal ? deal.value_lines : [])
   return values
 }
 
@@ -132,7 +153,7 @@ export function DealForm({
   owners,
   defaultOwnerId,
 }: Props) {
-  const [values, setValues] = useState<DealFormValues>(initial ?? DEFAULT_CREATE_VALUES)
+  const [values, setValues] = useState<DealFormValues>(() => initial ?? createValues())
   // `initial`'s absence is what "Nuovo deal" means, exactly like `CustomerForm`/
   // `PersonForm` -- derived rather than a separate boolean prop, so the "show the
   // Cliente picker" decision and the "which DynamicForm mode" decision can never
@@ -148,9 +169,14 @@ export function DealForm({
   // component's mount state), so a plain `useState(initial ?? {})` initializer
   // would only ever run once.
   const [wasOpen, setWasOpen] = useState(open)
+  // Counts the openings, so figures previewed for one opening never stand in for the next.
+  const [session, setSession] = useState(0)
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setValues(initial ?? DEFAULT_CREATE_VALUES)
+    if (open) {
+      setValues(initial ?? createValues())
+      setSession((previous) => previous + 1)
+    }
   }
 
   /** True for a key the active schema currently renders as a custom-field
@@ -169,6 +195,18 @@ export function DealForm({
     )
   }
 
+  const drafts = draftsOf(values)
+  // Debounced as text: a fresh array every render would never settle.
+  const settledKey = useDebounced(JSON.stringify(linesToBody(drafts)), PREVIEW_DEBOUNCE_MS)
+  const settledLines = useMemo(() => JSON.parse(settledKey) as ReturnType<typeof linesToBody>, [settledKey])
+  const closeDate = (values.native.expected_close_date as string | undefined) || null
+  const preview = useValuePreview(settledLines, closeDate, open, session)
+  // The server's sentence about the lines goes under the line it names: from the preview
+  // while typing, from the save once it was refused. Anything else stays with `DynamicForm`.
+  const previewProblem = preview.error as ProblemDetail | null
+  const onLines = lineProblem(previewProblem, drafts) ?? lineProblem(problem, drafts)
+  const formProblem = problem?.field === 'value_lines' ? null : problem
+
   function submit() {
     // `name` clears on `""`, while `expected_value`, `budgeted_hours`,
     // `budgeted_value` and `expected_close_date` clear on `null` -- sending `""`
@@ -178,7 +216,8 @@ export function DealForm({
       fields: NATIVE_FIELDS,
       initial,
       isRenderedCustomKey,
-      skipNative: (key) => key === 'customer_id' || key === 'owner_id',
+      skipNative: (key) =>
+        key === 'customer_id' || key === 'owner_id' || key === 'value_lines',
     })
 
     // Create-only: see `DealFormValues`'s own docstring for why `customer_id`
@@ -199,6 +238,18 @@ export function DealForm({
     // person is deactivated. `null` takes the owner away.
     if (owners !== undefined && chosenOwner !== undefined && chosenOwner !== initial?.native.owner_id) {
       body.owner_id = chosenOwner
+    }
+
+    // The lines are the whole list or nothing: a new deal sends them when it has any, an edit
+    // only when they changed (an unchanged list resent would be refused once a contract
+    // owns the price).
+    const lines = linesToBody(drafts)
+    if (
+      isCreate
+        ? lines.length > 0
+        : JSON.stringify(lines) !== JSON.stringify(linesToBody(draftsOf(initial)))
+    ) {
+      body.value_lines = lines
     }
 
     onSubmit(body)
@@ -236,8 +287,18 @@ export function DealForm({
           // reaches `submit` still knows which namespace each value came from.
           values={{ ...values.native, ...values.custom }}
           onChange={change}
-          problem={problem}
+          problem={formProblem}
           mode={isCreate ? 'create' : 'edit'}
+        />
+
+        <DealValueLines
+          lines={drafts}
+          onChange={(lines) =>
+            setValues((previous) => ({ ...previous, native: { ...previous.native, value_lines: lines } }))
+          }
+          // With no priced line left the deal has no value, whatever the debounce still holds.
+          preview={linesToBody(drafts).length > 0 ? preview.data : undefined}
+          problem={onLines}
         />
 
         {owners !== undefined ? (

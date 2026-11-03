@@ -423,6 +423,55 @@ def test_the_simulator_is_readable_by_a_readonly_actor(
     assert response.status_code == 200, response.text
 
 
+def _deal_with_a_monthly_fee(logged_in: TestClient) -> str:
+    """A saved deal with one open-ended fee of 1.000 a month, from 1 October of the year."""
+    assert logged_in.post("/api/pipeline-stages/seed").status_code == 200
+    customer = logged_in.post("/api/customers", json={"legal_name": "Acme S.r.l."})
+    assert customer.status_code == 201, customer.text
+    deal = logged_in.post(
+        "/api/deals",
+        json={
+            "name": "Manutenzione",
+            "customer_id": customer.json()["id"],
+            "value_lines": [
+                {
+                    "unit": "flat",
+                    "delivery_period": "monthly",
+                    "unit_price": "1000.00",
+                    "start": f"{YEAR}-10-01",
+                }
+            ],
+        },
+    )
+    assert deal.status_code == 201, deal.text
+    return str(deal.json()["id"])
+
+
+def test_the_simulator_reads_a_saved_deal_by_its_value_lines(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    """October, November and December: the fee's payments that fall in the year, not the
+    12.000 the deal's total says."""
+    deal_id = _deal_with_a_monthly_fee(logged_in)
+    response = logged_in.get(
+        "/api/analytics/ceilings/simulate", params={"year": YEAR, "deal_id": deal_id}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["brief_addition"] == "3000.00"
+
+
+def test_the_simulator_refuses_a_deal_id_together_with_a_raw_estimate(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    deal_id = _deal_with_a_monthly_fee(logged_in)
+    response = logged_in.get(
+        "/api/analytics/ceilings/simulate",
+        params={"year": YEAR, "deal_id": deal_id, "budgeted_value": "100.00"},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["field"] == "deal_id"
+
+
 # --- the fiscal estimate ------------------------------------------------------------
 
 

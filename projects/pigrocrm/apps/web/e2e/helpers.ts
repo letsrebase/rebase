@@ -467,9 +467,13 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
       name: dealName,
       customer_id: customerId,
       pipeline_stage_id: openStage.id,
-      // A string, never a JSON number: `expected_value` is `Numeric(12,2)`, and a float
-      // round trip is exactly what the rest of this codebase refuses to do to money.
-      expected_value: '18000.00',
+      // The value is written as lines now (`expected_value` is derived from them and a call
+      // that sends it is refused). The price is a string, never a JSON number: it is
+      // `Numeric(12,2)`, and a float round trip is exactly what the rest of this codebase
+      // refuses to do to money.
+      value_lines: [
+        { unit: 'flat', delivery_period: 'one_off', unit_price: '18000.00', quantity: '1' },
+      ],
       probability: 60,
     },
   })

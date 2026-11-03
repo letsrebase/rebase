@@ -340,6 +340,13 @@ ROWS: list[Row] = [
         body={"address": "marco@acme.it", "name": "Marco"},
     ),
     Row("POST", "/api/deals", body={"name": "matrice-deal", "customer_id": "__CUST__"}),
+    # The preview computes figures and writes nothing, so no role is refused it.
+    Row(
+        "POST",
+        "/api/deals/value-preview",
+        expect="open",
+        body={"value_lines": [{"unit": "flat", "delivery_period": "one_off", "unit_price": "1"}]},
+    ),
     Row("DELETE", "/api/deals/{deal_id}"),
     Row("PATCH", "/api/deals/{deal_id}", body={}),
     # Rates rewrite what a quarter's work was worth: admin (timetracking/service.py:440,
@@ -1016,6 +1023,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/customers/from-suggestions"),
         ("POST", "/api/deals"),
         ("POST", "/api/deals/{deal_id}/restore"),
+        ("POST", "/api/deals/value-preview"),
         ("POST", "/api/documents"),
         ("POST", "/api/documents/{document_id}/restore"),
         ("POST", "/api/documents/{document_id}/status"),

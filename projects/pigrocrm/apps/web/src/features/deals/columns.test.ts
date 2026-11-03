@@ -31,6 +31,8 @@ const BASE_DEAL: Deal = {
   customer_id: 'c1',
   pipeline_stage_id: 's1',
   expected_value: null,
+  one_off_value: null,
+  monthly_recurring_value: null,
   probability: 10,
   expected_close_date: null,
   owner_id: null,
@@ -69,6 +71,14 @@ describe('buildDealColumns', () => {
   it('renders a null valore_previsto as the empty dash, not zero', () => {
     const [, value] = buildDealColumns([])
     expect(cellValue(value!, { ...BASE_DEAL, expected_value: null })).toBe('—')
+  })
+
+  it('adds the monthly figure beside the total, and only when it is not zero', () => {
+    const [, value] = buildDealColumns([])
+    const mixed = { ...BASE_DEAL, expected_value: '26000.00', monthly_recurring_value: '500.00' }
+    expect(cellValue(value!, mixed)).toBe(`26.000,00${NBSP}€ + 500,00${NBSP}€/mese`)
+    expect(cellValue(value!, { ...mixed, monthly_recurring_value: '0.00' })).toBe(`26.000,00${NBSP}€`)
+    expect(cellValue(value!, { ...mixed, monthly_recurring_value: null })).toBe(`26.000,00${NBSP}€`)
   })
 
   it('renders a present valore_previsto with Italian currency formatting', () => {

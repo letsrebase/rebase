@@ -1,5 +1,5 @@
 from collections.abc import Collection
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -12,15 +12,27 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor, today_local
-from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import (
     DEAL_SORTS,
     DealCreate,
+    DealDetailRead,
     DealListQuery,
     DealPage,
     DealRead,
     DealUpdate,
+    DealValueLineIn,
+    DealValueLineRead,
+    ValuePreviewIn,
+    ValuePreviewRead,
+)
+from pigrocrm.core.deals.value import (
+    ValueSummary,
+    ValueTerm,
+    line_term,
+    summarize,
+    term_total,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
@@ -28,6 +40,7 @@ from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.money import HOURS_QUANT, MONEY_QUANT
 from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -40,6 +53,125 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 ENTITY: EntityType = "deal"
 
 
+# What `Numeric(12, 2)` holds: a total at or beyond this is refused by name, never left to
+# reach the database as an out-of-range error that poisons the session.
+VALUE_LIMIT = Decimal(10) ** 10
+
+
+def _line_label(index: int, line: DealValueLineIn) -> str:
+    return f"riga {index + 1}" + (f" ({line.description})" if line.description else "")
+
+
+def _line_terms(
+    lines: list[DealValueLineIn], close_date: date | None
+) -> list[tuple[DealValueLineIn, ValueTerm]]:
+    """Each line as a term, with the deal's expected close date (or today, when the deal has
+    none: the total does not depend on the dates) standing in for a missing start."""
+    fallback = close_date or today_local()
+    terms: list[tuple[DealValueLineIn, ValueTerm]] = []
+    for index, line in enumerate(lines):
+        try:
+            terms.append((line, line_term(line, fallback)))
+        except (ValueError, OverflowError):
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{_line_label(index, line)}: la data è fuori dal calendario",
+            ) from None
+    return terms
+
+
+def _check_lines(lines: list[DealValueLineIn], close_date: date | None) -> ValueSummary:
+    """Refuses the lines that cannot be priced, naming the line, and answers their figures.
+
+    Beyond the shape each line already has, this is what no single field can say: a flat
+    line is a lump sum (quantity 1), a flat one-off line has no window, a day or hour line
+    needs a start (its own or the deal's close date), at most one day or hour line is in
+    force on any date (a contract prices a worked day by the one rate in force), and no
+    line's total nor the deal's total overflows `Numeric(12, 2)`."""
+    pairs = _line_terms(lines, close_date)
+    for index, (line, _term) in enumerate(pairs):
+        label = _line_label(index, line)
+        if line.unit == "flat" and line.quantity != 1:
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{label}: una riga a corpo ha sempre quantità 1",
+                expected="quantity = 1",
+            )
+        if line.unit == "flat" and line.delivery_period == "one_off" and line.duration_months:
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{label}: una riga a corpo una tantum non ha durata",
+                expected="duration_months nullo",
+            )
+        if line.unit != "flat" and line.start is None and close_date is None:
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{label}: una tariffa a giorni o a ore ha bisogno di una data di inizio "
+                "(la sua, o la data di chiusura prevista del deal)",
+                expected="start o expected_close_date",
+            )
+    rated = [(index, line, term) for index, (line, term) in enumerate(pairs) if line.unit != "flat"]
+    for position, (index, line, term) in enumerate(rated):
+        for other_index, other, other_term in rated[position + 1 :]:
+            if _overlaps(term, other_term):
+                raise ValidationFailed(
+                    ENTITY,
+                    "value_lines",
+                    f"{_line_label(other_index, other)} si sovrappone a "
+                    f"{_line_label(index, line)}: un deal ha al più una tariffa a giorni o a "
+                    "ore in vigore in ogni data (due persone a tariffe diverse sono due deal)",
+                    expected="tariffe a giorni o a ore non sovrapposte",
+                )
+    for index, (line, term) in enumerate(pairs):
+        try:
+            line_total = term_total(term)
+        except (ValueError, OverflowError):
+            # An occurrence stepped past year 9999.
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{_line_label(index, line)}: la data è fuori dal calendario",
+            ) from None
+        if line_total >= VALUE_LIMIT:
+            raise ValidationFailed(
+                ENTITY,
+                "value_lines",
+                f"{_line_label(index, line)}: il totale della riga è troppo grande",
+                expected=f"meno di {VALUE_LIMIT}",
+            )
+    summary = summarize(term for _line, term in pairs)
+    if summary.total >= VALUE_LIMIT:
+        raise ValidationFailed(
+            ENTITY,
+            "value_lines",
+            "il totale del deal è troppo grande",
+            expected=f"meno di {VALUE_LIMIT}",
+        )
+    return summary
+
+
+def _overlaps(a: ValueTerm, b: ValueTerm) -> bool:
+    """Whether two rated terms are in force together: from its start to its end, or with no
+    end when it has none."""
+    return (a.end is None or b.start <= a.end) and (b.end is None or a.start <= b.end)
+
+
+def _line_key(line: DealValueLineIn | DealValueLine) -> tuple[object, ...]:
+    return (
+        line.description,
+        line.unit,
+        line.delivery_period,
+        line.unit_price,
+        line.quantity,
+        line.start,
+        line.duration_months,
+    )
+
+
 def _check_numbers(values: dict[str, Any]) -> None:
     """Shared by `create` and `update`: `probability` must be a percentage, and none
     of the money/hours fields can be negative. Values arriving here are already
@@ -49,7 +181,7 @@ def _check_numbers(values: dict[str, Any]) -> None:
     probability = values.get("probability")
     if probability is not None and not 0 <= probability <= 100:
         raise ValidationFailed(ENTITY, "probability", "fuori intervallo", expected="0-100")
-    for field in ("expected_value", "budgeted_value", "budgeted_hours", "hourly_rate"):
+    for field in ("budgeted_value", "budgeted_hours", "hourly_rate"):
         value = values.get(field)
         if value is not None and Decimal(value) < 0:
             raise ValidationFailed(ENTITY, field, "non può essere negativo", expected=">= 0")
@@ -159,7 +291,9 @@ class DealService:
         """
         return self._reads([deal])[0]
 
-    def _reads(self, deals: list[Deal]) -> list[DealRead]:
+    def _reads(
+        self, deals: list[Deal], lines: dict[UUID, list[DealValueLine]] | None = None
+    ) -> list[DealRead]:
         """The batched form, and the reason `customer_legal_name` is resolved here
         and not inside `DealRead` itself: one lookup for the whole page (see
         `DealRepository.customer_names`), so a page of deals costs two queries rather
@@ -171,14 +305,82 @@ class DealService:
         read -- and the value comes from a `String` column, already the right type.
         """
         names = self.repo.customer_names({deal.customer_id for deal in deals})
-        return [
-            DealRead.model_validate(deal).model_copy(
-                update={"customer_legal_name": names.get(deal.customer_id)}
+        if lines is None:
+            lines = self.repo.value_lines({deal.id for deal in deals})
+        reads: list[DealRead] = []
+        for deal in deals:
+            figures = self._figures(deal, lines.get(deal.id, []))
+            reads.append(
+                DealRead.model_validate(deal).model_copy(
+                    update={"customer_legal_name": names.get(deal.customer_id), **figures}
+                )
             )
-            for deal in deals
-        ]
+        return reads
 
-    def create(self, data: DealCreate, actor: Actor, *, rebase_ref: str | None = None) -> DealRead:
+    @staticmethod
+    def _figures(deal: Deal, lines: list[DealValueLine]) -> dict[str, Decimal | None]:
+        """The one-off and the monthly figure of a deal's lines, `None` for both when it has
+        none (the same «senza valore» it always was)."""
+        if not lines:
+            return {"one_off_value": None, "monthly_recurring_value": None}
+        fallback = deal.expected_close_date or today_local()
+        summary = summarize(line_term(line, fallback) for line in lines)
+        return {
+            "one_off_value": summary.one_off,
+            "monthly_recurring_value": summary.monthly_recurring,
+        }
+
+    def _detail(self, deal: Deal, lines: list[DealValueLine] | None = None) -> DealDetailRead:
+        """The single-deal read: the list shape plus the lines behind its figures. `lines`
+        are the ones the caller already holds; without them they are read."""
+        if lines is None:
+            lines = self.repo.value_lines([deal.id]).get(deal.id, [])
+        read = self._reads([deal], {deal.id: lines})[0]
+        return DealDetailRead(
+            **read.model_dump(),
+            value_lines=[DealValueLineRead.model_validate(line) for line in lines],
+        )
+
+    def preview_value(self, data: ValuePreviewIn) -> ValuePreviewRead:
+        """The figures a list of lines would give, validated as a write would be, and
+        written nowhere: what a form shows under the lines as they are typed."""
+        if not data.value_lines:
+            return ValuePreviewRead(
+                expected_value=None, one_off_value=None, monthly_recurring_value=None
+            )
+        summary = _check_lines(data.value_lines, data.expected_close_date)
+        return ValuePreviewRead(
+            expected_value=summary.total,
+            one_off_value=summary.one_off,
+            monthly_recurring_value=summary.monthly_recurring,
+        )
+
+    def _write_lines(
+        self, deal: Deal, lines: list[DealValueLineIn], summary: ValueSummary
+    ) -> list[DealValueLine]:
+        """Replaces the deal's lines and writes its total, in the caller's transaction;
+        answers the rows written."""
+        rows = [
+            DealValueLine(
+                deal_id=deal.id,
+                position=position,
+                **{
+                    **line.model_dump(),
+                    # At the column's scale, as the database will answer them: these rows
+                    # are read back without a round trip.
+                    "unit_price": line.unit_price.quantize(MONEY_QUANT),
+                    "quantity": line.quantity.quantize(HOURS_QUANT),
+                },
+            )
+            for position, line in enumerate(lines)
+        ]
+        self.repo.replace_value_lines(deal.id, rows)
+        deal.expected_value = summary.total if lines else None
+        return rows
+
+    def create(
+        self, data: DealCreate, actor: Actor, *, rebase_ref: str | None = None
+    ) -> DealDetailRead:
         """A new deal. `rebase_ref` is for the engagements door alone (the leads route and
         the letters): the reference it finds this deal again by, which no schema carries,
         since a caller who could set it could claim a request that was never made."""
@@ -186,6 +388,10 @@ class DealService:
         payload = data.model_dump()
         # Not a column: the first note of the deal, written below by the creating actor.
         first_note = payload.pop("note", None)
+        payload.pop("value_lines")
+        lines = data.value_lines or []
+        # Refused before anything is written, so a bad line leaves no deal behind.
+        summary = _check_lines(lines, data.expected_close_date)
         _check_numbers(payload)
 
         # A deal without a customer has no economic meaning -- see Deal's own
@@ -216,12 +422,13 @@ class DealService:
         payload["rebase_refs"] = [rebase_ref] if rebase_ref is not None else []
 
         deal = self.repo.add(Deal(**payload))
+        rows = self._write_lines(deal, lines, summary) if lines else []
         self.activities.record(
             ENTITY, deal.id, "created", actor, {"name": deal.name, "stage": stage.name}
         )
         append_first_note(self.session, ENTITY, deal.id, first_note, actor)
         self.session.commit()
-        return self._read(deal)
+        return self._detail(deal, rows)
 
     def attach_rebase_ref(self, deal_id: UUID, rebase_ref: str, actor: Actor) -> DealRead:
         """Adds a reference of the engagements door to a deal the CRM already had (the leads
@@ -237,7 +444,7 @@ class DealService:
         self.session.commit()
         return self._read(deal)
 
-    def update(self, deal_id: UUID, data: DealUpdate, actor: Actor) -> DealRead:
+    def update(self, deal_id: UUID, data: DealUpdate, actor: Actor) -> DealDetailRead:
         actor.require_write("update_deal")
         deal = self.repo.get(deal_id)
         if deal is None:
@@ -248,9 +455,26 @@ class DealService:
         # must see a caller-supplied `None` *inside* the dict (e.g. {"fonte": None},
         # meaning "remove this key") exactly as given, with no risk of it being
         # confused with the field itself being absent -- see `merge_custom`.
-        changes = supplied_changes(data, exclude={"custom_fields"})
+        changes = supplied_changes(data, exclude={"custom_fields", "value_lines"})
         reject_cleared_columns(ENTITY, Deal, changes)
         _check_numbers(changes)
+        # The lines are written whole or not at all; an unchanged list is not a change.
+        close_date = changes.get("expected_close_date", deal.expected_close_date)
+        stored = self.repo.value_lines([deal.id]).get(deal.id, [])
+        new_lines = (data.value_lines or []) if "value_lines" in data.model_fields_set else None
+        lines_changed = new_lines is not None and [_line_key(line) for line in new_lines] != [
+            _line_key(line) for line in stored
+        ]
+        summary: ValueSummary | None = None
+        if new_lines is not None:
+            summary = _check_lines(new_lines, close_date)
+        elif stored and close_date != deal.expected_close_date:
+            # A line with no start moves with the close date, so the rule that two day or
+            # hour lines never overlap is checked again.
+            _check_lines(
+                [DealValueLineIn.model_validate(line, from_attributes=True) for line in stored],
+                close_date,
+            )
         # Only a change is checked: re-sending the owner a deal already has must not be
         # refused the day that person is deactivated. An explicit `null` clears it.
         if "owner_id" in changes:
@@ -273,10 +497,13 @@ class DealService:
             )
         for key, value in changes.items():
             setattr(deal, key, value)
+        if lines_changed and new_lines is not None and summary is not None:
+            stored = self._write_lines(deal, new_lines, summary)
 
-        self.activities.record(ENTITY, deal.id, "updated", actor, {"changed": sorted(changes)})
+        changed = sorted([*changes, *(["value_lines"] if lines_changed else [])])
+        self.activities.record(ENTITY, deal.id, "updated", actor, {"changed": changed})
         self.session.commit()
-        return self._read(deal)
+        return self._detail(deal, stored)
 
     def move_stage(self, deal_id: UUID, stage_id: UUID, actor: Actor) -> DealRead:
         """The only supported way to change a deal's stage -- see `DealUpdate`'s own
@@ -345,11 +572,11 @@ class DealService:
         deal.probability = _settle_probability(stage, deal.probability)
         _settle_closure_date(deal, previous, stage)
 
-    def get(self, deal_id: UUID, actor: Actor) -> DealRead:
+    def get(self, deal_id: UUID, actor: Actor) -> DealDetailRead:
         deal = self.repo.get(deal_id)
         if deal is None:
             raise NotFound(ENTITY, deal_id)
-        return self._read(deal)
+        return self._detail(deal)
 
     def get_many(self, deal_ids: Collection[UUID], actor: Actor) -> dict[UUID, DealRead]:
         """The live deals among `deal_ids` by id, two queries whatever their number. An id

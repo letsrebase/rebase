@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -35,6 +36,8 @@ from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.db import today_local
 from pigrocrm.core.db.clock import month_bounds
+from pigrocrm.core.deals.repository import DealRepository
+from pigrocrm.core.deals.value import ValueTerm, line_term, share_in
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.ceiling import (
     CeilingStatus,
@@ -91,8 +94,26 @@ def _synthetic_addition(query: CeilingSimulationQuery) -> Decimal:
         ENTITY,
         "budgeted_value",
         "serve una stima per simulare l'aggiunta",
-        expected="budgeted_value, oppure budgeted_hours insieme a hourly_rate",
+        expected="budgeted_value, oppure budgeted_hours insieme a hourly_rate, oppure deal_id",
     )
+
+
+def _raw_fields_given(query: CeilingSimulationQuery) -> list[str]:
+    return [
+        name
+        for name in ("budgeted_value", "budgeted_hours", "hourly_rate")
+        if getattr(query, name) is not None
+    ]
+
+
+def _addition_over_period(terms: list[ValueTerm]) -> Callable[[date, date], Decimal]:
+    """A deal's value as a function of the window it is read over: the share of its terms
+    dated in it."""
+
+    def addition(date_from: date, date_to: date) -> Decimal:
+        return share_in(terms, date_from, date_to)
+
+    return addition
 
 
 class AnalyticsService:
@@ -214,6 +235,11 @@ class AnalyticsService:
         `deal_id`, so nothing has to be saved to ask the question. The legal entity
         resolves as in `ceiling_headroom` (REB-630).
 
+        With a `deal_id` (REB-931) the addition is read off the saved deal's value lines
+        instead: the share of them dated in `year`, so a fee that starts in October adds the
+        months left of the year and an annual one its single payment. The raw fields and
+        `deal_id` are two ways to ask the same question and are refused together.
+
         With a `contract_id` (REB-761) the same addition is also read against that
         contract's cap on its customer's share, in `contract_cap`: a clause of the
         contract and not of the pack, so it is answered whatever the regime, and the
@@ -224,7 +250,12 @@ class AnalyticsService:
         )
         profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
         pack = resolve_pack(profile.pack_id, profile.pack_version)
-        addition = _synthetic_addition(query)
+        addition_in: Callable[[date, date], Decimal] | None = None
+        if query.deal_id is None:
+            addition = _synthetic_addition(query)
+        else:
+            addition_in = self._deal_addition(query.deal_id, query, legal_entity.id)
+            addition = addition_in(date(year, 1, 1), date(year, 12, 31))
         results: list[CeilingSimulationResult] = []
         for before in evaluate_pack(pack, self.session, year, legal_entity.id):
             after = evaluate_ceiling(before.ceiling, before.revenue + addition)
@@ -255,7 +286,7 @@ class AnalyticsService:
                     expected=f"un contratto di {legal_entity.name}",
                 )
             cap = ContractService(self.session).simulate_cap(
-                query.contract_id, addition, query.expected_date, actor
+                query.contract_id, addition_in or addition, query.expected_date, actor
             )
         return CeilingSimulation(
             year=year,
@@ -266,6 +297,42 @@ class AnalyticsService:
             thresholds=results,
             contract_cap=cap,
         )
+
+    def _deal_addition(
+        self, deal_id: UUID, query: CeilingSimulationQuery, legal_entity_id: UUID
+    ) -> Callable[[date, date], Decimal]:
+        """The saved deal `deal_id` names, as a function of the window its value is read
+        over. Refuses, naming the field, a query that also carries the raw estimate, a deal
+        of another legal entity, and a deal with no lines (it has no value to add)."""
+        given = _raw_fields_given(query)
+        if given:
+            raise ValidationFailed(
+                ENTITY,
+                "deal_id",
+                f"deal_id e {', '.join(given)} sono due modi di porre la stessa domanda",
+                expected="deal_id da solo, oppure la stima a mano",
+            )
+        deals = DealRepository(self.session)
+        deal = deals.get(deal_id)
+        if deal is None:
+            raise NotFound("deal", deal_id)
+        if deal.legal_entity_id != legal_entity_id:
+            raise ValidationFailed(
+                ENTITY,
+                "deal_id",
+                "il deal è di un'altra azienda",
+                expected="un deal della stessa azienda della simulazione",
+            )
+        lines = deals.value_lines([deal.id]).get(deal.id, [])
+        if not lines:
+            raise ValidationFailed(
+                ENTITY,
+                "deal_id",
+                "il deal non ha righe di valore da aggiungere",
+                expected="un deal con almeno una riga di valore, oppure la stima a mano",
+            )
+        fallback = deal.expected_close_date or query.expected_date or today_local()
+        return _addition_over_period([line_term(line, fallback) for line in lines])
 
     def year_overview(
         self, year: int, actor: Actor, legal_entity_id: UUID | None = None

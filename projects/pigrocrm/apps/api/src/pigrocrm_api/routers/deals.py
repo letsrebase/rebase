@@ -14,10 +14,13 @@ from pigrocrm.core.analytics.schemas import (
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.deals.schemas import (
     DealCreate,
+    DealDetailRead,
     DealListQuery,
     DealPage,
     DealRead,
     DealUpdate,
+    ValuePreviewIn,
+    ValuePreviewRead,
 )
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.schemas import DocumentRead
@@ -69,9 +72,19 @@ class RecalculateResponse(BaseModel):
     updated_entries: int
 
 
-@router.post("", response_model=DealRead, status_code=status.HTTP_201_CREATED)
-def create(data: DealCreate, session: SessionDep, actor: ActorDep) -> DealRead:
+@router.post("", response_model=DealDetailRead, status_code=status.HTTP_201_CREATED)
+def create(data: DealCreate, session: SessionDep, actor: ActorDep) -> DealDetailRead:
+    """Creates a deal. Its value is written as `value_lines`; `expected_value` is derived from
+    them and cannot be sent."""
     return DealService(session).create(data, actor)
+
+
+@router.post("/value-preview", response_model=ValuePreviewRead)
+def value_preview(data: ValuePreviewIn, session: SessionDep) -> ValuePreviewRead:
+    """The total, the one-off figure and the monthly recurring figure a list of value lines
+    would give, with the same checks a write applies. Writes nothing: a form calls it as the
+    lines are typed, so the browser never adds or multiplies money."""
+    return DealService(session).preview_value(data)
 
 
 class DealListParams(SortedParams, SearchParams, CustomParams):
@@ -93,13 +106,15 @@ def list_deals(
     return DealService(session).list(params.to_query(DealListQuery), actor)
 
 
-@router.get("/{deal_id}", response_model=DealRead)
-def get(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealRead:
+@router.get("/{deal_id}", response_model=DealDetailRead)
+def get(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealDetailRead:
+    """One deal with its value lines; the list carries only the figures."""
     return DealService(session).get(deal_id, actor)
 
 
-@router.patch("/{deal_id}", response_model=DealRead)
-def update(deal_id: UUID, data: DealUpdate, session: SessionDep, actor: ActorDep) -> DealRead:
+@router.patch("/{deal_id}", response_model=DealDetailRead)
+def update(deal_id: UUID, data: DealUpdate, session: SessionDep, actor: ActorDep) -> DealDetailRead:
+    """Updates a deal. `value_lines`, when sent, replaces the whole list."""
     return DealService(session).update(deal_id, data, actor)
 
 
