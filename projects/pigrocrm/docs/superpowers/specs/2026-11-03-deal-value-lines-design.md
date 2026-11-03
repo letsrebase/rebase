@@ -30,8 +30,9 @@ Lorenzo decided on 2026-11-03:
 - The value is gross: what the customer pays, VAT excluded, never rebase's margin.
 - A won deal converts into a linked contract, and the conversion carries every amount.
 
-One rule here is the design's and not his answer, and it waits for him before this
-merges: a deal holds at most one day or hour rate in force on a date (§2).
+And, asked about the one limit the design adds: «per ora lasciamo un solo tipo per
+contratto», so a deal and a contract hold at most one day or hour rate in force on a
+date (§2, §7).
 
 ## 2. The value line
 
@@ -70,8 +71,7 @@ naming it, and runs the check on every write of the lines and of `expected_close
 since a line with no `start` moves with it. A day or hour line needs a start (its own or
 the deal's `expected_close_date`); without one it is refused. Two people at two different
 day rates at the same time are two deals and two contracts. Fees (`flat` lines) overlap
-freely. **This limit is the design's, not part of Lorenzo's answer, and is put to him
-before merge.**
+freely. Lorenzo confirmed the limit on 2026-11-03.
 
 **Limits.** A line's total (§3) and the deal's total must fit `Numeric(12, 2)`; the
 service refuses one that does not with `ValidationFailed` naming the line, never a
