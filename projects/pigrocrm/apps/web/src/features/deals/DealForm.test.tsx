@@ -510,7 +510,7 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
       expect(screen.getByLabelText('Periodo riga 1')).toHaveTextContent('Una tantum')
       // A lump sum is its price: no quantity, and paid once it has no duration either.
       expect(screen.queryByLabelText('Quantità riga 1')).not.toBeInTheDocument()
-      expect(screen.queryByLabelText('Durata riga 1')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Durata (mesi) riga 1')).not.toBeInTheDocument()
 
       await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto nuovo')
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
@@ -527,10 +527,10 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
         <DealForm title="Nuovo deal" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
       )
       await userEvent.type(screen.getByLabelText(/^Nome/), 'Progetto nuovo')
-      await userEvent.type(screen.getByLabelText('Prezzo riga 1'), '20000')
+      await userEvent.type(screen.getByLabelText('Importo (€) riga 1'), '20000')
       await userEvent.click(screen.getByRole('button', { name: 'Aggiungi riga' }))
       await userEvent.type(screen.getByLabelText('Descrizione riga 2'), 'Manutenzione')
-      await userEvent.type(screen.getByLabelText('Prezzo riga 2'), '500')
+      await userEvent.type(screen.getByLabelText('Importo (€) riga 2'), '500')
       await userEvent.click(screen.getByLabelText('Periodo riga 2'))
       await userEvent.click(await screen.findByRole('option', { name: 'Mensile' }))
 
@@ -566,7 +566,7 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
       await userEvent.click(screen.getByLabelText('Unità riga 1'))
       await userEvent.click(await screen.findByRole('option', { name: 'Giorni' }))
       expect(screen.getByLabelText('Quantità riga 1')).toBeInTheDocument()
-      expect(screen.getByLabelText('Durata riga 1')).toBeInTheDocument()
+      expect(screen.getByLabelText('Durata (mesi) riga 1')).toBeInTheDocument()
     })
 
     it('puts the server sentence on the line it names', async () => {
@@ -612,12 +612,61 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
       expect(submitted(onSubmit)).not.toHaveProperty('value_lines')
 
-      await userEvent.clear(screen.getByLabelText('Prezzo riga 1'))
-      await userEvent.type(screen.getByLabelText('Prezzo riga 1'), '12')
+      await userEvent.clear(screen.getByLabelText('Importo (€) riga 1'))
+      await userEvent.type(screen.getByLabelText('Importo (€) riga 1'), '12')
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
       expect((onSubmit.mock.calls[1]![0] as Record<string, unknown>).value_lines).toEqual([
         { description: null, unit: 'flat', delivery_period: 'one_off', unit_price: '12', quantity: '1', start: null, duration_months: null },
       ])
+    })
+
+    const LINE = { id: 'a', position: 0, description: null, unit: 'flat' as const, delivery_period: 'one_off' as const, unit_price: '10.00', quantity: '1.00', start: null, duration_months: null }
+
+    it('shows no figures once every line is gone, while the save sends an empty list', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <DealForm
+          title="Modifica deal"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={dealToFormValues({ ...BASE_DEAL, value_lines: [LINE] })}
+          onSubmit={onSubmit}
+        />,
+      )
+      await waitFor(() => expect(screen.getByTestId('preview-total')).toHaveTextContent('26.000,00'))
+
+      await userEvent.click(screen.getByRole('button', { name: 'Rimuovi riga 1' }))
+      // Immediately, not after the debounce: the old total must not outlive its lines.
+      expect(screen.getByTestId('preview-total')).toHaveTextContent('—')
+      expect(screen.getByTestId('preview-monthly')).toHaveTextContent('—')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(submitted(onSubmit).value_lines).toEqual([])
+    })
+
+    it("does not show another deal's figures when the form is opened again", async () => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const form = (open: boolean, price: string) => (
+        <QueryClientProvider client={client}>
+          <DealForm
+            title="Modifica deal"
+            open={open}
+            onOpenChange={vi.fn()}
+            customFields={[]}
+            initial={dealToFormValues({ ...BASE_DEAL, value_lines: [{ ...LINE, unit_price: price }] })}
+            onSubmit={vi.fn()}
+          />
+        </QueryClientProvider>
+      )
+      const { rerender } = render(form(true, '10.00'))
+      await waitFor(() => expect(screen.getByTestId('preview-total')).toHaveTextContent('26.000,00'))
+
+      rerender(form(false, '10.00'))
+      // The next deal's answer never arrives: what shows meanwhile must not be the last one's.
+      mockPost.mockImplementation((() => new Promise(() => {})) as never)
+      rerender(form(true, '77.00'))
+      expect(screen.getByTestId('preview-total')).toHaveTextContent('—')
     })
   })
 })

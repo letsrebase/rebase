@@ -76,24 +76,22 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
           >
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1">
-                <Label htmlFor={`${line.key}-description`}>Descrizione</Label>
+                <Label htmlFor={`${line.key}-description`}>Descrizione<span className="sr-only"> riga {n}</span></Label>
                 <Input
                   id={`${line.key}-description`}
-                  aria-label={`Descrizione riga ${n}`}
                   value={line.description}
                   maxLength={255}
                   onChange={(event) => patch(line.key, { description: event.target.value })}
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`${line.key}-unit`}>Unità</Label>
+                <Label htmlFor={`${line.key}-unit`}>Unità<span className="sr-only"> riga {n}</span></Label>
                 <Select
                   value={line.unit}
                   onValueChange={(value) => patch(line.key, { unit: value as LineUnit })}
                 >
                   <SelectTrigger
                     id={`${line.key}-unit`}
-                    aria-label={`Unità riga ${n}`}
                     className="w-full"
                   >
                     <SelectValue />
@@ -108,7 +106,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`${line.key}-period`}>Periodo</Label>
+                <Label htmlFor={`${line.key}-period`}>Periodo<span className="sr-only"> riga {n}</span></Label>
                 <Select
                   value={line.delivery_period}
                   onValueChange={(value) =>
@@ -117,7 +115,6 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                 >
                   <SelectTrigger
                     id={`${line.key}-period`}
-                    aria-label={`Periodo riga ${n}`}
                     className="w-full"
                   >
                     <SelectValue />
@@ -134,24 +131,24 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
               <div className="space-y-1">
                 <Label htmlFor={`${line.key}-price`}>
                   {flat ? 'Importo (€)' : `Prezzo per ${line.unit === 'day' ? 'giorno' : 'ora'} (€)`}
+                  <span className="sr-only"> riga {n}</span>
                 </Label>
                 <Input
                   id={`${line.key}-price`}
-                  aria-label={`Prezzo riga ${n}`}
                   type="number"
                   min="0"
                   step="0.01"
                   value={line.unit_price}
                   aria-invalid={error !== null}
+                  aria-describedby={error === null ? undefined : `${line.key}-error`}
                   onChange={(event) => patch(line.key, { unit_price: event.target.value })}
                 />
               </div>
               {!flat && (
                 <div className="space-y-1">
-                  <Label htmlFor={`${line.key}-quantity`}>Quantità</Label>
+                  <Label htmlFor={`${line.key}-quantity`}>Quantità<span className="sr-only"> riga {n}</span></Label>
                   <Input
                     id={`${line.key}-quantity`}
-                    aria-label={`Quantità riga ${n}`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -161,10 +158,9 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                 </div>
               )}
               <div className="space-y-1">
-                <Label htmlFor={`${line.key}-start`}>Inizio</Label>
+                <Label htmlFor={`${line.key}-start`}>Inizio<span className="sr-only"> riga {n}</span></Label>
                 <Input
                   id={`${line.key}-start`}
-                  aria-label={`Inizio riga ${n}`}
                   type="date"
                   value={line.start}
                   onChange={(event) => patch(line.key, { start: event.target.value })}
@@ -172,10 +168,9 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
               </div>
               {showDuration && (
                 <div className="space-y-1">
-                  <Label htmlFor={`${line.key}-duration`}>Durata (mesi)</Label>
+                  <Label htmlFor={`${line.key}-duration`}>Durata (mesi)<span className="sr-only"> riga {n}</span></Label>
                   <Input
                     id={`${line.key}-duration`}
-                    aria-label={`Durata riga ${n}`}
                     type="number"
                     min="1"
                     step="1"
@@ -188,7 +183,11 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
             </div>
 
             <div className="flex items-start justify-between gap-3">
-              <p className="text-sm text-destructive" role={error ? 'alert' : undefined}>
+              <p
+                id={`${line.key}-error`}
+                className="text-sm text-destructive"
+                role={error ? 'alert' : undefined}
+              >
                 {error}
               </p>
               <Button

@@ -153,7 +153,7 @@ export function DealForm({
   owners,
   defaultOwnerId,
 }: Props) {
-  const [values, setValues] = useState<DealFormValues>(initial ?? createValues())
+  const [values, setValues] = useState<DealFormValues>(() => initial ?? createValues())
   // `initial`'s absence is what "Nuovo deal" means, exactly like `CustomerForm`/
   // `PersonForm` -- derived rather than a separate boolean prop, so the "show the
   // Cliente picker" decision and the "which DynamicForm mode" decision can never
@@ -169,9 +169,14 @@ export function DealForm({
   // component's mount state), so a plain `useState(initial ?? {})` initializer
   // would only ever run once.
   const [wasOpen, setWasOpen] = useState(open)
+  // Counts the openings, so figures previewed for one opening never stand in for the next.
+  const [session, setSession] = useState(0)
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setValues(initial ?? createValues())
+    if (open) {
+      setValues(initial ?? createValues())
+      setSession((previous) => previous + 1)
+    }
   }
 
   /** True for a key the active schema currently renders as a custom-field
@@ -195,7 +200,7 @@ export function DealForm({
   const settledKey = useDebounced(JSON.stringify(linesToBody(drafts)), PREVIEW_DEBOUNCE_MS)
   const settledLines = useMemo(() => JSON.parse(settledKey) as ReturnType<typeof linesToBody>, [settledKey])
   const closeDate = (values.native.expected_close_date as string | undefined) || null
-  const preview = useValuePreview(settledLines, closeDate, open)
+  const preview = useValuePreview(settledLines, closeDate, open, session)
   // The server's sentence about the lines goes under the line it names: from the preview
   // while typing, from the save once it was refused. Anything else stays with `DynamicForm`.
   const previewProblem = preview.error as ProblemDetail | null
@@ -291,7 +296,8 @@ export function DealForm({
           onChange={(lines) =>
             setValues((previous) => ({ ...previous, native: { ...previous.native, value_lines: lines } }))
           }
-          preview={preview.data}
+          // With no priced line left the deal has no value, whatever the debounce still holds.
+          preview={linesToBody(drafts).length > 0 ? preview.data : undefined}
           problem={onLines}
         />
 
