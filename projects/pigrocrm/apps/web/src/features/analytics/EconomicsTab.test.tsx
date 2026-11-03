@@ -404,11 +404,11 @@ describe('ToInvoiceDialog', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [path, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [
       string,
-      { body: { entry_ids: string[]; group_by_by_month: boolean } },
+      { body: { entry_ids: string[]; group_by_month: boolean } },
     ]
     expect(path).toBe('/api/deals/{deal_id}/time-entries/to-invoice-draft')
     expect(options.body.entry_ids).toEqual([ENTRY_A, ENTRY_B])
-    expect(options.body.group_by_by_month).toBe(true)
+    expect(options.body.group_by_month).toBe(true)
   })
 
   it('sends only the entries still ticked', async () => {
@@ -436,9 +436,9 @@ describe('ToInvoiceDialog', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [
       string,
-      { body: { group_by_by_month: unknown } },
+      { body: { group_by_month: unknown } },
     ]
-    expect(options.body.group_by_by_month).toBe(false)
+    expect(options.body.group_by_month).toBe(false)
   })
 
   /** `BindTimeRequest.entry_ids` has `min_length=1`, so an empty list is a 422 the user

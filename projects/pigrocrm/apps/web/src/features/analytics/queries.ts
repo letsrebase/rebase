@@ -69,7 +69,7 @@ export function usePeriodPnl(params: PeriodParams) {
 export function useToInvoiceDraft(dealId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { entry_ids: string[]; group_by_by_month: boolean }) =>
+    mutationFn: (body: { entry_ids: string[]; group_by_month: boolean }) =>
       unwrap(
         api.POST('/api/deals/{deal_id}/time-entries/to-invoice-draft', {
           params: { path: { deal_id: dealId } },

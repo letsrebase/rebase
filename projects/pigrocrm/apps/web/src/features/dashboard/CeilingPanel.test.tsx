@@ -12,7 +12,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 const REVENUE = {
-  id: 'soglia_ricavi',
+  id: 'revenue_ceiling',
   label: 'Soglia di ricavi e compensi del regime forfettario',
   threshold: '85000.00',
   consequence: 'leaves_next_year',
@@ -23,7 +23,7 @@ const REVENUE = {
   usage: 0.7059,
 }
 const FUORIUSCITA = {
-  id: 'soglia_fuoriuscita_immediata',
+  id: 'immediate_exit_ceiling',
   label: 'Soglia di fuoriuscita immediata dal regime forfettario',
   threshold: '100000.00',
   consequence: 'leaves_immediately',
@@ -50,7 +50,7 @@ const simulation = (overrides: Record<string, unknown> = {}) => ({
   brief_addition: '20000.00',
   thresholds: [
     {
-      id: 'soglia_ricavi',
+      id: 'revenue_ceiling',
       label: REVENUE.label,
       threshold: '85000.00',
       consequence: 'leaves_next_year',
@@ -64,7 +64,7 @@ const simulation = (overrides: Record<string, unknown> = {}) => ({
       alert_level_simulated: 'In avvicinamento alla soglia di ricavi',
     },
     {
-      id: 'soglia_fuoriuscita_immediata',
+      id: 'immediate_exit_ceiling',
       label: FUORIUSCITA.label,
       threshold: '100000.00',
       consequence: 'leaves_immediately',
