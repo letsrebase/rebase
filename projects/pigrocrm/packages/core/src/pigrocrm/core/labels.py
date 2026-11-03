@@ -155,6 +155,57 @@ TASK_RULE: dict[str, str] = {
     "overdue_invoice": "fattura_scaduta",
 }
 
+# The door a note came through, as a card names it («fonte: sistema»); the other sources
+# (`web`, `mcp`, `rebase`) were English words already.
+NOTE_SOURCE: dict[str, str] = {"system": "sistema"}
+
+# Why a digest was skipped, as the cron's log line prints it (`saltato (titolare_mancante)`);
+# an exception's type name is its own word and passes through `label` unchanged.
+DIGEST_SKIP: dict[str, str] = {
+    "owner_missing": "titolare_mancante",
+    "owner_disabled": "titolare_disattivato",
+    "send_rejected": "invio_rifiutato",
+    "send_not_configured": "invio_non_configurato",
+}
+
+# The `activities.kind` of the events that were named in Italian, as a timeline line prints
+# them. The three kinds of a task (`completed`, `cancelled`, `reopened`) are not here: they
+# share their English word with the kinds of other entities, and no card prints a task's.
+ACTIVITY_KIND: dict[str, str] = {
+    "automation.stage_moved": "automazione.stage_spostato",
+    "automation.not_executed": "automazione.non_eseguita",
+    "automation.config_changed": "automazione.configurazione_modificata",
+    "automation.task_opened": "automazione.attivita_aperta",
+    "digest.sent": "digest.inviato",
+    "document.imported": "document.importato",
+    "drive.account_connected": "drive.account_collegato",
+    "drive.account_disconnected": "drive.account_scollegato",
+    "drive.credential_revoked": "drive.credenziale_revocata",
+    "drive.roots_set": "drive.radici_impostate",
+    "gmail.account_connected": "gmail.account_collegato",
+    "gmail.account_disconnected": "gmail.account_scollegato",
+    "gmail.backfill_run": "gmail.backfill_eseguito",
+    "gmail.draft_created": "gmail.bozza_creata",
+    "gmail.draft_deleted": "gmail.bozza_eliminata",
+    "gmail.draft_edited": "gmail.bozza_modificata",
+    "gmail.credential_revoked": "gmail.credenziale_revocata",
+    "gmail.settings_changed": "gmail.impostazioni_modificate",
+    "gmail.message_sent": "gmail.messaggio_inviato",
+    "gmail.message_received": "gmail.messaggio_ricevuto",
+    "gmail.payment_reminder_prepared": "gmail.sollecito_preparato",
+    "gmail.sync_run": "gmail.sync_eseguito",
+    "gmail.send_uncertain": "gmail.invio_incerto",
+    "hub.request_linked": "hub.richiesta_collegata",
+    "hub.request_received": "hub.richiesta_ricevuta",
+    "slack.matches_rebuilt": "slack.abbinamenti_rifatti",
+    "slack.manual_match": "slack.abbinamento_manuale",
+    "slack.match_removed": "slack.abbinamento_rimosso",
+    "slack.channel_set": "slack.canale_impostato",
+    "slack.channel_removed": "slack.canale_rimosso",
+    "slack.workspace_connected": "slack.workspace_collegato",
+    "slack.workspace_disconnected": "slack.workspace_scollegato",
+}
+
 
 def label(vocabulary: dict[str, str], code: str | None) -> str:
     """The Italian word for `code`, or the code itself when the vocabulary has none."""
