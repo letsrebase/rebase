@@ -21,7 +21,7 @@ export function reminder(overrides: Partial<Reminder> = {}): Reminder {
     measure: 16,
     title: 'Attività scaduta: Mandare il preventivo ad Acme',
     detail: 'Scaduta da 16 giorni (il 10/10/2026).',
-    entity: 'attivita',
+    entity: 'task',
     entity_id: ACME_ACTIVITY_ID,
     customer_id: null,
     status: 'open',

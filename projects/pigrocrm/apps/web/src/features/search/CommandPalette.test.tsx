@@ -150,12 +150,12 @@ describe('CommandPalette', () => {
         deadline: 'proposte',
         groups: [
           {
-            entity: 'attivita',
+            entity: 'task',
             total: 1,
             total_and_a_minimum: false,
             hits: [
               {
-                entity: 'attivita',
+                entity: 'task',
                 id: TASK_ID,
                 label: 'Preparare le proposte',
                 subtitle: '30/10/2026',

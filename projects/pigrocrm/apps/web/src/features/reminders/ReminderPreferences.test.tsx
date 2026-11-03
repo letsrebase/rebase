@@ -30,7 +30,7 @@ const TYPES: Types = [
     key: 'task_due',
     label: 'Attività in scadenza',
     description: "Un'attività aperta scade oggi.",
-    subject: 'attivita',
+    subject: 'task',
     audience: 'subject',
     direction: 'until',
     unit: 'days',

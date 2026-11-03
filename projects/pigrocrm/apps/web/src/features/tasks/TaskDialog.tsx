@@ -51,7 +51,7 @@ export interface TaskDefaults {
  * prefilling what it already knows (`defaults`), so no screen has its own small form that
  * forgets a field.
  *
- * Given an `attivita` it is the edit form of that row, with the two things that only make
+ * Given a `task` it is the edit form of that row, with the two things that only make
  * sense on an existing one: «Riapri» for a closed one and «Archivia» for a row made by
  * mistake (or «Ripristina», when the row is already archived: `archived`, since the read
  * shape does not say). Completing and cancelling stay where they were, on the lists.

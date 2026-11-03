@@ -220,11 +220,11 @@ function DayCell({
   data: CalendarDay | undefined
   onOpen: () => void
 }) {
-  const attivita = data?.attivita ?? []
+  const tasks = data?.tasks ?? []
   const invoices = data?.invoices ?? []
   const work_units = data?.work_units ?? []
-  const open = attivita.filter((item) => item.status === 'open').length
-  const closed = attivita.length - open
+  const open = tasks.filter((item) => item.status === 'open').length
+  const closed = tasks.length - open
   const hours = data ? formatItalianQuantity(data.hours) : null
 
   return (

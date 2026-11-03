@@ -85,7 +85,7 @@ export type EntityType =
   | 'invoice'
   | 'time_entry'
   | 'cost'
-  | 'attivita'
+  | 'task'
   | 'contract'
 
 /**
@@ -106,7 +106,7 @@ export type EntityType =
  * entry for both the moment `EntityType` grew them, even though neither has a
  * timeline router yet. Widen this `Exclude` alongside the endpoint, not before it.
  *
- * `attivita` joined them on 2026-09-09: slice 10 writes `activities` rows for every
+ * `task` joined them on 2026-09-09: slice 10 writes `activities` rows for every
  * closure of a commitment, so the timeline *data* exists, and
  * `GET /api/activities/{id}/timeline` does not. Excluded until it does -- inventing the
  * route in this type would give `Timeline` a fetcher that 404s.
@@ -114,7 +114,7 @@ export type EntityType =
  * `contract` was excluded at REB-358 for the identical reason and is back in since
  * REB-741, which added `GET /api/contracts/{id}/timeline` for the contract page.
  */
-export type TimelineEntityType = Exclude<EntityType, 'time_entry' | 'cost' | 'attivita'>
+export type TimelineEntityType = Exclude<EntityType, 'time_entry' | 'cost' | 'task'>
 
 export interface EntitySchema {
   entity_type: string

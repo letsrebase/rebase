@@ -52,7 +52,7 @@ const deal = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
-const attivita = {
+const task = {
   id: 'att-1',
   title: 'Sollecitare Rossi',
   note: null,
@@ -84,14 +84,14 @@ const month = {
       per_deal: [
         { deal_id: DEAL, deal_name: 'Progetto Alfa', customer: 'ACME S.r.l.', hours: '8.00' },
       ],
-      attivita: [],
+      tasks: [],
       invoices: [],
     },
     {
       day: '2026-09-18',
       hours: '0.00',
       per_deal: [],
-      attivita: [attivita],
+      tasks: [task],
       invoices: [
         {
           id: 'inv-1',
@@ -104,7 +104,7 @@ const month = {
       ],
     },
   ],
-  task_without_due_date: [{ ...attivita, id: 'att-2', title: 'Chiedere il codice SDI', due_date: null }],
+  task_without_due_date: [{ ...task, id: 'att-2', title: 'Chiedere il codice SDI', due_date: null }],
 }
 
 function ok(data: unknown) {
@@ -343,7 +343,7 @@ describe('CalendarPage', () => {
 
   it('creates a deadline on the day it was opened from', async () => {
     routeGet()
-    vi.mocked(api.POST).mockImplementation((() => ok({ ...attivita, id: 'new' })) as never)
+    vi.mocked(api.POST).mockImplementation((() => ok({ ...task, id: 'new' })) as never)
     renderPage()
     await screen.findByRole('grid')
     await userEvent.click(screen.getByRole('button', { name: /^18\/09\/2026:/ }))
@@ -367,7 +367,7 @@ describe('CalendarPage', () => {
 
   it('closes a commitment as done, and cancelling is a different button', async () => {
     routeGet()
-    vi.mocked(api.POST).mockImplementation((() => ok(attivita)) as never)
+    vi.mocked(api.POST).mockImplementation((() => ok(task)) as never)
     renderPage()
     await screen.findByRole('grid')
     await userEvent.click(screen.getByRole('button', { name: /^18\/09\/2026:/ }))
@@ -399,7 +399,7 @@ describe('CalendarPage', () => {
               day: '2026-09-22',
               hours: '0.00',
               per_deal: [],
-              attivita: [],
+              tasks: [],
               invoices: [],
               work_units: [worked, { ...worked, id: 'day-2', status: 'approved', quantity: '1.00' }],
             },

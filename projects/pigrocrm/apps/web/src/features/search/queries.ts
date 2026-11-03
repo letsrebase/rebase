@@ -70,5 +70,5 @@ export const ENTITY_LABELS: Record<SearchEntity, string> = {
   deal: 'Deal',
   document: 'Documenti',
   invoice: 'Fatture',
-  attivita: 'Attività',
+  task: 'Attività',
 }

@@ -91,7 +91,7 @@ export function CommandPalette({
         return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
       // No page of its own: the tasks opens in its dialog, over the Tasks page
       // (`?open=`), which is where every other screen opens one from.
-      case 'attivita':
+      case 'task':
         return void navigate({ to: '/app/activities', search: { open: hit.id } })
     }
   }
@@ -123,7 +123,7 @@ export function CommandPalette({
         return null
       // A task has no list of its own to filter by a term: the page has its own
       // filters, not a free-text one, so «vedi tutti» would land on a different question.
-      case 'attivita':
+      case 'task':
         return null
     }
   }

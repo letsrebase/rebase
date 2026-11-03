@@ -516,7 +516,7 @@ describe('AppShell', () => {
       measure: 0,
       title: `Attività ${index}`,
       detail: '',
-      entity: 'attivita',
+      entity: 'task',
       entity_id: `3f0c2a10-0000-4000-8000-00000000000${index}`,
       customer_id: null,
       status,

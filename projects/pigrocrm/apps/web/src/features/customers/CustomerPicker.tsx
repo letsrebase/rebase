@@ -18,7 +18,7 @@ export type PickedCustomer = Pick<Customer, 'id' | 'legal_name'>
  * The one customer picker of the app. It replaces four dropdowns that each loaded
  * `limit: 200` customers whole, and silently stopped at the 200th: a space has as many
  * customers as it has, so «scegli dall'elenco» has to be a search, the same gesture as
- * `attivita/RecordPicker`'s. A chosen customer is shown by name, with a button to take it
+ * `tasks/RecordPicker`'s. A chosen customer is shown by name, with a button to take it
  * off and search again.
  *
  * `value` is the customer's id and the name is read from it (`useCustomer`), so a form

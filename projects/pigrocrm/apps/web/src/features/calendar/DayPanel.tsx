@@ -119,9 +119,9 @@ function Worked({ data }: { data: CalendarDay | undefined }) {
 /** The day's deadlines: commitments, which can be closed from here, and invoices, which
  *  cannot be touched from here at all. */
 function Due({ data }: { data: CalendarDay | undefined }) {
-  const attivita = data?.attivita ?? []
+  const tasks = data?.tasks ?? []
   const invoices = data?.invoices ?? []
-  if (attivita.length === 0 && invoices.length === 0) return null
+  if (tasks.length === 0 && invoices.length === 0) return null
 
   return (
     <section aria-labelledby="due-on-day" className="space-y-2">
@@ -129,7 +129,7 @@ function Due({ data }: { data: CalendarDay | undefined }) {
         Scadenze
       </h3>
       <ul className="space-y-2 text-sm">
-        {attivita.map((item) => (
+        {tasks.map((item) => (
           <TaskItem key={item.id} task={item} />
         ))}
         {invoices.map((invoice) => (
