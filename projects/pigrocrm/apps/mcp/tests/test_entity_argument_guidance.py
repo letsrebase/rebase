@@ -34,7 +34,9 @@ async def test_update_deal_schema_lists_the_real_modifiable_fields(server) -> No
 
     changes_schema = tools["update_deal"].input_schema["properties"]["changes"]
     assert "probability" in changes_schema["properties"]
-    assert "expected_value" in changes_schema["properties"]
+    assert "value_lines" in changes_schema["properties"]
+    # The total is derived from the lines: the schema must not invite setting it.
+    assert "expected_value" not in changes_schema["properties"]
     # move_deal, not update_deal, is the supported way to change stage -- the
     # schema must not invite an agent to try setting it here instead.
     assert "pipeline_stage_id" not in changes_schema["properties"]
@@ -157,6 +159,23 @@ async def test_a_wrong_typed_money_field_on_create_deal_produces_guidance(
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "create_deal",
+            {"name": "X", "customer_id": customer["id"], "budgeted_value": "un sacco"},
+        )
+
+    assert result.is_error
+    message = result.content[0].text
+    assert "errors.pydantic.dev" not in message
+    assert "budgeted_value" in message
+
+
+async def test_create_deal_refuses_expected_value_and_points_at_value_lines(
+    server, mcp_session: Session
+) -> None:
+    PipelineService(mcp_session).seed_defaults(SETUP)
+    async with Client(server) as client:
+        customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
+        result = await client.call_tool(
+            "create_deal",
             {"name": "X", "customer_id": customer["id"], "expected_value": "un sacco"},
         )
 
@@ -164,6 +183,7 @@ async def test_a_wrong_typed_money_field_on_create_deal_produces_guidance(
     message = result.content[0].text
     assert "errors.pydantic.dev" not in message
     assert "expected_value" in message
+    assert "value_lines" in message
 
 
 async def test_create_deal_still_accepts_to_normal_numeric_probability(

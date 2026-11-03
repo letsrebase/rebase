@@ -133,6 +133,9 @@ async def _customer(client: Client) -> dict[str, Any]:
     )
 
 
+LUMP_1000 = {"unit": "flat", "delivery_period": "one_off", "unit_price": "1000.00"}
+
+
 async def _deal(client: Client, customer_id: str) -> dict[str, Any]:
     return await _create(
         client,
@@ -140,7 +143,7 @@ async def _deal(client: Client, customer_id: str) -> dict[str, Any]:
         {
             "name": "Progetto",
             "customer_id": customer_id,
-            "expected_value": "1000.00",
+            "value_lines": [LUMP_1000],
             "expected_close_date": "2026-12-31",
             "budgeted_hours": "10.00",
             "budgeted_value": "900.00",
@@ -169,7 +172,6 @@ async def test_clearing_a_customer_field_is_reported_with_the_value_it_held(
 @pytest.mark.parametrize(
     "field",
     [
-        "expected_value",
         "expected_close_date",
         "budgeted_hours",
         "budgeted_value",
@@ -193,6 +195,28 @@ async def test_clearing_a_deal_field_is_reported_with_the_value_it_held(
     assert result["cleared"] == {field: was}
 
 
+async def test_replacing_the_value_lines_reports_the_lines_and_the_figures_they_moved(
+    server, mcp_session: Session
+) -> None:
+    PipelineService(mcp_session).seed_defaults(SETUP)
+    async with Client(server) as client:
+        customer = await _customer(client)
+        deal = await _deal(client, customer["id"])
+        result = await _create(
+            client, "update_deal", {"deal_id": deal["id"], "changes": {"value_lines": []}}
+        )
+
+    assert result["value_lines"] == []
+    assert result["expected_value"] is None
+    assert result["changed"] == [
+        "expected_value",
+        "monthly_recurring_value",
+        "one_off_value",
+        "value_lines",
+    ]
+    assert result["cleared"]["expected_value"] == "1000.00"
+
+
 async def test_a_value_that_is_not_new_is_not_reported_as_changed(
     server, mcp_session: Session
 ) -> None:
@@ -205,7 +229,7 @@ async def test_a_value_that_is_not_new_is_not_reported_as_changed(
             "update_deal",
             {
                 "deal_id": deal["id"],
-                "changes": {"name": "Rinominato", "expected_value": deal["expected_value"]},
+                "changes": {"name": "Rinominato", "value_lines": [LUMP_1000]},
             },
         )
 
@@ -363,7 +387,13 @@ async def test_the_same_amount_written_with_another_scale_is_not_a_change(
         result = await _create(
             client,
             "update_deal",
-            {"deal_id": deal["id"], "changes": {"expected_value": 1000, "probability": 50}},
+            {
+                "deal_id": deal["id"],
+                "changes": {
+                    "value_lines": [{**LUMP_1000, "unit_price": 1000}],
+                    "probability": 50,
+                },
+            },
         )
 
     assert result["changed"] == ["probability"]
