@@ -43,7 +43,7 @@ dev = [
   "testcontainers[postgres]==4.15.0",
   "httpx==0.28.1",
   "ruff==0.16.9",
-  "mypy==2.3.1",
+  "mypy==2.4.0",
   "lxml-stubs==0.5.1",
   # openpyxl ships no inline types, so under `strict` every `from openpyxl import ...`
   # is an `import-untyped` error and the whole workbook builder degrades to `Any` --
@@ -59,7 +59,7 @@ dev = [
   # a woff2 cannot be opened at all. Also a runtime dependency of `rebase-core` since
   # REB-387, which typesets the contracts in the API; listed here too for the guide's
   # script.
-  "fonttools[woff]==4.66.1",
+  "fonttools[woff]==4.67.0",
 ]
 
 # Both tables below name one project's paths explicitly, and grow by a few lines per
