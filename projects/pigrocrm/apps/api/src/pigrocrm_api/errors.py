@@ -102,7 +102,7 @@ def _italian_message(error: dict[str, Any]) -> str:
     if error.get("type") == "extra_forbidden":
         return "campo non riconosciuto"
     loc = error.get("loc") or ()
-    failed = validation_failed_from_error(error, field=str(loc[-1]) if loc else "valore")  # type: ignore[arg-type]
+    failed = validation_failed_from_error(error, field=str(loc[-1]) if loc else "valore")
     reason = str(failed.details["reason"])
     expected = failed.details.get("expected")
     if expected and error.get("type") != "missing":

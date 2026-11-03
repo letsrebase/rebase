@@ -481,7 +481,7 @@ test.describe('the team builder on the first screen', () => {
       proposal: PROPOSAL.id,
       utm_source: 'linkedin',
       utm_campaign: 'orbita',
-      da: 'home',
+      from: 'home',
     })
     // The button is back, for a second description.
     await expect(page.getByRole('button', { name: 'Proponi il team' })).toBeEnabled()
@@ -542,7 +542,7 @@ test.describe('a visitor from a campaign', () => {
       // The guide's door keeps its own key beside the campaign's, and every door says
       // which page it is on (ORB-167).
       expect(doors.some((href) => href!.startsWith('/hub/freelance?perk=guida&utm_source=linkedin'))).toBe(true)
-      for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('da'), href!).toBe(path === '/' ? 'home' : 'pigrocrm')
+      for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('from'), href!).toBe(path === '/' ? 'home' : 'pigrocrm')
       expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe(path === '/' ? 'home' : 'pigrocrm')
       // The rest of the page's links are what the markup says.
       expect(await page.locator('a[href="/privacy"]').count()).toBeGreaterThan(0)
@@ -554,7 +554,7 @@ test.describe('a visitor from a campaign', () => {
     await page.goto('/', { waitUntil: 'networkidle' })
     const doors = await page.locator('a[href^="/hub/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')))
     expect(doors.filter((href) => href!.includes('utm_'))).toEqual([])
-    for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('da'), href!).toBe('home')
+    for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('from'), href!).toBe('home')
     expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBeNull()
     expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe('home')
   })

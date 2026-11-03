@@ -5,7 +5,8 @@ and path), so a missing or malformed value is worded the same on both surfaces a
 English `Field required` never reaches a screen or an agent.
 """
 
-from pydantic_core import ErrorDetails
+from collections.abc import Mapping
+from typing import Any
 
 from pigrocrm.core.errors import ValidationFailed
 
@@ -56,7 +57,7 @@ _COMPARISON_BOUND_BY_TYPE: dict[str, tuple[str, str]] = {
 }
 
 
-def _field_path(error: ErrorDetails) -> str:
+def _field_path(error: Mapping[str, Any]) -> str:
     return ".".join(str(part) for part in error["loc"]) or "valore"
 
 
@@ -86,7 +87,7 @@ _BOUNDED_REASON_BY_TYPE: dict[str, tuple[str, str, str]] = {
 
 
 def validation_failed_from_error(
-    error: ErrorDetails, *, field: str | None = None
+    error: Mapping[str, Any], *, field: str | None = None
 ) -> ValidationFailed:
     """Translates one pydantic-core error into this project's structured, Italian
     `ValidationFailed` -- the same family `to_agent_message` renders every hand-raised

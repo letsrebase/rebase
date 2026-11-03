@@ -81,7 +81,7 @@ engine = create_engine(get_settings().owner_database_url, future=True)
 with session_factory(engine)() as session:
     bind_scope(session, Actor.system())
     UserService(session).create(
-        UserCreate(email="e2e@pigro.it", password="supersegreta1", nome="E2E", ruolo="admin"),
+        UserCreate(email="e2e@pigro.it", password="supersegreta1", name="E2E", role="admin"),
         Actor.system(),
     )
     # `seed_defaults` is admin-only (it calls `actor.require_admin` itself, not just the REST
