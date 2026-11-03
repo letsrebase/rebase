@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 import pigrocrm.core as core_package
+from pigrocrm.core.contracts.schemas import check_expense_policy
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.invoices.fatturapa.checks import (
     check_document_text_exportable,
@@ -21,6 +22,7 @@ from pigrocrm.core.invoices.fatturapa.checks import (
 )
 from pigrocrm.core.invoices.schemas import PartySnapshot
 from pigrocrm.core.labels import ENTITY_NOUN, FIELD_PATH, entity_not_found, field_path
+from pigrocrm.core.reminders.catalogue import get_type
 
 CORE_ROOT = Path(core_package.__file__).parent
 REQUIRED = "campo obbligatorio per la fattura elettronica"
@@ -267,3 +269,18 @@ def test_the_nouns_agree_with_the_participle() -> None:
     for entity, (noun, ending) in ENTITY_NOUN.items():
         assert ending in ("o", "a"), entity
         assert "_" not in noun, entity
+
+
+def test_a_list_of_accepted_codes_is_worded_in_italian() -> None:
+    """The refusals that list the values a field accepts name them as a person reads them: the
+    codes 0068 renamed (reminder types, expense policy kinds) never print as English."""
+    with pytest.raises(ValidationFailed) as reminder:
+        get_type("nope")
+    listed = str(reminder.value.details["expected"]).split(", ")
+    assert "attivita_due" in listed and "attivita_overdue" in listed
+    assert "task_due" not in listed and "task_overdue" not in listed
+
+    with pytest.raises(ValueError, match=r"non_rimborsabile, rimborsabile, rimborsabile_con_tetto"):
+        check_expense_policy({"kind": "nope"})
+    with pytest.raises(ValueError, match=r"vale solo per rimborsabile_con_tetto"):
+        check_expense_policy({"kind": "reimbursable", "amount_cap": "10"})

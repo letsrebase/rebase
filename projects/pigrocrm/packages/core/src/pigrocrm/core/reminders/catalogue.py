@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.labels import REMINDER_TYPE, label
 
 Severity = Literal["warning", "serious", "critical"]
 SEVERITIES: tuple[Severity, ...] = ("warning", "serious", "critical")
@@ -389,7 +390,7 @@ def get_type(type_key: str) -> ReminderType:
             "reminder",
             "type",
             f"tipo di promemoria sconosciuto: {type_key}",
-            expected=", ".join(REMINDER_TYPES),
+            expected=", ".join(label(REMINDER_TYPE, key) for key in REMINDER_TYPES),
         ) from None
 
 

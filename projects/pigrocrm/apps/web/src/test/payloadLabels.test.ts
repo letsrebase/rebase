@@ -358,6 +358,13 @@ describe('the timeline words against migration 0068', () => {
     expect(labelForPayloadKey('custom_fields')).toBe('Campi personalizzati')
   })
 
+  it('writes the accents of the field names', () => {
+    expect(labelForPayloadKey('probability')).toBe('Probabilità')
+    expect(labelForPayloadKey('default_probability')).toBe('Probabilità default')
+    expect(labelForPayloadKey('payment_method')).toBe('Modalità pagamento')
+    expect(labelForPayloadKey('profitability_coefficient')).toBe('Coefficiente redditività')
+  })
+
   it('gives every document type a word that is not the code', () => {
     for (const [, now] of words(
       [...COLUMN_VALUES.entries()].find(([key]) => columnId(key) === 'documents.type')![1],

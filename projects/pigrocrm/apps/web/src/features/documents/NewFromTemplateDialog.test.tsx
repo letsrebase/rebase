@@ -82,6 +82,31 @@ describe('NewFromTemplateDialog', () => {
     expect(await screen.findByText('Consulenza CTO')).toBeInTheDocument()
   })
 
+  it('offers only the templates that can make a document, with their type in Italian', async () => {
+    const reminder: Template = { ...TEMPLATE, id: 't-2', name: 'Sollecito di pagamento', type: 'payment_reminder' }
+    const email: Template = { ...TEMPLATE, id: 't-3', name: 'Corpo email', type: 'email' }
+    const report: Template = { ...TEMPLATE, id: 't-4', name: 'Foglio ore', type: 'hours_report' }
+    routeGet({ '/api/templates': { items: [TEMPLATE, reminder, email, report], next_cursor: null } })
+    render(<NewFromTemplateDialog open onOpenChange={() => {}} owner={{ customerId: 'c-1' }} />, {
+      wrapper,
+    })
+    expect(await screen.findByText('Consulenza CTO')).toBeInTheDocument()
+    expect(screen.getByText('Foglio ore')).toBeInTheDocument()
+    expect(screen.getByText('Rapporto ore')).toBeInTheDocument()
+    expect(screen.queryByText('Sollecito di pagamento')).not.toBeInTheDocument()
+    expect(screen.queryByText('Corpo email')).not.toBeInTheDocument()
+  })
+
+  it('says there is no template when only email and reminder templates exist', async () => {
+    const reminder: Template = { ...TEMPLATE, id: 't-2', name: 'Sollecito di pagamento', type: 'payment_reminder' }
+    routeGet({ '/api/templates': { items: [reminder], next_cursor: null } })
+    render(<NewFromTemplateDialog open onOpenChange={() => {}} owner={{ customerId: 'c-1' }} />, {
+      wrapper,
+    })
+    expect(await screen.findByText(/Nessun template/)).toBeInTheDocument()
+    expect(screen.queryByText('Sollecito di pagamento')).not.toBeInTheDocument()
+  })
+
   it('shows the declared variables once a template is chosen', async () => {
     routeGet({
       '/describe': DESCRIPTION,

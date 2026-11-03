@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.contracts.renewal import RenewalUnit
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
+from pigrocrm.core.labels import EXPENSE_POLICY_KIND, label
 from pigrocrm.core.validation import SafeStr
 
 # Mirrors Contract's column widths (models.py). Without these, an over-length value
@@ -54,7 +55,8 @@ def check_expense_policy(policy: dict[str, Any]) -> dict[str, Any]:
     kind = policy.get("kind")
     if kind not in EXPENSE_POLICY_KINDS:
         raise ValueError(
-            f"expense_policy.kind deve essere uno fra {', '.join(EXPENSE_POLICY_KINDS)}"
+            "expense_policy.kind deve essere uno fra "
+            f"{', '.join(label(EXPENSE_POLICY_KIND, kind) for kind in EXPENSE_POLICY_KINDS)}"
         )
     cap = policy.get("amount_cap")
     if kind == "reimbursable_with_cap":
@@ -68,7 +70,10 @@ def check_expense_policy(policy: dict[str, Any]) -> dict[str, Any]:
                 "e va scritto come importo, per esempio 500.00"
             )
     elif cap is not None:
-        raise ValueError("expense_policy.amount_cap vale solo per reimbursable_with_cap")
+        raise ValueError(
+            "expense_policy.amount_cap vale solo per "
+            f"{label(EXPENSE_POLICY_KIND, 'reimbursable_with_cap')}"
+        )
     pre = policy.get("requires_pre_authorization")
     if pre is not None and not isinstance(pre, bool):
         raise ValueError("expense_policy.requires_pre_authorization deve essere vero o falso")
