@@ -1,5 +1,4 @@
 from datetime import date
-from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -9,7 +8,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contract_expenses.models import ContractExpense
-from pigrocrm.core.contracts.cap_service import ContractCapService
+from pigrocrm.core.contracts.cap_service import Addition, ContractCapService
 from pigrocrm.core.contracts.models import ClauseNote, Contract
 from pigrocrm.core.contracts.renewal_service import ContractRenewalService
 from pigrocrm.core.contracts.repository import ContractRepository
@@ -237,7 +236,7 @@ class ContractService:
         )
 
     def simulate_cap(
-        self, contract_id: UUID, addition: Decimal, expected_date: date | None, actor: Actor
+        self, contract_id: UUID, addition: Addition, expected_date: date | None, actor: Actor
     ) -> ContractCapSimulation:
         """The contract's cap against its customer's share after a synthetic addition. See
         `ContractCapService.simulate_cap`."""

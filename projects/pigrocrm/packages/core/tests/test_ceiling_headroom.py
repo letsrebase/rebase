@@ -5,12 +5,14 @@ The arithmetic underneath (`evaluate_pack`, `evaluate_ceiling`,
 `test_fiscal_ceiling.py`; these exercise the service wiring built on top of it:
 resolving the configured jurisdiction pack, mapping `evaluate_pack`'s own
 `CeilingStatus` onto the reader-facing schema, and the simulator's synthetic
-addition, sourced raw from a not-yet-won deal's own three estimate columns rather
-than a `deal_id`, per this issue's own "no persistence required".
+addition: sourced raw from a not-yet-won deal's own three estimate columns, so nothing has
+to be saved to ask, or (REB-931) read off a saved deal's value lines by `deal_id`, which is
+when the money falls and not only how much.
 """
 
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from fakes.customer_fixtures import make_customer
@@ -19,11 +21,13 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import CeilingSimulationQuery
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.deals.models import Deal, DealValueLine
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.pipeline.service import PipelineService
 
 ADMIN = Actor(id=None, type="system", role="admin")
 READER = Actor(id=None, type="user", role="readonly")
@@ -254,3 +258,139 @@ def test_simulate_is_readable_by_a_readonly_actor(db_session: Session) -> None:
     _configure_profile(db_session)
     query = CeilingSimulationQuery(budgeted_value=Decimal("1000.00"))
     AnalyticsService(db_session).simulate_ceiling(YEAR, query, READER)  # does not raise
+
+
+# --- simulate_ceiling, by deal -------------------------------------------------------
+
+
+def _deal_with_lines(
+    session: Session,
+    *lines: tuple[str, str, str, date | None, int | None],
+    close_date: date | None = None,
+) -> Deal:
+    """A saved open deal with `lines` given as (unit, period, price, start, duration)."""
+    PipelineService(session).seed_defaults(ADMIN)
+    stage = next(s for s in PipelineService(session).list() if s.code == "lead")
+    deal = Deal(
+        name="Manutenzione",
+        customer_id=make_customer(session).id,
+        pipeline_stage_id=stage.id,
+        expected_close_date=close_date,
+        probability=50,
+        custom_fields={},
+    )
+    session.add(deal)
+    session.flush()
+    for position, (unit, period, price, start, duration) in enumerate(lines):
+        session.add(
+            DealValueLine(
+                deal_id=deal.id,
+                position=position,
+                unit=unit,
+                delivery_period=period,
+                unit_price=Decimal(price),
+                quantity=Decimal(1),
+                start=start,
+                duration_months=duration,
+            )
+        )
+    session.flush()
+    return deal
+
+
+def test_an_open_ended_monthly_fee_adds_only_the_months_that_fall_in_the_year(
+    db_session: Session,
+) -> None:
+    """1.000 a month from 1 October, counted at 12 months, puts October, November and
+    December in the simulated year: the raw estimate could only have said 12.000."""
+    _configure_profile(db_session)
+    deal = _deal_with_lines(db_session, ("flat", "monthly", "1000.00", date(YEAR, 10, 1), None))
+
+    simulation = AnalyticsService(db_session).simulate_ceiling(
+        YEAR, CeilingSimulationQuery(deal_id=deal.id), READER
+    )
+
+    assert simulation.brief_addition == Decimal("3000.00")
+    revenue_threshold = next(s for s in simulation.thresholds if s.id == "revenue_ceiling")
+    assert revenue_threshold.simulated_revenue == Decimal("3000.00")
+
+
+def test_an_annual_fee_adds_its_one_payment_in_the_year_it_falls_due(db_session: Session) -> None:
+    _configure_profile(db_session)
+    deal = _deal_with_lines(db_session, ("flat", "annual", "12000.00", date(YEAR, 3, 1), None))
+
+    simulation = AnalyticsService(db_session).simulate_ceiling(
+        YEAR, CeilingSimulationQuery(deal_id=deal.id), READER
+    )
+
+    assert simulation.brief_addition == Decimal("12000.00")
+
+
+def test_a_line_with_no_start_follows_the_deals_close_date_then_the_expected_date(
+    db_session: Session,
+) -> None:
+    _configure_profile(db_session)
+    deal = _deal_with_lines(
+        db_session, ("flat", "monthly", "100.00", None, None), close_date=date(YEAR, 11, 1)
+    )
+    undated = _deal_with_lines(db_session, ("flat", "monthly", "100.00", None, None))
+    service = AnalyticsService(db_session)
+
+    by_close_date = service.simulate_ceiling(YEAR, CeilingSimulationQuery(deal_id=deal.id), READER)
+    by_expected_date = service.simulate_ceiling(
+        YEAR,
+        CeilingSimulationQuery(deal_id=undated.id, expected_date=date(YEAR, 12, 1)),
+        READER,
+    )
+
+    assert by_close_date.brief_addition == Decimal("200.00")
+    assert by_expected_date.brief_addition == Decimal("100.00")
+
+
+def test_the_one_off_and_the_fee_of_a_deal_add_together(db_session: Session) -> None:
+    _configure_profile(db_session)
+    deal = _deal_with_lines(
+        db_session,
+        ("flat", "one_off", "20000.00", date(YEAR, 2, 1), None),
+        ("flat", "monthly", "500.00", date(YEAR, 2, 1), 12),
+    )
+
+    simulation = AnalyticsService(db_session).simulate_ceiling(
+        YEAR, CeilingSimulationQuery(deal_id=deal.id), READER
+    )
+
+    # Eleven months of the fee (February to December) and the whole upfront.
+    assert simulation.brief_addition == Decimal("25500.00")
+
+
+def test_a_deal_id_and_a_raw_estimate_are_refused_together(db_session: Session) -> None:
+    _configure_profile(db_session)
+    deal = _deal_with_lines(db_session, ("flat", "one_off", "1000.00", date(YEAR, 2, 1), None))
+
+    with pytest.raises(ValidationFailed) as excinfo:
+        AnalyticsService(db_session).simulate_ceiling(
+            YEAR,
+            CeilingSimulationQuery(deal_id=deal.id, budgeted_value=Decimal("5.00")),
+            READER,
+        )
+    assert excinfo.value.details["field"] == "deal_id"
+    assert "budgeted_value" in str(excinfo.value)
+
+
+def test_a_deal_with_no_lines_has_nothing_to_add(db_session: Session) -> None:
+    _configure_profile(db_session)
+    deal = _deal_with_lines(db_session)
+
+    with pytest.raises(ValidationFailed) as excinfo:
+        AnalyticsService(db_session).simulate_ceiling(
+            YEAR, CeilingSimulationQuery(deal_id=deal.id), READER
+        )
+    assert excinfo.value.details["field"] == "deal_id"
+
+
+def test_an_unknown_deal_is_not_simulated(db_session: Session) -> None:
+    _configure_profile(db_session)
+    with pytest.raises(NotFound):
+        AnalyticsService(db_session).simulate_ceiling(
+            YEAR, CeilingSimulationQuery(deal_id=uuid4()), READER
+        )
