@@ -2,7 +2,7 @@
 spec §14, "Proposals"): the CHECK tying `contract_id`'s nullability to `target_type`,
 a `'work_unit'` accept creating both the `approval` and the `work_unit` in one
 transaction, `proposed_fields`/`accepted_fields` never overwritten, and `excerpt`
-verifiable against the source document's own text for `tipo_estratto = 'citato'`.
+verifiable against the source document's own text for `excerpt_type = 'quoted'`.
 
 `proposed_fields` payloads below are built as plain JSON-safe primitives (strings for
 UUIDs/dates, decimal strings for money and quantities) -- exactly the shape a real
@@ -94,7 +94,7 @@ def _contract_fields(customer_id: UUID, **overrides: object) -> dict[str, object
 def _work_unit_fields(contract_id: UUID, **overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "contract_id": str(contract_id),
-        "data": "2026-03-05",
+        "date": "2026-03-05",
         "quantity": "1.00",
         "description": "Giornata di consulenza",
         "approval": {
@@ -214,7 +214,7 @@ def test_create_of_work_unit_rejects_to_contract_id_mismatched_with_proposed_fie
             ),
             ADMIN,
         )
-    assert excinfo.value.details["field"] == "campi_proposti.contract_id"
+    assert excinfo.value.details["field"] == "proposed_fields.contract_id"
 
 
 def test_create_of_work_unit_rejects_an_unknown_contract(db_session: Session) -> None:
@@ -328,7 +328,7 @@ def test_reject_of_an_unknown_proposal_is_not_found(db_session: Session) -> None
         ProposalService(db_session).reject(uuid4(), ProposalReject(), ADMIN)
 
 
-# ---- accept: 'contratto' -----------------------------------------------------------
+# ---- accept: 'contract' -----------------------------------------------------------
 
 
 def test_accept_contract_creates_to_contract_and_its_first_rate_card(
@@ -416,7 +416,7 @@ def test_accept_of_an_already_decided_proposal_is_a_conflict(db_session: Session
         service.accept(proposal.id, ProposalAccept(), ADMIN)
 
 
-# ---- accept: 'giornata' -------------------------------------------------------------
+# ---- accept: 'work_unit' -------------------------------------------------------------
 
 
 def test_accept_work_unit_creates_an_approval_and_to_work_unit_at_approved_in_one_call(
@@ -447,7 +447,7 @@ def test_accept_work_unit_creates_an_approval_and_to_work_unit_at_approved_in_on
     assert approval is not None
     assert approval.document_id == document.id
     assert approval.excerpt == proposal.excerpt
-    assert approval.origin == {"kind": "agente", "proposal_id": str(proposal.id)}
+    assert approval.origin == {"kind": "agent", "proposal_id": str(proposal.id)}
 
 
 def test_accept_work_unit_rejects_an_edited_contract_id_that_diverges_from_the_proposal(
@@ -472,7 +472,7 @@ def test_accept_work_unit_rejects_an_edited_contract_id_that_diverges_from_the_p
     diverging = _work_unit_fields(other_contract.id)
     with pytest.raises(ValidationFailed) as excinfo:
         service.accept(proposal.id, ProposalAccept(accepted_fields=diverging), ADMIN)
-    assert excinfo.value.details["field"] == "campi_accettati.contract_id"
+    assert excinfo.value.details["field"] == "accepted_fields.contract_id"
     assert db_session.query(WorkUnit).count() == 0
     assert db_session.query(Approval).count() == 0
     reloaded = service.get(proposal.id, ADMIN)
@@ -482,7 +482,7 @@ def test_accept_work_unit_rejects_an_edited_contract_id_that_diverges_from_the_p
 def test_accept_work_unit_is_atomic_when_the_work_unit_write_conflicts(
     db_session: Session,
 ) -> None:
-    """The partial unique index (`uq_work_units_contract_data_live`) refuses a
+    """The partial unique index (`uq_work_units_contract_date_live`) refuses a
     second live day on the same contract and date. When it does, nothing of this
     accept attempt survives: no orphan `Approval`, and the proposal stays
     `'pending'` -- never a day silently left at `'proposed'`, and never a
@@ -495,7 +495,7 @@ def test_accept_work_unit_is_atomic_when_the_work_unit_write_conflicts(
             document.id,
             target_type="work_unit",
             contract_id=contract.id,
-            proposed_fields=_work_unit_fields(contract.id, data="2026-03-05"),
+            proposed_fields=_work_unit_fields(contract.id, date="2026-03-05"),
         ),
         ADMIN,
     )
@@ -504,7 +504,7 @@ def test_accept_work_unit_is_atomic_when_the_work_unit_write_conflicts(
     db_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=date(2026, 3, 5),
+            date=date(2026, 3, 5),
             quantity=Decimal("1.00"),
             description="Giornata già registrata",
             status="proposed",
@@ -535,14 +535,14 @@ def test_to_refused_work_unit_accept_keeps_what_the_caller_had_pending(db_sessio
             document.id,
             target_type="work_unit",
             contract_id=contract.id,
-            proposed_fields=_work_unit_fields(contract.id, data="2026-03-05"),
+            proposed_fields=_work_unit_fields(contract.id, date="2026-03-05"),
         ),
         ADMIN,
     )
     db_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=date(2026, 3, 5),
+            date=date(2026, 3, 5),
             quantity=Decimal("1.00"),
             description="Giornata già registrata",
             status="proposed",
@@ -635,7 +635,7 @@ def test_the_database_allows_to_contract_proposal_with_no_contract_id(
     assert proposal.contract_id is None
 
 
-# ---- estratto verifiability (tipo_estratto = 'citato') -------------------------------
+# ---- excerpt verifiability (excerpt_type = 'quoted') -------------------------------
 
 
 def test_to_quoted_excerpt_is_verifiable_against_the_documents_own_text(

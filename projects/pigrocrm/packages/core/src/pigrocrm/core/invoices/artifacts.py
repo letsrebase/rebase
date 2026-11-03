@@ -146,8 +146,8 @@ class InvoiceArtifacts:
 
     @staticmethod
     def frozen_abroad(invoice: Invoice) -> bool:
-        """Whether the issued row's frozen profile is a foreign azienda's (REB-619):
-        read off the stored JSON rather than the live profile, since the azienda's pack
+        """Whether the issued row's frozen profile is a foreign legal entity's (REB-619):
+        read off the stored JSON rather than the live profile, since the legal entity's pack
         at issue time is the fact the document was built on, and off the row before
         `for_export` validates the whole snapshot, so the refusal is the specific one.
         A row with no snapshot yet is not frozen anywhere, abroad included."""
@@ -233,7 +233,7 @@ class InvoiceArtifacts:
             document = documents.repo.get(existing_id)
             if document is not None:
                 return document
-        # The invoice's own azienda, never the customer's current one: a customer moved
+        # The invoice's own legal entity, never the customer's current one: a customer moved
         # since the invoice was issued keeps the invoice where it was (spec §1.7), and so
         # must the artefacts rendered for it afterwards.
         created = documents.create(
@@ -286,7 +286,7 @@ class InvoiceArtifacts:
                 f"il {kind} rigenerato non coincide con quello originale: e' una "
                 "divergenza da segnalare, non una nuova versione da salvare",
                 expected=expected_hash,
-                ottenuto=digest,
+                obtained=digest,
                 field="xml_hash_sha256" if kind == "xml" else "hash_sha256",
             )
 
@@ -454,7 +454,7 @@ class InvoiceArtifacts:
                 "il file XML archiviato non coincide piu' con l'hash registrato: "
                 "una divergenza da segnalare, non un file da servire",
                 expected=invoice.xml_hash_sha256,
-                ottenuto=digest,
+                obtained=digest,
                 field="xml_hash_sha256",
             )
         return data
@@ -535,7 +535,7 @@ class InvoiceArtifacts:
         )
         reference = invoice.reference if invoice.type == "proforma" else None
         type, title, filename = self._pdf_identity(invoice)
-        # The issuing azienda's logo (REB-627, spec §1.8), live like the document's.
+        # The issuing legal entity's logo (REB-627, spec §1.8), live like the document's.
         media = LegalEntityAssets(ctx.session, ctx.storage).media_for(invoice.legal_entity_id)
         # Everything the render needs is read: end the read transaction first, so the
         # compile (which may wait for a render slot) does not pin a pooled connection.
@@ -564,7 +564,7 @@ class InvoiceArtifacts:
         )
         ctx.session.commit()
         artifacts = [pdf_artifact]
-        # A foreign azienda's document is the PDF alone (REB-619): `export_xml` would
+        # A foreign legal entity's document is the PDF alone (REB-619): `export_xml` would
         # refuse it, and a refusal is not an artefact.
         if (
             invoice.type == "invoice"

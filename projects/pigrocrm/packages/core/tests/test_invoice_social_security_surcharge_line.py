@@ -1,10 +1,10 @@
-"""The rivalsa line through the real invoice lifecycle: create, issue, export --
-REB-361, proving REB-344 §9's own claim that a rivalsa line is "an ordinary
+"""The social-security surcharge (rivalsa) line through the real invoice lifecycle: create,
+issue, export -- REB-361, proving REB-344 §9's own claim that a surcharge line is "an ordinary
 InvoiceLine row" that "passes FatturaPA export unchanged."
 
 The one thing no unit test can prove: `InvoiceService.issue` re-derives every
 zero-rate line's own `(natura, riferimento_normativo)` from the regime and refuses a
-stored line whose pair disagrees. A rivalsa line only survives that check because
+stored line whose pair disagrees. A surcharge line only survives that check because
 `social_security_surcharge_line_for_contract` leaves `vat_nature`/`legal_reference` to the same
 `RegimeStrategy` every other line goes through, and marks itself only through
 `description` -- the one column the regime never recomputes. This file is where
@@ -137,14 +137,14 @@ def test_the_social_security_surcharge_line_passes_fatturapa_export_unchanged(
     assert_valid(data)
     assert content_type == "application/xml"
 
-    linee = list(etree.fromstring(data).iter("DettaglioLinee"))
-    assert len(linee) == 2
-    social_security_surcharge_line = linee[1]
+    lines = list(etree.fromstring(data).iter("DettaglioLinee"))
+    assert len(lines) == 2
+    social_security_surcharge_line = lines[1]
     assert social_security_surcharge_line.findtext("Natura") == "N2.2"
     assert social_security_surcharge_line.findtext("AliquotaIVA") == "0.00"
     assert social_security_surcharge_line.findtext("PrezzoTotale") == "40.00"
     assert (
-        "social_security_surcharge"
+        "rivalsa contributiva"
         in (social_security_surcharge_line.findtext("Descrizione") or "").lower()
     )
 

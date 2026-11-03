@@ -39,7 +39,7 @@ from pigrocrm.core.money import ZERO_MONEY, round_money, share
 from pigrocrm.core.work_units.models import WorkUnit, WorkUnitTransition
 
 # The eight states a bar stacks, in the order the legend reads them.
-STATUSES_GRAFICO: tuple[str, ...] = (
+CHART_STATUSES: tuple[str, ...] = (
     "proposed",
     "approved",
     "worked",
@@ -61,7 +61,7 @@ STATUSES_REGISTER: frozenset[str] = frozenset(
         "non_billable",
     }
 )
-STATUSES_NEVER_ACCADUTI: tuple[str, ...] = ("rejected", "revoked")
+NEVER_HAPPENED_STATUSES: tuple[str, ...] = ("rejected", "revoked")
 WINDOW_MEDIA = 3
 ZERO_DAYS = Decimal("0.00")
 
@@ -70,11 +70,11 @@ def month_key(year: int, month: int) -> str:
     return f"{year:04d}-{month:02d}"
 
 
-def months_between(da: date, a: date) -> list[tuple[int, int]]:
+def months_between(date_from: date, date_to: date) -> list[tuple[int, int]]:
     """Every `(year, month)` from `da`'s month to `a`'s, inclusive."""
     months: list[tuple[int, int]] = []
-    year, month = da.year, da.month
-    while (year, month) <= (a.year, a.month):
+    year, month = date_from.year, date_from.month
+    while (year, month) <= (date_to.year, date_to.month):
         months.append((year, month))
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     return months
@@ -87,19 +87,19 @@ def shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
 
 def monthly_figures(
     session: Session,
-    da: date,
-    a: date,
+    date_from: date,
+    date_to: date,
     legal_entity_id: UUID | None,
     today: date,
     timezone: str,
 ) -> tuple[list[DaysMonth], str | None, Decimal, Decimal, Decimal]:
     """`(mesi, ultimo_mese_completo, giorni_nel_periodo, senza_approvazione_nel_periodo,
     senza_approvazione_sempre)`."""
-    window = months_between(da, a)
+    window = months_between(date_from, date_to)
     first_year, first_month = window[0]
     lookback_year, lookback_month = shift_month(first_year, first_month, -WINDOW_MEDIA)
     fetch_from = date(lookback_year, lookback_month, 1)
-    fetch_to = month_bounds(a.year, a.month)[1]
+    fetch_to = month_bounds(date_to.year, date_to.month)[1]
 
     month_of = func.to_char(WorkUnit.date, "YYYY-MM")
     stmt = (
@@ -108,7 +108,7 @@ def monthly_figures(
         .where(
             WorkUnit.date >= fetch_from,
             WorkUnit.date <= fetch_to,
-            WorkUnit.status.not_in(STATUSES_NEVER_ACCADUTI),
+            WorkUnit.status.not_in(NEVER_HAPPENED_STATUSES),
         )
         .group_by(month_of, WorkUnit.status)
     )
@@ -161,7 +161,7 @@ def monthly_figures(
             for step in range(1, WINDOW_MEDIA + 1)
         ]
         average = round_money(sum(prior, start=ZERO_DAYS) / WINDOW_MEDIA)
-        stack = {s: per_month.get(key, {}).get(s, ZERO_DAYS) for s in STATUSES_GRAFICO}
+        stack = {s: per_month.get(key, {}).get(s, ZERO_DAYS) for s in CHART_STATUSES}
         rows.append(
             (year, month, key, stack, recorded(key), average, risk_by_month.get(key, ZERO_DAYS))
         )
@@ -180,7 +180,7 @@ def monthly_figures(
                 complete=end < today,
                 by_status=[
                     DaysStateShare(status=s, days=stack[s], share=share(stack[s], tallest))
-                    for s in STATUSES_GRAFICO
+                    for s in CHART_STATUSES
                 ],
                 total=total,
                 total_share=share(total, tallest),
@@ -230,7 +230,7 @@ class _Rate:
 
 
 def realised_rates(
-    session: Session, da: date, a: date, legal_entity_id: UUID | None
+    session: Session, date_from: date, date_to: date, legal_entity_id: UUID | None
 ) -> tuple[list[DaysRate], list[DaysRate], Decimal, Decimal | None]:
     """`(per_cliente, per_contratto, giorni_fatturati, tariffa_reale)` over the days dated
     `da`..`a` that sit on a line of an issued invoice."""
@@ -250,9 +250,9 @@ def realised_rates(
         .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
         .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
         .where(
-            WorkUnit.date >= da,
-            WorkUnit.date <= a,
-            WorkUnit.status.not_in(STATUSES_NEVER_ACCADUTI),
+            WorkUnit.date >= date_from,
+            WorkUnit.date <= date_to,
+            WorkUnit.status.not_in(NEVER_HAPPENED_STATUSES),
             *revenue_filter(),
         )
         .order_by(WorkUnit.date, WorkUnit.id)
@@ -268,7 +268,7 @@ def realised_rates(
             select(WorkUnit.invoice_line_id, func.sum(WorkUnit.quantity))
             .where(
                 WorkUnit.invoice_line_id.in_(line_ids),
-                WorkUnit.status.not_in(STATUSES_NEVER_ACCADUTI),
+                WorkUnit.status.not_in(NEVER_HAPPENED_STATUSES),
             )
             .group_by(WorkUnit.invoice_line_id)
         ):

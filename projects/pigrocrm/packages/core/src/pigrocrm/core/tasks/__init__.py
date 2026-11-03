@@ -1,4 +1,4 @@
-"""Attività: a commitment with a due date and a state.
+"""Task: a commitment with a due date and a state.
 
 The table slice 7 specified on 2026-09-03 and slice 10 built on 2026-09-09, when the
 calendar needed something to put in a day. Everything about the shape -- why `due_date`

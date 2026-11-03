@@ -2,7 +2,7 @@
 
 Spec §8.1 fixes the searched fields, §8.5 the ordering and the counting, §8.6 the three
 interface states. The shape here is what makes those three states expressible without the
-client inferring anything: `total` is the real count and `total_and_a_minimum` says
+client inferring anything: `total` is the real count and `total_is_minimum` says
 whether it was truncated, so "5 of 500" and "5 of 5" are different responses rather than
 the same list of five.
 """
@@ -39,8 +39,8 @@ class SearchQuery(BaseModel):
 
     term: SafeStr = Field(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)
     limit: int = Field(default=PER_CLASS_LIMIT, ge=1, le=20)
-    # One azienda's records (REB-623): customers, deals, documents and invoices by their
-    # own column, people through their customer. `None` is every azienda.
+    # One legal entity's records (REB-623): customers, deals, documents and invoices by their
+    # own column, people through their customer. `None` is every legal entity.
     legal_entity_id: UUID | None = None
 
 
@@ -69,7 +69,7 @@ class SearchGroup(BaseModel):
     total: int
     # True when `total` is COUNT_CEILING and the real count may be higher. The palette
     # renders "oltre 200" for this case; it never renders "200".
-    total_and_a_minimum: bool
+    total_is_minimum: bool
 
 
 class SearchResults(BaseModel):

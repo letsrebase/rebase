@@ -123,8 +123,8 @@ def test_month_bounds_applies_the_full_gregorian_leap_rule() -> None:
 def test_window_from_is_inclusive_at_both_ends() -> None:
     """The date arithmetic `core/dashboard/` is forbidden to contain (slice 6 §3) lives
     here instead. Inclusive at both ends, like `month_bounds`: every period filter in
-    slices 4 and 6 is `BETWEEN da AND a`, and a second convention is how a day gets counted
-    twice."""
+    slices 4 and 6 is `BETWEEN date_from AND date_to`, and a second convention is how a day
+    gets counted twice."""
     from pigrocrm.core.db import window_from
 
     assert window_from(date(2026, 1, 31), 30) == (date(2026, 1, 31), date(2026, 3, 2))

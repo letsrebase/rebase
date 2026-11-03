@@ -187,8 +187,8 @@ def test_a_draft_being_sent_or_already_sent_can_no_longer_be_edited(
 def test_a_failed_draft_is_editable_again_and_loses_its_stale_error(
     db_session: Session,
 ) -> None:
-    """Spec 6.3(a): Gmail refused, nothing left, «la bozza resta intatta con l'errore
-    accanto, il composer si riapre con il testo dentro». Refusing the edit would leave
+    """Spec 6.3(a): Gmail refused, nothing left, "the draft stays intact with the error
+    beside it, the composer reopens with the text in it". Refusing the edit would leave
     the only recovery as "write it again", which is the failure the durable draft exists
     to prevent. The error goes when the text changes: an error sentence next to text it
     no longer describes is worse than none."""
@@ -211,8 +211,8 @@ def test_a_failed_draft_is_editable_again_and_loses_its_stale_error(
 
 def test_deleting_a_draft_in_flight_is_refused(db_session: Session) -> None:
     """Deleting the row while the send is running would leave the outcome with nothing
-    to be recorded against -- which is the previous system's `404 'Offerta non trovata per
-    registrare l'invio email.'` with the mail already delivered."""
+    to be recorded against -- which is the previous system's `404 'Offer not found to
+    record the email send.'` with the mail already delivered."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
     service = _service(db_session)
@@ -246,7 +246,9 @@ def test_each_entity_type_is_checked_against_its_own_table(db_session: Session) 
     draft against a row of the wrong kind."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    person = Person(nome="Ada", last_name="Rossi", email="ada@acme.it", customer_id=customer.id)
+    person = Person(
+        first_name="Ada", last_name="Rossi", email="ada@acme.it", customer_id=customer.id
+    )
     db_session.add(person)
     db_session.flush()
     service = _service(db_session)

@@ -45,7 +45,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": COLLABORATOR_PASSWORD, "nome": "Test", "role": role},
+        json={"email": email, "password": COLLABORATOR_PASSWORD, "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -402,7 +402,7 @@ def test_a_transmitted_invoice_refuses_annulment_and_says_where_to_go(
     ).json()
     assert (
         logged_in.post(
-            f"/api/invoices/{issued['id']}/transmitted", json={"data": TODAY}
+            f"/api/invoices/{issued['id']}/transmitted", json={"date": TODAY}
         ).status_code
         == 200
     )

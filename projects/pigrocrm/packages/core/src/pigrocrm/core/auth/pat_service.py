@@ -294,7 +294,7 @@ class PatService:
             role=role,
             full_access=record.full_access and self.settings.mcp_full_access,
             # The owner's scope travels on the credential (REB-634): an agent sees the
-            # aziende its person sees, read fresh here like the role.
+            # legal entities its person sees, read fresh here like the role.
             legal_entities=scope_of(user),
         )
         # Only the *first* use is recorded, not every one. `resolve()` runs on every

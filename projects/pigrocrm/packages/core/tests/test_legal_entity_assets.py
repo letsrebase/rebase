@@ -1,5 +1,5 @@
-"""The logo and the signature an azienda uploads (REB-627, spec 2026-10-03 §1.8, §3):
-sniffed by content, bounded, stored under the azienda's own key, read back for the
+"""The logo and the signature a legal entity uploads (REB-627, spec 2026-10-03 §1.8, §3):
+sniffed by content, bounded, stored under the legal entity's own key, read back for the
 Typst job and for the panel, removable; and the SVG hygiene the API's serving needs.
 """
 
@@ -61,7 +61,7 @@ def _png_of(width: int, height: int, interlace: int, *idat: bytes) -> bytes:
 
 
 def test_the_signature_placeholder_is_a_transparent_pixel() -> None:
-    """The pixel every job gets under the signature's name when the azienda has none:
+    """The pixel every job gets under the signature's name when the legal entity has none:
     decoded, not merely compiled, since a pasted constant once was a blue square."""
     assert sniff_image(BLANK_PNG) == "png"
     offset, idat = 8, b""
@@ -147,7 +147,7 @@ def test_the_signature_is_a_png_under_the_name_the_offer_template_reads(
     legal_entity = _default(db_session)
     read = assets.set_signature(BLANK_PNG, ADMIN)
     assert read.signature_key is not None
-    assert read.signature_key.startswith(f"aziende/{legal_entity.id}/firma-")
+    assert read.signature_key.startswith(f"aziende/{legal_entity.id}/signature-")
     assert read.signature_key.endswith(".png")
     assert assets.signature() == (BLANK_PNG, "image/png")
     assert assets.media_for() == {"sign_is.png": BLANK_PNG}

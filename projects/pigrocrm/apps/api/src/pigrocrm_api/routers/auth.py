@@ -290,12 +290,12 @@ def enter_with_link(
 
 
 class InviteAccept(BaseModel):
-    """The token, plus `nome` when the peek answered none. Whether a name is needed
+    """The token, plus `name` when the peek answered none. Whether a name is needed
     is the service's knowledge (it reads the row), so that is where it is enforced --
     a schema constraint here could only duplicate the check or get it wrong."""
 
     t: SafeStr = Field(max_length=128)
-    nome: SafeStr | None = Field(default=None, max_length=200)
+    name: SafeStr | None = Field(default=None, max_length=200)
 
 
 @router.get(
@@ -348,7 +348,7 @@ def accept_invite(
     the default five a minute: the same posture as `/api/auth/link`, kept in a bucket
     apart so neither credential can starve the other's."""
     spend_one(request, scope="invite_accept")
-    user = InvitationService(session).accept(payload.t, payload.nome)
+    user = InvitationService(session).accept(payload.t, payload.name)
     open_session(response, request, settings, session, user)
     return user
 

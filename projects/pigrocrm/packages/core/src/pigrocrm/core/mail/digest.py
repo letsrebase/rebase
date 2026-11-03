@@ -21,8 +21,8 @@ def _hours_recorded(value: Decimal) -> str:
     return "1 ora registrata" if value == 1 else f"{_hours_it(value)} ore registrate"
 
 
-def _count(n: int, singolare: str, plurale: str) -> str:
-    return f"1 {singolare}" if n == 1 else f"{n} {plurale}"
+def _count(n: int, singular: str, plurale: str) -> str:
+    return f"1 {singular}" if n == 1 else f"{n} {plurale}"
 
 
 def _delay(days: int | None) -> str:
@@ -59,17 +59,17 @@ def digest_subject(digest: WeeklyDigest) -> str:
         parti.append(_hours_recorded(digest.hours.total_hours))
     if digest.offers_pending:
         parti.append(_count(len(digest.offers_pending), "offerta in attesa", "offerte in attesa"))
-    if digest.deal_mossi:
-        parti.append(_count(len(digest.deal_mossi), "deal mosso", "deal mossi"))
+    if digest.deal_moves:
+        parti.append(_count(len(digest.deal_moves), "deal mosso", "deal mossi"))
     if not parti:
         return "La tua settimana in PigroCRM"
     return "La tua settimana: " + ", ".join(parti)
 
 
-def _da_digest(url: str) -> str:
-    """Every link the report hands out carries `da=digest`, so PostHog can tell a click
+def _from_digest(url: str) -> str:
+    """Every link the report hands out carries `from=digest`, so PostHog can tell a click
     that came from the mail from the same page reached any other way (spec §3.1)."""
-    return f"{url}{'&' if '?' in url else '?'}da=digest"
+    return f"{url}{'&' if '?' in url else '?'}from=digest"
 
 
 # `PaymentStatus`'s collected value (`invoices/schemas.py`). Written out rather than
@@ -94,7 +94,8 @@ def _status_readable(inv: DigestInvoice) -> str:
         return "incassata"
     if inv.transmitted:
         return "trasmessa"
-    return inv.status
+    # The register stores `issued`; the reader gets the Italian word.
+    return "emessa" if inv.status == "issued" else inv.status
 
 
 def _invoice_line(inv: DigestInvoice, extra: str = "") -> str:
@@ -120,7 +121,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     """The weekly report, section by section, in the order `WeeklyDigest`'s fields carry
     (spec 2026-09-16 §3.1 and §3.5): a section prints only when it has rows, every link
     is built from `public_url` (or, for a signal, from its own `link`) and
-    carries `da=digest`, and a still week closes with the prompt instead of a list."""
+    carries `from=digest`, and a still week closes with the prompt instead of a list."""
     e = html_escape.escape
     heading = f'style="margin:28px 0 8px 0;font-weight:600;color:{INK};"'
     li = 'style="margin:0 0 6px 0;"'
@@ -128,7 +129,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};"'
 
     def link(path: str) -> str:
-        return _da_digest(f"{public_url}{path}")
+        return _from_digest(f"{public_url}{path}")
 
     text_parts: list[str] = ["Ciao,", "", "ecco la tua settimana in PigroCRM."]
     html_parts: list[str] = [
@@ -141,7 +142,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
             return
         text_parts.append("")
         text_parts.append(title)
-        text_parts.extend(f"- {testo}" for testo, _ in lines)
+        text_parts.extend(f"- {line_text}" for line_text, _ in lines)
         html_parts.append(f"<p {heading}>{e(title)}</p>")
         html_parts.append(
             '<ul style="margin:0;padding:0 0 0 18px;">'
@@ -175,32 +176,32 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     section(title_unpaid, lines_unpaid)
 
     # 2. «Da emettere»: won deals with no invoice, billable hours not yet invoiced.
-    lines_emettere: list[tuple[str, str]] = []
+    lines_to_issue: list[tuple[str, str]] = []
     if digest.won_to_invoice:
         text_deal_won = _count(
             digest.won_to_invoice, "deal vinto da fatturare", "deal vinti da fatturare"
         )
-        lines_emettere.append(
+        lines_to_issue.append(
             _row(
                 text_deal_won,
                 url=link("/app/deal/list?to_invoice=true"),
                 label="Vai ai deal",
             )
         )
-    if digest.hours_uninvoiced or digest.accrued_value:
-        lines_emettere.append(
+    if digest.unbilled_hours or digest.accrued_value:
+        lines_to_issue.append(
             _row(
-                f"{_hours_it(digest.hours_uninvoiced)} ore fatturabili non fatturate — "
+                f"{_hours_it(digest.unbilled_hours)} ore fatturabili non fatturate — "
                 f"{euro(digest.accrued_value)} maturati",
                 # `/app/hours` bare: the page declares no `validateSearch`, so a
                 # `?invoiced=false` would be dropped on arrival and the link would
-                # promise a filtered list the reader never gets. Only `da=digest`
+                # promise a filtered list the reader never gets. Only `from=digest`
                 # survives, and that one `link()` adds to every link the report hands out.
                 url=link("/app/hours"),
                 label="Vai alle ore",
             )
         )
-    section("Da emettere", lines_emettere)
+    section("Da emettere", lines_to_issue)
 
     # 3. «Emesse questa settimana», with this month's total next to last month's.
     lines_issued = [_row(_invoice_line(inv, _status_readable(inv))) for inv in digest.issued]
@@ -221,11 +222,11 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # entry, the only comparison `WeekHours` carries with it.
     hours = digest.hours
     if hours is not None:
-        copertura = len(hours.days) - len(hours.days_without_hours)
+        coverage = len(hours.days) - len(hours.days_without_hours)
         line_total = f"{_hours_recorded(hours.total_hours)} questa settimana"
-        riga_copertura = f"{copertura} giorni su {len(hours.days)} con ore registrate"
+        line_coverage = f"{coverage} giorni su {len(hours.days)} con ore registrate"
         # Nothing external in either line, so text and html are the same string.
-        section("Le ore", [(line_total, line_total), (riga_copertura, riga_copertura)])
+        section("Le ore", [(line_total, line_total), (line_coverage, line_coverage)])
 
     # 6. «In pipeline»: the open stages, the deals moved, the offers awaiting an answer.
     lines_pipeline: list[tuple[str, str]] = [
@@ -240,12 +241,12 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
             _row("La pipeline completa", url=link("/app/deal"), label="Vai alla pipeline")
         )
     lines_pipeline += [
-        _row(f"{mossa.title} è passato a {mossa.stage_name} ({day_short(mossa.when)})")
-        for mossa in digest.deal_mossi
+        _row(f"{move.title} è passato a {move.stage_name} ({day_short(move.when)})")
+        for move in digest.deal_moves
     ]
     lines_pipeline += [
         _row(
-            f"{offer.title} — in attesa da {_count(offer.days, 'day', 'days')}",
+            f"{offer.title} — in attesa da {_count(offer.days, 'giorno', 'giorni')}",
             url=link(f"/app/documents/{offer.document_id}"),
             label="Apri l'offerta",
         )
@@ -258,11 +259,11 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # `dashboard/service.py`), so it goes through `link()` like every other path.
     lines_signals = [
         _row(
-            f"{segnale.label}: {segnale.count}",
-            url=link(segnale.link),
+            f"{signal.label}: {signal.count}",
+            url=link(signal.link),
             label="Vedi",
         )
-        for segnale in digest.signals
+        for signal in digest.signals
     ]
     section("Da sistemare", lines_signals)
 
@@ -271,30 +272,30 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # another mail.
     tasks = digest.tasks
     lines_fare: list[tuple[str, str]] = []
-    for group, totale, delay in (
+    for group, group_total, delay in (
         (tasks.overdue, tasks.overdue_total, True),
         (tasks.in_week, tasks.in_week_total, False),
     ):
-        for riga in group:
-            when = day_short(riga.due_date)
+        for line in group:
+            when = day_short(line.due_date)
             if delay:
-                when += f" — {_count(riga.days_of_delay or 0, 'day', 'days')} di ritardo"
+                when += f" — {_count(line.days_of_delay or 0, 'giorno', 'giorni')} di ritardo"
             lines_fare.append(
                 _row(
-                    f"{riga.title} — {when}",
-                    url=link(f"/app/activities?open={riga.task_id}"),
+                    f"{line.title} — {when}",
+                    url=link(f"/app/activities?open={line.task_id}"),
                     label="Apri",
                 )
             )
-        if totale > len(group):
-            other = _count(totale - len(group), "altra", "altre")
+        if group_total > len(group):
+            other = _count(group_total - len(group), "altra", "altre")
             more = f"…e {other} {'in ritardo' if delay else 'questa settimana'}"
             lines_fare.append((more, e(more)))
     if lines_fare:
         lines_fare.append(
             _row(
                 "Tutto quello che c'è da fare",
-                url=link("/app/tasks?view=today"),
+                url=link("/app/activities?view=today"),
                 label="Vai a Oggi",
             )
         )

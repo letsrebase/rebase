@@ -48,7 +48,7 @@ def admin_user(db_session: Session) -> User:
     # persisted user row for the foreign keys below.
     user = User(
         email=f"drive-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
         role="admin",
         active=True,
@@ -553,7 +553,7 @@ def test_health_on_a_revoked_drive_account_shows_the_revoked_banner(
     account = _connected_drive_account(db_session, admin_user, status="revoked")
     health = _drive_service_account(db_session).health(_drive_actor(admin_user))
     assert health.banner == "revoked"
-    assert "revoked" in (health.banner_text or "")
+    assert "revocato" in (health.banner_text or "")
     assert account.email_address in (health.banner_text or "")
 
 
@@ -579,7 +579,7 @@ def test_health_on_an_expired_drive_account_shows_the_expired_banner(
     account = _connected_drive_account(db_session, admin_user, status="expired")
     health = _drive_service_account(db_session).health(_drive_actor(admin_user))
     assert health.banner == "expired"
-    assert "expired" in (health.banner_text or "")
+    assert "scaduto" in (health.banner_text or "")
     assert account.email_address in (health.banner_text or "")
 
 
@@ -597,7 +597,7 @@ def test_health_reports_a_consent_already_past_its_date_as_expired_not_expiring(
     health = _drive_service_account(db_session).health(_drive_actor(admin_user))
 
     assert health.banner == "expired"
-    assert "expired" in (health.banner_text or "")
+    assert "scaduto" in (health.banner_text or "")
 
 
 def test_health_within_the_warning_window_shows_the_expiring_banner_with_the_date(
@@ -670,7 +670,7 @@ def test_health_names_the_admin_whose_account_holds_the_spaces_storage(
     `drive.file`."""
     other_admin = User(
         email=f"other-admin-{uuid4().hex[:8]}@example.it",
-        nome="Bruno",
+        name="Bruno",
         password_hash="x",
         role="admin",
         active=True,
@@ -702,7 +702,7 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
     land there."""
     other_admin = User(
         email=f"other-admin-{uuid4().hex[:8]}@example.it",
-        nome="Bruno",
+        name="Bruno",
         password_hash="x",
         role="admin",
         active=True,
@@ -726,7 +726,7 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
     assert health.space_storage.holder.reachable is False
 
 
-def test_health_says_no_space_storage_when_only_a_collaboratores_row_names_one(
+def test_health_says_no_space_storage_when_only_a_collaborators_row_names_one(
     db_session: Session, admin_user: User
 ) -> None:
     """The behaviour `DriveRepository.storage_account` already settled on (REB-457):
@@ -783,7 +783,7 @@ def test_usable_on_a_revoked_account_raises_credential_revoked(
         _drive_service_account(db_session).usable(
             _drive_actor(admin_user), scope=DRIVE_SCOPE_READONLY, feature="la lettura dei documenti"
         )
-    assert "revoked" in caught.value.message
+    assert "revocato" in caught.value.message
     assert not isinstance(caught.value, CredentialRevoked)
     details = caught.value.details
     assert details["entity"] == "google_drive_account"
@@ -805,8 +805,8 @@ def test_usable_on_an_expired_account_raises_consent_expired(
         _drive_service_account(db_session).usable(
             _drive_actor(admin_user), scope=DRIVE_SCOPE_READONLY, feature="la lettura dei documenti"
         )
-    assert "expired" in caught.value.message
-    assert "revoked" not in caught.value.message
+    assert "scaduto" in caught.value.message
+    assert "revocato" not in caught.value.message
     assert not isinstance(caught.value, ConsentExpired)
     details = caught.value.details
     assert details["entity"] == "google_drive_account"
@@ -1059,7 +1059,7 @@ def test_set_roots_is_refused_for_a_readonly_actor(db_session: Session, admin_us
 def _collaborator(session: Session) -> User:
     user = User(
         email=f"collab-{uuid4().hex[:8]}@example.it",
-        nome="Collaboratore",
+        name="Collaboratore",
         password_hash="x",
         role="collaborator",
         active=True,

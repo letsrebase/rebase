@@ -55,7 +55,7 @@ ENTITY: EntityType = "time_entry"
 # make the delivered document and the database say two different things.
 FROZEN_WHEN_BILLED: tuple[str, ...] = (
     "hours",
-    "data",
+    "date",
     "applied_rate",
     "applied_cost",
     "description",
@@ -117,7 +117,7 @@ def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRe
         return set()
     # Still one query: every line this session can see, with whether its invoice is
     # issued. A line the session cannot see at all freezes its entry as an issued one
-    # would (REB-634): since the row-level policies, an entry of a deal in one azienda
+    # would (REB-634): since the row-level policies, an entry of a deal in one legal entity
     # may be bound to an invoice of another, which a member scoped to the first cannot
     # read. Open, the guard would let them edit hours already billed; closed, the worst
     # case is a draft line of an invoice out of their sight that they cannot touch until
@@ -191,7 +191,7 @@ class TimeEntryService:
         accepts tomorrow, which is the forecast this slice says it does not make."""
         if day > today_local():
             raise ValidationFailed(
-                ENTITY, "data", "data futura", expected="una data non successiva a oggi"
+                ENTITY, "date", "data futura", expected="una data non successiva a oggi"
             )
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
@@ -213,12 +213,12 @@ class TimeEntryService:
         deal = self._require_deal(data.deal_id)
         self._require_active_user(data.user_id)
         self._check_not_future(data.date)
-        self.locks.assert_writable(ENTITY, "data", data.date)
+        self.locks.assert_writable(ENTITY, "date", data.date)
 
         resolved = self.rates.resolve(
             deal_id=data.deal_id,
             user_id=data.user_id,
-            rate_esplicita=data.applied_rate,
+            explicit_rate=data.applied_rate,
             cost_explicit=data.applied_cost,
         )
         entry = self.repo.add(
@@ -290,12 +290,12 @@ class TimeEntryService:
             self._require_deal(changes["deal_id"])
         if changes.get("user_id") is not None:
             self._require_active_user(changes["user_id"])
-        if changes.get("data") is not None:
-            self._check_not_future(changes["data"])
+        if changes.get("date") is not None:
+            self._check_not_future(changes["date"])
         # Both the stored date and the new one: moving a row out of a closed month is
         # still a write into it, and checking only the destination would let somebody
         # empty a reported month one row at a time.
-        self.locks.assert_writable(ENTITY, "data", entry.date, changes.get("data"))
+        self.locks.assert_writable(ENTITY, "date", entry.date, changes.get("date"))
 
         # A rate supplied on an update is an explicit override and is re-frozen with
         # `origine = "manuale"`; a rate NOT supplied is never re-resolved, because
@@ -348,7 +348,7 @@ class TimeEntryService:
                 "la voce è legata a una riga di fattura: scollegala prima di cancellarla",
                 invoice_line_id=str(entry.invoice_line_id),
             )
-        self.locks.assert_writable(ENTITY, "data", entry.date)
+        self.locks.assert_writable(ENTITY, "date", entry.date)
         entry.deleted_at = datetime.now(UTC)
         self.activities.record(ENTITY, entry.id, "deleted", actor)
         self.session.commit()
@@ -377,7 +377,7 @@ class TimeEntryService:
                 deal_id=str(deal.id),
             )
 
-        self.locks.assert_writable(ENTITY, "data", entry.date)
+        self.locks.assert_writable(ENTITY, "date", entry.date)
         was_deleted = entry.deleted_at is not None
         entry.deleted_at = None
         if was_deleted:
@@ -457,16 +457,16 @@ class TimeEntryService:
         An entry whose rate (or cost) was written on the entry itself (`manual`) keeps it:
         that figure was chosen, not resolved, and is corrected on the entry.
 
-        Returns how many entries were rewritten, so a caller can say "12 voci
-        aggiornate" instead of "done".
+        Returns how many entries were rewritten, so a caller can say "12 voci aggiornate"
+        (the Italian copy) instead of "done".
         """
         actor.require_unscoped_admin("recalculate_rates")
-        if data.a < data.da:
+        if data.date_to < data.date_from:
             raise ValidationFailed(
-                ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
+                ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
             )
         self._require_deal(deal_id)
-        entries = self.repo.in_range(deal_id, data.da, data.a)
+        entries = self.repo.in_range(deal_id, data.date_from, data.date_to)
 
         billed = billed_entry_ids(self.session, entries)
         if billed:
@@ -483,7 +483,7 @@ class TimeEntryService:
         # A closed month is closed to this too: the lock and the recalculation are the
         # two ways the past can move, and leaving a gap between them would make the
         # lock decorative.
-        self.locks.assert_writable(ENTITY, "data", *[e.date for e in entries])
+        self.locks.assert_writable(ENTITY, "date", *[e.date for e in entries])
 
         touched = 0
         for entry in entries:

@@ -31,7 +31,7 @@ NAME_MAX_LENGTH = 200
 
 
 class InvitationCreate(BaseModel):
-    """The body of `POST /api/users/invites` (spec 2026-09-17 §3). `nome` is optional:
+    """The body of `POST /api/users/invites` (spec 2026-09-17 §3). `name` is optional:
     the acceptance page asks for one when the invitation carried none, so an address
     the admin knows only as an address is invitable. `email` is an `EmailStr` and not
     a `SafeStr` here: like `UserCreate`'s, email-validator refuses a NUL byte (and
@@ -42,8 +42,8 @@ class InvitationCreate(BaseModel):
     email: EmailStr
     name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     role: Role = "collaborator"
-    # The aziende the invitee will see (spec 2026-10-03 §1.11): omitted or `null` is
-    # every azienda, as before; a list scopes them to those; an empty list is refused by
+    # The legal entities the invitee will see (spec 2026-10-03 §1.11): omitted or `null` is
+    # every legal entity, as before; a list scopes them to those; an empty list is refused by
     # the service, since «nessuna azienda» is a deactivation and not a scope.
     legal_entities: list[UUID] | None = None
 
@@ -102,7 +102,7 @@ class InvitationOffer(BaseModel):
 
 class UserCreate(BaseModel):
     email: EmailStr
-    # The aziende the new account will see (spec 2026-10-03 §1.11), written in the same
+    # The legal entities the new account will see (spec 2026-10-03 §1.11), written in the same
     # transaction as the row: an account is never, not even between two commits, an
     # unscoped admin it was not meant to be. `null` or left out is the whole space.
     legal_entities: list[UUID] | None = None
@@ -130,7 +130,7 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     active: bool | None = None
     # The member's scope (spec 2026-10-03 §1.11): a list scopes them, an explicit
-    # `null` clears the scope back to every azienda, and a key left out leaves it as it
+    # `null` clears the scope back to every legal entity, and a key left out leaves it as it
     # is, which `UserService.update` tells apart through `model_fields_set`.
     legal_entities: list[UUID] | None = None
     weekly_digest: bool | None = None

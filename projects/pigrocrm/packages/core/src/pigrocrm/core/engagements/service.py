@@ -118,9 +118,11 @@ def full_name(freelancer: EngagementFreelancer) -> str:
 
 def deal_name(number: str, role: str, legal_entity: str) -> str:
     """`Lettera n. 3/2026 · Backend developer per Acme S.r.l.`, the role cut to 80 and
-    the company to 100 characters so the longest inputs stay under deals.nome's 255.
+    the company to 100 characters so the longest inputs stay under deals.name's 255.
     A label: the marker below is what finds a deal again."""
-    return f"Lettera n. {number} · {role[:ROLE_IN_DEAL_NAME]} per {legal_entity[:COMPANY_IN_DEAL_NAME]}"
+    role_part = role[:ROLE_IN_DEAL_NAME]
+    company_part = legal_entity[:COMPANY_IN_DEAL_NAME]
+    return f"Lettera n. {number} · {role_part} per {company_part}"
 
 
 def deal_marker(match_id: UUID) -> str:
@@ -211,7 +213,7 @@ class EngagementService:
                 self._unlock(lock, email)
 
     def report(
-        self, match_id: UUID, da: date | None = None, a: date | None = None
+        self, match_id: UUID, date_from: date | None = None, date_to: date | None = None
     ) -> EngagementReport:
         """The hours on the match's deal from `da` to `a`, both included (spec § 2.4):
         one row per time entry with the invoice its line belongs to, the CRM's own split
@@ -234,7 +236,7 @@ class EngagementService:
 
         with self._space_session(tenant) as space:
             deal = self._live_deal(space, deal_id, match_id)
-            first, last = self._period(deal, da, a)
+            first, last = self._period(deal, date_from, date_to)
             times = TimeEntryService(space)
             entries = self._entries(times, deal_id, first, last)
             status = times.deal_summary(deal_id, Actor.rebase()).status
@@ -285,9 +287,9 @@ class EngagementService:
                 status=status,
             ),
             days=days,
-            hours_total=total,
-            invoiced_hours=invoiced,
-            hours_uninvoiced=total - invoiced,
+            total_hours=total,
+            billed_hours=invoiced,
+            unbilled_hours=total - invoiced,
             invoices=[
                 invoice.model_copy(update={"hours": sum_hours(on_invoice[invoice.id])})
                 for invoice, _ in newest_first
@@ -300,17 +302,19 @@ class EngagementService:
         if not _origin(self.settings):
             raise ValidationFailed(ENTITY, "public_url", "PIGROCRM_PUBLIC_URL non configurato")
 
-    def _period(self, deal: DealRead, da: date | None, a: date | None) -> tuple[date, date]:
+    def _period(
+        self, deal: DealRead, date_from: date | None, date_to: date | None
+    ) -> tuple[date, date]:
         """`da` or the day the deal was created, `a` or today, both in the CRM's zone:
         `created_at` is an instant, and 22:30 UTC on 1 October is the 2nd in Rome. At
         most `REPORT_MAX_DAYS` from one to the other, so the hub's windows of exactly
         that many days, bounds touching, all pass."""
         first = (
-            da
-            if da is not None
+            date_from
+            if date_from is not None
             else deal.created_at.astimezone(ZoneInfo(self.settings.timezone)).date()
         )
-        last = a if a is not None else today_local(self.settings)
+        last = date_to if date_to is not None else today_local(self.settings)
         if last < first:
             raise ValidationFailed(ENTITY, "period", REVERSED)
         if (last - first).days > REPORT_MAX_DAYS:
@@ -318,7 +322,9 @@ class EngagementService:
         return first, last
 
     @staticmethod
-    def _entries(times: TimeEntryService, deal_id: UUID, da: date, a: date) -> list[TimeEntryRead]:
+    def _entries(
+        times: TimeEntryService, deal_id: UUID, date_from: date, date_to: date
+    ) -> list[TimeEntryRead]:
         """Every live entry of the deal in `[da, a]`, through the service's own list and
         its cursor to the end, sorted by day and then by when it was logged (the list
         itself runs newest first)."""
@@ -327,7 +333,11 @@ class EngagementService:
         while True:
             page = times.list(
                 TimeEntryListQuery(
-                    deal_id=deal_id, da=da, a=a, limit=REPORT_PAGE_SIZE, cursor=cursor
+                    deal_id=deal_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                    limit=REPORT_PAGE_SIZE,
+                    cursor=cursor,
                 ),
                 Actor.rebase(),
             )
@@ -642,7 +652,7 @@ class EngagementService:
         owner = UserRepository(space).get_by_email(email)
         created = DealService(space).create(
             DealCreate(
-                name=deal_name(letter.number, letter.role, letter.legal_entity),
+                name=deal_name(letter.number, letter.role, letter.company_name),
                 customer_id=customer_id,
                 hourly_rate=(letter.fee / HOURS_PER_DAY).quantize(RATE_PLACES),
                 budgeted_hours=(
@@ -650,9 +660,9 @@ class EngagementService:
                     if letter.expected_days is not None
                     else None
                 ),
-                expected_close_date=letter.data_fine,
+                expected_close_date=letter.end_date,
                 owner_id=owner.id if owner is not None and owner.active else None,
-                note=_deal_note(letter.number, letter.legal_entity),
+                note=_deal_note(letter.number, letter.company_name),
             ),
             Actor.rebase(),
             rebase_ref=deal_marker(match_id),

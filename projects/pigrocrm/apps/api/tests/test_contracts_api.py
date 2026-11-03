@@ -159,7 +159,7 @@ def test_the_concentration_answers_against_the_contracts_own_cap(logged_in: Test
 
     assert body["threshold"] == 0.5
     assert body["threshold_from_contract"] is True
-    assert [row["superata"] for row in body["currencies"]] == [False]
+    assert [row["exceeded"] for row in body["currencies"]] == [False]
 
 
 def test_the_simulator_answers_the_contracts_cap(logged_in: TestClient) -> None:
@@ -184,7 +184,7 @@ def test_the_simulator_answers_the_contracts_cap(logged_in: TestClient) -> None:
     body = response.json()
     assert body["thresholds"] == []
     assert body["contract_cap"]["contract_id"] == contract_id
-    assert body["contract_cap"]["rientra"] is False
+    assert body["contract_cap"]["falls_within"] is False
     assert body["contract_cap"]["period_from"] == "2026-01-01"
 
 

@@ -176,10 +176,10 @@ class AnalyticsService:
         `budget_vs_actual` already open to every role, not the taxable-income
         computation that method alone gates.
 
-        One azienda's, always (REB-630, spec 2026-10-03 §1.9): a ceiling exists on the
-        pack one azienda's profile points at, and its receipts are that azienda's
-        alone. `legal_entity_id` resolves to the only azienda when the caller names none,
-        so a one-azienda space reads what it always read; with several it is required,
+        One legal entity's, always (REB-630, spec 2026-10-03 §1.9): a ceiling exists on the
+        pack one legal entity's profile points at, and its receipts are that legal entity's
+        alone. `legal_entity_id` resolves to the only legal entity when the caller names none,
+        so a one-legal entity space reads what it always read; with several it is required,
         and `require_single` says so naming the field.
         """
         legal_entity = LegalEntityService(self.session).require_single(
@@ -211,13 +211,13 @@ class AnalyticsService:
         no second revenue query (`fiscal/ceiling.py::evaluate_ceiling`'s own
         docstring names this simulator by name). The addition is a not-yet-won
         deal's own estimate, read raw off its own three columns rather than by
-        `deal_id`, so nothing has to be saved to ask the question. The azienda
+        `deal_id`, so nothing has to be saved to ask the question. The legal entity
         resolves as in `ceiling_headroom` (REB-630).
 
         With a `contract_id` (REB-761) the same addition is also read against that
         contract's cap on its customer's share, in `contract_cap`: a clause of the
         contract and not of the pack, so it is answered whatever the regime, and the
-        contract has to be of the azienda the simulation is for.
+        contract has to be of the legal entity the simulation is for.
         """
         legal_entity = LegalEntityService(self.session).require_single(
             legal_entity_id, entity=ENTITY
@@ -270,14 +270,15 @@ class AnalyticsService:
     def year_overview(
         self, year: int, actor: Actor, legal_entity_id: UUID | None = None
     ) -> YearOverview:
-        """REB-757: the year of one azienda as an accountant reads it, from the register
+        """REB-757: the year of one legal entity as an accountant reads it, from the register
         alone: what was issued, under which regime and tax treatment, with the stamp duty
-        and the rivalsa apart. A read of the same invoices `annual_revenue` sums
+        and the social security surcharge apart. A read of the same invoices `annual_revenue` sums
         (`Invoice.year`, `invoice`, `issued`), so `totali.taxable_amount` is that figure and
         the CSV of the year (`year_csv.render_year_csv`) totals to it.
 
-        Open to every role, like the register itself, and one azienda's always: a register
-        is numbered per azienda, so `legal_entity_id` resolves to the only azienda when the
+        Open to every role, like the register itself, and one legal entity's always: a register
+        is numbered per legal entity, so `legal_entity_id` resolves to the only legal entity when
+        the
         caller names none and is required, by name, when the space has several.
         """
         return self._year(year, legal_entity_id)[0]
@@ -285,8 +286,8 @@ class AnalyticsService:
     def days_analysis(
         self,
         actor: Actor,
-        da: date | None = None,
-        a: date | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         legal_entity_id: UUID | None = None,
     ) -> DaysAnalysis:
         """REB-756: the days of a period by month and state, the realised day rate by
@@ -298,46 +299,46 @@ class AnalyticsService:
         (a bar is a month); the rate reads the exact `da`..`a`. At most ten years, the
         dashboard's own ceiling.
         """
-        if (da is None) != (a is None):
+        if (date_from is None) != (date_to is None):
             raise ValidationFailed(
                 "period",
-                "da" if da is None else "a",
+                "from" if date_from is None else "to",
                 "il periodo richiede entrambe le date, o nessuna",
                 expected="da e a insieme, oppure nessuna delle due",
             )
         today = today_local()
-        if da is None or a is None:
-            da, a = month_bounds(today.year, today.month)
-        if da > a:
+        if date_from is None or date_to is None:
+            date_from, date_to = month_bounds(today.year, today.month)
+        if date_from > date_to:
             raise ValidationFailed(
                 "period",
-                "da",
+                "from",
                 "la data iniziale è successiva a quella finale",
-                expected=f"da <= {a.isoformat()}",
+                expected=f"da <= {date_to.isoformat()}",
             )
-        if da.year < MIN_DAYS_YEAR:
+        if date_from.year < MIN_DAYS_YEAR:
             raise ValidationFailed(
                 "period",
-                "da",
+                "from",
                 f"il periodo non può cominciare prima del {MIN_DAYS_YEAR}",
                 expected=f"da >= {MIN_DAYS_YEAR}-01-01",
             )
-        if len(months_between(da, a)) > MAX_DAYS_MONTHS:
+        if len(months_between(date_from, date_to)) > MAX_DAYS_MONTHS:
             raise ValidationFailed(
                 "period",
-                "a",
+                "to",
                 f"il periodo non può superare {MAX_DAYS_MONTHS} mesi",
                 expected=f"un periodo di al più {MAX_DAYS_MONTHS} mesi",
             )
         months, last, days, in_period, always = monthly_figures(
-            self.session, da, a, legal_entity_id, today, get_settings().timezone
+            self.session, date_from, date_to, legal_entity_id, today, get_settings().timezone
         )
         by_customer, by_contract, invoiced_days, rate = realised_rates(
-            self.session, da, a, legal_entity_id
+            self.session, date_from, date_to, legal_entity_id
         )
         return DaysAnalysis(
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
             legal_entity_id=legal_entity_id,
             today=today,
             months=months,
@@ -354,7 +355,7 @@ class AnalyticsService:
     def build_year_csv(
         self, year: int, actor: Actor, legal_entity_id: UUID | None = None
     ) -> tuple[str, bytes]:
-        """REB-757: the year of one azienda as the file an accountant opens in a
+        """REB-757: the year of one legal entity as the file an accountant opens in a
         spreadsheet, `(filename, content)`: one row per invoice line, then the register,
         each with its total (`year_csv.render_year_csv`). The same invoices, in the same
         order, as `year_overview`, so the file's total is the page's."""
@@ -395,7 +396,7 @@ class AnalyticsService:
         estimate, and `get_fiscal_estimate`'s reasons apply unchanged.
 
         `base` moves the charts and the cash cards only. The fiscal block is always
-        computed on the `collection` reading, because the forfettario is taxed on what was
+        computed on the `collection` reading, because the flat-rate regime is taxed on what was
         collected in the calendar year and a chart that reads by accrual period must not
         move the taxes (`docs/design/DECISIONS.md`, 2026-09-10). Within one year the two
         readings' totals agree except for a document whose period and payment fall in
@@ -412,12 +413,12 @@ class AnalyticsService:
         with the fiscal block.
 
         `legal_entity_id` (REB-630, spec 2026-10-03 §1.9): the cash and the concentration
-        narrow to it, or add up every azienda without it. The fiscal block is one
-        azienda's or nothing: the named one, or the only one, and `None` in «tutte» on
+        narrow to it, or add up every legal entity without it. The fiscal block is one
+        legal entity's or nothing: the named one, or the only one, and `None` in «tutte» on
         a space with several, where the page asks `/api/analytics/fiscal` once per
-        azienda instead, because a forfettario's coefficients and an SRL's arithmetic
-        do not add. In «tutte» the concentration rows come per azienda, each share of
-        its own azienda's revenue, and carry which.
+        legal entity instead, because a flat-rate regime's coefficients and an SRL's arithmetic
+        do not add. In «tutte» the concentration rows come per legal entity, each share of
+        its own legal entity's revenue, and carry which.
         """
         pension_fund = self.cash_overview(year, actor, base, legal_entity_id)
         tax = projected_tax = None
@@ -426,33 +427,33 @@ class AnalyticsService:
             try:
                 owner = LegalEntityService(self.session).single(legal_entity_id)
                 # Only a regime with an income estimate has one to show: an ordinary or a
-                # foreign azienda gets the cash alone, not a card of zeros (REB-760).
+                # foreign legal entity gets the cash alone, not a card of zeros (REB-760).
                 if owner is not None and self._has_income_estimate(owner.id, actor):
-                    # The money the taxes are computed on is the azienda's own, never
-                    # the page's: in «tutte» with one active azienda `pension_fund` still adds
-                    # up a deactivated azienda's receipts, which must not reach the
+                    # The money the taxes are computed on is the legal entity's own, never
+                    # the page's: in «tutte» with one active legal entity `pension_fund` still adds
+                    # up a deactivated legal entity's receipts, which must not reach the
                     # active one's coefficients (spec §1.9, review of REB-630). The
                     # two nets below are read off the same figure, so they are that
-                    # azienda's too.
-                    per_fisco = (
+                    # legal entity's too.
+                    per_tax_office = (
                         pension_fund
                         if base == "collection" and pension_fund.legal_entity_id == owner.id
                         else self.cash_overview(year, actor, "collection", owner.id)
                     )
                     tax = self.get_fiscal_estimate(
-                        year, actor, revenue=per_fisco.paid, legal_entity_id=owner.id
+                        year, actor, revenue=per_tax_office.paid, legal_entity_id=owner.id
                     )
                     projected_tax = self.get_fiscal_estimate(
-                        year, actor, revenue=per_fisco.projected, legal_entity_id=owner.id
+                        year, actor, revenue=per_tax_office.projected, legal_entity_id=owner.id
                     )
                     if tax.due_total is not None:
-                        net = round_money(per_fisco.actual_gross - tax.due_total)
+                        net = round_money(per_tax_office.actual_gross - tax.due_total)
                     if projected_tax.due_total is not None:
                         projected_net = round_money(
-                            per_fisco.projected_gross - projected_tax.due_total
+                            per_tax_office.projected_gross - projected_tax.due_total
                         )
             except NotFound:
-                # No fiscal profile yet, or no azienda at all: the page says so and
+                # No fiscal profile yet, or no legal entity at all: the page says so and
                 # shows the cash alone.
                 tax = projected_tax = None
                 net = projected_net = None
@@ -471,7 +472,7 @@ class AnalyticsService:
         )
 
     def _has_income_estimate(self, legal_entity_id: UUID, actor: Actor) -> bool:
-        """Whether the azienda's pack carries the income estimate; `NotFound` without a
+        """Whether the legal entity's pack carries the income estimate; `NotFound` without a
         profile, as `get_fiscal_estimate` answers."""
         profile = FiscalProfileService(self.session).get(actor, legal_entity_id)
         return resolve_pack(profile.pack_id, profile.pack_version).estimate_income
@@ -509,10 +510,10 @@ class AnalyticsService:
         it your account" -- that figure does not enter a conversational context on the
         back of a generic question about deals.
 
-        One azienda's, always (REB-630, spec 2026-10-03 §1.9): the estimate reads one
-        profile's three rates and that azienda's invoices alone. `legal_entity_id` resolves
-        to the only azienda when none is named, and is required, by name, when the
-        space has several: a forfettario's coefficients and an SRL's arithmetic do not
+        One legal entity's, always (REB-630, spec 2026-10-03 §1.9): the estimate reads one
+        profile's three rates and that legal entity's invoices alone. `legal_entity_id` resolves
+        to the only legal entity when none is named, and is required, by name, when the
+        space has several: a flat-rate regime's coefficients and an SRL's arithmetic do not
         add, so there is no space-wide figure to answer with.
         """
         actor.require_admin("get_fiscal_estimate")
@@ -527,7 +528,8 @@ class AnalyticsService:
             # Every issued invoice of the year, deal or no deal: the estimate is about
             # the person's income, and an invoice attached to no deal is still income.
             # Reduced by the pack's own tagged charges (REB-352 §2, §6's resolved
-            # decision): a rivalsa line counts toward the ceiling in full but is not
+            # decision): a social security surcharge line counts toward the ceiling in full but is
+            # not
             # taxable income, so it never reaches the coefficiente base here even
             # though `annual_revenue` sums it in full.
             pack = resolve_pack(profile.pack_id, profile.pack_version)

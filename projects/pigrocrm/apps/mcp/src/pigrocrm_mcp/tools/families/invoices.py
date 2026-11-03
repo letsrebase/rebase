@@ -103,8 +103,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
         `issue_date` (YYYY-MM-DD): oggi se manca; la fattura prenderà la propria data.
         `accrual_from` e `accrual_to` (YYYY-MM-DD, insieme o nessuno): il periodo di competenza
-        del lavoro, per esempio il mese. `purchase_order_number`, `purchase_order_date` (YYYY-MM-DD), `purchase_order_tender_code`
-        (10 caratteri) e `purchase_order_project_code` (15) sono l'ordine d'acquisto del cliente.
+        del lavoro, per esempio il mese. `purchase_order_number`, `purchase_order_date`
+        (YYYY-MM-DD), `purchase_order_tender_code` (10 caratteri) e `purchase_order_project_code`
+        (15) sono l'ordine d'acquisto del cliente.
         """
         return invoices.create_proforma(
             context,

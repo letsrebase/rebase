@@ -18,7 +18,7 @@ def _payload(result):
 
 
 def _server_for(session: Session, role: str = "collaborator"):
-    user = User(email=f"a-{uuid4()}@example.test", password_hash="x", nome="A", role=role)
+    user = User(email=f"a-{uuid4()}@example.test", password_hash="x", name="A", role=role)
     session.add(user)
     session.flush()
     actor = Actor(id=user.id, type="mcp", role=role)  # type: ignore[arg-type]
@@ -119,7 +119,7 @@ async def test_an_agent_lists_the_reminders_of_its_person(mcp_session: Session) 
 
     items = listed if isinstance(listed, list) else listed["result"]
     assert [(item["type"], item["severity"]) for item in items] == [("task_overdue", "serious")]
-    assert items[0]["key"].startswith("attivita_overdue:")
+    assert items[0]["key"].startswith("task_overdue:")
 
 
 async def test_an_admins_agent_reads_how_the_scheduled_jobs_went(mcp_session: Session) -> None:

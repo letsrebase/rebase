@@ -97,7 +97,7 @@ def _service(
 
 
 def _user(session: Session, email: str = "owner@example.it", role: str = "admin") -> User:
-    user = User(email=email, nome="Owner", password_hash="x", role=role, active=True)
+    user = User(email=email, name="Owner", password_hash="x", role=role, active=True)
     session.add(user)
     session.flush()
     return user

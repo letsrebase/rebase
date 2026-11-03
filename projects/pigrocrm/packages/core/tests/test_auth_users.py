@@ -37,7 +37,7 @@ def test_create_user_stores_a_hash_and_normalises_the_email(db_session: Session)
     service = UserService(db_session)
     user = service.create(
         UserCreate(
-            email="  Mario@Example.IT ", password="supersegreta1", nome="Mario", role="admin"
+            email="  Mario@Example.IT ", password="supersegreta1", name="Mario", role="admin"
         ),
         ADMIN,
     )
@@ -50,11 +50,11 @@ def test_create_user_stores_a_hash_and_normalises_the_email(db_session: Session)
 def test_duplicate_email_is_a_conflict(db_session: Session) -> None:
     service = UserService(db_session)
     service.create(
-        UserCreate(email="a@b.it", password="supersegreta1", nome="A", role="admin"), ADMIN
+        UserCreate(email="a@b.it", password="supersegreta1", name="A", role="admin"), ADMIN
     )
     with pytest.raises(Conflict) as exc:
         service.create(
-            UserCreate(email="A@B.it", password="supersegreta1", nome="A2", role="admin"), ADMIN
+            UserCreate(email="A@B.it", password="supersegreta1", name="A2", role="admin"), ADMIN
         )
     assert exc.value.details["entity"] == "user"
 
@@ -62,7 +62,7 @@ def test_duplicate_email_is_a_conflict(db_session: Session) -> None:
 def test_short_password_is_rejected(db_session: Session) -> None:
     service = UserService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        service.create(UserCreate(email="c@d.it", password="corta", nome="C", role="admin"), ADMIN)
+        service.create(UserCreate(email="c@d.it", password="corta", name="C", role="admin"), ADMIN)
     assert exc.value.details["field"] == "password"
 
 
@@ -70,7 +70,7 @@ def test_only_admins_manage_users(db_session: Session) -> None:
     service = UserService(db_session)
     with pytest.raises(PermissionDenied) as exc:
         service.create(
-            UserCreate(email="e@f.it", password="supersegreta1", nome="E", role="readonly"), COLLAB
+            UserCreate(email="e@f.it", password="supersegreta1", name="E", role="readonly"), COLLAB
         )
     assert exc.value.details["required_roles"] == ["admin"]
 
@@ -78,7 +78,7 @@ def test_only_admins_manage_users(db_session: Session) -> None:
 def test_authenticate_accepts_correct_credentials(db_session: Session) -> None:
     service = UserService(db_session)
     service.create(
-        UserCreate(email="g@h.it", password="supersegreta1", nome="G", role="admin"), ADMIN
+        UserCreate(email="g@h.it", password="supersegreta1", name="G", role="admin"), ADMIN
     )
     assert service.authenticate("G@H.it", "supersegreta1").email == "g@h.it"
 
@@ -89,7 +89,7 @@ def test_authenticate_records_last_login_at(db_session: Session) -> None:
     leave it untouched."""
     service = UserService(db_session)
     created = service.create(
-        UserCreate(email="k@h.it", password="supersegreta1", nome="K", role="admin"), ADMIN
+        UserCreate(email="k@h.it", password="supersegreta1", name="K", role="admin"), ADMIN
     )
     assert created.last_login_at is None
     before = datetime.now(UTC)
@@ -115,7 +115,7 @@ def test_authenticate_rejects_bad_credentials_without_saying_which(
     """Distinguishing 'unknown user' from 'wrong password' leaks which emails exist."""
     service = UserService(db_session)
     service.create(
-        UserCreate(email="g@h.it", password="supersegreta1", nome="G", role="admin"), ADMIN
+        UserCreate(email="g@h.it", password="supersegreta1", name="G", role="admin"), ADMIN
     )
     with pytest.raises(ValidationFailed) as exc:
         service.authenticate(email, password)
@@ -128,11 +128,11 @@ def test_deactivated_user_cannot_authenticate(db_session: Session) -> None:
     # one, and this test is about authentication, not about the guard (its own tests
     # are at the bottom of this file).
     service.create(
-        UserCreate(email="altro@j.it", password="supersegreta1", nome="Altro", role="admin"),
+        UserCreate(email="altro@j.it", password="supersegreta1", name="Altro", role="admin"),
         ADMIN,
     )
     user = service.create(
-        UserCreate(email="i@j.it", password="supersegreta1", nome="I", role="admin"), ADMIN
+        UserCreate(email="i@j.it", password="supersegreta1", name="I", role="admin"), ADMIN
     )
     service.update(user.id, UserUpdate(active=False), ADMIN)
     with pytest.raises(ValidationFailed) as exc:
@@ -203,7 +203,7 @@ def test_authenticate_timing_does_not_reveal_whether_the_email_exists(
     flake on a slower or faster machine than whatever ran it last."""
     service = UserService(db_session)
     service.create(
-        UserCreate(email="timing@race.it", password="supersegreta1", nome="T", role="admin"),
+        UserCreate(email="timing@race.it", password="supersegreta1", name="T", role="admin"),
         ADMIN,
     )
 
@@ -253,7 +253,7 @@ def test_duplicate_email_race_past_the_precheck_still_becomes_a_domain_conflict(
     usable for whatever the caller does next."""
     service = UserService(db_session)
     service.create(
-        UserCreate(email="race@conflict.it", password="supersegreta1", nome="R1", role="admin"),
+        UserCreate(email="race@conflict.it", password="supersegreta1", name="R1", role="admin"),
         ADMIN,
     )
 
@@ -261,7 +261,7 @@ def test_duplicate_email_race_past_the_precheck_still_becomes_a_domain_conflict(
 
     with pytest.raises(Conflict) as exc:
         service.create(
-            UserCreate(email="race@conflict.it", password="supersegreta1", nome="R2", role="admin"),
+            UserCreate(email="race@conflict.it", password="supersegreta1", name="R2", role="admin"),
             ADMIN,
         )
     assert exc.value.details["entity"] == "user"
@@ -282,7 +282,7 @@ def test_case_insensitive_email_uniqueness_is_enforced_by_the_database(
         User(
             email="CaseTest@Example.com",
             password_hash=hash_password("supersegreta1"),
-            nome="Case1",
+            name="Case1",
             role="admin",
             active=True,
         )
@@ -293,7 +293,7 @@ def test_case_insensitive_email_uniqueness_is_enforced_by_the_database(
         User(
             email="casetest@example.com",
             password_hash=hash_password("supersegreta1"),
-            nome="Case2",
+            name="Case2",
             role="admin",
             active=True,
         )
@@ -325,7 +325,7 @@ def test_users_email_has_a_case_insensitive_unique_index_in_postgres(
     ), indexdefs
 
 
-# --- Final review item 4 (CRITICAL): UserCreate/UserUpdate.nome had no max_length -
+# --- Final review item 4 (CRITICAL): UserCreate/UserUpdate.name had no max_length -
 #
 # `users.name` is `String(200)` (auth/models.py). Every other domain's Create/Update
 # schema mirrors its own String columns' widths; `UserCreate`/`UserUpdate` predate
@@ -338,24 +338,24 @@ def test_users_email_has_a_case_insensitive_unique_index_in_postgres(
 
 def test_nome_over_the_column_width_is_rejected_on_create() -> None:
     with pytest.raises(ValidationError):
-        UserCreate(email="x@example.it", password="supersegreta1", nome="x" * (NAME_MAX_LENGTH + 1))
+        UserCreate(email="x@example.it", password="supersegreta1", name="x" * (NAME_MAX_LENGTH + 1))
 
 
 def test_nome_over_the_column_width_is_rejected_on_update() -> None:
     with pytest.raises(ValidationError):
-        UserUpdate(nome="x" * (NAME_MAX_LENGTH + 1))
+        UserUpdate(name="x" * (NAME_MAX_LENGTH + 1))
 
 
 def test_nome_at_the_column_width_is_accepted_on_create() -> None:
-    user = UserCreate(email="x@example.it", password="supersegreta1", nome="x" * NAME_MAX_LENGTH)
-    assert len(user.nome) == NAME_MAX_LENGTH
+    user = UserCreate(email="x@example.it", password="supersegreta1", name="x" * NAME_MAX_LENGTH)
+    assert len(user.name) == NAME_MAX_LENGTH
 
 
 def test_a_nul_byte_in_nome_is_rejected_not_stored(db_session: Session) -> None:
     """Same family as the max_length gap above (final review item 1): a NUL byte in
     a native string column reaches Postgres raw unless SafeStr catches it first."""
     with pytest.raises(ValidationError):
-        UserCreate(email="y@example.it", password="supersegreta1", nome="Mario\x00Rossi")
+        UserCreate(email="y@example.it", password="supersegreta1", name="Mario\x00Rossi")
 
 
 def test_reset_password_replaces_the_hash_and_records_only_that_it_happened(
@@ -366,7 +366,7 @@ def test_reset_password_replaces_the_hash_and_records_only_that_it_happened(
     service = UserService(db_session)
     admin = Actor.system()
     user = service.create(
-        UserCreate(email="reset@studio.it", password="vecchia-password-1", nome="R", role="admin"),
+        UserCreate(email="reset@studio.it", password="vecchia-password-1", name="R", role="admin"),
         admin,
     )
     service.reset_password("Reset@Studio.it", "nuova-password-2026", admin)
@@ -393,7 +393,7 @@ def test_reset_password_refuses_a_short_password_and_an_unknown_email(db_session
     with pytest.raises(NotFound):
         service.reset_password("nessuno@studio.it", "lunghissima-1", Actor.system())
     service.create(
-        UserCreate(email="corta@studio.it", password="vecchia-password-1", nome="C", role="admin"),
+        UserCreate(email="corta@studio.it", password="vecchia-password-1", name="C", role="admin"),
         Actor.system(),
     )
     with pytest.raises(ValidationFailed):
@@ -407,7 +407,7 @@ def test_a_user_without_a_password_cannot_log_in_with_one(db_session: Session) -
 
     service = UserService(db_session)
     created = service.create(
-        UserCreate(email="link@x.it", password="lunghissima1", nome="Link", role="admin"),
+        UserCreate(email="link@x.it", password="lunghissima1", name="Link", role="admin"),
         Actor.system(),
     )
     row = UserRepository(db_session).get(created.id)
@@ -426,14 +426,14 @@ def test_only_the_system_may_create_a_user_without_a_password(db_session: Sessio
 
     service = UserService(db_session)
     admin = service.create(
-        UserCreate(email="capo@x.it", password="lunghissima1", nome="Capo", role="admin"),
+        UserCreate(email="capo@x.it", password="lunghissima1", name="Capo", role="admin"),
         Actor.system(),
     )
     human = Actor(id=admin.id, type="user", role="admin")
     with pytest.raises(ValidationFailed):
-        service.create(UserCreate(email="link@x.it", password=None, nome="Link"), human)
+        service.create(UserCreate(email="link@x.it", password=None, name="Link"), human)
     created = service.create(
-        UserCreate(email="link@x.it", password=None, nome="Link"), Actor.system()
+        UserCreate(email="link@x.it", password=None, name="Link"), Actor.system()
     )
     row = UserRepository(db_session).get(created.id)
     assert row is not None and row.password_hash is None
@@ -450,18 +450,18 @@ def test_an_unverified_passwordless_admin_cannot_create_users_until_the_first_li
 
     service = UserService(db_session)
     admin = service.create(
-        UserCreate(email="link@x.it", password=None, nome="Link", role="admin"), Actor.system()
+        UserCreate(email="link@x.it", password=None, name="Link", role="admin"), Actor.system()
     )
     actor = Actor(id=admin.id, type="user", role="admin")
     with pytest.raises(ValidationFailed) as excinfo:
-        service.create(UserCreate(email="c@x.it", password="lunghissima1", nome="C"), actor)
+        service.create(UserCreate(email="c@x.it", password="lunghissima1", name="C"), actor)
     assert "conferma il tuo indirizzo" in str(excinfo.value)
     row = UserRepository(db_session).get(admin.id)
     assert row is not None
     row.email_verified_at = datetime.now(UTC)
     db_session.flush()
     assert (
-        service.create(UserCreate(email="c@x.it", password="lunghissima1", nome="C"), actor).email
+        service.create(UserCreate(email="c@x.it", password="lunghissima1", name="C"), actor).email
         == "c@x.it"
     )
 
@@ -476,7 +476,7 @@ def test_update_own_digest_needs_no_admin(db_session: Session) -> None:
     service = UserService(db_session)
     collab = service.create(
         UserCreate(
-            email="collab@x.it", password="lunghissima1", nome="Collab", role="collaborator"
+            email="collab@x.it", password="lunghissima1", name="Collab", role="collaborator"
         ),
         Actor.system(),
     )
@@ -497,27 +497,27 @@ def test_setting_the_digest_to_what_it_already_is_records_nothing(db_session: Se
 
     service = UserService(db_session)
     user = service.create(
-        UserCreate(email="switch@x.it", password="lunghissima1", nome="Switch"),
+        UserCreate(email="switch@x.it", password="lunghissima1", name="Switch"),
         Actor.system(),
     )
     actor = Actor(id=user.id, type="user", role="admin")
-    attivita = ActivityRepository(db_session)
+    activities = ActivityRepository(db_session)
 
     service.update_own_digest(actor, False)
-    after_the_cambio = len(attivita.timeline("user", user.id, limit=50))
+    after_the_switch = len(activities.timeline("user", user.id, limit=50))
 
     assert service.update_own_digest(actor, False).weekly_digest is False
 
-    assert len(attivita.timeline("user", user.id, limit=50)) == after_the_cambio
+    assert len(activities.timeline("user", user.id, limit=50)) == after_the_switch
     # The one that did change something is still on the timeline, with the new value.
-    last = attivita.timeline("user", user.id, limit=50)[0]
+    last = activities.timeline("user", user.id, limit=50)[0]
     assert last.kind == "updated"
     assert last.payload == {"weekly_digest": False}
 
 
-def _admin_actor(service: UserService, db_session: Session, email: str, nome: str):
+def _admin_actor(service: UserService, db_session: Session, email: str, name: str):
     admin = service.create(
-        UserCreate(email=email, password="lunghissima1", nome=nome, role="admin"),
+        UserCreate(email=email, password="lunghissima1", name=name, role="admin"),
         Actor.system(),
     )
     return Actor(id=admin.id, type="user", role="admin"), admin
@@ -551,7 +551,7 @@ def test_an_admin_can_demote_the_other_admin_while_two_exist(db_session: Session
     pinned next to its mirror in `test_the_self_change_rule...`."""
     service = UserService(db_session)
     carla = service.create(
-        UserCreate(email="carla@x.it", password="lunghissima1", nome="Carla", role="admin"),
+        UserCreate(email="carla@x.it", password="lunghissima1", name="Carla", role="admin"),
         Actor.system(),
     )
     actor, _ = _admin_actor(service, db_session, "giulia@x.it", "Giulia")
@@ -565,7 +565,7 @@ def test_an_admin_cannot_demote_themselves_while_two_exist(db_session: Session) 
     service = UserService(db_session)
     # Two admins: the count rule passes, and the self-change rule is what refuses.
     service.create(
-        UserCreate(email="prima@x.it", password="lunghissima1", nome="Prima", role="admin"),
+        UserCreate(email="prima@x.it", password="lunghissima1", name="Prima", role="admin"),
         Actor.system(),
     )
     actor, second = _admin_actor(service, db_session, "seconda@x.it", "Seconda")
@@ -580,11 +580,11 @@ def test_an_admin_can_still_edit_their_own_ordinary_fields(db_session: Session) 
     """The refusal is about the privileged fields, not about the person: the same
     actor patching their own name still writes."""
     service = UserService(db_session)
-    actor, me = _admin_actor(service, db_session, "nome@x.it", "Nome")
+    actor, me = _admin_actor(service, db_session, "name@x.it", "Nome")
 
-    renamed = service.update(me.id, UserUpdate(nome="Nome Secondo"), actor)
+    renamed = service.update(me.id, UserUpdate(name="Nome Secondo"), actor)
 
-    assert renamed.nome == "Nome Secondo"
+    assert renamed.name == "Nome Secondo"
 
 
 def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
@@ -607,10 +607,10 @@ def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
 # --- the member's scope (REB-633, spec 2026-10-03 §1.11) -----------------------------
 
 
-def _legal_entity(session: Session, nome: str) -> UUID:
+def _legal_entity(session: Session, name: str) -> UUID:
     from pigrocrm.core.legal_entities.models import LegalEntity
 
-    row = LegalEntity(nome=nome, legal_name=nome.title(), country="GB")
+    row = LegalEntity(name=name, legal_name=name.title(), country="GB")
     session.add(row)
     session.flush()
     return row.id
@@ -619,7 +619,7 @@ def _legal_entity(session: Session, nome: str) -> UUID:
 def _member(session: Session, email: str, role: str = "collaborator") -> UUID:
     return (
         UserService(session)
-        .create(UserCreate(email=email, password="supersegreta1", nome="M", role=role), ADMIN)  # type: ignore[arg-type]
+        .create(UserCreate(email=email, password="supersegreta1", name="M", role=role), ADMIN)  # type: ignore[arg-type]
         .id
     )
 
@@ -630,7 +630,7 @@ def test_create_writes_the_scope_with_the_row_and_refuses_an_empty_one(db_sessio
     ltd = _legal_entity(db_session, "rebase ltd")
     created = UserService(db_session).create(
         UserCreate(
-            email="s@x.it", password="supersegreta1", nome="S", role="admin", legal_entities=[ltd]
+            email="s@x.it", password="supersegreta1", name="S", role="admin", legal_entities=[ltd]
         ),
         ADMIN,
     )
@@ -648,7 +648,7 @@ def test_create_writes_the_scope_with_the_row_and_refuses_an_empty_one(db_sessio
     assert entry.payload["legal_entities"] == [str(ltd)]
     with pytest.raises(ValidationFailed) as refused:
         UserService(db_session).create(
-            UserCreate(email="t@x.it", password="supersegreta1", nome="T", legal_entities=[]), ADMIN
+            UserCreate(email="t@x.it", password="supersegreta1", name="T", legal_entities=[]), ADMIN
         )
     assert refused.value.details["field"] == "legal_entities"
 
@@ -660,7 +660,7 @@ def test_update_scopes_a_member_and_null_clears_the_scope(db_session: Session) -
     scoped = service.update(member, UserUpdate(legal_entities=[ltd]), ADMIN)
     assert scoped.legal_entities == [ltd]
     # Left out: left alone.
-    assert service.update(member, UserUpdate(nome="Mara"), ADMIN).legal_entities == [ltd]
+    assert service.update(member, UserUpdate(name="Mara"), ADMIN).legal_entities == [ltd]
     # Explicit null: the whole space again.
     assert service.update(member, UserUpdate(legal_entities=None), ADMIN).legal_entities is None
     row = db_session.get(User, member)
@@ -770,5 +770,5 @@ def test_a_scoped_admin_cannot_manage_the_team(db_session: Session) -> None:
     scoped = Actor(id=None, type="user", role="admin", legal_entities=(ltd,))
     with pytest.raises(ScopedAdmin):
         UserService(db_session).create(
-            UserCreate(email="e@f.it", password="supersegreta1", nome="E", role="readonly"), scoped
+            UserCreate(email="e@f.it", password="supersegreta1", name="E", role="readonly"), scoped
         )

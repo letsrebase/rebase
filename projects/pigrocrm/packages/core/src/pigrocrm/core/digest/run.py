@@ -142,11 +142,11 @@ def sections_with_lines(digest: WeeklyDigest) -> int:
     return sum(
         [
             bool(digest.overdue or digest.in_due_date),
-            bool(digest.won_to_invoice or digest.hours_uninvoiced or digest.accrued_value),
+            bool(digest.won_to_invoice or digest.unbilled_hours or digest.accrued_value),
             bool(digest.issued),
             bool(digest.paid),
             digest.hours is not None,
-            bool(digest.pipeline or digest.deal_mossi or digest.offers_pending),
+            bool(digest.pipeline or digest.deal_moves or digest.offers_pending),
             bool(digest.signals),
             not digest.tasks.empty,
         ]
@@ -181,7 +181,7 @@ class DigestRun:
         owner_email: str | None,
         week: tuple[date, date],
         *,
-        forza: bool = False,
+        force: bool = False,
         dry_run: bool = False,
     ) -> DigestOutcome:
         """The whole decision for one space, in the order the module docstring gives.
@@ -192,7 +192,7 @@ class DigestRun:
         `try` below, because half a sent week is worse than an unsent one.
 
         `owner_email` is the registry's `Tenant.owner_email` for a space, and `None` for
-        the root installation, which has no registry row (REB-263): its titolare is the
+        the root installation, which has no registry row (REB-263): its owner is the
         first active admin, so a root with none answers `owner_missing` like a space
         whose owner's address matches nobody.
         """
@@ -211,12 +211,12 @@ class DigestRun:
         # `cast` and not a runtime check, exactly as `cli.py`'s `_cron_actor` does it:
         # `Actor` validates `role` against its own literal on construction, so a column
         # holding something else raises there rather than travelling on unnoticed.
-        # The cron's own actor sees the whole space, whatever the titolare's scope is:
+        # The cron's own actor sees the whole space, whatever the owner's scope is:
         # the question `_space_empty` asks is the space's, and each recipient's mail is
         # built inside that recipient's scope below. Bound before the first read of a
         # policied table (REB-634): the cron opens this session as the application
         # role, and an unbound probe of `customers` would answer «vuoto» for every
-        # space, for ever; bound to a scoped titolare's aziende it would answer «vuoto»
+        # space, for ever; bound to a scoped owner's legal entities it would answer «vuoto»
         # for everyone else's (Greptile on PR #513).
         actor = actor_for(owner, "system").model_copy(update={"legal_entities": None})
         bind_scope(self.session, actor)
@@ -224,15 +224,15 @@ class DigestRun:
         if self._space_empty():
             return self._without_write(DigestOutcome(slug, "empty", iso))
 
-        riga_id = self._line_of_week(iso)
-        if riga_id is not None and not forza:
+        line_id = self._line_of_week(iso)
+        if line_id is not None and not force:
             return self._without_write(DigestOutcome(slug, "already_sent", iso))
 
         # Plain values, taken now: the `User` objects behind them expire on the rollback
         # the build needs, and reloading them would reopen the very transaction that
         # rollback exists to close.
         # Each recipient with their own scope (spec 2026-10-03 §4): the report is
-        # rendered once per distinct scope, so B's Monday mail sums B's aziende alone.
+        # rendered once per distinct scope, so B's Monday mail sums B's legal entities alone.
         recipients = [
             (user.id, user.email, scope_of(user))
             for user in users.list_all()
@@ -247,7 +247,7 @@ class DigestRun:
                 iso,
                 actor,
                 recipients,
-                riga_id,
+                line_id,
                 week,
                 dry_run=dry_run,
             )
@@ -275,7 +275,7 @@ class DigestRun:
         iso: str,
         actor: Actor,
         recipients: list[tuple[UUID, str, tuple[UUID, ...] | None]],
-        riga_id: UUID | None,
+        line_id: UUID | None,
         week: tuple[date, date],
         *,
         dry_run: bool,
@@ -308,7 +308,7 @@ class DigestRun:
         # One report per distinct scope, each built with that scope bound on the session
         # (spec 2026-10-03 §4): the dashboard call inside `build` opens its own snapshot,
         # and the listener `bind_scope` registers writes the scope at the start of it.
-        # The titolare's own actor, with the recipients' scope in place of theirs.
+        # The owner's own actor, with the recipients' scope in place of theirs.
         by_scope: dict[tuple[UUID, ...] | None, list[tuple[UUID, str]]] = {}
         for user_id, address, scope in recipients:
             by_scope.setdefault(scope, []).append((user_id, address))
@@ -354,13 +354,13 @@ class DigestRun:
                 None,
             )
 
-        indirizzi = [address for _, address in accepted]
-        riga = self._record(iso, indirizzi, riga_id)
+        addresses = [address for _, address in accepted]
+        line = self._record(iso, addresses, line_id)
         # Last touch on the session before the commit, as `ActivityService.record`'s own
         # contract requires: it flushes into this transaction and never commits.
         ActivityService(self.session).record(
             ENTITY,
-            riga.id,
+            line.id,
             KIND,
             actor,
             {"week": iso, "recipients": len(accepted), "sections": sections},
@@ -389,7 +389,7 @@ class DigestRun:
     def _space_empty(self) -> bool:
         """§2: silence for a space with nothing in it.
 
-        Four existence probes (and a fifth, for open attivita) rather than the built
+        Four existence probes (and a fifth, for open task) rather than the built
         report's own `empty`, because this is the question asked *before* building: a space
         that has never had a customer should cost one bounded query per table on a Monday
         morning, not seven sections and a snapshot. `LIMIT 1` on the primary key: the
@@ -411,10 +411,10 @@ class DigestRun:
         )
         if not empty:
             return False
-        # A fifth probe, and a different one: an open attivita needs none of the four
+        # A fifth probe, and a different one: an open task needs none of the four
         # records above (a to-do belongs to nobody's customer), so a space that holds
         # only commitments still has a week to report in «Da fare» (REB-726). Only the
-        # open ones: a space whose every attivita is closed has nothing to say.
+        # open ones: a space whose every task is closed has nothing to say.
         return (
             self.session.execute(
                 select(Task.id).where(Task.deleted_at.is_(None), Task.status == "open").limit(1)
@@ -427,7 +427,7 @@ class DigestRun:
             select(Digest.id).where(Digest.week == iso)
         ).scalar_one_or_none()
 
-    def _record(self, iso: str, indirizzi: list[str], riga_id: UUID | None) -> Digest:
+    def _record(self, iso: str, addresses: list[str], line_id: UUID | None) -> Digest:
         """The week's row: created, or -- under `forza` -- moved.
 
         `digests.week` is unique, so a resend cannot be a second row: it updates the
@@ -436,13 +436,13 @@ class DigestRun:
         column default uses, and it is an instant rather than a calendar day -- the thing
         `db/clock.py` bans is projecting `now()` onto a *date*, which nothing here does.
         """
-        if riga_id is None:
-            riga = Digest(week=iso, sent_to=indirizzi, occurred_at=datetime.now(UTC))
-            self.session.add(riga)
+        if line_id is None:
+            line = Digest(week=iso, sent_to=addresses, occurred_at=datetime.now(UTC))
+            self.session.add(line)
             self.session.flush()
-            return riga
-        riga = self.session.get_one(Digest, riga_id)
-        riga.sent_to = indirizzi
-        riga.occurred_at = datetime.now(UTC)
+            return line
+        line = self.session.get_one(Digest, line_id)
+        line.sent_to = addresses
+        line.occurred_at = datetime.now(UTC)
         self.session.flush()
-        return riga
+        return line

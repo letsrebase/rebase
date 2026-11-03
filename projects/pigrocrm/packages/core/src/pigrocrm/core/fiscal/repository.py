@@ -14,7 +14,7 @@ class FiscalProfileRepository:
         self.session = session
 
     def get(self, legal_entity_id: UUID) -> FiscalProfile | None:
-        """The profile of one azienda: at most one, by the unique key on
+        """The profile of one legal entity: at most one, by the unique key on
         `legal_entity_id`, and none until the person saves it once (spec §1.2)."""
         return (
             self.session.execute(

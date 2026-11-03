@@ -50,23 +50,23 @@ CONTRACT_ENTITY = "contract"
 
 # One declaration per variable: its name, label, whether a template must be given it, and the
 # sample the save check renders it with. The editor lists them, the save check renders against
-# the samples, and `_values` supplies the real ones. `due_date` is optional because an invoice
+# the samples, and `_values` supplies the real ones. `scadenza` is optional because an invoice
 # need not have one.
 _FIELDS: tuple[tuple[str, str, bool, str], ...] = (
-    ("customer", "Cliente", True, "Acme S.r.l."),
-    ("contract", "Contratto", True, "Consulenza"),
-    ("period", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
-    ("invoice_number", "Numero della fattura", True, "2026/12"),
-    ("invoice_date", "Data della fattura", True, "31/10/2026"),
-    ("amount", "Totale della fattura", True, "1.250,00 €"),
-    ("work_units", "Giornate in fattura", True, "2.50"),
-    ("due_date", "Scadenza", False, "30/11/2026"),
+    ("cliente", "Cliente", True, "Acme S.r.l."),
+    ("contratto", "Contratto", True, "Consulenza"),
+    ("periodo", "Periodo del registro", True, "01/10/2026 - 31/10/2026"),
+    ("numero_fattura", "Numero della fattura", True, "2026/12"),
+    ("data_fattura", "Data della fattura", True, "31/10/2026"),
+    ("importo", "Totale della fattura", True, "1.250,00 €"),
+    ("giornate", "Giornate in fattura", True, "2.50"),
+    ("scadenza", "Scadenza", False, "30/11/2026"),
 )
 TEMPLATE_VARIABLES: tuple[DeclaredVariable, ...] = tuple(
     DeclaredVariable(name, label, "text", required) for name, label, required, _ in _FIELDS
 )
-# `emittente.*` is the azienda's own identity, the same scope every template reads.
-_LEGAL_ENTITY_SAMPLE = {"legal_name": "Studio Rossi", "phone": "", "website": ""}
+# `emittente.*` is the legal entity's own identity, the same scope every template reads.
+_LEGAL_ENTITY_SAMPLE = {"ragione_sociale": "Studio Rossi", "telefono": "", "sito_web": ""}
 LEGAL_ENTITY_VARIABLES = tuple(f"emittente.{name}" for name in _LEGAL_ENTITY_SAMPLE)
 
 _SAMPLE: dict[str, Any] = {
@@ -226,8 +226,8 @@ class ContractEmailService:
         self,
         contract: Contract,
         invoice: Invoice,
-        da: date,
-        a: date,
+        date_from: date,
+        date_to: date,
         quantity: Decimal,
         actor: Actor,
     ) -> dict[str, Any]:
@@ -245,7 +245,7 @@ class ContractEmailService:
         return {
             "cliente": customer.legal_name if customer is not None else "",
             "contratto": contract.title,
-            "periodo": f"{_italian_date(da)} - {_italian_date(a)}",
+            "periodo": f"{_italian_date(date_from)} - {_italian_date(date_to)}",
             "numero_fattura": number_complete(invoice.year, invoice.number),
             "data_fattura": _italian_date(invoice.issue_date),
             "importo": _money(invoice.total, invoice.currency),
@@ -274,15 +274,15 @@ class ContractEmailService:
         contract = self._contract(contract_id)
         template = self._template(contract_id, template_id)
         invoice = self._invoice_of(contract, invoice_id)
-        da, a, quantity = self._days_of(contract_id, invoice)
-        values = self._values(contract, invoice, da, a, quantity, actor)
+        date_from, date_to, quantity = self._days_of(contract_id, invoice)
+        values = self._values(contract, invoice, date_from, date_to, quantity, actor)
         attachments = [
-            ContractEmailAttachment(type="invoice_pdf", name=f"Fattura {values['invoice_number']}")
+            ContractEmailAttachment(type="invoice_pdf", name=f"Fattura {values['numero_fattura']}")
             for kind in template.attachments
             if kind == "invoice_pdf"
         ] + [
             ContractEmailAttachment(
-                type="register_pdf", name=f"Registro giornate {values['period']}"
+                type="register_pdf", name=f"Registro giornate {values['periodo']}"
             )
             for kind in template.attachments
             if kind == "register_pdf"
@@ -292,8 +292,8 @@ class ContractEmailService:
             body=_render(template.body, values),
             to_suggested=self._suggested(contract),
             attachments=attachments,
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     def prepare(
@@ -316,8 +316,8 @@ class ContractEmailService:
         if not template.active:
             raise Conflict(ENTITY, "questo modello è archiviato", template_id=str(template_id))
         invoice = self._invoice_of(contract, invoice_id)
-        da, a, quantity = self._days_of(contract_id, invoice)
-        values = self._values(contract, invoice, da, a, quantity, actor)
+        date_from, date_to, quantity = self._days_of(contract_id, invoice)
+        values = self._values(contract, invoice, date_from, date_to, quantity, actor)
 
         documents = DocumentRepository(self.session)
         version_ids: list[UUID] = []
@@ -343,7 +343,7 @@ class ContractEmailService:
             # connection is not held while the render waits for one of its slots.
             self.session.commit()
             archived = ContractRegisterService(self.session, storage).render_pdf(
-                contract_id, da, a, actor, invoice_id=invoice.id
+                contract_id, date_from, date_to, actor, invoice_id=invoice.id
             )
             version = documents.version(archived.id, archived.current_version)
             if version is None:

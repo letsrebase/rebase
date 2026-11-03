@@ -37,14 +37,14 @@ def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID, UUID,
     session: Session = session_factory(mcp_engine)()
     try:
         stage = PipelineStage(
-            nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
+            name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
         customer = Customer(legal_name=f"Cliente concorrenza {uuid4()}")
-        user = User(email=f"worker-{uuid4()}@example.test", password_hash="x", nome="Worker")
+        user = User(email=f"worker-{uuid4()}@example.test", password_hash="x", name="Worker")
         session.add_all([stage, customer, user])
         session.flush()
         deal = Deal(
-            nome="Progetto concorrenza",
+            name="Progetto concorrenza",
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
             probability=10,
@@ -100,7 +100,7 @@ def _run_concurrent_log_time(mcp_engine: Engine, mcp_storage, deal_id: UUID, use
                 {
                     "deal_id": deal_id,
                     "user_id": user_id,
-                    "data": date(2026, 3, 10),
+                    "date": date(2026, 3, 10),
                     "hours": "1.00",
                     "description": f"Voce {index}",
                 },

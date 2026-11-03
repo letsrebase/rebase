@@ -45,10 +45,13 @@ def register_prompts(mcp: MCPServer, context: McpContext, guard: Callable[..., A
 
     @mcp.prompt(name="pipeline-review")
     @guard
-    def review_pipeline(da: str | None = None, a: str | None = None) -> list[dict[str, Any]]:
+    def review_pipeline(
+        date_from: str | None = None, date_to: str | None = None
+    ) -> list[dict[str, Any]]:
         """La revisione settimanale della pipeline commerciale, con i deal fermi e le
-        offerte in attesa. `da` e `a` sono date ISO opzionali: senza, il mese in corso."""
-        return dashboard_prompts.review_pipeline(context, da, a)
+        offerte in attesa. `date_from` e `date_to` sono date ISO opzionali: senza, il mese in
+        corso."""
+        return dashboard_prompts.review_pipeline(context, date_from, date_to)
 
     @mcp.prompt(name="month-close")
     @guard

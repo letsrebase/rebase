@@ -98,7 +98,7 @@ async def test_move_deal_accepts_the_deals_own_field_name(server, mcp_session: S
             await client.call_tool("create_customer", {"legal_name": "ACME"})
         ).structured_content
         deal = (
-            await client.call_tool("create_deal", {"nome": "X", "customer_id": customer["id"]})
+            await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         ).structured_content
         stages = (await client.call_tool("list_pipeline_stages", {})).structured_content["stages"]
         target = next(stage for stage in stages if stage["id"] != deal["pipeline_stage_id"])
@@ -132,7 +132,7 @@ async def test_move_deal_with_two_different_destinations_is_refused(server) -> N
         ("describe_schema", {"entity_type": "invoice"}, "entity_type"),
         ("describe_schema", {"entity_type": 7}, "entity_type"),
         ("update_customer", {"customer_id": str(uuid4()), "changes": "note"}, "changes"),
-        ("search_everything", {"deadline": "ab"}, "deadline"),
+        ("search_everything", {"term": "ab"}, "term"),
     ],
 )
 async def test_a_wrongly_typed_or_out_of_range_argument_names_its_field(
@@ -158,7 +158,7 @@ async def test_a_wrong_enum_value_lists_the_allowed_ones(server) -> None:
 
 async def test_a_short_search_text_is_asked_for_in_italian(server) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("search_everything", {"deadline": "ab"})
+        result = await client.call_tool("search_everything", {"term": "ab"})
 
     assert result.is_error
     assert "almeno 3 caratteri" in result.content[0].text
@@ -174,7 +174,7 @@ async def test_too_many_digits_is_explained_not_called_invalid(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-03-10",
+                "date": "2026-03-10",
                 "hours": "1.123456789",
                 "description": "x",
             },

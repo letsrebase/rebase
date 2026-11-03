@@ -71,7 +71,7 @@ class Seeded(NamedTuple):
     stage_ids: dict[str, UUID]
 
 
-def _cancellato() -> datetime:
+def _cancelled() -> datetime:
     return datetime.now(UTC)
 
 
@@ -84,9 +84,9 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         session.add(customer)
         session.flush()
 
-        def deal(nome: str, stage: str, **extra: object) -> Deal:
+        def deal(name: str, stage: str, **extra: object) -> Deal:
             row = Deal(
-                nome=f"{_PREFIX} {nome}",
+                name=f"{_PREFIX} {name}",
                 customer_id=customer.id,
                 pipeline_stage_id=stages[stage].id,
                 expected_value=Decimal("1000.00"),
@@ -104,16 +104,16 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             deal(f"contattato {index}", "contacted")
         # Soft-deleted, in `lead`. Counted by neither side; counted by a side that forgot
         # `deleted_at IS NULL`.
-        removed = deal("aperto cancellato", "lead", deleted_at=_cancellato())
+        removed = deal("aperto cancellato", "lead", deleted_at=_cancelled())
         won = deal("won", "won", closed_at=today_local())
         lost = deal("lost", "lost", closed_at=today_local())
         session.flush()
 
-        def document(nome: str, *, type: str = "offer", **extra: object) -> None:
+        def document(name: str, *, type: str = "offer", **extra: object) -> None:
             session.add(
                 Document(
                     type=type,
-                    title=f"{_PREFIX} {nome}",
+                    title=f"{_PREFIX} {name}",
                     status_since=today_local(),
                     current_version=1,
                     custom_fields={},
@@ -125,7 +125,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         for index in range(3):
             document(f"inviata {index}", customer_id=customer.id, status="sent")
         document(
-            "inviata cancellata", customer_id=customer.id, status="sent", deleted_at=_cancellato()
+            "inviata cancellata", customer_id=customer.id, status="sent", deleted_at=_cancelled()
         )
         # Differs from the wanted set in `status` only, and the next one in `type` only:
         # each exists so that dropping one filter on one side shows up as a divergence
@@ -147,7 +147,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             "accettata cancellata",
             deal_id=open[2].id,
             status="accepted",
-            deleted_at=_cancellato(),
+            deleted_at=_cancelled(),
         )
         document("accettata deal cancellato", deal_id=removed.id, status="accepted")
         session.commit()
@@ -157,7 +157,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     finally:
         with factory() as session:
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage))
             session.commit()
@@ -206,12 +206,12 @@ def test_the_open_deals_card_excludes_the_soft_deleted_deal_on_both_sides(
         page = DealService(session).list(
             DealListQuery(stage_id=seeded.stage_ids["lead"], limit=_ALL), READONLY
         )
-    nomi = {item.nome for item in page.items}
-    assert f"{_PREFIX} aperto cancellato" not in nomi
-    assert card.number == len(nomi)
+    names = {item.name for item in page.items}
+    assert f"{_PREFIX} aperto cancellato" not in names
+    assert card.number == len(names)
 
 
-# -- card: offerte in attesa -> /app/documents?tipo=offerta&stato=inviata ---------
+# -- card: pending offers -> /app/documents?type=offer&status=sent --------------
 
 
 def test_the_pending_offers_card_equals_its_document_list(seeded: Seeded) -> None:
@@ -242,7 +242,7 @@ def test_the_pending_offers_list_drops_the_row_that_differs_only_in_type_or_stat
     assert titles == {f"{_PREFIX} inviata {index}" for index in range(3)}
 
 
-# -- card: offerta accettata, deal non vinto -> ?solo_deal_non_vinto=true ---------
+# -- card: accepted offer, deal not won -> ?unwon_only=true ----------------------
 
 
 def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> None:
@@ -264,7 +264,7 @@ def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> No
 
 
 @pytest.mark.parametrize(
-    ("escluso", "perche"),
+    ("excluded", "why"),
     [
         ("accettata ok", "il deal è vinto"),
         ("accettata su cliente", "non ha un deal"),

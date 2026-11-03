@@ -39,14 +39,14 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
     and `deals.budgeted_value` have existed since slice 1 and have never been read
     by anybody. The actuals are the one missing half.
 
-    Keyset pagination on `(nome, id)`: the cursor is the id of the last deal of the
+    Keyset pagination on `(name, id)`: the cursor is the id of the last deal of the
     previous page, the deals after it are asked of the database, and only the page's
     deals are aggregated. A cursor naming no deal is refused, never read as "page one",
     which would let a client following `next_cursor` loop forever.
     """
-    if query.a < query.da:
+    if query.date_to < query.date_from:
         raise ValidationFailed(
-            ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
+            ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
         )
 
     anchor = None
@@ -60,8 +60,8 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
                 expected="il next_cursor di una pagina precedente",
             )
     deals = repo.deals_in_range(
-        query.da,
-        query.a,
+        query.date_from,
+        query.date_to,
         query.customer_id,
         after=(anchor.name, anchor.id) if anchor is not None else None,
         limit=query.limit + 1,
@@ -69,13 +69,13 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
     window = deals[: query.limit]
     next_cursor = window[-1].id if len(deals) > query.limit and window else None
     ids = [deal.id for deal in window]
-    revenue = repo.revenue_in_range(query.da, query.a, query.customer_id, deal_ids=ids)
-    hours = repo.hours_in_range(query.da, query.a, query.customer_id, deal_ids=ids)
+    revenue = repo.revenue_in_range(query.date_from, query.date_to, query.customer_id, deal_ids=ids)
+    hours = repo.hours_in_range(query.date_from, query.date_to, query.customer_id, deal_ids=ids)
 
     rows: list[BudgetVsActualRow] = []
     for deal in window:
         actuals_hours = hours.get(deal.id, ZERO_HOURS)
-        ricavi = revenue.get(deal.id, ZERO_MONEY)
+        revenue_total = revenue.get(deal.id, ZERO_MONEY)
         # Narrowed to "comparable or absent" once, here, so that below there is
         # nothing left to divide by that could be null or zero.
         hours_prev = comparable(deal.budgeted_hours)
@@ -101,14 +101,14 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
                 budgeted_hours=deal.budgeted_hours,
                 actuals_hours=actuals_hours,
                 budgeted_value=deal.budgeted_value,
-                revenue=ricavi,
+                revenue=revenue_total,
                 hours_progress=progress,
                 budget_pro_rata=pro_rata,
                 # Measured against the pro-rata, never the full budget: at 40% of the
                 # hours, being at 40% of the estimated value is on track, and
                 # comparing with 100% would mark every job in progress as
                 # underperforming.
-                value_variance=(ricavi - pro_rata) if pro_rata is not None else None,
+                value_variance=(revenue_total - pro_rata) if pro_rata is not None else None,
                 hours_variance=(actuals_hours - hours_prev if hours_prev is not None else None),
                 average_budgeted_rate=(
                     round_money(value_prev / hours_prev)
@@ -120,7 +120,7 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
                 # which would read as "realised nothing per hour" -- the opposite of the
                 # truth on a deal invoiced without a timesheet.
                 average_actual_rate=(
-                    round_money(ricavi / actuals_hours) if actuals_hours > 0 else None
+                    round_money(revenue_total / actuals_hours) if actuals_hours > 0 else None
                 ),
                 unbudgeted=hours_prev is None and value_prev is None,
                 pro_rata_not_calculable=value_prev is not None and hours_prev is None,

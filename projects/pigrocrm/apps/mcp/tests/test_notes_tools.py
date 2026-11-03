@@ -47,8 +47,8 @@ def _payload(result: Any) -> dict[str, Any]:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-def _member(session: Session, nome: str, key: str, role: str) -> User:
-    user = User(email=f"{key}@example.test", password_hash="x", nome=nome, role=role)
+def _member(session: Session, name: str, key: str, role: str) -> User:
+    user = User(email=f"{key}@example.test", password_hash="x", name=name, role=role)
     session.add(user)
     session.flush()
     return user
@@ -101,9 +101,9 @@ def records(mcp_session: Session, seeded_customer_id: str) -> dict[str, UUID]:
     PipelineService(mcp_session).seed_defaults(SYSTEM)
     customer = UUID(seeded_customer_id)
     deal = DealService(mcp_session).create(
-        DealCreate(nome="Progetto", customer_id=customer), SYSTEM
+        DealCreate(name="Progetto", customer_id=customer), SYSTEM
     )
-    person = PersonService(mcp_session).create(PersonCreate(nome="Anna"), SYSTEM)
+    person = PersonService(mcp_session).create(PersonCreate(first_name="Anna"), SYSTEM)
     return {"deal": deal.id, "customer": customer, "person": person.id}
 
 
@@ -425,11 +425,11 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
         deal = _payload(
             await client.call_tool(
                 "create_deal",
-                {"nome": "Progetto", "customer_id": customer["id"], "note": "In trattativa"},
+                {"name": "Progetto", "customer_id": customer["id"], "note": "In trattativa"},
             )
         )
         person = _payload(
-            await client.call_tool("create_person", {"nome": "Anna", "note": "Referente tecnico"})
+            await client.call_tool("create_person", {"first_name": "Anna", "note": "Referente tecnico"})
         )
         threads = {
             "customer": await _thread(client, "customer", UUID(customer["id"])),

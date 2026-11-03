@@ -128,14 +128,14 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         AGENTE,
     )
     deal = DealService(mcp_session).create(
-        DealCreate(nome="Progetto Ciclo", customer_id=customer.id, hourly_rate=RATE),
+        DealCreate(name="Progetto Ciclo", customer_id=customer.id, hourly_rate=RATE),
         AGENTE,
     )
     worker = UserService(mcp_session).create(
         UserCreate(
             email="worker-full-cycle@pigro.it",
             password="supersegreta1",
-            nome="Worker",
+            name="Worker",
             role="collaborator",
             default_hourly_cost=COST,
         ),
@@ -145,7 +145,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
         UserCreate(
             email="umano-full-cycle@pigro.it",
             password="supersegreta1",
-            nome="Umano",
+            name="Umano",
             role="admin",
         ),
         Actor.system(),
@@ -153,7 +153,7 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
     return {
         "deal_id": deal.id,
         "user_id": worker.id,
-        "won_id": next(stage.id for stage in stages if stage.code == "vinto"),
+        "won_id": next(stage.id for stage in stages if stage.code == "won"),
         # `type="user"` with a real id: exactly the Actor `get_actor` builds from a cookie
         # login, and the only reason the timeline assertion at the end can tell the two
         # halves of this test apart at all.
@@ -179,7 +179,7 @@ def _revenue_from_sql(session: Session, deal_id: UUID) -> Decimal:
     return Decimal(
         session.execute(
             text(
-                "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
+                "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
                 "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
                 "  AND deleted_at IS NULL"
             ),
@@ -202,7 +202,7 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
             {
                 "deal_id": str(deal_id),
                 "user_id": str(cycle["user_id"]),
-                "data": TODAY.isoformat(),
+                "date": TODAY.isoformat(),
                 # A string with two decimal places, not a bare `8`: a JSON integer arrives
                 # as a Python float whose `Decimal` conversion carries only as many places
                 # as the float itself. `test_timetracking_tools.py` states the same reason

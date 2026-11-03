@@ -12,7 +12,7 @@ whereas here the human picks it and can see what was attached.
 The context travels as **Markdown text inside the message**. It is a resource block only
 where the resource already exists, which in this slice means `customer://{id}` and therefore
 only `prompts/customer.py`. §11.1 adds no new resource, and inventing
-`dashboard://commercial?da=...` in order to have a URI to embed would be adding one without
+`dashboard://commercial?from=...` in order to have a URI to embed would be adding one without
 saying so.
 
 **Every figure rendered here is a field of a dashboard response, printed.** Nothing in this
@@ -84,7 +84,7 @@ def _and_the_rest(shown: int, total: int) -> list[str]:
 
 
 def review_pipeline(
-    context: McpContext, da: str | None = None, a: str | None = None
+    context: McpContext, date_from: str | None = None, date_to: str | None = None
 ) -> list[dict[str, Any]]:
     """The weekly review. Posture: ask about the deals that have not moved.
 
@@ -94,13 +94,13 @@ def review_pipeline(
     briefing whose list and whose count could disagree with each other by construction.
     """
     query = PeriodQuery(
-        da=date.fromisoformat(da) if da else None,
-        a=date.fromisoformat(a) if a else None,
+        date_from=date.fromisoformat(date_from) if date_from else None,
+        date_to=date.fromisoformat(date_to) if date_to else None,
     )
     board = DashboardService(context.session).get_commercial_dashboard(query, context.actor)
 
     lines = [
-        f"# Revisione pipeline — {board.period.da} → {board.period.a}",
+        f"# Revisione pipeline — {board.period.date_from} → {board.period.date_to}",
         "",
         "## Pipeline per stato",
         "",
@@ -168,9 +168,11 @@ def closing_month(context: McpContext, year: int, month: int) -> list[dict[str, 
     which the server's guard renders as guidance. Validating it here as well would be a
     second rule that agrees with the first until one of them is edited.
     """
-    da, a = month_bounds(year, month)
+    date_from, date_to = month_bounds(year, month)
     service = DashboardService(context.session)
-    economic = service.get_economic_dashboard(PeriodQuery(da=da, a=a), context.actor)
+    economic = service.get_economic_dashboard(
+        PeriodQuery(date_from=date_from, date_to=date_to), context.actor
+    )
     backlog = AnalyticsService(context.session).unbilled_backlog(context.actor)
 
     pnl = economic.pnl
@@ -240,28 +242,28 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
     zero", and re-deriving it from `days` would silently pick the second reading.
     """
     board = DashboardService(context.session).get_operational_dashboard(context.actor)
-    week = board.week
-    if week is not None and week != week.da.isoformat():
+    current = board.week
+    if week is not None and week != current.date_from.isoformat():
         return [
             _user(
                 f"La dashboard operativa copre solo la settimana corrente "
-                f"({week.da} → {week.a}); la settimana richiesta ({week}) non è "
+                f"({current.date_from} → {current.date_to}); la settimana richiesta ({week}) non è "
                 "disponibile. Per le ore di una settimana passata usa il rapporto ore."
             )
         ]
 
     lines = [
-        f"# Ore da registrare — settimana {week.da} → {week.a}",
+        f"# Ore da registrare — settimana {current.date_from} → {current.date_to}",
         "",
         "| Giorno | Ore |",
         "|---|---|",
     ]
-    for day in week.days:
+    for day in current.days:
         lines.append(f"| {day.day} | {day.hours} |")
-    lines += ["", f"Totale settimana: {week.total_hours} ore.", ""]
-    if week.days_without_hours:
+    lines += ["", f"Totale settimana: {current.total_hours} ore.", ""]
+    if current.days_without_hours:
         lines.append("**Giorni senza nessuna ora registrata:**")
-        lines += [f"- {day}" for day in week.days_without_hours]
+        lines += [f"- {day}" for day in current.days_without_hours]
     else:
         lines.append("Nessun giorno scoperto: la settimana è completa.")
 
@@ -269,20 +271,20 @@ def hours_to_log(context: McpContext, week: str | None = None) -> list[dict[str,
     # Names, not identifiers: a list of UUIDs is a section nobody can answer from. The feed
     # carries fifty rows and can name the same deal many times, so the names are resolved in
     # one batch, deduplicated in feed order and capped.
-    feed = [a.entity_id for a in board.recent_task if a.entity_type == "deal"]
+    feed = [a.entity_id for a in board.recent_activity if a.entity_type == "deal"]
     deals = DealService(context.session).get_many(set(feed), context.actor)
     seen: list[str] = []
     for deal_id in feed:
         deal = deals.get(deal_id)
-        if deal is None or deal.nome in seen:
+        if deal is None or deal.name in seen:
             continue
-        seen.append(deal.nome)
+        seen.append(deal.name)
         if len(seen) == RECENT_DEALS_SHOWN:
             break
     if not seen:
         lines.append("Nessuna attività recente su un deal.")
     else:
-        lines += [f"- {nome}" for nome in seen]
+        lines += [f"- {name}" for name in seen]
     lines += [
         "",
         "---",

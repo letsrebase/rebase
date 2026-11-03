@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from orologio import TODAY_IN_ITALY, congela
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,7 @@ def _create(service, deal_id, user_id, **overrides):
     payload = {
         "deal_id": deal_id,
         "user_id": user_id,
-        "data": date(2026, 3, 10),
+        "date": date(2026, 3, 10),
         "hours": Decimal("3.00"),
         "description": "Sviluppo",
     }
@@ -73,7 +73,7 @@ def test_a_multi_line_description_keeps_its_newlines_unescaped(
     )
     assert entry.description == hostile
     stored = db_session.execute(
-        text("SELECT descrizione FROM time_entries WHERE id = :id"), {"id": entry.id}
+        text("SELECT description FROM time_entries WHERE id = :id"), {"id": entry.id}
     ).scalar_one()
     assert stored == hostile
 
@@ -96,12 +96,12 @@ def test_a_future_date_is_refused_but_back_dating_is_not(
     Italy, which is legal and is not refused. The test then failed for a reason that has
     nothing to do with the rule it is checking, at 01:02 Rome time on 2026-09-08.
     """
-    congela(monkeypatch, timetracking_service_module)
+    freeze(monkeypatch, timetracking_service_module)
     service = TimeEntryService(db_session)
-    _create(service, seeded_deal_id, seeded_user_id, data=date(2019, 7, 1))
+    _create(service, seeded_deal_id, seeded_user_id, date=date(2019, 7, 1))
     with pytest.raises(ValidationFailed) as excinfo:
-        _create(service, seeded_deal_id, seeded_user_id, data=TODAY_IN_ITALY + timedelta(days=1))
-    assert excinfo.value.details["field"] == "data"
+        _create(service, seeded_deal_id, seeded_user_id, date=TODAY_IN_ITALY + timedelta(days=1))
+    assert excinfo.value.details["field"] == "date"
 
 
 def test_a_write_into_a_closed_period_is_refused(
@@ -113,15 +113,15 @@ def test_a_write_into_a_closed_period_is_refused(
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=3), admin)
     service = TimeEntryService(db_session)
     with pytest.raises(Conflict) as excinfo:
-        _create(service, seeded_deal_id, seeded_user_id, data=date(2026, 3, 10))
+        _create(service, seeded_deal_id, seeded_user_id, date=date(2026, 3, 10))
     assert excinfo.value.details["month"] == 3
     assert "marzo 2026" in excinfo.value.message
 
     # An entry already in an open month cannot be moved into the closed one, nor
     # deleted out of it.
-    entry = _create(service, seeded_deal_id, seeded_user_id, data=date(2026, 4, 10))
+    entry = _create(service, seeded_deal_id, seeded_user_id, date=date(2026, 4, 10))
     with pytest.raises(Conflict):
-        service.update(entry.id, TimeEntryUpdate(data=date(2026, 3, 20)), WRITER)
+        service.update(entry.id, TimeEntryUpdate(date=date(2026, 3, 20)), WRITER)
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=4), admin)
     with pytest.raises(Conflict):
         service.soft_delete(entry.id, WRITER)
@@ -142,14 +142,14 @@ def test_a_deactivated_user_cannot_receive_new_hours_but_keeps_the_old_ones(
         _create(service, seeded_deal_id, seeded_user_id)
     assert excinfo.value.details["field"] == "user_id"
 
-    other = User(email=f"altro-{uuid4()}@example.test", password_hash="x", nome="Altro")
+    other = User(email=f"altro-{uuid4()}@example.test", password_hash="x", name="Altro")
     db_session.add(other)
     db_session.flush()
     fresh = service.create(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=other.id,
-            data=date(2026, 3, 11),
+            date=date(2026, 3, 11),
             hours=Decimal("1.00"),
             description="x",
         ),
@@ -202,7 +202,7 @@ def test_an_entry_on_an_issued_invoice_freezes_the_named_fields(
 
     for field, value in [
         ("hours", Decimal("4.00")),
-        ("data", date(2026, 3, 12)),
+        ("date", date(2026, 3, 12)),
         ("applied_rate", Decimal("90.000000")),
         ("applied_cost", Decimal("10.000000")),
         ("description", "Altro"),
@@ -275,8 +275,8 @@ def test_the_state_is_derived_never_stored(
     db_session.flush()
     assert service.deal_summary(seeded_deal_id, READER).status == "to_invoice"
 
-    # "chiuso" is "no billable hour left unbilled", and since 4B-3 only an *issued*
-    # invoice bills one: on a draft the deal would still read "da fatturare", which is
+    # "closed" is "no billable hour left unbilled", and since 4B-3 only an *issued*
+    # invoice bills one: on a draft the deal would still read "to_invoice", which is
     # the honest answer while the document can still change.
     db_session.execute(
         text("UPDATE time_entries SET invoice_line_id = :line WHERE deal_id = :deal"),
@@ -312,7 +312,7 @@ def test_a_dangling_foreign_key_is_not_found_not_an_integrity_error(
             TimeEntryCreate(
                 deal_id=uuid4(),
                 user_id=seeded_user_id,
-                data=date(2026, 3, 1),
+                date=date(2026, 3, 1),
                 hours=Decimal("1.00"),
                 description="x",
             ),
@@ -327,9 +327,9 @@ def test_the_list_is_ordered_by_date_descending(
     these two tables are born ordered."""
     service = TimeEntryService(db_session)
     for day in (5, 20, 12):
-        _create(service, seeded_deal_id, seeded_user_id, data=date(2026, 3, day))
+        _create(service, seeded_deal_id, seeded_user_id, date=date(2026, 3, day))
     page = service.list(TimeEntryListQuery(deal_id=seeded_deal_id), READER)
-    assert [e.data.day for e in page.items] == [20, 12, 5]
+    assert [e.date.day for e in page.items] == [20, 12, 5]
 
 
 def test_the_invoiced_filter_answers_how_much_is_left_to_invoice(
@@ -344,7 +344,7 @@ def test_the_invoiced_filter_answers_how_much_is_left_to_invoice(
     keeps saying what it always said."""
     service = TimeEntryService(db_session)
     billed = _create(service, seeded_deal_id, seeded_user_id)
-    _create(service, seeded_deal_id, seeded_user_id, data=date(2026, 3, 11))
+    _create(service, seeded_deal_id, seeded_user_id, date=date(2026, 3, 11))
     db_session.execute(
         text("UPDATE time_entries SET invoice_line_id = :line WHERE id = :id"),
         {"line": issued_invoice_line_id, "id": billed.id},
@@ -364,25 +364,25 @@ def test_the_future_limit_is_italys_own_day_not_the_processs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """§6.3's limit is a day in the issuer's calendar, so it must be read off Italy's
-    clock and not the host's -- see `db/clock.py` and `orologio.py`.
+    clock and not the host's -- see `db/clock.py` and `frozen_clock.py`.
 
     Frozen at 00:30 on 1 January in Rome, which is still 23:30 on 31 December for a
     process running in UTC (the API image does). Against the host's day, an hour logged
     for the day it is *actually* being logged on is a day in the future and gets refused
-    as `data futura`: a legal entry rejected, at the one hour of the day when a
+    as `future date`: a legal entry rejected, at the one hour of the day when a
     freelancer closing the year is most likely to be writing it, with a message that
     reads as a product defect. The refusal of tomorrow is asserted in the same test so
     the fix cannot be "stop checking".
     """
-    congela(monkeypatch, timetracking_service_module)
+    freeze(monkeypatch, timetracking_service_module)
     service = TimeEntryService(db_session)
 
-    entry = _create(service, seeded_deal_id, seeded_user_id, data=TODAY_IN_ITALY)
-    assert entry.data == TODAY_IN_ITALY
+    entry = _create(service, seeded_deal_id, seeded_user_id, date=TODAY_IN_ITALY)
+    assert entry.date == TODAY_IN_ITALY
 
     with pytest.raises(ValidationFailed) as excinfo:
-        _create(service, seeded_deal_id, seeded_user_id, data=TODAY_IN_ITALY + timedelta(days=1))
-    assert excinfo.value.details["field"] == "data"
+        _create(service, seeded_deal_id, seeded_user_id, date=TODAY_IN_ITALY + timedelta(days=1))
+    assert excinfo.value.details["field"] == "date"
 
 
 def test_a_cursor_that_names_no_entry_is_refused_not_read_as_the_first_page(

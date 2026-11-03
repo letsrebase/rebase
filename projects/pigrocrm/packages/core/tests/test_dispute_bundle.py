@@ -83,7 +83,7 @@ def _contract(session: Session) -> Contract:
 def _day(session: Session, contract: Contract, day: date, status: str = "worked") -> WorkUnit:
     unit = WorkUnit(
         contract_id=contract.id,
-        data=day,
+        date=day,
         quantity=Decimal("1.00"),
         description="Giornata di consulenza",
         status=status,
@@ -186,17 +186,17 @@ def test_the_summary_carries_the_log_the_months_register_and_marks_the_day(
     summary = _open(content).read("summary.txt").decode()
 
     assert "Registro del contratto, da 2026-03-01 a 2026-03-31" in summary
-    assert "2026-03-02  1.00  contestato  (senza approvazione) <- questa giornata" in summary
-    assert "2026-03-03  1.00  lavorato" in summary
+    assert "2026-03-02  1.00  disputed  (senza approvazione) <- questa giornata" in summary
+    assert "2026-03-03  1.00  worked" in summary
     proposed = _day(db_session, contract, date(2026, 3, 9), "proposed")
     assert proposed.status == "proposed"
     _, content = build_dispute_bundle(db_session, local_storage, contested.id, READER)
     summary = _open(content).read("summary.txt").decode()
     # Listed, but a proposal is not in the total.
-    assert "2026-03-09  1.00  proposto" in summary
+    assert "2026-03-09  1.00  proposed" in summary
     assert "2026-04-01" not in summary and "2026-03-04" not in summary
     assert "Totale giornate del mese: 2.00 (" in summary
-    assert "-> lavorato" in summary and "lavorato -> contestato" in summary
+    assert "-> worked" in summary and "worked -> disputed" in summary
 
 
 def test_a_day_with_no_approval_still_gets_a_summary_that_says_so(
@@ -303,7 +303,7 @@ def test_the_register_names_the_approval_each_day_rests_on(
     assert (
         "(approvazione email di giulia@cliente.example, 2026-03-01) <- questa giornata" in summary
     )
-    assert "2026-03-03  1.00  lavorato  (senza approvazione)" in summary
+    assert "2026-03-03  1.00  worked  (senza approvazione)" in summary
 
 
 def test_the_log_names_who_acted(db_session: Session, local_storage: LocalFileStorage) -> None:
@@ -332,7 +332,7 @@ def test_the_invoice_line_the_day_landed_on_is_in_the_summary(
     _, content = build_dispute_bundle(db_session, local_storage, unit.id, READER)
     summary = _open(content).read("summary.txt").decode()
 
-    assert "Fattura 2026/1 (emessa, emessa il 2026-03-31)" in summary
+    assert "Fattura 2026/1 (issued, emessa il 2026-03-31)" in summary
     assert "Riga 1: Attività" in summary
     assert "Importo della riga: 500.00 EUR" in summary
 

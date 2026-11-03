@@ -68,7 +68,7 @@ def _rate_card(db_session: Session, contract: Contract, **overrides: object) -> 
 def _work_unit(db_session: Session, contract: Contract, **overrides: object) -> WorkUnit:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "quantity": Decimal("1.00"),
         "description": "Giornata di consulenza",
         "status": "worked",
@@ -265,7 +265,7 @@ def test_a_day_with_no_covering_rate_card_counts_but_prices_at_nothing(
     actual invoicing attempt, not for a dashboard figure."""
     contract = _contract(db_session)
     _rate_card(db_session, contract, valid_from=date(2026, 1, 1), valid_to=date(2026, 2, 28))
-    _work_unit(db_session, contract, status="approved", data=date(2026, 3, 5))
+    _work_unit(db_session, contract, status="approved", date=date(2026, 3, 5))
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
     assert backlog.accrued_value == Decimal("0.00")
@@ -283,7 +283,7 @@ def test_work_units_and_time_entries_combine_in_the_same_figure(
     entry = TimeEntry(
         deal_id=seeded_deal_id,
         user_id=seeded_user_id,
-        data=date(2026, 3, 1),
+        date=date(2026, 3, 1),
         hours=Decimal("10.00"),
         description="Ore fatturabili",
         billable=True,
@@ -324,11 +324,11 @@ def test_customer_id_scopes_work_units_through_their_contract(db_session: Sessio
 def test_date_window_scopes_work_units_by_their_own_data(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, status="approved", data=date(2026, 3, 5))
-    _work_unit(db_session, contract, status="approved", data=date(2026, 4, 5))
+    _work_unit(db_session, contract, status="approved", date=date(2026, 3, 5))
+    _work_unit(db_session, contract, status="approved", date=date(2026, 4, 5))
 
     _, value, _, entries = AnalyticsRepository(db_session).unbilled_backlog(
-        da=date(2026, 3, 1), a=date(2026, 3, 31)
+        date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)
     )
     assert value == Decimal("500.00")
     assert entries == 1

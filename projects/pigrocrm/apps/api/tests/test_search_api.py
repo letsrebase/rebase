@@ -29,7 +29,7 @@ from pigrocrm.core.search.schemas import COUNT_CEILING
 # Five, and the order is fixed: a palette whose sections move between keystrokes
 # cannot be driven with the keyboard. `invoice` is last, added by Task C12 with the
 # branch that finally makes `SearchEntity`'s fifth member true.
-_ENTITIES = ["customer", "person", "deal", "document", "invoice", "attivita"]
+_ENTITIES = ["customer", "person", "deal", "document", "invoice", "task"]
 
 
 def _search(client: TestClient, **params: Any) -> Any:
@@ -44,11 +44,11 @@ def test_a_search_returns_all_four_groups(logged_in: TestClient) -> None:
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["deadline"] == "Vulcano"
-    assert [group["entity"] for group in body["gruppi"]] == _ENTITIES
-    customer = body["gruppi"][0]
+    assert body["term"] == "Vulcano"
+    assert [group["entity"] for group in body["groups"]] == _ENTITIES
+    customer = body["groups"][0]
     assert customer["total"] == 1
-    assert customer["total_and_a_minimum"] is False
+    assert customer["total_is_minimum"] is False
     assert customer["hits"][0]["label"] == "Vulcano Impianti Srl"
     assert customer["hits"][0]["field"] == "legal_name"
     assert customer["hits"][0]["id"] == created.json()["id"]
@@ -63,16 +63,16 @@ def test_a_term_that_matches_nothing_is_four_empty_groups_and_not_a_404(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [group["entity"] for group in body["gruppi"]] == _ENTITIES
-    assert all(group["hits"] == [] for group in body["gruppi"])
-    assert all(group["total"] == 0 for group in body["gruppi"])
-    assert all(group["total_and_a_minimum"] is False for group in body["gruppi"])
+    assert [group["entity"] for group in body["groups"]] == _ENTITIES
+    assert all(group["hits"] == [] for group in body["groups"])
+    assert all(group["total"] == 0 for group in body["groups"])
+    assert all(group["total_is_minimum"] is False for group in body["groups"])
 
 
 def test_more_matches_than_the_ceiling_are_declared_as_a_minimum(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    """§8.6's second state, and the whole reason `total_and_a_minimum` exists.
+    """§8.6's second state, and the whole reason `total_is_minimum` exists.
 
     Inserted straight onto the session rather than through 201 `POST`s: the endpoint under
     test is the `GET`, and two hundred round trips through the writing half of the API
@@ -94,9 +94,9 @@ def test_more_matches_than_the_ceiling_are_declared_as_a_minimum(
 
     body = _search(logged_in, q="Moltissimi").json()
 
-    customer = body["gruppi"][0]
+    customer = body["groups"][0]
     assert customer["total"] == COUNT_CEILING
-    assert customer["total_and_a_minimum"] is True
+    assert customer["total_is_minimum"] is True
     # Still five on screen, and five is what the palette shows -- the count being a
     # minimum must not change the page.
     assert len(customer["hits"]) == 5
@@ -111,7 +111,7 @@ def test_the_score_is_serialised_as_a_decimal_string_not_a_float(logged_in: Test
     """
     logged_in.post("/api/customers", json={"legal_name": "Vulcano Impianti Srl"})
 
-    score = _search(logged_in, q="Vulcano").json()["gruppi"][0]["hits"][0]["score"]
+    score = _search(logged_in, q="Vulcano").json()["groups"][0]["hits"][0]["score"]
 
     assert isinstance(score, str), type(score)
     assert score == "0.8000"
@@ -172,8 +172,8 @@ def test_the_limit_is_honoured(logged_in: TestClient, api_session: Session) -> N
 
     body = _search(logged_in, q="Limitabile", limit=3).json()
 
-    assert len(body["gruppi"][0]["hits"]) == 3
-    assert body["gruppi"][0]["total"] == 12
+    assert len(body["groups"][0]["hits"]) == 3
+    assert body["groups"][0]["total"] == 12
 
 
 def test_the_endpoint_appears_in_the_openapi_document(client: TestClient) -> None:

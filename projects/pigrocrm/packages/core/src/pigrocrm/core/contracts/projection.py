@@ -64,9 +64,9 @@ class ContractProjection:
     Done-when criterion names, distinct from `CashOverview.projected`."""
 
     contract_id: UUID
-    come_di: dt.date
-    da: dt.date
-    a: dt.date
+    as_of: dt.date
+    date_from: dt.date
+    date_to: dt.date
     irrevocability_window_until_to: dt.date | None
     scheduled: Decimal
     from_renewal: Decimal
@@ -138,9 +138,9 @@ def renewal_assumption_contribution(
     contract: Contract,
     assumption: RenewalAssumption | None,
     occurrences: Sequence[RecurringFeeOccurrence],
-    come_di: dt.date,
-    da: dt.date,
-    a: dt.date,
+    as_of: dt.date,
+    date_from: dt.date,
+    date_to: dt.date,
 ) -> Decimal:
     """A contract's projected renewal contribution over `[da, a)` -- mastro's
     `renewalAssumptionContribution` (`certainty.ts:344-385`). Zero with no assumption
@@ -153,7 +153,7 @@ def renewal_assumption_contribution(
     authority."""
     if assumption is None:
         return ZERO_MONEY
-    window_end = irrevocability_window_end(contract, come_di)
+    window_end = irrevocability_window_end(contract, as_of)
     if window_end is None:
         return ZERO_MONEY
 
@@ -163,8 +163,8 @@ def renewal_assumption_contribution(
     if assumption_start >= horizon_end_exclusive:
         return ZERO_MONEY
 
-    overlap_start = max(assumption_start, da)
-    overlap_end_exclusive = min(horizon_end_exclusive, a)
+    overlap_start = max(assumption_start, date_from)
+    overlap_end_exclusive = min(horizon_end_exclusive, date_to)
     if overlap_start >= overlap_end_exclusive:
         return ZERO_MONEY
 
@@ -178,9 +178,9 @@ def project(
     contract: Contract,
     rate_cards: Sequence[RateCard],
     assumption: RenewalAssumption | None,
-    come_di: dt.date,
-    da: dt.date,
-    a: dt.date,
+    as_of: dt.date,
+    date_from: dt.date,
+    date_to: dt.date,
 ) -> ContractProjection:
     """The genuine "projected" figure over `[da, a)`: every recurring-fee occurrence
     beyond the irrevocability window plus the renewal assumption's own prorated
@@ -191,28 +191,28 @@ def project(
     # move with the window the caller asked about and the same days would be priced
     # differently from one query to the next. Through the assumption's own horizon it is
     # the schedule's own.
-    through = a if assumption is None else max(a, assumption.horizon_until)
+    through = date_to if assumption is None else max(date_to, assumption.horizon_until)
     occurrences = generate_recurring_fee_occurrences(contract, rate_cards, through=through)
-    window_end = irrevocability_window_end(contract, come_di)
-    effective_window_end = window_end if window_end is not None else come_di
+    window_end = irrevocability_window_end(contract, as_of)
+    effective_window_end = window_end if window_end is not None else as_of
     end = schedule_end(contract, effective_window_end, occurrences)
 
     beyond_window = [
         occurrence
         for occurrence in occurrences
-        if effective_window_end < occurrence.date <= end and da <= occurrence.date < a
+        if effective_window_end < occurrence.date <= end and date_from <= occurrence.date < date_to
     ]
     scheduled = round_money(sum((o.amount for o in beyond_window), ZERO_MONEY))
     from_renewal = renewal_assumption_contribution(
-        contract, assumption, occurrences, come_di, da, a
+        contract, assumption, occurrences, as_of, date_from, date_to
     )
     total = round_money(scheduled + from_renewal)
 
     return ContractProjection(
         contract_id=contract.id,
-        come_di=come_di,
-        da=da,
-        a=a,
+        as_of=as_of,
+        date_from=date_from,
+        date_to=date_to,
         irrevocability_window_until_to=window_end,
         scheduled=scheduled,
         from_renewal=from_renewal,

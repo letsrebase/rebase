@@ -40,7 +40,7 @@ def require_editable(invoice: Invoice, field: str) -> None:
         )
 
 
-def check_accrual(da: date | None, a: date | None) -> None:
+def check_accrual(date_from: date | None, date_to: date | None) -> None:
     """The accrual period as it will be stored: both ends or neither, in order.
 
     Checked on the *merged* row by `update`, not on the request, because completing
@@ -50,8 +50,8 @@ def check_accrual(da: date | None, a: date | None) -> None:
     violation into a `ValidationFailed` naming the field instead of a poisoned
     session.
     """
-    if (da is None) != (a is None):
-        missing = "accrual_to" if a is None else "accrual_from"
+    if (date_from is None) != (date_to is None):
+        missing = "accrual_to" if date_to is None else "accrual_from"
         raise ValidationFailed(
             ENTITY,
             missing,
@@ -59,12 +59,12 @@ def check_accrual(da: date | None, a: date | None) -> None:
             "oppure nessuno dei due",
             expected="competenza_da e competenza_a insieme",
         )
-    if da is not None and a is not None and a < da:
+    if date_from is not None and date_to is not None and date_to < date_from:
         raise ValidationFailed(
             ENTITY,
             "accrual_to",
             "il periodo di competenza finisce prima di cominciare",
-            expected=f"una data dal {da.isoformat()} in poi",
+            expected=f"una data dal {date_from.isoformat()} in poi",
         )
 
 
@@ -105,7 +105,7 @@ def check_issuable(source: Invoice, *, from_proforma: bool) -> None:
                 ENTITY,
                 "solo una proforma confermata si converte in fattura",
                 status_current=source.status,
-                status_richiesto="confirmed",
+                requested_status="confirmed",
             )
     elif source.status != "draft":
         raise Conflict(
@@ -197,13 +197,13 @@ def check_declared_totals(data: InvoiceImport) -> None:
     «Totale» column always equals «Imp. Reddito». `stamp_duty` is still checked
     (non-negative) and stored; it is never added.
     """
-    somma_lines = round_money(sum((r.total_price for r in data.lines), Decimal("0")))
-    if somma_lines != round_money(data.taxable_amount):
+    lines_sum = round_money(sum((r.total_price for r in data.lines), Decimal("0")))
+    if lines_sum != round_money(data.taxable_amount):
         raise ValidationFailed(
             ENTITY,
             "taxable_amount",
             f"l'imponibile dichiarato ({data.taxable_amount}) non e' la somma delle righe "
-            f"({somma_lines})",
+            f"({lines_sum})",
             expected="imponibile uguale alla somma dei prezzi totali di riga",
         )
     if data.stamp_duty < ZERO:

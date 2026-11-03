@@ -37,7 +37,7 @@ class DocumentText:
         the right answer for a browser and no answer at all for an agent.
 
         `extract_text` and not `read_text`, which is what `DriveReader` calls the same
-        operation on a file of the titolare's Drive: that name is one of the bare-name
+        operation on a file of the owner's Drive: that name is one of the bare-name
         bans in `test_mcp_invoice_ban.py`, and those bans are sound only while each name
         is unique in the codebase. A second `read_text` would turn a ban on an operation
         into a ban on a word, and would fail the build with a message about Drive over a

@@ -246,8 +246,8 @@ def test_a_hostile_name_round_trips_byte_for_byte() -> None:
         )
     )
     root = etree.fromstring(xml)
-    denominazioni = [element.text for element in root.iter("Denominazione")]
-    assert HOSTILE in denominazioni
+    names = [element.text for element in root.iter("Denominazione")]
+    assert HOSTILE in names
 
 
 def test_a_hostile_name_creates_no_element_the_exporter_did_not_create() -> None:
@@ -309,17 +309,17 @@ def test_an_astral_plane_emoji_is_refused_as_outside_latin_1() -> None:
 
 def test_a_legitimate_accented_italian_name_round_trips_and_validates() -> None:
     """Latin-1 Supplement covers ordinary accented Italian letters, so a real
-    ragione sociale like this one must both validate and come back unchanged."""
-    nome = "Caffè Perché S.r.l."
+    legal name like this one must both validate and come back unchanged."""
+    accented_name = "Caffè Perché S.r.l."
     xml = InvoicePaExporter().to_bytes(
         _invoice(
             [_line(1, "Consulenza", "1.000000", "100.000000", "100.00")],
-            customer=_customer(legal_name=nome),
+            customer=_customer(legal_name=accented_name),
         )
     )
     assert_valid(xml)
     root = etree.fromstring(xml)
-    assert nome in [element.text for element in root.iter("Denominazione")]
+    assert accented_name in [element.text for element in root.iter("Denominazione")]
 
 
 # --- the prologue and the element order carried over from the previous system --------------------
@@ -371,8 +371,8 @@ def test_the_transmitter_id_may_be_the_fiscal_code() -> None:
 
 
 def test_the_vat_quartet_agrees_on_every_summary_group() -> None:
-    """Two SdI checks applied as a pair: a zero rate with no Natura is rejected, and
-    a Natura with a non-zero rate is rejected. All four must agree."""
+    """Two SdI checks applied as a pair: a zero rate with no VAT nature is rejected, and
+    a VAT nature with a non-zero rate is rejected. All four must agree."""
     xml = InvoicePaExporter().to_bytes(
         _invoice([_line(1, "Consulenza", "1.000000", "100.000000", "100.00")])
     )
@@ -411,9 +411,7 @@ def test_quantity_and_unit_price_keep_six_decimals() -> None:
 # --- the recipient-code fallback, and the refusals --------------------------------
 
 
-def test_to_customer_with_to_certified_email_but_no_sdi_gets_the_seven_zeroes_and_the_certified_email() -> (
-    None
-):
+def test_customer_with_certified_email_but_no_sdi_code_gets_seven_zeroes_and_the_email() -> None:
     """The correct fallback is not deducible from the schema, where the field is
     simply mandatory."""
     xml = InvoicePaExporter().to_bytes(
@@ -508,12 +506,12 @@ def test_a_country_code_that_is_not_a_country_code_is_refused() -> None:
     `Nazione` wants two upper-case letters -- so a typo would otherwise reach the file and
     be rejected by the SdI after a register number had been spent on it.
     """
-    for sbagliata in ("D", "de1", "1I"):
+    for wrong in ("D", "de1", "1I"):
         with pytest.raises(ValidationFailed) as caught:
             InvoicePaExporter().to_bytes(
                 _invoice(
                     [_line(1, "Consulenza", "1.000000", "100.000000", "100.00")],
-                    customer=_customer(country=sbagliata),
+                    customer=_customer(country=wrong),
                 )
             )
         assert caught.value.details["field"] == "country"
@@ -585,7 +583,7 @@ def test_an_legal_entity_with_only_to_fiscal_code_and_no_vat_number_is_refused()
                 legal_entity=legal_entity_without_vat_number,
             )
         )
-    assert caught.value.details["entity"] == "legal_entities"
+    assert caught.value.details["entity"] == "legal_entity"
     assert caught.value.details["field"] == "vat_number"
 
 
@@ -1128,15 +1126,15 @@ def test_a_normative_reference_outside_latin_1_is_refused_by_the_pre_check_like_
 ):
     """The reference travels on the line into `DatiRiepilogo`, so it is the line's to
     check before the number as much as the description is."""
-    riga = _line(1, "Consulenza", "1.000000", "100.000000", "100.00").model_copy(
+    line = _line(1, "Consulenza", "1.000000", "100.000000", "100.00").model_copy(
         update={"legal_reference": "Операция не облагается"}
     )
     with pytest.raises(ValidationFailed) as pre:
-        check_document_text_exportable("Consulenza", [riga])
+        check_document_text_exportable("Consulenza", [line])
     assert pre.value.details["entity"] == "fiscal_profile"
     assert pre.value.details["field"] == "legal_reference"
     with pytest.raises(ValidationFailed) as writer:
-        InvoicePaExporter().to_bytes(_invoice([riga]))
+        InvoicePaExporter().to_bytes(_invoice([line]))
     assert writer.value.details == pre.value.details
 
 
@@ -1211,7 +1209,7 @@ def test_an_issuer_email_shorter_than_the_schema_floor_is_refused_by_the_pre_che
     alone. Refused here, before the register number, and by the writer if it is not."""
     legal_entity = LEGAL_ENTITY.model_copy(update={"email": "a@b.it"})
     with pytest.raises(ValidationFailed) as pre:
-        check_party_exportable(legal_entity, "legal_entities")
+        check_party_exportable(legal_entity, "legal_entity")
     assert pre.value.details["field"] == "email"
     assert pre.value.details["reason"].startswith("il valore ha meno dei 7 caratteri")
     with pytest.raises(ValidationFailed) as writer:
@@ -1231,7 +1229,7 @@ def test_an_issuer_email_with_no_dot_in_the_domain_is_refused_by_the_pre_check()
     itself refuses. `_EMAIL_CONTATTI_RE` closes that gap."""
     legal_entity = LEGAL_ENTITY.model_copy(update={"email": "info@localhost"})
     with pytest.raises(ValidationFailed) as pre:
-        check_party_exportable(legal_entity, "legal_entities")
+        check_party_exportable(legal_entity, "legal_entity")
     assert pre.value.details["field"] == "email"
     assert pre.value.details["reason"].startswith("il valore non ha la forma richiesta")
     with pytest.raises(ValidationFailed) as writer:
@@ -1244,9 +1242,7 @@ def test_an_issuer_email_with_no_dot_in_the_domain_is_refused_by_the_pre_check()
     assert writer.value.details == pre.value.details
 
 
-def test_to_malformed_certified_email_on_to_customer_routed_by_sdi_code_is_not_the_documents_problem() -> (
-    None
-):
+def test_malformed_certified_email_on_customer_routed_by_sdi_code_is_not_our_problem() -> None:
     """`_transmission_data` writes `PECDestinatario` only for a customer with no SDI
     code; one routed by SDI code keeps `certified_email` as an ordinary contact field the writer
     never touches, so a value that would fail `EmailType`'s pattern must not refuse an

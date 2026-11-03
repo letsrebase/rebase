@@ -213,11 +213,11 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
     created = logged_in.post(
         "/api/templates",
         json={
-            "nome": "Consulenza CTO",
-            "tipo": "offerta",
-            "corpo_markdown": "Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
-            "variabili_dichiarate": [
-                {"nome": "oggetto", "etichetta": "Oggetto", "tipo": "text", "obbligatoria": True}
+            "name": "Consulenza CTO",
+            "type": "offer",
+            "body_markdown": "Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
+            "declared_variables": [
+                {"name": "oggetto", "label": "Oggetto", "type": "text", "required": True}
             ],
         },
     )
@@ -226,11 +226,11 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
 
     described = logged_in.get(f"/api/templates/{template_id}/describe")
     assert described.status_code == 200
-    assert [v["nome"] for v in described.json()["variabili"]] == ["oggetto"]
+    assert [v["name"] for v in described.json()["variables"]] == ["oggetto"]
 
     preview = logged_in.post(
         f"/api/templates/{template_id}/preview",
-        json={"variabili": {"cliente": {"ragione_sociale": "ACME"}, "oggetto": "Advisory"}},
+        json={"variables": {"cliente": {"ragione_sociale": "ACME"}, "oggetto": "Advisory"}},
     )
     assert preview.status_code == 200
     assert preview.json()["markdown"] == "Spett.le ACME — Advisory"
@@ -238,7 +238,7 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
 
 def test_a_template_body_that_does_not_parse_is_a_422(logged_in: TestClient) -> None:
     response = logged_in.post(
-        "/api/templates", json={"nome": "Rotto", "tipo": "offerta", "corpo_markdown": "{{#if x}}"}
+        "/api/templates", json={"name": "Rotto", "type": "offer", "body_markdown": "{{#if x}}"}
     )
     assert response.status_code == 422
     assert "riga 1" in response.json()["reason"]
@@ -247,7 +247,7 @@ def test_a_template_body_that_does_not_parse_is_a_422(logged_in: TestClient) -> 
 def test_a_template_can_be_deactivated_and_reactivated(logged_in: TestClient) -> None:
     created = logged_in.post(
         "/api/templates",
-        json={"nome": "Da disattivare", "type": "offer", "body_markdown": "Ciao"},
+        json={"name": "Da disattivare", "type": "offer", "body_markdown": "Ciao"},
     )
     template_id = created.json()["id"]
     deactivated = logged_in.delete(f"/api/templates/{template_id}")
@@ -261,7 +261,7 @@ def test_a_template_can_be_deactivated_and_reactivated(logged_in: TestClient) ->
 def test_template_list_hides_inactive_ones_by_default(logged_in: TestClient) -> None:
     created = logged_in.post(
         "/api/templates",
-        json={"nome": "Nascosto", "type": "offer", "body_markdown": "Ciao"},
+        json={"name": "Nascosto", "type": "offer", "body_markdown": "Ciao"},
     )
     template_id = created.json()["id"]
     logged_in.delete(f"/api/templates/{template_id}")
@@ -385,7 +385,7 @@ def _connected_drive(session: Session) -> GoogleDriveAccount:
     """
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
         role="admin",
         active=True,
@@ -553,7 +553,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-{uuid4().hex[:8]}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "role": role},
+        json={"email": email, "password": "supersegreta1", "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")

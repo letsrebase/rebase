@@ -29,7 +29,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_deal(
-        nome: str,
+        name: str,
         customer_id: str,
         expected_value: OptionalMoney = None,
         probability: OptionalProbability = None,
@@ -48,7 +48,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         return deals.create(
             context,
             {
-                "nome": nome,
+                "name": name,
                 "customer_id": UUID(customer_id),
                 "expected_value": expected_value,
                 "probability": probability,
@@ -91,8 +91,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         # `str`, not a Literal -- see `search_customers`.
         dir: str = "asc",
     ) -> dict[str, Any]:
-        """Cerca deal per nome, cliente o stato di pipeline. `sort`: `created_at`, `updated_at`,
-        `nome`. `legal_entity_id` filtra per azienda.
+        """Cerca deal per nome (`name`), cliente o stato di pipeline. `sort`: `created_at`,
+        `updated_at`, `name`. `legal_entity_id` filtra per azienda.
         """
         return deals.search(
             context,

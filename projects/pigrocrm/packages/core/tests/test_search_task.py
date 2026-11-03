@@ -1,4 +1,4 @@
-"""The sixth branch of the global search: an attività by its title and its notes (REB-723,
+"""The sixth branch of the global search: a task by its title and its notes (REB-723,
 slice 7 §10 criterion 9).
 
 What is pinned: both columns are searched, a title above a mention in the notes, the
@@ -37,9 +37,9 @@ def _add(session: Session, title: str, **columns: object) -> Task:
 
 def _group(session: Session, term: str, limit: int = 5) -> SearchGroup:
     results = SearchService(session).search_everything(
-        SearchQuery(deadline=term, limit=limit), READONLY
+        SearchQuery(term=term, limit=limit), READONLY
     )
-    return next(group for group in results.groups if group.entity == "attivita")
+    return next(group for group in results.groups if group.entity == "task")
 
 
 def test_a_word_of_the_title_finds_it(db_session: Session) -> None:
@@ -100,7 +100,7 @@ def test_the_group_is_there_when_nothing_matches_and_counts_past_the_limit(
     for index in range(8):
         _add(db_session, f"Sollecito cliente {index}")
 
-    group = _group(db_session, "payment_reminder")
+    group = _group(db_session, "sollecito")
     assert len(group.hits) == 5
     assert group.total == 8
-    assert group.total_and_a_minimum is False
+    assert group.total_is_minimum is False

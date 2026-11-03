@@ -95,7 +95,7 @@ class ProposalService:
                 ENTITY,
                 "proposed_fields",
                 _first_error(exc),
-                expected="{'contract_id', 'data', 'quantita', 'descrizione', 'approvazione'}",
+                expected="{'contract_id', 'date', 'quantity', 'description', 'approval'}",
             ) from exc
 
     # ---- create (the one proposal-creation step, reachable from any door) ---------
@@ -135,7 +135,7 @@ class ProposalService:
             if work_unit_fields.contract_id != data.contract_id:
                 raise ValidationFailed(
                     ENTITY,
-                    "campi_proposti.contract_id",
+                    "proposed_fields.contract_id",
                     "non corrisponde al contract_id della proposta",
                     expected=str(data.contract_id),
                 )
@@ -273,7 +273,7 @@ class ProposalService:
                 "di questo contratto",
             ),
         ):
-            # The customer's azienda at acceptance, as `ContractService.create` copies it.
+            # The customer's legal entity at acceptance, as `ContractService.create` copies it.
             contract = Contract(
                 **contract_payload,
                 legal_entity_id=LegalEntityService(self.session).inherited(
@@ -326,7 +326,7 @@ class ProposalService:
         if fields.contract_id != proposal.contract_id:
             raise ValidationFailed(
                 ENTITY,
-                "campi_accettati.contract_id",
+                "accepted_fields.contract_id",
                 "non corrisponde al contract_id della proposta",
                 expected=str(proposal.contract_id),
             )
@@ -340,9 +340,9 @@ class ProposalService:
             self.session,
             lambda exc: Conflict(
                 "work_unit",
-                "esiste già un day non concluso per questo contratto in questa data",
+                "esiste già una giornata non conclusa per questo contratto in questa data",
                 contract_id=str(fields.contract_id),
-                data=str(fields.date),
+                date=str(fields.date),
             ),
         ):
             approval = Approval(
@@ -361,7 +361,7 @@ class ProposalService:
             set_transition_context(self.session, actor, f"proposta {proposal.id} accettata")
             work_unit = WorkUnit(
                 contract_id=fields.contract_id,
-                data=fields.date,
+                date=fields.date,
                 quantity=fields.quantity,
                 description=fields.description,
                 status="approved",

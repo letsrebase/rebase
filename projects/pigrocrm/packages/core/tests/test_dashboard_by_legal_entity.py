@@ -1,13 +1,13 @@
-"""«Tutte» is the sum of the aziende, and the taxes are one azienda's at a time
+""" "All" is the sum of the legal entities, and the taxes are one legal entity's at a time
 (REB-630, spec 2026-10-03 §1.9, §8 «Dashboard»).
 
-Two aziende, each with one customer, one open deal, one paid and one unpaid invoice and
+Two legal entities, each with one customer, one open deal, one paid and one unpaid invoice and
 some hours this week; a won deal, a per-deal cost and a shared cost on top. Every figure
 below is a literal derived by hand from those rows, in the reading
 `test_dashboard_economic.py` gives for doing so: an expectation recomputed the way the
-code computes it agrees with a wrong implementation. The default azienda is a
-forfettario on the Italian pack, the second is a foreign company on `non-it`, so the
-estimate and the ceiling have one azienda they apply to and one they do not.
+code computes it agrees with a wrong implementation. The default legal entity is a
+flat-rate one on the Italian pack, the second is a foreign company on `non-it`, so the
+estimate and the ceiling have one legal entity they apply to and one they do not.
 
 Committed sessions of their own, like every dashboard file: `DashboardService` sets the
 isolation level as its first statement and Postgres refuses that once a transaction
@@ -24,7 +24,7 @@ from uuid import UUID
 
 import pytest
 from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_legal_entity
-from orologio import fissa_today
+from frozen_clock import freeze_today
 from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
@@ -60,14 +60,14 @@ TODAY = today_local()
 
 @pytest.fixture(autouse=True)
 def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
-    fissa_today(monkeypatch, TODAY)
+    freeze_today(monkeypatch, TODAY)
 
 
 YEAR = TODAY.year
 # One day of the year every invoice is dated and paid on: inside `YEAR` for the yearly
 # sums, whichever month the suite runs in.
 DAY = date(YEAR, 3, 10)
-PERIOD = PeriodQuery(da=date(YEAR, 3, 1), a=date(YEAR, 3, 31))
+PERIOD = PeriodQuery(date_from=date(YEAR, 3, 1), date_to=date(YEAR, 3, 31))
 
 # The figures, by hand, from the rows the fixture writes.
 P_PAID = Decimal("1000.00")  # the studio's paid invoice
@@ -105,18 +105,18 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         studio = LegalEntityRepository(session).default()
         assert studio is not None
         foreign = LegalEntity(
-            nome=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB", predefinita=False
+            name=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB", is_default=False
         )
         open = PipelineStage(
-            nome=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
+            name=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
         )
         won = PipelineStage(
-            nome=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
+            name=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
         )
         user = User(
             email=f"{_PREFIX.lower()}-{uuid7()}@example.test",
             password_hash="x",
-            nome=f"{_PREFIX} operatore",
+            name=f"{_PREFIX} operatore",
             role="collaborator",
         )
         session.add_all([foreign, open, won, user])
@@ -136,9 +136,9 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         session.add_all([customer_p, customer_and])
         session.flush()
 
-        def _deal(nome: str, customer: Customer, stage: PipelineStage, value: str) -> Deal:
+        def _deal(name: str, customer: Customer, stage: PipelineStage, value: str) -> Deal:
             deal = Deal(
-                nome=f"{_PREFIX} {nome}",
+                name=f"{_PREFIX} {name}",
                 customer_id=customer.id,
                 legal_entity_id=customer.legal_entity_id,
                 pipeline_stage_id=stage.id,
@@ -186,7 +186,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                 TimeEntry(
                     deal_id=deal.id,
                     user_id=user.id,
-                    data=TODAY,
+                    date=TODAY,
                     hours=hours,
                     description="Lavorazione",
                     billable=True,
@@ -223,7 +223,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         _hours(deal_e, HOURS_AND)
         # Written by row, not through `CostCategoryService`: a service commits, and a
         # fixture that commits halfway leaves rows behind when a later step fails.
-        category = CostCategory(nome=f"{_PREFIX} categoria")
+        category = CostCategory(name=f"{_PREFIX} categoria")
         session.add(category)
         session.flush()
         session.add_all(
@@ -232,7 +232,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                     deal_id=None,
                     legal_entity_id=None,
                     category_id=category.id,
-                    data=DAY,
+                    date=DAY,
                     amount=COST_SHARED,
                     description=f"{_PREFIX} condiviso",
                     custom_fields={},
@@ -241,7 +241,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                     deal_id=deal_e.id,
                     legal_entity_id=foreign.id,
                     category_id=category.id,
-                    data=DAY,
+                    date=DAY,
                     amount=COST_AND,
                     description=f"{_PREFIX} estero",
                     custom_fields={},
@@ -276,16 +276,16 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
             session.execute(
                 delete(TimeEntry).where(
-                    TimeEntry.deal_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %")))
+                    TimeEntry.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
                 )
             )
             session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
-            session.execute(delete(CostCategory).where(CostCategory.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(User).where(User.nome == f"{_PREFIX} operatore"))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
+            session.execute(delete(User).where(User.name == f"{_PREFIX} operatore"))
             session.execute(
                 delete(FiscalProfile).where(
                     FiscalProfile.legal_entity_id.in_((ids.studio, ids.foreign))
@@ -308,7 +308,7 @@ def _signal(result: OperationalDashboard, code: str) -> int:
     return next(s.count for s in result.signals if s.code == code)
 
 
-# --- the cash adds up, the shared cost only in «tutte» ------------------------------
+# --- the cash adds up, the shared cost only in "all" ------------------------------
 
 
 def test_the_cash_overview_in_all_is_the_sum_of_the_legal_entities(corpus: Corpus) -> None:
@@ -334,9 +334,13 @@ def test_the_cash_overview_in_all_is_the_sum_of_the_legal_entities(corpus: Corpu
 def test_the_period_pnl_keeps_the_shared_cost_out_of_each_legal_entity(corpus: Corpus) -> None:
     with session_factory(corpus.engine)() as session:
         service = AnalyticsService(session)
-        all = service.period_pnl(PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a), READONLY)  # type: ignore[arg-type]
+        all = service.period_pnl(
+            PeriodPnlQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to), READONLY
+        )  # type: ignore[arg-type]
         foreign = service.period_pnl(
-            PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a, legal_entity_id=corpus.foreign),  # type: ignore[arg-type]
+            PeriodPnlQuery(
+                date_from=PERIOD.date_from, date_to=PERIOD.date_to, legal_entity_id=corpus.foreign
+            ),  # type: ignore[arg-type]
             READONLY,
         )
     assert all.general_expenses == COST_SHARED
@@ -371,7 +375,7 @@ def test_the_overview_in_all_carries_no_estimate_and_names_each_share_s_legal_en
     assert all.legal_entity_id is None
     assert all.tax is None and all.projected_tax is None
     assert all.actual_net is None
-    # One customer per azienda, each the whole of its own azienda's revenue: a share
+    # One customer per legal entity, each the whole of its own legal entity's revenue: a share
     # of the space would read 1/6 and 5/6 and hide exactly that.
     quote = {(row.legal_entity_id, row.legal_name): row.share for row in all.customer_concentration}
     assert quote == {
@@ -417,7 +421,12 @@ def test_the_commercial_dashboard_keeps_every_stage_and_sums_the_pipeline(
     def _run(legal_entity_id: UUID | None) -> dict[str, tuple[int, Decimal]]:
         with session_factory(corpus.engine)() as session:
             result = DashboardService(session).get_commercial_dashboard(
-                PeriodQuery(da=PERIOD.da, a=PERIOD.a, legal_entity_id=legal_entity_id), READONLY
+                PeriodQuery(
+                    date_from=PERIOD.date_from,
+                    date_to=PERIOD.date_to,
+                    legal_entity_id=legal_entity_id,
+                ),
+                READONLY,
             )
         assert result.legal_entity_id == legal_entity_id
         return {
@@ -449,7 +458,12 @@ def test_the_closures_and_the_receivables_follow_the_legal_entity(corpus: Corpus
             return (
                 DashboardService(session)
                 .get_commercial_dashboard(
-                    PeriodQuery(da=PERIOD.da, a=PERIOD.a, legal_entity_id=legal_entity_id), READONLY
+                    PeriodQuery(
+                        date_from=PERIOD.date_from,
+                        date_to=PERIOD.date_to,
+                        legal_entity_id=legal_entity_id,
+                    ),
+                    READONLY,
                 )
                 .closings.won
             )
@@ -480,10 +494,10 @@ def test_the_operational_dashboard_narrows_the_week_the_backlog_and_the_signals(
         Decimal("150.00"),
     )
     assert all.backlog.accrued_value == Decimal("250.00")
-    assert [_signal(r, "scaduto_non_incassato") for r in (all, studio, foreign)] == [1, 1, 0]
+    assert [_signal(r, "overdue_unpaid") for r in (all, studio, foreign)] == [1, 1, 0]
     # Each customer is the whole of its own azienda, so above a 50% threshold in both;
     # «tutte» counts the two of them, never a space-wide 1/6 that would hide the studio's.
-    assert [_signal(r, "concentrazione_sopra_soglia") for r in (all, studio, foreign)] == [
+    assert [_signal(r, "concentration_above_threshold") for r in (all, studio, foreign)] == [
         2,
         1,
         1,
@@ -501,9 +515,9 @@ def test_the_operational_dashboard_narrows_the_week_the_backlog_and_the_signals(
 def test_to_deactivated_legal_entity_s_cash_never_reaches_the_active_one_s_estimate(
     corpus: Corpus,
 ) -> None:
-    """With one active azienda the overview in «tutte» still adds up a deactivated
-    azienda's receipts, which must not reach the active one's coefficients: the estimate
-    and the two nets are read off the active azienda's own cash (spec §1.9)."""
+    """With one active legal entity the overview in "all" still adds up a deactivated
+    legal entity's receipts, which must not reach the active one's coefficients: the estimate
+    and the two nets are read off the active legal entity's own cash (spec §1.9)."""
     factory = session_factory(corpus.engine)
     with factory() as session:
         LegalEntityService(session).deactivate(corpus.foreign, ADMIN)
@@ -528,8 +542,8 @@ def test_to_deactivated_legal_entity_s_cash_never_reaches_the_active_one_s_estim
 def test_the_concentration_signal_counts_to_customer_billed_by_two_legal_entities_once(
     corpus: Corpus,
 ) -> None:
-    """A customer over the threshold in both aziende is two rows of the concentration
-    table, one share per azienda, and one person to talk to on the signal."""
+    """A customer over the threshold in both legal entities is two rows of the concentration
+    table, one share per legal entity, and one person to talk to on the signal."""
     factory = session_factory(corpus.engine)
     with factory() as session:
         customer = session.execute(
@@ -560,13 +574,13 @@ def test_the_concentration_signal_counts_to_customer_billed_by_two_legal_entitie
     try:
         with factory() as session:
             rows = AnalyticsRepository(session).revenue_by_customer(YEAR)
-            doppio = [r for r in rows if r.customer_id == customer.id]
-            assert {r.legal_entity_id for r in doppio} == {corpus.studio, corpus.foreign}
-            assert all(r.share > 0.5 for r in doppio)
+            both = [r for r in rows if r.customer_id == customer.id]
+            assert {r.legal_entity_id for r in both} == {corpus.studio, corpus.foreign}
+            assert all(r.share > 0.5 for r in both)
             # The foreign company's own customer fell under the threshold: 5000 of 11000.
             assert AnalyticsRepository(session).count_over_concentration_threshold(YEAR, 0.5) == 1
-        tutte = _operational(corpus.engine, None)
-        assert _signal(tutte, "concentrazione_sopra_soglia") == 1
+        all_legal_entities = _operational(corpus.engine, None)
+        assert _signal(all_legal_entities, "concentration_above_threshold") == 1
     finally:
         with factory() as session:
             session.execute(delete(Invoice).where(Invoice.id == extra_id))
@@ -582,7 +596,7 @@ def test_the_invoiced_not_won_signal_follows_the_deal_s_legal_entity_like_its_li
     factory = session_factory(corpus.engine)
     with factory() as session:
         deal = session.execute(
-            select(Deal).where(Deal.nome == f"{_PREFIX} studio aperto")
+            select(Deal).where(Deal.name == f"{_PREFIX} studio aperto")
         ).scalar_one()
         stray = Invoice(
             customer_id=deal.customer_id,
@@ -615,7 +629,7 @@ def test_the_invoiced_not_won_signal_follows_the_deal_s_legal_entity_like_its_li
             counted = DealRepository(session).list(
                 DealListQuery(invoiced_unwon=True, legal_entity_id=corpus.foreign, limit=50)
             )
-        assert [d.nome for d in counted] == [f"{_PREFIX} estero aperto"]
+        assert [d.name for d in counted] == [f"{_PREFIX} estero aperto"]
     finally:
         with factory() as session:
             session.execute(delete(Invoice).where(Invoice.id == stray_id))

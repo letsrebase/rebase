@@ -1,4 +1,4 @@
-"""Import dello storico fatture (slice 9 §3)."""
+"""Import of the invoice history (slice 9 §3)."""
 
 from datetime import date
 from decimal import Decimal
@@ -118,7 +118,7 @@ def test_neighbour_dates_look_both_ways(db_session: Session) -> None:
     assert repo.first_native_number(legal_entity_id, 2026) is None
     _issued(db_session, year=2026, number=18, day=date(2026, 9, 10), imported=False)
     assert repo.first_native_number(legal_entity_id, 2026) == 18
-    # Another azienda's register is empty: the reads are keyed, not merely filtered.
+    # Another legal entity's register is empty: the reads are keyed, not merely filtered.
     assert repo.numbers_present(uuid4(), 2026) == set()
     assert repo.neighbour_dates(uuid4(), 2026, 9) == (None, None)
 
@@ -152,7 +152,7 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
     from pigrocrm.core.legal_entities.service import LegalEntityService
     from pigrocrm.core.storage.local import LocalFileStorage
 
-    # The azienda first, always (REB-615: a bare default is already seeded and this
+    # The legal entity first, always (REB-615: a bare default is already seeded and this
     # fills in its identity), then its fiscal profile when it has none.
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
@@ -228,11 +228,11 @@ def test_an_imported_invoice_is_issued_numbered_and_moves_the_counter(
     assert read.xml_hash_sha256 is None and read.pdf_document_id is None
     assert _counter(db_session, 2026).last_number == 7
     lines = service.repo.lines(read.id)
-    assert [(riga.line_number, riga.total_price, riga.vat_nature) for riga in lines] == [
+    assert [(line.line_number, line.total_price, line.vat_nature) for line in lines] == [
         (1, Decimal("2700.00"), "N2.2")
     ]
     row = db_session.get(Invoice, read.id)
-    assert row.snapshot is not None and row.snapshot["versione"] == 1
+    assert row.snapshot is not None and row.snapshot["version"] == 1
 
 
 def test_import_issued_accepts_xml_document_id_and_hash_gated_by_the_caller(
@@ -460,7 +460,7 @@ def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
     failed and the register carried it anyway.
 
     It used to be the emitter profile that was missing; since REB-623 a customer cannot
-    exist without an azienda, so the first thing an import can miss is the profile.
+    exist without a legal entity, so the first thing an import can miss is the profile.
     """
     from pigrocrm.core.errors import NotFound
     from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -628,7 +628,7 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
     """The refusal is read by a person: the message names the first twenty numbers and
-    says how many there are, while `details["numeri"]` keeps every one of them for a
+    says how many there are, while `details["numbers"]` keeps every one of them for a
     caller that wants to act on the list.
     """
     from pigrocrm.core.db.clock import today_local
@@ -651,7 +651,7 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     )
     with pytest.raises(Conflict) as caught:
         service.issue(draft.id, InvoiceIssue(), ADMIN)
-    assert caught.value.details["numeri"] == gaps
+    assert caught.value.details["numbers"] == gaps
     assert f"({len(gaps)} in tutto)" in caught.value.message
     assert str(GAPS_SHOWN_IN_MESSAGE) in caught.value.message
     # The twenty-first number is not spelled out.
@@ -904,7 +904,7 @@ def _drive_account(session: Session, *, roots: tuple[str, ...] = (ROOT_FOLDER,))
 
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
         role="admin",
         active=True,
@@ -1077,7 +1077,7 @@ def test_a_drive_file_that_is_not_a_pdf_is_refused(db_session: Session, tmp_path
             ADMIN,
         )
 
-    assert caught.value.details["field"] == "pdf_sorgente.drive_file_id"
+    assert caught.value.details["field"] == "pdf_source.drive_file_id"
     assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert _imported_documents(db_session) == []
     # And it was refused *without downloading it*. The mime is a fact one `files.get`
@@ -1167,7 +1167,7 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     hoisted here, among the pure checks, where it belongs: it is a fact about the file
     the caller named.
 
-    Three things must be absent afterwards, not one: the fattura, the imported
+    Three things must be absent afterwards, not one: the invoice, the imported
     document, and the counter row -- `lock_counter` creates it, so a refusal that
     escaped the transaction would leave a register year in existence because somebody
     typed a bad Drive id.
@@ -1191,7 +1191,7 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
             ADMIN,
         )
 
-    assert caught.value.details["field"] == "pdf_sorgente.drive_file_id"
+    assert caught.value.details["field"] == "pdf_source.drive_file_id"
     assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
     assert _counter(db_session, 2026) is None
@@ -1206,8 +1206,8 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
     can refuse for reasons that are not facts about the Drive file at all: here a
     required custom field defined on `document`, which every `documents` row must carry
     and this one has no way to supply. Without a SAVEPOINT around the writes the refused
-    fattura would sit flushed in the caller's session, and the next query in the same
-    transaction would find a fattura the caller had just been told did not exist --
+    invoice would sit flushed in the caller's session, and the next query in the same
+    transaction would find a invoice the caller had just been told did not exist --
     the precise failure `import_issued`'s own docstring exists to describe.
 
     The assertion after the refusal is therefore made *through the same session*: it is

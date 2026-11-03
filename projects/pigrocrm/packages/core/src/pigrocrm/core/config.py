@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     tenants_alembic_ini: str = ""
     # The root installation's own name as a space, e.g. `studiorossi`: `/<root_slug>/app`
     # and `/<root_slug>/api` are the root itself -- same database, same Gmail and Drive,
-    # same cookies -- so the titolare's CRM has an address shaped like everyone else's.
+    # same cookies -- so the owner's CRM has an address shaped like everyone else's.
     # Empty means the root answers only without a prefix. Reserved for signups when set.
     root_slug: str = ""
     # The most spaces the registry may hold: the public signup (`POST /api/tenants/`) refuses
@@ -209,7 +209,7 @@ class Settings(BaseSettings):
     #
     # `gdrive` is finished by one of two routes, and the environment chooses which:
     # either the two service-account variables below, or -- with neither of them set --
-    # the Google account the titolare connects from Impostazioni → Drive, writing into
+    # the Google account the owner connects from the Drive settings screen, writing into
     # the folder they pick there. The second route has nothing to configure here: it
     # lives in a row, so `storage_from_settings` returns a storage that resolves it at
     # the first upload, and the API boots before Drive is connected. Naming either
@@ -254,7 +254,7 @@ class Settings(BaseSettings):
     google_app_unverified: bool = False
     # Whether the root lends its Google client to every space that has none of its own
     # (spec 2026-09-16 §5, REB-394). Off, the default: a space has no Google unless it
-    # configures a client in Impostazioni → Spazio, which is what a self-hosted
+    # configures a client in the space settings screen, which is what a self-hosted
     # installation with no spaces expects. On: `space_base_settings` hands each space
     # the root's client and secret, a token key derived for that space alone, and the
     # root's callback, which relays the consent to the space named in the `state`
@@ -345,7 +345,7 @@ class Settings(BaseSettings):
     # Gmail's own ceiling for a message is 25 MiB to send and 50 MiB to receive.
     gmail_attachment_max_bytes: int = Field(default=20_971_520, ge=1, le=52_428_800)
     gmail_send_grace_minutes: int = Field(default=15, ge=1, le=1440)
-    # --- Drive (slice 9C). The text of one file the titolare pointed at, capped.
+    # --- Drive (slice 9C). The text of one file the owner pointed at, capped.
     # `ge=1` because a ceiling of zero would return an empty document for every file
     # and read as "this file has no text"; the upper bound is what an agent's context
     # and an HTTP response can carry without the cap being a fiction.
@@ -380,7 +380,8 @@ class Settings(BaseSettings):
     # typed 50 into the ceiling would have configured a persecution.
     payment_reminders_grace_days: int = Field(default=7, ge=1, le=365)
     payment_reminders_min_interval_days: int = Field(default=14, ge=1, le=365)
-    # 3 is also `MAX_PAYMENT_REMINDER_LEVEL` in `gmail/solleciti_template.py`, which is where the
+    # 3 is also `MAX_PAYMENT_REMINDER_LEVEL` in `gmail/payment_reminders_template.py`, which is
+    # where the
     # wording stops escalating: above it a fourth register would have to be a legal
     # threat, which is not a sentence this project has standing to put in a freelancer's
     # name. The `le` therefore matches the template rather than being a round number.
@@ -399,7 +400,7 @@ class Settings(BaseSettings):
     # 0.30 is a starting default, not a rule of law the way `stamp_duty_threshold` is: a
     # freelance practice with one dominant client for a season is not wrong, only
     # worth naming. That is why this is a per-space `Settings` field an operator can
-    # raise or lower exactly the way the three `solleciti_*` thresholds above already
+    # raise or lower exactly the way the three `payment_reminders_*` thresholds above already
     # are, rather than a column on `FiscalProfile` -- nothing here is a legal fact the
     # way the stamp-duty threshold is.
     preferred_concentration_threshold: float = Field(default=0.30, gt=0.0, le=1.0)

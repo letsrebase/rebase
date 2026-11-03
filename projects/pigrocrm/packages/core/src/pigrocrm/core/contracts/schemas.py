@@ -99,7 +99,7 @@ class ContractCreate(BaseModel):
     currency: SafeStr = Field(default="EUR", max_length=CURRENCY_MAX_LENGTH)
     requires_prior_approval: bool = False
     applies_social_charge: bool = False
-    # REB-761: the share of the azienda's invoiced revenue this customer must not reach
+    # REB-761: the share of the legal entity's invoiced revenue this customer must not reach
     # over the contract's own anniversary year, as a percentage (`50.00`). Absent, no cap.
     customer_share_cap: Decimal | None = Field(
         default=None, max_digits=CAP_MAX_DIGITS, decimal_places=DECIMAL_PLACES, gt=0, lt=100
@@ -119,7 +119,7 @@ class ContractCreate(BaseModel):
     @model_validator(mode="after")
     def _end_not_before_start(self) -> "ContractCreate":
         if self.end is not None and self.end < self.start:
-            raise ValueError("fine non può precedere inizio")
+            raise ValueError("end non può precedere start")
         return self
 
 
@@ -204,7 +204,7 @@ class ContractRead(BaseModel):
 
     id: UUID
     customer_id: UUID
-    # The customer's azienda when the contract was created (REB-623); read-only.
+    # The customer's legal entity when the contract was created (REB-623); read-only.
     legal_entity_id: UUID
     title: str
     start: date
@@ -280,7 +280,7 @@ class RateCardCreate(BaseModel):
         # conflict. Catching it here, before the row ever reaches the database,
         # is what keeps the two failures distinguishable.
         if self.valid_to is not None and self.valid_to < self.valid_from:
-            raise ValueError("valido_a non può precedere valido_da")
+            raise ValueError("valid_to non può precedere valid_from")
         return self
 
 
@@ -325,7 +325,7 @@ class RateCardRead(BaseModel):
 
 class ConcentrationFigures(BaseModel):
     """One currency's side of a concentration cap: the customer's invoiced revenue and
-    the azienda's total, both in `currency` and never converted, with the share one is of
+    the legal entity's total, both in `currency` and never converted, with the share one is of
     the other. A customer billed in euros on a USD contract is a `EUR` row, not a figure
     labelled with the contract's own currency (REB-776)."""
 
@@ -373,7 +373,7 @@ class ContractConcentrationCap(BaseModel):
 
 class ContractCapSimulation(BaseModel):
     """REB-761: the «ci sta?» simulator's answer for one contract's cap. The customer's
-    share of the azienda's invoiced revenue over the contract's own anniversary year
+    share of the legal entity's invoiced revenue over the contract's own anniversary year
     containing `expected_date`, before and after a synthetic addition that goes entirely
     to this customer: both the customer's revenue and the total grow by it, which is why
     the share moves less than the addition. In the contract's own currency, since a cap
@@ -507,18 +507,18 @@ class RenewalAssumptionRead(BaseModel):
 class ContractProjectionQuery(BaseModel):
     """The window `ContractProjectionService.project` reads: `[da, a)`, half-open --
     an occurrence dated exactly `a` belongs to the next window, matching
-    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `come_di` is the date
+    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `as_of` is the date
     a termination notice is assumed served on; `None` reads as "today", resolved by
     the service and never by this schema (packages/core's own single clock,
     db/clock.py)."""
 
-    da: date
-    a: date
-    come_di: date | None = None
+    date_from: date
+    date_to: date
+    as_of: date | None = None
 
     @model_validator(mode="after")
     def _a_after_da(self) -> "ContractProjectionQuery":
-        if self.a <= self.da:
+        if self.date_to <= self.date_from:
             raise ValueError("a deve essere successiva a da")
         return self
 
@@ -531,9 +531,9 @@ class ContractProjectionRead(BaseModel):
     figure"."""
 
     contract_id: UUID
-    come_di: date
-    da: date
-    a: date
+    as_of: date
+    date_from: date
+    date_to: date
     irrevocability_window_until_to: date | None
     scheduled: Decimal
     from_renewal: Decimal

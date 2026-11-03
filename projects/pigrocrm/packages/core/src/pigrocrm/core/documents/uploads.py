@@ -20,6 +20,9 @@ from pigrocrm.core.documents.schemas import (
 )
 from pigrocrm.core.errors import Conflict, ValidationFailed
 
+# What a person reads for the stored `invoices.type` value.
+_INVOICE_TYPE_LABELS = {"invoice": "fattura", "proforma": "proforma"}
+
 # The leading bytes a file of each sniffable type starts with. A declared type is a
 # claim by the uploader; these are what the bytes say. Plain text, Markdown and XML have
 # no signature and are not sniffed. `.docx` and `.xlsx` are ZIP containers. A PDF may
@@ -197,7 +200,8 @@ class DocumentUploads:
             raise ValidationFailed(
                 ENTITY,
                 "content_type",
-                f"questo documento e' il PDF di una {type}: una nuova versione deve essere "
+                f"questo documento e' il PDF di una {_INVOICE_TYPE_LABELS.get(type, type)}: "
+                "una nuova versione deve essere "
                 f"un PDF, non {content_type}",
                 expected="application/pdf",
             )
@@ -341,8 +345,8 @@ class DocumentUploads:
                 title=title,
             ),
             actor,
-            # The record's own azienda when the caller names it (an imported invoice's
-            # original PDF is the invoice's, whatever azienda its customer is in now).
+            # The record's own legal entity when the caller names it (an imported invoice's
+            # original PDF is the invoice's, whatever legal entity its customer is in now).
             legal_entity_id=legal_entity_id,
         )
         self.add_version_row(document, data, content_type, actor)

@@ -1,7 +1,8 @@
 """Spec §9's own call site: the unbilled-`work_unit`-to-`InvoiceLine` assembly step.
 
 This is the foundations half REB-359 owns -- fee lines only, for a day with no
-`applies_social_charge` awareness at all (that election, and the rivalsa line itself,
+`applies_social_charge` awareness at all (that election, and the social security surcharge line
+itself,
 is a later issue's job, appended by a separate step onto whatever this one produces).
 No schema change to `Invoice`/`InvoiceLine`: an approved, worked day becomes an
 ordinary `InvoiceLine` on a draft that `invoices.assembly.assemble_draft` creates, the
@@ -24,12 +25,13 @@ its days back (`release_days_of_invoice`), through the two edges the state graph
 
 `assemble_unbilled_work_units_into_new_invoice` is the convenience path for the common
 case: a contract with nothing else being assembled onto the same invoice. A caller that
-also needs to append a rivalsa line or a rebillable expense to the *same* invoice
+also needs to append a social security surcharge line or a rebillable expense to the *same* invoice
 should use `unbilled_work_unit_lines` and `bind_work_units` directly around its own
 single `assemble_draft` call instead -- `InvoiceLineIn` deliberately carries no
-`vat_nature`/`legal_reference` (`invoices/schemas.py`), so an existing rivalsa line
+`vat_nature`/`legal_reference` (`invoices/schemas.py`), so an existing social security surcharge
+line
 read back and round-tripped through a second, independent line replacement would
-silently lose the very fields that make it a rivalsa line.
+silently lose the very fields that make it a social security surcharge line.
 """
 
 from collections import defaultdict
@@ -87,11 +89,13 @@ def _currency_block(contract: Contract) -> str | None:
 
 
 def _gather(
-    session: Session, contract_id: UUID, da: date | None, a: date | None
+    session: Session, contract_id: UUID, date_from: date | None, date_to: date | None
 ) -> tuple[dict[_GroupKey, list[WorkUnit]], list[WorkUnit], dict[UUID, RateCard]]:
     """`(groups, uncovered, cards)`: the ready days grouped by the rate card in force on
     their own date and by month, the days no card covers, and the contract's cards by id."""
-    work_units = WorkUnitRepository(session).unbilled_for_contract(contract_id, da=da, a=a)
+    work_units = WorkUnitRepository(session).unbilled_for_contract(
+        contract_id, date_from=date_from, date_to=date_to
+    )
     cards = RateCardRepository(session).list_for_contract(contract_id)
 
     groups: dict[_GroupKey, list[WorkUnit]] = defaultdict(list)
@@ -134,9 +138,9 @@ def _line_in(card: RateCard, year: int, month: int, quantity: Decimal) -> Invoic
 
 
 def unbilled_work_unit_lines(
-    session: Session, contract_id: UUID, da: date | None = None, a: date | None = None
+    session: Session, contract_id: UUID, date_from: date | None = None, date_to: date | None = None
 ) -> tuple[list[InvoiceLineIn], list[list[UUID]]]:
-    """`(righe, gruppi)`: one `InvoiceLineIn` per `(rate_card, month)` group of
+    """`(lines, groups)`: one `InvoiceLineIn` per `(rate_card, month)` group of
     unbilled, worked days, and the ids each line prices, in the same order --
     positionally zippable with the line ids `replace_lines` produces
     (`bind_work_units`), the same mechanism `bind_to_invoice` uses for
@@ -144,36 +148,36 @@ def unbilled_work_unit_lines(
     the order `lines` was built in. `da`/`a` (inclusive) take only the days of a period.
 
     Raises `ValidationFailed` if any gathered day has no rate card covering its own
-    `data` -- inventing a price here would be a commercial decision this step does
+    `date` -- inventing a price here would be a commercial decision this step does
     not own, the same refusal `bind_to_invoice` gives an unpriced `TimeEntry`.
     """
-    groups, uncovered, cards = _gather(session, contract_id, da, a)
+    grouped, uncovered, cards = _gather(session, contract_id, date_from, date_to)
     if uncovered:
         raise ValidationFailed(
             ENTITY,
-            "data",
+            "date",
             f"{len(uncovered)} giornate non hanno una rate_card in vigore alla propria data",
             expected="una rate_card del contratto valida su ogni data selezionata: "
             + ", ".join(str(w.id) for w in uncovered),
         )
 
     lines: list[InvoiceLineIn] = []
-    gruppi: list[list[UUID]] = []
-    for (card_id, year, month), members in _ordered(groups):
+    groups: list[list[UUID]] = []
+    for (card_id, year, month), members in _ordered(grouped):
         lines.append(_line_in(cards[card_id], year, month, _quantity(members)))
-        gruppi.append([m.id for m in members])
-    return lines, gruppi
+        groups.append([m.id for m in members])
+    return lines, groups
 
 
 def billable_days(
-    session: Session, contract_id: UUID, da: date | None = None, a: date | None = None
+    session: Session, contract_id: UUID, date_from: date | None = None, date_to: date | None = None
 ) -> BillableDays:
     """What `assemble_unbilled_work_units_into_new_invoice` would put on a draft, as
     figures a page can show before anybody presses the button. It builds the lines the
     way `unbilled_work_unit_lines` does, but names the days it cannot price instead of
     refusing, so the page can say which to fix."""
     contract = _require_contract(session, contract_id)
-    groups, uncovered, cards = _gather(session, contract_id, da, a)
+    groups, uncovered, cards = _gather(session, contract_id, date_from, date_to)
 
     lines: list[BillableLine] = []
     for (card_id, year, month), members in _ordered(groups):
@@ -195,10 +199,10 @@ def billable_days(
         contract_id=contract.id,
         currency=contract.currency,
         lines=lines,
-        months=sorted({riga.month for riga in lines}),
-        work_units=sum(riga.work_units for riga in lines),
-        quantity=sum((riga.quantity for riga in lines), start=Decimal("0")),
-        taxable_amount=sum((riga.amount for riga in lines), start=Decimal("0")),
+        months=sorted({line.month for line in lines}),
+        work_units=sum(line.work_units for line in lines),
+        quantity=sum((line.quantity for line in lines), start=Decimal("0")),
+        taxable_amount=sum((line.amount for line in lines), start=Decimal("0")),
         without_rate=without_rate,
         without_approval=WorkUnitRepository(session).count_without_approval(contract_id),
         billable=bool(lines) and not without_rate and _currency_block(contract) is None,
@@ -250,12 +254,12 @@ def assemble_unbilled_work_units_into_new_invoice(
     storage: DocumentStorage,
     contract_id: UUID,
     actor: Actor,
-    da: date | None = None,
-    a: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> InvoiceRead:
     """The end-to-end common case: every unbilled, worked day on `contract_id` (or those
     in `[da, a]`) becomes one line each (grouped by rate card and month) on a fresh draft
-    invoice for the contract's own customer, under the contract's own azienda, and each
+    invoice for the contract's own customer, under the contract's own legal entity, and each
     day is bound to the line it produced. The draft, its lines and the binding are one
     transaction (`assemble_draft`): a day that was billed in the meantime refuses the
     whole thing and no draft is left behind.
@@ -270,7 +274,7 @@ def assemble_unbilled_work_units_into_new_invoice(
     if blocked is not None:
         raise ValidationFailed(ENTITY, "currency", blocked, expected=f"un contratto in {CURRENCY}")
 
-    lines, groups = unbilled_work_unit_lines(session, contract_id, da, a)
+    lines, groups = unbilled_work_unit_lines(session, contract_id, date_from, date_to)
     if not lines:
         raise ValidationFailed(
             ENTITY,

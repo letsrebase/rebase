@@ -28,8 +28,8 @@ class WorkUnitRepository:
         contract_id: UUID,
         *,
         status: str = "worked",
-        da: date | None = None,
-        a: date | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> list[WorkUnit]:
         """Every day in `status` with no invoice line yet, oldest first -- the same
         shape `won_with_unbilled_hours_predicate` (`timetracking/repository.py`)
@@ -44,10 +44,10 @@ class WorkUnitRepository:
             )
             .order_by(WorkUnit.date.asc(), WorkUnit.id.asc())
         )
-        if da is not None:
-            stmt = stmt.where(WorkUnit.date >= da)
-        if a is not None:
-            stmt = stmt.where(WorkUnit.date <= a)
+        if date_from is not None:
+            stmt = stmt.where(WorkUnit.date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(WorkUnit.date <= date_to)
         return list(self.session.execute(stmt).scalars())
 
     def labelled(self, work_unit_id: UUID) -> tuple[WorkUnit, Contract, Customer] | None:
@@ -99,10 +99,10 @@ class WorkUnitRepository:
             stmt = stmt.where(WorkUnit.contract_id == query.contract_id)
         if query.legal_entity_id is not None:
             stmt = stmt.where(Contract.legal_entity_id == query.legal_entity_id)
-        if query.da is not None:
-            stmt = stmt.where(WorkUnit.date >= query.da)
-        if query.a is not None:
-            stmt = stmt.where(WorkUnit.date <= query.a)
+        if query.date_from is not None:
+            stmt = stmt.where(WorkUnit.date >= query.date_from)
+        if query.date_to is not None:
+            stmt = stmt.where(WorkUnit.date <= query.date_to)
         if query.status is not None:
             stmt = stmt.where(WorkUnit.status == query.status)
         stmt = stmt.order_by(WorkUnit.date.desc(), WorkUnit.id.desc()).limit(query.limit + 1)

@@ -157,28 +157,34 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
     performance. The reportable number is the first, and there is deliberately no
     combined field to read by mistake.
     """
-    if query.a < query.da:
+    if query.date_to < query.date_from:
         raise ValidationFailed(
-            ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
+            ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
         )
 
     # `legal_entity_id` is one more predicate on every read (REB-630, spec 2026-10-03
     # §1.9) and nothing else: the arithmetic below does not know it exists.
     legal_entity = query.legal_entity_id
-    revenue = repo.revenue_in_range(query.da, query.a, query.customer_id, query.base, legal_entity)
-    per_deal_costs, general = repo.costs_in_range(
-        query.da, query.a, query.customer_id, legal_entity
+    revenue = repo.revenue_in_range(
+        query.date_from, query.date_to, query.customer_id, query.base, legal_entity
     )
-    labour = repo.labour_cost_in_range(query.da, query.a, query.customer_id, legal_entity)
+    per_deal_costs, general = repo.costs_in_range(
+        query.date_from, query.date_to, query.customer_id, legal_entity
+    )
+    labour = repo.labour_cost_in_range(
+        query.date_from, query.date_to, query.customer_id, legal_entity
+    )
     # Slice 6 §5's three rows, from the same aggregate `unbilled_backlog` uses and
     # merely bounded to the period: one definition of "ore fatturabili non fatturate",
     # not one per screen. They are informative and enter no margin, which is why they
     # sit outside both `PnlTotals` columns rather than inside either.
-    hours_arretrate, value_backlog, without_rate, _ = repo.unbilled_backlog(
-        query.da, query.a, query.customer_id, legal_entity
+    backlog_hours, value_backlog, without_rate, _ = repo.unbilled_backlog(
+        query.date_from, query.date_to, query.customer_id, legal_entity
     )
 
-    deals = repo.deals_in_range(query.da, query.a, query.customer_id, query.base, legal_entity)
+    deals = repo.deals_in_range(
+        query.date_from, query.date_to, query.customer_id, query.base, legal_entity
+    )
     # The state comes from the same rule the deal's own P&L gets it from, so the two
     # screens can never disagree about which column a deal belongs in -- and, in
     # particular, both read "already invoiced" as the *invoice state* through
@@ -201,12 +207,12 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
     # place it matters.
     closed_period = all(
         locks.is_closed(date(year, month, 1)) is not None
-        for year, month in months_between(query.da, query.a)
+        for year, month in months_between(query.date_from, query.date_to)
     )
 
     return PeriodPnl(
-        da=query.da,
-        a=query.a,
+        date_from=query.date_from,
+        date_to=query.date_to,
         customer_id=query.customer_id,
         base=query.base,
         legal_entity_id=legal_entity,
@@ -216,10 +222,10 @@ def period_pnl(session: Session, repo: AnalyticsRepository, query: PeriodPnlQuer
         # customer filter, because a general expense belongs to no customer.
         general_expenses=general,
         accrued_value=value_backlog,
-        billable_uninvoiced_hours=hours_arretrate,
+        billable_uninvoiced_hours=backlog_hours,
         hours_without_rate=without_rate,
         closed_period=closed_period,
         # Free: a COUNT over two columns that already exist, and the one thing a
         # reader most needs to know about an open period (§6.4).
-        written_entries_overdue=repo.late_entry_count(query.da, query.a, legal_entity),
+        written_entries_overdue=repo.late_entry_count(query.date_from, query.date_to, legal_entity),
     )

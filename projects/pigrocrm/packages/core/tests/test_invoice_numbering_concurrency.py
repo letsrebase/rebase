@@ -83,11 +83,11 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
         with factory() as cleanup:
             cleanup.execute(text("DELETE FROM invoice_lines"))
             cleanup.execute(text("DELETE FROM activities WHERE entity_type = 'invoice'"))
-            cleanup.execute(text("UPDATE invoices SET origine_proforma_id = NULL"))
+            cleanup.execute(text("UPDATE invoices SET origin_proforma_id = NULL"))
             cleanup.execute(text("DELETE FROM invoices"))
             cleanup.execute(text("DELETE FROM invoice_counters"))
             cleanup.execute(text("DELETE FROM fiscal_profile"))
-            cleanup.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
+            cleanup.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
             cleanup.execute(text("DELETE FROM customers WHERE id = :id"), {"id": customer_id})
             cleanup.commit()
 
@@ -144,14 +144,14 @@ def test_twenty_concurrent_emissions_produce_one_to_twenty_with_no_gap(world) ->
     with factory() as check:
         rows = (
             check.execute(
-                text("SELECT numero FROM invoices WHERE anno = :anno ORDER BY numero"),
+                text("SELECT number FROM invoices WHERE year = :year ORDER BY number"),
                 {"year": YEAR},
             )
             .scalars()
             .all()
         )
         counter = check.execute(
-            text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
+            text("SELECT last_number FROM invoice_counters WHERE year = :year"),
             {"year": YEAR},
         ).scalar_one()
     assert list(rows) == list(range(1, EMISSIONS + 1))
@@ -199,12 +199,12 @@ def test_a_failure_between_the_counter_update_and_the_commit_consumes_nothing(
 
     with factory() as check:
         counter = check.execute(
-            text("SELECT ultimo_numero FROM invoice_counters WHERE anno = :anno"),
+            text("SELECT last_number FROM invoice_counters WHERE year = :year"),
             {"year": YEAR},
         ).scalar_one()
         rows = (
             check.execute(
-                text("SELECT numero FROM invoices WHERE anno = :anno ORDER BY numero"),
+                text("SELECT number FROM invoices WHERE year = :year ORDER BY number"),
                 {"year": YEAR},
             )
             .scalars()
@@ -224,7 +224,7 @@ def test_a_failure_between_the_counter_update_and_the_commit_consumes_nothing(
 def test_two_first_invoices_of_a_year_do_not_collide_on_the_counter_insert(
     world,
 ) -> None:  # type: ignore[no-untyped-def]
-    """`INSERT ... ON CONFLICT (anno) DO NOTHING` before the `SELECT ... FOR UPDATE`:
+    """`INSERT ... ON CONFLICT (year) DO NOTHING` before the `SELECT ... FOR UPDATE`:
     two concurrent first-invoices-of-the-year both proceed, one having inserted the
     row and the other having done nothing. Without `ON CONFLICT` the loser would take
     a `UniqueViolation` the caller would have to retry."""

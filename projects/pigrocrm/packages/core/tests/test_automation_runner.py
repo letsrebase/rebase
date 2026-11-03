@@ -59,7 +59,7 @@ def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
     db_session.add(customer)
     db_session.flush()
     row = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
         probability=10,
@@ -122,8 +122,8 @@ def test_a1_writes_exactly_one_activity_attributed_to_the_system(
     assert entry.payload["rule"] == "A1"
     assert entry.payload["document_id"] == str(document.id)
     assert entry.payload["triggered_by"] == str(ADMIN.id)
-    assert entry.payload["da"] == "Lead"
-    assert entry.payload["a"] == "Vinto"
+    assert entry.payload["from"] == "Lead"
+    assert entry.payload["to"] == "Vinto"
 
 
 def test_a1_does_not_write_a_second_stage_changed_entry(
@@ -200,7 +200,7 @@ def test_a1_resolves_by_code_and_not_by_name(
     (slice 1 §5.4, residuo R11)."""
     won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
-    won.nome = "Chiuso positivo"
+    won.name = "Chiuso positivo"
     db_session.flush()
 
     document = _offer(db_session, deal, "accepted")
@@ -232,7 +232,7 @@ def test_a1_refuses_to_guess_between_two_won_stages(
     won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
-    db_session.add(PipelineStage(nome="Vinto bis", position=6, default_probability=100, type="won"))
+    db_session.add(PipelineStage(name="Vinto bis", position=6, default_probability=100, type="won"))
     db_session.flush()
 
     document = _offer(db_session, deal, "accepted")
@@ -428,7 +428,7 @@ def _scenario_stage_ambiguous(
     won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
-    db_session.add(PipelineStage(nome="Vinto bis", position=6, default_probability=100, type="won"))
+    db_session.add(PipelineStage(name="Vinto bis", position=6, default_probability=100, type="won"))
     db_session.flush()
     return _offer(db_session, deal, "accepted"), "sent"
 

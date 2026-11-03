@@ -73,9 +73,9 @@ def test_segment_records_the_line_each_segment_starts_on() -> None:
 def test_parse_gives_each_variable_the_context_of_its_segment() -> None:
     nodes = parse_template(TYPST_BLOCK_TEMPLATE)
     variables = {n.path: n.context for n in nodes if isinstance(n, VariableNode)}
-    assert variables[("customer", "legal_name")] == "markdown"
+    assert variables[("cliente", "ragione_sociale")] == "markdown"
     assert variables[("riga", "servizio")] == "typst"
-    assert variables[("riga", "total")] == "typst"
+    assert variables[("riga", "totale")] == "typst"
 
 
 def test_the_same_placeholder_gets_two_different_contexts_in_two_places() -> None:
@@ -127,7 +127,7 @@ def test_parse_nests_blocks() -> None:
 def test_parse_rejects_an_unclosed_block_naming_the_line() -> None:
     with pytest.raises(ValidationFailed) as excinfo:
         parse_template("prima\n{{#if x}}mai chiuso\n")
-    assert excinfo.value.details["field"] == "corpo_markdown"
+    assert excinfo.value.details["field"] == "body_markdown"
     assert "riga 2" in excinfo.value.details["reason"]
     assert "#if" in excinfo.value.details["reason"]
 
@@ -876,7 +876,7 @@ def test_for_real_the_line_marker_survives_pandoc_and_produces_no_visible_text(
         ["pdftotext", "-layout", str(pdf_path), "-"], check=True, capture_output=True, text=True
     ).stdout
     assert "pigrocrm:line" not in text
-    assert "before" in text and "after" in text
+    assert "prima" in text and "dopo" in text
 
 
 # --- Fix round 1, item 2: a placeholder that is the entire content of a Typst

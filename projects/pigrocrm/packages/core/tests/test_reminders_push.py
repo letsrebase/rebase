@@ -482,7 +482,7 @@ def _write(endpoint: str = "https://fcm.googleapis.com/fcm/send/abc") -> PushSub
 
 
 def _user(session: Session, role: str = "collaborator") -> tuple[User, Actor]:
-    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", role=role)
+    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
     session.add(user)
     session.flush()
     return user, Actor(id=user.id, type="user", role=user.role)  # type: ignore[arg-type]
@@ -625,13 +625,13 @@ def test_every_record_a_detector_names_has_a_path_or_is_listed_as_having_none() 
 
 
 def test_paths_open_the_record_inside_the_app() -> None:
-    attivita = uuid4()
-    assert record_path("attivita", attivita) == f"/app/activities?open={attivita}"
-    assert record_path("invoice", attivita) == f"/app/invoices/{attivita}"
-    assert record_path("proforma", attivita) == f"/app/invoices/{attivita}"
-    assert record_path("timer", attivita) == "/app/hours"
-    assert record_path("job", attivita) == "/app/reminders", "no page of its own: the list"
-    assert record_path("something-new", attivita) == "/app/reminders"
+    task_id = uuid4()
+    assert record_path("task", task_id) == f"/app/activities?open={task_id}"
+    assert record_path("invoice", task_id) == f"/app/invoices/{task_id}"
+    assert record_path("proforma", task_id) == f"/app/invoices/{task_id}"
+    assert record_path("timer", task_id) == "/app/hours"
+    assert record_path("job", task_id) == "/app/reminders", "no page of its own: the list"
+    assert record_path("something-new", task_id) == "/app/reminders"
 
 
 def test_links_stay_on_the_space_the_person_is_in() -> None:
@@ -639,7 +639,7 @@ def test_links_stay_on_the_space_the_person_is_in() -> None:
     assert url_prefix("https://pigro.example.test") == ""
     assert url_prefix("") == ""
     assert absolute("https://pigro.example.test/acme/", "/app/reminders") == (
-        "https://pigro.example.test/acme/app/avvisi"
+        "https://pigro.example.test/acme/app/reminders"
     )
 
 

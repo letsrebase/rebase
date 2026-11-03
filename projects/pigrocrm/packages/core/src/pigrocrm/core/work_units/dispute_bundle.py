@@ -168,7 +168,7 @@ def _invoice_lines(session: Session, detail: WorkUnitDetail) -> list[str]:
     if row is None:
         return ["La riga di fattura non è più leggibile."]
     line, invoice = row
-    number = f"{invoice.year}/{invoice.number}" if invoice.number is not None else "draft"
+    number = f"{invoice.year}/{invoice.number}" if invoice.number is not None else "bozza"
     issued = f", emessa il {invoice.issue_date.isoformat()}" if invoice.issue_date else ""
     return [
         f"Fattura {number} ({invoice.status}{issued})",

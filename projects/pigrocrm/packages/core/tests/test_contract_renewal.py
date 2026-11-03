@@ -70,7 +70,7 @@ def test_a_stated_duration_or_end_overrides_the_default() -> None:
     assert renewed_term(**base, duration=(2, "years"))[1] == date(2028, 12, 31)
     assert renewed_term(**base, duration=(10, "days"))[1] == date(2027, 1, 10)
     assert renewed_term(**base, duration=(2, "weeks"))[1] == date(2027, 1, 14)
-    assert renewed_term(**base, nuova_fine=date(2027, 3, 15))[1] == date(2027, 3, 15)
+    assert renewed_term(**base, new_end=date(2027, 3, 15))[1] == date(2027, 3, 15)
 
 
 def test_month_arithmetic_clamps_to_the_last_day() -> None:
@@ -88,11 +88,11 @@ def test_the_term_is_refused_without_an_end_or_when_it_overlaps() -> None:
         renewed_term(start=date(2026, 1, 1), end=date(2026, 12, 31), new_start=date(2026, 12, 31))
     assert overlap.value.field == "start"
     with pytest.raises(RenewalRefused) as backwards:
-        renewed_term(start=date(2026, 1, 1), end=date(2026, 12, 31), nuova_fine=date(2026, 12, 31))
+        renewed_term(start=date(2026, 1, 1), end=date(2026, 12, 31), new_end=date(2026, 12, 31))
     assert backwards.value.field == "end"
 
 
-def test_fine_and_durata_together_are_refused() -> None:
+def test_end_and_duration_together_are_refused() -> None:
     import pydantic
 
     with pytest.raises(pydantic.ValidationError):

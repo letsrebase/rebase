@@ -42,7 +42,7 @@ CLOSED = frozenset({"completed", "cancelled"})
 
 # Which table each reference column points at, so `_check_reference` is a loop and not
 # four near-identical blocks. The order is `REFERENCES`'s.
-_TABELLE: dict[str, type[Customer] | type[Person] | type[Deal] | type[Invoice]] = {
+_TABLES: dict[str, type[Customer] | type[Person] | type[Deal] | type[Invoice]] = {
     "customer_id": Customer,
     "person_id": Person,
     "deal_id": Deal,
@@ -89,7 +89,7 @@ class TaskService:
             )
         for field in named:
             identifier = payload[field]
-            if self.session.get(_TABELLE[field], identifier) is None:
+            if self.session.get(_TABLES[field], identifier) is None:
                 raise NotFound(field.removesuffix("_id"), identifier)
 
     def _check_assigned(self, payload: dict[str, Any]) -> None:
@@ -118,7 +118,7 @@ class TaskService:
     def _flush_or_conflict(self, task_id: UUID) -> None:
         """Flush, answering the automation index as a `Conflict` and not a 500.
 
-        `uq_tasks_rule_open` allows one open attivita per automation rule and
+        `uq_tasks_rule_open` allows one open task per automation rule and
         subject, and the daily pass opens a new one as soon as the old one is closed. So
         reopening, restoring or re-linking an old one can collide with it, and that is a
         sentence for the person («chiudi o annulla l'altra»), not a database error."""
@@ -192,11 +192,11 @@ class TaskService:
         # The check reads the *result*, not the patch: a request that sets `deal_id` on
         # an activity already hanging off a customer would pass a check that only looked
         # at what was supplied, and then fail at the database.
-        risultante = {
+        resulting = {
             field: changes.get(field, getattr(row, field)) for field in (*REFERENCES, "assigned_to")
         }
-        self._check_reference(risultante)
-        self._check_assigned(risultante)
+        self._check_reference(resulting)
+        self._check_assigned(resulting)
 
         if data.custom_fields is not None:
             changes["custom_fields"] = self._validated_custom(data.custom_fields)
@@ -269,7 +269,7 @@ class TaskService:
         row.status = "open"
         row.completed_at = None
         self._flush_or_conflict(row.id)
-        self.activities.record(ENTITY, row.id, "riaperta", actor)
+        self.activities.record(ENTITY, row.id, "reopened", actor)
         self.session.commit()
         return TaskRead.model_validate(row)
 
@@ -304,7 +304,7 @@ class TaskService:
         """The four sections of the Oggi panel, cut on the emitter's today.
 
         `query.assigned_to` narrows every section to one person's; `None` is the whole space.
-        With `query.include_unassigned` it keeps the attività nobody holds too.
+        With `query.include_unassigned` it keeps the task nobody holds too.
         The day is read once and every section is cut on it, so a request that straddles
         midnight cannot list the same commitment under two headings.
         """
@@ -317,7 +317,7 @@ class TaskService:
                 limit=query.limit,
                 **window,
             )
-            return TaskGroup(total=total, items=[TaskRead.model_validate(riga) for riga in lines])
+            return TaskGroup(total=total, items=[TaskRead.model_validate(line) for line in lines])
 
         return TaskToday(
             today=day,

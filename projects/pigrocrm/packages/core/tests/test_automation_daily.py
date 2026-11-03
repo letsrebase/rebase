@@ -1,8 +1,8 @@
-"""The daily automation pass: three rules that open an attivita, once each (REB-727, REB-728).
+"""The daily automation pass: three rules that open a task, once each (REB-727, REB-728).
 
 Slice 7 §10.4 and §10.5 are what this file is for: a rule that runs twice on the same subject
-opens **one** attivita and the second run says why it did not open another; closing the
-attivita lets the next pass open a new one. The concurrent case is proved on two real
+opens **one** task and the second run says why it did not open another; closing the
+task lets the next pass open a new one. The concurrent case is proved on two real
 connections with a barrier, as the spec asks, and not with two calls in a row.
 
 The ordinary cases run inside `db_session`'s rolled-back transaction. The race cannot: it
@@ -61,8 +61,8 @@ def _local_noon(days_ago: int) -> datetime:
     return datetime.combine(day, time(12, 0), tzinfo=ZoneInfo(get_settings().timezone))
 
 
-def _customer(session: Session, nome: str = "Acme S.r.l.") -> Customer:
-    customer = Customer(legal_name=nome, country="IT", custom_fields={})
+def _customer(session: Session, name: str = "Acme S.r.l.") -> Customer:
+    customer = Customer(legal_name=name, country="IT", custom_fields={})
     session.add(customer)
     session.flush()
     return customer
@@ -70,7 +70,7 @@ def _customer(session: Session, nome: str = "Acme S.r.l.") -> Customer:
 
 def _stage(session: Session, type: str = "open") -> PipelineStage:
     stage = PipelineStage(
-        nome=f"Fase {type} {datetime.now(UTC).timestamp()}",
+        name=f"Fase {type} {datetime.now(UTC).timestamp()}",
         position=0,
         default_probability=10,
         type=type,
@@ -84,7 +84,7 @@ def _owner(session: Session, *, active: bool = True) -> User:
     user = User(
         email=f"titolare-{datetime.now(UTC).timestamp()}@example.test",
         password_hash="x",
-        nome="Maria Rossi",
+        name="Maria Rossi",
         role="collaborator",
         active=active,
     )
@@ -98,12 +98,12 @@ def _deal(
     customer: Customer,
     stage: PipelineStage,
     *,
-    nome: str = "Sito Acme",
+    name: str = "Sito Acme",
     owner: User | None = None,
     created_days_ago: int = 0,
 ) -> Deal:
     deal = Deal(
-        nome=nome,
+        name=name,
         customer_id=customer.id,
         pipeline_stage_id=stage.id,
         probability=10,
@@ -206,7 +206,7 @@ def test_an_offer_waiting_seven_days_opens_one_task_for_the_deals_owner(
     second = _run(db_session)
 
     assert _report(first, "sent_offer_follow_up") == (False, 1, 0)
-    # The second run names why it opened nothing: the subject already has its attivita.
+    # The second run names why it opened nothing: the subject already has its task.
     assert _report(second, "sent_offer_follow_up") == (False, 0, 1)
     (row,) = _rows(db_session, "sent_offer_follow_up")
     assert row.title == "Richiamare Acme S.r.l. sull'offerta Offerta sito"
@@ -283,7 +283,7 @@ def test_a_recent_stage_change_resets_the_clock_and_a_closed_deal_is_never_stall
     db_session: Session,
 ) -> None:
     customer = _customer(db_session)
-    moved = _deal(db_session, customer, _stage(db_session), nome="Spostato", created_days_ago=90)
+    moved = _deal(db_session, customer, _stage(db_session), name="Spostato", created_days_ago=90)
     db_session.add(
         Activity(
             entity_type="deal",
@@ -294,8 +294,8 @@ def test_a_recent_stage_change_resets_the_clock_and_a_closed_deal_is_never_stall
             occurred_at=_local_noon(2),
         )
     )
-    _deal(db_session, customer, _stage(db_session, "won"), nome="Vinto", created_days_ago=90)
-    _deal(db_session, customer, _stage(db_session, "lost"), nome="Perso", created_days_ago=90)
+    _deal(db_session, customer, _stage(db_session, "won"), name="Vinto", created_days_ago=90)
+    _deal(db_session, customer, _stage(db_session, "lost"), name="Perso", created_days_ago=90)
     db_session.flush()
 
     assert _report(_run(db_session), "stalled_deal") == (False, 0, 0)
@@ -319,8 +319,8 @@ def test_the_day_a_deal_stalled_since_is_the_installations_not_utcs(db_session: 
     customer = _customer(db_session)
     zone = ZoneInfo(get_settings().timezone)
     just_after_midnight = {
-        "under": _deal(db_session, customer, _stage(db_session), nome="Sotto", created_days_ago=90),
-        "on": _deal(db_session, customer, _stage(db_session), nome="Sopra", created_days_ago=90),
+        "under": _deal(db_session, customer, _stage(db_session), name="Sotto", created_days_ago=90),
+        "on": _deal(db_session, customer, _stage(db_session), name="Sopra", created_days_ago=90),
     }
     for name, days in (("under", 29), ("on", 30)):
         moved_at = datetime.combine(today_local() - timedelta(days=days), time(0, 30), tzinfo=zone)
@@ -367,7 +367,7 @@ def test_an_overdue_unpaid_invoice_opens_one_task_for_its_deals_owner(
 def test_due_today_paid_draft_and_annulled_invoices_are_not_overdue(db_session: Session) -> None:
     customer = _customer(db_session)
     _invoice(db_session, customer, overdue_days=0, number=1)  # due today is not late
-    _invoice(db_session, customer, payment="incassata", number=2)
+    _invoice(db_session, customer, payment="paid", number=2)
     _invoice(db_session, customer, number=None, status="draft")
     cancelled = _invoice(db_session, customer, number=4)
     cancelled.status = "cancelled"
@@ -465,7 +465,7 @@ def test_every_opened_task_leaves_to_system_entry_on_its_own_timeline(
 
     (row,) = _rows(db_session, "overdue_invoice")
     (entry,) = db_session.scalars(
-        select(Activity).where(Activity.entity_type == "attivita", Activity.entity_id == row.id)
+        select(Activity).where(Activity.entity_type == "task", Activity.entity_id == row.id)
     )
     assert entry.kind == KIND_TASK_OPENED
     assert entry.actor_type == "system" and entry.actor_id is None
@@ -516,7 +516,7 @@ def test_the_index_refuses_to_second_open_task_of_one_rule_and_subject(
 def test_reopening_an_old_task_next_to_the_one_the_pass_opened_is_to_conflict(
     db_session: Session,
 ) -> None:
-    """The index that keeps the pass to one open attivita also stops a person bringing a
+    """The index that keeps the pass to one open task also stops a person bringing a
     second one back: a sentence (409 at the API), never a database error."""
     from pigrocrm.core.errors import Conflict
 
@@ -550,7 +550,7 @@ def committed_overdue_invoice(db_engine: Engine) -> Iterator[UUID]:
     finally:
         with factory() as session:
             ids = [invoice_id]
-            session.execute(delete(Activity).where(Activity.entity_type == "attivita"))
+            session.execute(delete(Activity).where(Activity.entity_type == "task"))
             session.execute(delete(Task).where(Task.invoice_id.in_(ids)))
             session.execute(delete(Invoice).where(Invoice.id == invoice_id))
             session.execute(delete(Customer).where(Customer.id == customer_id))
@@ -587,7 +587,7 @@ def test_two_passes_at_the_same_instant_open_one_task(
     committed_overdue_invoice: UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Slice 7 §10.4, on two real connections. Both passes read «no open attivita» before
+    """Slice 7 §10.4, on two real connections. Both passes read «no open task» before
     either has written (the barrier holds each after its read), both try to insert, and the
     index lets exactly one through: the loser's insert fails on `uq_tasks_rule_open`,
     is absorbed under its savepoint and counted as «già aperta», not raised."""

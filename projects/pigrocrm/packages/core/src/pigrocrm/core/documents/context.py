@@ -99,8 +99,8 @@ class DocumentContext:
         return contract
 
     def legal_entity_of(self, owner: Customer | Deal | Contract) -> UUID:
-        """The azienda a new document hangs on (REB-623, spec §1.7): its owner's.
-        Refused when that azienda is deactivated (spec §3)."""
+        """The legal entity a new document hangs on (REB-623, spec §1.7): its owner's.
+        Refused when that legal entity is deactivated (spec §3)."""
         return self.legal_entity.inherited(owner.legal_entity_id, ENTITY)
 
     def customer_for(
@@ -194,12 +194,12 @@ class DocumentContext:
         actor.require_write("create_document")
         payload = data.model_dump()
         if legal_entity_id is None:
-            # The owner is the authority on the azienda, so it must be there to ask. A
-            # caller that names the azienda is filing a record's own child (an invoice's
+            # The owner is the authority on the legal entity, so it must be there to ask. A
+            # caller that names the legal entity is filing a record's own child (an invoice's
             # artefact): the record already holds its owner, which may have moved to an
-            # azienda this member cannot see, and the artefact must still render. The
-            # azienda is then the record's own, not the one its customer is in now: an
-            # invoice keeps its azienda when its customer moves (spec §1.7).
+            # legal entity this member cannot see, and the artefact must still render. The
+            # legal entity is then the record's own, not the one its customer is in now: an
+            # invoice keeps its legal entity when its customer moves (spec §1.7).
             owner = self.check_owner(
                 payload["customer_id"], payload["deal_id"], payload["contract_id"]
             )

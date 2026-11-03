@@ -25,6 +25,7 @@ from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.money import sum_hours
 from pigrocrm.core.storage import DocumentStorage
+from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking.locks import period_label
 from pigrocrm.core.timetracking.models import TimeEntry
@@ -40,8 +41,8 @@ TIME_REPORT_TEMPLATE_NAME = "Rapporto ore"
 # `render_template` accepts undeclared supplied keys -- `{{#each voci}}` resolves from
 # `values`. Declaring it would put a list-typed variable on a form nobody fills in.
 TIME_REPORT_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"name": "period", "label": "Periodo", "type": "text", "required": True},
-    {"name": "hours_total", "label": "Totale ore", "type": "number", "required": True},
+    {"name": "periodo", "label": "Periodo", "type": "text", "required": True},
+    {"name": "totale_ore", "label": "Totale ore", "type": "number", "required": True},
     {"name": "numero_voci", "label": "Numero voci", "type": "number", "required": True},
 )
 
@@ -80,7 +81,7 @@ def report_variables(
 ) -> dict[str, Any]:
     """Everything both formats need, computed once from already-fetched rows.
 
-    Every figure arrives finished: `hours_total` is already summed with `sum_hours`, so
+    Every figure arrives finished: `totale_ore` is already summed with `sum_hours`, so
     neither the template nor the workbook adds anything. The previous system accumulated hours as
     binary floats (`sum + entry.hours`) and printed a total that was a binary sum
     rounded at the end.
@@ -102,9 +103,13 @@ def report_variables(
         # produced just after midnight on 1 January carries the previous *year*, on the
         # document that justifies the hours billed for the year that just closed.
         "oggi": _italian_date(today_local()),
-        "deal": {"name": deal.name},
+        "deal": {"nome": deal.name},
         "cliente": (
-            CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
+            italian_keys(
+                CustomerRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
+            )
+            if customer
+            else {}
         ),
         "voci": [
             {
@@ -170,7 +175,7 @@ class TimeReportService:
         return DocumentService(self.session, self.storage).create_from_template(
             DocumentFromTemplate(
                 template_id=template.id,
-                title=f"Rapporto ore {variables['period']}",
+                title=f"Rapporto ore {variables['periodo']}",
                 customer_id=None,
                 deal_id=deal_id,
                 variables=public,
@@ -190,9 +195,9 @@ class TimeReportService:
         """
         variables = self.variables_for(deal_id, month, actor)
         content = build_time_report_xlsx(
-            customer=str(variables["customer"].get("legal_name", "")),
-            offer=str(variables["deal"]["name"]),
-            period=str(variables["period"]),
+            customer=str(variables["cliente"].get("ragione_sociale", "")),
+            offer=str(variables["deal"]["nome"]),
+            period=str(variables["periodo"]),
             rows=variables["_rows"],
         )
         return f"rapporto-ore-{variables['_anno']}-{variables['_mese']:02d}.xlsx", content

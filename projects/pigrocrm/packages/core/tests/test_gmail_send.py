@@ -265,7 +265,9 @@ def test_the_sent_message_is_filed_against_the_people_it_actually_concerns(
     customer is the conversation that lies, in the other direction."""
     account = connected_account(db_session)
     customer = make_customer(db_session, email="info@acme.it")
-    person = Person(customer_id=customer.id, nome="Ada", last_name="Rossi", email="ada@acme.it")
+    person = Person(
+        customer_id=customer.id, first_name="Ada", last_name="Rossi", email="ada@acme.it"
+    )
     db_session.add(person)
     db_session.flush()
     draft = _draft(db_session, account, customer)
@@ -627,10 +629,10 @@ def _edited_by_someone_else(session: Session, account: GoogleAccount, draft_id: 
 def test_a_send_carrying_an_older_revision_is_refused_and_sends_nothing(
     db_session: Session,
 ) -> None:
-    """REB-419's acceptance test. The Email tab promises «parte esattamente quello che
-    vedi», so a send carries the `updated_at` of the draft as the person read it, and a
-    row that moved since is refused before anything is claimed or composed: no request
-    reaches Gmail, not even the token refresh, and the draft is left as it was."""
+    """REB-419's acceptance test. The Email tab promises that what leaves is exactly
+    what the person sees, so a send carries the `updated_at` of the draft as the person
+    read it, and a row that moved since is refused before anything is claimed or composed:
+    no request reaches Gmail, not even the token refresh, and the draft is left as it was."""
     account = connected_account(db_session)
     read = _draft(db_session, account)
     db_session.commit()
@@ -822,7 +824,7 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
         with ThreadPoolExecutor(max_workers=2) as pool:
             edited = pool.submit(edit)
             sent = pool.submit(send)
-            assert edited.result(timeout=60) == "refused:in_invio"
+            assert edited.result(timeout=60) == "refused:sending"
             assert sent.result(timeout=60) == "sent"
 
         left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
@@ -923,7 +925,7 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
         with ThreadPoolExecutor(max_workers=2) as pool:
             deleted = pool.submit(delete)
             sent = pool.submit(send)
-            assert deleted.result(timeout=60) == "refused:in_invio"
+            assert deleted.result(timeout=60) == "refused:sending"
             assert sent.result(timeout=60) == "sent"
 
         left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))

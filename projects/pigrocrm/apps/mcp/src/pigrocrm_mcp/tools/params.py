@@ -60,14 +60,14 @@ IsoDateStr = Annotated[
 ]
 
 
-def iso_date(value: str | None, field: str = "data") -> date | None:
+def iso_date(value: str | None, field: str = "date") -> date | None:
     """An `IsoDateStr` argument as the `date` a core schema takes, or `None` when the
     agent left it out. Called *inside* the guarded tool body: a malformed string is a
     sentence naming the format, not a raw SDK rejection."""
     return required_iso_date(value, field) if value else None
 
 
-def required_iso_date(value: str, field: str = "data") -> date:
+def required_iso_date(value: str, field: str = "date") -> date:
     try:
         return date.fromisoformat(value)
     except ValueError as exc:

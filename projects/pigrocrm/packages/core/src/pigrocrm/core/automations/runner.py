@@ -91,7 +91,7 @@ class AutomationOutcome:
         if self.moved == (self.reason is not None):
             raise ValueError(
                 "un'automazione o sposta il deal o dichiara il motivo per cui non lo fa: "
-                f"moved={self.moved!r}, motivo={self.reason!r}"
+                f"moved={self.moved!r}, reason={self.reason!r}"
             )
 
 

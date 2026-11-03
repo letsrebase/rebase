@@ -15,7 +15,7 @@ What they share, and the reason each differs from `gmail-sync`:
   deploy's boot command.
 - **The space's clock** (REB-764). After each space a real run writes its row in
   `reminder_job_run` (`record_job`): a success moves `ran_at`, a failure records a short
-  word for why and leaves `ran_at` alone. Impostazioni → Esecuzioni and `job_late` read
+  word for why and leaves `ran_at` alone. the settings job-runs screen and `job_late` read
   it. A rehearsal (`--dry-run`) writes nothing.
 """
 
@@ -49,17 +49,17 @@ from pigrocrm.core.slack.client import slack_client_for
 from pigrocrm.core.telemetry import tracker_from_settings
 
 
-def _refuse_other_day(settings: Settings, data: date | None, dry_run: bool) -> bool:
+def _refuse_other_day(settings: Settings, day: date | None, dry_run: bool) -> bool:
     """`--date` evaluates another day, and only as a rehearsal: a real pass of another
-    day would write against today's reminders and attivita."""
-    if data is not None and data != today_local(settings) and not dry_run:
-        print("--data cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
+    day would write against today's reminders and task."""
+    if day is not None and day != today_local(settings) and not dry_run:
+        print("--date cambia il giorno: si usa solo con --dry-run", file=sys.stderr)
         return True
     return False
 
 
 def digest(
-    settings: Settings, *, slug: str | None, data: date | None, forza: bool, dry_run: bool
+    settings: Settings, *, slug: str | None, day: date | None, force: bool, dry_run: bool
 ) -> int:
     """`pigrocrm digest`: the weekly report of the root installation and of every space in
     the registry (spec 2026-09-16 §3.4, REB-263). One run a week, Monday morning (the
@@ -88,7 +88,7 @@ def digest(
             print(f"{slug}: non nel registro", file=sys.stderr)
         return 0
 
-    week = week_containing(data) if data is not None else previous_week(settings)
+    week = week_containing(day) if day is not None else previous_week(settings)
     try:
         # Both clients are built *inside* this `try`, so that the `finally` below reaches
         # them: PostHog's constructor can fail here -- a malformed key, a host it
@@ -116,7 +116,7 @@ def digest(
                             target.label,
                             target.owner_email,
                             week,
-                            forza=forza,
+                            force=force,
                             dry_run=dry_run,
                         )
                     if not dry_run:
@@ -159,7 +159,7 @@ def _print_digest_outcome(outcome: DigestOutcome, *, dry_run: bool) -> None:
         print(f"{outcome.slug}: saltato ({outcome.reason})", file=sys.stderr)
 
 
-def reminders(settings: Settings, *, slug: str | None, data: date | None, dry_run: bool) -> int:
+def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run: bool) -> int:
     """`pigrocrm reminders`: the reminder pass over the root installation and every space
     in the registry, for cron (spec 2026-10-26 §9, REB-736).
 
@@ -172,7 +172,7 @@ def reminders(settings: Settings, *, slug: str | None, data: date | None, dry_ru
     lists and writes nothing, and `--date` evaluates another day only with `--dry-run`.
     The pass writes its own success in the transaction that ends it, so only a failure is
     written from here."""
-    if _refuse_other_day(settings, data, dry_run):
+    if _refuse_other_day(settings, day, dry_run):
         return 2
     walk = read_spaces(settings, slug=slug)
     failed = report_unreadable(walk)
@@ -195,16 +195,16 @@ def reminders(settings: Settings, *, slug: str | None, data: date | None, dry_ru
         print(f"canali non configurabili ({type(exc).__name__})", file=sys.stderr)
         return 1
     now = None
-    if data is not None and data != today_local(settings):
+    if day is not None and day != today_local(settings):
         # Another day: its last minute, so a timer that was running by then has run.
-        now = datetime.combine(data, time(23, 59, 59), tzinfo=ZoneInfo(settings.timezone))
+        now = datetime.combine(day, time(23, 59, 59), tzinfo=ZoneInfo(settings.timezone))
     for target in walk.targets:
         with space_engine(target.url) as engine:
             try:
                 outcome = run.run_for_space(
                     target.label,
                     engine,
-                    today=data,
+                    today=day,
                     now=now,
                     dry_run=dry_run,
                     public_url=target.public_url,
@@ -247,8 +247,8 @@ def _print_reminder_outcome(outcome: ReminderOutcome, *, dry_run: bool) -> None:
     )
 
 
-def automations(settings: Settings, *, slug: str | None, data: date | None, dry_run: bool) -> int:
-    """`pigrocrm automations`: the daily pass of the rules that open attivita (REB-727,
+def automations(settings: Settings, *, slug: str | None, day: date | None, dry_run: bool) -> int:
+    """`pigrocrm automations`: the daily pass of the rules that open task (REB-727,
     slice 7 §6), over the root installation and every space in the registry, for cron.
 
     One line per space and one per rule. **Exits 1 when any line went to `stderr`**, so a
@@ -259,8 +259,8 @@ def automations(settings: Settings, *, slug: str | None, data: date | None, dry_
 
     `AutomationPass.run` decides; `--dry-run` runs it and rolls back, so the counters of a
     rehearsal are the real ones, and `--date` evaluates another day only with `--dry-run`:
-    a real pass for another day would open attivita due on days that are not today."""
-    if _refuse_other_day(settings, data, dry_run):
+    a real pass for another day would open task due on days that are not today."""
+    if _refuse_other_day(settings, day, dry_run):
         return 2
     walk = read_spaces(settings, slug=slug)
     failed = report_unreadable(walk)
@@ -274,7 +274,7 @@ def automations(settings: Settings, *, slug: str | None, data: date | None, dry_
         with space_engine(target.url) as engine:
             try:
                 with session_factory(engine)() as space:
-                    report = AutomationPass(space, settings).run(today=data, dry_run=dry_run)
+                    report = AutomationPass(space, settings).run(today=day, dry_run=dry_run)
                 if not dry_run and not record_job(engine, AUTOMATIONS_JOB, target.label, None):
                     failed = True
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others

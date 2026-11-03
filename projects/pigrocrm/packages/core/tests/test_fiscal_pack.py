@@ -23,13 +23,13 @@ def test_the_pack_declares_exactly_the_two_flat_rate_ceilings() -> None:
     immediately -- `it-flat-rate.ts:128,161`, ported verbatim."""
     thresholds = {c.id: c.threshold for c in IT_FLAT_RATE_PACK.ceilings}
     assert thresholds == {
-        "soglia_ricavi": Decimal("85000.00"),
-        "soglia_fuoriuscita_immediata": Decimal("100000.00"),
+        "revenue_ceiling": Decimal("85000.00"),
+        "immediate_exit_ceiling": Decimal("100000.00"),
     }
-    conseguenze = {c.id: c.consequence for c in IT_FLAT_RATE_PACK.ceilings}
-    assert conseguenze == {
-        "soglia_ricavi": "leaves_next_year",
-        "soglia_fuoriuscita_immediata": "leaves_immediately",
+    consequences = {c.id: c.consequence for c in IT_FLAT_RATE_PACK.ceilings}
+    assert consequences == {
+        "revenue_ceiling": "leaves_next_year",
+        "immediate_exit_ceiling": "leaves_immediately",
     }
 
 
@@ -59,7 +59,7 @@ def test_the_social_security_surcharge_charge_carries_its_legal_basis_in_its_own
 
 def test_an_unknown_charge_id_is_refused_rather_than_returning_none() -> None:
     with pytest.raises(KeyError):
-        IT_FLAT_RATE_PACK.charge("una_carica_che_non_esiste")
+        IT_FLAT_RATE_PACK.charge("a_charge_that_does_not_exist")
 
 
 def test_resolve_pack_finds_every_shipped_pack() -> None:
@@ -69,12 +69,12 @@ def test_resolve_pack_finds_every_shipped_pack() -> None:
 
 
 def test_only_the_flat_rate_declares_to_ceiling_or_to_charge() -> None:
-    """REB-760: the 85,000 and 100,000 euro thresholds and the rivalsa are the
-    forfettario's alone. The ordinary regime and the foreign pack declare neither, so a
+    """REB-760: the 85,000 and 100,000 euro thresholds and the social-security surcharge are the
+    flat-rate regime's alone. The ordinary regime and the foreign pack declare neither, so a
     ceiling is a fact read off the pack and never a branch on the regime code."""
     assert [c.id for c in IT_FLAT_RATE_PACK.ceilings] == [
-        "soglia_ricavi",
-        "soglia_fuoriuscita_immediata",
+        "revenue_ceiling",
+        "immediate_exit_ceiling",
     ]
     assert IT_STANDARD_PACK.ceilings == () and IT_STANDARD_PACK.charges == ()
     assert NON_IT_PACK.ceilings == () and NON_IT_PACK.charges == ()

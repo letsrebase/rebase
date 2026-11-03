@@ -27,20 +27,22 @@ router = APIRouter(
     dependencies=[Depends(get_actor)],
 )
 
-Da = Annotated[date, Query(description="Dal giorno, YYYY-MM-DD, incluso")]
-A = Annotated[date, Query(description="Al giorno, YYYY-MM-DD, incluso")]
+DateFrom = Annotated[date, Query(alias="from", description="Dal giorno, YYYY-MM-DD, incluso")]
+DateTo = Annotated[date, Query(alias="to", description="Al giorno, YYYY-MM-DD, incluso")]
 
 
 @router.get("/{contract_id}/billable-days", response_model=BillableDays)
 def get_billable_days(
     contract_id: UUID,
     session: SessionDep,
-    da: Annotated[date | None, Query(description="Dal giorno, incluso")] = None,
-    a: Annotated[date | None, Query(description="Al giorno, incluso")] = None,
+    date_from: Annotated[
+        date | None, Query(alias="from", description="Dal giorno, incluso")
+    ] = None,
+    date_to: Annotated[date | None, Query(alias="to", description="Al giorno, incluso")] = None,
 ) -> BillableDays:
     """Le giornate pronte da fatturare di un contratto, come le righe che metterebbero in una
     bozza: `worked` e non ancora su una riga di fattura. Sola lettura."""
-    return billable_days(session, contract_id, da, a)
+    return billable_days(session, contract_id, date_from, date_to)
 
 
 @router.post(
@@ -53,32 +55,32 @@ def invoice_days(
     actor: ActorDep,
     storage: StorageDep,
 ) -> InvoiceRead:
-    """Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `da` e `a`),
-    alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
+    """Crea la bozza di fattura con le giornate pronte del contratto (o quelle fra `date_from` e
+    `date_to`), alle tariffe del contratto, e le segna `invoiced`. Non emette niente. Solo un
     amministratore e mai un agente: scegliere cosa finisce su una bozza decide cosa
     congelerà l'emissione."""
     return assemble_unbilled_work_units_into_new_invoice(
-        session, storage, contract_id, actor, data.da, data.a
+        session, storage, contract_id, actor, data.date_from, data.date_to
     )
 
 
 @router.get("/{contract_id}/register", response_model=ContractRegister)
 def get_register(
-    contract_id: UUID, session: SessionDep, actor: ActorDep, da: Da, a: A
+    contract_id: UUID, session: SessionDep, actor: ActorDep, date_from: DateFrom, date_to: DateTo
 ) -> ContractRegister:
     """Il registro delle giornate fatturate di un contratto nel periodo, ciascuna con la
     prova di approvazione che la regge. Sola lettura."""
-    return ContractRegisterService(session).build(contract_id, da, a, actor)
+    return ContractRegisterService(session).build(contract_id, date_from, date_to, actor)
 
 
 @router.get("/{contract_id}/register/csv")
 def get_register_csv(
-    contract_id: UUID, session: SessionDep, actor: ActorDep, da: Da, a: A
+    contract_id: UUID, session: SessionDep, actor: ActorDep, date_from: DateFrom, date_to: DateTo
 ) -> Response:
     """Lo stesso registro come CSV (RFC 4180, UTF-8 con BOM). Una copia di lavoro che il
     cliente filtra: si ricalcola a ogni richiesta e non si archivia, come l'XLSX delle ore."""
     service = ContractRegisterService(session)
-    register = service.build(contract_id, da, a, actor)
+    register = service.build(contract_id, date_from, date_to, actor)
     return attachment_response(
         service.build_csv(register), CSV_CONTENT_TYPE, service.csv_filename(register)
     )
@@ -88,9 +90,16 @@ def get_register_csv(
     "/{contract_id}/register/pdf", response_model=DocumentRead, status_code=status.HTTP_201_CREATED
 )
 def render_register_pdf(
-    contract_id: UUID, session: SessionDep, actor: ActorDep, storage: StorageDep, da: Da, a: A
+    contract_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    date_from: DateFrom,
+    date_to: DateTo,
 ) -> DocumentRead:
     """Il registro come PDF, archiviato come documento del cliente: si scarica dal documento
     e si allega alla fattura. Ogni chiamata archivia un documento nuovo: non ne sovrascrive
     mai uno precedente."""
-    return ContractRegisterService(session, storage).render_pdf(contract_id, da, a, actor)
+    return ContractRegisterService(session, storage).render_pdf(
+        contract_id, date_from, date_to, actor
+    )

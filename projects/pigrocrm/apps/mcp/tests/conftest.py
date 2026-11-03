@@ -35,12 +35,12 @@ def _ensure_committed_default(engine: Engine) -> None:
 
     with engine.begin() as connection:
         if connection.execute(
-            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
         ).first():
             return
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
 
@@ -67,11 +67,11 @@ def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
     if not connection.execute(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).first():
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
@@ -156,11 +156,11 @@ def seeded_template_id(mcp_session: Session) -> str:
     )
     template = TemplateService(mcp_session).create(
         TemplateCreate(
-            nome="Consulenza CTO",
-            type="offerta",
+            name="Consulenza CTO",
+            type="offer",
             body_markdown="Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
             declared_variables=[
-                TemplateVariable(nome="oggetto", label="Oggetto", type="text", required=True)
+                TemplateVariable(name="oggetto", label="Oggetto", type="text", required=True)
             ],
         ),
         SETUP,
@@ -177,7 +177,7 @@ def seeded_user_id(mcp_session: Session):
     conftest.py`'s identical fixture."""
     from pigrocrm.core.auth.models import User
 
-    user = User(email="worker-mcp@example.test", password_hash="x", nome="Worker")
+    user = User(email="worker-mcp@example.test", password_hash="x", name="Worker")
     mcp_session.add(user)
     mcp_session.flush()
     return user.id
@@ -192,11 +192,11 @@ def seeded_deal_id(mcp_session: Session, seeded_customer_id: str):
     from pigrocrm.core.deals.models import Deal
     from pigrocrm.core.pipeline.models import PipelineStage
 
-    stage = PipelineStage(nome="Aperto", position=0, default_probability=10, type="open")
+    stage = PipelineStage(name="Aperto", position=0, default_probability=10, type="open")
     mcp_session.add(stage)
     mcp_session.flush()
     deal = Deal(
-        nome="Progetto MCP",
+        name="Progetto MCP",
         customer_id=UUID(seeded_customer_id),
         pipeline_stage_id=stage.id,
         probability=10,

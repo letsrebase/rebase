@@ -110,7 +110,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         # No `expected_close_date`: the baseline for "prossime chiusure" has to be zero
         # so that the intruder below is the only thing that could ever move it.
         base = Deal(
-            nome=f"{_PREFIX} base",
+            name=f"{_PREFIX} base",
             customer_id=customer_id,
             pipeline_stage_id=stages["lead"].id,
             expected_value=Decimal("1000.00"),
@@ -135,7 +135,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage))
             remove_legal_entity(session, legal_entity_id)
@@ -160,9 +160,9 @@ def _imminent_date() -> date:
     the month is inside it and outside the period itself.
     """
     today = today_local()
-    _, fine_periodo = month_bounds(today.year, today.month)
-    _, imminente = window_from(fine_periodo, 10)
-    return imminente
+    _, period_end = month_bounds(today.year, today.month)
+    _, upcoming = window_from(period_end, 10)
+    return upcoming
 
 
 def _intruder_deal(seeded: Seeded) -> Deal:
@@ -173,7 +173,7 @@ def _intruder_deal(seeded: Seeded) -> Deal:
     figure moving would be a coincidence; the pair is the property.
     """
     return Deal(
-        nome=f"{_PREFIX} intruso",
+        name=f"{_PREFIX} intruso",
         customer_id=seeded.customer_id,
         pipeline_stage_id=seeded.stages["lead"].id,
         expected_value=Decimal("9999.00"),
@@ -189,7 +189,7 @@ def _intruder_invoice(seeded: Seeded) -> Invoice:
     It is what a deal cannot be: a row the *economic* and *operational* dashboards would
     each report from more than one query. Issued today, so it falls in the current month
     (`issued_invoices`, `pnl.in_progress.revenue`); unpaid (`unpaid`); due yesterday, so
-    `_overdue_predicate`'s strict `<` catches it (`expired`, `scaduto_non_incassato`); and
+    `_overdue_predicate`'s strict `<` catches it (`expired`, `overdue_unpaid`); and
     attached to the base deal, which sits on an `open` stage (`invoiced_unwon`) and
     gives `revenue_in_range` -- which groups by `deal_id` and skips nulls -- something to
     group by.
@@ -442,7 +442,7 @@ def _operational_figures(result: OperationalDashboard) -> dict[str, object]:
     counts = {signal.code: signal.count for signal in result.signals}
     return {
         "invoiced_unwon": counts["invoiced_unwon"],
-        "scaduto_non_incassato": counts["scaduto_non_incassato"],
+        "overdue_unpaid": counts["overdue_unpaid"],
     }
 
 

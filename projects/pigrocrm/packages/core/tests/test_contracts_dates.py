@@ -101,8 +101,8 @@ def test_anniversary_year_bounds_roll_over_on_the_next_anniversary_itself() -> N
 def test_anniversary_year_bounds_handle_a_29_february_anchor_in_a_non_leap_year() -> None:
     """Neither 2026 nor 2027 is a leap year: the anchor falls back to 28 February on
     both sides of the window rather than raising."""
-    da, a = anniversary_year_bounds(date(2024, 2, 29), date(2026, 3, 1))
-    assert (da, a) == (date(2026, 2, 28), date(2027, 2, 27))
+    date_from, date_to = anniversary_year_bounds(date(2024, 2, 29), date(2026, 3, 1))
+    assert (date_from, date_to) == (date(2026, 2, 28), date(2027, 2, 27))
 
 
 def test_anniversary_year_bounds_reject_a_reference_date_before_the_contract_started() -> None:

@@ -45,7 +45,7 @@ def test_an_omitted_key_changes_nothing(db_session: Session, seeded_deal_id: UUI
         DealUpdate(budgeted_hours=Decimal("100.00"), budgeted_value=Decimal("10000.00")),
         WRITER,
     )
-    after = service.update(seeded_deal_id, DealUpdate(nome="Rinominato"), WRITER)
+    after = service.update(seeded_deal_id, DealUpdate(name="Rinominato"), WRITER)
     assert after.budgeted_hours == Decimal("100.00")
     assert after.budgeted_value == Decimal("10000.00")
 
@@ -115,14 +115,14 @@ def test_a_null_aimed_at_a_not_null_column_is_refused(
     db_session: Session, seeded_deal_id: UUID
 ) -> None:
     """The consequence `exclude_none` was accidentally hiding. `deals.name` is `NOT
-    NULL`; `{"nome": null}` used to be dropped on the floor, and with `exclude_unset` it
+    NULL`; `{"name": null}` used to be dropped on the floor, and with `exclude_unset` it
     would instead reach `flush()` as a raw `IntegrityError` -- which does not merely fail
     the call, it poisons the caller's session for every statement after it. The refusal
     happens before any assignment, and names the field."""
     service = DealService(db_session)
     with pytest.raises(ValidationFailed) as exc:
-        service.update(seeded_deal_id, DealUpdate.model_validate({"nome": None}), WRITER)
-    assert exc.value.details["field"] == "nome"
+        service.update(seeded_deal_id, DealUpdate.model_validate({"name": None}), WRITER)
+    assert exc.value.details["field"] == "name"
 
 
 def test_a_cleared_rate_is_manual_absence_and_never_re_resolves(
@@ -160,7 +160,7 @@ def test_an_emptied_cost_amount_is_refused_by_name(
         CostCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 10),
+            date=date(2026, 3, 10),
             amount=Decimal("100.00"),
             description="Hosting",
         ),
@@ -181,7 +181,7 @@ def test_a_nullable_cost_reference_clears_without_a_lookup(
         CostCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 10),
+            date=date(2026, 3, 10),
             amount=Decimal("100.00"),
             description="Hosting",
         ),

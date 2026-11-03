@@ -86,7 +86,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "role": role},
+        json={"email": email, "password": "supersegreta1", "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -199,7 +199,7 @@ def _agent_client(admin_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> 
         what it claims and pass anyway (`test_mcp_invoice_ban.py` says the same thing
         about its own settings). Patched at the one name that decides it.
     """
-    raw = admin_client.post("/api/tokens", json={"nome": "Claude"})
+    raw = admin_client.post("/api/tokens", json={"name": "Claude"})
     assert raw.status_code == 201, raw.text
     token = raw.json()["token"]
     monkeypatch.setattr(
@@ -328,7 +328,7 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
         "/api/drive/oauth/callback?code=abc&state=mai-emesso", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/settings/drive?outcome=errore"
+    assert response.headers["location"] == "/app/settings/drive?outcome=error"
 
 
 # --- a session that ran out on Google's screens (REB-446) -------------------------------
@@ -394,7 +394,7 @@ def test_a_consent_that_outlasts_the_access_cookie_still_connects_drive(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/settings/drive?outcome=collegato"
+    assert back.headers["location"] == "/app/settings/drive?outcome=connected"
     assert google.codes == ["4/0A-code"]
     # Only read: the SPA renews the pair on landing with the token the callback saw.
     assert logged_in.post("/api/auth/refresh").status_code == 200
@@ -416,7 +416,7 @@ def test_a_drive_consent_with_no_live_session_lands_on_the_settings_page(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/settings/drive?outcome=sessione"
+    assert back.headers["location"] == "/app/settings/drive?outcome=session_expired"
     assert google.codes == []
 
 
@@ -436,7 +436,7 @@ def test_another_persons_drive_state_is_refused_on_a_refresh_only_session(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/settings/drive?outcome=errore"
+    assert back.headers["location"] == "/app/settings/drive?outcome=error"
     assert google.codes == []
     count = api_session.execute(text("select count(*) from google_drive_accounts")).scalar_one()
     assert count == 0

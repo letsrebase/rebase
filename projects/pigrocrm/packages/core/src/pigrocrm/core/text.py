@@ -2,7 +2,7 @@
 
 Under `core/` and not under `drive/`, where this started: the bytes of a PDF do not
 know which door they came in by. The same four extractors now answer for a file the
-titolare pointed at on Drive, for a document archived in the CRM (`documents/service.py`
+owner pointed at on Drive, for a document archived in the CRM (`documents/service.py`
 `extract_text`) and for the attachment of a received mail -- and a second copy per source
 would be four parsers of somebody else's malformed PDF to keep in step.
 
@@ -151,7 +151,7 @@ def _is_xml(mime: str) -> bool:
     Not covered by the `text/` prefix below, and worth its own branch because of one
     file in particular: a FatturaPA XML is archived beside the PDF of the same invoice
     (`documents/schemas.py` allows `application/xml` for exactly that), and it is the
-    copy that holds the fields the PDF only prints -- the codice destinatario, the PEC,
+    copy that holds the fields the PDF only prints -- the SdI recipient code, the PEC,
     the fiscal regime. Refusing it as "a type this does not read" would send a reader to
     the rendered page for a value that is written, unambiguously, in the source.
 
@@ -196,9 +196,9 @@ def file_text(content: bytes, *, mime: str, max_bytes: int) -> FileText:
     # field a caller has for it: the extraction stopped early (the page ceiling, or the
     # budget), and the text that came back did not fit `max_bytes`. Either alone is a
     # `troncato: true`; only "read to the end and it fitted" is false.
-    whole, interrotto = _extracted(content, mime=mime, budget=max_bytes)
-    text, tagliato = _truncate(whole, max_bytes)
-    return FileText(text=text, mime=mime, truncated=tagliato or interrotto)
+    whole, interrupted = _extracted(content, mime=mime, budget=max_bytes)
+    text, cut = _truncate(whole, max_bytes)
+    return FileText(text=text, mime=mime, truncated=cut or interrupted)
 
 
 def _truncate(text: str, max_bytes: int) -> tuple[str, bool]:
@@ -244,14 +244,14 @@ def _pdf_text(content: bytes, budget: int | None) -> tuple[str, bool]:
     """
     pages: list[str] = []
     held = 0
-    interrotto = False
+    interrupted = False
     try:
         reader = PdfReader(BytesIO(content))
         # Counted before the slice, because the slice is what has to be reported: a
         # document with more pages than the ceiling is answered without them, and
         # `len(reader.pages)` is a property of the parsed cross-reference table rather
         # than a second pass over the file.
-        interrotto = len(reader.pages) > MAX_PDF_PAGES
+        interrupted = len(reader.pages) > MAX_PDF_PAGES
         for page in reader.pages[:MAX_PDF_PAGES]:
             text = page.extract_text() or ""
             pages.append(text)
@@ -261,14 +261,14 @@ def _pdf_text(content: bytes, budget: int | None) -> tuple[str, bool]:
             if budget is not None and held > budget:
                 # Short of the last page it was allowed to read, so short of the
                 # document -- whether or not the join below ends up over `max_bytes`.
-                interrotto = interrotto or len(pages) < min(len(reader.pages), MAX_PDF_PAGES)
+                interrupted = interrupted or len(pages) < min(len(reader.pages), MAX_PDF_PAGES)
                 break
     except Exception:
         # `False`, not `interrotto`: a malformation discovered on page three of a
         # thousand-page file is not a truncation, and the caller is told the document
         # has no readable text (see the docstring).
         return "", False
-    return "\n".join(page.strip() for page in pages if page.strip()), interrotto
+    return "\n".join(page.strip() for page in pages if page.strip()), interrupted
 
 
 def _docx_text(content: bytes) -> str:

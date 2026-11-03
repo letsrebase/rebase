@@ -38,7 +38,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 def _make_user(db_session: Session, email: str = "tok@test.it"):
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Tok", role="admin"), ADMIN
+        UserCreate(email=email, password="supersegreta1", name="Tok", role="admin"), ADMIN
     )
 
 
@@ -260,7 +260,7 @@ def test_a_token_reaches_the_privileged_surface_only_where_it_and_the_space_both
     user = _make_user(db_session, "pat-switch@test.it")
     actor = Actor(id=user.id, type="user", role="admin")
 
-    chiusa = Settings(_env_file=None)  # type: ignore[call-arg]
+    closed_settings = Settings(_env_file=None)  # type: ignore[call-arg]
     open = Settings(_env_file=None, mcp_full_access=True)  # type: ignore[call-arg]
 
     _, closed = PatService(db_session, open).create("Chiacchiere", actor)
@@ -270,7 +270,7 @@ def test_a_token_reaches_the_privileged_surface_only_where_it_and_the_space_both
     assert PatService(db_session, open).resolve(closed).full_access is False
     assert PatService(db_session, open).resolve(open_).full_access is True
     # And the ceiling wins over a token that asks for more than the space offers.
-    assert PatService(db_session, chiusa).resolve(open_).full_access is False
+    assert PatService(db_session, closed_settings).resolve(open_).full_access is False
 
 
 def test_a_token_cannot_be_made_with_what_the_space_does_not_offer(db_session: Session) -> None:
@@ -306,7 +306,7 @@ def test_an_agent_credential_cannot_mint_a_token_that_opens_the_privileged_surfa
 
 def _collaborator(db_session: Session, email: str):
     return UserService(db_session).create(
-        UserCreate(email=email, password="supersegreta1", nome="Colla", role="collaborator"),
+        UserCreate(email=email, password="supersegreta1", name="Colla", role="collaborator"),
         ADMIN,
     )
 
@@ -591,7 +591,7 @@ def test_a_second_resolve_on_the_same_session_sees_the_current_role(
 
     assert service.resolve(raw).role == "admin"
     db_session.execute(
-        text("UPDATE users SET ruolo = 'collaboratore' WHERE id = :id"), {"id": str(user.id)}
+        text("UPDATE users SET role = 'collaborator' WHERE id = :id"), {"id": str(user.id)}
     )
     db_session.commit()
 
@@ -614,7 +614,7 @@ def test_a_second_resolve_on_the_same_session_refuses_a_deactivation(
     _, raw = service.create("Claude locale", actor)
 
     assert service.resolve(raw).id == user.id
-    db_session.execute(text("UPDATE users SET attivo = false WHERE id = :id"), {"id": str(user.id)})
+    db_session.execute(text("UPDATE users SET active = false WHERE id = :id"), {"id": str(user.id)})
     db_session.commit()
 
     with pytest.raises(ValidationFailed) as refused:
@@ -684,7 +684,7 @@ def test_a_deactivation_that_changed_nothing_revokes_nothing(
     owner_actor = Actor(id=user.id, type="user", role="admin")
     tokens = PatService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
     _, raw = tokens.create("Vivace", owner_actor)
-    db_session.execute(text("UPDATE users SET attivo = false WHERE id = :id"), {"id": str(user.id)})
+    db_session.execute(text("UPDATE users SET active = false WHERE id = :id"), {"id": str(user.id)})
     db_session.commit()
 
     UserService(db_session).update(user.id, UserUpdate(active=False), ADMIN)

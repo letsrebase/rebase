@@ -33,7 +33,7 @@ WRITER = Actor(id=None, type="user", role="collaborator")
 # outside the current fiscal year -- so a literal `2026-03` here was a date on which this
 # whole file would begin failing. `periodo_fiscale.py` explains why "this year, March"
 # would not have been a fix either.
-PERIOD = PeriodPnlQuery(da=FIRST_OF_MONTH, a=TODAY)
+PERIOD = PeriodPnlQuery(date_from=FIRST_OF_MONTH, date_to=TODAY)
 # A second window, for the one test that needs the period to be *over*:
 # `written_entries_overdue` counts rows whose `created_at` is later than `a`, so a window
 # ending today can never contain a late row -- a row written now is written on the last
@@ -41,7 +41,7 @@ PERIOD = PeriodPnlQuery(da=FIRST_OF_MONTH, a=TODAY)
 # has certainly ended, and it is available on every run day including 1 January. It may
 # fall in the previous fiscal year, which is why no test that issues an invoice may use
 # it -- and none does: nothing here needs a `issue_date`.
-MONTH_CLOSED = PeriodPnlQuery(da=DAY_BEFORE.replace(day=1), a=DAY_BEFORE)
+MONTH_CLOSED = PeriodPnlQuery(date_from=DAY_BEFORE.replace(day=1), date_to=DAY_BEFORE)
 
 
 def test_an_open_deal_and_a_closed_one_never_share_a_total(
@@ -118,7 +118,7 @@ def test_a_general_expense_has_its_own_row_and_touches_no_deal(
         CostCreate(
             deal_id=None,
             category_id=seeded_category_id,
-            data=TODAY,
+            date=TODAY,
             amount=Decimal("300.00"),
             description="Commercialista",
         ),
@@ -142,7 +142,7 @@ def test_a_customer_filter_excludes_general_expenses_entirely(
         CostCreate(
             deal_id=None,
             category_id=seeded_category_id,
-            data=TODAY,
+            date=TODAY,
             amount=Decimal("300.00"),
             description="Commercialista",
         ),
@@ -153,7 +153,8 @@ def test_a_customer_filter_excludes_general_expenses_entirely(
 
     customer_id = db_session.get(Deal, open_deal_with_hours).customer_id  # type: ignore[union-attr]
     scoped = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a, customer_id=customer_id), READER
+        PeriodPnlQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to, customer_id=customer_id),
+        READER,
     )
     assert scoped.general_expenses == Decimal("0.00")
     # And the customer's own deal is still there in full: a scope that returned nothing
@@ -184,7 +185,7 @@ def test_each_quantity_is_attributed_by_its_own_date(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=FIRST_OF_MONTH,
+            date=FIRST_OF_MONTH,
             hours=Decimal("1.00"),
             description="nel periodo",
             applied_cost=Decimal("50.000000"),
@@ -195,7 +196,7 @@ def test_each_quantity_is_attributed_by_its_own_date(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=DAY_BEFORE,
+            date=DAY_BEFORE,
             hours=Decimal("1.00"),
             description="fuori periodo",
             applied_cost=Decimal("50.000000"),
@@ -206,7 +207,7 @@ def test_each_quantity_is_attributed_by_its_own_date(
         CostCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
-            data=DAY_BEFORE,
+            date=DAY_BEFORE,
             amount=Decimal("10.00"),
             description="fuori periodo",
         ),
@@ -218,7 +219,7 @@ def test_each_quantity_is_attributed_by_its_own_date(
         CostCreate(
             deal_id=None,
             category_id=seeded_category_id,
-            data=DAY_BEFORE,
+            date=DAY_BEFORE,
             amount=Decimal("77.00"),
             description="fuori periodo generale",
         ),
@@ -245,7 +246,7 @@ def test_an_open_period_reports_the_late_entries_and_a_closed_one_says_so(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=MONTH_CLOSED.a,
+            date=MONTH_CLOSED.date_to,
             hours=Decimal("2.00"),
             description="retrodatata",
             applied_cost=Decimal("50.000000"),
@@ -261,7 +262,7 @@ def test_an_open_period_reports_the_late_entries_and_a_closed_one_says_so(
 
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     PeriodLockService(db_session).close_period(
-        PeriodLockCreate(year=MONTH_CLOSED.a.year, month=MONTH_CLOSED.a.month), admin
+        PeriodLockCreate(year=MONTH_CLOSED.date_to.year, month=MONTH_CLOSED.date_to.month), admin
     )
     closed = service.period_pnl(MONTH_CLOSED, READER)
     assert closed.closed_period is True
@@ -280,7 +281,7 @@ def test_a_multi_month_window_is_closed_only_when_every_month_is(
     it matters."""
     admin = Actor(id=seeded_user_id, type="user", role="admin")
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=1), admin)
-    quarter = PeriodPnlQuery(da=date(2026, 1, 1), a=date(2026, 3, 31))
+    quarter = PeriodPnlQuery(date_from=date(2026, 1, 1), date_to=date(2026, 3, 31))
     assert AnalyticsService(db_session).period_pnl(quarter, READER).closed_period is False
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=2), admin)
     assert AnalyticsService(db_session).period_pnl(quarter, READER).closed_period is False
@@ -294,7 +295,7 @@ def test_a_window_across_a_year_end_enumerates_every_month_it_touches(
     """December to January is where month arithmetic goes wrong, and the wrong answer
     here is `periodo_chiuso = true` on a window nobody has closed."""
     admin = Actor(id=seeded_user_id, type="user", role="admin")
-    across = PeriodPnlQuery(da=date(2025, 12, 1), a=date(2026, 1, 31))
+    across = PeriodPnlQuery(date_from=date(2025, 12, 1), date_to=date(2026, 1, 31))
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2025, month=12), admin)
     assert AnalyticsService(db_session).period_pnl(across, READER).closed_period is False
     PeriodLockService(db_session).close_period(PeriodLockCreate(year=2026, month=1), admin)
@@ -304,14 +305,14 @@ def test_a_window_across_a_year_end_enumerates_every_month_it_touches(
 def test_an_inverted_window_is_refused(db_session: Session) -> None:
     with pytest.raises(ValidationFailed) as excinfo:
         AnalyticsService(db_session).period_pnl(
-            PeriodPnlQuery(da=date(2026, 3, 31), a=date(2026, 3, 1)), READER
+            PeriodPnlQuery(date_from=date(2026, 3, 31), date_to=date(2026, 3, 1)), READER
         )
-    assert excinfo.value.details["field"] == "a"
+    assert excinfo.value.details["field"] == "to"
 
 
 def test_an_empty_window_returns_typed_zeros_and_a_null_percentage(db_session: Session) -> None:
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(1999, 1, 1), a=date(1999, 1, 31)), READER
+        PeriodPnlQuery(date_from=date(1999, 1, 1), date_to=date(1999, 1, 31)), READER
     )
     assert pnl.closed.revenue == Decimal("0.00")
     assert pnl.closed.percentage_margin is None
@@ -327,7 +328,7 @@ def test_an_empty_window_returns_typed_zeros_and_a_null_percentage(db_session: S
 # Invoicing runs late: August's work is issued in September, and by emission date it is
 # September's revenue. The default reading stays emission (§7.1 is a recorded decision,
 # and the fiscal reports keep it); `base="accrual"` is a second reading of the same
-# report that attributes each invoice to `coalesce(competenza_da, data_emissione)`.
+# report that attributes each invoice to `coalesce(accrual_from, issue_date)`.
 # Costs and hours are unaffected: each quantity still goes by its own date.
 
 # The month before the window, whole: the invoice issued today says its work belongs
@@ -380,11 +381,11 @@ def _won_deal_with_period_invoice(
     )
     session.add(customer)
     session.flush()
-    stage = PipelineStage(nome=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
+    stage = PipelineStage(name=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
     session.add(stage)
     session.flush()
     deal = Deal(
-        nome="Lavoro di agosto",
+        name="Lavoro di agosto",
         customer_id=customer.id,
         pipeline_stage_id=stage.id,
         probability=100,
@@ -419,10 +420,10 @@ def test_by_default_revenue_follows_the_emission_date(
     the report read before the second reading existed."""
     _won_deal_with_period_invoice(db_session, local_storage)
     service = AnalyticsService(db_session)
-    assert PeriodPnlQuery(da=TODAY, a=TODAY).base == "issue"
+    assert PeriodPnlQuery(date_from=TODAY, date_to=TODAY).base == "issue"
     this_month = service.period_pnl(PERIOD, READER)
     last_month = service.period_pnl(
-        PeriodPnlQuery(da=MONTH_PREVIOUS[0], a=MONTH_PREVIOUS[1]), READER
+        PeriodPnlQuery(date_from=MONTH_PREVIOUS[0], date_to=MONTH_PREVIOUS[1]), READER
     )
     assert this_month.closed.revenue == Decimal("2000.00")
     assert this_month.closed.deal == 1
@@ -445,7 +446,7 @@ def test_by_accrual_period_the_revenue_lands_in_the_month_the_work_belongs_to(
         CostCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
-            data=TODAY,
+            date=TODAY,
             amount=Decimal("200.00"),
             description="Stampa",
         ),
@@ -453,10 +454,11 @@ def test_by_accrual_period_the_revenue_lands_in_the_month_the_work_belongs_to(
     )
     service = AnalyticsService(db_session)
     this_month = service.period_pnl(
-        PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a, base="accrual"), READER
+        PeriodPnlQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to, base="accrual"), READER
     )
     last_month = service.period_pnl(
-        PeriodPnlQuery(da=MONTH_PREVIOUS[0], a=MONTH_PREVIOUS[1], base="accrual"), READER
+        PeriodPnlQuery(date_from=MONTH_PREVIOUS[0], date_to=MONTH_PREVIOUS[1], base="accrual"),
+        READER,
     )
     assert last_month.base == "accrual"
     assert last_month.closed.revenue == Decimal("2000.00")
@@ -472,12 +474,14 @@ def test_by_accrual_period_the_revenue_lands_in_the_month_the_work_belongs_to(
 def test_an_invoice_with_no_period_falls_back_to_its_emission_date_under_both_readings(
     db_session: Session, closed_deal_with_invoice: UUID
 ) -> None:
-    """`coalesce(competenza_da, data_emissione)`: a document that never said what period
+    """`coalesce(accrual_from, issue_date)`: a document that never said what period
     it was for is read by the only date it has, so the accrual reading of a register
     with no periods is the emission reading, figure for figure."""
     service = AnalyticsService(db_session)
     issue = service.period_pnl(PERIOD, READER)
-    accrual = service.period_pnl(PeriodPnlQuery(da=PERIOD.da, a=PERIOD.a, base="accrual"), READER)
+    accrual = service.period_pnl(
+        PeriodPnlQuery(date_from=PERIOD.date_from, date_to=PERIOD.date_to, base="accrual"), READER
+    )
     assert issue.closed.revenue == Decimal("2000.00")
     assert accrual.closed == issue.closed
     assert accrual.in_progress == issue.in_progress
@@ -487,14 +491,16 @@ def test_a_dated_proforma_is_not_revenue_under_either_reading(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """ORB-63 gives a proforma a `issue_date` of its own. `_revenue_filter` selects
-    `tipo = 'fattura' AND stato = 'emessa'`, so a proforma dated inside the window, with
+    `type = 'invoice' AND status = 'issued'`, so a proforma dated inside the window, with
     a period inside the window, contributes nothing to either column under either base;
     the deal does not even appear, since a proforma is not activity the report counts."""
     _won_deal_with_period_invoice(db_session, local_storage, type="proforma")
     service = AnalyticsService(db_session)
     for base in ("issue", "accrual"):
-        for da, a in ((PERIOD.da, PERIOD.a), MONTH_PREVIOUS):
-            pnl = service.period_pnl(PeriodPnlQuery(da=da, a=a, base=base), READER)  # type: ignore[arg-type]
-            assert pnl.closed.revenue == Decimal("0.00"), (base, da)
-            assert pnl.in_progress.revenue == Decimal("0.00"), (base, da)
-            assert pnl.closed.deal == 0 and pnl.in_progress.deal == 0, (base, da)
+        for date_from, date_to in ((PERIOD.date_from, PERIOD.date_to), MONTH_PREVIOUS):
+            pnl = service.period_pnl(
+                PeriodPnlQuery(date_from=date_from, date_to=date_to, base=base), READER
+            )  # type: ignore[arg-type]
+            assert pnl.closed.revenue == Decimal("0.00"), (base, date_from)
+            assert pnl.in_progress.revenue == Decimal("0.00"), (base, date_from)
+            assert pnl.closed.deal == 0 and pnl.in_progress.deal == 0, (base, date_from)

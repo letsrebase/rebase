@@ -1,4 +1,4 @@
-"""The CSV of one azienda's year, for the accountant (REB-757).
+"""The CSV of one legal entity's year, for the accountant (REB-757).
 
 Mastro's year export, ported: Italian spreadsheet format, a UTF-8 byte-order mark, the
 semicolon as delimiter and the comma as decimal mark, because that combination is what
@@ -7,7 +7,8 @@ every money column as text, or reads `1.234,56` as a thousand times too much.
 
 Two tables in one file, separated by one blank line, so a single download answers both
 questions: **the lines** (one row per invoice line, with the rate, the `Natura` and the
-legal reference it printed) and **the register** (one row per invoice, with the rivalsa
+legal reference it printed) and **the register** (one row per invoice, with the social security
+surcharge
 and the stamp duty apart and the declaration the document carries). Each ends in a total
 row, and the two totals are the same figure: `Σ lines = Σ imponibile`, which is what
 `YearOverview.totali.taxable_amount` says and what the page shows.
@@ -198,12 +199,12 @@ def render_year_csv(overview: YearOverview, lines: dict[UUID, list[InvoiceLine]]
 
 
 def year_csv_filename(overview: YearOverview) -> str:
-    """`registro-2026-studio-rossi.csv`: the year and the azienda's short name, reduced
+    """`registro-2026-studio-rossi.csv`: the year and the legal entity's short name, reduced
     to what any file system and any `Content-Disposition` header accept."""
     ascii_name = (
         unicodedata.normalize("NFKD", overview.legal_entity_name).encode("ascii", "ignore").decode()
     )
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "legal_entity"
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "azienda"
     return f"registro-{overview.year}-{slug}.csv"
 
 

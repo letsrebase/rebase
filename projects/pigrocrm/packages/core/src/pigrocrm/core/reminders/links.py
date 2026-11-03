@@ -19,7 +19,7 @@ REMINDERS_PATH = "/app/reminders"
 NOTIFICATIONS_PATH = "/app/settings/notifications"
 
 _PATHS: dict[str, Callable[[UUID], str]] = {
-    # An attività has no page of its own: the list opens it in a dialog.
+    # A task has no page of its own: the list opens it in a dialog.
     "task": lambda id_: f"/app/activities?open={id_}",
     "deal": lambda id_: f"/app/deal/{id_}",
     "customer": lambda id_: f"/app/customers/{id_}",
@@ -27,7 +27,7 @@ _PATHS: dict[str, Callable[[UUID], str]] = {
     # A proforma is an invoice row of type `proforma`, opened by the same page.
     "proforma": lambda id_: f"/app/invoices/{id_}",
     "contract": lambda id_: f"/app/contracts/{id_}",
-    "fiscal": lambda _: "/app?tab=anno",
+    "fiscal": lambda _: "/app?tab=year",
     "proposal": lambda id_: f"/app/proposals/{id_}",
     # The timer is the caller's own and lives in the hours page, which has no id to open.
     "timer": lambda _: "/app/hours",

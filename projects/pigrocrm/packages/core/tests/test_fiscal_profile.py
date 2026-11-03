@@ -151,8 +151,8 @@ def test_an_iban_longer_than_the_column_is_refused_by_pydantic(db_session: Sessi
 
 
 def test_to_flat_rate_profile_must_declare_to_vat_nature(db_session: Session) -> None:
-    """Under a zero-rate regime the summary group needs a Natura, and a profile with
-    neither a natura nor a non-zero default rate can only produce invoices the SdI
+    """Under a zero-rate regime the summary group needs a nature code (Natura), and a profile with
+    neither a nature code nor a non-zero default rate can only produce invoices the SdI
     rejects. Caught at configuration time, not at emission time."""
     with pytest.raises(ValidationFailed) as caught:
         FiscalProfileService(db_session).upsert(_payload(default_vat_nature=None), ADMIN)
@@ -201,8 +201,8 @@ def test_a_foreign_profile_leaves_the_italian_fields_empty_unless_told_otherwise
     db_session: Session,
 ) -> None:
     """REB-619: on the `non-it` pack the schema's defaults are not the forfettario's,
-    so the minimal body an API or MCP caller sends saves a profile with no natura, no
-    bollo and no income parameters, and the service then accepts it."""
+    so the minimal body an API or MCP caller sends saves a profile with no nature code, no
+    stamp duty and no income parameters, and the service then accepts it."""
     minimal = FiscalProfileUpsert(pack_id="non-it", default_vat_rate=Decimal("20.00"))
     assert minimal.regime_code is None
     assert (minimal.default_vat_nature, minimal.legal_reference) == (None, None)
@@ -219,7 +219,7 @@ def test_a_foreign_profile_leaves_the_italian_fields_empty_unless_told_otherwise
     assert FiscalProfileUpsert(regime_code="RF19").default_vat_nature == "N2.2"
 
 
-def test_to_foreign_profile_refuses_the_stamp_duty_and_the_forfettarios_parameters(
+def test_to_foreign_profile_refuses_the_stamp_duty_and_the_flat_rate_parameters(
     db_session: Session,
 ) -> None:
     service = FiscalProfileService(db_session)
@@ -246,7 +246,7 @@ def test_to_foreign_profile_refuses_the_stamp_duty_and_the_forfettarios_paramete
 def test_to_foreign_zero_rate_needs_to_vat_nature_and_says_so_in_its_own_words(
     db_session: Session,
 ) -> None:
-    """`invoice_lines` requires a natura beside a zero rate whoever issues; the foreign
+    """`invoice_lines` requires a nature code beside a zero rate whoever issues; the foreign
     refusal names the reason a foreign company understands, not the SdI."""
     with pytest.raises(ValidationFailed) as refused:
         FiscalProfileService(db_session).upsert(FiscalProfileUpsert(pack_id="non-it"), ADMIN)

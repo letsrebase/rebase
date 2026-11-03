@@ -82,8 +82,8 @@ def sdi_filename(id_tax: str, year: int, number: int) -> str:
 def invoice_storage_prefix(legal_entity_id: UUID, year: int, number: int) -> str:
     """`invoices/{legal_entity_id}/{year}/{number}` -- so a file pulled out of context is
     still identifiable, which is mechanism 4 of the four that keep a proforma from
-    being mistaken for an invoice. The azienda first since REB-619, because `2026/1`
-    names one invoice per azienda; every key written before it stays on its row and is
+    being mistaken for an invoice. The legal entity first since REB-619, because `2026/1`
+    names one invoice per legal entity; every key written before it stays on its row and is
     never moved (spec 2026-10-03 §1.4)."""
     return f"fatture/{legal_entity_id}/{year}/{number}"
 
@@ -105,14 +105,14 @@ def number_complete(year: int, number: int) -> str:
     return f"{year}/{number}"
 
 
-def proforma_reference(year: int, sequenza: int) -> str:
+def proforma_reference(year: int, sequence: int) -> str:
     """`PROV-{year}-{sequenza:04d}`.
 
     The non-numeric prefix is load-bearing: no fiscal-number pattern can accept it, so
     a proforma cannot be read as an invoice by any regex, in this codebase or in a
     spreadsheet somebody builds later.
     """
-    return f"PROV-{year}-{sequenza:04d}"
+    return f"PROV-{year}-{sequence:04d}"
 
 
 __all__ = [

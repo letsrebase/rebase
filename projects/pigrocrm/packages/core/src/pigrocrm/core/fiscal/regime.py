@@ -9,7 +9,7 @@ written, simply start producing non-zero values.
 
 Deliberately out of scope and named rather than half-designed: withholding tax,
 social-security fund, split payment, reverse charge, deferred or cash-basis VAT
-liability. Each is a distinct XML block the forfettario never exercises.
+liability. Each is a distinct XML block the flat-rate regime never exercises.
 """
 
 from collections.abc import Sequence
@@ -163,7 +163,7 @@ class _foreign:
     established outside Italy, which issues no FatturaPA and owes no Italian duty.
 
     The rate is the one entered, or the profile's default: the strategy knows nothing
-    of the local VAT law and does not pretend to. No bollo, ever. No `Natura`
+    of the local VAT law and does not pretend to. No stamp duty, ever. No `Natura`
     default of its own, because a `Natura` is a FatturaPA code: a zero rate is
     accepted only when the profile names one, since `invoice_lines` requires a
     `vat_nature` beside a zero rate whoever the issuer is; a foreign invoice that needs a
@@ -216,9 +216,9 @@ def resolve_regime(regime_code: str | None, pack_id: str) -> RegimeStrategy:
     trailing newline is refused rather than accepted and passed on), a strategy
     must exist for it (a code such as `RF07` is real FPR12 and still has no
     implementation here, and saying so is more useful than resolving it to the
-    forfettario and silently issuing an invoice under the wrong regime), and that
+    flat-rate regime and silently issuing an invoice under the wrong regime), and that
     strategy must belong to the pack (REB-760): `RF01` is the ordinary regime of
-    `it-standard` and `RF19` the forfettario of `it-flat-rate`, so a profile that names
+    `it-standard` and `RF19` the flat-rate regime of `it-flat-rate`, so a profile that names
     one with the other's pack is refused instead of being held to the other regime's
     ceilings.
     """

@@ -17,11 +17,11 @@ from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
 
-def _user(session: Session, nome: str, *, role: str = "collaborator", active: bool = True) -> User:
+def _user(session: Session, name: str, *, role: str = "collaborator", active: bool = True) -> User:
     user = User(
-        email=f"{nome.lower()}-{uuid4()}@example.test",
+        email=f"{name.lower()}-{uuid4()}@example.test",
         password_hash="x",
-        nome=nome,
+        name=name,
         role=role,
         active=active,
     )
@@ -52,7 +52,7 @@ async def test_an_admin_lists_the_active_members_with_role_and_email(
     assert str(gone.id) not in members
     assert members[str(ada.id)] == {
         "id": str(ada.id),
-        "nome": "Ada",
+        "name": "Ada",
         "role": "admin",
         "email": ada.email,
     }
@@ -80,13 +80,13 @@ async def test_it_lists_the_people_the_web_pickers_list(server, mcp_session: Ses
     members = UserService(mcp_session).members()
     # What the REST picker answers stays id and name only: the role and the email are the
     # MCP's `directory`, not something `members` quietly grew.
-    assert all(set(m.model_dump()) == {"id", "nome"} for m in members)
+    assert all(set(m.model_dump()) == {"id", "name"} for m in members)
     async with Client(server) as client:
         result = await client.call_tool("list_members", {})
 
     listed = result.structured_content["result"]
-    assert [(m["id"], m["nome"]) for m in listed] == [(str(m.id), m.nome) for m in members]
-    assert [m["nome"] for m in listed] == sorted(m["nome"] for m in listed)
+    assert [(m["id"], m["name"]) for m in listed] == [(str(m.id), m.name) for m in members]
+    assert [m["name"] for m in listed] == sorted(m["name"] for m in listed)
 
 
 async def test_an_agent_resolves_to_name_to_an_id_and_assigns_an_task_with_it(
@@ -96,7 +96,7 @@ async def test_an_agent_resolves_to_name_to_an_id_and_assigns_an_task_with_it(
 
     async with Client(server) as client:
         members = (await client.call_tool("list_members", {})).structured_content["result"]
-        found = next(m["id"] for m in members if m["nome"] == "Bruno")
+        found = next(m["id"] for m in members if m["name"] == "Bruno")
         attivita = await client.call_tool(
             "create_task", {"title": "Chiamare il cliente", "assigned_to": found}
         )

@@ -105,8 +105,8 @@ def admin(db_session: Session) -> tuple[Actor, GoogleAccount]:
 def test_reads_the_text_of_a_pdf_the_crm_never_stored(
     db_session: Session, admin: tuple[Actor, GoogleAccount]
 ) -> None:
-    """The case that forced the module: a codice destinatario that exists in no body and
-    in no CRM field, only inside a signed order form."""
+    """The case that forced the module: a recipient code (codice destinatario) that exists in
+    no body and in no CRM field, only inside a signed order form."""
     actor, account = admin
     fake = FakeGmail()
     row = _archived(db_session, account, fake, [_pdf_attachment(["Codice destinatario: ABCDEFG"])])
@@ -114,7 +114,7 @@ def test_reads_the_text_of_a_pdf_the_crm_never_stored(
     read = _service(db_session, fake).attachment_text(row.id, ORDER, actor)
 
     assert "ABCDEFG" in read.text
-    assert read.nome_file == ORDER
+    assert read.file_name == ORDER
     assert read.mime == "application/pdf"
     assert read.truncated is False
 
@@ -184,9 +184,9 @@ def test_an_attachment_inside_a_forwarded_message_is_reachable() -> None:
         ],
     }
 
-    nomi = [str(part.get("filename") or "") for part in _walk(payload)]
+    names = [str(part.get("filename") or "") for part in _walk(payload)]
 
-    assert ORDER in nomi
+    assert ORDER in names
 
 
 def test_a_name_that_is_not_there_answers_with_the_names_that_are(
@@ -294,7 +294,7 @@ def test_an_unknown_message_is_not_found(
         _service(db_session, fake).attachment_text(uuid4(), ORDER, actor)
 
 
-def test_to_readonly_actor_cannot_spend_the_titolares_share(
+def test_to_readonly_actor_cannot_spend_the_owners_share(
     db_session: Session, admin: tuple[Actor, GoogleAccount]
 ) -> None:
     """The same gate `discover_gmail_correspondents` applies. This changes nothing in the

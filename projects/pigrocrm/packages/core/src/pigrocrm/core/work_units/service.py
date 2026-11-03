@@ -69,7 +69,7 @@ CONTRACT_ENTITY = "contract"
 
 # The partial unique index that allows one live day per contract per date
 # (`models.py`): the name Postgres reports when a second one is recorded.
-LIVE_DAY_INDEX = "uq_work_units_contract_data_live"
+LIVE_DAY_INDEX = "uq_work_units_contract_date_live"
 
 # The two edges that are not a person's click on a day's page: `invoiced` is what an
 # invoice does to a day (`invoicing.py`), and `approved` is what recording an approval
@@ -163,7 +163,7 @@ class WorkUnitService:
             raise ValidationFailed(
                 WORK_UNIT_ENTITY,
                 "status",
-                f"un work_unit non si crea direttamente in stato '{data.status}'",
+                f"una giornata non si crea direttamente in stato '{data.status}'",
                 expected=f"uno tra {sorted(WORK_UNIT_ENTRY_STATUSES)}",
             )
         if ContractRepository(self.session).get(data.contract_id) is None:
@@ -233,8 +233,8 @@ class WorkUnitService:
             raise Conflict(
                 WORK_UNIT_ENTITY,
                 f"una giornata '{origin}' non puo' passare a '{new_status}'",
-                da=origin,
-                a=new_status,
+                from_status=origin,
+                to_status=new_status,
             )
         set_transition_context(self.session, actor, reason)
         # The trigger is the authority, and the check above only gives the common refusal a
@@ -245,7 +245,7 @@ class WorkUnitService:
             lambda exc: Conflict(
                 WORK_UNIT_ENTITY,
                 f"la giornata non puo' passare a '{new_status}': e' cambiata nel frattempo",
-                a=new_status,
+                to_status=new_status,
             ),
         ):
             work_unit.status = new_status
@@ -276,8 +276,8 @@ class WorkUnitService:
             raise Conflict(
                 WORK_UNIT_ENTITY,
                 f"una giornata '{work_unit.status}' non puo' passare a '{new_status}' da qui",
-                da=work_unit.status,
-                a=new_status,
+                from_status=work_unit.status,
+                to_status=new_status,
             )
         return self.transition(work_unit_id, new_status, actor, reason)
 
@@ -319,16 +319,20 @@ class WorkUnitService:
     # `list` stays the last method in this class: a later `def list(...)` would rebind
     # `list` in the class namespace and Python 3.13 evaluates annotations eagerly.
     def list(self, query: WorkUnitListQuery, actor: Actor) -> WorkUnitList:
-        if query.contract_id is None and query.da is None and query.a is None:
+        if query.contract_id is None and query.date_from is None and query.date_to is None:
             raise ValidationFailed(
                 WORK_UNIT_ENTITY,
                 "contract_id",
                 "indica un contratto o un intervallo di date",
                 expected="contract_id, da o a",
             )
-        if query.da is not None and query.a is not None and query.a < query.da:
+        if (
+            query.date_from is not None
+            and query.date_to is not None
+            and query.date_to < query.date_from
+        ):
             raise ValidationFailed(
-                WORK_UNIT_ENTITY, "a", "non puo' precedere da", expected=f">= {query.da}"
+                WORK_UNIT_ENTITY, "to", "non puo' precedere from", expected=f">= {query.date_from}"
             )
         rows = self.repo.list_labelled(query)
         return WorkUnitList(

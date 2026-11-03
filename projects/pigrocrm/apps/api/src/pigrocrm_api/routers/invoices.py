@@ -289,8 +289,8 @@ async def confirm_import_upload(
     return UploadedInvoiceConfirmResult(lines=lines)
 
 
-# The register is per azienda (REB-619): both routes take the azienda as a query
-# parameter and read the default when it is omitted, so a space with one azienda calls
+# The register is per legal entity (REB-619): both routes take the legal entity as a query
+# parameter and read the default when it is omitted, so a space with one legal entity calls
 # them exactly as before.
 @router.get("/register/{year}/gaps", response_model=list[RegisterGapRead])
 def register_gaps(

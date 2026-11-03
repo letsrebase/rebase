@@ -21,7 +21,7 @@ contract with no renewal clause or no end date has no deadline and is not raised
 deadline has passed has no window left and is not either. `irrevocability_window_end` is
 about the notice a termination would serve, not a date to act by, and is not read.
 
-Recipients are the owner of the customer (`links.py`), scoped to the contract's azienda.
+Recipients are the owner of the customer (`links.py`), scoped to the contract's legal entity.
 """
 
 from __future__ import annotations
@@ -136,7 +136,7 @@ def detect_expiring(ctx: DetectorContext) -> list[Detection]:
     for contract in contracts:
         assert contract.end is not None
         left = (contract.end - ctx.today).days
-        when = "today" if left == 0 else f"fra {format_days(left)}"
+        when = "oggi" if left == 0 else f"fra {format_days(left)}"
         found.append(
             _detection(
                 ctx,
@@ -184,7 +184,7 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
     for contract, deadline in pairs:
         assert contract.end is not None
         left = (deadline - ctx.today).days
-        when = "today" if left == 0 else f"fra {format_days(left)}"
+        when = "oggi" if left == 0 else f"fra {format_days(left)}"
         found.append(
             _detection(
                 ctx,

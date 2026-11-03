@@ -62,7 +62,7 @@ def connected_account(
     """
     user = User(
         email=f"user-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
         role="admin",
         active=True,

@@ -42,7 +42,7 @@ DUE_DAYS_MAX = 365
 
 # The previous system shipped `RiferimentoNormativo` as "N2.2 (non soggette - altri casi)", which is
 # the *description of the code*, not a normative reference. This is the real one for
-# the forfettario, and it is a default rather than a constant because the article
+# the flat-rate regime, and it is a default rather than a constant because the article
 # numbers have changed before.
 DEFAULT_LEGAL_REFERENCE = (
     "Operazione non soggetta a IVA ai sensi dell'art. 1, commi 54-89, "
@@ -51,7 +51,7 @@ DEFAULT_LEGAL_REFERENCE = (
 
 # A customer established outside Italy (ORB-32). A service to a business abroad is
 # outside the territorial scope of Italian VAT under art. 7-ter DPR 633/1972, which the
-# SdI codes as `N2.1`, not as the `N2.2` the forfettario's own declaration covers: the
+# SdI codes as `N2.1`, not as the `N2.2` the flat-rate regime's own declaration covers: the
 # accountant's tool issued 13/2026 to a GB company with N2.1 while every domestic
 # invoice carries N2.2, and the two registers have to agree. The annotation the invoice
 # must carry is dictated by art. 21, comma 6-bis, DPR 633/1972 and differs by where the
@@ -85,7 +85,7 @@ DEFAULT_STAMP_DUTY_AMOUNT = Decimal("2.00")
 
 # §4.5. The estimate's three rates (profitability 0.67, substitute tax 0.05, INPS 0.2607),
 # expressed as percentages, which is how their owner reads and types them. Defaults
-# rather than constants for the same reason the bollo values above are: the ATECO
+# rather than constants for the same reason the stamp duty values above are: the ATECO
 # coefficient depends on the activity code, and the INPS gestione separata rate is
 # re-set by the Legge di Bilancio most years.
 DEFAULT_PROFITABILITY_COEFFICIENT = Decimal("67.00")
@@ -116,7 +116,7 @@ class FiscalSnapshot(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # `None` on a foreign azienda (REB-619): RF01..RF19 are FatturaPA values and mean
+    # `None` on a foreign legal entity (REB-619): RF01..RF19 are FatturaPA values and mean
     # nothing abroad. `pack_id` defaults to the Italian pack so every snapshot frozen
     # before the column reached the snapshot still validates, and reads as what it was.
     regime_code: str | None = Field(default=None, max_length=REGIME_CODE_MAX_LENGTH)
@@ -142,7 +142,7 @@ class FiscalSnapshot(BaseModel):
 class FiscalProfileUpsert(BaseModel):
     """One shape for create and update: there is only ever one row, so "create" and
     "update" are the same operation with the same required fields -- the same decision
-    the azienda's own upsert already made.
+    the legal entity's own upsert already made.
 
     `regime_code` carries `max_length` because the column is `String(4)` and the
     service's own `.fullmatch` check is *not* a length check on its own for a value
@@ -158,10 +158,10 @@ class FiscalProfileUpsert(BaseModel):
     @classmethod
     def _pack_defaults(cls, data: Any) -> Any:
         """A key the caller leaves out defaults to the pack's own value, not the
-        forfettario's: `default_vat_nature` «N2.2», the bollo on and the three income
-        parameters are the forfettario's facts, and a profile on another pack saved with
+        flat-rate regime's: `default_vat_nature` «N2.2», the stamp duty on and the three income
+        parameters are the flat-rate regime's facts, and a profile on another pack saved with
         them would be refused («una natura con un'aliquota diversa da zero») or, worse,
-        would have the fiscal estimate compute the forfettario's taxes for an azienda it
+        would have the fiscal estimate compute the flat-rate regime's taxes for a legal entity it
         does not apply to. `non-it` (REB-619) is empty of all of them; `it-standard`
         (REB-760) is the ordinary regime, `RF01` at the standard VAT rate. The rule lives
         here, where the API and MCP deserialise, and not only in the SPA's form."""
@@ -213,7 +213,7 @@ class FiscalProfileUpsert(BaseModel):
     iban: SafeStr | None = Field(default=None, max_length=IBAN_MAX_LENGTH)
     # Nullable in the column, and still defaulted here: a profile saved without them
     # would otherwise leave the fiscal estimate with nothing to compute from, and "the
-    # forfettario's own numbers" is a far better answer than NULL for the only regime
+    # flat-rate regime's own numbers" is a far better answer than NULL for the only regime
     # this project implements. Clearing them is still possible -- an explicit `null`.
     profitability_coefficient: Decimal | None = Field(
         default=DEFAULT_PROFITABILITY_COEFFICIENT,

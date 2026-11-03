@@ -114,11 +114,11 @@ def test_schema_endpoint_matches_describe_entity_exactly(
 def test_deal_lifecycle_including_the_kanban_move(logged_in: TestClient) -> None:
     _seed_pipeline(logged_in)
     stages = logged_in.get("/api/pipeline-stages").json()
-    offer = next(s for s in stages if s["nome"] == "Offerta")
+    offer = next(s for s in stages if s["name"] == "Offerta")
 
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
     deal = logged_in.post(
-        "/api/deals", json={"nome": "Progetto X", "customer_id": customer_id}
+        "/api/deals", json={"name": "Progetto X", "customer_id": customer_id}
     ).json()
 
     moved = logged_in.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": offer["id"]})
@@ -134,7 +134,7 @@ def test_a_deal_carries_the_name_of_its_customer(logged_in: TestClient) -> None:
     _seed_pipeline(logged_in)
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"}).json()["id"]
     created = logged_in.post(
-        "/api/deals", json={"nome": "Progetto X", "customer_id": customer_id}
+        "/api/deals", json={"name": "Progetto X", "customer_id": customer_id}
     ).json()
     assert created["customer_legal_name"] == "ACME Srl"
 
@@ -169,7 +169,7 @@ def test_timeline_endpoint_respects_a_bounded_limit(logged_in: TestClient) -> No
 def test_deleting_a_customer_with_deals_is_409_and_says_how_many(logged_in: TestClient) -> None:
     _seed_pipeline(logged_in)
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
-    logged_in.post("/api/deals", json={"nome": "X", "customer_id": customer_id})
+    logged_in.post("/api/deals", json={"name": "X", "customer_id": customer_id})
 
     response = logged_in.delete(f"/api/customers/{customer_id}")
     assert response.status_code == 409
@@ -189,7 +189,7 @@ def test_list_supports_search_and_pagination(logged_in: TestClient) -> None:
 
 
 def test_a_pat_is_shown_once_and_then_only_by_prefix(logged_in: TestClient) -> None:
-    created = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()
+    created = logged_in.post("/api/tokens", json={"name": "Claude"}).json()
     assert created["token"].startswith("pgc_")
 
     listed = logged_in.get("/api/tokens").json()
@@ -198,7 +198,7 @@ def test_a_pat_is_shown_once_and_then_only_by_prefix(logged_in: TestClient) -> N
 
 
 def test_a_person_can_be_created_without_a_customer(logged_in: TestClient) -> None:
-    response = logged_in.post("/api/people", json={"nome": "Mario"})
+    response = logged_in.post("/api/people", json={"first_name": "Mario"})
     assert response.status_code == 201
     assert response.json()["customer_id"] is None
     assert response.json()["customer_legal_name"] is None
@@ -210,7 +210,7 @@ def test_a_person_carries_the_name_of_the_company_they_belong_to(logged_in: Test
     one customer per row just to print a name."""
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"}).json()["id"]
     person_id = logged_in.post(
-        "/api/people", json={"nome": "Mario", "customer_id": customer_id}
+        "/api/people", json={"first_name": "Mario", "customer_id": customer_id}
     ).json()["id"]
 
     assert logged_in.get(f"/api/people/{person_id}").json()["customer_legal_name"] == "ACME Srl"
@@ -284,11 +284,11 @@ def test_list_people_filters_by_a_custom_query_param(logged_in: TestClient) -> N
             "field_type": "text",
         },
     )
-    logged_in.post("/api/people", json={"nome": "A", "custom_fields": {"seniority": "senior"}})
-    logged_in.post("/api/people", json={"nome": "B", "custom_fields": {"seniority": "junior"}})
+    logged_in.post("/api/people", json={"first_name": "A", "custom_fields": {"seniority": "senior"}})
+    logged_in.post("/api/people", json={"first_name": "B", "custom_fields": {"seniority": "junior"}})
 
     page = logged_in.get("/api/people", params={"custom": "seniority:senior"}).json()
-    assert [p["nome"] for p in page["items"]] == ["A"]
+    assert [p["first_name"] for p in page["items"]] == ["A"]
 
 
 def test_list_deals_filters_by_a_custom_query_param(logged_in: TestClient) -> None:
@@ -300,14 +300,14 @@ def test_list_deals_filters_by_a_custom_query_param(logged_in: TestClient) -> No
     customer_id = logged_in.post("/api/customers", json={"legal_name": "ACME"}).json()["id"]
     created_a = logged_in.post(
         "/api/deals",
-        json={"nome": "A", "customer_id": customer_id, "custom_fields": {"source": "referral"}},
+        json={"name": "A", "customer_id": customer_id, "custom_fields": {"source": "referral"}},
     )
     assert created_a.status_code == 201, created_a.text
     created_b = logged_in.post(
         "/api/deals",
-        json={"nome": "B", "customer_id": customer_id, "custom_fields": {"source": "outbound"}},
+        json={"name": "B", "customer_id": customer_id, "custom_fields": {"source": "outbound"}},
     )
     assert created_b.status_code == 201, created_b.text
 
     page = logged_in.get("/api/deals", params={"custom": "fonte:referral"}).json()
-    assert [d["nome"] for d in page["items"]] == ["A"]
+    assert [d["name"] for d in page["items"]] == ["A"]

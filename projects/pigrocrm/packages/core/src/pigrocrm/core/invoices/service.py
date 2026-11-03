@@ -7,8 +7,8 @@ working on one `InvoiceContext` (one session, one transaction):
 * `emission.InvoiceEmission`: `issue`, `annul`, `mark_transmitted_externally`;
 * `register.RegisterGaps`: the numbers a register will never carry;
 * `importing.InvoiceImporter` and `issued_import.IssuedInvoiceImporter`: reviewing and
-  confirming FatturaPA files, and registering a fattura another system issued;
-* `original_pdf.OriginalPdfResolver`: where an imported fattura's original PDF is;
+  confirming FatturaPA files, and registering an invoice another system issued;
+* `original_pdf.OriginalPdfResolver`: where an imported invoice's original PDF is;
 * `artifacts.InvoiceArtifacts`: the PDF and the FatturaPA file.
 
 The constructor and the public methods are the domain's API for the REST app, the MCP

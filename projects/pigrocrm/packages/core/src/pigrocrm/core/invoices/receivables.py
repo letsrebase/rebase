@@ -36,8 +36,8 @@ def _issued_filter() -> tuple[ColumnElement[bool], ...]:
 
 
 def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's register, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
-    one predicate the dashboard sums below add when the sidebar names an azienda, so
+    """One legal entity's register, or every legal entity's (REB-630, spec 2026-10-03 §1.9): the
+    one predicate the dashboard sums below add when the sidebar names a legal entity, so
     «tutte» stays their unfiltered sum by construction."""
     return () if legal_entity_id is None else (Invoice.legal_entity_id == legal_entity_id,)
 
@@ -83,8 +83,8 @@ BANDS_RECEIVABLES: tuple[str, ...] = (
 
 class BandRow(NamedTuple):
     code: str
-    da: date | None
-    a: date | None
+    date_from: date | None
+    date_to: date | None
     amount: Decimal
     number: int
     # The bucket's share of the largest bucket, in [0, 1], so a page can scale a bar

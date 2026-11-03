@@ -1,7 +1,7 @@
 """The scope is Postgres (REB-633, spec 2026-10-03 §4, §8 «Scope»).
 
-A member scoped to one azienda sees, through every repository and through a raw
-`SELECT`, the rows of that azienda alone; a session with nothing bound sees nothing
+A member scoped to one legal entity sees, through every repository and through a raw
+`SELECT`, the rows of that legal entity alone; a session with nothing bound sees nothing
 on any policied table; an `INSERT` across the line is refused by the policy. All of it
 proven as a role of its own, `pigrocrm_app_test`, which the fixture creates on the
 worker's server: the suite's user is a superuser and a superuser is never subject to a
@@ -97,13 +97,13 @@ POLICIED = {
     "approvals",
     "work_unit_transitions",
     "proposals",
-    "attivita",
+    "tasks",
     "gmail_message_links",
     "email_drafts",
     "gmail_messages",
     "activities",
 }
-# Tables that reach an azienda through a foreign key and carry no policy on purpose
+# Tables that reach a legal entity through a foreign key and carry no policy on purpose
 # (spec §4): the scope's own row, and the registry-side tables that do not live in a
 # space's database at all.
 DECLARED_EXCEPTIONS = {"user_legal_entities"}
@@ -115,7 +115,7 @@ class World(NamedTuple):
     studio: UUID
     foreign: UUID
     user_id: UUID
-    # What azienda «estero» owns, per table, written by hand below.
+    # What legal entity «estero» owns, per table, written by hand below.
     foreign_rows: dict[str, int]
 
 
@@ -142,17 +142,17 @@ def world(db_engine: Engine) -> Iterator[World]:
         inserted = committed_default_legal_entity(session)
         studio = LegalEntityRepository(session).default()
         assert studio is not None
-        foreign = LegalEntity(nome=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB")
+        foreign = LegalEntity(name=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB")
         stage = PipelineStage(
-            nome=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
+            name=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
         )
         user = User(
             email=f"{_PREFIX.lower()}-{uuid7()}@example.test",
             password_hash="x",
-            nome=f"{_PREFIX} operatore",
+            name=f"{_PREFIX} operatore",
             role="collaborator",
         )
-        category = CostCategory(nome=f"{_PREFIX} categoria")
+        category = CostCategory(name=f"{_PREFIX} categoria")
         session.add_all([foreign, stage, user, category])
         session.flush()
 
@@ -166,11 +166,11 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.add(customer)
             session.flush()
             person = Person(
-                nome=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={}
+                first_name=f"{_PREFIX} {tag} contatto", customer_id=customer.id, custom_fields={}
             )
             session.add(person)
             deal = Deal(
-                nome=f"{_PREFIX} {tag} deal",
+                name=f"{_PREFIX} {tag} deal",
                 customer_id=customer.id,
                 legal_entity_id=legal_entity,
                 pipeline_stage_id=stage.id,
@@ -249,7 +249,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 TimeEntry(
                     deal_id=deal.id,
                     user_id=user.id,
-                    data=TODAY,
+                    date=TODAY,
                     hours=Decimal("2.00"),
                     description="Lavorazione",
                     billable=True,
@@ -265,7 +265,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                     deal_id=deal.id,
                     legal_entity_id=legal_entity,
                     category_id=category.id,
-                    data=TODAY,
+                    date=TODAY,
                     amount=Decimal("10.00"),
                     description=f"{_PREFIX} {tag} costo",
                     custom_fields={},
@@ -282,7 +282,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                     occurred_at=datetime.now(UTC),
                 )
             )
-            # The register's own timeline row: no record behind its id, the azienda in
+            # The register's own timeline row: no record behind its id, the legal entity in
             # the payload (`InvoiceService.declare_gaps`), and a gap's reason inside.
             session.add(
                 Activity(
@@ -305,13 +305,13 @@ def world(db_engine: Engine) -> Iterator[World]:
 
         seed(studio.id, "studio", 2)
         seed(foreign.id, "estero", 1)
-        # One shared cost and one space-level timeline row: «tutte»'s alone, and everyone's.
+        # One shared cost and one space-level timeline row: «all»'s alone, and everyone's.
         session.add(
             Cost(
                 deal_id=None,
                 legal_entity_id=None,
                 category_id=category.id,
-                data=TODAY,
+                date=TODAY,
                 amount=Decimal("5.00"),
                 description=f"{_PREFIX} condiviso",
                 custom_fields={},
@@ -360,7 +360,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(delete(Activity).where(Activity.kind == f"{_PREFIX}.test"))
             session.execute(
                 delete(TimeEntry).where(
-                    TimeEntry.deal_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %")))
+                    TimeEntry.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
                 )
             )
             # The notes this file seeded and the ones its tests wrote as the operator, with
@@ -376,20 +376,20 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(
                 delete(Activity).where(
                     Activity.kind.like("note\\_%"),
-                    Activity.entity_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %"))),
+                    Activity.entity_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %"))),
                 )
             )
             session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
-            session.execute(delete(CostCategory).where(CostCategory.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
             session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id.in_(invoices)))
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
             session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             session.execute(delete(Contract).where(Contract.title.like(f"{_PREFIX} %")))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Person).where(Person.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+            session.execute(delete(Person).where(Person.first_name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(User).where(User.nome == f"{_PREFIX} operatore"))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
+            session.execute(delete(User).where(User.name == f"{_PREFIX} operatore"))
             session.execute(delete(LegalEntity).where(LegalEntity.id == ids.foreign))
             remove_legal_entity(session, inserted)
             session.commit()
@@ -423,17 +423,17 @@ def test_every_repository_list_answers_the_scope_s_rows_alone(world: World) -> N
         customers = CustomerRepository(session).list(CustomerListQuery(limit=50))
         assert [c.legal_name for c in customers] == [f"{_PREFIX} estero"]
         deals = DealRepository(session).list(DealListQuery(limit=50))
-        assert [d.nome for d in deals] == [f"{_PREFIX} estero deal"]
+        assert [d.name for d in deals] == [f"{_PREFIX} estero deal"]
         invoices = InvoiceRepository(session).list(InvoiceListQuery(limit=50))
         assert len(invoices) == 1 and invoices[0].legal_entity_id == world.foreign
         documents = DocumentRepository(session).list(DocumentListQuery(limit=50))
         assert [d.title for d in documents] == [f"{_PREFIX} estero offerta"]
         people = PersonRepository(session).list(PersonListQuery(limit=50))
-        assert [p.nome for p in people] == [f"{_PREFIX} estero contatto"]
+        assert [p.first_name for p in people] == [f"{_PREFIX} estero contatto"]
         entries = TimeEntryRepository(session).list(TimeEntryListQuery(limit=50))
         assert len(entries) == 1
         costs = CostRepository(session).list(CostListQuery(limit=50))
-        # The shared cost is «tutte»'s alone (§1.7): not here.
+        # The shared cost is «all»'s alone (§1.7): not here.
         assert [c.description for c in costs] == [f"{_PREFIX} estero costo"]
 
 
@@ -442,12 +442,12 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
     with _scoped(world, world.foreign) as session:
         for table, expected in world.foreign_rows.items():
             assert _count(session, table) == expected, table
-    # Both aziende in scope: everything but what belongs to neither.
+    # Both legal entities in scope: everything but what belongs to neither.
     with _scoped(world, world.studio, world.foreign) as session:
         assert _count(session, "customers") == 2
         assert _count(session, "notes") == 6
         assert _count(session, "invoices") == 3
-        assert _count(session, "costs") == 2  # the shared one is still «tutte»'s alone
+        assert _count(session, "costs") == 2  # the shared one is still «all»'s alone
         assert _count(session, "activities") == 5
 
 
@@ -467,7 +467,7 @@ def test_a_session_with_nothing_bound_sees_nothing(world: World) -> None:
         for table in POLICIED - {"activities"}:
             assert _count(session, table) == 0, table
         # The timeline is the one table whose space-level rows (a user's, a template's)
-        # are everyone's by design (spec §4): the azienda-bound ones are gone.
+        # are everyone's by design (spec §4): the legal entity-bound ones are gone.
         assert _count(session, "activities") == 1
 
 
@@ -481,15 +481,15 @@ def test_to_scoped_member_reads_and_writes_the_notes_of_their_legal_entities_alo
     world: World,
 ) -> None:
     """REB-879: the notes table follows its parent's visibility through `entity_visible`.
-    Through the service a record of the other azienda is simply not there (a note cannot
+    Through the service a record of the other legal entity is simply not there (a note cannot
     be listed, added, edited or deleted on it); through a raw `INSERT` the policy itself
     refuses the line being crossed."""
     with session_factory(world.engine)() as session:
         studio_deal = session.scalars(
-            select(Deal.id).where(Deal.nome == f"{_PREFIX} studio deal")
+            select(Deal.id).where(Deal.name == f"{_PREFIX} studio deal")
         ).one()
         foreign_deal = session.scalars(
-            select(Deal.id).where(Deal.nome == f"{_PREFIX} estero deal")
+            select(Deal.id).where(Deal.name == f"{_PREFIX} estero deal")
         ).one()
         studio_note = session.scalars(
             select(Note.id).where(Note.text == f"{_PREFIX} studio deal")
@@ -505,16 +505,16 @@ def test_to_scoped_member_reads_and_writes_the_notes_of_their_legal_entities_alo
         with pytest.raises(NotFound):
             service.list_for_entity("deal", studio_deal, actor)
         with pytest.raises(NotFound):
-            service.add("deal", studio_deal, NoteCreate(text="fuori ambito"), actor)
+            service.add("deal", studio_deal, NoteCreate(text="out of scope"), actor)
 
-        mine = service.add("deal", foreign_deal, NoteCreate(text="nel mio ambito"), actor)
+        mine = service.add("deal", foreign_deal, NoteCreate(text="in my scope"), actor)
         assert mine.source == "web" and mine.editable is True
         assert service.update(mine.id, NoteUpdate(text="cambiata"), actor).text == "cambiata"
-        assert [r.text for r in service.revisions(mine.id, actor)] == ["nel mio ambito"]
+        assert [r.text for r in service.revisions(mine.id, actor)] == ["in my scope"]
         service.delete(mine.id, actor)
         assert len(service.list_for_entity("deal", foreign_deal, actor)) == 1
 
-        # A note of the other azienda is not there to edit or delete either.
+        # A note of the other legal entity is not there to edit or delete either.
         with pytest.raises(NotFound):
             service.update(studio_note, NoteUpdate(text="no"), actor)
         with pytest.raises(NotFound):
@@ -526,8 +526,8 @@ def test_to_scoped_member_reads_and_writes_the_notes_of_their_legal_entities_alo
         with pytest.raises(DBAPIError) as refused:
             session.execute(
                 text(
-                    "INSERT INTO notes (id, entity_type, entity_id, testo) "
-                    "VALUES (gen_random_uuid(), 'deal', :deal, 'fuori ambito')"
+                    "INSERT INTO notes (id, entity_type, entity_id, text) "
+                    "VALUES (gen_random_uuid(), 'deal', :deal, 'out of scope')"
                 ),
                 {"deal": studio_deal},
             )
@@ -550,10 +550,10 @@ def test_to_scoped_member_reads_and_writes_the_notes_of_their_legal_entities_alo
 
 def test_the_register_s_timeline_rows_follow_their_legal_entity(world: World) -> None:
     """An `invoice_register` row has no record behind its id: the policy reads the
-    azienda from its payload, so a gap's number and reason reach only that azienda's
-    members and «tutte» (the adversarial pass on PR #513 found them everyone's)."""
+    legal entity from its payload, so a gap's number and reason reach only that legal entity's
+    members and «all» (the adversarial pass on PR #513 found them everyone's)."""
     query = text(
-        "SELECT payload->>'motivo' FROM activities WHERE entity_type = 'invoice_register' "
+        "SELECT payload->>'reason' FROM activities WHERE entity_type = 'invoice_register' "
         f"AND kind = '{_PREFIX}.test' ORDER BY 1"
     )
     with _scoped(world, world.studio) as session:
@@ -571,9 +571,9 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
 ) -> None:
     """A payment reminder is prepared on the customer (the draft and the timeline row
     hang there) but copies the invoice's number, total and IBAN. A customer moved to
-    the other azienda keeps its invoices where they were (spec §1.7): the draft and
-    the row stay with the invoice, so the new azienda's members read neither, the old
-    one's cannot open the customer anyway, and «tutte» reads both (CodeRabbit's second
+    the other legal entity keeps its invoices where they were (spec §1.7): the draft and
+    the row stay with the invoice, so the new legal entity's members read neither, the old
+    one's cannot open the customer anyway, and «all» reads both (CodeRabbit's second
     adversarial pass on PR #513)."""
     from pigrocrm.core.gmail.models import (
         EmailDraft,
@@ -698,9 +698,9 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
 def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
     world: World, tmp_path: Path
 ) -> None:
-    """The invoice keeps its azienda when its customer moves (spec §1.7); the PDF and
+    """The invoice keeps its legal entity when its customer moves (spec §1.7); the PDF and
     the XML rendered for it afterwards are the invoice's, not the customer's new
-    azienda's (CodeRabbit's fourth adversarial pass on PR #513)."""
+    legal entity's (CodeRabbit's fourth adversarial pass on PR #513)."""
     from pigrocrm.core.config import Settings
     from pigrocrm.core.invoices.service import InvoiceService
     from pigrocrm.core.storage import LocalFileStorage
@@ -781,8 +781,8 @@ def test_an_imported_original_takes_the_legal_entity_the_caller_names(
     world: World, tmp_path: Path
 ) -> None:
     """`import_bytes` is the one seam imported bytes enter through: an imported
-    invoice's original PDF names the invoice's azienda, so it stays there whatever
-    azienda the customer is in (CodeRabbit's fifth adversarial pass on PR #513)."""
+    invoice's original PDF names the invoice's legal entity, so it stays there whatever
+    legal entity the customer is in (CodeRabbit's fifth adversarial pass on PR #513)."""
     from pigrocrm.core.config import Settings
     from pigrocrm.core.documents.service import DocumentService
     from pigrocrm.core.storage import LocalFileStorage
@@ -826,8 +826,8 @@ def test_an_imported_original_takes_the_legal_entity_the_caller_names(
 
 def test_a_proposal_follows_its_contract_as_well_as_its_document(world: World) -> None:
     """A work-day proposal names a contract and an evidence document; after the customer
-    moved, the document may sit in the new azienda while the contract stayed. Neither
-    azienda alone reads the proposal, both together and «tutte» do (CodeRabbit's sixth
+    moved, the document may sit in the new legal entity while the contract stayed. Neither
+    legal entity alone reads the proposal, both together and «all» do (CodeRabbit's sixth
     adversarial pass on PR #513)."""
     from decimal import Decimal as D
 
@@ -852,7 +852,7 @@ def test_a_proposal_follows_its_contract_as_well_as_its_document(world: World) -
         session.add(proposal)
         session.commit()
         proposal_id = proposal.id
-    query = text(f"SELECT count(*) FROM proposals WHERE estratto = '{_PREFIX} evidenza'")
+    query = text(f"SELECT count(*) FROM proposals WHERE excerpt = '{_PREFIX} evidenza'")
     try:
         with _scoped(world, world.studio) as session:
             assert session.execute(query).scalar_one() == 0
@@ -870,7 +870,7 @@ def test_a_proposal_follows_its_contract_as_well_as_its_document(world: World) -
 
 def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> None:
     """A time entry follows its deal, and may be bound to a line of an invoice in another
-    azienda (an import put it there). The member who sees the deal and not the invoice
+    legal entity (an import put it there). The member who sees the deal and not the invoice
     cannot resolve the line, and the guard that freezes billed hours must read that as
     frozen rather than as free (CodeRabbit's seventh adversarial pass on PR #513)."""
     from decimal import Decimal as D
@@ -913,7 +913,7 @@ def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> No
                 Actor(id=world.user_id, type="user", role="collaborator"),
             )
         # And the backlog does not count those hours as still to invoice, from the
-        # deal's scope (the line is out of sight) as from «tutte» (the line is issued).
+        # deal's scope (the line is out of sight) as from «all» (the line is issued).
         from pigrocrm.core.analytics.repository import AnalyticsRepository
 
         with _scoped(world, world.studio) as session:
@@ -928,9 +928,9 @@ def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> No
             assert hours == D("0.00") and entries == 0
     finally:
         with factory() as session:
-            entry = session.get(TimeEntry, entry_id)
-            assert entry is not None
-            entry.invoice_line_id = None
+            stored_entry = session.get(TimeEntry, entry_id)
+            assert stored_entry is not None
+            stored_entry.invoice_line_id = None
             session.commit()
 
 
@@ -979,16 +979,16 @@ def test_a_non_pdf_version_is_refused_on_an_invoice_s_document_out_of_sight(
             assert refused.value.details["field"] == "content_type"
     finally:
         with factory() as session:
-            invoice = session.get(Invoice, invoice_id)
-            assert invoice is not None
-            invoice.pdf_document_id = None
+            stored_invoice = session.get(Invoice, invoice_id)
+            assert stored_invoice is not None
+            stored_invoice.pdf_document_id = None
             session.commit()
 
 
 def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: World) -> None:
     """The invariant holds past what the archiver or the restorer can see: a customer
-    with an active deal in another azienda cannot be archived by a member of its own,
-    and a deal cannot be restored under a customer archived in an azienda the deal's
+    with an active deal in another legal entity cannot be archived by a member of its own,
+    and a deal cannot be restored under a customer archived in a legal entity the deal's
     member cannot see (CodeRabbit's ninth adversarial pass on PR #513)."""
     from pigrocrm.core.customers.service import CustomerService
     from pigrocrm.core.deals.service import DealService
@@ -1013,7 +1013,7 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
         with _scoped(world, world.studio) as session, pytest.raises(Conflict) as refused:
             CustomerService(session).soft_delete(customer_id, studio_actor)
         # Refused on both deals, said with the one in sight: the other is another
-        # azienda's count.
+        # legal entity's count.
         assert refused.value.details["active_deals"] == 1
         # Archive the deal, then the customer (by hand, as the superuser), and try to
         # restore the deal as a member who cannot see the customer.
@@ -1107,13 +1107,13 @@ def _tables_reaching_an_legal_entity() -> set[str]:
 def test_every_table_that_reaches_an_legal_entity_carries_the_policy(db_engine: Engine) -> None:
     """A table added later without a policy fails the build, the way `test_architecture`
     fails an undeclared import. The polymorphic tables (`activities`, the Gmail links and
-    drafts) reach an azienda through `entity_id`, which is no foreign key: they are in
+    drafts) reach a legal entity through `entity_id`, which is no foreign key: they are in
     0048's list and checked against `pg_policies` below like the others."""
     with db_engine.connect() as connection:
         policied = {
             row[0]
             for row in connection.execute(
-                text("SELECT tablename FROM pg_policies WHERE policyname = 'ambito_azienda'")
+                text("SELECT tablename FROM pg_policies WHERE policyname = 'legal_entity_scope'")
             )
         }
         forced = {
@@ -1127,12 +1127,12 @@ def test_every_table_that_reaches_an_legal_entity_carries_the_policy(db_engine: 
     space_tables = {t.name for t in Base.metadata.tables.values()}
     expected = (_tables_reaching_an_legal_entity() & space_tables) - DECLARED_EXCEPTIONS
     missing = expected - policied
-    assert missing == set(), f"tables reaching an azienda with no policy: {sorted(missing)}"
+    assert missing == set(), f"tables reaching a legal entity with no policy: {sorted(missing)}"
     assert "users" not in policied and "user_legal_entities" not in policied
 
 
-# The tables whose policy reaches an azienda through a parent row, as 0049 lists them: an
-# unscoped session answers «tutte» on the policy's first arm and calls no function.
+# The tables whose policy reaches a legal entity through a parent row, as 0049 lists them: an
+# unscoped session answers «all» on the policy's first arm and calls no function.
 FAST_PATH = {
     "people",
     "time_entries",
@@ -1151,7 +1151,7 @@ FAST_PATH = {
     "work_units",
     "approvals",
     "work_unit_transitions",
-    "attivita",
+    "tasks",
     "gmail_message_links",
     "email_drafts",
     "gmail_messages",
@@ -1171,7 +1171,7 @@ THROUGH_THE_PARENT = (
 
 def test_the_through_the_parent_policies_put_the_all_fast_path_first(db_engine: Engine) -> None:
     """Migration 0049 (REB-656): measured on REB-633's corpus, the dashboard's recent 50
-    cost 15.8 ms as «tutte» against 0.04 ms with no policy, one SQL function call per row
+    cost 15.8 ms as «all» against 0.04 ms with no policy, one SQL function call per row
     before `*` answered. The fast path is the shape of the stored predicate, which the
     template applies from the revision itself; this reads it back, so a template rebuilt
     without 0049 or a later revision that writes the policy afresh fails here by name."""
@@ -1181,7 +1181,7 @@ def test_the_through_the_parent_policies_put_the_all_fast_path_first(db_engine: 
             for row in connection.execute(
                 text(
                     "SELECT tablename, qual, with_check FROM pg_policies "
-                    "WHERE policyname = 'ambito_azienda'"
+                    "WHERE policyname = 'legal_entity_scope'"
                 )
             )
         }
@@ -1193,7 +1193,7 @@ def test_the_through_the_parent_policies_put_the_all_fast_path_first(db_engine: 
         )
     # Postgres deparses the arm as written, minus the parentheses around a lone call and
     # with a `CASE` on a line of its own, so the prefix is read on the tokens.
-    fast = "(scope_tutte()OR"
+    fast = "(scope_all()OR"
     for table in FAST_PATH:
         using, check = policies[table]
         assert "".join(using.split()).startswith(fast), f"{table}: {using[:60]}"
@@ -1202,12 +1202,12 @@ def test_the_through_the_parent_policies_put_the_all_fast_path_first(db_engine: 
     for table in POLICIED - FAST_PATH:
         assert not "".join(policies[table][0].split()).startswith(fast), table
     assert set(bodies) == set(THROUGH_THE_PARENT)
-    spelled_out = "current_setting('pigrocrm.aziende', true) = '*' OR "
+    spelled_out = "current_setting('pigrocrm.legal_entities', true) = '*' OR "
     for name, body in bodies.items():
         if name == "entity_visible":
             # Inside each branch, so an unknown type still answers the third argument.
             assert body.lstrip().startswith("SELECT CASE $1"), body.strip()[:70]
             assert f"THEN {spelled_out}EXISTS (" in body and "ELSE $3" in body
-            assert "scope_tutte() OR" not in body
+            assert "scope_all() OR" not in body
         else:
             assert body.lstrip().startswith(f"SELECT {spelled_out}"), f"{name}: {body[:70]}"

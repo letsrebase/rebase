@@ -123,7 +123,7 @@ def test_a_thousand_irrelevant_messages_and_two_known_addresses(db_session: Sess
     account = connected_account(db_session)
     customer = _customer(db_session, "info@acme.it")
     db_session.add(
-        Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     )
     db_session.flush()
 
@@ -153,7 +153,7 @@ def test_no_messages_list_is_ever_issued_without_an_address_filter(db_session: S
     account = connected_account(db_session)
     customer = _customer(db_session, "info@acme.it")
     db_session.add(
-        Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     )
     db_session.flush()
     known = set(AddressRoster(db_session).known_addresses())
@@ -668,7 +668,7 @@ def test_syncing_without_a_connected_mailbox_is_a_refusal_not_a_silent_success(
 ) -> None:
     user = User(
         email=f"solo-{uuid4().hex[:8]}@example.it",
-        nome="Solo",
+        name="Solo",
         password_hash="x",
         role="admin",
         active=True,

@@ -1,10 +1,10 @@
-"""The azienda on customers, deals, contracts, documents and costs (REB-623, spec
+"""The legal entity on customers, deals, contracts, documents and costs (REB-623, spec
 2026-10-03 §1.6, §1.7, §8 «Chain»).
 
-A new customer gets the azienda its nation proposes; a deal, a contract, a document and
+A new customer gets the legal entity its nation proposes; a deal, a contract, a document and
 an invoice take their parent's at creation and keep it; a cost takes its deal's or is
-shared; every list and the search narrow to one azienda, and the sum over aziende is the
-unfiltered list. The second azienda is written by row, since no route creates one before
+shared; every list and the search narrow to one legal entity, and the sum over legal entities is the
+unfiltered list. The second legal entity is written by row, since no route creates one before
 milestone 5 (§9).
 """
 
@@ -56,11 +56,11 @@ def _default(session: Session) -> LegalEntity:
 
 
 def _legal_entity(
-    session: Session, nome: str, country: str = "IT", **overrides: object
+    session: Session, name: str, country: str = "IT", **overrides: object
 ) -> LegalEntity:
     values: dict[str, object] = {
-        "nome": nome,
-        "legal_name": f"{nome.title()} S.r.l.",
+        "name": name,
+        "legal_name": f"{name.title()} S.r.l.",
         "country": country,
         "address": "Via Po 1",
         "cap": "10100",
@@ -74,8 +74,8 @@ def _legal_entity(
     return row
 
 
-def _customer(session: Session, nome: str = "Acme", **overrides: object) -> UUID:
-    values: dict[str, object] = {"legal_name": f"{nome} S.r.l.", "country": "IT"}
+def _customer(session: Session, name: str = "Acme", **overrides: object) -> UUID:
+    values: dict[str, object] = {"legal_name": f"{name} S.r.l.", "country": "IT"}
     values.update(overrides)
     return CustomerService(session).create(CustomerCreate(**values), ADMIN).id  # type: ignore[arg-type]
 
@@ -122,7 +122,7 @@ def test_to_foreign_customer_gets_the_one_foreign_legal_entity_when_its_nation_h
 def test_the_nation_never_decides_between_two_legal_entities_that_share_it(
     db_session: Session,
 ) -> None:
-    """Two Italian aziende: an Italian customer gets the default, the person picks. Two
+    """Two Italian legal entities: an Italian customer gets the default, the person picks. Two
     foreign ones and a customer of a third country: the default again."""
     default = _default(db_session)
     _legal_entity(db_session, "rebase")
@@ -173,7 +173,7 @@ def test_moving_a_customer_leaves_its_deals_documents_and_invoices_behind(
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     customer_id = _customer(db_session)
     deal = DealService(db_session).create(
-        DealCreate(nome="Primo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Primo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     contract_id = _contract(db_session, customer_id)
@@ -204,7 +204,7 @@ def test_moving_a_customer_leaves_its_deals_documents_and_invoices_behind(
     assert invoices.get(before.id, ADMIN).legal_entity_id == default.id
 
     after_deal = DealService(db_session).create(
-        DealCreate(nome="Secondo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Secondo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     after_invoice = invoices.create(
@@ -215,7 +215,7 @@ def test_moving_a_customer_leaves_its_deals_documents_and_invoices_behind(
         ADMIN,
     )
     assert (after_deal.legal_entity_id, after_invoice.legal_entity_id) == (second.id, second.id)
-    # An invoice born from a deal takes the deal's azienda, not the customer's of today.
+    # An invoice born from a deal takes the deal's legal entity, not the customer's of today.
     from_old_deal = invoices.create(
         InvoiceCreate(
             customer_id=customer_id,
@@ -242,7 +242,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
     second = _legal_entity(db_session, "rebase")
     customer_id = _customer(db_session, legal_entity_id=second.id)
     deal = DealService(db_session).create(
-        DealCreate(nome="Rebase", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Rebase", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     costs = CostService(db_session)
@@ -250,7 +250,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
         CostCreate(
             deal_id=deal.id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("10.00"),
             description="Treno",
         ),
@@ -260,7 +260,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
     shared = costs.create(
         CostCreate(
             category_id=seeded_category_id,
-            data=date(2026, 3, 2),
+            date=date(2026, 3, 2),
             amount=Decimal("20.00"),
             description="Software",
         ),
@@ -270,7 +270,7 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
     own = costs.create(
         CostCreate(
             category_id=seeded_category_id,
-            data=date(2026, 3, 3),
+            date=date(2026, 3, 3),
             amount=Decimal("30.00"),
             description="Licenza",
             legal_entity_id=default.id,
@@ -284,14 +284,14 @@ def test_to_cost_takes_its_deals_legal_entity_and_to_shared_one_has_none(
                 deal_id=deal.id,
                 legal_entity_id=default.id,
                 category_id=seeded_category_id,
-                data=date(2026, 3, 4),
+                date=date(2026, 3, 4),
                 amount=Decimal("1.00"),
                 description="Sbagliato",
             ),
             ADMIN,
         )
     assert refused.value.details["field"] == "legal_entity_id"
-    # Off the deal, the cost is shared unless an azienda is named; onto it, the deal's.
+    # Off the deal, the cost is shared unless a legal entity is named; onto it, the deal's.
     assert costs.update(on_deal.id, CostUpdate(deal_id=None), ADMIN).legal_entity_id is None
     assert costs.update(on_deal.id, CostUpdate(deal_id=deal.id), ADMIN).legal_entity_id == second.id
     assert (
@@ -324,11 +324,11 @@ def test_every_list_narrows_to_one_legal_entity_and_the_sum_is_the_whole(
     beta = _customer(db_session, "Beta", legal_entity_id=second.id)
     deals = DealService(db_session)
     deal_a = deals.create(
-        DealCreate(nome="Acme deal", customer_id=acme, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Acme deal", customer_id=acme, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     deal_b = deals.create(
-        DealCreate(nome="Beta deal", customer_id=beta, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Beta deal", customer_id=beta, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     _contract(db_session, acme)
@@ -345,8 +345,8 @@ def test_every_list_narrows_to_one_legal_entity_and_the_sum_is_the_whole(
             ),
             ADMIN,
         )
-    time_entry_factory(data=date(2026, 3, 2), deal_id=deal_a.id)
-    time_entry_factory(data=date(2026, 3, 3), deal_id=deal_b.id)
+    time_entry_factory(date=date(2026, 3, 2), deal_id=deal_a.id)
+    time_entry_factory(date=date(2026, 3, 3), deal_id=deal_b.id)
 
     def ids(items: list) -> set[UUID]:  # type: ignore[type-arg]
         return {item.id for item in items}
@@ -371,26 +371,24 @@ def test_every_list_narrows_to_one_legal_entity_and_the_sum_is_the_whole(
         assert on_default | on_second == everything, type(service).__name__
         assert ids(service.list(query(uuid4()), ADMIN).items) == set()
 
-    # The calendar's hours follow the deal's azienda.
+    # The calendar's hours follow the deal's legal entity.
     calendar = CalendarService(db_session)
     whole = calendar.month("2026-03", ADMIN, user_id=None)
     only_second = calendar.month("2026-03", ADMIN, user_id=None, legal_entity_id=second.id)
     assert len(whole.days) >= 2
     assert [g.day for g in only_second.days if g.hours] == [date(2026, 3, 3)]
 
-    # And the search: Beta is the second azienda's, Acme is not.
+    # And the search: Beta is the second legal entity's, Acme is not.
     search = SearchService(db_session)
-    everyone = search.search_everything(SearchQuery(deadline="brief"), ADMIN)
-    narrowed = search.search_everything(
-        SearchQuery(deadline="brief", legal_entity_id=second.id), ADMIN
-    )
+    everyone = search.search_everything(SearchQuery(term="brief"), ADMIN)
+    narrowed = search.search_everything(SearchQuery(term="brief", legal_entity_id=second.id), ADMIN)
     documents_group = next(g for g in narrowed.groups if g.entity == "document")
     assert [h.label for h in documents_group.hits] == ["Beta brief"]
     assert next(g for g in everyone.groups if g.entity == "document").total == 2
     customers_group = next(
         g
         for g in search.search_everything(
-            SearchQuery(deadline="Acme", legal_entity_id=second.id), ADMIN
+            SearchQuery(term="Acme", legal_entity_id=second.id), ADMIN
         ).groups
         if g.entity == "customer"
     )
@@ -403,20 +401,20 @@ def test_to_space_with_one_legal_entity_sees_nothing_change(
     default = _default(db_session)
     customer = CustomerService(db_session).create(CustomerCreate(legal_name="Solo"), ADMIN)
     deal = DealService(db_session).create(
-        DealCreate(nome="Solo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Solo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     assert customer.legal_entity_id == deal.legal_entity_id == default.id
     assert LegalEntityService(db_session).propose("DE").id == default.id
 
 
-# --- a deactivated azienda --------------------------------------------------------
+# --- a deactivated legal entity --------------------------------------------------------
 
 
 def test_nothing_new_is_born_under_to_customer_of_to_deactivated_legal_entity(
     db_session: Session, local_storage: LocalFileStorage, seeded_open_stage_id: UUID
 ) -> None:
-    """Spec §3: the history of a closed azienda stays readable, a deal, a contract, a
+    """Spec §3: the history of a closed legal entity stays readable, a deal, a contract, a
     document or a proforma under one of its customers is refused in words."""
     second = _legal_entity(db_session, "rebase")
     customer_id = _customer(db_session, legal_entity_id=second.id)
@@ -425,7 +423,7 @@ def test_nothing_new_is_born_under_to_customer_of_to_deactivated_legal_entity(
     with pytest.raises(ValidationFailed) as deal:
         DealService(db_session).create(
             DealCreate(
-                nome="Dopo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
+                name="Dopo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
             ),
             ADMIN,
         )
@@ -445,7 +443,7 @@ def test_nothing_new_is_born_under_to_customer_of_to_deactivated_legal_entity(
             ),
             ADMIN,
         )
-    # Moved to an active azienda, the same customer works again.
+    # Moved to an active legal entity, the same customer works again.
     CustomerService(db_session).update(
         customer_id, CustomerUpdate(legal_entity_id=_default(db_session).id), ADMIN
     )
@@ -453,7 +451,7 @@ def test_nothing_new_is_born_under_to_customer_of_to_deactivated_legal_entity(
         DealService(db_session)
         .create(
             DealCreate(
-                nome="Dopo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
+                name="Dopo", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
             ),
             ADMIN,
         )
@@ -469,7 +467,7 @@ def test_a_cost_of_an_archived_deal_can_still_be_edited(
     against may be archived since: a domain answer, never an assertion."""
     customer_id = _customer(db_session)
     deal = DealService(db_session).create(
-        DealCreate(nome="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     costs = CostService(db_session)
@@ -477,7 +475,7 @@ def test_a_cost_of_an_archived_deal_can_still_be_edited(
         CostCreate(
             deal_id=deal.id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("10.00"),
             description="Treno",
         ),
@@ -495,14 +493,14 @@ def test_a_cost_of_an_archived_deal_can_still_be_edited(
 def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_old_one_stays(
     db_session: Session, seeded_category_id: UUID
 ) -> None:
-    """Spec §3 for the one record that names its azienda directly: nothing new is filed
-    under a closed azienda, but a cost already there can still be edited in place."""
+    """Spec §3 for the one record that names its legal entity directly: nothing new is filed
+    under a closed legal entity, but a cost already there can still be edited in place."""
     closed = _legal_entity(db_session, "rebase")
     costs = CostService(db_session)
     old = costs.create(
         CostCreate(
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("10.00"),
             description="Licenza",
             legal_entity_id=closed.id,
@@ -515,7 +513,7 @@ def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_ol
         costs.create(
             CostCreate(
                 category_id=seeded_category_id,
-                data=date(2026, 3, 2),
+                date=date(2026, 3, 2),
                 amount=Decimal("5.00"),
                 description="Dopo",
                 legal_entity_id=closed.id,
@@ -530,7 +528,7 @@ def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_ol
     # `deal_id: null` echoed on a cost that never had a deal is no move: it keeps A.
     echoed = costs.update(old.id, CostUpdate(deal_id=None, description="Licenza"), ADMIN)
     assert echoed.legal_entity_id == closed.id
-    # Off the closed azienda, onto an active one or to shared, is a move and allowed.
+    # Off the closed legal entity, onto an active one or to shared, is a move and allowed.
     moved = costs.update(old.id, CostUpdate(legal_entity_id=_default(db_session).id), ADMIN)
     assert moved.legal_entity_id == _default(db_session).id
     assert costs.update(old.id, CostUpdate(legal_entity_id=None), ADMIN).legal_entity_id is None
@@ -539,12 +537,12 @@ def test_to_new_general_cost_is_refused_on_to_deactivated_legal_entity_and_an_ol
 def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an_old_one_stays(
     db_session: Session, seeded_open_stage_id: UUID, seeded_category_id: UUID
 ) -> None:
-    """The deal's azienda may close after the deal: a cost already on it is edited in
+    """The deal's legal entity may close after the deal: a cost already on it is edited in
     place, a new one is refused like a deal or a document would be."""
     closed = _legal_entity(db_session, "rebase")
     customer_id = _customer(db_session, legal_entity_id=closed.id)
     deal = DealService(db_session).create(
-        DealCreate(nome="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
+        DealCreate(name="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
         ADMIN,
     )
     costs = CostService(db_session)
@@ -552,7 +550,7 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
         CostCreate(
             deal_id=deal.id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("10.00"),
             description="Treno",
         ),
@@ -565,7 +563,7 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
             CostCreate(
                 deal_id=deal.id,
                 category_id=seeded_category_id,
-                data=date(2026, 3, 2),
+                date=date(2026, 3, 2),
                 amount=Decimal("5.00"),
                 description="Dopo",
             ),
@@ -581,10 +579,10 @@ def test_to_new_cost_on_to_deal_of_to_deactivated_legal_entity_is_refused_and_an
     # The same deal sent back, as a client echoing the row does, is no move either.
     echoed = costs.update(old.id, CostUpdate(deal_id=deal.id, legal_entity_id=closed.id), ADMIN)
     assert (echoed.deal_id, echoed.legal_entity_id) == (deal.id, closed.id)
-    # A move onto another deal of the closed azienda is a new assignment, and refused.
-    # Built by row: the customer is on the closed azienda, so the service would refuse.
+    # A move onto another deal of the closed legal entity is a new assignment, and refused.
+    # Built by row: the customer is on the closed legal entity, so the service would refuse.
     sibling = Deal(
-        nome="Fratello",
+        name="Fratello",
         customer_id=customer_id,
         pipeline_stage_id=seeded_open_stage_id,
         legal_entity_id=closed.id,

@@ -41,7 +41,7 @@ def _record(client: TestClient, contract_id: str, day: str, **extra: Any) -> dic
         "/api/work-units",
         json={
             "contract_id": contract_id,
-            "data": day,
+            "date": day,
             "quantity": "0.50",
             "description": "Revisione architettura",
             "status": "worked",
@@ -91,7 +91,7 @@ def test_a_second_day_on_the_same_date_is_a_409(logged_in: TestClient) -> None:
         "/api/work-units",
         json={
             "contract_id": contract_id,
-            "data": "2026-03-02",
+            "date": "2026-03-02",
             "quantity": "1.00",
             "description": "Altro",
             "status": "worked",
@@ -155,15 +155,15 @@ def test_a_day_is_moved_and_the_page_shows_both_moves_with_their_dates(
 
     body = contested.json()
     assert body["status"] == "disputed"
-    moves = [(t["previous_status"], t["new_status"], t["reason"]) for t in body["transizioni"]]
+    moves = [(t["previous_status"], t["new_status"], t["reason"]) for t in body["transitions"]]
     assert moves == [
         (None, "proposed", "creazione"),
         ("proposed", "approved", "Approvazione registrata"),
         ("approved", "worked", "Fatta"),
         ("worked", "disputed", "Il cliente contesta le ore"),
     ]
-    assert all(t["created_at"] for t in body["transizioni"])
-    assert body["transizioni"][-1]["actor"]["kind"] == "human"
+    assert all(t["created_at"] for t in body["transitions"])
+    assert body["transitions"][-1]["actor"]["kind"] == "human"
     assert body["actions"] == ["worked", "revoked", "non_billable"]
 
 
@@ -205,7 +205,7 @@ def test_a_day_is_recorded_proposed_or_worked_and_never_approved_or_with_an_appr
     contract_id = _contract(logged_in)
     base = {
         "contract_id": contract_id,
-        "data": "2026-03-02",
+        "date": "2026-03-02",
         "quantity": "1.00",
         "description": "Giornata",
     }
@@ -240,10 +240,10 @@ def test_the_window_lists_every_contracts_days_between_two_dates(logged_in: Test
     _record(logged_in, second, "2026-03-03")
     _record(logged_in, second, "2026-04-03")
 
-    response = logged_in.get("/api/work-units", params={"da": "2026-03-01", "a": "2026-03-31"})
+    response = logged_in.get("/api/work-units", params={"from": "2026-03-01", "to": "2026-03-31"})
 
     assert response.status_code == 200, response.text
-    assert sorted(row["data"] for row in response.json()["items"]) == ["2026-03-02", "2026-03-03"]
+    assert sorted(row["date"] for row in response.json()["items"]) == ["2026-03-02", "2026-03-03"]
 
 
 def test_an_unknown_day_is_a_404(logged_in: TestClient) -> None:
@@ -271,7 +271,7 @@ def _agent_client(admin_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> 
     """A personal access token on an installation that has not opted in, the credential
     an agent is handed (`test_drive_api.py::_agent_client` says why the switch is forced
     off at the one name that reads it)."""
-    raw = admin_client.post("/api/tokens", json={"nome": "Claude"})
+    raw = admin_client.post("/api/tokens", json={"name": "Claude"})
     assert raw.status_code == 201, raw.text
     monkeypatch.setattr(
         "pigrocrm.core.auth.pat_service.get_settings",
@@ -293,7 +293,7 @@ def test_an_agent_token_cannot_record_or_move_a_day(
         "/api/work-units",
         json={
             "contract_id": contract_id,
-            "data": "2026-03-03",
+            "date": "2026-03-03",
             "quantity": "1.00",
             "description": "Giornata",
             "status": "worked",
@@ -428,7 +428,7 @@ def test_an_agent_token_cannot_record_an_approval(
 def _request_body(*dates: str, to: str = "amministrazione@acme.example") -> dict[str, Any]:
     return {
         "days": [
-            {"data": day, "quantity": "1.00", "description": "Workshop con il cliente"}
+            {"date": day, "quantity": "1.00", "description": "Workshop con il cliente"}
             for day in dates
         ],
         "to_addresses": [to],
@@ -470,7 +470,7 @@ def test_preparing_a_request_proposes_the_days_and_files_the_draft_without_sendi
     assert body["draft"]["send_state"] == "draft"
     assert body["draft"]["to_addresses"] == ["amministrazione@acme.example"]
     days = logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"]
-    assert sorted(day["data"] for day in days) == ["2026-11-02", "2026-11-03", "2026-11-04"]
+    assert sorted(day["date"] for day in days) == ["2026-11-02", "2026-11-03", "2026-11-04"]
 
 
 def test_a_request_for_a_date_already_held_is_a_409_and_records_nothing(
@@ -486,7 +486,7 @@ def test_a_request_for_a_date_already_held_is_a_409_and_records_nothing(
 
     assert response.status_code == 409, response.text
     days = logged_in.get("/api/work-units", params={"contract_id": contract_id}).json()["items"]
-    assert [day["data"] for day in days] == ["2026-11-03"]
+    assert [day["date"] for day in days] == ["2026-11-03"]
 
 
 def test_a_request_with_no_recipient_is_a_422(logged_in: TestClient) -> None:

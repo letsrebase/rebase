@@ -1,6 +1,6 @@
 """The application role the boot creates (REB-634, spec 2026-10-03 §4 «The role»).
 
-The boundary itself is `test_azienda_scope.py`, which connects as this role. This file
+The boundary itself is `test_legal_entity_scope.py`, which connects as this role. This file
 is about the helper: what one URL means, what two mean, and that the grants reach a
 table created after the role was granted, which is what every later migration is.
 """
@@ -119,15 +119,13 @@ def test_the_application_role_runs_the_definer_helpers_but_cannot_move_the_schem
     try:
         with app.begin() as connection:
             assert (
-                connection.execute(
-                    text("SELECT cliente_archiviato(gen_random_uuid())")
-                ).scalar_one()
+                connection.execute(text("SELECT customer_archived(gen_random_uuid())")).scalar_one()
                 is None
             )
             with pytest.raises(DBAPIError):
                 connection.execute(text("UPDATE alembic_version SET version_num = version_num"))
         with outside.connect() as connection, pytest.raises(DBAPIError):
-            connection.execute(text("SELECT cliente_archiviato(gen_random_uuid())"))
+            connection.execute(text("SELECT customer_archived(gen_random_uuid())"))
     finally:
         app.dispose()
         outside.dispose()

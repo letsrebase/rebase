@@ -137,7 +137,7 @@ async def test_a_cap_on_the_customers_share_is_set_read_and_simulated(
             },
         )
         assert simulated.structured_content["thresholds"] == []
-        assert simulated.structured_content["contract_cap"]["rientra"] is False
+        assert simulated.structured_content["contract_cap"]["falls_within"] is False
 
 
 async def test_a_note_on_the_renewal_clause_is_read_back_with_get_contract(

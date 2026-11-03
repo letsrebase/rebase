@@ -30,7 +30,7 @@ class UserRepository:
         return self.session.execute(stmt).scalar_one_or_none()
 
     def first_active_admin(self) -> User | None:
-        """The installation's titolare when nothing else names one: the admin created
+        """The installation's owner when nothing else names one: the admin created
         first among those still active. The root installation has no registry row and so
         no `owner_email`, and this is who stands in for it (REB-263). `id` breaks the tie
         between two admins created in the same transaction, so the answer never depends

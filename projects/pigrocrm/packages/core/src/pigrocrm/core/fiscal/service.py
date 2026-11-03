@@ -19,8 +19,8 @@ from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
-# The first half of the advisory lock every save takes per azienda (REB-622), the second
-# being the azienda id hashed: a profile not saved yet has no row to lock, and two first
+# The first half of the advisory lock every save takes per legal entity (REB-622), the second
+# being the legal entity id hashed: a profile not saved yet has no row to lock, and two first
 # saves would otherwise both read «no row»; two versioned ones would both pass the
 # comparison and the loser would meet the unique key as a generic `conflict` instead of
 # the `stale_row` the panel knows how to recover from, and a versionless one (the MCP
@@ -35,8 +35,8 @@ class FiscalProfileService:
         self.legal_entities = LegalEntityService(session)
         self.activities = ActivityService(session)
 
-    # Every read takes an optional `legal_entity_id`; `None` is the default azienda, which
-    # on a space with one azienda is the only one, so every caller written for the
+    # Every read takes an optional `legal_entity_id`; `None` is the default legal entity, which
+    # on a space with one legal entity is the only one, so every caller written for the
     # single profile keeps working unchanged (REB-615, spec 2026-10-03 §1.2).
 
     def get(self, actor: Actor, legal_entity_id: UUID | None = None) -> FiscalProfileRead:
@@ -74,7 +74,7 @@ class FiscalProfileService:
     def upsert(
         self, data: FiscalProfileUpsert, actor: Actor, legal_entity_id: UUID | None = None
     ) -> FiscalProfileRead:
-        """Create-or-update the one row of an azienda, admin only.
+        """Create-or-update the one row of a legal entity, admin only.
 
         `repo.add` sits **inside** the `try`, not before it: it is the only statement
         that can violate the unique key on `legal_entity_id`, and leaving it outside would
@@ -95,7 +95,7 @@ class FiscalProfileService:
         legal_entity = self.legal_entities.resolve(legal_entity_id)
 
         # Before the read and on every save, versioned or not, so two saves on one
-        # azienda run one after the other and the second reads what the first
+        # legal entity run one after the other and the second reads what the first
         # committed: a versioned one finding a row where it expected none (`null` sent)
         # is `stale_row`, never the unique key's `conflict`, and a versionless one
         # finding the row updates it instead of racing it to the insert. Then the row's
@@ -135,8 +135,8 @@ class FiscalProfileService:
     def check(payload: dict[str, Any]) -> None:
         """Every refusal a profile body can earn, on the dumped payload, before any row
         is touched. Public since REB-630: `LegalEntityService.create` runs it on the
-        profile a new azienda is born with, so a bad profile refuses the whole request
-        rather than leaving an azienda `issue` could never use."""
+        profile a new legal entity is born with, so a bad profile refuses the whole request
+        rather than leaving a legal entity `issue` could never use."""
         # `resolve_regime` does the regime checks: the pack decides whether a code is
         # required (the Italian packs) or forbidden (`non-it`, REB-619), then the
         # `RF01`-`RF19` shape, with `.fullmatch` so "RF19\n" cannot reach the String(4)
@@ -172,9 +172,9 @@ class FiscalProfileService:
                 else "una natura, per esempio N2.2",
             )
         if pack_id != PACK_IT_FLAT_RATE:
-            # What only the forfettario carries (REB-619, REB-760): the bollo is owed on
-            # an untaxed base and the three income parameters are the forfettario's
-            # arithmetic, which the fiscal estimate would otherwise compute for an azienda
+            # What only the flat-rate regime carries (REB-619, REB-760): the stamp duty is owed on
+            # an untaxed base and the three income parameters are the flat-rate regime's
+            # arithmetic, which the fiscal estimate would otherwise compute for a legal entity
             # it does not apply to. `FiscalProfileUpsert` defaults them off for these
             # packs; an explicit value is refused, not silently dropped.
             whose = "un'azienda estera" if abroad else "il regime ordinario"

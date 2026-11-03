@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 KIND_STAGE_MOVED = "automation.stage_moved"
 KIND_NOT_EXECUTED = "automation.not_executed"
 KIND_CONFIG_CHANGED = "automation.config_changed"
-# One timeline entry per attivita the daily pass opens, on the attivita itself (REB-727).
+# One timeline entry per task the daily pass opens, on the task itself (REB-727).
 KIND_TASK_OPENED = "automation.task_opened"
 AUTOMATION_KINDS: tuple[str, ...] = (
     KIND_STAGE_MOVED,
@@ -28,7 +28,7 @@ AUTOMATION_KINDS: tuple[str, ...] = (
     KIND_TASK_OPENED,
 )
 
-# A1 and A2 move a deal when an offer changes state; the other three open an attivita from
+# A1 and A2 move a deal when an offer changes state; the other three open an task from
 # the daily pass and are named by the `tasks.rule` they write (slice 7 §6).
 AutomationRule = Literal["A1", "A2"]
 TaskRule = Literal["sent_offer_follow_up", "stalled_deal", "overdue_invoice"]
@@ -38,9 +38,9 @@ TASK_RULES: tuple[TaskRule, ...] = (
     "overdue_invoice",
 )
 AutomationRuleCode = AutomationRule | TaskRule
-# The rule whose cause a reminder already raises (`invoice_overdue`): the attivita reminders
+# The rule whose cause a reminder already raises (`invoice_overdue`): the task reminders
 # skip what it opened, so one late invoice is not announced twice. See `daily.py`.
-RULE_COPERTA_FROM_REMINDER: TaskRule = "overdue_invoice"
+RULE_COVERED_BY_REMINDER: TaskRule = "overdue_invoice"
 
 # The four declared conditions the runner absorbs. Anything not in this list propagates
 # and rolls the trigger back (§9.3): a database that cannot write is not an automation
@@ -116,14 +116,14 @@ RULE_DESCRIPTIONS: dict[AutomationRuleCode, tuple[str, str]] = {
     "A1": (
         "Offerta accettata → deal vinto",
         "Quando un'offerta passa da «inviata» ad «accettata», il deal collegato viene "
-        "spostato nello stato con code «vinto», o nell'unico stato di tipo «won». Se lo "
+        "spostato nello stato con codice «won», o nell'unico stato di tipo «won». Se lo "
         "stato manca o ce ne sono due, l'automazione non indovina: non fa nulla e "
         "registra il motivo.",
     ),
     "A2": (
         "Offerta inviata → il deal avanza",
         "Quando un'offerta passa da «bozza» a «inviata», il deal collegato avanza allo "
-        "stato con code «offerta», ma solo se la sua posizione attuale è precedente. Non "
+        "stato con codice «offer», ma solo se la sua posizione attuale è precedente. Non "
         "torna mai indietro: un deal già in negoziazione non retrocede perché è stata "
         "mandata una seconda offerta.",
     ),

@@ -58,7 +58,7 @@ class ParsedInvoiceParty(BaseModel):
     `vat_number`/`tax_code` are two first-class, independently optional
     fields rather than mastro's single `taxId` (which changes shape depending on
     which identifier the source document happened to carry): PigroCRM already
-    treats both as first-class columns on a customer and on an azienda, so there is
+    treats both as first-class columns on a customer and on a legal entity, so there is
     no "whichever one" concept to port here. `vat_number` carries `IdPaese` +
     `IdCodice` concatenated (e.g. `"IT01234567890"`) exactly as mastro's
     `fiscalIdString` does, since a later direction-detection step needs the
@@ -218,5 +218,5 @@ class ParsedInvoice(BaseModel):
     total: Decimal
     stamp_duty: Decimal | None = None
     social_security_pension_fund: list[ParsedInvoiceSocialCharge]
-    termini_payment: list[ParsedInvoicePaymentTerms]
+    payment_terms: list[ParsedInvoicePaymentTerms]
     transmission: ParsedInvoiceTransmission

@@ -71,7 +71,7 @@ class ContractService:
         if customer is None:
             raise NotFound("customer", payload["customer_id"])
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
-        # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
+        # The customer's legal entity at this moment, kept from now on (REB-623, spec §1.7);
         # refused when deactivated.
         payload["legal_entity_id"] = self.legal_entity.inherited(customer.legal_entity_id, ENTITY)
 
@@ -148,7 +148,7 @@ class ContractService:
             raise ValidationFailed(
                 ENTITY,
                 "end",
-                "non può precedere inizio",
+                "non può precedere start",
                 expected=f">= {merged['start'].isoformat()}",
             )
         if data.custom_fields is not None:

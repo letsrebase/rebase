@@ -13,7 +13,7 @@ The layout is the one of the register this product inherited (ORB-102). Ivan's i
 invoices are the previous system's own PDFs, kept through `import_issued`, and a
 document rendered here sits next to them in the same list: a full emitter block top
 right, a `TD01 fattura | Numero | Data` line, the customer on two bar-separated lines,
-a three-column detail table with the Natura where there is no rate, the payment code
+a three-column detail table with the VAT nature where there is no rate, the payment code
 with its words, a rule, a «Thank you!» with the contacts, `1.760,00 €` and `dd-mm-yyyy`.
 Where this file departs from that layout it says so at the value that departs.
 """
@@ -30,6 +30,7 @@ from pigrocrm.core.legal_entities.assets import logo_file_in
 from pigrocrm.core.money import round_money
 from pigrocrm.core.render.pdf import ASSETS_DIR, logo_flags, render_pdf
 from pigrocrm.core.templates.renderer import render_template
+from pigrocrm.core.templates.scope import CUSTOMER_KEYS, LEGAL_ENTITY_KEYS, TAX_KEYS, italian_keys
 
 # One template for the fattura and the proforma, with the declaration under a
 # condition: two files that were meant to stay identical drifted once (ORB-102), and a
@@ -77,7 +78,7 @@ Regimes: dict[str, str] = {
 # The word after the `TipoDocumento` code on the first line (`TD01 fattura`). The
 # product issues `TD01` and nothing else today (`invoices/models.py`); a code this table
 # does not know prints alone rather than as "fattura" by default.
-TIPI_DOCUMENT: dict[str, str] = {"TD01": "invoice"}
+TIPI_DOCUMENT: dict[str, str] = {"TD01": "fattura"}
 
 # The words for FPR12's `ModalitaPagamentoType`, for the DETTAGLI column
 # (`MP05` in the first column, `Bonifico IBAN IT…` in the second). Same fallback rule.
@@ -134,9 +135,9 @@ def format_data(value: date) -> str:
 
 
 def format_vat(rate: Decimal, vat_nature: str | None) -> str:
-    """What the %IVA column shows for a line: the Natura when the line carries one
-    (`N2.2` on a forfettario line, the way the register always printed it), the rate
-    otherwise (`22%`, `4,5%`). A rate of zero with no Natura is not a line FPR12 lets
+    """What the %IVA column shows for a line: the VAT nature when the line carries one
+    (`N2.2` on a flat-rate regime line, the way the register always printed it), the rate
+    otherwise (`22%`, `4,5%`). A rate of zero with no VAT nature is not a line FPR12 lets
     through, so `0%` is printed rather than guessed at."""
     if vat_nature:
         return vat_nature
@@ -157,26 +158,27 @@ def address_display(party: dict[str, Any]) -> str:
 
     Italy keeps the shape it always had, `CAP Comune (PR)`. Outside it, the postcode is
     printed as the record holds it (`EC1V 9HL`, not the `00000` the XML carries -- see
-    `fatturapa.constants.POSTAL_CODE_FOREIGN`) and the province is not printed at all. An Italian record
+    `fatturapa.constants.POSTAL_CODE_FOREIGN`) and the province is not printed at all. An Italian
+    record
     with no province yet, which a proforma may well have, loses the parentheses rather
     than printing them empty: the same defect in the domestic case.
     """
     country = (party.get("country") or "").strip().upper()
-    pezzi = [
-        pezzo
-        for pezzo in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
-        if pezzo
+    pieces = [
+        piece
+        for piece in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
+        if piece
     ]
     province = (party.get("province") or "").strip().upper()
     if country == "IT" and province:
-        pezzi.append(f"({province})")
+        pieces.append(f"({province})")
     if country:
-        pezzi.append(country)
+        pieces.append(country)
     address = (party.get("address") or "").strip()
-    resto = " ".join(pezzi)
-    if address and resto:
-        return f"{address}, {resto}"
-    return address or resto
+    rest = " ".join(pieces)
+    if address and rest:
+        return f"{address}, {rest}"
+    return address or rest
 
 
 def identifier_vat(party: dict[str, Any]) -> str:
@@ -218,39 +220,39 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
     legal_entity = snapshot.legal_entity.model_dump(mode="json")
     customer = snapshot.customer.model_dump(mode="json")
     tax = snapshot.tax.model_dump(mode="json")
-    code_recipient = (customer.get("codice_sdi") or "").strip() or (
-        CODE_RECIPIENT_FALLBACK if (customer.get("pec") or "").strip() else _EMPTY
+    code_recipient = (customer.get("sdi_code") or "").strip() or (
+        CODE_RECIPIENT_FALLBACK if (customer.get("certified_email") or "").strip() else _EMPTY
     )
     customer_address = address_display(customer)
     stamp_duty_declaration = stamp_duty_declaration_virtual(export.stamp_duty) or _EMPTY
     proforma = reference is not None
-    regime_code = (tax.get("codice_regime") or "").strip()
-    code_payment = (tax.get("modalita_pagamento") or "").strip()
+    regime_code = (tax.get("regime_code") or "").strip()
+    code_payment = (tax.get("payment_method") or "").strip()
     iban = (tax.get("iban") or "").strip()
     return {
         "emittente": {
-            **legal_entity,
+            **italian_keys(legal_entity, LEGAL_ENTITY_KEYS),
             "identificativo_iva": identifier_vat(legal_entity),
             "indirizzo_display": address_display(legal_entity),
         },
         "cliente": {
-            **customer,
+            **italian_keys(customer, CUSTOMER_KEYS),
             "codice_destinatario": code_recipient,
             "indirizzo_display": customer_address,
             # Two lines, bar-separated, as the register prints its Committente block.
             "riga_identita": _bars(
-                customer.get("ragione_sociale") or _EMPTY,
+                customer.get("legal_name") or _EMPTY,
                 _labelled("IVA", identifier_vat(customer)),
-                _labelled("CF", (customer.get("codice_fiscale") or "").strip()),
+                _labelled("CF", (customer.get("tax_code") or "").strip()),
             ),
             "riga_recapiti": _bars(
                 customer_address,
-                _labelled("PEC", (customer.get("pec") or "").strip()),
+                _labelled("PEC", (customer.get("certified_email") or "").strip()),
                 _labelled("Codice destinatario", code_recipient),
             ),
         },
         "fiscale": {
-            **tax,
+            **italian_keys(tax, TAX_KEYS),
             "regime_display": _bars_space(regime_code, Regimes.get(regime_code, _EMPTY)),
         },
         "pagamento": {
@@ -286,7 +288,7 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
             "totale": format_euro(export.total),
             # The register printed no totals block: the payment table carries the
             # amount. It comes back only when there is something the payment row does
-            # not say, VAT to show, so a forfettario invoice matches the register and an
+            # not say, VAT to show, so a flat-rate regime invoice matches the register and an
             # ordinario one still shows its tax. The stamp is never a row here: the total
             # does not include it (`totals.py`) and the emitter bears it, so a `2,00 €`
             # line under Imposta would read as charged to the customer; the declaration
@@ -299,12 +301,12 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
         },
         "righe": [
             {
-                "numero_linea": str(riga.line_number),
-                "descrizione": riga.description,
-                "iva": format_vat(riga.vat_rate, riga.vat_nature),
-                "prezzo_totale": format_euro(riga.total_price),
+                "numero_linea": str(line.line_number),
+                "descrizione": line.description,
+                "iva": format_vat(line.vat_rate, line.vat_nature),
+                "prezzo_totale": format_euro(line.total_price),
             }
-            for riga in export.lines
+            for line in export.lines
         ],
     }
 
@@ -348,12 +350,12 @@ def _declaration_regime(export: InvoiceForExport) -> str:
     with no reference at all, which is what an `RF01` invoice has.
 
     The register this layout follows printed no declaration at all. This one stays,
-    small and under the rule: a forfettario invoice has to say why it carries no VAT.
+    small and under the rule: a flat-rate regime invoice has to say why it carries no VAT.
     """
     distinct: list[str] = []
-    for riga in export.lines:
-        if riga.legal_reference and riga.legal_reference not in distinct:
-            distinct.append(riga.legal_reference)
+    for line in export.lines:
+        if line.legal_reference and line.legal_reference not in distinct:
+            distinct.append(line.legal_reference)
     if distinct:
         return " ".join(distinct)
     return export.snapshot.tax.legal_reference or _EMPTY
@@ -386,7 +388,7 @@ def render_invoice_pdf(
     """
     scope = build_scope(export, reference=reference)
     markdown = render_template(INVOICE_TEMPLATE.read_text(encoding="utf-8"), scope)
-    # The identity in the header is the frozen snapshot's; the logo is the azienda's
+    # The identity in the header is the frozen snapshot's; the logo is the legal entity's
     # live one (REB-627, spec §1.8), the way `regenerate` re-reads a live profile: a logo
     # is not a fiscal fact, and a re-render after a rebrand should carry the new mark.
     header = build_invoice_header(scope, logo=logo_file_in(dict(media or {})))

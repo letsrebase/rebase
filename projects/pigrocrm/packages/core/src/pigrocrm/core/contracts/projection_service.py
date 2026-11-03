@@ -34,15 +34,17 @@ class ContractProjectionService:
         if contract is None:
             raise NotFound(ENTITY, contract_id)
 
-        come_di: date = query.come_di if query.come_di is not None else today_local()
+        as_of: date = query.as_of if query.as_of is not None else today_local()
         rate_cards = self.rate_cards.list_for_contract(contract_id)
         assumption = self.renewal_assumptions.get_for_contract(contract_id)
-        result = projection.project(contract, rate_cards, assumption, come_di, query.da, query.a)
+        result = projection.project(
+            contract, rate_cards, assumption, as_of, query.date_from, query.date_to
+        )
         return ContractProjectionRead(
             contract_id=result.contract_id,
-            come_di=result.come_di,
-            da=result.da,
-            a=result.a,
+            as_of=result.as_of,
+            date_from=result.date_from,
+            date_to=result.date_to,
             irrevocability_window_until_to=result.irrevocability_window_until_to,
             scheduled=result.scheduled,
             from_renewal=result.from_renewal,

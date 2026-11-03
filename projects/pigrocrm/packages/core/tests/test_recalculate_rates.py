@@ -32,7 +32,7 @@ def _log(service, deal_id, user_id, day, hours="8.00"):
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=user_id,
-            data=date(2026, 3, day),
+            date=date(2026, 3, day),
             hours=Decimal(hours),
             description=f"Giorno {day}",
         ),
@@ -54,7 +54,9 @@ def test_it_rewrites_the_interval_and_records_one_activity_per_entry(
     deal.hourly_rate = Decimal("180.000000")
     db_session.flush()
     touched = service.recalculate_rates(
-        seeded_deal_id, RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)), admin
+        seeded_deal_id,
+        RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
+        admin,
     )
     assert touched == 3
 
@@ -91,7 +93,7 @@ def test_an_entry_with_a_rate_written_on_it_keeps_that_rate(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
+            date=date(2026, 3, 2),
             hours=Decimal("2.00"),
             description="Omaggio",
             applied_rate=Decimal("0.000000"),
@@ -103,7 +105,9 @@ def test_an_entry_with_a_rate_written_on_it_keeps_that_rate(
     deal.hourly_rate = Decimal("180.000000")
     db_session.flush()
     touched = service.recalculate_rates(
-        seeded_deal_id, RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)), admin
+        seeded_deal_id,
+        RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
+        admin,
     )
 
     assert touched == 1
@@ -141,7 +145,7 @@ def test_a_billed_entry_in_the_interval_refuses_the_whole_call_and_changes_nothi
     with pytest.raises(Conflict) as excinfo:
         service.recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
             admin,
         )
     assert excinfo.value.details["entries_invoiced"] == 1
@@ -161,7 +165,7 @@ def test_a_collaborator_cannot_call_it(
     with pytest.raises(PermissionDenied):
         TimeEntryService(db_session).recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
             WRITER,
         )
 
@@ -178,7 +182,7 @@ def test_it_will_not_rewrite_inside_a_closed_period(
     with pytest.raises(Conflict):
         service.recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 1), a=date(2026, 3, 10)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 1), date_to=date(2026, 3, 10)),
             admin,
         )
 
@@ -192,7 +196,7 @@ def test_an_inverted_interval_is_a_validation_failure(
     with pytest.raises(ValidationFailed) as excinfo:
         TimeEntryService(db_session).recalculate_rates(
             seeded_deal_id,
-            RecalculateRatesRequest(da=date(2026, 3, 10), a=date(2026, 3, 1)),
+            RecalculateRatesRequest(date_from=date(2026, 3, 10), date_to=date(2026, 3, 1)),
             admin,
         )
-    assert excinfo.value.details["field"] == "a"
+    assert excinfo.value.details["field"] == "to"

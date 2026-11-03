@@ -77,16 +77,16 @@ LegalEntityRequired = Annotated[
 def period_pnl(
     session: SessionDep,
     actor: ActorDep,
-    da: FromDate,
-    a: ToDate,
+    date_from: FromDate,
+    date_to: ToDate,
     customer_id: Annotated[UUID | None, Query()] = None,
     legal_entity_id: LegalEntityFilter = None,
     base: Annotated[
         RevenueBase,
         Query(
             description=(
-                "Quale data colloca il ricavo di una fattura nel periodo: 'emissione' "
-                "(la data del documento, predefinita) oppure 'competenza' (il periodo di "
+                "Quale data colloca il ricavo di una fattura nel periodo: 'issue' "
+                "(la data del documento, predefinita) oppure 'accrual' (il periodo di "
                 "competenza dichiarato sulla fattura, con la data di emissione per chi non "
                 "lo dichiara). Costi e ore restano attribuiti alla propria data."
             )
@@ -99,15 +99,19 @@ def period_pnl(
     (ORB-61); everything else about it is the same."""
     return AnalyticsService(session).period_pnl(
         PeriodPnlQuery(
-            da=da, a=a, customer_id=customer_id, base=base, legal_entity_id=legal_entity_id
+            date_from=date_from,
+            date_to=date_to,
+            customer_id=customer_id,
+            base=base,
+            legal_entity_id=legal_entity_id,
         ),
         actor,
     )
 
 
 class BudgetParams(KeysetParams):
-    da: date = Field(alias="from", description="Inizio del periodo, YYYY-MM-DD")
-    a: date = Field(alias="to", description="Fine del periodo, YYYY-MM-DD")
+    date_from: date = Field(alias="from", description="Inizio del periodo, YYYY-MM-DD")
+    date_to: date = Field(alias="to", description="Fine del periodo, YYYY-MM-DD")
     customer_id: UUID | None = None
 
 
@@ -131,9 +135,9 @@ def economic_overview(
         CashBase,
         Query(
             description=(
-                "In quale mese cade il denaro di ogni documento: 'competenza' (il periodo "
+                "In quale mese cade il denaro di ogni documento: 'accrual' (il periodo "
                 "di competenza dichiarato sulla fattura o sulla proforma, con la data del "
-                "documento per chi non lo dichiara; predefinito) oppure 'incasso' (la data "
+                "documento per chi non lo dichiara; predefinito) oppure 'collection' (la data "
                 "di incasso per le fatture pagate, la scadenza per quelle da incassare, la "
                 "data del documento, o di creazione, per bozze e proforma). La stima "
                 "fiscale resta sempre "
@@ -238,15 +242,19 @@ def simulate_ceiling(
 def days_analysis(
     session: SessionDep,
     actor: ActorDep,
-    da: Annotated[date | None, Query(description="Inizio del periodo, YYYY-MM-DD")] = None,
-    a: Annotated[date | None, Query(description="Fine del periodo, YYYY-MM-DD")] = None,
+    date_from: Annotated[
+        date | None, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")
+    ] = None,
+    date_to: Annotated[
+        date | None, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")
+    ] = None,
     legal_entity_id: LegalEntityFilter = None,
 ) -> DaysAnalysis:
     """Le giornate di un periodo (REB-756): per mese e per stato, la tariffa reale
     contro il listino per cliente e per contratto, e l'andamento delle giornate
     lavorate senza l'approvazione che il contratto chiede. Entrambe le date o nessuna
     (il mese corrente). Aperto a ogni ruolo, come le giornate."""
-    return AnalyticsService(session).days_analysis(actor, da, a, legal_entity_id)
+    return AnalyticsService(session).days_analysis(actor, date_from, date_to, legal_entity_id)
 
 
 @router.get("/year", response_model=YearOverview)

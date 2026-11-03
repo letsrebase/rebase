@@ -1,13 +1,13 @@
 """Two booleans, and every change to them audited.
 
 Spec §9.6: `automation_config` is a single row like `legal_entities` and
-`fiscal_profile`, admin-only, and every modification writes an activity -- residuo **R5**
+`fiscal_profile`, admin-only, and every modification writes an activity -- residue **R5**
 closed for this table, with slice 3 §7.1's argument: changing what the system will do by
 itself to future data is of a different order of seriousness from renaming a stage.
 
 R5 itself stays open, and it is worth being exact about what it says, because "closing R5"
-is a claim this task cannot make. R5 (`2026-08-07-slice-1a-residui.md`) is *"Nessun audit
-trail per configurazione e token"*: no timeline entries for **field definitions, pipeline
+is a claim this task cannot make. R5 (`2026-08-07-slice-1a-residui.md`) is *"No audit
+trail for configuration and tokens"*: no timeline entries for **field definitions, pipeline
 stages, users and personal access tokens**. None of those four gains one here. What this
 task does is keep a *fifth* piece of configuration off that list on the day it is
 introduced, which is the only kind of progress against R5 a new table can make.
@@ -136,7 +136,7 @@ def test_changing_the_threshold_is_audited_and_an_equal_value_is_not(db_session:
 
     service.update_automation_config(AutomationConfigUpdate(a4_stalled_deal_days=45), ADMIN)
     (entry,) = ActivityRepository(db_session).by_kind(["automation.config_changed"])
-    assert entry.payload["a4_stalled_deal_days"] == {"da": 30, "a": 45}
+    assert entry.payload["a4_stalled_deal_days"] == {"from": 30, "to": 45}
 
 
 def test_an_admin_can_switch_a_rule_off(db_session: Session) -> None:
@@ -179,7 +179,7 @@ def test_an_unknown_field_is_refused_rather_than_ignored() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        AutomationConfigUpdate(to_3_offer_rejected_perde_deal=True)  # type: ignore[call-arg]
+        AutomationConfigUpdate(to_3_offer_rejected_loses_deal=True)  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize("actor", [COLLABORATOR, READONLY])
@@ -210,12 +210,10 @@ def test_every_change_writes_an_activity(db_session: Session) -> None:
     AutomationConfigService(db_session).update_automation_config(
         AutomationConfigUpdate(a1_wins_accepted_offer_deal=False), ADMIN
     )
-    rows = ActivityRepository(db_session).by_kind(
-        ["automation.config_changed"], limit=10
-    )
+    rows = ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10)
     assert len(rows) == 1
     assert rows[0].actor_id == ADMIN.id
-    assert rows[0].payload["a1_wins_accepted_offer_deal"] == {"da": True, "a": False}
+    assert rows[0].payload["a1_wins_accepted_offer_deal"] == {"from": True, "to": False}
     # The unchanged rule is absent, not recorded as unchanged: an audit entry listing
     # every field on every edit is an audit entry nobody reads.
     assert "a2_advances_sent_offer_deal" not in rows[0].payload
@@ -229,10 +227,7 @@ def test_a_no_op_update_writes_no_activity(db_session: Session) -> None:
     service.update_automation_config(
         AutomationConfigUpdate(a1_wins_accepted_offer_deal=True), ADMIN
     )
-    assert (
-        ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10)
-        == []
-    )
+    assert ActivityRepository(db_session).by_kind(["automation.config_changed"], limit=10) == []
 
 
 def test_describe_returns_the_recent_runs(db_session: Session) -> None:

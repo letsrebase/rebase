@@ -133,7 +133,7 @@ def stop_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 def discard_timer(context: McpContext) -> dict[str, str]:
     TimerService(context.session).discard(context.actor)
-    return {"status": "scartato"}
+    return {"status": "discarded"}
 
 
 def get_deal_time_summary(context: McpContext, deal_id: str) -> dict[str, Any]:
@@ -171,7 +171,7 @@ def update_cost(context: McpContext, cost_id: str, data: dict[str, Any]) -> dict
 
 def archive_cost(context: McpContext, cost_id: str) -> dict[str, str]:
     CostService(context.session).soft_delete(UUID(cost_id), context.actor)
-    return {"status": "archiviato", "cost_id": cost_id}
+    return {"status": "archived", "cost_id": cost_id}
 
 
 def restore_cost(context: McpContext, cost_id: str) -> dict[str, Any]:
@@ -283,9 +283,9 @@ def simulate_ceiling(
 def get_year_overview(
     context: McpContext, year: int | str, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
-    """The year of one azienda as the accountant reads it (REB-757): revenue by regime
+    """The year of one legal entity as the accountant reads it (REB-757): revenue by regime
     and tax treatment, and the register of issued invoices with the stamp duty and the
-    rivalsa apart. The file is the web app's: an MCP tool returns no bytes."""
+    social security surcharge apart. The file is the web app's: an MCP tool returns no bytes."""
     return (
         AnalyticsService(context.session)
         .year_overview(_YEAR.validate_python(year), context.actor, legal_entity_id)
@@ -298,8 +298,8 @@ _DATE: TypeAdapter[date | None] = TypeAdapter(date | None)
 
 def get_days_analysis(
     context: McpContext,
-    da: str | None = None,
-    a: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     legal_entity_id: UUID | None = None,
 ) -> dict[str, Any]:
     """The days of a period by month and state, the realised day rate and the trend of
@@ -307,7 +307,10 @@ def get_days_analysis(
     return (
         AnalyticsService(context.session)
         .days_analysis(
-            context.actor, _DATE.validate_python(da), _DATE.validate_python(a), legal_entity_id
+            context.actor,
+            _DATE.validate_python(date_from),
+            _DATE.validate_python(date_to),
+            legal_entity_id,
         )
         .model_dump(mode="json")
     )

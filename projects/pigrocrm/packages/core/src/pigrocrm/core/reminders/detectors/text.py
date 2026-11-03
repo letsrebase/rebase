@@ -24,19 +24,19 @@ def counted(value: int | Decimal, one: str, many: str) -> str:
 
 
 def format_days(value: int) -> str:
-    return counted(value, "day", "days")
+    return counted(value, "giorno", "giorni")
 
 
 def work_units(value: int | Decimal) -> str:
-    return counted(value, "work_unit", "work_units")
+    return counted(value, "giornata", "giornate")
 
 
 def format_entries(value: int) -> str:
-    return counted(value, "voce", "entries")
+    return counted(value, "voce", "voci")
 
 
 def format_hours(value: int | Decimal) -> str:
-    return counted(value, "ora", "hours")
+    return counted(value, "ora", "ore")
 
 
 def format_days_ago(value: int) -> str:
@@ -45,5 +45,5 @@ def format_days_ago(value: int) -> str:
 
 
 def ago(days: int) -> str:
-    """`today` for none, then as `days_fa`."""
-    return "today" if days == 0 else format_days_ago(days)
+    """`oggi` for none, then as `format_days_ago`."""
+    return "oggi" if days == 0 else format_days_ago(days)

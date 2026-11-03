@@ -43,7 +43,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def search_everything(
-        deadline: str, limit: SearchLimit = PER_CLASS_LIMIT, legal_entity_id: str | None = None
+        term: str, limit: SearchLimit = PER_CLASS_LIMIT, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Cerca in tutto il CRM con una chiamata: clienti (ragione sociale, P.IVA, codice fiscale,
         email), persone (nome, cognome, email), deal (nome), documenti (titolo), fatture
@@ -52,21 +52,20 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         scrive «2026/7», «7/2026» o «007»: trova quella fattura, senza anno in ogni anno.
 
         Servono almeno 3 caratteri. Dà fino a `limit` risultati per classe e il conteggio reale;
-        se `total_and_a_minimum` è true il conteggio è un minimo e il resto sta nell'elenco della
-        singola entità. `legal_entity_id` restringe clienti, persone (via il cliente), deal, documenti e
-        fatture a quell'azienda, ma non le attività, che non ne hanno; omesso, cerca in tutto lo
-        spazio. Non cerca contratti, costi, proposte né posta.
+        se `total_is_minimum` è true il conteggio è un minimo e il resto sta nell'elenco della
+        singola entità. `legal_entity_id` restringe clienti, persone (via il cliente), deal,
+        documenti e fatture a quell'azienda, ma non le attività, che non ne hanno; omesso, cerca in
+        tutto lo spazio. Non cerca contratti, costi, proposte né posta.
         """
-        # `deadline` is a bare `str` with no `Annotated` bound, following the
+        # `term` is a bare `str` with no `Annotated` bound, following the
         # runtime-permissive / schema-only-strict convention of `tools/params.py`: the
-        # length check happens
-        # inside `SearchQuery`, inside the guarded call, so a two-character term produces a
-        # domain error the agent can act on instead of an SDK rejection whose wording is
-        # not ours.
+        # length check happens inside `SearchQuery`, inside the guarded call, so a
+        # two-character term produces a domain error the agent can act on instead of an SDK
+        # rejection whose wording is not ours.
         return search_tools.search_everything(
             context,
             SearchQuery(
-                deadline=deadline,
+                term=term,
                 limit=cast(int, limit),
                 legal_entity_id=parse_legal_entity_id(legal_entity_id),
             ),

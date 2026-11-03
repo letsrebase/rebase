@@ -104,4 +104,4 @@ def _back(
     # Snyk Code python/OR here is a false positive: one of the SPA's fixed pages, under the
     # request's own prefix (a slug that matched SLUG_PATTERN in `tenancy.py`, or none for
     # the root), with one of the four constant `outcome` codes.
-    return RedirectResponse(f"{prefix}{path}?esito={outcome.value}", status_code=307)
+    return RedirectResponse(f"{prefix}{path}?outcome={outcome.value}", status_code=307)

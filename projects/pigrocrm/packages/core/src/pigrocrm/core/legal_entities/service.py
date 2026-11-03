@@ -22,6 +22,7 @@ from pigrocrm.core.legal_entities.schemas import (
     LegalEntityRead,
     LegalEntityUpsert,
 )
+from pigrocrm.core.templates.scope import LEGAL_ENTITY_KEYS, italian_keys
 from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
@@ -43,7 +44,7 @@ DEFAULT_LABEL = "default"
 def _normalise_ids(data: dict[str, Any]) -> None:
     """Store both fiscal ids in the shape the import classifier compares them in
     (spec §2 step 1), so the two unique indexes on `upper(...)` really mean «one
-    azienda per code»: an Italian azienda through `normalise_fiscal_id`, which also
+    azienda per code»: an Italian legal entity through `normalise_fiscal_id`, which also
     strips an `IT` prefix and refuses anything that is not a P.IVA or a codice fiscale;
     a foreign one through `normalise_foreign_fiscal_id`, which keeps a nine-digit
     British VAT number instead of emptying it. A value either function empties is
@@ -98,12 +99,12 @@ def _check_fiscal(data: dict[str, Any]) -> None:
 
 
 class LegalEntityService:
-    """The aziende of a space, and «the» azienda for every caller that has one.
+    """The legal entities of a space, and «the» legal entity for every caller that has one.
 
     Every read takes an optional `legal_entity_id`; `None` means the default, which on a
-    space with one azienda is the only one, so a consumer written for the single
+    space with one legal entity is the only one, so a consumer written for the single
     emitter keeps working unchanged. There is deliberately no `create` here before
-    the milestone that can number, own and render for a second azienda (spec §9): the
+    the milestone that can number, own and render for a second legal entity (spec §9): the
     first row of a space is written by `upsert_default`, from provisioning and from
     `ensure_defaults`, and nothing else can add one.
     """
@@ -121,29 +122,29 @@ class LegalEntityService:
         ]
 
     def propose(self, country: str | None) -> LegalEntity:
-        """The azienda a new customer of `country` is billed by when the caller names
-        none (REB-623, spec 2026-10-03 §1.6): the one active azienda of that nation when
-        exactly one has it; else, for a customer outside Italy, the one active azienda
+        """The legal entity a new customer of `country` is billed by when the caller names
+        none (REB-623, spec 2026-10-03 §1.6): the one active legal entity of that nation when
+        exactly one has it; else, for a customer outside Italy, the one active legal entity
         outside Italy when exactly one exists; else the default. The nation never
-        decides between two aziende that share it: an Italian customer in a space with a
-        forfettario and an SRL, both Italian, gets the default proposed and the person
-        picks. `NotFound("emitter_profile", "predefinita")` on a space with no azienda.
+        decides between two legal entities that share it: an Italian customer in a space with a
+        flat-rate regime and an SRL, both Italian, gets the default proposed and the person
+        picks. `NotFound("emitter_profile", "predefinita")` on a space with no legal entity.
         """
-        paese = (country or "IT").strip().upper() or "IT"
+        country_code = (country or "IT").strip().upper() or "IT"
         active = self.repo.list(only_active=True)
-        same = [a for a in active if (a.country or "IT").upper() == paese]
+        same = [a for a in active if (a.country or "IT").upper() == country_code]
         if len(same) == 1:
             return same[0]
-        if paese != "IT":
+        if country_code != "IT":
             abroad = [a for a in active if (a.country or "IT").upper() != "IT"]
             if len(abroad) == 1:
                 return abroad[0]
         return self.resolve(None)
 
     def inherited(self, legal_entity_id: UUID, entity: str) -> UUID:
-        """The azienda a new deal, contract, document or invoice takes from its parent
+        """The legal entity a new deal, contract, document or invoice takes from its parent
         (REB-623, spec §1.7 and §3): the parent's, and never a deactivated one. The
-        history of a closed azienda stays readable, but nothing new is born on it; the
+        history of a closed legal entity stays readable, but nothing new is born on it; the
         answer is to move the customer first, and the message says so. `entity` is the
         thing being created, so the refusal names the field of that request."""
         legal_entity = self.resolve(legal_entity_id)
@@ -168,12 +169,12 @@ class LegalEntityService:
         return row
 
     def single(self, legal_entity_id: UUID | None = None) -> LegalEntity | None:
-        """The one azienda a per-azienda figure speaks for (REB-630, spec 2026-10-03
-        §1.9): the row `legal_entity_id` names, or the only active azienda when the caller
-        named none, which is what keeps every read written for a one-azienda space
+        """The one legal entity a per-legal entity figure speaks for (REB-630, spec 2026-10-03
+        §1.9): the row `legal_entity_id` names, or the only active legal entity when the caller
+        named none, which is what keeps every read written for a one-legal entity space
         working unchanged. `None` when the space has several and none was named: the
-        coefficients of a forfettario and the arithmetic of an SRL do not add, so there
-        is no figure to answer with. `NotFound` on a space with no azienda at all, under
+        coefficients of a flat-rate regime and the arithmetic of an SRL do not add, so there
+        is no figure to answer with. `NotFound` on a space with no legal entity at all, under
         the label every consumer already handles."""
         if legal_entity_id is not None:
             return self.resolve(legal_entity_id)
@@ -204,7 +205,7 @@ class LegalEntityService:
     def as_template_values(
         self, actor: Actor, legal_entity_id: UUID | None = None
     ) -> dict[str, Any]:
-        """The azienda as a template scope, under the name `emittente`.
+        """The legal entity as a template scope, under the name `emittente`.
 
         This is what makes `{{emittente.ragione_sociale}}` work in a template and what
         replaced the hardcoded issuer data of the previous system's `header.typ`. The
@@ -212,13 +213,14 @@ class LegalEntityService:
         business (and `LegalEntityRead` already drops nothing else).
         """
         profile = self.get(actor, legal_entity_id)
-        return {"emittente": profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))}
+        fields = profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
+        return {"emittente": italian_keys(fields, LEGAL_ENTITY_KEYS)}
 
     # -- writes --------------------------------------------------------------
 
     def upsert_default(self, data: LegalEntityUpsert, actor: Actor) -> LegalEntityRead:
-        """Create the space's first azienda as its default, or replace the default's
-        fields: the one write a space with one azienda ever needs, and the only path
+        """Create the space's first legal entity as its default, or replace the default's
+        fields: the one write a space with one legal entity ever needs, and the only path
         that can insert a row before creation opens (spec §9, milestone 5).
 
         `repo.add` sits inside the `try`: it is the flush, and the flush is where the
@@ -248,12 +250,12 @@ class LegalEntityService:
         return LegalEntityRead.model_validate(row)
 
     def create(self, data: LegalEntityCreate, actor: Actor) -> LegalEntityRead:
-        """A second azienda, with its fiscal profile, in one transaction (REB-630, spec
+        """A second legal entity, with its fiscal profile, in one transaction (REB-630, spec
         2026-10-03 §1.2, §3, §9 milestone 5). Active, and the default only when the
-        space had none: the first azienda of a space is what every implicit read
+        space had none: the first legal entity of a space is what every implicit read
         resolves to, whichever route wrote it. Both payloads are checked before the
         first `INSERT`, so a profile the fiscal service would refuse never leaves an
-        azienda behind that `issue` could not use; the two rows then flush under one
+        legal entity behind that `issue` could not use; the two rows then flush under one
         `try`, where the partial unique indexes on the P.IVA and the codice fiscale are
         the only things that can refuse them, and a refusal is a clean `Conflict`.
 
@@ -271,18 +273,18 @@ class LegalEntityService:
         _check_fiscal(payload)
         # The profile body is `FiscalProfileUpsert`, whose `updated_at` is a version and
         # not a column (REB-622); a row being created has none to check against.
-        profilo = data.fiscal_profile.model_dump(exclude={"updated_at"})
-        FiscalProfileService.check(profilo)
+        profile_data = data.fiscal_profile.model_dump(exclude={"updated_at"})
+        FiscalProfileService.check(profile_data)
         try:
             row = self.repo.add(
                 LegalEntity(**payload, is_default=self.repo.default() is None, active=True)
             )
-            profile = FiscalProfile(**profilo, legal_entity_id=row.id)
+            profile = FiscalProfile(**profile_data, legal_entity_id=row.id)
             self.session.add(profile)
             self.session.flush()
             self.activities.record(ENTITY, row.id, "created", actor, {"changed": sorted(payload)})
             self.activities.record(
-                FISCAL_ENTITY, profile.id, "created", actor, {"changed": sorted(profilo)}
+                FISCAL_ENTITY, profile.id, "created", actor, {"changed": sorted(profile_data)}
             )
             self.session.commit()
         except IntegrityError as exc:
@@ -296,7 +298,7 @@ class LegalEntityService:
     def update(
         self, legal_entity_id: UUID, data: LegalEntityUpsert, actor: Actor
     ) -> LegalEntityRead:
-        """Replace one azienda's fields. Whole-row, like every write on this table:
+        """Replace one legal entity's fields. Whole-row, like every write on this table:
         a key left out goes back to its default, which is why the MCP tool tells the
         agent to read first and send the object back. A body that names the version it
         was built on (`updated_at`, REB-622) is refused when the row has moved since,
@@ -325,7 +327,7 @@ class LegalEntityService:
 
     def set_default(self, legal_entity_id: UUID, actor: Actor) -> LegalEntityRead:
         """Move the default. One transaction, old row off first, so the partial unique
-        index never sees two defaults; an inactive azienda cannot become the default,
+        index never sees two defaults; an inactive legal entity cannot become the default,
         because the default is what every implicit read resolves to."""
         actor.require_unscoped_admin("set_default_legal_entity")
         row = self.resolve(legal_entity_id)
@@ -353,7 +355,7 @@ class LegalEntityService:
         return LegalEntityRead.model_validate(row)
 
     def deactivate(self, legal_entity_id: UUID, actor: Actor) -> LegalEntityDeactivated:
-        """Switch an azienda off. Never a delete: an azienda that issued an invoice
+        """Switch a legal entity off. Never a delete: a legal entity that issued an invoice
         stays readable forever, and a row that is gone cannot be the `emittente` a
         snapshot was frozen from. The default is refused, since every implicit read
         resolves to it; move the default first. The answer carries how many live

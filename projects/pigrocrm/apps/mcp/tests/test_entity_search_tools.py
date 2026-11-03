@@ -59,16 +59,16 @@ async def test_search_people_filters_by_a_custom_field(server, mcp_session: Sess
     )
     async with Client(server) as client:
         await client.call_tool(
-            "create_person", {"nome": "A", "custom_fields": {"seniority": "senior"}}
+            "create_person", {"first_name": "A", "custom_fields": {"seniority": "senior"}}
         )
         await client.call_tool(
-            "create_person", {"nome": "B", "custom_fields": {"seniority": "junior"}}
+            "create_person", {"first_name": "B", "custom_fields": {"seniority": "junior"}}
         )
         found = _payload(
             await client.call_tool("search_people", {"custom": {"seniority": "senior"}})
         )
 
-    assert [p["nome"] for p in found["items"]] == ["A"]
+    assert [p["name"] for p in found["items"]] == ["A"]
 
 
 async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Session) -> None:
@@ -81,15 +81,15 @@ async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Sessi
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         await client.call_tool(
             "create_deal",
-            {"nome": "A", "customer_id": customer["id"], "custom_fields": {"source": "referral"}},
+            {"name": "A", "customer_id": customer["id"], "custom_fields": {"source": "referral"}},
         )
         await client.call_tool(
             "create_deal",
-            {"nome": "B", "customer_id": customer["id"], "custom_fields": {"source": "outbound"}},
+            {"name": "B", "customer_id": customer["id"], "custom_fields": {"source": "outbound"}},
         )
         found = _payload(await client.call_tool("search_deals", {"custom": {"source": "referral"}}))
 
-    assert [d["nome"] for d in found["items"]] == ["A"]
+    assert [d["name"] for d in found["items"]] == ["A"]
 
 
 # --- Final review item 7 (IMPORTANT): search tools returned next_cursor but had --
@@ -125,7 +125,7 @@ async def test_search_customers_can_walk_a_second_page_via_cursor(
 async def test_search_people_can_walk_a_second_page_via_cursor(server) -> None:
     async with Client(server) as client:
         for index in range(3):
-            await client.call_tool("create_person", {"nome": f"Persona {index:02d}"})
+            await client.call_tool("create_person", {"first_name": f"Persona {index:02d}"})
 
         first = _payload(await client.call_tool("search_people", {"limit": 2}))
         second = _payload(
@@ -144,7 +144,7 @@ async def test_search_deals_can_walk_a_second_page_via_cursor(server, mcp_sessio
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         for index in range(3):
             await client.call_tool(
-                "create_deal", {"nome": f"Deal {index:02d}", "customer_id": customer["id"]}
+                "create_deal", {"name": f"Deal {index:02d}", "customer_id": customer["id"]}
             )
 
         first = _payload(await client.call_tool("search_deals", {"limit": 2}))
@@ -186,8 +186,8 @@ async def test_search_customers_accepts_sort_and_dir(server) -> None:
     """
     token = f"zz{uuid4().hex[:8]}"
     async with Client(server) as client:
-        for nome in ("Gamma", "Alfa", "Beta"):
-            await client.call_tool("create_customer", {"legal_name": f"{token} {nome}"})
+        for name in ("Gamma", "Alfa", "Beta"):
+            await client.call_tool("create_customer", {"legal_name": f"{token} {name}"})
 
         ascending = _payload(
             await client.call_tool(

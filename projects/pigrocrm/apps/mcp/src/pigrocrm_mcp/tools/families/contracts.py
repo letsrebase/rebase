@@ -70,20 +70,20 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             {
                 "customer_id": UUID(customer_id),
-                "titolo": title,
-                "inizio": start,
-                "fine": end,
-                "tipo_rinnovo": renewal_type,
-                "preavviso_rinnovo_giorni": renewal_notice_days,
-                "preavviso_disdetta_giorni": termination_notice_days,
-                "giorni_pagamento": payment_days,
-                "pagamento_fine_mese": payment_end_of_month,
-                "cadenza_fatturazione": billing_cadence,
-                "divisa": currency,
+                "title": title,
+                "start": start,
+                "end": end,
+                "renewal_type": renewal_type,
+                "renewal_notice_days": renewal_notice_days,
+                "termination_notice_days": termination_notice_days,
+                "payment_days": payment_days,
+                "payment_end_of_month": payment_end_of_month,
+                "billing_cadence": billing_cadence,
+                "currency": currency,
                 "requires_prior_approval": requires_prior_approval,
                 "applies_social_charge": applies_social_charge,
-                "tetto_quota_cliente": customer_share_cap,
-                "politica_spese": expense_policy,
+                "customer_share_cap": customer_share_cap,
+                "expense_policy": expense_policy,
                 "note": note,
                 "custom_fields": custom_fields or {},
             },
@@ -135,11 +135,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         spese, giornate e note sulle clausole. Si rinnova una volta e solo un contratto con una
         fine. Chiedi conferma alla persona prima.
         """
-        data: dict[str, Any] = {"inizio": start, "fine": end, "titolo": title}
+        data: dict[str, Any] = {"start": start, "end": end, "title": title}
         if (duration_count is None) != (duration_unit is None):
-            raise ValueError("durata_conteggio e durata_unita vanno indicati insieme")
+            raise ValueError("duration_count e duration_unit vanno indicati insieme")
         if duration_count is not None:
-            data["durata"] = {"conteggio": duration_count, "unita": duration_unit}
+            data["duration"] = {"count": duration_count, "unit": duration_unit}
         return contracts.renew(context, contract_id, data)
 
     @mcp.tool(annotations=READ_ONLY)
@@ -189,23 +189,23 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         YYYY-MM-DD; senza `valid_to` la scheda è aperta. Un periodo che si sovrappone a un'altra
         scheda del contratto è rifiutato, salvo `close_previous` vero: allora la scheda in
         vigore a `valid_from` si chiude il giorno prima. `minimum_hours` vale solo per `tipo =
-        'orario'`, `periodo_erogazione` solo per `'ricorrente_fisso'`.
+        'orario'`, `delivery_period` solo per `'fixed_recurring'`.
         """
         payload: dict[str, Any] = {
-            "valido_da": valid_from,
-            "valido_a": valid_to,
-            "tipo": type,
-            "importo": amount,
-            "unita": unit,
-            "ore_minime": minimum_hours,
-            "periodo_erogazione": delivery_period,
+            "valid_from": valid_from,
+            "valid_to": valid_to,
+            "type": type,
+            "amount": amount,
+            "unit": unit,
+            "minimum_hours": minimum_hours,
+            "delivery_period": delivery_period,
         }
         # Omitted rather than `None`: `RateCardCreate.allowed_fractions` has no `None`
         # branch (its default is `[1]`, mirroring `RateCard.allowed_fractions`'s own
         # column default), so passing an explicit `None` through would raise instead
         # of falling back to it.
         if allowed_fractions is not None:
-            payload["frazioni_ammesse"] = allowed_fractions
+            payload["allowed_fractions"] = allowed_fractions
         return contracts.create_rate_card(context, contract_id, payload, close_previous)
 
     @mcp.tool(annotations=DESTRUCTIVE)
@@ -242,9 +242,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             contract_id,
             {
-                "riferimento_clausola": clause_reference,
-                "testo_letterale": literal_text,
-                "interpretazione_adottata": adopted_interpretation,
+                "clause_reference": clause_reference,
+                "literal_text": literal_text,
+                "adopted_interpretation": adopted_interpretation,
                 "note": note,
             },
         )
@@ -272,14 +272,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     def create_contract_expense(
         contract_id: str,
         category_id: str,
-        data: str,
+        date: str,
         amount: MoneyArg,
         description: str,
         pre_authorized: bool = False,
         authorization_reference: str | None = None,
         document_id: str | None = None,
     ) -> dict[str, Any]:
-        """Registra una spesa rimborsabile su un contratto. `data` in formato YYYY-MM-DD.
+        """Registra una spesa rimborsabile su un contratto. `date` in formato YYYY-MM-DD.
         `authorization_reference` è obbligatorio se `pre_authorized` è vero, assente
         altrimenti. `reimbursable` non si imposta: lo calcola il sistema dalla `expense_policy`
         del contratto e la spesa è registrata comunque, solo segnalata.
@@ -289,11 +289,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             contract_id,
             {
                 "category_id": category_id,
-                "data": data,
-                "importo": amount,
-                "descrizione": description,
-                "pre_autorizzata": pre_authorized,
-                "riferimento_autorizzazione": authorization_reference,
+                "date": date,
+                "amount": amount,
+                "description": description,
+                "pre_authorized": pre_authorized,
+                "authorization_reference": authorization_reference,
                 "document_id": document_id,
             },
         )
@@ -333,14 +333,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def get_contract_register(contract_id: str, da: str, a: str) -> dict[str, Any]:
-        """Il registro delle giornate fatturate di un contratto fra `da` e `a` (YYYY-MM-DD, estremi
-        inclusi): per ogni giornata la prova di approvazione (canale, mittente, giorno di
-        arrivo, id del messaggio) e il numero della fattura, più il totale. Una giornata senza
-        approvazione resta in elenco con approvazione vuota e `without_approval` le conta.
+    def get_contract_register(contract_id: str, date_from: str, date_to: str) -> dict[str, Any]:
+        """Il registro delle giornate fatturate di un contratto fra `date_from` e `date_to`
+        (YYYY-MM-DD, estremi inclusi): per ogni giornata la prova di approvazione (canale, mittente,
+        giorno di arrivo, id del messaggio) e il numero della fattura, più il totale. Una giornata
+        senza approvazione resta in elenco con approvazione vuota e `without_approval` le conta.
         """
         return contracts.register(
-            context, contract_id, date.fromisoformat(da), date.fromisoformat(a)
+            context, contract_id, date.fromisoformat(date_from), date.fromisoformat(date_to)
         )
 
     @mcp.tool(annotations=READ_ONLY)
@@ -379,9 +379,9 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             context,
             contract_id,
             {
-                "probabilita": probability,
-                "volume_atteso": expected_volume,
-                "orizzonte_al": horizon_until,
+                "probability": probability,
+                "expected_volume": expected_volume,
+                "horizon_until": horizon_until,
             },
         )
 
@@ -394,15 +394,17 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def project_contract_revenue(
-        contract_id: str, da: str, a: str, come_di: IsoDateStr = None
+        contract_id: str, date_from: str, date_to: str, as_of: IsoDateStr = None
     ) -> dict[str, Any]:
         """Ricavo «programmato» di un contratto oltre la finestra di irrevocabilità, nella finestra
-        `[da, a)` (`YYYY-MM-DD`, `a` esclusa), più l'eventuale contributo dell'assunzione di
-        rinnovo. `come_di` è la data di riferimento (default oggi). Non è il `projected` di
-        `get_economic_dashboard`: segue lo scadenzario del contratto, non le bozze.
+        `[date_from, date_to)` (`YYYY-MM-DD`, `date_to` esclusa), più l'eventuale contributo
+        dell'assunzione di rinnovo. `as_of` è la data di riferimento (default oggi). Non è il
+        `projected` di `get_economic_dashboard`: segue lo scadenzario del contratto, non le bozze.
         """
         return contracts.project_revenue(
             context,
             contract_id,
-            ContractProjectionQuery.model_validate({"da": da, "a": a, "come_di": come_di}),
+            ContractProjectionQuery.model_validate(
+                {"date_from": date_from, "date_to": date_to, "as_of": as_of}
+            ),
         )

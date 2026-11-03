@@ -46,7 +46,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-analytics-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": PASSWORD, "nome": "Test", "role": role},
+        json={"email": email, "password": PASSWORD, "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -117,7 +117,7 @@ def _seed_deal_and_user(
         },
     )
     assert customer.status_code == 201, customer.text
-    body: dict[str, Any] = {"nome": "Progetto", "customer_id": customer.json()["id"]}
+    body: dict[str, Any] = {"name": "Progetto", "customer_id": customer.json()["id"]}
     if budgeted_hours is not None:
         body["budgeted_hours"] = budgeted_hours
     if budgeted_value is not None:
@@ -129,7 +129,7 @@ def _seed_deal_and_user(
         json={
             "email": f"worker-analytics-{id(logged_in)}@pigro.it",
             "password": PASSWORD,
-            "nome": "Worker",
+            "name": "Worker",
             "role": "collaborator",
         },
     )
@@ -151,7 +151,7 @@ def _log_hours(
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": TODAY.isoformat(),
+            "date": TODAY.isoformat(),
             "hours": hours,
             "description": "Sviluppo",
             "applied_rate": rate,
@@ -190,7 +190,7 @@ def test_deal_pnl_serialises_decimals_as_strings_and_null_percentage(
     assert body["accrued_value"] != body["revenue"]
     # Asserted on the raw text, because `response.json()` would already have parsed it:
     # a `Decimal` reaches the browser as a string, never as a binary float.
-    assert '"costo_lavoro":"100.00"' in response.text.replace(" ", "")
+    assert '"work_cost":"100.00"' in response.text.replace(" ", "")
 
 
 def test_a_readonly_actor_may_read_the_economics(logged_in: TestClient) -> None:
@@ -268,7 +268,7 @@ def test_the_period_report_uses_the_spec_query_names(logged_in: TestClient) -> N
     assert body["in_progress"]["deal"] == 1
     assert body["in_progress"]["work_cost"] == "100.00"
     assert body["closed"]["deal"] == 0
-    assert body["da"] == DA and body["a"] == A
+    assert body["date_from"] == DA and body["date_to"] == A
 
     assert logged_in.get("/api/analytics/pnl", params={"da": DA, "a": A}).status_code == 422
 
@@ -313,7 +313,7 @@ def test_an_inverted_window_is_a_422_naming_the_field(logged_in: TestClient) -> 
     """The service's own guard, rendered as a problem document rather than a 500."""
     response = logged_in.get("/api/analytics/pnl", params={"from": A, "to": DA})
     assert response.status_code == 422
-    assert response.json()["field"] == "a"
+    assert response.json()["field"] == "to"
 
 
 def test_the_budget_list_is_bounded(logged_in: TestClient) -> None:
@@ -390,7 +390,7 @@ def test_the_simulator_adds_the_typed_value_and_answers_would_this_fit(
     assert body["brief_addition"] == "20000.00"
     revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
     assert revenue_threshold["simulated_revenue"] == "20000.00"
-    assert revenue_threshold["rientra"] is True
+    assert revenue_threshold["falls_within"] is True
 
 
 def test_the_simulator_derives_the_addition_from_hours_and_rate(
@@ -460,7 +460,7 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert body["revenue"] == "400.00"
     assert body["taxable_amount"] == "268.00"
     assert body["substitute_tax"] == "13.40"
-    assert body["contributi"] == "66.37"
+    assert body["contributions"] == "66.37"
     assert body["estimated_net_income"] == "320.23"
 
 
@@ -537,7 +537,7 @@ def test_an_entry_from_another_deal_is_a_422_naming_the_field(logged_in: TestCli
     other = logged_in.post(
         "/api/deals",
         json={
-            "nome": "Altro progetto",
+            "name": "Altro progetto",
             "customer_id": logged_in.get(f"/api/deals/{deal_id}").json()["customer_id"],
         },
     )
@@ -714,7 +714,7 @@ def test_the_openapi_document_describes_the_base_parameter_in_italian(
 # --- one azienda at a time for the taxes, every azienda for the cash (REB-631) ---------
 
 LTD = {
-    "nome": "rebase ltd",
+    "name": "rebase ltd",
     "legal_name": "Rebase Ltd",
     "country": "GB",
     "fiscal_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
@@ -833,7 +833,7 @@ def test_the_year_routes_answer_for_one_legal_entity_and_the_csv_is_to_spreadshe
     assert year.status_code == 200, year.text
     body = year.json()
     assert body["legal_entity_id"] == default
-    assert body["totali"]["taxable_amount"] == "1200.50"
+    assert body["total"]["taxable_amount"] == "1200.50"
     assert [row["number"] for row in body["register"]] == [1]
 
     file = logged_in.get("/api/analytics/year/csv", params={"year": YEAR})
@@ -898,7 +898,7 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     api_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=TODAY,
+            date=TODAY,
             quantity=Decimal("1.00"),
             description="Giornata di consulenza",
             status="worked",
@@ -915,7 +915,7 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     assert worked["days"] == "1.00"
 
     year = logged_in.get(
-        "/api/analytics/days", params={"da": DA, "a": A, "legal_entity_id": default}
+        "/api/analytics/days", params={"from": DA, "to": A, "legal_entity_id": default}
     )
     assert year.status_code == 200, year.text
     assert len(year.json()["months"]) == 12
@@ -926,6 +926,6 @@ def test_the_days_route_answers_by_month_and_state_and_takes_one_legal_entity(
     elsewhere = logged_in.get("/api/analytics/days", params={"legal_entity_id": other.json()["id"]})
     assert elsewhere.json()["days_in_period"] == "0.00"
 
-    half = logged_in.get("/api/analytics/days", params={"da": DA})
+    half = logged_in.get("/api/analytics/days", params={"from": DA})
     assert half.status_code == 422
-    assert half.json()["field"] == "a"
+    assert half.json()["field"] == "to"

@@ -20,14 +20,14 @@ def _name_from_legal_name(context: Any) -> str:
 
 
 def default_legal_entity_id(context: Any) -> UUID | None:
-    """The space's default azienda, for a row inserted without naming one.
+    """The space's default legal entity, for a row inserted without naming one.
 
     A column default on `invoices.legal_entity_id`, `invoice_counters.legal_entity_id` and
-    `invoice_register_gaps.legal_entity_id` (REB-619): the services name the azienda on
+    `invoice_register_gaps.legal_entity_id` (REB-619): the services name the legal entity on
     every row they write, so in production this runs for no row at all; it is what a
     row built by hand, which the test suite does in fifty places and a migration's
     planted fixture may, gets instead of a NOT NULL violation. Until the customer chain
-    of milestone 3 decides it, the default azienda is also the only answer there is.
+    of milestone 3 decides it, the default legal entity is also the only answer there is.
     Context-sensitive on purpose (`context.connection` is the inserting connection, so
     a default seeded in the caller's own transaction is visible); `None` when the space
     has no default at all, which the NOT NULL then refuses loudly rather than this
@@ -40,7 +40,7 @@ def default_legal_entity_id(context: Any) -> UUID | None:
 
 
 class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
-    """Who is issuing the document: one row per azienda of the space.
+    """Who is issuing the document: one row per legal entity of the space.
 
     Until REB-615 this was `EmitterProfile`, «one row, ever», held to a single row by
     a `singleton` unique column. The table keeps its name, `legal_entities`, on
@@ -52,7 +52,7 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     What the row gained: `name`, the short name the selector shows («studio rossi»,
     distinct from `legal_name`); `is_default`, exactly one `True` per space,
     enforced by the partial unique index below and not by a check in the service; and
-    `active`, because an azienda that issued an invoice is never deleted, only switched
+    `active`, because a legal entity that issued an invoice is never deleted, only switched
     off. The two partial unique indexes on the upper-cased fiscal ids are what makes
     «an XML whose supplier matches two aziende» impossible to save in the first place
     (spec §1.5, §2 step 1); `LegalEntityService` writes both ids already normalised, so
@@ -102,9 +102,7 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
         # The default is what every implicit read resolves to, so it is never a row that
         # was switched off: enforced here, not only in `set_default`/`deactivate`, because
         # the two can race each other across transactions.
-        CheckConstraint(
-            "NOT (is_default AND NOT active)", name="ck_legal_entities_default_active"
-        ),
+        CheckConstraint("NOT (is_default AND NOT active)", name="ck_legal_entities_default_active"),
         Index(
             "uq_legal_entities_default",
             "is_default",

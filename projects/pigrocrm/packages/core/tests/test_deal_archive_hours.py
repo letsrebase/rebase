@@ -46,7 +46,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 # The scenario from the finding, to the euro: eight billable hours at a hundred an hour on
 # a deal that has been won and not yet invoiced. 800.00 of `accrued_value` and one
-# `vinto_da_fatturare` signal are the two numbers that have to move together.
+# `won_to_invoice` signal are the two numbers that have to move together.
 _HOURS = "8.00"
 _RATE = "100.000000"
 _VALUE = Decimal("800.00")
@@ -55,7 +55,7 @@ ZERO = Decimal("0.00")
 
 @pytest.fixture
 def won_stage_id(db_session: Session) -> UUID:
-    stage = PipelineStage(nome=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
+    stage = PipelineStage(name=f"Vinto {uuid4()}", position=9, default_probability=100, type="won")
     db_session.add(stage)
     db_session.flush()
     return stage.id
@@ -67,7 +67,7 @@ def won_deal_id(db_session: Session, won_stage_id: UUID) -> UUID:
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
-        nome="Progetto vinto",
+        name="Progetto vinto",
         customer_id=customer.id,
         pipeline_stage_id=won_stage_id,
         probability=100,
@@ -93,9 +93,9 @@ def test_the_backlog_and_the_signal_agree_before_anything_is_archived(
     db_session: Session, won_deal_id: UUID, seeded_user_id: UUID, time_entry_factory
 ) -> None:  # type: ignore[no-untyped-def]
     """The precondition. Without it the tests below would pass on an empty backlog."""
-    time_entry_factory(data=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id)
-    hours, value, segnale = _figures(db_session)
-    assert (hours, value, segnale) == (Decimal(_HOURS), _VALUE, 1)
+    time_entry_factory(date=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id)
+    hours, value, signal = _figures(db_session)
+    assert (hours, value, signal) == (Decimal(_HOURS), _VALUE, 1)
 
 
 def test_archiving_a_deal_with_live_hours_is_refused(
@@ -106,11 +106,11 @@ def test_archiving_a_deal_with_live_hours_is_refused(
     A refusal rather than a silent success is what leaves a row to explain the number. The
     alternative the dashboard had was two irreconcilable figures and no event anywhere.
     """
-    time_entry_factory(data=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id)
+    time_entry_factory(date=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id)
     with pytest.raises(Conflict) as caught:
         DealService(db_session).soft_delete(won_deal_id, ADMIN)
     assert caught.value.details["entity"] == "deal"
-    assert caught.value.details["hours_attive"] == 1
+    assert caught.value.details["active_hours"] == 1
 
 
 def test_the_two_figures_agree_whatever_the_archive_does(
@@ -128,14 +128,14 @@ def test_the_two_figures_agree_whatever_the_archive_does(
     Asserted non-vacuously: the entry exists, so "both zero" is only reachable through an
     archive that really did remove the work from both sides.
     """
-    time_entry_factory(data=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id)
+    time_entry_factory(date=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id)
     with contextlib.suppress(Conflict):
         DealService(db_session).soft_delete(won_deal_id, ADMIN)
 
-    hours, value, segnale = _figures(db_session)
-    assert (hours, value, segnale) in {(Decimal(_HOURS), _VALUE, 1), (Decimal("0.00"), ZERO, 0)}, (
+    hours, value, signal = _figures(db_session)
+    assert (hours, value, signal) in {(Decimal(_HOURS), _VALUE, 1), (Decimal("0.00"), ZERO, 0)}, (
         f"the backlog reports {value} of work to invoice over {hours} hours while the card "
-        f"that would let anyone act on it reads {segnale}; that is the pair of numbers this "
+        f"that would let anyone act on it reads {signal}; that is the pair of numbers this "
         "file exists to keep together"
     )
 
@@ -152,7 +152,7 @@ def test_a_non_billable_hour_still_blocks_the_archive(
     aggregate is worth more than three guards that each hold for one.
     """
     time_entry_factory(
-        data=date(2026, 3, 10), hours=_HOURS, rate=None, billable=False, deal_id=won_deal_id
+        date=date(2026, 3, 10), hours=_HOURS, rate=None, billable=False, deal_id=won_deal_id
     )
     with pytest.raises(Conflict):
         DealService(db_session).soft_delete(won_deal_id, ADMIN)
@@ -167,13 +167,13 @@ def test_a_deal_whose_hours_are_archived_can_be_archived(
     soft-deleted, which is the state every one of them already reads correctly.
     """
     entry = time_entry_factory(
-        data=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id
+        date=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id
     )
     TimeEntryService(db_session).soft_delete(entry.id, ADMIN)
     DealService(db_session).soft_delete(won_deal_id, ADMIN)
 
-    hours, value, segnale = _figures(db_session)
-    assert (hours, value, segnale) == (ZERO, ZERO, 0)
+    hours, value, signal = _figures(db_session)
+    assert (hours, value, signal) == (ZERO, ZERO, 0)
 
 
 def test_a_deal_with_no_hours_at_all_is_archived_unchanged(
@@ -196,7 +196,7 @@ def test_restoring_an_hour_onto_an_archived_deal_is_refused(
     customer/deal pair; it is the same pattern one level down.
     """
     entry = time_entry_factory(
-        data=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id
+        date=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id
     )
     TimeEntryService(db_session).soft_delete(entry.id, ADMIN)
     DealService(db_session).soft_delete(won_deal_id, ADMIN)
@@ -205,8 +205,8 @@ def test_restoring_an_hour_onto_an_archived_deal_is_refused(
         TimeEntryService(db_session).restore(entry.id, ADMIN)
     assert caught.value.details["deal_id"] == str(won_deal_id)
 
-    hours, value, segnale = _figures(db_session)
-    assert (hours, value, segnale) == (ZERO, ZERO, 0)
+    hours, value, signal = _figures(db_session)
+    assert (hours, value, signal) == (ZERO, ZERO, 0)
 
 
 def test_restoring_an_hour_on_a_live_deal_still_works(
@@ -214,11 +214,11 @@ def test_restoring_an_hour_on_a_live_deal_still_works(
 ) -> None:  # type: ignore[no-untyped-def]
     """The guard is about the deal's state, not about restoring."""
     entry = time_entry_factory(
-        data=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id
+        date=date(2026, 3, 10), hours=_HOURS, rate=_RATE, deal_id=won_deal_id
     )
     TimeEntryService(db_session).soft_delete(entry.id, ADMIN)
     restored = TimeEntryService(db_session).restore(entry.id, ADMIN)
     assert restored.id == entry.id
 
-    hours, value, segnale = _figures(db_session)
-    assert (hours, value, segnale) == (Decimal(_HOURS), _VALUE, 1)
+    hours, value, signal = _figures(db_session)
+    assert (hours, value, signal) == (Decimal(_HOURS), _VALUE, 1)

@@ -121,14 +121,14 @@ def test_only_one_legal_entity_can_be_the_default(db_session: Session) -> None:
     db_session.execute(delete(LegalEntity))
     db_session.flush()
     for i in range(2):
-        db_session.add(LegalEntity(legal_name="X", vat_number=f"1234567890{i}", predefinita=True))
+        db_session.add(LegalEntity(legal_name="X", vat_number=f"1234567890{i}", is_default=True))
     with pytest.raises(IntegrityError):
         db_session.flush()
 
 
 def test_two_templates_cannot_share_a_name_case_insensitively(db_session: Session) -> None:
-    db_session.add(Template(nome="Consulenza CTO", type="offer", body_markdown="x"))
-    db_session.add(Template(nome="consulenza cto", type="offer", body_markdown="y"))
+    db_session.add(Template(name="Consulenza CTO", type="offer", body_markdown="x"))
+    db_session.add(Template(name="consulenza cto", type="offer", body_markdown="y"))
     with pytest.raises(IntegrityError):
         db_session.flush()
 

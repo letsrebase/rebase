@@ -4,7 +4,7 @@ Spec 2026-10-26 §9, REB-736. The command is the one piece of the reminders that
 is more than one space: it visits the root installation, walks the tenant registry, opens
 each space's own database and hands `ReminderRun` one engine per space. So this file
 provisions two spaces for real (`CREATE DATABASE`, the migrations to head, the first
-admin), as `test_cli_digest.py` does, gives each an attività due today, and then runs
+admin), as `test_cli_digest.py` does, gives each an task due today, and then runs
 `cli.main(["reminders", ...])`.
 
 The card's proof is in the first test: nobody calls the pass for a space, the command does,
@@ -45,7 +45,7 @@ from pigrocrm.core.tenants.service import migrate_to_head
 
 UNO = "prova-promemoria-uno"
 DUE = "prova-promemoria-due"
-TITOLARI = {UNO: "uno@studio.it", DUE: "due@studio.it"}
+OWNERS = {UNO: "uno@studio.it", DUE: "due@studio.it"}
 SPACES = (UNO, DUE)
 ROOT_DB = "prova_promemoria_radice"
 ROOT_OWNER = "titolare@radice.it"
@@ -68,8 +68,8 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     try:
         migrate_to_head(configured, configured.database_url)
         with _engine(configured.database_url) as engine, session_factory(engine)() as session:
-            session.add(User(email=ROOT_OWNER, nome="Titolare", role="admin", active=True))
-            committed_default_legal_entity(session, nome="Radice")
+            session.add(User(email=ROOT_OWNER, name="Titolare", role="admin", active=True))
+            committed_default_legal_entity(session, name="Radice")
             session.commit()
         yield configured
     finally:
@@ -102,7 +102,7 @@ def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
     service = TenantService(session, settings)
     try:
         for slug in SPACES:
-            service.provision(TenantSignup(slug=slug, nome=f"Studio {slug}", email=TITOLARI[slug]))
+            service.provision(TenantSignup(slug=slug, name=f"Studio {slug}", email=OWNERS[slug]))
         yield
     finally:
         for slug in SPACES:
@@ -123,7 +123,7 @@ def _url(settings: Settings, slug: str | None) -> object:
 
 
 def _owner_id(settings: Settings, slug: str | None) -> UUID:
-    email = ROOT_OWNER if slug is None else TITOLARI[slug]
+    email = ROOT_OWNER if slug is None else OWNERS[slug]
     with _engine(_url(settings, slug)) as engine, engine.connect() as connection:
         return connection.execute(
             text("select id from users where email = :email"), {"email": email}
@@ -132,7 +132,7 @@ def _owner_id(settings: Settings, slug: str | None) -> UUID:
 
 @pytest.fixture(autouse=True)
 def _to_due_task_in_every_space(settings: Settings, spaces: None) -> Iterator[None]:
-    """One attività due today, assigned to each installation's owner, and everything a pass
+    """One task due today, assigned to each installation's owner, and everything a pass
     writes undone afterwards so each test starts from a space nobody has reminded."""
     today = today_local(settings)
     for slug in (None, *SPACES):
@@ -148,7 +148,7 @@ def _to_due_task_in_every_space(settings: Settings, spaces: None) -> Iterator[No
                 "reminder_ack",
                 "reminder_snooze",
                 "reminder_job_run",
-                "attivita",
+                "tasks",
             ):
                 connection.execute(text(f"delete from {table}"))  # noqa: S608 - fixed names
 

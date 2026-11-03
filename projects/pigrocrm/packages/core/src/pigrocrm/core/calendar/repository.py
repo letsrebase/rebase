@@ -27,7 +27,12 @@ class CalendarRepository:
         self.session = session
 
     def hours_by_day_and_deal(
-        self, da: date, a: date, *, user_id: UUID | None = None, legal_entity_id: UUID | None = None
+        self,
+        date_from: date,
+        date_to: date,
+        *,
+        user_id: UUID | None = None,
+        legal_entity_id: UUID | None = None,
     ) -> list[tuple[date, UUID, Decimal]]:
         """`(day, deal, hours)` for every day of the window that has any, in one query.
 
@@ -44,8 +49,8 @@ class CalendarRepository:
             select(TimeEntry.date, TimeEntry.deal_id, func.sum(TimeEntry.hours))
             .where(
                 TimeEntry.deleted_at.is_(None),
-                TimeEntry.date >= da,
-                TimeEntry.date <= a,
+                TimeEntry.date >= date_from,
+                TimeEntry.date <= date_to,
             )
             .group_by(TimeEntry.date, TimeEntry.deal_id)
             .order_by(TimeEntry.date)
@@ -85,7 +90,7 @@ class CalendarRepository:
         return {row[0]: (row[1], row[2]) for row in rows}
 
     def invoices_due(
-        self, da: date, a: date, *, legal_entity_id: UUID | None = None
+        self, date_from: date, date_to: date, *, legal_entity_id: UUID | None = None
     ) -> list[tuple[Invoice, str | None]]:
         """Issued, unpaid invoices whose due date falls in the window, with the client's
         name.
@@ -107,8 +112,8 @@ class CalendarRepository:
                 Invoice.status == "issued",
                 Invoice.payment_status == "unpaid",
                 Invoice.due_date.is_not(None),
-                Invoice.due_date >= da,
-                Invoice.due_date <= a,
+                Invoice.due_date >= date_from,
+                Invoice.due_date <= date_to,
                 *(
                     [Invoice.legal_entity_id == legal_entity_id]
                     if legal_entity_id is not None
@@ -120,16 +125,16 @@ class CalendarRepository:
         return [(row[0], row[1]) for row in rows]
 
     def work_units_in_window(
-        self, da: date, a: date, *, legal_entity_id: UUID | None = None
+        self, date_from: date, date_to: date, *, legal_entity_id: UUID | None = None
     ) -> list[tuple[WorkUnit, str, str]]:
         """`(day, contract title, customer name)` for every contract day of the window that
         still counts, oldest first.
 
         `rejected` and `revoked` are left out: those two are exactly the outcomes that
-        free the date for a fresh day (`uq_work_units_contract_data_live`), so a cell that
+        free the date for a fresh day (`uq_work_units_contract_date_live`), so a cell that
         drew them would show a date as taken that nothing holds. They stay in the register
         (`WorkUnitService.list`). The customer is joined with no `deleted_at` filter, for
-        the reason `deal_labels` records. Through the contract for the azienda, the way
+        the reason `deal_labels` records. Through the contract for the legal entity, the way
         every contract read does (REB-623).
         """
         stmt = (
@@ -137,8 +142,8 @@ class CalendarRepository:
             .join(Contract, Contract.id == WorkUnit.contract_id)
             .join(Customer, Customer.id == Contract.customer_id)
             .where(
-                WorkUnit.date >= da,
-                WorkUnit.date <= a,
+                WorkUnit.date >= date_from,
+                WorkUnit.date <= date_to,
                 WorkUnit.status.not_in(("rejected", "revoked")),
             )
             .order_by(WorkUnit.date, Contract.title, WorkUnit.id)

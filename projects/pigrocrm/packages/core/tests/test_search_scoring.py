@@ -1,12 +1,12 @@
 """Spec §8.5's formula, pinned against real Postgres.
 
-    punteggio_campo = 1.00  se lower(campo) = lower(termine)
-                    = 0.80  se lower(campo) inizia con lower(termine)
-                    = 0.60 × similarity(campo, termine)
-    peso_campo      = 1.00  campo identificativo / codice
-                    = 0.90  email
-                    = 0.80  causale
-    punteggio_riga  = max(peso_campo × punteggio_campo)
+    field_score = 1.00  if lower(field) = lower(term)
+                = 0.80  if lower(field) starts with lower(term)
+                = 0.60 × similarity(field, term)
+    field_weight = 1.00  identifier / code field
+                 = 0.90  email
+                 = 0.80  memo
+    row_score    = max(field_weight × field_score)
 
 Exact and prefix scores are asserted to the cent, because they are literals. The
 substring score is asserted only by *ordering* and by its bounds: the precise value of

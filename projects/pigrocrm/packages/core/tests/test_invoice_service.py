@@ -154,11 +154,11 @@ def test_the_stamp_duty_is_stored_but_stays_out_of_the_total(
 
 def test_the_regime_decides_the_line_vat_nature(service: InvoiceService, customer_id: UUID) -> None:
     invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.line_number == 1
-    assert riga.vat_rate == Decimal("0.00")
-    assert riga.vat_nature == "N2.2"
-    assert riga.legal_reference == DEFAULT_LEGAL_REFERENCE
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.line_number == 1
+    assert line.vat_rate == Decimal("0.00")
+    assert line.vat_nature == "N2.2"
+    assert line.legal_reference == DEFAULT_LEGAL_REFERENCE
 
 
 def _non_resident_customer(db_session: Session) -> UUID:
@@ -188,11 +188,11 @@ def test_to_not_resident_customer_gets_vat_nature_n_2_1_and_the_7_ter_reference(
     invoice = service.create(
         InvoiceCreate(customer_id=customer_id, type="proforma", lines=[_line()]), ADMIN
     )
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.vat_rate == Decimal("0.00")
-    assert riga.vat_nature == "N2.1"
-    assert riga.legal_reference == LEGAL_REFERENCE_EXTRA_UE
-    assert "7-ter" in riga.legal_reference
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.vat_rate == Decimal("0.00")
+    assert line.vat_nature == "N2.1"
+    assert line.legal_reference == LEGAL_REFERENCE_EXTRA_UE
+    assert "7-ter" in line.legal_reference
 
 
 def test_replacing_the_lines_reads_the_customer_s_country_again(
@@ -211,9 +211,9 @@ def test_replacing_the_lines_reads_the_customer_s_country_again(
     db_session.flush()
 
     service.replace_lines(invoice.id, [_line()], ADMIN)
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.vat_nature == "N2.2"
-    assert riga.legal_reference == DEFAULT_LEGAL_REFERENCE
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.vat_nature == "N2.2"
+    assert line.legal_reference == DEFAULT_LEGAL_REFERENCE
 
 
 def test_to_not_zero_rate_under_the_flat_rate_is_refused_by_field_name(
@@ -258,7 +258,7 @@ def test_a_deal_belonging_to_another_customer_is_refused(
     other = Customer(legal_name="Altro", country="IT")
     db_session.add(other)
     db_session.flush()
-    deal = Deal(nome="Progetto", customer_id=other.id, pipeline_stage_id=stage.id)
+    deal = Deal(name="Progetto", customer_id=other.id, pipeline_stage_id=stage.id)
     db_session.add(deal)
     db_session.flush()
     with pytest.raises(ValidationFailed) as caught:
@@ -269,7 +269,7 @@ def test_a_deal_belonging_to_another_customer_is_refused(
 def test_creation_without_a_fiscal_profile_says_which_configuration_is_missing(
     db_session: Session, storage: LocalFileStorage, customer_id: UUID
 ) -> None:
-    # The azienda exists, as it does on every provisioned space; what is missing is
+    # The legal entity exists, as it does on every provisioned space; what is missing is
     # its fiscal profile, which is the configuration the message has to name.
     from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
     from pigrocrm.core.legal_entities.service import LegalEntityService
@@ -352,10 +352,10 @@ def test_bulk_replacement_is_how_an_optional_numeric_field_gets_cleared(
         ADMIN,
     )
     service.replace_lines(invoice.id, [_line("A", "100.00")], ADMIN)
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.discount_amount is None
-    assert riga.unit_of_measure is None
-    assert riga.total_price == Decimal("100.00")
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.discount_amount is None
+    assert line.unit_of_measure is None
+    assert line.total_price == Decimal("100.00")
 
 
 def test_a_percentage_and_a_fixed_discount_compose_in_a_defined_order(
@@ -562,7 +562,7 @@ def _issued_row(db_session: Session, customer_id: UUID, **overrides: object) -> 
         stamp_duty=Decimal("2.00"),
         total=Decimal("100.00"),
         payment_status="unpaid",
-        snapshot={"versione": 1},
+        snapshot={"version": 1},
         snapshot_version=1,
         custom_fields={},
     )
@@ -600,7 +600,9 @@ def test_the_internal_notes_of_an_issued_invoice_can_still_be_changed(
     """They appear on no artefact, so they are not part of the document (spec 4)."""
     invoice = _issued_row(db_session, customer_id)
     assert (
-        service.update(invoice.id, InvoiceUpdate(internal_notes="sollecitato"), ADMIN).internal_notes
+        service.update(
+            invoice.id, InvoiceUpdate(internal_notes="sollecitato"), ADMIN
+        ).internal_notes
         == "sollecitato"
     )
 
@@ -619,10 +621,10 @@ def test_an_issued_invoice_cannot_be_soft_deleted(
 def test_the_list_finds_the_invoice_to_consumed_proforma_was_issued_as(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """The fattura points back at its proforma and the proforma points at nothing, so
-    the consumed proforma's page finds its fattura by asking the list for the row whose
-    `origin_proforma_id` is its own id (ORB-134). Another fattura, or another
-    proforma's fattura, does not answer."""
+    """The invoice points back at its proforma and the proforma points at nothing, so
+    the consumed proforma's page finds its invoice by asking the list for the row whose
+    `origin_proforma_id` is its own id (ORB-134). Another invoice, or another
+    proforma's invoice, does not answer."""
     proforma = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
     other = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
     from_proforma = _issued_row(db_session, customer_id, origin_proforma_id=proforma.id)
@@ -679,8 +681,8 @@ def test_the_list_under_unpaid_answers_only_the_receivables(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     """REB-325: every row is born `unpaid`, so an equality on the column listed
-    drafts and proformas as unpaid. The filter now means what the dashboard's «Da
-    incassare» card means (`_receivable_filter`): an issued fattura nobody has paid."""
+    drafts and proformas as unpaid. The filter now means what the dashboard's "Da
+    incassare" (to collect) card means (`_receivable_filter`): an issued invoice nobody has paid."""
     service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
     service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
     owed = _issued_row(db_session, customer_id)
@@ -735,7 +737,7 @@ def test_list_is_the_last_method_of_the_service_class() -> None:
 
 
 def test_a_draft_may_carry_an_accrual_period(service: InvoiceService, customer_id: UUID) -> None:
-    """The month the work belongs to used to live only in the free text of the causale
+    """The month the work belongs to used to live only in the free text of the memo
     ("FDE, agosto 2026"); now it is two dates the XML and the P&L can read."""
     invoice = service.create(
         InvoiceCreate(
@@ -1004,8 +1006,8 @@ def test_to_malformed_tender_code_is_refused_by_field_name(
 def test_the_order_is_edited_on_the_merged_row_and_cleared_as_a_whole(
     service: InvoiceService, customer_id: UUID
 ) -> None:
-    """Like the accrual period: adding a CIG to a document whose number is stored is
-    one field, dropping the number while the CIG stays is refused and leaves the row as
+    """Like the accrual period: adding a tender code to a document whose number is stored is
+    one field, dropping the number while the tender code stays is refused and leaves the row as
     it was, and four nulls clear the order."""
     invoice = service.create(
         InvoiceCreate(customer_id=customer_id, purchase_order_number="ODA-14"), ADMIN

@@ -142,7 +142,7 @@ ROWS: list[Row] = [
     # --- automation config: admin (config_service.py:103) ---------------------------
     Row("PUT", "/api/automation-config", admin_only=True, body={}),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
-    Row("POST", "/api/cost-categories", admin_only=True, body={"nome": "matrice-cat"}),
+    Row("POST", "/api/cost-categories", admin_only=True, body={"name": "matrice-cat"}),
     Row("POST", "/api/cost-categories/seed", admin_only=True),
     Row("PATCH", "/api/cost-categories/{category_id}", admin_only=True, body={}),
     Row("POST", "/api/cost-categories/{category_id}/archive", admin_only=True),
@@ -153,7 +153,7 @@ ROWS: list[Row] = [
         "/api/costs",
         body={
             "category_id": "__FAKE__",
-            "data": "2026-01-05",
+            "date": "2026-01-05",
             "amount": "10.00",
             "description": "matrice-costo",
         },
@@ -206,7 +206,7 @@ ROWS: list[Row] = [
         "/api/contracts/{contract_id}/expenses",
         body={
             "category_id": "__FAKE__",
-            "data": "2026-01-01",
+            "date": "2026-01-01",
             "amount": "10.00",
             "description": "Matrice",
         },
@@ -219,13 +219,13 @@ ROWS: list[Row] = [
     Row(
         "POST",
         "/api/contracts/{contract_id}/register/pdf",
-        params={"da": "2026-10-01", "a": "2026-10-31"},
+        params={"from": "2026-10-01", "to": "2026-10-31"},
     ),
     # --- contracts / email templates (REB-753): `require_write` ----------------------
     Row(
         "POST",
         "/api/contracts/{contract_id}/email-templates",
-        body={"nome": "Matrice", "subject": "Matrice", "body": "Matrice"},
+        body={"name": "Matrice", "subject": "Matrice", "body": "Matrice"},
     ),
     Row("PATCH", "/api/contracts/{contract_id}/email-templates/{template_id}", body={}),
     Row(
@@ -261,7 +261,7 @@ ROWS: list[Row] = [
             "target_type": "work_unit",
             "proposed_fields": {
                 "contract_id": "__FAKE__",
-                "data": "2026-01-01",
+                "date": "2026-01-01",
                 "quantity": "1.00",
                 "description": "Matrice",
                 "approval": {
@@ -282,7 +282,7 @@ ROWS: list[Row] = [
         "/api/work-units",
         body={
             "contract_id": "__FAKE__",
-            "data": "2026-01-01",
+            "date": "2026-01-01",
             "quantity": "1.00",
             "description": "Matrice",
             "status": "worked",
@@ -292,7 +292,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/contracts/{contract_id}/approval-request",
         body={
-            "days": [{"data": "2026-01-05", "quantity": "1.00", "description": "Matrice"}],
+            "days": [{"date": "2026-01-05", "quantity": "1.00", "description": "Matrice"}],
             "to_addresses": ["cliente@example.it"],
             "subject": "Matrice",
             "body": "Matrice",
@@ -303,7 +303,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/contracts/{contract_id}/approval-request/preview",
         expect="open",
-        body={"days": [{"data": "2026-01-05", "quantity": "1.00", "description": "Matrice"}]},
+        body={"days": [{"date": "2026-01-05", "quantity": "1.00", "description": "Matrice"}]},
     ),
     Row(
         "POST",
@@ -337,9 +337,9 @@ ROWS: list[Row] = [
     Row(
         "POST",
         "/api/customers/{customer_id}/people-from-mail",
-        body={"address": "marco@acme.it", "nome": "Marco"},
+        body={"address": "marco@acme.it", "name": "Marco"},
     ),
-    Row("POST", "/api/deals", body={"nome": "matrice-deal", "customer_id": "__CUST__"}),
+    Row("POST", "/api/deals", body={"name": "matrice-deal", "customer_id": "__CUST__"}),
     Row("DELETE", "/api/deals/{deal_id}"),
     Row("PATCH", "/api/deals/{deal_id}", body={}),
     # Rates rewrite what a quarter's work was worth: admin (timetracking/service.py:440,
@@ -349,7 +349,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/deals/{deal_id}/rates/recalculate",
         admin_only=True,
-        body={"da": "2026-01-01", "a": "2026-01-31"},
+        body={"date_from": "2026-01-01", "date_to": "2026-01-31"},
     ),
     Row("POST", "/api/deals/{deal_id}/restore"),
     Row("PATCH", "/api/deals/{deal_id}/stage", body={"stage_id": "__FAKE__"}),
@@ -428,7 +428,7 @@ ROWS: list[Row] = [
         "/api/legal-entities",
         admin_only=True,
         body={
-            "nome": "matrice",
+            "name": "matrice",
             "legal_name": "Matrice Ltd",
             "country": "GB",
             "fiscal_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
@@ -552,12 +552,12 @@ ROWS: list[Row] = [
         "POST",
         "/api/invoices/{invoice_id}/transmitted",
         admin_only=True,
-        body={"data": "2026-01-02"},
+        body={"date": "2026-01-02"},
     ),
     # --- payment reminders: preparing one is a write (gmail/solleciti.py:220) --------
     Row("POST", "/api/payment-reminders", body={"invoice_id": "__FAKE__"}),
     # --- people: same CRUD shape as customers ----------------------------------------
-    Row("POST", "/api/people", body={"nome": "Matrice Persona"}),
+    Row("POST", "/api/people", body={"first_name": "Matrice Persona"}),
     Row("DELETE", "/api/people/{person_id}"),
     Row("PATCH", "/api/people/{person_id}", body={}),
     Row("POST", "/api/people/{person_id}/restore"),
@@ -565,7 +565,7 @@ ROWS: list[Row] = [
     Row("POST", "/api/period-locks", admin_only=True, body={"year": 2020, "month": 1}),
     Row("DELETE", "/api/period-locks/{year}/{month}", admin_only=True),
     # --- pipeline: configuration, admin (pipeline/service.py) -------------------------
-    Row("POST", "/api/pipeline-stages", admin_only=True, body={"nome": "Matrice", "position": 99}),
+    Row("POST", "/api/pipeline-stages", admin_only=True, body={"name": "Matrice", "position": 99}),
     Row("POST", "/api/pipeline-stages/seed", admin_only=True),
     Row("DELETE", "/api/pipeline-stages/{stage_id}", admin_only=True),
     Row("PATCH", "/api/pipeline-stages/{stage_id}", admin_only=True, body={}),
@@ -577,7 +577,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/templates",
         admin_only=True,
-        body={"nome": "matrice-tpl", "type": "offer", "body_markdown": "ciao"},
+        body={"name": "matrice-tpl", "type": "offer", "body_markdown": "ciao"},
     ),
     Row("DELETE", "/api/templates/{template_id}", admin_only=True),
     Row("PATCH", "/api/templates/{template_id}", admin_only=True, body={}),
@@ -593,7 +593,7 @@ ROWS: list[Row] = [
         body={
             "deal_id": "__FAKE__",
             "user_id": "__ADMIN__",
-            "data": "2026-01-05",
+            "date": "2026-01-05",
             "hours": "1.00",
             "description": "matrice",
         },
@@ -612,7 +612,7 @@ ROWS: list[Row] = [
     # right shape: the row's nonexistence is the answer, not the role. REB-295 landed
     # with the inheritance current, not frozen (see this module's docstring), and it
     # did NOT gate minting: both rows and the spec §10 table stand as written.
-    Row("POST", "/api/tokens", expect="open", body={"nome": "matrice-token"}),
+    Row("POST", "/api/tokens", expect="open", body={"name": "matrice-token"}),
     Row("DELETE", "/api/tokens/{token_id}", expect="open"),
     # REB-810: a token's own full access. Open to every role for the same reason: it is the
     # owner's own token, and a foreign id is a 404 from here (an administrator may change a
@@ -628,7 +628,7 @@ ROWS: list[Row] = [
         "POST",
         "/api/users",
         admin_only=True,
-        body={"email": "matrice-nuovo@pigro.it", "nome": "Matrice", "password": ADMIN_PASSWORD},
+        body={"email": "matrice-nuovo@pigro.it", "name": "Matrice", "password": ADMIN_PASSWORD},
     ),
     Row("GET", "/api/users", admin_only=True),
     Row("GET", "/api/users/directory", expect="open"),
@@ -841,7 +841,7 @@ GOOGLE_SETTINGS = BASE_SETTINGS.model_copy(
 
 def _logged_in_as(app: FastAPI, session: Session, *, email: str, role: str) -> TestClient:
     UserService(session).create(
-        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Matrice", role=role),  # type: ignore[arg-type]
+        UserCreate(email=email, password=ADMIN_PASSWORD, name="Matrice", role=role),  # type: ignore[arg-type]
         Actor.system(),
     )
     client = TestClient(app, base_url="https://testserver")
@@ -894,12 +894,12 @@ def matrix(api_engine: Engine) -> Iterator[Matrix]:
         customer = admin.post("/api/customers", json={"legal_name": "Matrice Srl"})
         assert customer.status_code == 201, customer.text
         ids["__CUST__"] = customer.json()["id"]
-        deal = admin.post("/api/deals", json={"nome": "Matrice", "customer_id": ids["__CUST__"]})
+        deal = admin.post("/api/deals", json={"name": "Matrice", "customer_id": ids["__CUST__"]})
         assert deal.status_code == 201, deal.text
         ids["__DEAL__"] = deal.json()["id"]
         # An administrator's personal access token, which is a *credential*, not a role:
         # the same person, the same role, carried by `Bearer pgc_...` and no cookie.
-        minted = admin.post("/api/tokens", json={"nome": "matrice-agente"})
+        minted = admin.post("/api/tokens", json={"name": "matrice-agente"})
         assert minted.status_code == 201, minted.text
         agent = TestClient(
             app,

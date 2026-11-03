@@ -78,7 +78,7 @@ class ReviewedInvoiceRead(BaseModel):
     document_id: UUID
     outcome: InvoiceReviewOutcome
     invoice: ParsedInvoice | None = None
-    # The azienda the file's supplier matched (REB-619, spec §1.5): the register it
+    # The legal entity the file's supplier matched (REB-619, spec §1.5): the register it
     # was checked against and the one `confirm_invoice_import` writes it on. `None`
     # on an `incoming_skipped` or `unclaimed` row, which lands nowhere.
     legal_entity_id: UUID | None = None
@@ -96,7 +96,7 @@ class InvoiceReviewRequest(BaseModel):
     """One or more `document_id`s, never raw bytes -- the MCP rule
     (`tools/families/documents.py`'s own "the download of bytes never goes through MCP")
     applied symmetrically to the *input* side, and the same shape `InvoiceImport.
-    pdf_sorgente` already uses for a `documents` row that is already on file."""
+    pdf_source` already uses for a `documents` row that is already on file."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -149,14 +149,14 @@ def natural_key(invoice: ParsedInvoice) -> tuple[int, int] | None:
 
 def existing_for(session: Session, invoice: ParsedInvoice, legal_entity_id: UUID) -> Invoice | None:
     """What `classify_parsed_invoice` should compare this invoice's bytes against:
-    the azienda's register row at the invoice's own natural key, or -- when that key
+    the legal entity's register row at the invoice's own natural key, or -- when that key
     cannot be derived at all (`natural_key` above) -- a synthetic hashless row.
     `check_invoice_duplicate`'s own NULL-hash rule then answers `"conflict"` for that
     row: there is nothing to compare against, so nothing can be proven new, the same
     conservative default `import_dedup` already applies to a `NULL`-hash register row.
 
     Called through `classify_parsed_invoice`'s `existing_for` callback, once the
-    azienda is known (REB-619): an incoming invoice never reaches it, and an outgoing
+    legal entity is known (REB-619): an incoming invoice never reaches it, and an outgoing
     one is looked up on the register it would land on and no other.
     """
     key = natural_key(invoice)
@@ -170,7 +170,7 @@ def register_lookup(
     session: Session, invoice: ParsedInvoice
 ) -> Callable[[LegalEntity], Invoice | None]:
     """`existing_for` with the session and the invoice bound, in the shape
-    `classify_parsed_invoice` takes: the azienda is the one argument left, since it
+    `classify_parsed_invoice` takes: the legal entity is the one argument left, since it
     is the one fact the classifier learns."""
     return lambda legal_entity: existing_for(session, invoice, legal_entity.id)
 
@@ -179,7 +179,7 @@ def match_customer(
     session: Session, customer: ParsedInvoiceParty, legal_entity_id: UUID | None = None
 ) -> UUID | None:
     """The customer on file for `customer`, by tax id, among those of `legal_entity_id` when
-    given: an invoice written on one azienda's register attaches only to that azienda's
+    given: an invoice written on one legal entity's register attaches only to that legal entity's
     customers (REB-783)."""
     vat_number = normalise_fiscal_id(customer.vat_number)
     cf = normalise_fiscal_id(customer.tax_code)
@@ -248,9 +248,9 @@ def _propose_day_mappings(
         return none_per_line
     return [
         propose_day_mapping(
-            riga.quantity, riga.total_price, invoice.issue_date, eligible_days, rate_cards
+            line.quantity, line.total_price, invoice.issue_date, eligible_days, rate_cards
         )
-        for riga in invoice.lines
+        for line in invoice.lines
     ]
 
 
@@ -275,7 +275,7 @@ def review_invoices(
 ) -> list[ReviewedInvoice]:
     """The whole review step for one document's already-read bytes: `detect`,
     `parse`, `classify_parsed_invoice` per invoice against the space's active Italian
-    aziende (REB-619), and -- only for an otherwise-`"ready"` one -- the customer
+    legal entities (REB-619), and -- only for an otherwise-`"ready"` one -- the customer
     match this issue adds on top of REB-364. Reads through `session`; writes nothing.
     """
     adapter = detect_adapter(content)

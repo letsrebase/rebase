@@ -213,7 +213,7 @@ def test_paging_a_nullable_sort_column_reaches_the_null_tail(
     directions, which is what `order_by` declares and what the descending index exists
     to serve."""
     for last_name in ("Bianchi", None, "Rossi", None):
-        db_session.add(Person(nome="Marco", last_name=last_name, custom_fields={}))
+        db_session.add(Person(first_name="Marco", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     service = PersonService(db_session)

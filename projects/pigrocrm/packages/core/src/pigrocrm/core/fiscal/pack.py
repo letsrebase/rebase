@@ -6,16 +6,17 @@ A ceiling and a statutory charge are not emission defaults -- they are a fact ab
 the jurisdiction's regime, ported from mastro's own `FiscalPack`/`Ceiling`/
 `StatutoryCharge` interfaces (`fiscal/pack.ts`, `packs/it-flat-rate.ts` in
 `~/projects/personal/mastro`, commit `53ef2942`) and trimmed to exactly what a
-ceiling engine and a rivalsa line need: no `TaxTreatment`/`resolveTaxTreatment`
+ceiling engine and a social security surcharge line need: no `TaxTreatment`/`resolveTaxTreatment`
 machinery, since `FiscalProfile.default_vat_nature`/`default_vat_rate` already solve
 that problem for the one regime this product supports.
 
-Three shipped packs. `IT_FLAT_RATE_PACK` is the forfettario, the currently-in-force version
+Three shipped packs. `IT_FLAT_RATE_PACK` is the flat-rate regime, the currently-in-force version
 (`it-flat-rate.ts`'s `effectiveFrom: '2023-01-01'`, not the pre-2023
 `itFlatRatePackV0`, since PigroCRM has no history to reconcile against an older
 regime). `IT_STANDARD_PACK` is Italy's ordinary regime (mastro's `it-standard.ts`):
-no revenue ceiling and no statutory charge, because the forfettario's thresholds and
-its rivalsa are facts of that regime alone. `NON_IT_PACK` is mastro's `generic` pack
+no revenue ceiling and no statutory charge, because the flat-rate regime's thresholds and
+its social security surcharge are facts of that regime alone. `NON_IT_PACK` is mastro's `generic`
+pack
 under the name this product gave it (REB-619): a company outside Italy, no ceiling,
 no charge, no national invoice format; there is no second no-ceiling pack beside it,
 since one that declared nothing and did nothing else would only be a duplicate.
@@ -23,7 +24,7 @@ since one that declared nothing and did nothing else would only be a duplicate.
 governs -- a plain string pair, no historicisation, matching `FiscalProfile`'s own
 un-historicised shape -- read once by the ceiling service at evaluation time. A
 further pack is a new module and a new registry entry here, never a branch on
-`FiscalProfile.regime_code` inside the ceiling or rivalsa logic (mastro's own
+`FiscalProfile.regime_code` inside the ceiling or social security surcharge logic (mastro's own
 invariant 1: no country-specific logic outside a jurisdiction pack).
 """
 
@@ -41,7 +42,7 @@ PACK_NON_IT: Final = "non-it"
 
 # The only basis this pack's ceilings use today -- mastro's `cash_received_calendar_year`
 # (`pack.ts`'s `CeilingBasis`). Money in the bank, within the calendar year, matching
-# how the law itself measures the forfettario's own ceilings ("ricavi o compensi
+# how the law itself measures the flat-rate regime's own ceilings ("ricavi o compensi
 # percepiti").
 CeilingBasis = Literal["cash_received_calendar_year"]
 
@@ -81,16 +82,16 @@ class Ceiling:
 class StatutoryCharge:
     """A statutory charge a pack requires an invoice to carry -- mastro's
     `StatutoryCharge` (`pack.ts:195-221`), trimmed to `amount: {kind: 'percentage'}`
-    (`IT_FLAT_RATE_PACK`'s rivalsa is the only charge this port ships; mastro's
+    (`IT_FLAT_RATE_PACK`'s social security surcharge is the only charge this port ships; mastro's
     virtual stamp duty is not ported, per REB-344 §8: PigroCRM never recharges its
-    bollo to the client).
+    stamp duty to the client).
 
     `description_line` is the exact `InvoiceLine.description` text the
     invoice-line-construction step writes -- naming the surcharge and its legal
     basis, per REB-361's own "Needed" -- and the one stable marker the tagged-figure
     mechanism (`ceiling.py`) reads back to identify this charge's own lines without a
     new `InvoiceLine`/`Invoice` column: `vat_nature`/`legal_reference` cannot serve
-    that role, because every zero-rate line on a forfettario invoice already carries
+    that role, because every zero-rate line on a flat-rate regime invoice already carries
     the *regime's* single `vat_nature`/`legal_reference` pair
     (`fiscal/regime.py::_flat_rate.resolve_line_vat`), identical whether the line is
     a fee or a statutory charge -- `description` is the only column a per-charge
@@ -117,7 +118,7 @@ class StatutoryCharge:
 class FiscalPack:
     """A jurisdiction pack: its ceilings and its statutory charges -- mastro's
     `FiscalPack` (`pack.ts:297-350`), trimmed to the two sections this port needs.
-    Never named by id inside the ceiling or rivalsa logic (mastro's own `pack.ts`
+    Never named by id inside the ceiling or social security surcharge logic (mastro's own `pack.ts`
     header: "nothing in this file may name a concrete pack") -- a caller resolves one
     by `id`/`version` through `resolve_pack` and passes the object on."""
 
@@ -126,7 +127,7 @@ class FiscalPack:
     ceilings: tuple[Ceiling, ...]
     charges: tuple[StatutoryCharge, ...]
     # Whether the pack's regime has the income estimate (`analytics/fiscal.py`): the
-    # forfettario's coefficient, substitute tax and INPS. No other pack has one, and the
+    # flat-rate regime's coefficient, substitute tax and INPS. No other pack has one, and the
     # economic overview draws no estimate for them instead of a card of zeros (REB-760).
     estimate_income: bool = False
 
@@ -141,7 +142,7 @@ SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID = "rivalsa_inps"
 
 # 4%, `it-flat-rate.ts:278`'s `basisPoints: 400`. The base is the fee subtotal alone,
 # never widened by a recharged stamp duty (`chargeSlotOrder`'s other slot): REB-344 §9
-# confirms PigroCRM never recharges bollo to the client, so the base the law and
+# confirms PigroCRM never recharges stamp duty to the client, so the base the law and
 # mastro's own pack agree on collapses to the fee alone here.
 SOCIAL_SECURITY_SURCHARGE_INPS = StatutoryCharge(
     id=SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID,
@@ -149,7 +150,7 @@ SOCIAL_SECURITY_SURCHARGE_INPS = StatutoryCharge(
     description_line="Rivalsa contributiva INPS 4% (art. 1, comma 212, legge 662/1996)",
     rate=Decimal("0.04"),
     # It counts toward the ceiling in full ("l'importo concorre al limite dei ricavi
-    # e compensi del regime forfettario", the circolare `it-flat-rate.ts:262` cites)
+    # e compensi del regime flat-rate regime", the circolare `it-flat-rate.ts:262` cites)
     # while never entering the coefficiente base ("pur non costituendo reddito
     # imponibile", the same citation's second half) -- REB-352 §2 and §6's resolved
     # decision, the reason this charge carries two booleans and not one.
@@ -166,7 +167,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
     version="1",
     ceilings=(
         Ceiling(
-            id="soglia_ricavi",
+            id="revenue_ceiling",
             label="Soglia di ricavi e compensi del regime forfettario",
             threshold=Decimal("85000.00"),
             basis="cash_received_calendar_year",
@@ -183,7 +184,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
             ),
         ),
         Ceiling(
-            id="soglia_fuoriuscita_immediata",
+            id="immediate_exit_ceiling",
             label="Soglia di fuoriuscita immediata dal regime forfettario",
             threshold=Decimal("100000.00"),
             basis="cash_received_calendar_year",
@@ -205,19 +206,21 @@ IT_FLAT_RATE_PACK = FiscalPack(
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
-# because the forfettario's thresholds are a fact of Italian law; no statutory charge,
-# because the rivalsa INPS is too; and no bollo or `Natura`, which are the regime
+# because the flat-rate regime's thresholds are a fact of Italian law; no statutory charge,
+# because the social security surcharge is too; and no stamp duty or `Natura`, which are the regime
 # strategy's (`fiscal/regime.py::FOREIGN`, selected by this pack's id). Its invoices
 # are never FatturaPA, so `regime_code` is `NULL` on a profile that points here.
 NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 
 # Italy's ordinary regime, RF01 (mastro's `it-standard.ts`: `ceilings: []`, `charges: []`).
-# No ceiling, because the 85,000 and 100,000 euro thresholds are the forfettario's
-# (l. 190/2014, commi 54 and 71) and an ordinary azienda is held to neither. No statutory
-# charge either, as in mastro: the rivalsa INPS this product ships is the forfettario's
+# No ceiling, because the 85,000 and 100,000 euro thresholds are the flat-rate regime's
+# (l. 190/2014, commi 54 and 71) and an ordinary legal entity is held to neither. No statutory
+# charge either, as in mastro: the social security surcharge this product ships is the flat-rate
+# regime's
 # zero-VAT line, and on an ordinary invoice the surcharge would take VAT and join the
 # taxable base, a rule this product has not been given, so a contract's
-# `applies_social_charge` election adds no line here (`social_security_surcharge_line_for_contract`).
+# `applies_social_charge` election adds no line here
+# (`social_security_surcharge_line_for_contract`).
 # The regime strategy (`fiscal/regime.py::ORDINARY`) is selected by this pack's id.
 IT_STANDARD_PACK = FiscalPack(id=PACK_IT_STANDARD, version="1", ceilings=(), charges=())
 
@@ -241,7 +244,7 @@ def resolve_pack(pack_id: str, pack_version: str) -> FiscalPack:
 
 def known_charge_markers() -> frozenset[str]:
     """The `description_line` of every statutory charge any shipped pack declares. What a
-    register reads to tell a charge's line from a fee's, whatever pack the azienda is on
+    register reads to tell a charge's line from a fee's, whatever pack the legal entity is on
     today: an invoice keeps the lines it was issued with after the profile moves to
     another pack."""
     return frozenset(charge.description_line for pack in _PACKS.values() for charge in pack.charges)

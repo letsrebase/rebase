@@ -10,7 +10,7 @@ from pigrocrm.core.tasks.schemas import TASK_SORTS, TaskListQuery
 
 
 def _assigned(user_id: UUID, include_unassigned: bool) -> ColumnElement[bool]:
-    """One person's attività, and with `include_unassigned` the ones nobody holds too."""
+    """One person's tasks, and with `include_unassigned` the ones nobody holds too."""
     if include_unassigned:
         return or_(Task.assigned_to == user_id, Task.assigned_to.is_(None))
     return Task.assigned_to == user_id
@@ -33,7 +33,7 @@ class TaskRepository:
         self.session.flush()
         return task
 
-    def in_range(self, da: date, a: date) -> list[Task]:
+    def in_range(self, date_from: date, date_to: date) -> list[Task]:
         """Every live activity whose `due_date` falls in `[da, a]`, earliest first.
 
         For the calendar (slice 10 §6), which asks by month and not by page: no cursor,
@@ -51,8 +51,8 @@ class TaskRepository:
                 .where(
                     Task.deleted_at.is_(None),
                     Task.due_date.is_not(None),
-                    Task.due_date >= da,
-                    Task.due_date <= a,
+                    Task.due_date >= date_from,
+                    Task.due_date <= date_to,
                 )
                 .order_by(Task.due_date, Task.created_at)
             )

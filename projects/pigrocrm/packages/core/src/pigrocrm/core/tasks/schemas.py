@@ -125,7 +125,7 @@ DAYS_NEXT = 7
 
 
 class TaskTodayQuery(BaseModel):
-    """What the Oggi panel can be asked: whose attività (everybody's when `None`) and how
+    """What the Oggi panel can be asked: whose task (everybody's when `None`) and how
     many rows each section carries. Validated here and not only by the REST router, so an
     agent's `limit` of 0 or of «molti» is a sentence and not a database error."""
 

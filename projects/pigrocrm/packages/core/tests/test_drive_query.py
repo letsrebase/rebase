@@ -1,28 +1,26 @@
-"""Un URL di Drive nasce in un posto solo, e quel posto sa elencare solo dei figli.
+"""A Drive URL is born in one place only, and that place can only list children.
 
-Spec 9C non chiede una convenzione, chiede un meccanismo. La lettura da Drive parte
-sempre da una cartella che il titolare ha indicato -- `google_drive_accounts.
-root_folder_ids` -- e "elenca i figli di questa cartella" e' l'unica interrogazione
-che il sistema ha bisogno di fare. Una ricerca aperta (`name contains '...'`)
-attraverserebbe l'intero Drive dell'utente, comprese le cartelle che non ci ha mai
-dato, quindi non deve essere *scomoda*: deve essere impossibile da costruire.
+Spec 9C does not ask for a convention, it asks for a mechanism. Reading from Drive always
+starts from a folder the owner named -- `google_drive_accounts.root_folder_ids` -- and
+"list the children of this folder" is the only query the system needs to make. An open
+search (`name contains '...'`) would cross the user's whole Drive, folders they never
+handed over included, so it must not be *inconvenient*: it must be impossible to build.
 
-Come per Gmail (`test_gmail_query.py`, di cui questo file e' il gemello), le guardie
-sono due, perche' ognuna da sola e' a una modifica di distanza dall'essere aggirata:
+As with Gmail (`test_gmail_query.py`, of which this file is the twin), there are two
+guards, because each alone is one edit away from being bypassed:
 
-1. `files_list_url` **rifiuta** un `q` che non contenga una clausola `'<id>' in
-   parents` ben formata, e ne rifiuta uno che contenga `contains`. Il bug non e'
-   sconsigliato: e' non costruibile.
-2. `test_no_other_module_can_build_a_drive_url` cammina l'AST di ogni file sorgente e
-   fallisce se un literal contiene l'host di Drive, quello di upload o un path
-   `/files`. La guardia 1 e' a una riga dall'essere cancellata; la guardia 2 e' cio'
-   che rende quella cancellazione insufficiente, perche' chi vuole bypassare questo
-   modulo deve pur scrivere un URL da qualche parte e non gli resta nessun posto dove
-   scriverlo.
+1. `files_list_url` **refuses** a `q` that does not contain a well-formed `'<id>' in
+   parents` clause, and refuses one that contains `contains`. The bug is not
+   discouraged: it cannot be built.
+2. `test_no_other_module_can_build_a_drive_url` walks the AST of every source file and
+   fails if a literal contains the Drive host, the upload host or a `/files` path.
+   Guard 1 is one line from being deleted; guard 2 is what makes that deletion
+   insufficient, because whoever wants to bypass this module has to write a URL
+   somewhere, and no place is left to write it.
 
-L'insieme delle eccezioni della guardia 2 e' **vuoto**: `storage/gdrive.py`, che gli
-URL di Drive li scriveva a mano, e' stato migrato a chiamare questo modulo (9C T1,
-ruling 4) invece di essere messo in una lista di deroghe.
+The set of exceptions to guard 2 is **empty**: `storage/gdrive.py`, which used to write
+Drive URLs by hand, was migrated to call this module (9C T1, ruling 4) instead of being
+put on an exemption list.
 """
 
 import ast
@@ -58,25 +56,24 @@ SOURCE_ROOTS = (
     REPO_ROOT / "apps" / "mcp" / "src",
 )
 QUERY_MODULE = REPO_ROOT / "packages" / "core" / "src" / "pigrocrm" / "core" / "drive" / "query.py"
-# Uno qualsiasi di questi in un literal significa che qualcuno sta assemblando a mano
-# un URL di Drive. `/files` prende anche `f"{DRIVE_API_ROOT}/files?q=..."`, che
-# sfuggirebbe a una scansione del solo host; `googleapis.com/upload` prende l'endpoint
-# di upload, che vive su un path diverso dallo stesso host.
+# Any one of these in a literal means someone is assembling a Drive URL by hand.
+# `/files` also catches `f"{DRIVE_API_ROOT}/files?q=..."`, which would slip past a scan
+# of the host alone; `googleapis.com/upload` catches the upload endpoint, which lives on
+# a different path of the same host.
 URL_FRAGMENTS = ("googleapis.com/drive", "googleapis.com/upload", "/files")
 
-# Vuoto, e deve restarlo. `storage/gdrive.py` era l'unico candidato a un'eccezione ed
-# e' stato migrato (ruling 4 di 9C T1): dichiarare una deroga per l'unico modulo che
-# oggi tocca Drive avrebbe reso la guardia una formalita' proprio nel file dove
-# qualcuno aggiungera' la prossima chiamata. Le coppie sono `(file, literal)` esatte,
-# non file interi, cosi' che un *secondo* literal nello stesso modulo fallisca comunque;
-# e sono ricontrollate sotto, cosi' che una voce stantia non sopravviva in silenzio a
-# cio' che descriveva.
+# Empty, and it must stay so. `storage/gdrive.py` was the only candidate for an exception
+# and it has been migrated (ruling 4 of 9C T1): declaring an exemption for the only module
+# that touches Drive today would have made the guard a formality in exactly the file
+# where someone will add the next call. The pairs are exact `(file, literal)`, not whole
+# files, so a *second* literal in the same module fails anyway; and they are re-checked
+# below, so a stale entry cannot silently outlive what it described.
 ALLOWED_LITERALS: frozenset[tuple[Path, str]] = frozenset()
 
 FOLDER = "1AbCdEfGhIjKlMnOpQ"
 
 
-# --- l'unica interrogazione che serve: i figli di una cartella -----------------------
+# --- the only query needed: the children of a folder --------------------------------
 
 
 def test_children_query_names_one_folder_and_excludes_the_trash() -> None:
@@ -84,9 +81,9 @@ def test_children_query_names_one_folder_and_excludes_the_trash() -> None:
 
 
 def test_a_folder_id_that_could_break_out_of_the_query_is_refused() -> None:
-    """L'id arriva da `google_drive_accounts.root_folder_ids`, cioe' in ultima analisi
-    da un incollaggio del titolare: un apice chiuderebbe la clausola e il resto
-    diventerebbe un'espressione di ricerca scelta da chi ha incollato."""
+    """The id comes from `google_drive_accounts.root_folder_ids`, that is, ultimately from
+    something the owner pasted: a quote would close the clause and the rest would become
+    a search expression chosen by whoever pasted it."""
     hostile = [
         "1AbCdEfGhIjKlMnOpQ' or name contains 'fattura",
         "1AbCdEfGhIjKlMnOpQ or trashed = true",
@@ -94,8 +91,8 @@ def test_a_folder_id_that_could_break_out_of_the_query_is_refused() -> None:
         "1AbCd/EfGhIjKlMnOpQ",
         "../../drives",
         "",
-        # Troppo corto per essere un id di Drive: gli id veri stanno fra 28 e 44
-        # caratteri, e accettarne uno di tre significa accettare qualunque parola.
+        # Too short to be a Drive id: real ids run between 28 and 44 characters, and
+        # accepting one of three means accepting any word.
         "abc",
         "x" * 129,
     ]
@@ -106,11 +103,11 @@ def test_a_folder_id_that_could_break_out_of_the_query_is_refused() -> None:
 
 
 def test_checked_outside_id_names_the_field_it_was_given() -> None:
-    """Lo stesso controllo, due nomi. Un id che arriva da fuori puo' essere la cartella
-    radice incollata dal titolare o il file che un agente ha chiesto di leggere, e la
-    forma pretesa e' identica -- ma il messaggio no: chi legge «non e\' un id di
-    cartella Drive» dopo aver passato l'id di un *file* va a cercare l'errore nella
-    configurazione delle radici invece che nel parametro che ha scritto lui.
+    """The same check, two names. An id that arrives from outside can be the root folder
+    pasted by the owner or the file an agent asked to read, and the required shape is
+    identical -- but the message is not: whoever reads «not a Drive folder id» after
+    passing the id of a *file* goes looking for the error in the roots configuration
+    instead of in the parameter they wrote themselves.
     """
     assert checked_outside_id(FOLDER, field="folder_id") == FOLDER
     assert checked_outside_id(FOLDER, field="file_id") == FOLDER
@@ -123,15 +120,15 @@ def test_checked_outside_id_names_the_field_it_was_given() -> None:
     with pytest.raises(ValidationFailed) as as_folder:
         checked_outside_id("abc", field="folder_id")
     assert as_folder.value.details["field"] == "folder_id"
-    # Una sola frase per i due, e che non nomini nessuno dei due tipi: e' la forma
-    # dell'id che e' sbagliata, non cosa c'e' dall'altra parte.
+    # One sentence for both, naming neither kind: it is the shape of the id that is wrong,
+    # not what is on the other side.
     assert as_file.value.details["reason"] == as_folder.value.details["reason"]
     assert "cartella" not in as_file.value.details["reason"]
 
 
 def test_checked_outside_id_is_the_check_children_query_already_did() -> None:
-    """La stessa severita' di prima, non una nuova: gli id che `children_query`
-    rifiutava restano rifiutati, e con lo stesso `field`."""
+    """The same severity as before, not a new one: the ids `children_query` refused stay
+    refused, with the same `field`."""
     for hostile in ("", "abc", "1AbCd/EfGhIjKlMnOpQ", "x" * 129, "1AbCdEfGhIjKlMnOpQ "):
         with pytest.raises(ValidationFailed) as caught:
             checked_outside_id(hostile, field="folder_id")
@@ -140,21 +137,21 @@ def test_checked_outside_id_is_the_check_children_query_already_did() -> None:
             children_query(hostile)
 
 
-# --- guardia uno: l'URL di elenco rifiuta tutto cio' che non sia un elenco di figli --
+# --- guard one: the list URL refuses anything that is not a list of children --------
 
 
 def test_the_list_url_refuses_a_query_that_is_not_scoped_to_a_folder() -> None:
-    """Guardia uno. La sola funzione che sa costruire un `files.list` non ne costruisce
-    uno che non sia limitato a una cartella data: cosi' "leggere tutto il Drive" non e'
-    sconsigliato, e' non costruibile."""
+    """Guard one. The only function that can build a `files.list` builds none that is not
+    limited to a given folder: so "read the whole Drive" is not discouraged, it is
+    unbuildable."""
     unscoped = [
         "",
         "   ",
         "trashed = false",
         "mimeType='application/pdf'",
         "name='fattura.pdf'",
-        # La forma dell'id conta, non la presenza delle parole: `in parents` senza una
-        # clausola ben formata davanti non limita niente.
+        # The shape of the id matters, not the presence of the words: `in parents` with no
+        # well-formed clause in front of it limits nothing.
         "in parents",
         "'' in parents",
         "'1AbCd EfGhIjKlMnOpQ' in parents",
@@ -165,9 +162,9 @@ def test_the_list_url_refuses_a_query_that_is_not_scoped_to_a_folder() -> None:
 
 
 def test_the_list_url_refuses_a_full_text_search_even_inside_a_folder() -> None:
-    """`contains` e' l'operatore di ricerca libera di Drive. Anche ristretto a una
-    cartella non e' cio' che l'import fa -- l'import elenca e decide dopo -- e
-    ammetterlo qui vorrebbe dire ammettere che una stringa di ricerca arrivi da fuori."""
+    """`contains` is Drive's free-search operator. Even restricted to a folder it is not
+    what the import does -- the import lists and decides afterwards -- and admitting it
+    here would mean admitting that a search string can arrive from outside."""
     for bad in [
         f"'{FOLDER}' in parents and name contains 'fattura'",
         f"'{FOLDER}' in parents and fullText contains 'fattura'",
@@ -178,12 +175,12 @@ def test_the_list_url_refuses_a_full_text_search_even_inside_a_folder() -> None:
 
 
 def test_the_list_url_refuses_a_query_that_widens_past_its_folder() -> None:
-    """Che una clausola `in parents` ci sia non basta: deve essere l'unica cosa che
-    decide *dove* si guarda. `'<id>' in parents or mimeType='application/pdf'` contiene
-    la clausola e ciononostante elenca ogni PDF del Drive, quindi un controllo di sola
-    presenza renderebbe falso il docstring di questo modulo. Un elenco puo' solo
-    restringere: `or`, `not` e le parentesi -- che servono a raggruppare un `or` -- sono
-    i tre modi di allargare, e sono rifiutati tutti e tre."""
+    """That an `in parents` clause is there is not enough: it must be the only thing that
+    decides *where* to look. `'<id>' in parents or mimeType='application/pdf'` contains
+    the clause and still lists every PDF in the Drive, so a presence-only check would
+    make this module's docstring false. A list can only narrow: `or`, `not` and
+    parentheses -- which exist to group an `or` -- are the three ways to widen, and all
+    three are refused."""
     for bad in [
         children_query(FOLDER) + " or mimeType='application/pdf'",
         f"not {children_query(FOLDER)}",
@@ -197,20 +194,20 @@ def test_the_list_url_refuses_a_query_that_widens_past_its_folder() -> None:
 
 
 def test_a_value_in_quotes_is_never_mistaken_for_an_operator() -> None:
-    """I controlli girano su uno scheletro in cui ogni literal fra apici e' stato
-    svuotato, e non sul `q` grezzo. Non e' una raffinatezza: la ragione sociale di un
-    cliente diventa un segmento di storage key, quindi un nome di cartella, quindi un
-    valore dentro `name='...'` -- e "Contains S.r.l." avrebbe fatto fallire *ogni* put e
-    ogni get di quel cliente con un `ValidationFailed` su un `q` che il CRM aveva
-    costruito lui. Il rifiuto vale per l'operatore, non per la parola."""
+    """The checks run on a skeleton in which every quoted literal has been emptied, not on
+    the raw `q`. This is not a refinement: a customer's legal name becomes a storage key
+    segment, hence a folder name, hence a value inside `name='...'` -- and "Contains
+    S.r.l." would have made *every* put and get of that customer fail with a
+    `ValidationFailed` on a `q` the CRM had built itself. The refusal applies to the
+    operator, not to the word."""
     assert files_list_url(folder_by_name_query("id2", "contains-srl-01234567"), fields="files(id)")
     assert files_list_url(folder_by_name_query("id2", "or-not-spa"), fields="files(id)")
-    # Apice compreso: lo scheletro deve saltare anche un apice escapato, altrimenti
-    # perderebbe il conto delle virgolette proprio sul valore piu' ostile.
+    # Quote included: the skeleton must also skip an escaped quote, otherwise it would
+    # lose count of the quotes on exactly the most hostile value.
     assert files_list_url(
         folder_by_name_query("id2", "bar's or fullText contains x"), fields="files(id)"
     )
-    # E fuori dagli apici l'operatore resta vietato.
+    # And outside the quotes the operator stays forbidden.
     with pytest.raises(ValidationFailed, match="contains"):
         files_list_url(f"'{FOLDER}' in parents and name contains 'x'", fields="files(id)")
 
@@ -224,8 +221,8 @@ def test_the_list_url_accepts_a_query_that_is_scoped_and_says_where_it_is_going(
     assert query["q"] == [f"'{FOLDER}' in parents and trashed = false"]
     assert query["pageToken"] == ["tok"]
     assert query["fields"] == ["files(id,name)"]
-    # Una cartella di un titolare vive su un Drive condiviso quanto una di un service
-    # account: senza questi due parametri Drive risponde 404 a entrambe.
+    # An owner's folder lives on a shared Drive as much as a service account's does:
+    # without these two parameters Drive answers 404 to both.
     assert query["supportsAllDrives"] == ["true"]
     assert query["includeItemsFromAllDrives"] == ["true"]
 
@@ -235,16 +232,16 @@ def test_the_first_page_has_no_page_token_at_all() -> None:
 
 
 def test_every_query_this_module_builds_is_one_it_would_also_accept() -> None:
-    """Le due guardie devono essere d'accordo. Un costruttore che producesse un `q` che
-    il costruttore di URL poi rifiuta fallirebbe al primo import, non qui."""
+    """The two guards must agree. A builder that produced a `q` the URL builder then
+    refuses would fail at the first import, not here."""
     assert files_list_url(children_query(FOLDER), fields="files(id)")
     assert files_list_url(folder_by_name_query(FOLDER, "acme-01234567"), fields="files(id)")
-    # Anche con un id corto: quelli che `_ensure_folder` si passa arrivano da Drive
-    # stesso, non da un incollaggio, e sono opachi per contratto.
+    # Also with a short id: the ones `_ensure_folder` passes around come from Drive itself,
+    # not from a paste, and are opaque by contract.
     assert files_list_url(folder_by_name_query("id2", "acme-01234567"), fields="files(id)")
 
 
-# --- la cartella per nome: placement, e l'unica interrogazione con un valore dentro --
+# --- the folder by name: placement, and the only query with a value inside ----------
 
 
 def test_folder_by_name_query_is_scoped_named_and_typed() -> None:
@@ -255,31 +252,30 @@ def test_folder_by_name_query_is_scoped_named_and_typed() -> None:
 
 
 def test_a_folder_name_is_escaped_rather_than_refused() -> None:
-    """Il nome e' un segmento di storage key generato dal CRM, non testo dell'utente:
-    la sua classe di caratteri oggi non contiene ne' apice ne' backslash. L'escaping
-    resta perche' un allargamento futuro di quella classe non deve riaprire in silenzio
-    l'injection solo perche' oggi nessuno la esercita."""
+    """The name is a storage key segment generated by the CRM, not user text: its
+    character class today contains neither a quote nor a backslash. The escaping stays
+    because a future widening of that class must not silently reopen the injection just
+    because nobody exercises it today."""
     assert "name='bar\\'s'" in folder_by_name_query("id2", "bar's")
 
 
 def test_escaping_handles_the_backslash_before_the_quote() -> None:
-    """Invertire l'ordine lascerebbe un backslash solitario in grado di mangiarsi
-    l'apice di chiusura del filtro: e' lo stesso motivo per cui gli escaper dei
-    template lo fanno in questo ordine."""
+    """Reversing the order would leave a lone backslash able to eat the filter's closing
+    quote: the same reason the template escapers do it in this order."""
     assert escape_query_value("bar's") == "bar\\'s"
     assert escape_query_value("a\\b") == "a\\\\b"
     assert escape_query_value("a\\'b") == "a\\\\\\'b"
 
 
-# --- l'identita': appProperties, l'eccezione dichiarata alla guardia uno -------------
+# --- identity: appProperties, the declared exception to guard one -------------------
 
 
 def test_the_app_property_url_asks_for_one_exact_key_across_every_drive() -> None:
-    """L'unica interrogazione non limitata a una cartella, e lo e' perche' e' *piu'*
-    specifica, non meno: nomina un valore che il CRM ha scritto lui stesso in
-    `appProperties`, non una ricerca del Drive. Stessa logica dell'eccezione
-    `rfc822msgid` di Gmail. La forma della clausola e' esatta perche' e' quella che
-    `FakeDrive._list` sa leggere, oltre che quella che Drive accetta."""
+    """The only query not limited to a folder, and it is so because it is *more*
+    specific, not less: it names a value the CRM itself wrote into `appProperties`, not
+    a Drive search. Same logic as Gmail's `rfc822msgid` exception. The shape of the
+    clause is exact because it is the one `FakeDrive._list` can read, as well as the
+    one Drive accepts."""
     url = files_by_app_property_url(
         "pigrocrm_key", "acme-01234567/0199abcd/v1.pdf", fields="files(id)"
     )
@@ -299,17 +295,17 @@ def test_the_app_property_value_is_escaped_not_interpolated_raw() -> None:
 
 
 def test_an_app_property_key_that_is_not_a_plain_name_is_refused() -> None:
-    """La chiave e' una costante del codice, non un input: verificarla costa una riga e
-    rende impossibile che diventi un input per distrazione."""
-    for hostile in ["pigrocrm_key' and name contains 'x", "", "chiave con spazi"]:
+    """The key is a constant of the code, not an input: checking it costs one line and
+    makes it impossible for it to become an input by distraction."""
+    for hostile in ["pigrocrm_key' and name contains 'x", "", "key with spaces"]:
         with pytest.raises(ValidationFailed) as caught:
             files_by_app_property_url(hostile, "v1.pdf", fields="files(id)")
         assert caught.value.details["field"] == "key"
 
 
 def test_the_strict_list_url_would_have_refused_the_app_property_query() -> None:
-    """Perche' esiste un secondo costruttore invece di un parametro `strict=False`: la
-    deroga e' un'altra funzione, con un altro nome, che dice nel nome cosa filtra."""
+    """Why a second builder exists instead of a `strict=False` parameter: the exemption
+    is another function, with another name, that says in its name what it filters."""
     with pytest.raises(ValidationFailed):
         files_list_url(
             "trashed=false and appProperties has { key='pigrocrm_key' and value='v1.pdf' }",
@@ -317,7 +313,7 @@ def test_the_strict_list_url_would_have_refused_the_app_property_query() -> None
         )
 
 
-# --- gli URL per un singolo file -----------------------------------------------------
+# --- the URLs for a single file ------------------------------------------------------
 
 
 def test_the_single_file_urls_carry_the_id_in_the_path_and_all_drives_support() -> None:
@@ -330,10 +326,10 @@ def test_the_single_file_urls_carry_the_id_in_the_path_and_all_drives_support() 
 
 
 def test_the_export_url_asks_for_a_conversion_and_defaults_to_plain_text() -> None:
-    """`files.export` e' il solo endpoint qui senza `supportsAllDrives`: non e' un suo
-    parametro (il client generato di Google non lo espone), e passarne uno che l'API
-    non documenta e' un 400 in attesa di succedere. Un Google Doc su uno Shared Drive
-    si esporta comunque, perche' l'accesso e' per fileId."""
+    """`files.export` is the only endpoint here without `supportsAllDrives`: it is not one
+    of its parameters (Google's generated client does not expose it), and passing one
+    the API does not document is a 400 waiting to happen. A Google Doc on a Shared Drive
+    exports anyway, because access is by fileId."""
     url = file_export_url("id2")
     assert urlparse(url).path == "/drive/v3/files/id2/export"
     assert parse_qs(urlparse(url).query) == {"mimeType": ["text/plain"]}
@@ -348,9 +344,9 @@ def test_an_export_mime_type_that_is_not_one_is_refused() -> None:
 
 
 def test_a_file_id_that_is_not_one_is_refused_by_every_path_builder() -> None:
-    """Questi id arrivano dall'elenco di Drive stesso, quindi uno ostile significa che
-    la risposta e' stata manomessa -- ma il path traversal verso un altro endpoint
-    costa una riga da rendere impossibile e molto da scoprire dopo."""
+    """These ids come from Drive's own listing, so a hostile one means the response was
+    tampered with -- but path traversal to another endpoint costs one line to make
+    impossible and a lot to discover afterwards."""
     for hostile in ["../../drives/other", "id 2", "id/2", "", "x" * 129]:
         for builder in (file_url, file_media_url, file_export_url, upload_media_url):
             with pytest.raises(ValidationFailed):
@@ -359,7 +355,7 @@ def test_a_file_id_that_is_not_one_is_refused_by_every_path_builder() -> None:
             file_meta_url(hostile, fields="id")
 
 
-# --- la scrittura: create e upload ---------------------------------------------------
+# --- writing: create and upload ------------------------------------------------------
 
 
 def test_the_create_and_upload_urls_say_which_upload_they_are() -> None:
@@ -376,19 +372,18 @@ def test_the_create_and_upload_urls_say_which_upload_they_are() -> None:
 
 
 def test_no_helper_takes_a_caller_supplied_search_string() -> None:
-    """Nessuna superficie di questa slice accetta una stringa di ricerca di Drive. Il
-    modulo espone esattamente questi costruttori, e il solo che prende un `q` --
-    `files_list_url` -- rifiuta tutto cio' che non abbia costruito questo modulo
-    stesso. Elencare i nomi qui rende l'aggiunta di un `search_url(text)` una modifica
-    che qualcuno deve *decidere* di fare, non una che passa in un diff."""
+    """No surface of this slice accepts a Drive search string. The module exposes exactly
+    these builders, and the only one that takes a `q` -- `files_list_url` -- refuses
+    everything this module did not build itself. Listing the names here makes adding a
+    `search_url(text)` a change someone must *decide* to make, not one that slips through
+    a diff."""
     exported = sorted(
         name
         for name, value in vars(module).items()
         if not name.startswith("_")
         and inspect.isfunction(value)
-        # Definite qui, non solo importate qui: `urlencode` e' una funzione pubblica
-        # nel namespace di questo modulo e non ha niente a che vedere con la superficie
-        # che stiamo fissando.
+        # Defined here, not merely imported here: `urlencode` is a public function in this
+        # module's namespace and has nothing to do with the surface being pinned.
         and value.__module__ == module.__name__
     )
     assert exported == [
@@ -408,16 +403,15 @@ def test_no_helper_takes_a_caller_supplied_search_string() -> None:
     ]
 
 
-# --- guardia due: nessun altro modulo puo' scrivere uno di questi URL ---------------
+# --- guard two: no other module may write one of these URLs -------------------------
 
 
 def _string_constants(path: Path) -> list[str]:
-    """Solo i literal di stringa, dall'AST.
+    """Only the string literals, from the AST.
 
-    Non un `grep`: questo file, il docstring del modulo e mezzi commenti della slice
-    parlano di `/files` in prosa, e una scansione incapace di distinguere una frase da
-    un URL sarebbe o abbastanza rumorosa da venire disattivata o abbastanza ristretta
-    da essere inutile.
+    Not a `grep`: this file, the module docstring and half the slice's comments talk
+    about `/files` in prose, and a scan unable to tell a sentence from a URL would be
+    either noisy enough to be switched off or narrow enough to be useless.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     return [
@@ -428,22 +422,20 @@ def _string_constants(path: Path) -> list[str]:
 
 
 def test_no_other_module_can_build_a_drive_url() -> None:
-    """Guardia due. Che `files_list_url` rifiuti un `q` non limitato a una cartella
-    vale esattamente quanto la garanzia che sia l'unico modo di arrivare a
-    `files.list`: altrimenti il prossimo chiamante si scrive la sua f-string e il
-    rifiuto protegge una funzione che nessuno chiama.
+    """Guard two. That `files_list_url` refuses a `q` not limited to a folder is worth
+    exactly as much as the guarantee that it is the only way to reach `files.list`:
+    otherwise the next caller writes their own f-string and the refusal protects a
+    function nobody calls.
 
-    I docstring sono inclusi per la forma stessa della camminata sull'AST: sono
-    `ast.Constant` anche loro, quindi un modulo che si limitasse a *documentare*
-    l'endpoint fallirebbe. E' deliberato e costa poco da soddisfare -- si scrive
-    `files.list` invece del path, o si nomina l'helper -- ed e' il prezzo di non dover
-    distinguere un URL da una frase che ne parla.
+    Docstrings are included by the very shape of the AST walk: they are `ast.Constant`
+    too, so a module that merely *documented* the endpoint would fail. That is deliberate
+    and cheap to satisfy -- write `files.list` instead of the path, or name the helper --
+    and it is the price of not having to tell a URL from a sentence that mentions one.
     """
     offenders: list[str] = []
     for root in SOURCE_ROOTS:
-        # Una scansione che non guarda nessun file passa sempre. Se un giorno un
-        # package si sposta, questo test deve fallire per quello, non diventare verde
-        # per vuoto.
+        # A scan that looks at no file always passes. If a package ever moves, this test
+        # must fail for that, not turn green on an empty set.
         assert list(root.rglob("*.py")), root
         for path in sorted(root.rglob("*.py")):
             if path == QUERY_MODULE:
@@ -455,33 +447,31 @@ def test_no_other_module_can_build_a_drive_url() -> None:
                     if fragment in literal:
                         offenders.append(f"{path.relative_to(REPO_ROOT)}: {literal!r}")
     assert offenders == [], (
-        "solo drive/query.py può costruire un URL di Drive: un elenco costruito "
-        "altrove sfugge al vincolo di restare dentro una cartella indicata dal "
-        "titolare (spec 9C). Usa children_query / files_list_url / file_meta_url / "
+        "only drive/query.py may build a Drive URL: a listing built elsewhere escapes "
+        "the constraint of staying inside a folder the owner named (spec 9C). Use "
+        "children_query / files_list_url / file_meta_url / "
         "file_media_url / file_export_url / files_by_app_property_url / "
         "files_create_url / upload_create_url / upload_media_url.\n" + "\n".join(offenders)
     )
 
 
 def test_every_allowed_literal_is_still_present_in_that_file() -> None:
-    """La guardia della lista di deroghe. Una voce sopravvissuta a cio' che descriveva
-    allargherebbe il punto cieco della scansione di esattamente un literal, nel file
-    dove qualcuno ha piu' probabilita' di aggiungere una chiamata a Drive. Oggi la
-    lista e' vuota e questo test non ha niente da fare: e' qui perche' il giorno in cui
-    qualcuno aggiunge una deroga, la deroga nasca gia' con il suo controllo di
-    scadenza."""
+    """The guard of the exemption list. An entry that outlived what it described would
+    widen the scan's blind spot by exactly one literal, in the file where someone is most
+    likely to add a Drive call. Today the list is empty and this test has nothing to do:
+    it is here so that the day someone adds an exemption, the exemption is born with its
+    own expiry check."""
     for path, literal in ALLOWED_LITERALS:
-        assert path.exists(), f"{path} non esiste piu': l'eccezione va rimossa"
+        assert path.exists(), f"{path} no longer exists: the exception must be removed"
         assert literal in _string_constants(path), (
-            f"{path.relative_to(REPO_ROOT)} non contiene piu' {literal!r}: "
-            "l'eccezione va rimossa insieme al codice che la giustificava"
+            f"{path.relative_to(REPO_ROOT)} no longer contains {literal!r}: "
+            "the exception must be removed together with the code that justified it"
         )
 
 
 def test_the_guard_above_would_notice_a_hand_built_drive_url(tmp_path: Path) -> None:
-    """Una scansione che non puo' fallire e' una scansione di cui nessuno si accorgera'
-    che si e' rotta. Questa fa girare lo stesso lettore su un file che fa esattamente
-    quello che la guardia vieta."""
+    """A scan that cannot fail is a scan nobody will notice has broken. This one runs the
+    same reader over a file that does exactly what the guard forbids."""
     offender = tmp_path / "importer.py"
     offender.write_text(
         "URL = \"https://www.googleapis.com/drive/v3/files?q=name contains 'fattura'\"\n"

@@ -20,7 +20,7 @@ from pigrocrm.core.timetracking.repository import won_with_unbilled_hours_predic
 
 
 def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's deals, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
+    """One legal entity's deals, or every legal entity's (REB-630, spec 2026-10-03 §1.9): the
     deal's own column, which a deal keeps when its customer moves (§1.7)."""
     return () if legal_entity_id is None else (Deal.legal_entity_id == legal_entity_id,)
 
@@ -75,7 +75,7 @@ class DealRepository:
         return {row[0]: row[1] for row in rows}
 
     def names(self, deal_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `nome` of each given deal, in one query.
+        """The `name` of each given deal, in one query.
 
         The sibling of `customer_names` above, for rows that arrive naming a deal by id
         and nothing else. Its caller is the weekly report (spec 2026-09-16 §3.1, section
@@ -145,7 +145,7 @@ class DealRepository:
         **Every** configured stage, not only the open ones (2026-09-09): a card that stops
         at the last open stage never says where the work ended up, and «Vinto» and «Perso»
         are the two places a pipeline exists to reach. Each row carries its `stage_type` so
-        the renderer groups the closed ones by that rather than by `nome`, which the user
+        the renderer groups the closed ones by that rather than by `name`, which the user
         may rename. The closed rows count what sits in the stage *today* and are not
         filtered by any period -- nothing here ever was; the period question is answered by
         `closed_in_period`, above the same card, and one card with two meanings is how two
@@ -165,22 +165,22 @@ class DealRepository:
                 PipelineStage.type,
                 PipelineStage.position,
                 func.count(Deal.id).label("number"),
-                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("valore"),
+                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("value"),
                 # `Deal.id IS NOT NULL` is load-bearing and not defensive: under the outer
                 # join a stage with no deals still yields one row whose `deals` columns are
                 # all NULL, so a bare `valore_previsto IS NULL` would count that phantom
                 # row and report one value-less deal in a stage that has none.
                 func.count(
                     case((and_(Deal.id.is_not(None), Deal.expected_value.is_(None)), 1))
-                ).label("senza"),
-                func.coalesce(func.sum(rounded_weight), literal(0)).label("ponderato"),
+                ).label("without"),
+                func.coalesce(func.sum(rounded_weight), literal(0)).label("weighted"),
             )
             .select_from(PipelineStage)
             .outerjoin(
                 Deal,
-                # The azienda goes in the join condition, never in a `where` (REB-630):
+                # The legal entity goes in the join condition, never in a `where` (REB-630):
                 # a `where` on a column of the outer side turns the join inner, and a
-                # stage with none of this azienda's deals would vanish instead of
+                # stage with none of this legal entity's deals would vanish instead of
                 # reading zero, which is the one thing the outer join is here for.
                 (Deal.pipeline_stage_id == PipelineStage.id)
                 & Deal.deleted_at.is_(None)
@@ -211,7 +211,7 @@ class DealRepository:
         ]
 
     def closed_in_period(
-        self, da: date, a: date, legal_entity_id: UUID | None = None
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
     ) -> ClosedInPeriod:
         """Deals won and lost in the period, by `closed_at`.
 
@@ -231,15 +231,15 @@ class DealRepository:
             select(
                 PipelineStage.type,
                 func.count(Deal.id).label("number"),
-                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("valore"),
+                func.coalesce(func.sum(Deal.expected_value), literal(0)).label("value"),
             )
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .where(
                 Deal.deleted_at.is_(None),
                 *_legal_entity_filter(legal_entity_id),
                 Deal.closed_at.is_not(None),
-                Deal.closed_at >= da,
-                Deal.closed_at <= a,
+                Deal.closed_at >= date_from,
+                Deal.closed_at <= date_to,
                 PipelineStage.type.in_(("won", "lost")),
             )
             .group_by(PipelineStage.type)
@@ -247,16 +247,18 @@ class DealRepository:
         by_type = {row.type: row for row in self.session.execute(stmt).all()}
         won = by_type.get("won")
         lost = by_type.get("lost")
-        vinti = won.number if won is not None else 0
-        persi = lost.number if lost is not None else 0
+        won_count = won.number if won is not None else 0
+        lost_count = lost.number if lost is not None else 0
         return ClosedInPeriod(
-            won=vinti,
-            lost=persi,
+            won=won_count,
+            lost=lost_count,
             won_value=(round_money(Decimal(won.value)) if won is not None else Decimal("0.00")),
-            conversion_rate=percentage_of(Decimal(vinti), Decimal(vinti + persi)),
+            conversion_rate=percentage_of(Decimal(won_count), Decimal(won_count + lost_count)),
         )
 
-    def expected_closures(self, da: date, a: date, legal_entity_id: UUID | None = None) -> int:
+    def expected_closures(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> int:
         """Open deals whose `expected_close_date` falls in the window.
 
         `type='open'` only: a deal already won with a future expected date is not an
@@ -271,8 +273,8 @@ class DealRepository:
                     *_legal_entity_filter(legal_entity_id),
                     PipelineStage.type == "open",
                     Deal.expected_close_date.is_not(None),
-                    Deal.expected_close_date >= da,
-                    Deal.expected_close_date <= a,
+                    Deal.expected_close_date >= date_from,
+                    Deal.expected_close_date <= date_to,
                 )
             )
             or 0

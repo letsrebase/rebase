@@ -83,7 +83,7 @@ class ContractRenewalService:
                 start=contract.start,
                 end=contract.end,
                 new_start=data.start,
-                nuova_fine=data.end,
+                new_end=data.end,
                 duration=None
                 if data.duration is None
                 else (data.duration.count, data.duration.unit),
@@ -92,8 +92,8 @@ class ContractRenewalService:
             raise ValidationFailed(
                 ENTITY, refused.field, str(refused), expected=refused.expected
             ) from refused
-        # The azienda of the customer as it is now, as `create` takes it, and never a
-        # deactivated one: a customer moved since the contract began renews on the azienda
+        # The legal entity of the customer as it is now, as `create` takes it, and never a
+        # deactivated one: a customer moved since the contract began renews on the legal entity
         # it has moved to, and an archived customer has nothing to renew for.
         customer = self.customers.get(contract.customer_id)
         if customer is None:

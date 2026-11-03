@@ -1,5 +1,5 @@
 """A configurable taxonomy, on the pipeline-stage model: `code` is the stable identity
-of a seed, `nome` is the label a user may rename, and `archived` replaces deletion."""
+of a seed, `name` is the label a user may rename, and `archived` replaces deletion."""
 
 from datetime import date
 from decimal import Decimal
@@ -21,7 +21,7 @@ COLLABORATOR = Actor(id=None, type="user", role="collaborator")
 
 def test_seed_creates_the_five_named_categories(db_session: Session) -> None:
     created = CostCategoryService(db_session).seed_defaults(ADMIN)
-    assert [c.nome for c in created] == [
+    assert [c.name for c in created] == [
         "Consulenza esterna",
         "Software e licenze",
         "Viaggi e trasferte",
@@ -32,14 +32,14 @@ def test_seed_creates_the_five_named_categories(db_session: Session) -> None:
     assert [c.position for c in created] == [0, 1, 2, 3, 4]
 
 
-def test_seed_deduplicates_on_code_not_on_nome(db_session: Session) -> None:
+def test_seed_deduplicates_on_code_not_on_name(db_session: Session) -> None:
     """The exact bug residual R11 records against `pipeline_stages`: `seed_defaults`
-    deduplicated on `nome`, the one field the user is free to change, so renaming a
+    deduplicated on `name`, the one field the user is free to change, so renaming a
     seeded row made the next seed create a duplicate."""
     service = CostCategoryService(db_session)
     first = service.seed_defaults(ADMIN)
     renamed = first[0]
-    service.update_cost_category(renamed.id, CostCategoryUpdate(nome="Fornitori terzi"), ADMIN)
+    service.update_cost_category(renamed.id, CostCategoryUpdate(name="Fornitori terzi"), ADMIN)
 
     again = service.seed_defaults(ADMIN)
     assert again == []
@@ -48,9 +48,9 @@ def test_seed_deduplicates_on_code_not_on_nome(db_session: Session) -> None:
 
 def test_a_duplicate_name_is_a_conflict_case_insensitively(db_session: Session) -> None:
     service = CostCategoryService(db_session)
-    service.create_cost_category(CostCategoryCreate(nome="Trasferte"), ADMIN)
+    service.create_cost_category(CostCategoryCreate(name="Trasferte"), ADMIN)
     with pytest.raises(Conflict):
-        service.create_cost_category(CostCategoryCreate(nome="  trasferte "), ADMIN)
+        service.create_cost_category(CostCategoryCreate(name="  trasferte "), ADMIN)
 
 
 def test_archiving_keeps_existing_costs_readable(db_session: Session, seeded_deal_id: UUID) -> None:
@@ -58,12 +58,12 @@ def test_archiving_keeps_existing_costs_readable(db_session: Session, seeded_dea
     produce orphan rows nobody can see. Archiving hides it from the picker and leaves
     the data readable."""
     service = CostCategoryService(db_session)
-    category = service.create_cost_category(CostCategoryCreate(nome="Hosting"), ADMIN)
+    category = service.create_cost_category(CostCategoryCreate(name="Hosting"), ADMIN)
     db_session.add(
         Cost(
             deal_id=seeded_deal_id,
             category_id=category.id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             amount=Decimal("42.00"),
             description="VPS",
         )
@@ -81,7 +81,7 @@ def test_archiving_keeps_existing_costs_readable(db_session: Session, seeded_dea
 
 def test_unarchive_brings_it_back(db_session: Session) -> None:
     service = CostCategoryService(db_session)
-    category = service.create_cost_category(CostCategoryCreate(nome="Hosting"), ADMIN)
+    category = service.create_cost_category(CostCategoryCreate(name="Hosting"), ADMIN)
     service.archive_cost_category(category.id, ADMIN)
     assert service.unarchive_cost_category(category.id, ADMIN).archived is False
 
@@ -91,8 +91,8 @@ def test_every_write_records_an_activity(db_session: Session) -> None:
     taxonomy changed, and that is not hygiene -- it is what lets §5 skip historicising
     anything."""
     service = CostCategoryService(db_session)
-    category = service.create_cost_category(CostCategoryCreate(nome="Hosting"), ADMIN)
-    service.update_cost_category(category.id, CostCategoryUpdate(nome="Cloud"), ADMIN)
+    category = service.create_cost_category(CostCategoryCreate(name="Hosting"), ADMIN)
+    service.update_cost_category(category.id, CostCategoryUpdate(name="Cloud"), ADMIN)
     service.archive_cost_category(category.id, ADMIN)
     kinds = [
         entry.kind for entry in ActivityService(db_session).timeline("cost_category", category.id)
@@ -103,7 +103,7 @@ def test_every_write_records_an_activity(db_session: Session) -> None:
 def test_every_write_is_admin_only(db_session: Session) -> None:
     service = CostCategoryService(db_session)
     for call in (
-        lambda: service.create_cost_category(CostCategoryCreate(nome="X"), COLLABORATOR),
+        lambda: service.create_cost_category(CostCategoryCreate(name="X"), COLLABORATOR),
         lambda: service.archive_cost_category(uuid4(), COLLABORATOR),
         lambda: service.seed_defaults(COLLABORATOR),
     ):

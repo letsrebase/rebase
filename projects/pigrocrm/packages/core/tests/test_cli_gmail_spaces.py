@@ -97,7 +97,7 @@ def spaces(settings: Settings) -> Iterator[None]:
         service = TenantService(session, settings)
         for slug in SPACES:
             service.provision(
-                TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"owner@{slug}.example")
+                TenantSignup(slug=slug, name=f"Studio {slug}", email=f"owner@{slug}.example")
             )
         yield
     finally:
@@ -125,7 +125,7 @@ def _no_mailbox_left(settings: Settings, spaces: None) -> Iterator[None]:
                 connection.execute(text("delete from gmail_known_addresses"))
                 connection.execute(text("delete from google_accounts"))
                 connection.execute(text("delete from reminder_job_run"))
-                connection.execute(text("delete from customers where ragione_sociale like 'CLI %'"))
+                connection.execute(text("delete from customers where legal_name like 'CLI %'"))
         finally:
             engine.dispose()
 
@@ -171,7 +171,7 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
                 select(User).where(User.role == "admin").order_by(User.created_at)
             ).first()
             if owner is None:
-                owner = User(email=ROOT_OWNER, nome="Owner", role="admin", active=True)
+                owner = User(email=ROOT_OWNER, name="Owner", role="admin", active=True)
                 session.add(owner)
                 session.flush()
             ciphertext, nonce = seal(refresh_token, _key(settings, slug))
@@ -186,9 +186,9 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
                     status=status,
                 )
             )
-            # The azienda the customer is billed by (REB-623): a root seeded by hand has
+            # The legal entity the customer is billed by (REB-623): a root seeded by hand has
             # none until somebody writes it, as `createadmin` does on a real one.
-            committed_default_legal_entity(session, nome="Radice")
+            committed_default_legal_entity(session, name="Radice")
             session.add(Customer(legal_name="CLI Acme", email="info@acme.it"))
             session.commit()
     finally:
@@ -208,7 +208,7 @@ def _watermark(settings: Settings, slug: str | None) -> object:
 
 def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
     """The space's `gmail-sync` row as `(it has run, its failure)`, `None` for no row: what
-    Impostazioni → Esecuzioni reads (REB-764)."""
+    Settings → Runs reads (REB-764)."""
     engine = _engine(settings, slug)
     try:
         with engine.connect() as connection:
@@ -303,7 +303,7 @@ def test_a_revoked_mailbox_is_its_own_line_and_the_next_space_still_runs(
 
     captured = capsys.readouterr()
     assert _line(ONE, ONE) in captured.err
-    assert "revoked" in captured.err
+    assert "revocato" in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, ONE) is None
     assert _watermark(settings, TWO) is not None
@@ -485,8 +485,8 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The same claim, narrowed to one address: with a space unread, «non è una casella
-    collegata» would be a guess. The line names what was read and says a space was not."""
+    """The same claim, narrowed to one address: with a space unread, the claim that no mailbox
+    is connected would be a guess. The line names what was read and says a space was not."""
     import pigrocrm.core.cli.spaces_walk as tenants_database
 
     _connect(settings, TWO)
@@ -602,7 +602,7 @@ def test_a_space_with_a_good_and_a_refused_mailbox_records_the_refusal_and_keeps
                 {"at": datetime(2026, 10, 1, tzinfo=UTC)},
             )
         with session_factory(engine)() as session:
-            second = User(email="seconda@one.example", nome="Seconda", role="admin", active=True)
+            second = User(email="seconda@one.example", name="Seconda", role="admin", active=True)
             session.add(second)
             session.flush()
             ciphertext, nonce = seal(MAILBOXES[ONE][1], _key(settings, ONE))

@@ -31,26 +31,26 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 def _default_id(client: TestClient) -> str:
     legal_entities = client.get("/api/legal-entities").json()
-    assert legal_entities and legal_entities[0]["predefinita"]
+    assert legal_entities and legal_entities[0]["is_default"]
     return str(legal_entities[0]["id"])
 
 
-def _second_legal_entity(session: Session, nome: str = "rebase ltd", country: str = "GB") -> str:
-    row = LegalEntity(nome=nome, legal_name=f"{nome.title()}", country=country)
+def _second_legal_entity(session: Session, name: str = "rebase ltd", country: str = "GB") -> str:
+    row = LegalEntity(name=name, legal_name=f"{name.title()}", country=country)
     session.add(row)
     session.flush()
     return str(row.id)
 
 
-def _customer(client: TestClient, nome: str, **extra: Any) -> dict[str, Any]:
-    created = client.post("/api/customers", json={"legal_name": nome, **extra})
+def _customer(client: TestClient, name: str, **extra: Any) -> dict[str, Any]:
+    created = client.post("/api/customers", json={"legal_name": name, **extra})
     assert created.status_code == 201, created.text
     return dict(created.json())
 
 
-def _deal(client: TestClient, customer_id: str, nome: str) -> str:
+def _deal(client: TestClient, customer_id: str, name: str) -> str:
     assert client.post("/api/pipeline-stages/seed").status_code == 200
-    created = client.post("/api/deals", json={"nome": nome, "customer_id": customer_id})
+    created = client.post("/api/deals", json={"name": name, "customer_id": customer_id})
     assert created.status_code == 201, created.text
     return str(created.json()["id"])
 
@@ -122,7 +122,7 @@ def test_to_customer_gets_the_proposal_or_keeps_the_legal_entity_named(
 def test_an_inactive_legal_entity_is_refused_on_to_customer_naming_the_field(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    closed = LegalEntity(nome="chiusa", legal_name="Chiusa S.r.l.", active=False)
+    closed = LegalEntity(name="chiusa", legal_name="Chiusa S.r.l.", active=False)
     api_session.add(closed)
     api_session.flush()
     refused = logged_in.post(
@@ -139,7 +139,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
     logged_in: TestClient, api_session: Session, tmp_path: Path
 ) -> None:
     default = _default_id(logged_in)
-    second = _second_legal_entity(api_session, nome="rebase", country="IT")
+    second = _second_legal_entity(api_session, name="rebase", country="IT")
     fiscal = FiscalProfileService(api_session)
     fiscal.upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     fiscal.upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN, legal_entity_id=UUID(second))
@@ -173,7 +173,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
             "/api/documents", json={"customer_id": customer, "type": "document", "title": title}
         )
         assert created.status_code == 201, created.text
-    category = logged_in.post("/api/cost-categories", json={"nome": "Viaggi"}).json()["id"]
+    category = logged_in.post("/api/cost-categories", json={"name": "Viaggi"}).json()["id"]
     me = str(logged_in.get("/api/auth/me").json()["id"])
     for deal, day in ((deal_a, "2026-03-02"), (deal_b, "2026-03-03")):
         cost = logged_in.post(
@@ -181,7 +181,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
             json={
                 "deal_id": deal,
                 "category_id": category,
-                "data": day,
+                "date": day,
                 "amount": "10.00",
                 "description": "Treno",
             },
@@ -192,7 +192,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
             json={
                 "deal_id": deal,
                 "user_id": me,
-                "data": day,
+                "date": day,
                 "hours": "1.00",
                 "description": "Sviluppo",
             },
@@ -202,7 +202,7 @@ def test_every_list_route_narrows_to_one_legal_entity(
         "/api/costs",
         json={
             "category_id": category,
-            "data": "2026-03-04",
+            "date": "2026-03-04",
             "amount": "5.00",
             "description": "Software",
         },
@@ -244,9 +244,9 @@ def test_every_list_route_narrows_to_one_legal_entity(
     narrowed_search = logged_in.get(
         "/api/search", params={"q": "brief", "legal_entity_id": second}
     ).json()
-    documents = next(g for g in everyone["gruppi"] if g["entity"] == "document")
+    documents = next(g for g in everyone["groups"] if g["entity"] == "document")
     assert documents["total"] == 2
-    narrowed_documents = next(g for g in narrowed_search["gruppi"] if g["entity"] == "document")
+    narrowed_documents = next(g for g in narrowed_search["groups"] if g["entity"] == "document")
     assert [h["label"] for h in narrowed_documents["hits"]] == ["Beta brief"]
 
 

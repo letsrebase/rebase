@@ -54,8 +54,8 @@ class Order:
 def _number(value: str | None) -> str | None:
     if value is None:
         return None
-    pulito = value.strip()
-    if not pulito:
+    cleaned = value.strip()
+    if not cleaned:
         raise ValidationFailed(
             ENTITY,
             "purchase_order_number",
@@ -63,14 +63,14 @@ def _number(value: str | None) -> str | None:
             "dall'applicazione",
             expected=f"da 1 a {PURCHASE_ORDER_NUMBER_MAX_LENGTH} caratteri",
         )
-    if len(pulito) > PURCHASE_ORDER_NUMBER_MAX_LENGTH:
+    if len(cleaned) > PURCHASE_ORDER_NUMBER_MAX_LENGTH:
         raise ValidationFailed(
             ENTITY,
             "purchase_order_number",
             f"il numero dell'ordine ha al massimo {PURCHASE_ORDER_NUMBER_MAX_LENGTH} caratteri",
             expected=f"da 1 a {PURCHASE_ORDER_NUMBER_MAX_LENGTH} caratteri",
         )
-    offending = next((c for c in pulito if not _NUMBER_RE.fullmatch(c)), None)
+    offending = next((c for c in cleaned if not _NUMBER_RE.fullmatch(c)), None)
     if offending is not None:
         # Name the character and its code point: an en dash or a no-break space pasted
         # from a PDF looks exactly like the ASCII one, and U+XXXX is what finds it.
@@ -82,7 +82,7 @@ def _number(value: str | None) -> str | None:
             "scrivilo con lettere senza accento, cifre, spazi e punteggiatura semplice",
             expected="lettere senza accento, cifre, spazi e punteggiatura semplice",
         )
-    return pulito
+    return cleaned
 
 
 def _code(
@@ -90,10 +90,10 @@ def _code(
 ) -> str | None:
     if value is None:
         return None
-    pulito = value.strip()
-    if not pattern.fullmatch(pulito):
+    cleaned = value.strip()
+    if not pattern.fullmatch(cleaned):
         raise ValidationFailed(ENTITY, field, reason, expected=expected)
-    return pulito.upper()
+    return cleaned.upper()
 
 
 def checked_order(
@@ -105,23 +105,23 @@ def checked_order(
     sends `null` for an empty input, so an empty string is a caller's mistake, and
     taking it as a clear would let a stray `""` drop the order a CIG still needs.
     """
-    number_pulito = _number(number)
-    tender_code_pulito = _code(
+    number_cleaned = _number(number)
+    tender_code_cleaned = _code(
         tender_code,
         "purchase_order_tender_code",
         _TENDER_CODE_RE,
         "il CIG ha 10 caratteri, lettere e cifre",
         "10 lettere o cifre",
     )
-    cup_pulito = _code(
+    cup_cleaned = _code(
         cup,
         "purchase_order_project_code",
         _PROJECT_CODE_RE,
         "il CUP ha 15 caratteri, lettere e cifre",
         "15 lettere o cifre",
     )
-    if number_pulito is None and (
-        data is not None or tender_code_pulito is not None or cup_pulito is not None
+    if number_cleaned is None and (
+        data is not None or tender_code_cleaned is not None or cup_cleaned is not None
     ):
         raise ValidationFailed(
             ENTITY,
@@ -129,4 +129,4 @@ def checked_order(
             "indica il numero dell'ordine a cui si riferiscono data, CIG e CUP",
             expected="il numero dell'ordine del cliente",
         )
-    return Order(number_pulito, data, tender_code_pulito, cup_pulito)
+    return Order(number_cleaned, data, tender_code_cleaned, cup_cleaned)

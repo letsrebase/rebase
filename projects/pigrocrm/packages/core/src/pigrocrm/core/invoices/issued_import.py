@@ -41,9 +41,9 @@ def check_import_customer(
     ctx: InvoiceContext, customer_id: UUID, legal_entity: LegalEntity, name: str
 ) -> None:
     """The customer an imported invoice is attached to (REB-783, REB-784) has to be one
-    it can be written for: on the azienda whose register it lands on, and not archived.
+    it can be written for: on the legal entity whose register it lands on, and not archived.
     `name` is the counterparty the message names. The dialog lists only such customers,
-    but the server is the contract: without this an invoice would land on one azienda's
+    but the server is the contract: without this an invoice would land on one legal entity's
     register for another's customer, a state `legal_entity_of_parent` derives away on every
     other path. It runs for the FatturaPA confirmation and for `import_issued` itself, so
     the hand-declared import is held to it too. An unknown id stays `NotFound`."""
@@ -84,7 +84,7 @@ class IssuedInvoiceImporter:
         commit: bool = True,
     ) -> InvoiceRead:
         """Register a fattura that another system issued (slice 9 §3), on the register
-        of `legal_entity_id`, the default azienda when `None` (REB-619).
+        of `legal_entity_id`, the default legal entity when `None` (REB-619).
 
         Same lock, same snapshot, same lines as `issue`; the two differences are the
         whole feature. The number is *declared*, so the counter follows it instead of
@@ -143,9 +143,9 @@ class IssuedInvoiceImporter:
             if data.pdf_source is not None
             else None
         )
-        # All of these can refuse -- `resolve` when the azienda does not exist, `regime`
+        # All of these can refuse -- `resolve` when the legal entity does not exist, `regime`
         # when no fiscal profile is configured, `build_snapshot` when no emitter profile
-        # is -- and none writes anything. The azienda is named by the caller, or the one
+        # is -- and none writes anything. The legal entity is named by the caller, or the one
         # the customer's chain gives, as `create` does (REB-623).
         legal_entity = ctx.writing_legal_entity(
             legal_entity_id
@@ -257,7 +257,7 @@ class IssuedInvoiceImporter:
                 "precedente alla prima emessa qui",
                 year=data.year,
                 number=data.number,
-                before_nativa=first_native,
+                before_native=first_native,
             )
         before, after = repo.neighbour_dates(legal_entity_id, data.year, data.number)
         if before is not None and data.issue_date < before:
@@ -326,19 +326,19 @@ class IssuedInvoiceImporter:
         )
 
     def _add_lines(self, invoice: Invoice, data: InvoiceImport) -> None:
-        for index, riga in enumerate(data.lines, start=1):
+        for index, line in enumerate(data.lines, start=1):
             self.ctx.repo.add_line(
                 InvoiceLine(
                     invoice_id=invoice.id,
                     line_number=index,
-                    description=riga.description,
-                    quantity=riga.quantity,
-                    unit_of_measure=riga.unit_of_measure,
-                    unit_price=riga.unit_price,
-                    total_price=riga.total_price,
-                    vat_rate=riga.vat_rate,
-                    vat_nature=riga.vat_nature,
-                    legal_reference=riga.legal_reference,
+                    description=line.description,
+                    quantity=line.quantity,
+                    unit_of_measure=line.unit_of_measure,
+                    unit_price=line.unit_price,
+                    total_price=line.total_price,
+                    vat_rate=line.vat_rate,
+                    vat_nature=line.vat_nature,
+                    legal_reference=line.legal_reference,
                 )
             )
 
@@ -348,10 +348,10 @@ class IssuedInvoiceImporter:
         """The `documents` row that is the invoice's original PDF."""
         documents = self.ctx.documents
         if isinstance(pdf, UUID):
-            # The original must already sit with the invoice's azienda: a document of
-            # another azienda (the customer's current one, after a move) named as this
+            # The original must already sit with the invoice's legal entity: a document of
+            # another legal entity (the customer's current one, after a move) named as this
             # invoice's PDF would be readable, and replaceable, by members who cannot see
-            # the invoice. Here rather than among the pure checks, since the azienda is
+            # the invoice. Here rather than among the pure checks, since the legal entity is
             # resolved after them.
             original = documents.repo.get(pdf)
             if original is not None and original.legal_entity_id != invoice.legal_entity_id:
@@ -371,7 +371,7 @@ class IssuedInvoiceImporter:
             data=pdf.content,
             content_type=PDF_MIME,
             actor=actor,
-            # The invoice's azienda, the one the file landed on (spec §1.5), and never the
+            # The invoice's legal entity, the one the file landed on (spec §1.5), and never the
             # customer's current one.
             legal_entity_id=invoice.legal_entity_id,
             # `DriveReader.read_bytes` answers with the bytes and the mime and no name, so

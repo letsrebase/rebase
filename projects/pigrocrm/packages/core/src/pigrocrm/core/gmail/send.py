@@ -532,7 +532,7 @@ class EmailSendService:
         return parent.message_id_header, chain
 
     def _signature_name(self, draft: EmailDraft) -> str:
-        """The display name on the `From` header: the `legal_name` of the azienda
+        """The display name on the `From` header: the `legal_name` of the legal entity
         the draft's record belongs to (REB-627, spec §1.8), the default's for a record
         with none.
 
@@ -560,7 +560,7 @@ class EmailSendService:
         row.send_state = state
         row.last_error = error
         # A reminder's attempt names its invoice, so the row follows the invoice's
-        # azienda on the timeline and not only the customer's (REB-634).
+        # legal entity on the timeline and not only the customer's (REB-634).
         reminder = self.repo.reminder_for_draft(draft_id)
         if kind is not None:
             # Last before the commit, per `ActivityService.record`. The payload carries
@@ -629,7 +629,7 @@ class EmailSendService:
                 "subject": row.subject,
                 "to_addresses": list(row.to_addresses),
                 "gmail_message_id": gmail_message_id,
-                # Named, so the row follows the invoice's azienda on the timeline and not
+                # Named, so the row follows the invoice's legal entity on the timeline and not
                 # only the customer's, which may have moved since (REB-634).
                 **({"invoice_id": str(reminder.invoice_id)} if reminder is not None else {}),
             },

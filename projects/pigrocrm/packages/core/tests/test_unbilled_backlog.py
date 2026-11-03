@@ -70,8 +70,8 @@ def test_it_sums_billable_unbilled_hours_across_every_period(
 ) -> None:
     """No period. "Quanto ho da fatturare" is not a question about March (§6.3), so an
     entry from two years ago counts exactly as much as one from last month."""
-    time_entry_factory(data=date(2024, 1, 15), hours="8.00", rate="50.000000")
-    time_entry_factory(data=date(2026, 8, 1), hours="2.50", rate="50.000000")
+    time_entry_factory(date=date(2024, 1, 15), hours="8.00", rate="50.000000")
+    time_entry_factory(date=date(2026, 8, 1), hours="2.50", rate="50.000000")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
     assert backlog.billable_uninvoiced_hours == Decimal("10.50")
@@ -84,7 +84,7 @@ def test_an_hour_on_a_line_of_an_issued_invoice_is_not_backlog(
 ) -> None:
     """The moment `issue()` commits, the hours are revenue and stop being arrears."""
     time_entry_factory(
-        data=date(2026, 8, 1),
+        date=date(2026, 8, 1),
         hours="8.00",
         rate="50.000000",
         invoice_line_id=issued_invoice_line_id,
@@ -106,7 +106,7 @@ def test_an_hour_on_a_line_of_a_draft_is_still_backlog(
     while appearing in no revenue figure either.
     """
     time_entry_factory(
-        data=date(2026, 8, 1),
+        date=date(2026, 8, 1),
         hours="8.00",
         rate="50.000000",
         invoice_line_id=draft_invoice_line_id,
@@ -124,7 +124,7 @@ def test_an_hour_on_an_annulled_invoice_is_backlog_again(
     struck-through page of a paper register. Its hours are CRM data again, and they are
     still owed by somebody."""
     time_entry_factory(
-        data=date(2026, 8, 1),
+        date=date(2026, 8, 1),
         hours="8.00",
         rate="50.000000",
         invoice_line_id=annulled_invoice_line_id,
@@ -138,7 +138,7 @@ def test_an_hour_on_a_confirmed_proforma_is_still_backlog(
     """A proforma never touches the register (slice 3 §5), `confirmed` included -- the
     state closest to an emission that is not one."""
     time_entry_factory(
-        data=date(2026, 8, 1),
+        date=date(2026, 8, 1),
         hours="8.00",
         rate="50.000000",
         invoice_line_id=proforma_invoice_line_id,
@@ -150,7 +150,7 @@ def test_a_non_billable_hour_is_not_backlog(
     db_session: Session, time_entry_factory: EntryFactory
 ) -> None:
     """`billable` is a property of the work, and internal work is never arrears."""
-    time_entry_factory(data=date(2026, 8, 1), hours="8.00", rate="50.000000", billable=False)
+    time_entry_factory(date=date(2026, 8, 1), hours="8.00", rate="50.000000", billable=False)
     assert AnalyticsService(db_session).unbilled_backlog(READONLY).entries == 0
 
 
@@ -160,8 +160,8 @@ def test_hours_without_a_rate_are_counted_and_valued_at_nothing(
     """Slice 4 §5.1 already names this as a figure of its own. A rate of zero and no rate
     are different facts, and treating the second as the first understates the backlog
     with nothing on screen to say so."""
-    time_entry_factory(data=date(2026, 8, 1), hours="4.00", rate=None)
-    time_entry_factory(data=date(2026, 8, 2), hours="1.00", rate="100.000000")
+    time_entry_factory(date=date(2026, 8, 1), hours="4.00", rate=None)
+    time_entry_factory(date=date(2026, 8, 2), hours="1.00", rate="100.000000")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
     assert backlog.billable_uninvoiced_hours == Decimal("5.00")
@@ -174,7 +174,7 @@ def test_a_rate_of_zero_is_a_rate(db_session: Session, time_entry_factory: Entry
     """The mirror of the test above, and the reason the two columns cannot be collapsed:
     an hour priced at nothing is priced. It is worth `0.00`, and it is **not** one of the
     `entries_without_rate`."""
-    time_entry_factory(data=date(2026, 8, 1), hours="4.00", rate="0.000000")
+    time_entry_factory(date=date(2026, 8, 1), hours="4.00", rate="0.000000")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
     assert backlog.billable_uninvoiced_hours == Decimal("4.00")
@@ -190,7 +190,7 @@ def test_the_value_rounds_per_row_then_sums(
     `Σ ROUND(row)` and `ROUND(Σ exact)` by a cent, which is how a reconciliation stops
     reconciling."""
     for _ in range(3):
-        time_entry_factory(data=date(2026, 8, 1), hours="0.10", rate="0.050000")
+        time_entry_factory(date=date(2026, 8, 1), hours="0.10", rate="0.050000")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
     # ROUND(0.005, 2) = 0.01 half-up, three times. `ROUND(Σ 0.015, 2)` would be 0.02, and
@@ -201,7 +201,7 @@ def test_the_value_rounds_per_row_then_sums(
 def test_a_soft_deleted_entry_is_not_backlog(
     db_session: Session, time_entry_factory: EntryFactory
 ) -> None:
-    entry = time_entry_factory(data=date(2026, 8, 1), hours="8.00", rate="50.000000")
+    entry = time_entry_factory(date=date(2026, 8, 1), hours="8.00", rate="50.000000")
     entry.deleted_at = datetime.now(UTC)
     db_session.flush()
     assert AnalyticsService(db_session).unbilled_backlog(READONLY).entries == 0
@@ -217,11 +217,11 @@ def test_the_period_pnl_carries_the_same_three_figures_for_its_period(
     on the economic dashboard, "in totale" on the operational one -- and that the two are
     never shown side by side.
     """
-    time_entry_factory(data=date(2026, 3, 10), hours="4.00", rate="50.000000")
-    time_entry_factory(data=date(2026, 6, 10), hours="4.00", rate="50.000000")
+    time_entry_factory(date=date(2026, 3, 10), hours="4.00", rate="50.000000")
+    time_entry_factory(date=date(2026, 6, 10), hours="4.00", rate="50.000000")
 
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(2026, 3, 1), a=date(2026, 3, 31)), READONLY
+        PeriodPnlQuery(date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)), READONLY
     )
     assert pnl.billable_uninvoiced_hours == Decimal("4.00")
     assert pnl.accrued_value == Decimal("200.00")
@@ -241,11 +241,11 @@ def test_the_period_rows_count_their_own_unpriced_hours(
     prints the three under one heading ("Maturato e non fatturato — nel periodo"), and a
     count taken over a different population than the sum above it is a figure that cannot
     be reconciled with anything on the same card."""
-    time_entry_factory(data=date(2026, 3, 10), hours="4.00", rate=None)
-    time_entry_factory(data=date(2026, 6, 10), hours="7.00", rate=None)
+    time_entry_factory(date=date(2026, 3, 10), hours="4.00", rate=None)
+    time_entry_factory(date=date(2026, 6, 10), hours="7.00", rate=None)
 
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(2026, 3, 1), a=date(2026, 3, 31)), READONLY
+        PeriodPnlQuery(date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)), READONLY
     )
     assert pnl.hours_without_rate == 1
     assert pnl.billable_uninvoiced_hours == Decimal("4.00")
@@ -263,7 +263,7 @@ def test_the_period_rows_honour_the_customer_filter(
     db_session.add(other_customer)
     db_session.flush()
     other_deal = Deal(
-        nome="Progetto altrui",
+        name="Progetto altrui",
         customer_id=other_customer.id,
         pipeline_stage_id=mine.pipeline_stage_id,
         probability=10,
@@ -271,13 +271,15 @@ def test_the_period_rows_honour_the_customer_filter(
     db_session.add(other_deal)
     db_session.flush()
 
-    time_entry_factory(data=date(2026, 3, 10), hours="4.00", rate="50.000000")
+    time_entry_factory(date=date(2026, 3, 10), hours="4.00", rate="50.000000")
     time_entry_factory(
-        data=date(2026, 3, 11), hours="9.00", rate="50.000000", deal_id=other_deal.id
+        date=date(2026, 3, 11), hours="9.00", rate="50.000000", deal_id=other_deal.id
     )
 
     pnl = AnalyticsService(db_session).period_pnl(
-        PeriodPnlQuery(da=date(2026, 3, 1), a=date(2026, 3, 31), customer_id=mine.customer_id),
+        PeriodPnlQuery(
+            date_from=date(2026, 3, 1), date_to=date(2026, 3, 31), customer_id=mine.customer_id
+        ),
         READONLY,
     )
     assert pnl.billable_uninvoiced_hours == Decimal("4.00")
@@ -290,7 +292,7 @@ def test_a_readonly_actor_may_read_the_backlog(
     """Slice 4 §11 gives every analytics read to every role; the one admin-only figure is
     the fiscal estimate, which is not this. Asserted against a backlog that is not empty,
     so a `PermissionDenied` raised before any row is read would still be caught."""
-    time_entry_factory(data=date(2026, 8, 1), hours="4.00", rate="50.000000")
+    time_entry_factory(date=date(2026, 8, 1), hours="4.00", rate="50.000000")
     assert AnalyticsService(db_session).unbilled_backlog(READONLY).entries == 1
 
 

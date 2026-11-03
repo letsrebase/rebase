@@ -36,9 +36,9 @@ NONE = "none"
 
 
 def assignee_of_default(context: McpContext, assigned_to: str | None) -> UUID | None:
-    """Who a new attività goes to: the id given, nobody for `"none"`, and, when the
+    """Who a new task goes to: the id given, nobody for `"none"`, and, when the
     agent says nothing, the user who owns the token (`None` still for a token with no
-    person behind it). Agents almost never pass an id, and an unassigned attività would
+    person behind it). Agents almost never pass an id, and an unassigned task would
     be nobody's to-do."""
     if assigned_to is None or assigned_to == "":
         return context.actor.id

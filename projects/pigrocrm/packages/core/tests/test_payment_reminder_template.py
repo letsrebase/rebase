@@ -23,18 +23,18 @@ from pigrocrm.core.gmail.payment_reminders_template import (
 from pigrocrm.core.templates.renderer import render_template
 
 VALUES = {
-    "customer": "Acme S.r.l.",
-    "invoice_number": "2026/14",
-    "invoice_date": "01/07/2026",
-    "due_date": "31/07/2026",
-    "amount": "1.200,00 €",
+    "cliente": "Acme S.r.l.",
+    "numero_fattura": "2026/14",
+    "data_fattura": "01/07/2026",
+    "scadenza": "31/07/2026",
+    "importo": "1.200,00 €",
     "iban": "IT60X0542811101000000123456",
     "emittente": {
-        "legal_name": "Studio Rossi",
-        "phone": "+39 333 1234567",
-        "website": "https://studiorossi.it",
+        "ragione_sociale": "Studio Rossi",
+        "telefono": "+39 333 1234567",
+        "sito_web": "https://studiorossi.it",
     },
-    "email_signature": "Mario Rossi\nConsulente",
+    "firma_email": "Mario Rossi\nConsulente",
 }
 
 
@@ -124,7 +124,7 @@ def test_the_signature_comes_from_the_legal_entities() -> None:
 
 
 def test_a_signature_keeps_its_own_line_breaks() -> None:
-    """`email_signature` is a *block* -- name on one line, role on the next. The markdown
+    """`firma_email` is a *block* -- name on one line, role on the next. The markdown
     and typst escapers both collapse every line terminator to a space, because a value
     landing in a table cell must not manufacture a row; a plain-text body has no such
     unit to protect, and collapsing here would run the whole signature together."""
@@ -210,7 +210,7 @@ def test_the_declared_variables_match_the_paths_the_body_actually_reads() -> Non
     root = {
         path[0] for path in declared_paths(parse_template(PAYMENT_REMINDER_TEMPLATE_SOURCE)).root
     }
-    declared = {variable.nome for variable in PAYMENT_REMINDER_DECLARED_VARIABLES}
+    declared = {variable.name for variable in PAYMENT_REMINDER_DECLARED_VARIABLES}
     assert declared <= root, f"declared but never used: {sorted(declared - root)}"
     # `emittente` is supplied whole by `LegalEntityService.as_template_values`, never
     # typed into a form, so it is deliberately not declared -- the same decision

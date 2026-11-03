@@ -102,17 +102,17 @@ def test_the_proposals_group_the_sent_conversations_by_domain(db_session: Sessio
 
     assert [proposal.domain for proposal in proposals] == ["acme.it", "studio-rossi.it"]
     acme, rossi = proposals
-    assert acme.nome == "Acme"
+    assert acme.name == "Acme"
     assert acme.conversations == 2
     # The last message of any conversation it took part in: t2, three days ago.
     assert acme.last_message == datetime.fromtimestamp(
         fake.messages["m3"].internal_date_ms / 1000, tz=UTC
     )
-    people = {person.address: person.nome for person in acme.people}
+    people = {person.address: person.name for person in acme.people}
     # Sara never received a mail from the owner, but she answered in a thread the owner
     # started: she is somebody the owner corresponds with.
     assert people == {"marco@acme.it": "Marco Bianchi", "sara@acme.it": "Sara Verdi"}
-    assert rossi.nome == "Studio Rossi"
+    assert rossi.name == "Studio Rossi"
     assert rossi.conversations == 1
     assert [person.address for person in rossi.people] == ["anna@studio-rossi.it"]
 
@@ -185,11 +185,11 @@ def test_a_domain_already_filed_under_a_customer_is_not_proposed_again(
     rossi = Customer(legal_name="Studio Rossi")
     db_session.add(rossi)
     db_session.flush()
-    db_session.add(Person(nome="Anna", email="anna@studio-rossi.it", customer_id=rossi.id))
+    db_session.add(Person(first_name="Anna", email="anna@studio-rossi.it", customer_id=rossi.id))
     db_session.flush()
     fake = _mailbox()
     fake.messages["m11"] = _mail(11, frm=OWN, to="luca@nuovo.it", thread="t10")
-    db_session.add(Person(nome="Luca", email="Luca@Nuovo.it"))
+    db_session.add(Person(first_name="Luca", email="Luca@Nuovo.it"))
     db_session.flush()
 
     proposals = sync_service(db_session, fake).suggest_customers(actor=actor_for(account))
@@ -359,8 +359,8 @@ def _import(**overrides: object) -> CustomersFromSuggestions:
                 "domain": "acme.it",
                 "legal_name": "Acme S.r.l.",
                 "people": [
-                    {"address": "marco@acme.it", "nome": "Marco Bianchi"},
-                    {"address": "sara@acme.it", "nome": ""},
+                    {"address": "marco@acme.it", "name": "Marco Bianchi"},
+                    {"address": "sara@acme.it", "name": ""},
                 ],
             },
             {"domain": "studio-rossi.it", "legal_name": "  Studio Rossi  ", "people": []},
@@ -375,7 +375,7 @@ def test_ticked_proposals_become_customers_and_people_in_one_go(db_session: Sess
     assert [customer.legal_name for customer in created] == ["Acme S.r.l.", "Studio Rossi"]
     assert [customer.website for customer in created] == ["acme.it", "studio-rossi.it"]
     people = db_session.execute(select(Person).order_by(Person.email)).scalars().all()
-    assert [(p.email, p.nome, p.last_name, p.customer_id) for p in people] == [
+    assert [(p.email, p.first_name, p.last_name, p.customer_id) for p in people] == [
         ("marco@acme.it", "Marco", "Bianchi", created[0].id),
         # No display name: the address stands in for it.
         ("sara@acme.it", "Sara", None, created[0].id),
@@ -418,7 +418,7 @@ def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: 
         {
             "domain": "acme.it",
             "legal_name": "Acme",
-            "people": [{"address": "ceo@rival.it", "nome": "Ceo"}],
+            "people": [{"address": "ceo@rival.it", "name": "Ceo"}],
         }
     ]
     with pytest.raises(ValidationFailed):
@@ -429,7 +429,7 @@ def test_a_person_outside_the_domain_or_a_webmail_domain_is_refused(db_session: 
 
 
 def test_a_person_already_in_the_address_book_is_left_where_it_is(db_session: Session) -> None:
-    db_session.add(Person(nome="Marco", email="marco@acme.it"))
+    db_session.add(Person(first_name="Marco", email="marco@acme.it"))
     db_session.flush()
 
     CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
@@ -466,12 +466,12 @@ def test_a_display_name_longer_than_a_person_holds_is_clipped(db_session: Sessio
         {
             "domain": "acme.it",
             "legal_name": "Acme",
-            "people": [{"address": "marco@acme.it", "nome": "M" * 130 + " " + "B" * 124}],
+            "people": [{"address": "marco@acme.it", "name": "M" * 130 + " " + "B" * 124}],
         }
     ]
     CustomerService(db_session).create_from_suggestions(_import(customers=long), ADMIN)
     person = db_session.execute(select(Person)).scalar_one()
-    assert len(person.nome) == 120
+    assert len(person.first_name) == 120
     assert person.last_name is not None and len(person.last_name) == 120
 
 

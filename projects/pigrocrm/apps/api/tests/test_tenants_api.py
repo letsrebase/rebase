@@ -39,7 +39,7 @@ SLUG = "studio-prova"
 REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 SIGNUP = {
     "slug": SLUG,
-    "nome": "Ada Lovelace",
+    "name": "Ada Lovelace",
     "email": "ada@studio.it",
 }
 
@@ -120,7 +120,7 @@ def test_availability_says_why(spaces_client: TestClient) -> None:
     assert spaces_client.get("/api/tenants/app/available").json() == {
         "slug": "app",
         "available": False,
-        "reason": "questo nome è riservato",
+        "reason": "questo name è riservato",
     }
     assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
 
@@ -255,7 +255,7 @@ def test_the_root_slug_is_the_root_itself_and_nobody_elses_name(
             assert sum("Path=/studiorossi/;" in c for c in deletions) == 2
             assert sum("Path=/;" in c for c in deletions) == 2
             assert client.get("/api/tenants/studiorossi/available").json()["reason"] == (
-                "questo nome è riservato"
+                "questo name è riservato"
             )
             refused = client.post("/api/tenants/", json={**SIGNUP, "slug": "studiorossi"})
             assert refused.status_code == 422, refused.text
@@ -374,7 +374,7 @@ def test_the_signup_learns_whether_an_address_is_a_member_and_owns_a_space_and_n
 
     def fake_lookup(settings: Settings, email: str) -> MemberLookup:
         asked.append(email)
-        return MemberLookup(member=True, nome="Ada", last_name="Lovelace")
+        return MemberLookup(member=True, first_name="Ada", last_name="Lovelace")
 
     monkeypatch.setattr("pigrocrm_api.routers.tenants.lookup_member", fake_lookup)
 
@@ -468,7 +468,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
     assert me.status_code == 200 and me.json()["role"] == "admin"
     assert spaces_client.post(f"/{SLUG}/api/auth/refresh").status_code == 401
     # Nothing durable before the address is proven: no token, no second user.
-    token = spaces_client.post(f"/{SLUG}/api/tokens", json={"nome": "claude"})
+    token = spaces_client.post(f"/{SLUG}/api/tokens", json={"name": "claude"})
     assert token.status_code == 422, token.text
     assert "conferma il tuo indirizzo" in token.text
     user = spaces_client.post(
@@ -476,7 +476,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
         json={
             "email": "b@studio.it",
             "password": "lunghissima1",
-            "nome": "B",
+            "name": "B",
             "role": "collaborator",
         },
     )
@@ -495,7 +495,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
         for c in entered.headers.get_list("set-cookie")
     )
     assert spaces_client.post(f"/{SLUG}/api/auth/refresh").status_code == 200
-    assert spaces_client.post(f"/{SLUG}/api/tokens", json={"nome": "claude"}).status_code == 201
+    assert spaces_client.post(f"/{SLUG}/api/tokens", json={"name": "claude"}).status_code == 201
     # No password was ever set: the password form knows nothing of this admin.
     denied = spaces_client.post(
         f"/{SLUG}/api/auth/login", json={"email": "ada@studio.it", "password": "qualunque11"}

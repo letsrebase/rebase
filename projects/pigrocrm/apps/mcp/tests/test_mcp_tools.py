@@ -96,19 +96,19 @@ async def test_the_full_journey_an_agent_would_take(server, mcp_session: Session
         person = _payload(
             await client.call_tool(
                 "create_person",
-                {"nome": "Mario", "last_name": "Rossi", "customer_id": customer["id"]},
+                {"first_name": "Mario", "last_name": "Rossi", "customer_id": customer["id"]},
             )
         )
         assert person["customer_id"] == customer["id"]
 
         deal = _payload(
             await client.call_tool(
-                "create_deal", {"nome": "Progetto X", "customer_id": customer["id"]}
+                "create_deal", {"name": "Progetto X", "customer_id": customer["id"]}
             )
         )
 
         stages = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"]
-        offer = next(s for s in stages if s["nome"] == "Offerta")
+        offer = next(s for s in stages if s["name"] == "Offerta")
         moved = _payload(
             await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": offer["id"]})
         )
@@ -175,8 +175,8 @@ async def test_an_agent_names_a_customers_owner_when_it_creates_it_and_when_it_u
     `changes` (its schema is `CustomerUpdate`'s). The agent here is an admin's."""
     from pigrocrm.core.auth.models import User
 
-    first = User(email=f"a-{uuid4()}@example.test", password_hash="x", nome="A", role="admin")
-    second = User(email=f"b-{uuid4()}@example.test", password_hash="x", nome="B", role="admin")
+    first = User(email=f"a-{uuid4()}@example.test", password_hash="x", name="A", role="admin")
+    second = User(email=f"b-{uuid4()}@example.test", password_hash="x", name="B", role="admin")
     mcp_session.add_all([first, second])
     mcp_session.flush()
 

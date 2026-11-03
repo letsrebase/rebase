@@ -37,7 +37,7 @@ def test_columns_are_keyed_by_the_invoice_fields() -> None:
 
 
 @pytest.mark.parametrize(
-    "data, cig, cup",
+    "order_date, tender_code, cup",
     [
         (date(2026, 10, 9), None, None),
         (None, "Z0A1B2C3D4", None),
@@ -45,10 +45,10 @@ def test_columns_are_keyed_by_the_invoice_fields() -> None:
     ],
 )
 def test_to_date_tender_code_or_project_code_without_the_number_is_refused_on_the_number(
-    data: date | None, tender_code: str | None, cup: str | None
+    order_date: date | None, tender_code: str | None, cup: str | None
 ) -> None:
     with pytest.raises(ValidationFailed) as caught:
-        checked_order(None, data, tender_code, cup)
+        checked_order(None, order_date, tender_code, cup)
     assert caught.value.details["field"] == "purchase_order_number"
     assert "numero dell'ordine" in caught.value.details["reason"]
 
@@ -68,7 +68,7 @@ def test_a_number_longer_than_twenty_characters_is_refused() -> None:
 
 
 @pytest.mark.parametrize(
-    "numero, code_point",
+    "number, code_point",
     [
         ("Ordine città 5", "U+00E0"),
         ("N°5", "U+00B0"),
@@ -89,7 +89,7 @@ def test_a_number_outside_printable_basic_latin_is_refused_not_transliterated(
 
 
 @pytest.mark.parametrize(
-    "cig", ["Z0A1B2C3D", "Z0A1B2C3D45", "Z0A1-2C3D4", "Z0A1B2C3Dè", "ß12345678"]
+    "tender_code", ["Z0A1B2C3D", "Z0A1B2C3D45", "Z0A1-2C3D4", "Z0A1B2C3Dè", "ß12345678"]
 )
 def test_to_tender_code_is_exactly_ten_letters_or_digits(tender_code: str) -> None:
     with pytest.raises(ValidationFailed) as caught:

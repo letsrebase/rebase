@@ -29,8 +29,8 @@ def _bearer(client: TestClient, raw: str) -> TestClient:
     return agent
 
 
-def _make(client: TestClient, nome: str, **body: Any) -> dict[str, Any]:
-    response = client.post("/api/tokens", json={"nome": nome, **body})
+def _make(client: TestClient, name: str, **body: Any) -> dict[str, Any]:
+    response = client.post("/api/tokens", json={"name": name, **body})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -41,7 +41,7 @@ def test_a_token_is_made_closed_unless_asked_and_the_list_says_so(open_space: Te
 
     assert plain["full_access"] is False
     assert full["full_access"] is True
-    listed = {token["nome"]: token["full_access"] for token in open_space.get("/api/tokens").json()}
+    listed = {token["name"]: token["full_access"] for token in open_space.get("/api/tokens").json()}
     assert listed == {"chiacchiere": False, "fatturazione": True}
 
 
@@ -51,7 +51,7 @@ def test_asking_for_full_access_on_a_space_that_did_not_open_it_is_refused(
     invalidate_space_settings(None)
     assert logged_in.get("/api/tokens/options").json() == {"full_access_available": False}
 
-    refused = logged_in.post("/api/tokens", json={"nome": "fatturazione", "full_access": True})
+    refused = logged_in.post("/api/tokens", json={"name": "fatturazione", "full_access": True})
 
     assert refused.status_code == 422, refused.text
     assert "Impostazioni → Spazio" in refused.text
@@ -102,7 +102,7 @@ def test_a_token_cannot_open_itself_nor_mint_an_open_one(open_space: TestClient)
     agent = _bearer(open_space, created["token"])
 
     opened = agent.patch(f"/api/tokens/{created['id']}", json={"full_access": True})
-    minted = agent.post("/api/tokens", json={"nome": "figlio", "full_access": True})
+    minted = agent.post("/api/tokens", json={"name": "figlio", "full_access": True})
 
     assert opened.status_code == 403, opened.text
     assert opened.json()["code"] == "agent_forbidden"

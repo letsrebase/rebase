@@ -30,7 +30,7 @@ async def test_log_time_writes_and_is_attributable_to_the_agent(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-03-10",
+                "date": "2026-03-10",
                 # A string with two decimal places, not a bare `3`: `HoursArg` accepts
                 # `float | str`, and a JSON integer arrives as a Python `float` whose
                 # `Decimal` conversion carries only as many places as the float itself
@@ -107,7 +107,7 @@ async def test_list_period_locks_shows_the_months_log_time_will_refuse(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-01-15",
+                "date": "2026-01-15",
                 "hours": "2.00",
                 "description": "Voce arretrata",
             },
@@ -150,7 +150,7 @@ async def test_a_bad_argument_comes_back_as_guidance_not_a_pydantic_dump(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-03-10",
+                "date": "2026-03-10",
                 "hours": "molte",
                 "description": "x",
             },
@@ -168,7 +168,7 @@ async def test_the_deal_resource_carries_the_hours_block(
             {
                 "deal_id": str(seeded_deal_id),
                 "user_id": str(seeded_user_id),
-                "data": "2026-03-10",
+                "date": "2026-03-10",
                 "hours": "8.00",
                 "description": "Sviluppo",
             },

@@ -39,7 +39,7 @@ def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
     db_session.add(customer)
     db_session.flush()
     row = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
         probability=50,

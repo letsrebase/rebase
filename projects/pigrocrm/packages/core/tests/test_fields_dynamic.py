@@ -47,7 +47,7 @@ def test_the_model_name_mentions_the_entity() -> None:
 
 def test_optional_fields_default_to_none() -> None:
     model = build_custom_fields_model("customer", [spec("settore", "text")])
-    assert model().industry is None  # type: ignore[attr-defined]
+    assert model().settore is None  # type: ignore[attr-defined]
 
 
 def test_required_fields_are_required() -> None:
@@ -67,10 +67,10 @@ def test_json_schema_exposes_every_key_with_its_label_as_description() -> None:
 
 def test_select_becomes_an_enum_in_the_json_schema() -> None:
     """An enum is what lets the model pick a valid option instead of guessing."""
-    s = spec("status", "select", options=["active", "sospeso"])
+    s = spec("stato", "select", options=["attivo", "sospeso"])
     schema = build_custom_fields_model("customer", [s]).model_json_schema()
     rendered = str(schema)
-    assert "active" in rendered and "sospeso" in rendered
+    assert "attivo" in rendered and "sospeso" in rendered
 
 
 def test_multiselect_becomes_an_array() -> None:
@@ -106,16 +106,16 @@ def test_checkbox_rejects_a_non_boolean() -> None:
 def test_describe_specs_returns_plain_serialisable_data() -> None:
     import json
 
-    specs = [spec("status", "select", options=["active"], required=True)]
+    specs = [spec("stato", "select", options=["attivo"], required=True)]
     described = describe_specs(specs)
 
     assert described == [
         {
-            "key": "status",
+            "key": "stato",
             "label": "Stato",
             "type": "select",
             "required": True,
-            "options": ["active"],
+            "options": ["attivo"],
         }
     ]
     json.dumps(described)  # must not raise

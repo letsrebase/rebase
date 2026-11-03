@@ -79,5 +79,5 @@ class ContractEmailPreview(BaseModel):
     body: str
     to_suggested: list[str]
     attachments: list[ContractEmailAttachment]
-    da: date
-    a: date
+    date_from: date
+    date_to: date

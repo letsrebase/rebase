@@ -38,10 +38,10 @@ _A = date(2026, 3, 31)
 
 def _seed(session: Session, deals: int) -> None:
     open_stage = PipelineStage(
-        nome=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
+        name=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
     )
     won_stage = PipelineStage(
-        nome=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
+        name=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
     )
     session.add_all([open_stage, won_stage])
     session.flush()
@@ -51,7 +51,7 @@ def _seed(session: Session, deals: int) -> None:
         session.flush()
         stage = open_stage if index % 2 else won_stage
         deal = Deal(
-            nome=f"{_PREFIX} deal {index}",
+            name=f"{_PREFIX} deal {index}",
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
             probability=stage.default_probability,
@@ -83,12 +83,12 @@ def _seed(session: Session, deals: int) -> None:
 def _clean(session: Session) -> None:
     session.execute(
         delete(Invoice).where(
-            Invoice.deal_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %")))
+            Invoice.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
         )
     )
-    session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+    session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
     session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-    session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+    session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
     session.commit()
 
 
@@ -119,7 +119,7 @@ def _statements_for(engine: Engine, deals: int) -> int:
     try:
         with factory() as session:
             result = DashboardService(session).get_economic_dashboard(
-                PeriodQuery(da=_DA, a=_A), READONLY
+                PeriodQuery(date_from=_DA, date_to=_A), READONLY
             )
     finally:
         event.remove(engine, "before_cursor_execute", count)

@@ -101,13 +101,13 @@ def _settings_for(engine: Engine, *, public_url: str = "https://pigro.test") -> 
 def _upsert(**parts: dict[str, Any]) -> EngagementUpsert:
     """The body of spec § 2.3, with any part's fields overridden by name."""
     body: dict[str, dict[str, Any]] = {
-        "freelancer": {"email": ADA, "nome": "Ada", "last_name": "Lovelace"},
+        "freelancer": {"email": ADA, "first_name": "Ada", "last_name": "Lovelace"},
         "letter": {
             "number": "3/2026",
             "role": "Backend developer",
-            "legal_entity": "Acme S.r.l.",
+            "company_name": "Acme S.r.l.",
             "start_date": "2026-10-01",
-            "data_fine": "2026-12-31",
+            "end_date": "2026-12-31",
             "fee": "400.00",
             "expected_days": 40,
         },
@@ -155,7 +155,7 @@ def _provision(door: Door, slug: str, email: str = ADA) -> UUID:
     """A space opened at the signup, before the door ever saw the address."""
     with session_factory(door.registry)() as registry:
         tenant = TenantService(registry, door.settings).provision(
-            TenantSignup(slug=slug, nome="Ada Lovelace", email=email)
+            TenantSignup(slug=slug, name="Ada Lovelace", email=email)
         )
     return tenant.id
 
@@ -176,7 +176,7 @@ def _half_provisioned(door: Door, slug: str, *, database: bool) -> UUID:
         with _space(door, slug) as space:
             # With the space's name, as provisioning passes it: that is what writes the
             # azienda a customer needs since REB-623.
-            ensure_defaults(space, nome=slug)
+            ensure_defaults(space, name=slug)
     return tenant_id
 
 
@@ -305,7 +305,7 @@ def test_first_call_creates_space_customer_and_deal(door: Door) -> None:
 
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None
-        assert deal.nome == DEAL_NAME
+        assert deal.name == DEAL_NAME
         assert deal.customer_id == customer.id
         # 400.00 a day over eight hours, at the column's six places.
         assert str(deal.hourly_rate) == "50.000000"
@@ -368,7 +368,7 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
         assert _count(space, Customer) == 1 and _count(space, Deal) == 1
         recorded = space.get(Deal, first.deal_id)
         assert recorded is not None
-        assert (recorded.nome, str(recorded.hourly_rate)) == (DEAL_NAME, "50.000000")
+        assert (recorded.name, str(recorded.hourly_rate)) == (DEAL_NAME, "50.000000")
 
     # The row's ids are answered (spec § 2.3 step 2), not what the deal points at now.
     with _space(door, "ada-lovelace") as space:
@@ -392,7 +392,7 @@ def test_owned_space_is_reused_oldest_first(door: Door) -> None:
     assert answer.space_created is False and answer.created is True
     assert _owned(door) == ["studio-ada", "ada-seconda"]
     with _space(door, "studio-ada") as space:
-        assert _count(space, Deal, Deal.nome == DEAL_NAME) == 1
+        assert _count(space, Deal, Deal.name == DEAL_NAME) == 1
     with _space(door, "ada-seconda") as space:
         assert _count(space, Deal) == 0
     # A space the door did not open is not welcomed again.
@@ -507,7 +507,7 @@ def test_two_addresses_at_once_open_two_spaces(door: Door) -> None:
     lets both through, so two spaces are provisioned at once in one process. Alembic's
     script directory is not thread-safe (`DuplicateTable`, `KeyError('script')` before
     `migrate_to_head` took its own lock), so the migrations take turns."""
-    grace = {"email": "grace@studio.it", "nome": "Grace", "last_name": "Hopper"}
+    grace = {"email": "grace@studio.it", "first_name": "Grace", "last_name": "Hopper"}
     answers = _at_once(
         door,
         {
@@ -633,7 +633,7 @@ def test_a_space_left_without_its_admin_gets_one_and_the_welcome_once(door: Door
     with _space(door, "ada-lovelace") as space:
         admin = UserRepository(space).get_by_email(ADA)
         assert admin is not None
-        assert (admin.role, admin.nome, admin.password_hash) == ("admin", "Ada Lovelace", None)
+        assert (admin.role, admin.name, admin.password_hash) == ("admin", "Ada Lovelace", None)
         deal = space.get(Deal, answer.deal_id)
         assert deal is not None and deal.owner_id == admin.id
     assert [mail.to for mail in door.sender.sent] == [ADA]
@@ -671,7 +671,7 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
         )
         deal = DealService(space).create(
             DealCreate(
-                nome="Acme, il backend",
+                name="Acme, il backend",
                 customer_id=customer.id,
                 note=DEAL_NOTE,
             ),
@@ -738,7 +738,7 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
             Actor.system(),
         )
         theirs = DealService(space).create(
-            DealCreate(nome=DEAL_NAME, customer_id=customer.id, note="La mia lettera."),
+            DealCreate(name=DEAL_NAME, customer_id=customer.id, note="La mia lettera."),
             Actor.system(),
         )
 
@@ -747,7 +747,7 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
     assert answer.customer_id == customer.id
     assert answer.deal_id != theirs.id
     with _space(door, "ada-lovelace") as space:
-        assert _count(space, Deal, Deal.nome == DEAL_NAME) == 2
+        assert _count(space, Deal, Deal.name == DEAL_NAME) == 2
         untouched = space.get(Deal, theirs.id)
         assert untouched is not None and untouched.rebase_refs == []
         assert texts(space, "deal", theirs.id) == ["La mia lettera."]
@@ -779,12 +779,12 @@ def test_longest_role_and_company_still_make_a_valid_name(door: Door) -> None:
 
     match_id = uuid4()
     answer = door.service().ensure(
-        match_id, _upsert(letter={"number": number, "role": role, "legal_entity": legal_entity})
+        match_id, _upsert(letter={"number": number, "role": role, "company_name": legal_entity})
     )
 
     with _space(door, answer.slug) as space:
         deal = space.get(Deal, answer.deal_id)
-        assert deal is not None and deal.nome == name
+        assert deal is not None and deal.name == name
         # The note is a `Text`: it keeps the whole company, and a name with no full stop
         # of its own gets one.
         assert texts(space, "deal", deal.id) == [
@@ -914,7 +914,7 @@ def _log(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=admin.id,
-            data=day,
+            date=day,
             hours=Decimal("8.00"),
             description=description,
             billable=billable,
@@ -979,13 +979,13 @@ def test_report_lists_entries_with_their_invoice(
             issue_date=second,
         )
 
-    report = door.service().report(match_id, da=first)
+    report = door.service().report(match_id, date_from=first)
 
     assert report.slug == "ada-lovelace"
     assert report.deal_url == linked.deal_url
     assert report.deal == ReportDeal(
         id=linked.deal_id,
-        nome=DEAL_NAME,
+        name=DEAL_NAME,
         hourly_rate=Decimal("50.000000"),
         budgeted_hours=Decimal("320.00"),
         status="in_progress",
@@ -997,9 +997,9 @@ def test_report_lists_entries_with_their_invoice(
         number=12,
         status="issued",
         payment_status="unpaid",
-        data=second,
+        date=second,
     )
-    assert [(g.data, g.hours, g.description, g.billable, g.invoice) for g in report.days] == [
+    assert [(g.date, g.hours, g.description, g.billable, g.invoice) for g in report.days] == [
         (first, Decimal("8.00"), "Setup", True, issued),
         (second, Decimal("8.00"), "API", True, issued),
         (second, Decimal("8.00"), "Riunione interna", False, None),
@@ -1008,7 +1008,7 @@ def test_report_lists_entries_with_their_invoice(
     # The wire shape the hub reads (spec § 2.4): hours at two places, the rate at six,
     # and no hours on an entry's own invoice.
     wire = report.model_dump(mode="json")
-    assert (wire["hours_total"], wire["invoiced_hours"], wire["hours_uninvoiced"]) == (
+    assert (wire["total_hours"], wire["billed_hours"], wire["unbilled_hours"]) == (
         "24.00",
         "16.00",
         "8.00",
@@ -1017,7 +1017,7 @@ def test_report_lists_entries_with_their_invoice(
     assert wire["deal"]["budgeted_hours"] == "320.00"
     assert wire["days"][0]["invoice"]["hours"] is None
     assert wire["invoices"][0]["hours"] == "16.00"
-    assert wire["invoices"][0]["data"] == second.isoformat()
+    assert wire["invoices"][0]["date"] == second.isoformat()
 
 
 def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
@@ -1056,7 +1056,7 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
             deleted_at=datetime.now(UTC),
         )
 
-    report = door.service().report(match_id, da=days[0])
+    report = door.service().report(match_id, date_from=days[0])
 
     assert [(g.description, g.invoice.id if g.invoice else None) for g in report.days] == [
         ("Analisi", proforma),
@@ -1066,7 +1066,7 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
     ]
     shown = report.days[0].invoice
     assert shown is not None
-    assert (shown.type, shown.status, shown.year, shown.number, shown.data, shown.hours) == (
+    assert (shown.type, shown.status, shown.year, shown.number, shown.date, shown.hours) == (
         "proforma",
         "confirmed",
         None,
@@ -1074,7 +1074,7 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
         None,
         None,
     )
-    assert (report.hours_total, report.invoiced_hours, report.hours_uninvoiced) == (
+    assert (report.total_hours, report.billed_hours, report.unbilled_hours) == (
         Decimal("32.00"),
         Decimal("8.00"),
         Decimal("24.00"),
@@ -1087,8 +1087,8 @@ def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
 
 
 def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`da` is the day the deal was created, in the CRM's zone (22:30 UTC on 1 October is
-    already the 2nd in Rome), `a` is today by the CRM's clock; a period over 800 days,
+    """`date_from` is the day the deal was created, in the CRM's zone (22:30 UTC on 1 October is
+    already the 2nd in Rome), `date_to` is today by the CRM's clock; a period over 800 days,
     or one that ends before it starts, is refused."""
     match_id = uuid4()
     linked = door.service().ensure(match_id, _upsert())
@@ -1106,41 +1106,41 @@ def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.Mon
     _frozen(monkeypatch, datetime(2026, 10, 31, 12, 0, tzinfo=UTC))
     report = door.service().report(match_id)
 
-    assert [g.data for g in report.days] == [date(2026, 10, 2), date(2026, 10, 31)]
+    assert [g.date for g in report.days] == [date(2026, 10, 2), date(2026, 10, 31)]
 
-    for da, a, reason in (
+    for date_from, date_to, reason in (
         (date(2024, 1, 1), date(2024, 1, 1) + timedelta(days=801), "al massimo 800 giorni"),
         (date(2026, 10, 2), date(2026, 10, 1), REVERSED),
     ):
         with pytest.raises(ValidationFailed) as refused:
-            door.service().report(match_id, da=da, a=a)
+            door.service().report(match_id, date_from=date_from, date_to=date_to)
         assert refused.value.details == {
             "entity": "engagement",
             "field": "period",
             "reason": reason,
         }
-    # `a` alone before the deal's first day is the same reversed period.
+    # `date_to` alone before the deal's first day is the same reversed period.
     with pytest.raises(ValidationFailed) as refused:
-        door.service().report(match_id, a=date(2026, 10, 1))
+        door.service().report(match_id, date_to=date(2026, 10, 1))
     assert refused.value.details["reason"] == REVERSED
 
 
 def test_report_accepts_exactly_800_days(door: Door) -> None:
-    """The hub walks 800-day windows whose bounds touch (`da + 800`, then `da + 801`):
+    """The hub walks 800-day windows whose bounds touch (`date_from + 800`, then `date_from + 801`):
     a span of exactly 800 days is accepted, and both of its ends are in it."""
     match_id = uuid4()
     linked = door.service().ensure(match_id, _upsert())
-    a = today_local(door.settings)
-    da = a - timedelta(days=800)
+    date_to = today_local(door.settings)
+    date_from = date_to - timedelta(days=800)
     with _space(door, linked.slug) as space:
-        _log(space, linked.deal_id, da - timedelta(days=1), "Prima")
-        _log(space, linked.deal_id, da, "Il primo giorno")
-        _log(space, linked.deal_id, a, "L'ultimo giorno")
+        _log(space, linked.deal_id, date_from - timedelta(days=1), "Prima")
+        _log(space, linked.deal_id, date_from, "Il primo giorno")
+        _log(space, linked.deal_id, date_to, "L'ultimo giorno")
 
-    report = door.service().report(match_id, da=da, a=a)
+    report = door.service().report(match_id, date_from=date_from, date_to=date_to)
 
     assert [g.description for g in report.days] == ["Il primo giorno", "L'ultimo giorno"]
-    assert report.hours_total == Decimal("16.00")
+    assert report.total_hours == Decimal("16.00")
 
 
 def test_report_of_unknown_match_is_not_found(door: Door) -> None:

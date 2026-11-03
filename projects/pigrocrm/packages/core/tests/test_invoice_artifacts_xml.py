@@ -149,12 +149,12 @@ def test_the_bytes_live_under_the_fiscal_prefix(
     artifact = service.export_xml(invoice_id, ADMIN)
     key = db_session.execute(
         text(
-            "SELECT storage_key FROM document_versions WHERE document_id = :id AND numero = :numero"
+            "SELECT storage_key FROM document_versions WHERE document_id = :id AND number = :number"
         ),
         {"id": artifact.document_id, "number": artifact.version_number},
     ).scalar_one()
     invoice = service.get(invoice_id, ADMIN)
-    # The azienda first since REB-619: `2026/1` names one invoice per azienda.
+    # The legal entity first since REB-619: `2026/1` names one invoice per legal entity.
     assert key == f"fatture/{invoice.legal_entity_id}/{invoice.year}/{invoice.number}/v1.xml"
 
 
@@ -164,7 +164,7 @@ def test_the_xml_gets_its_own_documents_row_typed_invoice_xml(
     invoice_id = _issue(service, customer_id)
     artifact = service.export_xml(invoice_id, ADMIN)
     type, status = db_session.execute(
-        text("SELECT tipo, stato FROM documents WHERE id = :id"), {"id": artifact.document_id}
+        text("SELECT type, status FROM documents WHERE id = :id"), {"id": artifact.document_id}
     ).one()
     assert type == "invoice_xml"
     # `documents.status` stays NULL for all three invoice artefact types: the
@@ -254,7 +254,7 @@ def test_a_divergent_export_is_an_error_to_report_not_a_version_to_save(
     db_session.execute(
         text(
             "UPDATE invoices SET snapshot = jsonb_set(snapshot, "
-            "'{cliente,ragione_sociale}', '\"Altro Cliente\"') WHERE id = :id"
+            "'{customer,legal_name}', '\"Altro Cliente\"') WHERE id = :id"
         ),
         {"id": invoice_id},
     )
@@ -449,7 +449,7 @@ def test_the_stored_xml_carries_the_frozen_accrual_period_on_every_line(
     data, _, _ = service.download(invoice_id, "xml", ADMIN)
     assert hashlib.sha256(data).hexdigest() == artifact.hash_sha256
     assert_valid(data)
-    linee = list(etree.fromstring(data).iter("DettaglioLinee"))
-    assert len(linee) == 2
-    assert [line.findtext("DataInizioPeriodo") for line in linee] == ["2026-08-01"] * 2
-    assert [line.findtext("DataFinePeriodo") for line in linee] == ["2026-08-31"] * 2
+    lines = list(etree.fromstring(data).iter("DettaglioLinee"))
+    assert len(lines) == 2
+    assert [line.findtext("DataInizioPeriodo") for line in lines] == ["2026-08-01"] * 2
+    assert [line.findtext("DataFinePeriodo") for line in lines] == ["2026-08-31"] * 2

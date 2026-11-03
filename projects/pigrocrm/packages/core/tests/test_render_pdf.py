@@ -26,16 +26,16 @@ pytestmark = pytest.mark.skipif(
 
 SETTINGS = Settings(jwt_secret="x" * 32)
 PROFILE = {
-    "legal_name": "Studio Rossi",
-    "vat_number": "01234567890",
+    "ragione_sociale": "Studio Rossi",
+    "partita_iva": "01234567890",
     "email": "mario@example.com",
-    "phone": "+39 02 1234567",
-    "certified_email": "studiorossi@pec.it",
-    "website": "www.example.com",
-    "address": "Via Roma 1",
+    "telefono": "+39 02 1234567",
+    "pec": "studiorossi@pec.it",
+    "sito_web": "www.example.com",
+    "indirizzo": "Via Roma 1",
     "cap": "20053",
-    "city": "Milano",
-    "province": "MI",
+    "comune": "Milano",
+    "provincia": "MI",
 }
 
 
@@ -45,7 +45,7 @@ def test_a_minimal_document_renders_to_a_pdf() -> None:
     assert len(pdf) > 1000
 
 
-def test_the_legal_entities_reaches_the_header() -> None:
+def test_the_legal_entity_reaches_the_header() -> None:
     header = build_header(PROFILE)
     assert "Studio Rossi" in header
     assert "01234567890" in header

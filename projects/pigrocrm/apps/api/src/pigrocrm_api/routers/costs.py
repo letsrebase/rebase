@@ -40,8 +40,8 @@ class CostListParams(KeysetParams, CustomParams):
         default=False, description="Solo spese generali, cioè senza deal (§7.4)"
     )
     category_id: UUID | None = None
-    da: date | None = None
-    a: date | None = None
+    date_from: date | None = Field(default=None, alias="from")
+    date_to: date | None = Field(default=None, alias="to")
 
 
 @router.get("", response_model=CostPage)

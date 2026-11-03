@@ -61,7 +61,7 @@ class World:
     def profile(
         self, pack: str = "it-flat-rate", legal_entity: UUID | None = None
     ) -> FiscalProfile:
-        """The fiscal profile of an azienda (the default one), set to `pack`."""
+        """The fiscal profile of a legal entity (the default one), set to `pack`."""
         target = legal_entity or self.legal_entity
         row = self.session.scalar(
             select(FiscalProfile).where(FiscalProfile.legal_entity_id == target)
@@ -114,11 +114,11 @@ class World:
         self.session.flush()
         return row
 
-    def hours(self, data: date, *, deal: Deal | None = None, **fields: Any) -> TimeEntry:
+    def hours(self, day: date, *, deal: Deal | None = None, **fields: Any) -> TimeEntry:
         payload: dict[str, Any] = {
             "deal_id": (deal or self.deal).id,
             "user_id": self.bob.id,
-            "data": data,
+            "date": day,
             "hours": Decimal("2.00"),
             "description": "Analisi",
             "rate_source": "manual",
@@ -130,7 +130,7 @@ class World:
         return row
 
     def contract(
-        self, cadenza: str = "monthly", *, end: date | None = None, start: date | None = None
+        self, cadence: str = "monthly", *, end: date | None = None, start: date | None = None
     ) -> Contract:
         row = Contract(
             customer_id=self.customer.id,
@@ -140,17 +140,17 @@ class World:
             end=end,
             renewal_type="none",
             termination_notice_days=30,
-            billing_cadence=cadenza,
-            expense_policy={"type": "non_rimborsabili"},
+            billing_cadence=cadence,
+            expense_policy={"kind": "not_reimbursable"},
         )
         self.session.add(row)
         self.session.flush()
         return row
 
-    def day(self, contract: Contract, data: date, **fields: Any) -> WorkUnit:
+    def day(self, contract: Contract, day: date, **fields: Any) -> WorkUnit:
         payload: dict[str, Any] = {
             "contract_id": contract.id,
-            "data": data,
+            "date": day,
             "quantity": Decimal("1.00"),
             "description": "Giornata",
             "status": "worked",
@@ -202,19 +202,19 @@ class World:
 @pytest.fixture
 def world(db_session: Session) -> World:
     legal_entity = db_session.scalars(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).one()
     users = {}
     for name, role in (("owner", "admin"), ("bob", "collaborator"), ("carol", "collaborator")):
         user = User(
             email=f"{name}-{uuid4()}@example.test",
             password_hash="x",
-            nome=name.title(),
+            name=name.title(),
             role=role,
         )
         db_session.add(user)
         users[name] = user
-    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
+    stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     db_session.add(stage)
     db_session.flush()
     customer = Customer(
@@ -223,7 +223,7 @@ def world(db_session: Session) -> World:
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
-        nome="Sito web",
+        name="Sito web",
         customer_id=customer.id,
         legal_entity_id=legal_entity,
         pipeline_stage_id=stage.id,
@@ -386,7 +386,7 @@ def test_marking_an_invoice_transmitted_clears_its_reminder(world: World) -> Non
 
 
 def test_one_italian_legal_entity_is_enough_for_the_space_to_export_fatturapa(world: World) -> None:
-    abroad = LegalEntity(nome="Ltd", legal_name="Ltd", country="GB", predefinita=False)
+    abroad = LegalEntity(name="Ltd", legal_name="Ltd", country="GB", is_default=False)
     world.session.add(abroad)
     world.session.flush()
     world.profile("non-it")
@@ -508,7 +508,7 @@ def test_one_reminder_per_deal_reads_the_oldest_entry_and_goes_to_both_owners(
     world.hours(_ago(35))
     world.hours(_ago(65), deleted_at=_at(_ago(1)))
     other = Deal(
-        nome="App",
+        name="App",
         customer_id=world.customer.id,
         legal_entity_id=world.legal_entity,
         pipeline_stage_id=world.deal.pipeline_stage_id,
@@ -595,7 +595,7 @@ def test_the_closed_period_ladder_steps_at_30_and_60_days_past_the_end(
 def test_the_current_period_is_not_closed_and_the_cadence_sets_the_period(world: World) -> None:
     monthly = world.contract("monthly")
     world.day(monthly, date(2026, 10, 1))
-    quarterly = world.contract("Trimestrale")
+    quarterly = world.contract("quarterly")
     world.day(quarterly, date(2026, 8, 1))  # Q3 ended 30 September
     open_quarter = world.contract("quarterly")
     world.day(open_quarter, date(2026, 10, 2))  # Q4 is running
@@ -620,7 +620,7 @@ def test_a_day_billed_proposed_or_on_a_deleted_contract_is_not_unbilled(world: W
 
 
 def test_a_contract_billed_on_completion_never_closes_a_period(world: World) -> None:
-    world.day(world.contract("a_consuntivo"), date(2026, 8, 1))
+    world.day(world.contract("on_completion"), date(2026, 8, 1))
 
     assert world.raised("billable_period_closed") == {}
 
@@ -748,7 +748,7 @@ def test_a_fee_not_in_force_or_a_contract_not_running_in_the_period_is_not_raise
     world.day(no_fee, date(2026, 10, 1))
     deleted = _fee_contract(world)
     deleted.deleted_at = _at(_ago(1))
-    on_completion = world.contract("a_consuntivo")
+    on_completion = world.contract("on_completion")
     world.fee(on_completion)
 
     assert "fixed_fee_period_unbilled" in world.evaluate().ran
@@ -779,16 +779,16 @@ def test_a_space_with_no_fixed_fee_does_not_run_the_fixed_fee_type(world: World)
 def test_a_contract_billed_on_completion_is_counted_from_its_end(
     world: World, days: int, severity: str | None
 ) -> None:
-    contract = world.contract("a_consuntivo", end=_ago(days))
+    contract = world.contract("on_completion", end=_ago(days))
     world.day(contract, date(2026, 2, 3))
 
     assert world.severity("on_completion_unbilled", contract.id) == severity
 
 
 def test_a_contract_still_running_or_without_an_end_has_not_completed(world: World) -> None:
-    running = world.contract("a_consuntivo", end=TODAY + timedelta(days=5))
+    running = world.contract("on_completion", end=TODAY + timedelta(days=5))
     world.day(running, date(2026, 2, 3))
-    open_ended = world.contract("a_consuntivo")
+    open_ended = world.contract("on_completion")
     world.day(open_ended, date(2026, 2, 3))
     periodic = world.contract("monthly", end=_ago(40))
     world.day(periodic, date(2026, 2, 3))
@@ -797,20 +797,20 @@ def test_a_contract_still_running_or_without_an_end_has_not_completed(world: Wor
 
 
 def test_a_completed_contract_with_nothing_unbilled_or_deleted_is_not_raised(world: World) -> None:
-    billed = world.contract("a_consuntivo", end=_ago(10))
+    billed = world.contract("on_completion", end=_ago(10))
     world.day(billed, date(2026, 2, 3), invoice_line_id=world.line(world.invoice()).id)
-    gone = world.contract("a_consuntivo", end=_ago(10))
+    gone = world.contract("on_completion", end=_ago(10))
     world.day(gone, date(2026, 2, 3))
     gone.deleted_at = _at(_ago(1))
     assert world.raised("on_completion_unbilled") == {}
 
-    world.contract("a_consuntivo", end=_ago(10))
+    world.contract("on_completion", end=_ago(10))
 
     assert world.raised("on_completion_unbilled") == {}
 
 
 def test_on_completion_is_told_to_the_customers_owner(world: World) -> None:
-    contract = world.contract("a_consuntivo", end=_ago(10))
+    contract = world.contract("on_completion", end=_ago(10))
     world.day(contract, date(2026, 2, 3))
 
     assert world.raised("on_completion_unbilled") == {contract.id: ("warning", {world.carol.id})}
@@ -823,7 +823,7 @@ def _one_off(world: World, contract: Contract, **fields: Any) -> RateCard:
 def test_an_ended_contract_with_a_one_off_fee_and_no_days_is_raised_until_it_is_invoiced(
     world: World,
 ) -> None:
-    contract = world.contract("a_consuntivo", end=_ago(10))
+    contract = world.contract("on_completion", end=_ago(10))
     _one_off(world, contract)
 
     evaluation = world.evaluate()
@@ -837,7 +837,7 @@ def test_an_ended_contract_with_a_one_off_fee_and_no_days_is_raised_until_it_is_
 
 
 def test_a_one_off_fee_is_covered_by_an_invoice_dated_on_or_after_the_end(world: World) -> None:
-    contract = world.contract("a_consuntivo", end=_ago(10))
+    contract = world.contract("on_completion", end=_ago(10))
     _one_off(world, contract)
     before = world.invoice(issue_date=_ago(11))
     assert set(world.raised("on_completion_unbilled")) == {contract.id}
@@ -850,9 +850,9 @@ def test_a_one_off_fee_is_covered_by_an_invoice_dated_on_or_after_the_end(world:
 def test_a_one_off_fee_not_in_force_at_the_end_or_on_a_running_contract_is_not_raised(
     world: World,
 ) -> None:
-    lapsed = world.contract("a_consuntivo", end=_ago(10))
+    lapsed = world.contract("on_completion", end=_ago(10))
     _one_off(world, lapsed, valid_to=_ago(11))
-    running = world.contract("a_consuntivo", end=TODAY + timedelta(days=3))
+    running = world.contract("on_completion", end=TODAY + timedelta(days=3))
     _one_off(world, running)
     monthly = world.contract("monthly", end=_ago(10))
     _one_off(world, monthly)
@@ -863,7 +863,7 @@ def test_a_one_off_fee_not_in_force_at_the_end_or_on_a_running_contract_is_not_r
 def test_a_contract_with_days_and_a_fee_is_raised_once_and_the_text_names_both(
     world: World,
 ) -> None:
-    contract = world.contract("a_consuntivo", end=_ago(40))
+    contract = world.contract("on_completion", end=_ago(40))
     _one_off(world, contract)
     world.day(contract, date(2026, 2, 3))
     world.day(contract, date(2026, 2, 4), quantity=Decimal("0.50"))
@@ -881,7 +881,7 @@ def test_a_contract_with_days_and_a_fee_is_raised_once_and_the_text_names_both(
 def test_days_alone_still_raise_and_a_covering_invoice_does_not_hide_unbilled_days(
     world: World,
 ) -> None:
-    contract = world.contract("a_consuntivo", end=_ago(10))
+    contract = world.contract("on_completion", end=_ago(10))
     _one_off(world, contract)
     world.day(contract, date(2026, 2, 3))
     world.invoice(issue_date=_ago(5))
@@ -997,23 +997,27 @@ def test_the_italian_helpers_pluralise_and_use_a_decimal_comma() -> None:
     from pigrocrm.core.reminders.detectors.text import (
         ago,
         counted,
-        days,
-        days_fa,
-        entries,
-        hours,
+        format_days,
+        format_days_ago,
+        format_entries,
+        format_hours,
         work_units,
     )
 
-    assert days(1) == "1 giorno" and days(0) == "0 giorni" and days(5) == "5 giorni"
+    assert (
+        format_days(1) == "1 giorno"
+        and format_days(0) == "0 giorni"
+        and format_days(5) == "5 giorni"
+    )
     assert work_units(Decimal("1.00")) == "1 giornata"
     assert (
         work_units(Decimal("1.50")) == "1,5 giornate"
         and work_units(Decimal("12.00")) == "12 giornate"
     )
-    assert entries(1) == "1 voce" and entries(3) == "3 voci"
-    assert hours(Decimal("1")) == "1 ora" and hours(Decimal("2.25")) == "2,25 ore"
-    assert days_fa(1) == "ieri" and days_fa(2) == "2 giorni fa"
-    assert ago(0) == "today" and ago(1) == "ieri" and ago(2) == "2 giorni fa"
+    assert format_entries(1) == "1 voce" and format_entries(3) == "3 voci"
+    assert format_hours(Decimal("1")) == "1 ora" and format_hours(Decimal("2.25")) == "2,25 ore"
+    assert format_days_ago(1) == "ieri" and format_days_ago(2) == "2 giorni fa"
+    assert ago(0) == "oggi" and ago(1) == "ieri" and ago(2) == "2 giorni fa"
     assert counted(1, "minuto", "minuti") == "1 minuto" and counted(61, "minuto", "minuti") == (
         "61 minuti"
     )

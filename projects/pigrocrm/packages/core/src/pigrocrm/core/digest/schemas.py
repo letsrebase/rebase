@@ -10,7 +10,7 @@ and the two properties at the bottom are predicates over fields rather than sums
 `DigestService` copies each number from the repository or the service that owns it, so
 there is no second place a total of this report can be worked out and disagree. The same
 rule `core/dashboard/` is held to by an AST scan, applied here by construction --
-`vinto_da_fatturare` is the dashboard's own count, `accrued_value` is
+`won_to_invoice` is the dashboard's own count, `accrued_value` is
 `AnalyticsService`'s, and the two month totals are two calls to one register sum with two
 windows.
 
@@ -165,8 +165,8 @@ class WeeklyDigest(BaseModel):
     """
 
     week: str
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
 
     # 1. Da incassare.
     overdue: list[DigestInvoice]
@@ -174,25 +174,25 @@ class WeeklyDigest(BaseModel):
 
     # 2. Da emettere.
     won_to_invoice: int
-    hours_uninvoiced: Decimal = Field(max_digits=8, decimal_places=2)
+    unbilled_hours: Decimal = Field(max_digits=8, decimal_places=2)
     # `AnalyticsService`'s accrued value. Never revenue, never added to one: the revenue
     # is the invoice, and this is what has not been invoiced yet.
     accrued_value: Decimal = Field(max_digits=12, decimal_places=2)
 
-    # 3. Emesse questa settimana, with the running month beside the one before it.
+    # 3. Issued this week, with the running month beside the one before it.
     issued: list[DigestInvoice]
     total_month_current: Decimal = Field(max_digits=12, decimal_places=2)
     total_month_previous: Decimal = Field(max_digits=12, decimal_places=2)
 
-    # 4. Incassate questa settimana.
+    # 4. Collected this week.
     paid: list[DigestInvoice]
 
-    # 5. Le ore. `None` when the week has none at all.
+    # 5. The hours. `None` when the week has none at all.
     hours: WeekHours | None
 
     # 6. In pipeline.
     pipeline: list[DigestStage]
-    deal_mossi: list[DigestDealMove]
+    deal_moves: list[DigestDealMove]
     offers_pending: list[DigestOffer]
 
     # 7. Da sistemare.
@@ -212,7 +212,7 @@ class WeeklyDigest(BaseModel):
         closes with the «settimana ferma» line and the ready-made prompt, and it is the
         week the report is most worth sending.
         """
-        return not self.issued and not self.paid and not self.deal_mossi and self.hours is None
+        return not self.issued and not self.paid and not self.deal_moves and self.hours is None
 
     @property
     def empty(self) -> bool:
@@ -234,13 +234,13 @@ class WeeklyDigest(BaseModel):
             and not self.issued
             and not self.paid
             and not self.pipeline
-            and not self.deal_mossi
+            and not self.deal_moves
             and not self.offers_pending
             and not self.signals
             and self.tasks.empty
             and self.hours is None
             and self.won_to_invoice == 0
-            and self.hours_uninvoiced == 0
+            and self.unbilled_hours == 0
             and self.accrued_value == 0
             and self.total_month_current == 0
             and self.total_month_previous == 0

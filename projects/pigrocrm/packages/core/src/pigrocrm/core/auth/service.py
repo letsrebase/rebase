@@ -132,7 +132,7 @@ class UserService:
     def create(self, data: UserCreate, actor: Actor) -> UserRead:
         actor.require_unscoped_admin("create_user")
         require_verified_identity(self.session, actor, "create_user")
-        # The scope checked like an update's (no empty list, active aziende only), and
+        # The scope checked like an update's (no empty list, active legal entities only), and
         # written with the row below rather than after its commit: in between, a scoped
         # admin would count as an unscoped one for a concurrent `update`'s guard.
         return self.create_scoped(
@@ -143,7 +143,7 @@ class UserService:
         self, data: UserCreate, actor: Actor, legal_entities: list[UUID] | None
     ) -> UserRead:
         """`create` with an already-checked scope, possibly empty: what an accepted
-        invitation whose aziende were deactivated meanwhile opens (spec §1.11), which
+        invitation whose legal entities were deactivated meanwhile opens (spec §1.11), which
         `check_scope` would refuse to a request. Same guards, same single transaction."""
         actor.require_unscoped_admin("create_user")
         if data.password is None:

@@ -97,7 +97,7 @@ def _person_of_new_customer(session: Session, email: str) -> Person:
     customer = Customer(legal_name=f"Acme {uuid4().hex[:6]}", email=None)
     session.add(customer)
     session.flush()
-    person = Person(nome="Ada", last_name="Byron", email=email, customer_id=customer.id)
+    person = Person(first_name="Ada", last_name="Byron", email=email, customer_id=customer.id)
     session.add(person)
     session.flush()
     return person
@@ -308,11 +308,11 @@ def test_a_customer_backfill_covers_the_people_who_work_there(db_session: Sessio
     db_session.add(customer)
     db_session.flush()
     db_session.add(
-        Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     )
     db_session.add(
         Person(
-            nome="Grace",
+            first_name="Grace",
             last_name="Hopper",
             email="grace@acme.it",
             customer_id=customer.id,

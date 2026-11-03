@@ -103,8 +103,8 @@ class CalendarMonth(BaseModel):
     """
 
     month: str = Field(pattern=MONTH_PATTERN)
-    da: date
-    a: date
+    date_from: date
+    date_to: date
     today: date
     total_hours: Decimal
     days: list[CalendarDay] = Field(default_factory=list)

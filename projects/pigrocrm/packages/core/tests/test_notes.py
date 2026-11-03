@@ -26,8 +26,8 @@ SYSTEM = Actor.system()
 REBASE = Actor.rebase()
 
 
-def _member(session: Session, nome: str, role: str = "collaborator") -> User:
-    user = User(email=f"{uuid4()}@example.test", password_hash="x", nome=nome, role=role)
+def _member(session: Session, name: str, role: str = "collaborator") -> User:
+    user = User(email=f"{uuid4()}@example.test", password_hash="x", name=name, role=role)
     session.add(user)
     session.flush()
     return user
@@ -47,11 +47,11 @@ def records(db_session: Session, customer_id: UUID, seeded_open_stage_id: UUID) 
     """One record of each kind a thread hangs on."""
     deal = DealService(db_session).create(
         DealCreate(
-            nome="Progetto", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
+            name="Progetto", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
         ),
         SYSTEM,
     )
-    person = PersonService(db_session).create(PersonCreate(nome="Anna"), SYSTEM)
+    person = PersonService(db_session).create(PersonCreate(first_name="Anna"), SYSTEM)
     return {"customer": customer_id, "deal": deal.id, "person": person.id}
 
 
@@ -141,23 +141,23 @@ def test_a_readonly_member_reads_the_thread_and_writes_nothing(
 def test_the_thread_is_newest_first_without_the_deleted_and_can_be_capped(
     db_session: Session, records: dict[str, UUID]
 ) -> None:
-    capo = _actor(_member(db_session, "Capo", "admin"))
+    boss = _actor(_member(db_session, "Capo", "admin"))
     service = NoteService(db_session)
-    first = service.add("person", records["person"], NoteCreate(text="uno"), capo)
-    service.add("person", records["person"], NoteCreate(text="due"), capo)
-    service.add("person", records["person"], NoteCreate(text="tre"), capo)
-    service.add("customer", records["customer"], NoteCreate(text="di un altro"), capo)
+    first = service.add("person", records["person"], NoteCreate(text="uno"), boss)
+    service.add("person", records["person"], NoteCreate(text="due"), boss)
+    service.add("person", records["person"], NoteCreate(text="tre"), boss)
+    service.add("customer", records["customer"], NoteCreate(text="di un altro"), boss)
 
-    assert [n.text for n in service.list_for_entity("person", records["person"], capo)] == [
+    assert [n.text for n in service.list_for_entity("person", records["person"], boss)] == [
         "tre",
         "due",
         "uno",
     ]
     assert [
-        n.text for n in service.list_for_entity("person", records["person"], capo, limit=2)
+        n.text for n in service.list_for_entity("person", records["person"], boss, limit=2)
     ] == ["tre", "due"]
-    service.delete(first.id, capo)
-    assert [n.text for n in service.list_for_entity("person", records["person"], capo)] == [
+    service.delete(first.id, boss)
+    assert [n.text for n in service.list_for_entity("person", records["person"], boss)] == [
         "tre",
         "due",
     ]
@@ -187,11 +187,11 @@ def test_an_author_edits_their_own_note_and_the_edit_says_who_and_when(
 def test_the_same_text_again_is_no_edit_and_leaves_no_trace(
     db_session: Session, records: dict[str, UUID]
 ) -> None:
-    capo = _actor(_member(db_session, "Capo", "admin"))
+    boss = _actor(_member(db_session, "Capo", "admin"))
     service = NoteService(db_session)
-    note = service.add("deal", records["deal"], NoteCreate(text="Uguale"), capo)
+    note = service.add("deal", records["deal"], NoteCreate(text="Uguale"), boss)
 
-    again = service.update(note.id, NoteUpdate(text="Uguale"), capo)
+    again = service.update(note.id, NoteUpdate(text="Uguale"), boss)
 
     assert again.edited_at is None
     kinds = [e.kind for e in ActivityService(db_session).timeline("deal", records["deal"])]
@@ -203,7 +203,7 @@ def test_somebody_else_cannot_change_a_note_unless_they_are_an_admin(
 ) -> None:
     giulia = _member(db_session, "Giulia Bianchi")
     marco = _member(db_session, "Marco Verdi")
-    capo = _member(db_session, "Capo", "admin")
+    boss = _member(db_session, "Capo", "admin")
     service = NoteService(db_session)
     note = service.add(
         "customer", records["customer"], NoteCreate(text="Di Giulia"), _actor(giulia)
@@ -211,37 +211,37 @@ def test_somebody_else_cannot_change_a_note_unless_they_are_an_admin(
 
     # The flag says it before the click.
     [as_marco] = service.list_for_entity("customer", records["customer"], _actor(marco))
-    [as_capo] = service.list_for_entity("customer", records["customer"], _actor(capo))
-    assert (as_marco.editable, as_capo.editable) == (False, True)
+    [as_boss] = service.list_for_entity("customer", records["customer"], _actor(boss))
+    assert (as_marco.editable, as_boss.editable) == (False, True)
     with pytest.raises(NoteNotChangeable):
         service.update(note.id, NoteUpdate(text="Di Marco"), _actor(marco))
     with pytest.raises(NoteNotChangeable):
         service.delete(note.id, _actor(marco))
 
-    assert service.update(note.id, NoteUpdate(text="Corretta dal capo"), _actor(capo)).text == (
+    assert service.update(note.id, NoteUpdate(text="Corretta dal capo"), _actor(boss)).text == (
         "Corretta dal capo"
     )
-    service.delete(note.id, _actor(capo))
-    assert service.list_for_entity("customer", records["customer"], _actor(capo)) == []
+    service.delete(note.id, _actor(boss))
+    assert service.list_for_entity("customer", records["customer"], _actor(boss)) == []
 
 
 @pytest.mark.parametrize("writer", [SYSTEM, REBASE], ids=["system", "rebase"])
 def test_a_note_written_by_the_system_or_rebase_is_read_only_for_everybody(
     db_session: Session, records: dict[str, UUID], writer: Actor
 ) -> None:
-    capo = _actor(_member(db_session, "Capo", "admin"))
+    boss = _actor(_member(db_session, "Capo", "admin"))
     service = NoteService(db_session)
     note = service.add("deal", records["deal"], NoteCreate(text="Un evento"), writer)
 
     assert note.editable is False
     with pytest.raises(NoteNotChangeable):
-        service.update(note.id, NoteUpdate(text="Altro"), capo)
+        service.update(note.id, NoteUpdate(text="Altro"), boss)
     with pytest.raises(NoteNotChangeable):
-        service.delete(note.id, capo)
+        service.delete(note.id, boss)
     # Not even the actor that wrote it: it is an event of the record.
     with pytest.raises(NoteNotChangeable):
         service.delete(note.id, writer)
-    [seen] = service.list_for_entity("deal", records["deal"], capo)
+    [seen] = service.list_for_entity("deal", records["deal"], boss)
     assert (seen.text, seen.editable) == ("Un evento", False)
 
 
@@ -253,17 +253,17 @@ def test_a_note_moved_over_from_the_old_field_has_no_source_and_is_anyone_s_who_
     db_session.add(legacy)
     db_session.flush()
     collaborator = _actor(_member(db_session, "Giulia"))
-    capo = _actor(_member(db_session, "Capo", "admin"))
+    boss = _actor(_member(db_session, "Capo", "admin"))
     service = NoteService(db_session)
 
     [seen] = service.list_for_entity("deal", records["deal"], collaborator)
     assert (seen.source, seen.author, seen.author_id, seen.editable) == (None, None, None, True)
-    [seen_by_admin] = service.list_for_entity("deal", records["deal"], capo)
+    [seen_by_admin] = service.list_for_entity("deal", records["deal"], boss)
     assert seen_by_admin.editable is True
     # Nobody wrote it any more than anybody else: whoever may write the record may change it.
     assert service.update(legacy.id, NoteUpdate(text="Rivista"), collaborator).source is None
     service.delete(legacy.id, collaborator)
-    assert service.list_for_entity("deal", records["deal"], capo) == []
+    assert service.list_for_entity("deal", records["deal"], boss) == []
 
     reader = _actor(_member(db_session, "Lettore", "readonly"))
     other = Note(entity_type="deal", entity_id=records["deal"], text="Un'altra da prima")
@@ -349,8 +349,8 @@ def test_the_first_note_on_creation_is_bounded_like_any_note() -> None:
 
     for create in (
         lambda note: CustomerCreate(legal_name="A", note=note),
-        lambda note: PersonCreate(nome="A", note=note),
-        lambda note: DealCreate(nome="A", customer_id=uuid4(), note=note),
+        lambda note: PersonCreate(first_name="A", note=note),
+        lambda note: DealCreate(name="A", customer_id=uuid4(), note=note),
     ):
         create("x" * NOTE_MAX_LENGTH)
         with pytest.raises(ValidationError):
@@ -360,15 +360,15 @@ def test_the_first_note_on_creation_is_bounded_like_any_note() -> None:
 def test_the_count_of_a_thread_ignores_deleted_notes_and_the_cap(
     db_session: Session, records: dict[str, UUID]
 ) -> None:
-    capo = _actor(_member(db_session, "Capo", "admin"))
+    boss = _actor(_member(db_session, "Capo", "admin"))
     service = NoteService(db_session)
     notes = [
-        service.add("customer", records["customer"], NoteCreate(text=str(n)), capo)
+        service.add("customer", records["customer"], NoteCreate(text=str(n)), boss)
         for n in range(4)
     ]
-    service.delete(notes[0].id, capo)
-    assert service.count_for_entity("customer", records["customer"], capo) == 3
-    assert len(service.list_for_entity("customer", records["customer"], capo, limit=2)) == 2
+    service.delete(notes[0].id, boss)
+    assert service.count_for_entity("customer", records["customer"], boss) == 3
+    assert len(service.list_for_entity("customer", records["customer"], boss, limit=2)) == 2
 
 
 def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
@@ -381,14 +381,16 @@ def test_a_note_on_creation_is_the_first_note_written_by_the_creating_actor(
     )
     deal = DealService(db_session).create(
         DealCreate(
-            nome="Progetto",
+            name="Progetto",
             customer_id=customer.id,
             pipeline_stage_id=seeded_open_stage_id,
             note="Primo contatto.",
         ),
         actor,
     )
-    person = PersonService(db_session).create(PersonCreate(nome="Anna", note="Referente."), actor)
+    person = PersonService(db_session).create(
+        PersonCreate(first_name="Anna", note="Referente."), actor
+    )
     service = NoteService(db_session)
 
     for kind, record, text in (
@@ -415,7 +417,7 @@ def test_an_absent_or_blank_note_on_creation_makes_no_note(
 def test_a_creation_that_fails_leaves_no_note(db_session: Session) -> None:
     with pytest.raises(NotFound):
         DealService(db_session).create(
-            DealCreate(nome="Senza cliente", customer_id=uuid4(), note="Non deve restare"), SYSTEM
+            DealCreate(name="Senza cliente", customer_id=uuid4(), note="Non deve restare"), SYSTEM
         )
     assert db_session.query(Note).filter(Note.text == "Non deve restare").count() == 0
 
@@ -439,4 +441,4 @@ def test_the_note_is_not_a_native_field_any_more() -> None:
 
     for kind in ("customer", "person", "deal"):
         assert "note" not in native_fields(kind)
-    assert "note" in native_fields("attivita")
+    assert "note" in native_fields("task")

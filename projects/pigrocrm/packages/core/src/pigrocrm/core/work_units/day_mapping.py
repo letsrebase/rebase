@@ -110,24 +110,24 @@ def propose_day_mapping(
     )
 
     picked: list[WorkUnit] = []
-    quantity_raccolta = Decimal("0")
+    quantity_collected = Decimal("0")
     for day in candidates:
-        if quantity_raccolta >= quantity_line:
+        if quantity_collected >= quantity_line:
             break
         picked.append(day)
-        quantity_raccolta += day.quantity
+        quantity_collected += day.quantity
 
     if not picked:
         return None
-    if quantity_raccolta != quantity_line:
+    if quantity_collected != quantity_line:
         return None
 
     proposed_amount = sum_money(_price_work_unit_on_date(day, rate_cards) for day in picked)
-    date_scelte = [day.date for day in picked]
+    date_chosen = [day.date for day in picked]
     return WorkUnitDayMappingProposal(
         work_unit_ids=[day.id for day in picked],
-        period_from=min(date_scelte),
-        period_to=max(date_scelte),
+        period_from=min(date_chosen),
+        period_to=max(date_chosen),
         days_number=len(picked),
         proposed_amount=proposed_amount,
         line_amount=line_amount,

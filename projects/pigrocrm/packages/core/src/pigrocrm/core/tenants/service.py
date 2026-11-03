@@ -177,7 +177,7 @@ class TenantService:
             try:
                 with session_factory(engine)() as space:
                     # The owner is inside the policies too (`FORCE ROW LEVEL SECURITY`),
-                    # and the default azienda `ensure_defaults` writes is a policied
+                    # and the default legal entity `ensure_defaults` writes is a policied
                     # row: the system actor's scope, «tutte», is what lets it in.
                     bind_scope(space, Actor.system())
                     UserService(space).create(
@@ -187,11 +187,11 @@ class TenantService:
                         Actor.system(),
                     )
                     # Born ready (spec 2026-09-12 §6.5): stages, templates and
-                    # categories, and the one azienda that carries the name and
+                    # categories, and the one legal entity that carries the name and
                     # nothing fiscal (REB-615: `ensure_defaults` writes it, so a space
                     # that somehow lacks one gets it at the next boot too). Inside the
                     # same try: a space that fails here is undone like one whose
-                    # migration failed. `nome` is capped at 200 by `TenantSignup`,
+                    # migration failed. `name` is capped at 200 by `TenantSignup`,
                     # under the emitter's 255; a name that is only spaces would make
                     # an empty header, so the slug stands in for it.
                     ensure_defaults(space, name=data.name.strip() or data.slug)

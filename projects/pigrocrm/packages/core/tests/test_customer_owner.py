@@ -29,7 +29,7 @@ def _user(session: Session, *, role: str = "collaborator", active: bool = True) 
     user = User(
         email=f"u-{uuid4()}@example.test",
         password_hash="x",
-        nome="Persona",
+        name="Persona",
         role=role,
         active=active,
     )
@@ -181,7 +181,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
                     "INSERT INTO pipeline_stages (id, nome, posizione, probabilita_default, tipo) "
                     "VALUES (:id, :nome, 0, 10, :tipo)"
                 ),
-                {"id": ids[key], "nome": key, "type": type},
+                {"id": ids[key], "nome": key, "tipo": type},
             )
         legal_entity = connection.execute(text("SELECT id FROM emitter_profile LIMIT 1")).scalar()
         if legal_entity is None:
@@ -200,7 +200,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
                     "pagamento_fine_mese, custom_fields) "
                     "VALUES (:id, :azienda, :nome, 'IT', false, '{}')"
                 ),
-                {"id": customer_id, "legal_entity": legal_entity, "nome": name},
+                {"id": customer_id, "azienda": legal_entity, "nome": name},
             )
 
         def deal(customer: str, owner: str | None, stage: str, created: str) -> None:
@@ -212,7 +212,7 @@ def _check_backfill(migration_engine: Engine, config: Config) -> None:
                 ),
                 {
                     "id": uuid4(),
-                    "legal_entity": legal_entity,
+                    "azienda": legal_entity,
                     "customer": customers[customer],
                     "stage": ids[stage],
                     "owner": users[owner] if owner else None,

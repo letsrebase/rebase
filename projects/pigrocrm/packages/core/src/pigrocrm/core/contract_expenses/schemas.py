@@ -47,9 +47,7 @@ class ContractExpenseCreate(BaseModel):
     @model_validator(mode="after")
     def _reference_matches_pre_authorized(self) -> "ContractExpenseCreate":
         if self.pre_authorized and not self.authorization_reference:
-            raise ValueError(
-                "authorization_reference è obbligatorio quando pre_authorized è vero"
-            )
+            raise ValueError("authorization_reference è obbligatorio quando pre_authorized è vero")
         if not self.pre_authorized and self.authorization_reference:
             raise ValueError(
                 "authorization_reference va lasciato vuoto quando pre_authorized è falso"

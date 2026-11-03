@@ -19,7 +19,7 @@ OVERDUE = "task_overdue"
 
 
 def _user(session: Session, role: str = "collaborator") -> User:
-    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="P", role=role)
+    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="P", role=role)
     session.add(user)
     session.flush()
     return user

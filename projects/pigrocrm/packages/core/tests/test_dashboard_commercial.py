@@ -82,7 +82,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
 
         session.add(
             Deal(
-                nome="DASH aperto",
+                name="DASH aperto",
                 customer_id=customer_id,
                 pipeline_stage_id=stages["lead"].id,
                 expected_value=Decimal("1000.00"),
@@ -93,7 +93,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         )
         session.add(
             Deal(
-                nome="DASH vinto",
+                name="DASH vinto",
                 customer_id=customer_id,
                 pipeline_stage_id=stages["won"].id,
                 expected_value=Decimal("5000.00"),
@@ -104,7 +104,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         )
         session.add(
             Deal(
-                nome="DASH perso",
+                name="DASH perso",
                 customer_id=customer_id,
                 pipeline_stage_id=stages["lost"].id,
                 expected_value=Decimal("2000.00"),
@@ -131,17 +131,19 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     finally:
         with factory() as session:
             session.execute(delete(Document).where(Document.title.like("DASH %")))
-            session.execute(delete(Deal).where(Deal.nome.like("DASH %")))
+            session.execute(delete(Deal).where(Deal.name.like("DASH %")))
             session.execute(delete(Customer).where(Customer.legal_name.like("DASH %")))
             session.execute(delete(PipelineStage))
             session.commit()
 
 
 def _dashboard(
-    engine: Engine, da: date | None = None, a: date | None = None
+    engine: Engine, date_from: date | None = None, date_to: date | None = None
 ) -> CommercialDashboard:
     with session_factory(engine)() as session:
-        return DashboardService(session).get_commercial_dashboard(PeriodQuery(da=da, a=a), READONLY)
+        return DashboardService(session).get_commercial_dashboard(
+            PeriodQuery(date_from=date_from, date_to=date_to), READONLY
+        )
 
 
 def _this_month() -> tuple[date, date]:
@@ -154,21 +156,21 @@ def _this_month() -> tuple[date, date]:
 
 def test_the_period_defaults_to_the_current_month(seeded: Seeded) -> None:
     result = _dashboard(seeded.engine)
-    assert (result.period.da, result.period.a) == _this_month()
+    assert (result.period.date_from, result.period.date_to) == _this_month()
 
 
 def test_the_period_is_echoed_back_normalised(seeded: Seeded) -> None:
     """Always echoed, because a screenshot of a dashboard with no explicit period is a
     number with no unit (§4)."""
     result = _dashboard(seeded.engine, date(2026, 3, 1), date(2026, 3, 31))
-    assert result.period.da == date(2026, 3, 1)
-    assert result.period.a == date(2026, 3, 31)
+    assert result.period.date_from == date(2026, 3, 1)
+    assert result.period.date_to == date(2026, 3, 31)
 
 
 def test_an_inverted_period_is_a_named_validation_error(seeded: Seeded) -> None:
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date(2026, 3, 31), date(2026, 3, 1))
-    assert caught.value.details["field"] == "da"
+    assert caught.value.details["field"] == "from"
 
 
 def test_an_absurdly_long_period_is_refused(seeded: Seeded) -> None:
@@ -176,34 +178,34 @@ def test_an_absurdly_long_period_is_refused(seeded: Seeded) -> None:
     `da=0001-01-01` is a full scan requested from a query string."""
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date(1900, 1, 1), date(2026, 12, 31))
-    assert caught.value.details["field"] == "a"
+    assert caught.value.details["field"] == "to"
 
 
 def test_the_ceiling_is_at_max_period_days_exactly(seeded: Seeded) -> None:
     """The boundary, because a limit tested only from a thousand years away is a limit
     whose off-by-one nobody has looked at."""
-    da = date(2020, 1, 1)
-    accepted = _dashboard(seeded.engine, da, da + timedelta(days=MAX_PERIOD_DAYS))
-    assert accepted.period.da == da
+    date_from = date(2020, 1, 1)
+    accepted = _dashboard(seeded.engine, date_from, date_from + timedelta(days=MAX_PERIOD_DAYS))
+    assert accepted.period.date_from == date_from
 
     with pytest.raises(ValidationFailed) as caught:
-        _dashboard(seeded.engine, da, da + timedelta(days=MAX_PERIOD_DAYS + 1))
-    assert caught.value.details["field"] == "a"
+        _dashboard(seeded.engine, date_from, date_from + timedelta(days=MAX_PERIOD_DAYS + 1))
+    assert caught.value.details["field"] == "to"
 
 
 @pytest.mark.parametrize(
-    ("da", "a"),
+    ("date_from", "date_to"),
     [(date(2026, 3, 1), None), (None, date(2026, 3, 31))],
 )
 def test_supplying_only_one_bound_is_refused(
-    seeded: Seeded, da: date | None, a: date | None
+    seeded: Seeded, date_from: date | None, date_to: date | None
 ) -> None:
     """Half a period is not a period, and guessing the other half would silently answer a
     different question from the one asked. Both halves are checked: a rule written as
     `if self.da is None` alone accepts the other spelling."""
     with pytest.raises(ValidationFailed) as caught:
-        _dashboard(seeded.engine, da, a)
-    assert caught.value.details["field"] == ("da" if da is None else "a")
+        _dashboard(seeded.engine, date_from, date_to)
+    assert caught.value.details["field"] == ("from" if date_from is None else "to")
 
 
 # -- one instant -----------------------------------------------------------------
@@ -257,12 +259,12 @@ def test_every_figure_comes_from_one_instant(
     original = DealRepository.closed_in_period
 
     def intruding(
-        self: DealRepository, da: date, a: date, legal_entity_id: UUID | None = None
+        self: DealRepository, date_from: date, date_to: date, legal_entity_id: UUID | None = None
     ) -> object:
         with session_factory(seeded.engine)() as outside:
             outside.add(
                 Deal(
-                    nome="DASH intruso",
+                    name="DASH intruso",
                     customer_id=seeded.customer_id,
                     pipeline_stage_id=seeded.stages["won"].id,
                     expected_value=Decimal("7000.00"),
@@ -272,11 +274,11 @@ def test_every_figure_comes_from_one_instant(
                 )
             )
             outside.commit()
-        return original(self, da, a, legal_entity_id)
+        return original(self, date_from, date_to, legal_entity_id)
 
     monkeypatch.setattr(DealRepository, "closed_in_period", intruding)
-    da, a = _this_month()
-    result = _dashboard(seeded.engine, da, a)
+    date_from, date_to = _this_month()
+    result = _dashboard(seeded.engine, date_from, date_to)
 
     assert result.closings.won == 1, "the dashboard saw a deal committed after its snapshot"
     assert result.closings.won_value == Decimal("5000.00")
@@ -350,10 +352,10 @@ def test_the_closed_stages_count_what_sits_there_today_whatever_the_period(
 
 
 def test_the_closures_match_the_repository_verbatim(seeded: Seeded) -> None:
-    da, a = _this_month()
-    result = _dashboard(seeded.engine, da, a)
+    date_from, date_to = _this_month()
+    result = _dashboard(seeded.engine, date_from, date_to)
     with session_factory(seeded.engine)() as session:
-        expected = DealRepository(session).closed_in_period(da, a)
+        expected = DealRepository(session).closed_in_period(date_from, date_to)
     assert result.closings == expected
     assert result.closings.won == 1
     assert result.closings.lost == 1
@@ -378,22 +380,22 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
     Only the middle one is imminent -- an implementation that starts the window at the
     period's start counts the first as well, and one that widens it counts the last.
     """
-    da, a = _this_month()
+    date_from, date_to = _this_month()
     with session_factory(seeded.engine)() as session:
         # The seeded open deal expects to close *today*, which is inside the period and
         # outside the window; clearing it keeps this assertion independent of which day of
         # the month the suite happens to run on.
         session.execute(
-            text("UPDATE deals SET data_chiusura_prevista = NULL WHERE nome = 'DASH aperto'")
+            text("UPDATE deals SET expected_close_date = NULL WHERE name = 'DASH aperto'")
         )
-        for nome, when in (
-            ("DASH dentro", da + timedelta(days=1)),
-            ("DASH vicino", a + timedelta(days=20)),
-            ("DASH lontano", a + timedelta(days=50)),
+        for name, when in (
+            ("DASH dentro", date_from + timedelta(days=1)),
+            ("DASH vicino", date_to + timedelta(days=20)),
+            ("DASH lontano", date_to + timedelta(days=50)),
         ):
             session.add(
                 Deal(
-                    nome=nome,
+                    name=name,
                     customer_id=seeded.customer_id,
                     pipeline_stage_id=seeded.stages["contacted"].id,
                     expected_value=Decimal("100.00"),
@@ -404,7 +406,7 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
             )
         session.commit()
 
-    result = _dashboard(seeded.engine, da, a)
+    result = _dashboard(seeded.engine, date_from, date_to)
     assert result.expected_closings_30_days == 1
 
 
@@ -414,7 +416,7 @@ def test_the_unattributable_count_is_declared(seeded: Seeded) -> None:
     with session_factory(seeded.engine)() as session:
         session.add(
             Deal(
-                nome="DASH storico",
+                name="DASH storico",
                 customer_id=seeded.customer_id,
                 pipeline_stage_id=seeded.stages["won"].id,
                 expected_value=Decimal("900.00"),
@@ -435,7 +437,7 @@ def test_the_signal_is_present_on_the_commercial_dashboard(seeded: Seeded) -> No
     assert result.accepted_offers_deal_not_won == 0
 
     with session_factory(seeded.engine)() as session:
-        deal = session.execute(text("SELECT id FROM deals WHERE nome = 'DASH aperto'")).scalar_one()
+        deal = session.execute(text("SELECT id FROM deals WHERE name = 'DASH aperto'")).scalar_one()
         session.add(
             Document(
                 deal_id=deal,

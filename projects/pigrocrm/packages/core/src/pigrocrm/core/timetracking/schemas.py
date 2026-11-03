@@ -129,11 +129,11 @@ class TimeEntryRead(BaseModel):
 
 class TimeEntryListQuery(BaseModel):
     deal_id: UUID | None = None
-    # Through the deal: an entry's azienda is its deal's (REB-623).
+    # Through the deal: an entry's legal entity is its deal's (REB-623).
     legal_entity_id: UUID | None = None
     user_id: UUID | None = None
-    da: dt.date | None = None
-    a: dt.date | None = None
+    date_from: dt.date | None = None
+    date_to: dt.date | None = None
     billable: bool | None = None
     # Three states, not two: `True` = already on an invoice line, `False` = not yet,
     # `None` = do not filter. It is the "how much do I have to invoice?" query.
@@ -191,8 +191,8 @@ class TimerRead(BaseModel):
 class CostCreate(BaseModel):
     deal_id: UUID | None = None
     # Read only for a cost without a deal (REB-623, spec §1.7): a cost with a deal takes
-    # the deal's azienda and refuses a different one; without a deal, `None` is a shared
-    # cost («condivisa») and an id ties it to one azienda.
+    # the deal's legal entity and refuses a different one; without a deal, `None` is a shared
+    # cost («condivisa») and an id ties it to one legal entity.
     legal_entity_id: UUID | None = None
     category_id: UUID
     date: dt.date
@@ -238,16 +238,16 @@ class CostRead(BaseModel):
 
 class CostListQuery(BaseModel):
     deal_id: UUID | None = None
-    # One azienda's costs (REB-623): a shared cost, `NULL`, appears only when none is
-    # asked for, which is the view over every azienda.
+    # One legal entity's costs (REB-623): a shared cost, `NULL`, appears only when none is
+    # asked for, which is the view over every legal entity.
     legal_entity_id: UUID | None = None
     # `True` selects only general expenses (`deal_id IS NULL`). Needed because
     # `deal_id=None` already means "do not filter", and §7.4 gives general expenses a
     # row of their own that has to be selectable.
     only_general: bool = False
     category_id: UUID | None = None
-    da: dt.date | None = None
-    a: dt.date | None = None
+    date_from: dt.date | None = None
+    date_to: dt.date | None = None
     custom: dict[str, Any] | None = None
     limit: int = Field(default=50, ge=1, le=200)
     cursor: UUID | None = None
@@ -337,8 +337,8 @@ class DealTimeSummary(BaseModel):
 
 
 class RecalculateRatesRequest(BaseModel):
-    da: dt.date
-    a: dt.date
+    date_from: dt.date
+    date_to: dt.date
 
 
 class UserRatesUpdate(BaseModel):

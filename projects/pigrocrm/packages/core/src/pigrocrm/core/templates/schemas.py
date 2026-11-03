@@ -2,8 +2,8 @@
 
 No brief exists for this task (task-8-brief.md was never written to
 `.superpowers/sdd/2026-08-10-slice-2-documenti-e-template/`); these shapes are
-derived directly from `Template`'s own committed columns (nome String(120), tipo
-String(20), corpo_markdown Text, variabili_dichiarate JSONB, attivo Boolean) and from
+derived directly from `Template`'s own committed columns (name String(120), type
+String(20), body_markdown Text, declared_variables JSONB, active Boolean) and from
 the conventions every sibling domain in this package already follows (`customers/
 schemas.py`, `fields/schemas.py`, `pipeline/schemas.py`).
 """
@@ -22,7 +22,7 @@ from pigrocrm.core.validation import SafeStr
 # extended, because no `documents` row is ever an email, and appending these two there
 # would make them legal document types on every document endpoint in the API. The
 # document-only values (`invoice`, `invoice_xml`, `proforma`, `hours_report`) are not
-# mirrored back the other way either, with one exception: `hours_report` is the tipo
+# mirrored back the other way either, with one exception: `hours_report` is the type
 # `TemplateService.seed_defaults` already stores on the shipped timesheet template, so
 # dropping it here would make a shipped row unreadable through `TemplateRead`.
 # `Template.type` is already `String(20)` with no constraint, so there is no migration.
@@ -36,7 +36,7 @@ TemplateType = Literal[
     "payment_reminder",
 ]
 
-# Mirrors `Template.nome`'s column width (models.py). Without this an over-length
+# Mirrors `Template.name`'s column width (models.py). Without this an over-length
 # value reaches Postgres and raises sqlalchemy.exc.DataError -- not a subclass of
 # IntegrityError, so the service's `except IntegrityError` around the unique-name
 # constraint would not catch it.
@@ -55,7 +55,7 @@ VARIABLE_LABEL_MAX_LENGTH = 120
 class TemplateVariable(BaseModel):
     """One entry of `declared_variables`: a variable the compilation form asks the
     user to fill in before rendering (spec 4.3) -- declared, not deduced. Shaped to
-    match `templates.renderer.DeclaredVariable` field-for-field (`nome`, `label`,
+    match `templates.renderer.DeclaredVariable` field-for-field (`name`, `label`,
     `type`, `required`), which is what `TemplateService.preview` builds from this
     on its way into `render_template`; `options` is the one addition, carrying a
     `select`/`multiselect` variable's own choices for the form to render, the same
@@ -152,10 +152,10 @@ class TemplateDescription(BaseModel):
     # declared_paths's `root`), each as a list of segments: describe answers "what
     # must the caller supply", and a caller supplies root-level values, never a
     # loop-relative one -- `{{nome}}` inside an `#each righe` body describes the
-    # shape of each element of `lines`, not something provided directly. That split
+    # shape of each element of `righe`, not something provided directly. That split
     # belongs to `declared_paths` and stays there; this field never mixes the two
     # back together. A superset of `variables`'s own names, since it also includes
-    # context paths like `customer.legal_name` or `emittente.vat_number` that a
+    # context paths like `cliente.ragione_sociale` or `emittente.partita_iva` that a
     # caller must supply even though no compilation-form field exists for them.
     used_journeys: list[list[str]]
     # Declared (in `variables`) but never referenced by any root-level path: a

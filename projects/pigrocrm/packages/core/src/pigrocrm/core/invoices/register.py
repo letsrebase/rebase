@@ -15,7 +15,7 @@ from pigrocrm.core.invoices.schemas import RegisterGapRead, RegisterGapsDeclare
 
 GAPS_ACTION = "declare_invoice_register_gaps"
 # How many undeclared numbers `issue`'s refusal spells out. The whole list always stays
-# in `details["numeri"]`, machine-readable; the *sentence* is read by a person, and a
+# in `details["numbers"]`, machine-readable; the *sentence* is read by a person, and a
 # register whose lowest imported number is high can leave hundreds of them.
 GAPS_SHOWN_IN_MESSAGE = 20
 
@@ -31,8 +31,8 @@ class RegisterGaps:
         actor: Actor,
         legal_entity_id: UUID | None = None,
     ) -> list[RegisterGapRead]:
-        """Name the numbers the azienda's register will never carry, and why (spec 9
-        §3.2 rule 4); `None` is the default azienda (REB-619).
+        """Name the numbers the legal entity's register will never carry, and why (spec 9
+        §3.2 rule 4); `None` is the default legal entity (REB-619).
 
         A declared gap is the honest alternative to two dishonest ones: inventing a row
         to fill it, or leaving it silent so that it looks like a lost invoice. It is
@@ -89,7 +89,7 @@ class RegisterGaps:
                     )
                 )
                 # The register has no row of its own to hang a timeline entry on, so the
-                # entity id is derived deterministically from the azienda and the year:
+                # entity id is derived deterministically from the legal entity and the year:
                 # `ActivityService.record` accepts any `entity_type` string, and `uuid5`
                 # gives the same id every time this register is touched again.
                 ctx.activities.record(
@@ -117,8 +117,8 @@ class RegisterGaps:
         ]
 
     def undeclared_gaps(self, year: int, legal_entity_id: UUID | None = None) -> list[int]:
-        """Numbers from 1 to the highest in the azienda's register that are neither an
-        invoice nor a declared gap; `None` is the default azienda (REB-619). Empty is
+        """Numbers from 1 to the highest in the legal entity's register that are neither an
+        invoice nor a declared gap; `None` is the default legal entity (REB-619). Empty is
         the only state in which native issuing may resume (spec 9 §3.2 rule 4): an
         import can arrive in any order, so a hole is expected until the operator has
         looked at every one of them and either imported or declared it.
@@ -141,7 +141,7 @@ class RegisterGaps:
         """Native issuing must not resume on top of a silent gap: the next number would
         look like it continues a register that has an unexplained hole underneath it.
 
-        Rendered short, reported whole: `details["numeri"]` carries every number, and the
+        Rendered short, reported whole: `details["numbers"]` carries every number, and the
         message names the first `GAPS_SHOWN_IN_MESSAGE` plus a count. A refusal a person
         cannot read is a refusal that does not explain itself."""
         gaps = self.undeclared_gaps(year, legal_entity_id)
@@ -155,7 +155,7 @@ class RegisterGaps:
             f"il registro importato ha buchi non dichiarati ai numeri {shown}: "
             "dichiarali (o importali) prima di riprendere a emettere",
             year=year,
-            numeri=gaps,
+            numbers=gaps,
         )
 
 

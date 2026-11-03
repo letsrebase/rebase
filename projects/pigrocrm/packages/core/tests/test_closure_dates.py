@@ -5,7 +5,7 @@ precise reason: a date that decides which period a figure falls in is not an ins
 of this slice's period filters land on `Date` columns -- `invoices.issue_date`,
 `costs.date`, `time_entries.date`, `closed_at` -- and no mixed comparison exists anywhere.
 
-Two of the tests below freeze `orologio.ISTANTE` rather than comparing against
+Two of the tests below freeze `frozen_clock.FROZEN_INSTANT` rather than comparing against
 `today_local()`. Comparing against `today_local()` is what the brief asked for and it
 proves less than it looks: `date.today()` returns the same answer for twenty-three hours
 of every day, so such an assertion passes against the exact defect commit 875a1f9 had to
@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from orologio import TODAY_IN_ITALY, TODAY_OF_PROCESSO, congela
+from frozen_clock import TODAY_IN_ITALY, TODAY_OF_PROCESS, freeze
 from sqlalchemy import Date, DateTime
 from sqlalchemy.orm import Session
 
@@ -63,7 +63,7 @@ def _deal(db_session: Session, stage_id: object) -> Deal:
     db_session.add(customer)
     db_session.flush()
     deal = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stage_id,
         probability=50,
@@ -102,7 +102,7 @@ def test_moving_to_a_won_stage_stamps_the_local_day(
 def test_moving_to_a_lost_stage_also_stamps_it(
     db_session: Session, stages: dict[str, PipelineStageRead]
 ) -> None:
-    """`tipo != 'open'`, not `tipo == 'won'`: a lost deal is closed too, and the
+    """`type != 'open'`, not `type == 'won'`: a lost deal is closed too, and the
     conversion rate needs both halves of the denominator."""
     deal = _deal(db_session, stages["lead"].id)
     DealService(db_session).move_stage(deal.id, stages["lost"].id, ADMIN)
@@ -117,18 +117,18 @@ def test_the_stamped_day_is_italys_own_and_not_the_processs(
 ) -> None:
     """The assertion the two tests above cannot make.
 
-    `deal.chiuso_il == today_local()` holds just as well against a `date.today()` that
+    `deal.closed_at == today_local()` holds just as well against a `date.today()` that
     happens to agree, which it does for twenty-three hours of every day. Frozen at 00:30
     on 1 January in Rome, the process clock says 31 December of the *previous year*, and
     a deal won that night would be counted in the wrong year's conversion rate --
     permanently, because nothing recomputes it.
     """
-    congela(monkeypatch, deals_service_module)
+    freeze(monkeypatch, deals_service_module)
     deal = _deal(db_session, stages["lead"].id)
     DealService(db_session).move_stage(deal.id, stages["won"].id, ADMIN)
     db_session.refresh(deal)
     assert deal.closed_at == TODAY_IN_ITALY
-    assert deal.closed_at != TODAY_OF_PROCESSO
+    assert deal.closed_at != TODAY_OF_PROCESS
 
 
 def test_reopening_a_deal_clears_the_closure_date(
@@ -177,7 +177,7 @@ def test_reopening_then_closing_again_stamps_the_new_day(
     """The three cases compose. A deal that was won, reopened and won again closed on the
     second day, not the first -- otherwise `closed_at` would be a "first ever closed on"
     column, and the conversion rate for the month the deal actually landed in would miss
-    it. Distinguishes clearing from a mere `if target.tipo == 'open': pass`.
+    it. Distinguishes clearing from a mere `if target.type == 'open': pass`.
     """
     service = DealService(db_session)
     deal = _deal(db_session, stages["lead"].id)
@@ -241,13 +241,13 @@ def test_status_since_is_italys_own_day_too(
 ) -> None:
     """Same reason as `closed_at`: an offer whose state was set at 00:30 CET on 1 January
     would be reported as having been in that state since the previous year."""
-    congela(monkeypatch, documents_service_module)
+    freeze(monkeypatch, documents_service_module)
     document = _offer(document_service, db_session)
     document_service.set_offer_state(document.id, "sent", ADMIN)
     row = db_session.get(Document, document.id)
     assert row is not None
     assert row.status_since == TODAY_IN_ITALY
-    assert row.status_since != TODAY_OF_PROCESSO
+    assert row.status_since != TODAY_OF_PROCESS
 
 
 def test_status_since_is_exposed_on_the_read_schema(

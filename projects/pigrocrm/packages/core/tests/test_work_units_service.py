@@ -1,4 +1,4 @@
-"""`WorkUnitService`/`ApprovalService`: the actor/motivo wiring spec §5 asks for (a
+"""`WorkUnitService`/`ApprovalService`: the actor/reason wiring spec §5 asks for (a
 day's transition log must never be silently attributed to nobody), the friendlier
 pre-database validation `WorkUnitCreate`'s own entry-state check gives, and that the
 service and a bare SQL write enforce the identical rule -- the other half of the
@@ -120,7 +120,7 @@ def test_a_rebase_actor_is_its_own_kind_and_never_an_agent() -> None:
 # ---- WorkUnitService.create ----------------------------------------------------------
 
 
-def test_create_refuses_to_not_entry_status_before_touching_the_database(
+def test_create_refuses_a_status_that_is_not_an_entry_status_before_touching_the_database(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
@@ -128,7 +128,7 @@ def test_create_refuses_to_not_entry_status_before_touching_the_database(
         WorkUnitService(db_session).create(
             WorkUnitCreate(
                 contract_id=contract.id,
-                data=date(2026, 3, 1),
+                date=date(2026, 3, 1),
                 quantity=Decimal("1.00"),
                 description="Giornata",
                 status="invoiced",
@@ -142,7 +142,7 @@ def test_create_a_legal_entry_state_succeeds(db_session: Session) -> None:
     work_unit = WorkUnitService(db_session).create(
         WorkUnitCreate(
             contract_id=contract.id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="proposed",
@@ -160,7 +160,7 @@ def test_create_reports_the_redirect_not_the_naive_request(db_session: Session) 
     work_unit = WorkUnitService(db_session).create(
         WorkUnitCreate(
             contract_id=contract.id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="worked",
@@ -176,7 +176,7 @@ def test_a_reader_cannot_create_a_work_unit(db_session: Session) -> None:
         WorkUnitService(db_session).create(
             WorkUnitCreate(
                 contract_id=contract.id,
-                data=date(2026, 3, 1),
+                date=date(2026, 3, 1),
                 quantity=Decimal("1.00"),
                 description="Giornata",
                 status="proposed",
@@ -196,7 +196,7 @@ def test_transition_moves_to_day_and_logs_the_supplied_actor_and_reason(
     work_unit = service.create(
         WorkUnitCreate(
             contract_id=contract.id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="proposed",
@@ -220,7 +220,7 @@ def test_transition_to_an_illegal_target_is_refused(db_session: Session) -> None
     work_unit = service.create(
         WorkUnitCreate(
             contract_id=contract.id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="proposed",
@@ -242,7 +242,7 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
     day = service.create(
         WorkUnitCreate(
             contract_id=contract.id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="worked",
@@ -266,8 +266,8 @@ def test_days_and_approvals_name_the_member_and_the_channel_on_the_contract(
     assert entries["day_state_changed"].actor_type == "mcp"
     assert entries["day_state_changed"].payload == {
         "work_unit": "2026-03-01",
-        "da": "worked_without_approval",
-        "a": "disputed",
+        "from": "worked_without_approval",
+        "to": "disputed",
     }
 
 
@@ -299,7 +299,7 @@ def test_an_agent_credential_cannot_record_or_move_a_day(db_session: Session) ->
     service = WorkUnitService(db_session)
     body = WorkUnitCreate(
         contract_id=contract.id,
-        data=date(2026, 3, 1),
+        date=date(2026, 3, 1),
         quantity=Decimal("1.00"),
         description="Giornata",
         status="proposed",
@@ -330,7 +330,7 @@ def test_an_agent_credential_cannot_record_or_move_a_day(db_session: Session) ->
 def _day(contract: Contract, day: date, status: str = "worked") -> WorkUnitCreate:
     return WorkUnitCreate(
         contract_id=contract.id,
-        data=day,
+        date=day,
         quantity=Decimal("0.50"),
         description="Revisione",
         status=status,  # type: ignore[arg-type]
@@ -344,7 +344,7 @@ def test_a_second_live_day_on_the_same_date_is_a_conflict(db_session: Session) -
 
     with pytest.raises(Conflict) as refused:
         service.create(_day(contract, date(2026, 3, 2)), WRITER)
-    assert refused.value.details["data"] == "2026-03-02"
+    assert refused.value.details["date"] == "2026-03-02"
 
 
 def test_a_revoked_day_frees_its_date(db_session: Session) -> None:
@@ -441,7 +441,7 @@ def test_list_is_newest_first_filtered_and_says_when_it_cut(db_session: Session)
     service.create(_day(other, date(2026, 3, 3)), WRITER)
 
     everything = service.list(WorkUnitListQuery(contract_id=contract.id), WRITER)
-    assert [row.data for row in everything.items] == [
+    assert [row.date for row in everything.items] == [
         date(2026, 3, 4),
         date(2026, 3, 3),
         date(2026, 3, 2),
@@ -449,7 +449,9 @@ def test_list_is_newest_first_filtered_and_says_when_it_cut(db_session: Session)
     assert everything.truncated is False
     assert {row.contract_title for row in everything.items} == {"Consulenza"}
 
-    window = service.list(WorkUnitListQuery(da=date(2026, 3, 3), a=date(2026, 3, 3)), WRITER)
+    window = service.list(
+        WorkUnitListQuery(date_from=date(2026, 3, 3), date_to=date(2026, 3, 3)), WRITER
+    )
     assert {row.contract_id for row in window.items} == {contract.id, other.id}
 
     cut = service.list(WorkUnitListQuery(contract_id=contract.id, limit=2), WRITER)
@@ -465,7 +467,9 @@ def test_list_refuses_an_unbounded_or_inverted_query(db_session: Session) -> Non
     with pytest.raises(ValidationFailed):
         service.list(WorkUnitListQuery(), WRITER)
     with pytest.raises(ValidationFailed):
-        service.list(WorkUnitListQuery(da=date(2026, 3, 5), a=date(2026, 3, 4)), WRITER)
+        service.list(
+            WorkUnitListQuery(date_from=date(2026, 3, 5), date_to=date(2026, 3, 4)), WRITER
+        )
 
 
 # ---- WorkUnitService.move: the person's door --------------------------------------------
@@ -485,7 +489,7 @@ def test_move_refuses_what_the_days_page_would_not_offer(db_session: Session) ->
         with pytest.raises(Conflict) as refused:
             service.move(work_unit.id, target, WRITER, reason)
         # The graph allows these edges (`transition` does them); `move` refuses them.
-        assert (refused.value.details["da"], refused.value.details["a"]) == (
+        assert (refused.value.details["from_status"], refused.value.details["to_status"]) == (
             work_unit.status,
             target,
         )

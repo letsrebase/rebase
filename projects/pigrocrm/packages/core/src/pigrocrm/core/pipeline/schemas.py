@@ -11,8 +11,8 @@ StageKind = Literal["open", "won", "lost"]
 # value sails past Pydantic, reaches flush(), and comes back as a raw
 # sqlalchemy.exc.DataError (StringDataRightTruncation) instead of an ordinary
 # ValidationError -- the same class of gap fields/schemas.py's KEY_MAX_LENGTH closes.
-# `nome` is the fourth time this project has hit an unbounded string column that can
-# poison the session this way; `code` was closed in fix round 1, `nome` predates that
+# `name` is the fourth time this project has hit an unbounded string column that can
+# poison the session this way; `code` was closed in fix round 1, `name` predates that
 # round and is closed here.
 NAME_MAX_LENGTH = 60
 CODE_MAX_LENGTH = 30

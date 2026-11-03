@@ -151,7 +151,7 @@ def _seed_people(session: Session, storage: LocalFileStorage) -> list[Seeded]:
     for index, last_name in enumerate(_NULLABLE_VALUES):
         created, updated = _stamps(index)
         row = Person(
-            nome="Marco",
+            first_name="Marco",
             last_name=last_name,
             custom_fields={},
             created_at=created,
@@ -167,7 +167,7 @@ def _seed_people(session: Session, storage: LocalFileStorage) -> list[Seeded]:
 
 def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
     customer = Customer(legal_name="Committente Srl", country="IT", custom_fields={})
-    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
+    stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     session.add_all([customer, stage])
     session.flush()
 
@@ -175,7 +175,7 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
     for index, nome in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Deal(
-            nome=nome,
+            name=nome,
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
             probability=10,
@@ -184,7 +184,7 @@ def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"nome": nome, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"name": nome, "created_at": created, "updated_at": updated}))
     return seeded
 
 
@@ -279,7 +279,7 @@ _ENTITIES: dict[
         ("created_at", "updated_at", "legal_name"),
     ),
     "people": (_seed_people, _page_people, ("created_at", "updated_at", "last_name")),
-    "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "nome")),
+    "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "name")),
     "documents": (_seed_documents, _page_documents, ("created_at", "updated_at", "title")),
 }
 

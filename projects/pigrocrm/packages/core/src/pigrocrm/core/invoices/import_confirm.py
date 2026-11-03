@@ -99,7 +99,7 @@ class ConfirmedInvoiceRead(BaseModel):
 
     document_id: UUID
     outcome: InvoiceConfirmOutcome
-    # The azienda the file landed on, or was checked against (REB-619, spec §1.5);
+    # The legal entity the file landed on, or was checked against (REB-619, spec §1.5);
     # `None` for `incoming_skipped` and `unclaimed`, which land nowhere.
     legal_entity_id: UUID | None = None
     invoice: InvoiceRead | None = None
@@ -193,15 +193,15 @@ def map_parsed_invoice_to_import(
         customer_id=customer_id,
         lines=[
             InvoiceLineImport(
-                description=riga.description,
-                quantity=riga.quantity,
-                unit_price=riga.unit_price,
-                total_price=riga.total_price,
-                vat_rate=riga.vat_rate,
-                vat_nature=riga.vat_nature,
-                legal_reference=reference_by_pair.get((riga.vat_rate, riga.vat_nature)),
+                description=line.description,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                total_price=line.total_price,
+                vat_rate=line.vat_rate,
+                vat_nature=line.vat_nature,
+                legal_reference=reference_by_pair.get((line.vat_rate, line.vat_nature)),
             )
-            for riga in invoice.lines
+            for line in invoice.lines
         ],
         taxable_amount=invoice.taxable_amount,
         vat_amount=invoice.vat_amount,

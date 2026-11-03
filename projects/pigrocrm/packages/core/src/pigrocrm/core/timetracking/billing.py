@@ -242,7 +242,7 @@ class TimeBilling:
             .where(InvoiceLine.id == frozen[0])
         ).one_or_none()
         if named is None:
-            # Frozen by a line this session cannot see (an invoice of another azienda,
+            # Frozen by a line this session cannot see (an invoice of another legal entity,
             # REB-634): the refusal stands, and it names no document, since the
             # document is not this member's to be pointed at.
             raise Conflict(

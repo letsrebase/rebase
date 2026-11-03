@@ -1,4 +1,4 @@
-"""A contract's cap on one customer's share of the azienda's revenue (REB-761).
+"""A contract's cap on one customer's share of the legal entity's revenue (REB-761).
 
 The clause is a column of the contract (`customer_share_cap`, a percentage), read over
 the contract's own anniversary year: by `concentration_cap`, which compares the share
@@ -34,7 +34,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 def _world(db_session: Session, *, cap: str | None = "50.00") -> tuple[Customer, Contract]:
     """A customer of 300 euros out of 1,000 invoiced over the contract's first year, which
-    starts on 10 March: 30% of the azienda's revenue, a 9,000 invoice before the
+    starts on 10 March: 30% of the legal entity's revenue, a 9,000 invoice before the
     anniversary left out of the window."""
     customer = make_customer(db_session)
     other = Customer(legal_name="Altro Cliente")
@@ -278,8 +278,8 @@ def test_the_ceiling_simulator_answers_the_contracts_cap_beside_the_packs_ceilin
     )
 
     assert [s.id for s in simulation.thresholds] == [
-        "soglia_ricavi",
-        "soglia_fuoriuscita_immediata",
+        "revenue_ceiling",
+        "immediate_exit_ceiling",
     ]
     assert simulation.contract_cap is not None
     assert simulation.contract_cap.falls_within is False
@@ -289,8 +289,8 @@ def test_the_ceiling_simulator_answers_the_contracts_cap_beside_the_packs_ceilin
 def test_the_postal_code_is_answered_for_an_legal_entity_with_no_ceiling_at_all(
     db_session: Session,
 ) -> None:
-    """A cap is a clause of the contract, not of the regime: an ordinary azienda has no
-    soglie and still hears that the addition takes the customer past 50%."""
+    """A cap is a clause of the contract, not of the regime: an ordinary legal entity has no
+    thresholds and still hears that the addition takes the customer past 50%."""
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(pack_id="it-standard"), ADMIN)
     _, contract = _world(db_session, cap="50.00")
 
@@ -324,7 +324,7 @@ def test_to_contract_of_another_legal_entity_is_not_simulated_against_this_one(
 ) -> None:
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     _, contract = _world(db_session)
-    other = LegalEntity(nome="altra", legal_name="Altra S.r.l.", country="IT")
+    other = LegalEntity(name="altra", legal_name="Altra S.r.l.", country="IT")
     db_session.add(other)
     db_session.flush()
     FiscalProfileService(db_session).upsert(
