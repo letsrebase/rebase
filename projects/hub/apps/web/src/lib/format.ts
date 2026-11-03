@@ -212,7 +212,7 @@ export const INVOICE_STATE_LABELS: Record<string, string> = {
   consumed: 'Consumata',
 }
 export const PAYMENT_STATE_LABELS: Record<string, string> = {
-  from_unpaid: 'Da incassare',
+  unpaid: 'Da incassare',
   paid: 'Incassato',
 }
 

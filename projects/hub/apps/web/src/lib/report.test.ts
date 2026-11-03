@@ -63,7 +63,7 @@ const REPORT: MatchReport = {
       kind: 'proforma',
       date: '2026-10-31',
       status: 'confirmed',
-      payment_status: 'from_unpaid',
+      payment_status: 'unpaid',
       hours: '16.00',
     },
     {
@@ -212,7 +212,7 @@ describe('the invoices of a period', () => {
     const partly: Pick<MatchReport, 'by_day' | 'invoices'> = {
       by_day: [day('2026-10-30', '8.00', [on('14/2026', '8.00')]), day('2026-11-02', '8.00', [on('14/2026', '3.00')])],
       invoices: [
-        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '11.00' },
+        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'unpaid', hours: '11.00' },
       ],
     }
     expect(periodInvoices(partly, '2026-11').map((i) => [invoiceLabel(i), i.hours])).toEqual([['14/2026', '3.00']])
@@ -229,8 +229,8 @@ describe('the invoices of a period', () => {
         day('2026-12-01', '8.00', [on('14/2026', '8.00')]),
       ],
       invoices: [
-        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '13.00' },
-        { number: '13/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '11.00' },
+        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'unpaid', hours: '13.00' },
+        { number: '13/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'unpaid', hours: '11.00' },
       ],
     }
     expect(periodInvoices(split, '2026-11').map((i) => [invoiceLabel(i), i.hours])).toEqual([
@@ -247,8 +247,8 @@ describe('the invoices of a period', () => {
         day('2026-12-01', '8.00', [on('5/2026', '8.00', 'proforma')]),
       ],
       invoices: [
-        { number: '5/2026', kind: 'proforma', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '10.00' },
-        { number: '5/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '14.00' },
+        { number: '5/2026', kind: 'proforma', date: null, status: 'draft', payment_status: 'unpaid', hours: '10.00' },
+        { number: '5/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'unpaid', hours: '14.00' },
       ],
     }
     expect(periodInvoices(same, '2026-11').map((i) => [invoiceLabel(i), i.hours])).toEqual([
@@ -265,8 +265,8 @@ describe('the invoices of a period', () => {
         day('2026-11-03', '8.00', [on('13/2026', '3.00'), on('14/2026', '5.00')]),
       ],
       invoices: [
-        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'from_unpaid', hours: '5.00' },
-        { number: '13/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'from_unpaid', hours: '11.00' },
+        { number: '14/2026', kind: 'invoice', date: null, status: 'draft', payment_status: 'unpaid', hours: '5.00' },
+        { number: '13/2026', kind: 'invoice', date: '2026-11-30', status: 'issued', payment_status: 'unpaid', hours: '11.00' },
       ],
     }
     expect(periodInvoices(shared, '2026-11').map((i) => i.hours)).toEqual(['5.00', '11.00'])

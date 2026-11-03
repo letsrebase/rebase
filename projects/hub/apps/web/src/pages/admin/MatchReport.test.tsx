@@ -92,7 +92,7 @@ const REPORT = {
     { month: '2026-11', hours: '32.00' },
   ],
   invoices: [
-    { number: '4/2026', kind: 'proforma', date: '2026-10-31', status: 'confirmed', payment_status: 'from_unpaid', hours: '16.00' },
+    { number: '4/2026', kind: 'proforma', date: '2026-10-31', status: 'confirmed', payment_status: 'unpaid', hours: '16.00' },
     { number: '12/2026', kind: 'invoice', date: '2026-10-02', status: 'issued', payment_status: 'paid', hours: '27.00' },
   ],
 }
