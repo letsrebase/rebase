@@ -76,7 +76,7 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     vat_number: Mapped[str | None] = mapped_column(String(VAT_NUMBER_WIDTH), default=None)
     tax_code: Mapped[str | None] = mapped_column(String(16), default=None)
     address: Mapped[str | None] = mapped_column(String(255), default=None)
-    cap: Mapped[str | None] = mapped_column(String(10), default=None)
+    postal_code: Mapped[str | None] = mapped_column(String(10), default=None)
     city: Mapped[str | None] = mapped_column(String(120), default=None)
     province: Mapped[str | None] = mapped_column(String(2), default=None)
     country: Mapped[str] = mapped_column(String(2), nullable=False, default="IT")

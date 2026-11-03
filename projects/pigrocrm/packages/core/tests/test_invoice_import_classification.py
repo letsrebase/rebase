@@ -63,7 +63,7 @@ def _party(**overrides: object) -> ParsedInvoiceParty:
         "vat_number": "IT01234567890",
         "tax_code": "BNCCHR85M41H501Z",
         "address": "Via delle Officine 10",
-        "cap": "20121",
+        "postal_code": "20121",
         "city": "Milano",
         "province": "MI",
         "country": "IT",
@@ -187,7 +187,7 @@ def _customer(session: Session) -> Customer:
     customer = Customer(
         legal_name=f"Acme {uuid4()}",
         address="Corso Italia 5",
-        cap="00100",
+        postal_code="00100",
         city="Roma",
         province="RM",
         country="IT",

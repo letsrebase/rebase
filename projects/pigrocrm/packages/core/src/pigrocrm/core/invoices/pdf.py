@@ -166,7 +166,7 @@ def address_display(party: dict[str, Any]) -> str:
     country = (party.get("country") or "").strip().upper()
     pieces = [
         piece
-        for piece in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
+        for piece in ((party.get("postal_code") or "").strip(), (party.get("city") or "").strip())
         if piece
     ]
     province = (party.get("province") or "").strip().upper()

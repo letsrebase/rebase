@@ -47,7 +47,7 @@ def _contract(session: Session) -> Contract:
         vat_number="01234567890",
         sdi_code="ABCDEFG",
         address="Corso Italia 5",
-        cap="00100",
+        postal_code="00100",
         city="Roma",
         province="RM",
         country="IT",

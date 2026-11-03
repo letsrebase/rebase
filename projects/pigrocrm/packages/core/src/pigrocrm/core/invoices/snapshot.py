@@ -28,7 +28,7 @@ class _Party(Protocol):
     @property
     def address(self) -> str | None: ...
     @property
-    def cap(self) -> str | None: ...
+    def postal_code(self) -> str | None: ...
     @property
     def city(self) -> str | None: ...
     @property
@@ -53,7 +53,7 @@ def party_snapshot(party: _Party) -> PartySnapshot:
         sdi_code=party.sdi_code,
         certified_email=party.certified_email,
         address=party.address or "",
-        cap=party.cap or "",
+        postal_code=party.postal_code or "",
         city=party.city or "",
         province=party.province or "",
         country=party.country,

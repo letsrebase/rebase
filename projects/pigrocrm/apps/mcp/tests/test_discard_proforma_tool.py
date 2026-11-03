@@ -38,7 +38,7 @@ def _legal_entity(session: Session) -> None:
             legal_name="Studio Rossi",
             vat_number="01234567890",
             address="Via Vittorio Veneto 12",
-            cap="20124",
+            postal_code="20124",
             city="Milano",
             province="MI",
             email="mario@example.com",
@@ -57,7 +57,7 @@ def _customer(session: Session, *, exportable: bool = False) -> str:
         {
             "sdi_code": "ABCDEFG",
             "address": "Corso Italia 5",
-            "cap": "00100",
+            "postal_code": "00100",
             "city": "Roma",
             "province": "RM",
             "country": "IT",

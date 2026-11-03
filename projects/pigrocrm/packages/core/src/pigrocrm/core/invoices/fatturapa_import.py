@@ -215,7 +215,7 @@ def _party_name(directory: etree._Element, *, context: str) -> str:
 class _PartyAddress(TypedDict):
     address: str
     city: str
-    cap: str
+    postal_code: str
     province: str | None
     country: str
 
@@ -226,7 +226,7 @@ def _party_address(headquarters: etree._Element) -> _PartyAddress:
     return {
         "address": f"{address} {street_number}" if street_number else address,
         "city": _required_text(headquarters, "Comune", context="Sede"),
-        "cap": _required_text(headquarters, "CAP", context="Sede"),
+        "postal_code": _required_text(headquarters, "CAP", context="Sede"),
         "province": _text(headquarters, "Provincia"),
         # The schema declares `Nazione` defaulting to "IT" for a document that
         # omits it; lxml has no notion of XSD defaults, so the fallback is

@@ -165,7 +165,7 @@ def test_a_snapshot_round_trips_through_json_with_its_version() -> None:
         sdi_code="ABCDEFG",
         certified_email=None,
         address="Via Roma 1",
-        cap="20100",
+        postal_code="20100",
         city="Milano",
         province="MI",
         country="IT",

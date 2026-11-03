@@ -241,7 +241,7 @@ export function CustomerDetail() {
                   label="Indirizzo"
                   value={
                     customer.address
-                      ? `${customer.address}, ${customer.cap ?? ''} ${customer.city ?? ''} (${customer.province ?? ''})`
+                      ? `${customer.address}, ${customer.postal_code ?? ''} ${customer.city ?? ''} (${customer.province ?? ''})`
                       : EMPTY
                   }
                 />

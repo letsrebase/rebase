@@ -112,7 +112,7 @@ with session_factory(engine)() as session:
             legal_name="Studio E2E",
             vat_number="12345678903",
             address="Via di Prova 1",
-            cap="00100",
+            postal_code="00100",
             city="Roma",
             province="RM",
             email="e2e@pigro.it",

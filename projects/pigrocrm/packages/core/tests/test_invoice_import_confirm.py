@@ -621,7 +621,7 @@ def test_vat_nature_is_read_from_the_line_itself_never_reconstructed_by_rate_alo
     customer = ParsedInvoiceParty(
         legal_name="Cliente Test",
         address="Via Test 1",
-        cap="00100",
+        postal_code="00100",
         city="Roma",
         country="IT",
     )
@@ -629,7 +629,7 @@ def test_vat_nature_is_read_from_the_line_itself_never_reconstructed_by_rate_alo
         legal_name="Emittente Test",
         vat_number=SUPPLIER_VAT_NUMBER,
         address="Via Test 2",
-        cap="20100",
+        postal_code="20100",
         city="Milano",
         country="IT",
     )

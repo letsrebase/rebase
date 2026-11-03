@@ -47,7 +47,7 @@ def _customer(
         tax_code=None if vat_number else "RSSMRA80A01H501U",
         sdi_code="ABCDEFG",
         address="Corso Italia 5",
-        cap="00100",
+        postal_code="00100",
         city="Roma",
         province="RM",
         country="IT",

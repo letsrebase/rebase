@@ -67,7 +67,7 @@ def customer_id(db_session: Session) -> UUID:
         vat_number="12345678901",
         sdi_code="ABCDEFG",
         address="Corso Italia 5",
-        cap="00100",
+        postal_code="00100",
         city="Roma",
         province="RM",
         country="IT",
@@ -168,7 +168,7 @@ def _non_resident_customer(db_session: Session) -> UUID:
         legal_name="Example Ltd",
         vat_number="GB123456789",
         address="1 Old Street",
-        cap="EC1V 9HL",
+        postal_code="EC1V 9HL",
         city="London",
         province="",
         country="GB",
@@ -207,7 +207,7 @@ def test_replacing_the_lines_reads_the_customer_s_country_again(
     assert customer is not None
     customer.country = "IT"
     customer.province = "RM"
-    customer.cap = "00100"
+    customer.postal_code = "00100"
     db_session.flush()
 
     service.replace_lines(invoice.id, [_line()], ADMIN)

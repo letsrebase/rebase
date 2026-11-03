@@ -2453,3 +2453,102 @@ def _read_0068(url: str, table: str, columns: str) -> tuple[Any, ...]:
         return task, stage, setting, [tuple(row) for row in timeline]
     finally:
         engine.dispose()
+
+
+def test_0069_renames_the_postal_code_column_and_its_json_both_ways(pigrocrm_postgres: Any) -> None:
+    """REB-898 over rows planted at 0068: a customer and a legal entity with their `cap`, an
+    invoice whose snapshot carries it in both parties, and timeline entries naming it in
+    `changed`, `before` and `after`. Up, the columns, the snapshot keys and the payload
+    names say `postal_code`; down, every row is what was planted."""
+    snapshot = (
+        '{"version": 1, "legal_entity": {"legal_name": "L", "cap": "00100"},'
+        ' "customer": {"legal_name": "C", "cap": "20124"}, "tax": {}}'
+    )
+    payload = '{"changed": ["cap", "city"], "before": {"cap": "1"}, "after": {"cap": "2"}}'
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0068")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country, cap) VALUES "
+                    "('00000000-0000-7000-8000-0000000000e1', 'E', 'E srl', 'IT', '00100')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, cap, custom_fields, "
+                    "legal_entity_id) VALUES ('00000000-0000-7000-8000-0000000000c1', 'C srl', "
+                    "'IT', '20124', '{}', '00000000-0000-7000-8000-0000000000e1')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO activities (id, entity_type, entity_id, kind, actor_type, "
+                    "payload, occurred_at) VALUES "
+                    "(gen_random_uuid(), 'customer', gen_random_uuid(), 'updated', 'user', "
+                    "CAST(:payload AS jsonb), now()), "
+                    "(gen_random_uuid(), 'deal', gen_random_uuid(), 'updated', 'user', "
+                    "CAST(:payload AS jsonb), now())"
+                ),
+                {"payload": payload},
+            )
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            connection.execute(
+                text(
+                    "INSERT INTO invoices (id, customer_id, legal_entity_id, type, status, "
+                    "sdi_document_type, currency, taxable_amount, vat_amount, stamp_duty, total, "
+                    "payment_status, custom_fields, snapshot_version, snapshot) VALUES "
+                    "('00000000-0000-7000-8000-0000000000f1', "
+                    "'00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000e1', 'invoice', 'draft', "
+                    "'TD01', 'EUR', 0, 0, 0, 0, 'unpaid', '{}', 1, CAST(:snapshot AS jsonb))"
+                ),
+                {"snapshot": snapshot},
+            )
+        engine.dispose()
+
+        before = _read_0069(url, "cap")
+        upgrade(config, "0069")
+        after = _read_0069(url, "postal_code")
+        downgrade(config, "0068")
+        round_trip = _read_0069(url, "cap")
+    assert after[0] == ("00100", "20124")
+    assert after[1]["legal_entity"] == {"legal_name": "L", "postal_code": "00100"}
+    assert after[1]["customer"] == {"legal_name": "C", "postal_code": "20124"}
+    assert after[2] == {
+        "customer": {
+            "changed": ["postal_code", "city"],
+            "before": {"postal_code": "1"},
+            "after": {"postal_code": "2"},
+        },
+        "deal": {"changed": ["cap", "city"], "before": {"cap": "1"}, "after": {"cap": "2"}},
+    }
+    assert before == round_trip
+
+
+def _read_0069(url: str, column: str) -> tuple[Any, ...]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            columns = tuple(
+                connection.execute(
+                    text(
+                        f"SELECT (SELECT {column} FROM legal_entities), "  # noqa: S608
+                        f"(SELECT {column} FROM customers)"
+                    )
+                ).one()
+            )
+            snapshot = connection.execute(text("SELECT snapshot FROM invoices")).scalar_one()
+            timeline = {
+                entity: payload
+                for entity, payload in connection.execute(
+                    text("SELECT entity_type, payload FROM activities")
+                ).all()
+            }
+        return columns, snapshot, timeline
+    finally:
+        engine.dispose()

@@ -39,7 +39,7 @@ LEGAL_ENTITY = {
     "legal_name": "Studio Verdi",
     "vat_number": "01234567890",
     "address": "Via Roma 1",
-    "cap": "20100",
+    "postal_code": "20100",
     "city": "Milano",
     "province": "MI",
     "certified_email": "studio@pec.example",

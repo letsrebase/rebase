@@ -63,7 +63,7 @@ def _legal_entity(
         "legal_name": f"{name.title()} S.r.l.",
         "country": country,
         "address": "Via Po 1",
-        "cap": "10100",
+        "postal_code": "10100",
         "city": "Torino",
         "province": "TO",
     }

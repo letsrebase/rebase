@@ -6632,8 +6632,8 @@ export interface components {
             certified_email?: string | null;
             /** Address */
             address?: string | null;
-            /** Cap */
-            cap?: string | null;
+            /** Postal Code */
+            postal_code?: string | null;
             /** City */
             city?: string | null;
             /** Province */
@@ -6718,8 +6718,8 @@ export interface components {
             certified_email: string | null;
             /** Address */
             address: string | null;
-            /** Cap */
-            cap: string | null;
+            /** Postal Code */
+            postal_code: string | null;
             /** City */
             city: string | null;
             /** Province */
@@ -6767,8 +6767,8 @@ export interface components {
             certified_email?: string | null;
             /** Address */
             address?: string | null;
-            /** Cap */
-            cap?: string | null;
+            /** Postal Code */
+            postal_code?: string | null;
             /** City */
             city?: string | null;
             /** Province */
@@ -9198,8 +9198,8 @@ export interface components {
             tax_code?: string | null;
             /** Address */
             address?: string | null;
-            /** Cap */
-            cap?: string | null;
+            /** Postal Code */
+            postal_code?: string | null;
             /** City */
             city?: string | null;
             /** Province */
@@ -9252,8 +9252,8 @@ export interface components {
             tax_code: string | null;
             /** Address */
             address: string | null;
-            /** Cap */
-            cap: string | null;
+            /** Postal Code */
+            postal_code: string | null;
             /** City */
             city: string | null;
             /** Province */
@@ -9312,8 +9312,8 @@ export interface components {
             tax_code: string | null;
             /** Address */
             address: string | null;
-            /** Cap */
-            cap: string | null;
+            /** Postal Code */
+            postal_code: string | null;
             /** City */
             city: string | null;
             /** Province */
@@ -9370,8 +9370,8 @@ export interface components {
             tax_code?: string | null;
             /** Address */
             address?: string | null;
-            /** Cap */
-            cap?: string | null;
+            /** Postal Code */
+            postal_code?: string | null;
             /** City */
             city?: string | null;
             /** Province */
@@ -9747,8 +9747,8 @@ export interface components {
             tax_code?: string | null;
             /** Address */
             address: string;
-            /** Cap */
-            cap: string;
+            /** Postal Code */
+            postal_code: string;
             /** City */
             city: string;
             /** Province */

@@ -79,7 +79,7 @@ def address_xml(party: PartySnapshot) -> str:
     address = (party.address or "").strip()
     if is_italian(party):
         return address
-    cap = (party.cap or "").strip()
-    if not cap or cap == POSTAL_CODE_FOREIGN:
+    postal_code = (party.postal_code or "").strip()
+    if not postal_code or postal_code == POSTAL_CODE_FOREIGN:
         return address
-    return f"{address}, {cap}"
+    return f"{address}, {postal_code}"

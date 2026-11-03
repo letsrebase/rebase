@@ -21,7 +21,7 @@ interface IdentityField {
     | 'vat_number'
     | 'tax_code'
     | 'address'
-    | 'cap'
+    | 'postal_code'
     | 'city'
     | 'province'
     | 'country'
@@ -39,7 +39,7 @@ const IDENTITY: readonly IdentityField[] = [
   { name: 'vat_number', label: 'Partita IVA', hint: '11 cifre per un’azienda italiana' },
   { name: 'tax_code', label: 'Codice fiscale' },
   { name: 'address', label: 'Indirizzo' },
-  { name: 'cap', label: 'CAP' },
+  { name: 'postal_code', label: 'CAP' },
   { name: 'city', label: 'Comune' },
   { name: 'province', label: 'Provincia' },
   { name: 'country', label: 'Nazione', hint: 'Codice a due lettere: IT, GB, FR' },

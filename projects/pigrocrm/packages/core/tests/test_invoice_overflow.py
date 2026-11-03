@@ -64,7 +64,7 @@ def customer_id(db_session: Session) -> UUID:
         vat_number="12345678901",
         sdi_code="ABCDEFG",
         address="Corso Italia 5",
-        cap="00100",
+        postal_code="00100",
         city="Roma",
         province="RM",
         country="IT",

@@ -104,6 +104,7 @@ The English identifier is the usual English rendering; the Italian term is kept 
 | INPS | social_security (inps in compounds) | Italian social security institute; `aliquota_inps` is `social_security_rate` |
 | coefficiente di redditivita | profitability_coefficient | Flat-rate regime coefficient |
 | tetto / soglia | cap / threshold | Revenue ceilings |
+| CAP (codice di avviamento postale) | postal_code | The postal code: column, JSON key, REST/MCP parameter (migration 0069). `cap` stays English for a limit (`contract_cap`, `customer_share_cap`), the template variable `{{cliente.cap}}` keeps its Italian key, and so does FatturaPA's `CAP` element |
 | irrevocabilita | irrevocability | Contract irrevocability window |
 | riferimento normativo | legal_reference | Legal reference printed on the line |
 | tipo documento | sdi_document_type | SdI TipoDocumento (TD01 and so on) |

@@ -55,7 +55,7 @@ PHONE_MAX = 12
 
 # `xs:pattern` restrictions the schema applies. `.fullmatch` at every call site, never
 # `.match` with `$`.
-CAP_RE = re.compile(r"\d{5}")
+POSTAL_CODE_RE = re.compile(r"\d{5}")
 PROVINCE_RE = re.compile(r"[A-Z]{2}")
 COUNTRY_RE = re.compile(r"[A-Z]{2}")
 IBAN_RE = re.compile(r"[A-Z]{2}\d{2}[A-Za-z0-9]{11,30}")
