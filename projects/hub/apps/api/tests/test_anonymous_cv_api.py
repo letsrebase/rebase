@@ -30,35 +30,35 @@ CV = text_pdf("Ada Lovelace Backend developer TIM 2019-2024")
 MODEL = "claude-opus-5"
 
 BODY: dict[str, Any] = {
-    "lingua": "it",
-    "titolo": "Backend developer",
-    "sommario": "Backend developer con cinque anni di servizi di fatturazione.",
-    "esperienze": [
+    "language": "it",
+    "title": "Backend developer",
+    "summary": "Backend developer con cinque anni di servizi di fatturazione.",
+    "experience": [
         {
             "role": "Backend developer",
             "company": "una società di telecomunicazioni",
             "location": None,
-            "periodo": "2019 – 2024",
-            "punti": [{"titolo": None, "text": "Ha sviluppato i servizi di fatturazione."}],
+            "period": "2019 – 2024",
+            "points": [{"title": None, "text": "Ha sviluppato i servizi di fatturazione."}],
         }
     ],
-    "skills": [{"area": "Competenze", "voci": ["Python", "PostgreSQL"]}],
-    "formazione": [],
-    "certificazioni": [],
-    "languages": [{"lingua": "Italiano", "livello": "Madrelingua"}],
+    "skills": [{"area": "Competenze", "entries": ["Python", "PostgreSQL"]}],
+    "education": [],
+    "certifications": [],
+    "languages": [{"language": "Italiano", "level": "Madrelingua"}],
     "other_sections": [],
 }
 NO_IDENTITY: dict[str, Any] = {
-    "nome": None,
+    "first_name": None,
     "last_name": None,
     "email": None,
-    "telefoni": [],
+    "phones": [],
     "link": [],
 }
 
 
 def _answer(body: dict[str, Any] | None = None) -> LlmResponse:
-    text_ = json.dumps({"cv": body or BODY, "identita": NO_IDENTITY})
+    text_ = json.dumps({"cv": body or BODY, "identity": NO_IDENTITY})
     return LlmResponse(
         text=text_,
         parsed=AnonymousCvDraft.model_validate_json(text_),
@@ -75,13 +75,13 @@ def _answer(body: dict[str, Any] | None = None) -> LlmResponse:
 
 def _naming_ada() -> LlmResponse:
     body = copy.deepcopy(BODY)
-    body["sommario"] = "Ada Lovelace è una backend developer."
+    body["summary"] = "Ada Lovelace è una backend developer."
     return _answer(body)
 
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -126,11 +126,11 @@ def _apply(
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "hybrid",
         },
         files={"cv": ("Ada CV.pdf", CV, "application/pdf")},
@@ -148,7 +148,7 @@ def _apply(
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 

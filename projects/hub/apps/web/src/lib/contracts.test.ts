@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { LetterTextKeys, type LetterDraft } from './api'
+import { LETTER_TEXT_KEYS, type LetterDraft } from './api'
 import {
-  OtherTermsGroups,
+  OTHER_TERMS_GROUPS,
   amountForm,
-  TermsFields,
+  TERMS_FIELDS,
   cancelDescription,
   closeDescription,
   customerComplete,
@@ -14,10 +14,10 @@ import {
   fiscalLine,
   fiscalToSave,
   expectedDaysToSend,
-  LetterEmpty,
-  LetterGroups,
-  LetterLabels,
-  LetterRequired,
+  LETTER_EMPTY,
+  LETTER_GROUPS,
+  LETTER_LABELS,
+  LETTER_REQUIRED,
   letterForm,
   olderFiscal,
   letterToSend,
@@ -43,15 +43,15 @@ import {
 
 describe('the letter form (REB-387)', () => {
   it('shows every field of the letter exactly once, in a group', () => {
-    const grouped = LetterGroups.flatMap((group) => group.fields)
+    const grouped = LETTER_GROUPS.flatMap((group) => group.fields)
     expect(new Set(grouped).size).toBe(grouped.length)
-    expect(new Set(grouped)).toEqual(new Set(Object.keys(LetterLabels)))
-    expect(grouped).toHaveLength(LetterTextKeys.length + 6)
+    expect(new Set(grouped)).toEqual(new Set(Object.keys(LETTER_LABELS)))
+    expect(grouped).toHaveLength(LETTER_TEXT_KEYS.length + 6)
   })
 
   it('sends an empty box as null, a comma decimal with a dot, and numbers as numbers', () => {
     const letter = toLetter({
-      ...LetterEmpty,
+      ...LETTER_EMPTY,
       role: ' Backend developer ',
       activities: 'Le API',
       start_date: '2026-10-01',
@@ -61,14 +61,14 @@ describe('the letter form (REB-387)', () => {
     })
     expect(letter.role).toBe('Backend developer')
     expect(letter.results).toBeNull()
-    expect(letter.data_fine).toBeNull()
+    expect(letter.end_date).toBeNull()
     expect(letter.fee).toBe('450.50')
     expect(letter.payment_days).toBe(30)
     expect(letter.notice_days).toBeNull()
   })
 
   it('reads a prefill with no fee as an empty box, not the word null', () => {
-    const keys = [...LetterTextKeys, 'start_date', 'data_fine', 'fee', 'payment_days', 'month_end', 'notice_days']
+    const keys = [...LETTER_TEXT_KEYS, 'start_date', 'end_date', 'fee', 'payment_days', 'month_end', 'notice_days']
     const draft = Object.fromEntries(keys.map((key) => [key, null])) as unknown as LetterDraft
     const form = letterForm(draft)
     expect(form.fee).toBe('')
@@ -84,7 +84,7 @@ describe('the letter form (REB-387)', () => {
     // What JSON would send for it anyway, so «Controlla e invia» never prints «NaN».
     expect(expectedDaysToSend('quaranta')).toBeNull()
     // The letter's own form has no such field, so the letter the API takes has no such key.
-    expect(toLetter(LetterEmpty)).not.toHaveProperty('expected_days')
+    expect(toLetter(LETTER_EMPTY)).not.toHaveProperty('expected_days')
   })
 
   it('trims the client data', () => {
@@ -98,21 +98,21 @@ describe('the letter form (REB-387)', () => {
 
 describe('«Crea match» in three steps (REB-476)', () => {
   it('asks each field of the letter once: on «Condizioni» or in «Altre condizioni»', () => {
-    const other = OtherTermsGroups.flatMap((group) => group.fields)
+    const other = OTHER_TERMS_GROUPS.flatMap((group) => group.fields)
     expect(new Set(other).size).toBe(other.length)
-    expect(other.filter((field) => TermsFields.has(field))).toEqual([])
-    expect(new Set([...TermsFields, ...other])).toEqual(new Set(Object.keys(LetterLabels)))
-    expect(other.filter((field) => LetterRequired.has(field))).toEqual([])
+    expect(other.filter((field) => TERMS_FIELDS.has(field))).toEqual([])
+    expect(new Set([...TERMS_FIELDS, ...other])).toEqual(new Set(Object.keys(LETTER_LABELS)))
+    expect(other.filter((field) => LETTER_REQUIRED.has(field))).toEqual([])
   })
 
   it('keeps the letter’s sections in «Altre condizioni», with the fields left alone in one «Altro»', () => {
-    expect(OtherTermsGroups.every((group) => group.fields.length > 1)).toBe(true)
-    expect(OtherTermsGroups.at(-1)).toEqual({
+    expect(OTHER_TERMS_GROUPS.every((group) => group.fields.length > 1)).toBe(true)
+    expect(OTHER_TERMS_GROUPS.at(-1)).toEqual({
       title: 'Altro',
       fields: ['review_period', 'notice_days', 'previous_reports'],
     })
-    const order = LetterGroups.flatMap((group) => group.fields)
-    for (const group of OtherTermsGroups) {
+    const order = LETTER_GROUPS.flatMap((group) => group.fields)
+    for (const group of OTHER_TERMS_GROUPS) {
       expect([...group.fields].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(group.fields)
     }
   })
@@ -123,42 +123,42 @@ describe('«Crea match» in three steps (REB-476)', () => {
     expect(amountForm('480.50')).toBe('480,50')
     expect(amountForm('480.5')).toBe('480,50')
     expect(amountForm('480.05')).toBe('480,05')
-    expect(toLetter({ ...LetterEmpty, fee: amountForm('480.50') }).fee).toBe('480.50')
+    expect(toLetter({ ...LETTER_EMPTY, fee: amountForm('480.50') }).fee).toBe('480.50')
   })
 
   it('reads a fee the Italian way, through the parser every amount field shares (lib/amount.ts)', () => {
-    expect(toLetter({ ...LetterEmpty, fee: '12.000' }).fee).toBe('12000.00')
-    expect(toLetter({ ...LetterEmpty, fee: '1.234,50' }).fee).toBe('1234.50')
+    expect(toLetter({ ...LETTER_EMPTY, fee: '12.000' }).fee).toBe('12000.00')
+    expect(toLetter({ ...LETTER_EMPTY, fee: '1.234,50' }).fee).toBe('1234.50')
   })
 
   it('compares the fee with the day rate after reading both the Italian way', () => {
-    const daily = withPayMode({ ...LetterEmpty, fee: '1.500' }, 'to_work_unit')
+    const daily = withPayMode({ ...LETTER_EMPTY, fee: '1.500' }, 'to_work_unit')
     expect(switchPayMode(daily, 'to_body', '1500').fee).toBe('')
     expect(switchPayMode({ ...daily, fee: '1.500,00' }, 'to_body', '1500').fee).toBe('')
     expect(switchPayMode({ ...daily, fee: '1,5' }, 'to_body', '1500').fee).toBe('1,5')
   })
 
   it('does not take the day rate for a lump sum, and puts it back for an empty day-rate fee', () => {
-    const daily = withPayMode({ ...LetterEmpty, fee: '480' }, 'to_work_unit')
-    expect(switchPayMode(daily, 'to_body', '480')).toMatchObject({ mode: 'to_body', unit: 'to_body', fee: '' })
+    const daily = withPayMode({ ...LETTER_EMPTY, fee: '480' }, 'to_work_unit')
+    expect(switchPayMode(daily, 'to_body', '480')).toMatchObject({ mode: 'to_body', unit: 'a corpo', fee: '' })
     expect(switchPayMode({ ...daily, fee: '480,00' }, 'to_body', '480').fee).toBe('')
     expect(switchPayMode({ ...daily, fee: '500' }, 'to_body', '480').fee).toBe('500')
-    const lump = withPayMode({ ...LetterEmpty, fee: '' }, 'to_body')
+    const lump = withPayMode({ ...LETTER_EMPTY, fee: '' }, 'to_body')
     expect(switchPayMode(lump, 'to_work_unit', '480')).toMatchObject({ mode: 'to_work_unit', fee: '480' })
     expect(switchPayMode({ ...lump, fee: '12000' }, 'to_work_unit', '480').fee).toBe('12000')
     expect(switchPayMode(daily, 'to_body', '').fee).toBe('480')
   })
 
   it('sets modalità and unità together, and reads anything but «a corpo» as a day rate', () => {
-    const body = withPayMode(LetterEmpty, 'to_body')
-    expect(body).toMatchObject({ mode: 'to_body', unit: 'to_body' })
+    const body = withPayMode(LETTER_EMPTY, 'to_body')
+    expect(body).toMatchObject({ mode: 'to_body', unit: 'a corpo' })
     expect(payModeOf(body)).toBe('to_body')
-    expect(payModeOf(LetterEmpty)).toBe('to_work_unit')
+    expect(payModeOf(LETTER_EMPTY)).toBe('to_work_unit')
   })
 
   it('leaves out the fixed-price fields of a day-rate letter, and keeps them a corpo', () => {
     const form = {
-      ...LetterEmpty,
+      ...LETTER_EMPTY,
       start_date: '2026-10-01',
       fee: '450',
       payment_days: '30',
@@ -389,18 +389,18 @@ describe('tax data without a partita IVA (REB-687)', () => {
 describe('the letter type (REB-687)', () => {
   it('offers the two types in the order step 1 shows them', () => {
     expect(REGIME_OPTIONS).toEqual([
-      { regime: 'partita_iva', label: 'Incarico con partita IVA' },
+      { regime: 'vat_registered', label: 'Incarico con partita IVA' },
       { regime: 'occasional', label: 'Prestazione occasionale' },
     ])
   })
 
   it('hints the fee as net of VAT or gross, by type', () => {
-    expect(feeHint('partita_iva')).toBe('IVA esclusa')
+    expect(feeHint('vat_registered')).toBe('IVA esclusa')
     expect(feeHint('occasional')).toBe('lordo, senza IVA')
   })
 
   it('names the previews by type', () => {
-    expect(previewLabels('partita_iva')).toEqual({ letter: 'Apri la lettera (PDF)', framework: 'Apri il contratto quadro (PDF)' })
+    expect(previewLabels('vat_registered')).toEqual({ letter: 'Apri la lettera (PDF)', framework: 'Apri il contratto quadro (PDF)' })
     expect(previewLabels('occasional')).toEqual({
       letter: 'Apri la lettera occasionale (PDF)',
       framework: 'Apri il contratto quadro per prestazioni occasionali (PDF)',
@@ -409,14 +409,14 @@ describe('the letter type (REB-687)', () => {
 
   it('names each framework agreement by its type, as complement and as object', () => {
     const occasional = { kind: 'framework', number: null, regime: 'occasional' } as const
-    const ordinary = { kind: 'framework', number: null, regime: 'partita_iva' } as const
+    const ordinary = { kind: 'framework', number: null, regime: 'vat_registered' } as const
     const letter = { kind: 'letter', number: '2026-001', regime: 'occasional' } as const
     expect(whatOf(occasional)).toBe('del contratto quadro per prestazioni occasionali')
     expect(whatOf(ordinary)).toBe('del contratto quadro')
     expect(objectOf(occasional)).toBe('il contratto quadro per prestazioni occasionali')
     expect(objectOf(ordinary)).toBe('il contratto quadro')
     expect(objectOf(letter)).toBe('la lettera n. 2026-001')
-    expect(frameworkHeadingId('partita_iva')).toBe('contratti-quadro')
-    expect(frameworkHeadingId('occasional')).toBe('contratti-quadro-occasionale')
+    expect(frameworkHeadingId('vat_registered')).toBe('framework-contracts')
+    expect(frameworkHeadingId('occasional')).toBe('framework-contracts-occasional')
   })
 })

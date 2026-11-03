@@ -13,13 +13,13 @@ referrals the person made or came through, the matches, the contract documents, 
 notes, the audit entries, the talent's asks on team requests, the tax data. A
 row that would collide with one the survivor already has (a referral for the same card,
 a talent already on the same request, a live cloud grant for the same company, a second
-tax record) stays where it was and is counted as `lasciati`.
+tax record) stays where it was and is counted as `left_behind`.
 
 **The CV is the newest of the two.** `freelancers.cv_uploaded_at` says which; the CV and
 its anonymous card travel together, so if the absorbed card holds the newer one the two
 swap and the older file and card stay, reachable, on the soft-deleted card. A survivor
 left with a CV and no card, or only a failure for that CV, is flagged
-(`card_from_regenerate`) and its failure is cleared, so the hourly `cards-refresh` writes
+(`card_to_regenerate`) and its failure is cleared, so the hourly `cards-refresh` writes
 it: the merge never calls Claude.
 
 **Profile fields** the survivor leaves empty are filled from the absorbed card; the first
@@ -87,9 +87,9 @@ class MergeRead(ResponseModel):
     absorbed_freelancer_id: UUID
     action_id: UUID
     moved: dict[str, int]
-    left: dict[str, int]
+    left_behind: dict[str, int]
     cv: Annotated[str, Field(json_schema_extra=enum_of(CV_OUTCOMES))]
-    card_from_regenerate: bool
+    card_to_regenerate: bool
 
 
 class MergeRequest(BaseModel):
@@ -105,7 +105,7 @@ class MergeRefused(InvalidState):
 
 
 def _name(user: User) -> str:
-    return f"{user.nome} {user.last_name}".strip()
+    return f"{user.first_name} {user.last_name}".strip()
 
 
 class PersonMergeService:
@@ -130,7 +130,7 @@ class PersonMergeService:
             raise NotFound(USER, admin_id)
         ctx = Context(s_user.id, a_user.id, survivor.id, absorbed.id)
 
-        moved, left = move_relations(self.session, ctx)
+        moved, left_behind = move_relations(self.session, ctx)
         undo: dict[str, Any] = {}
         undo["filled"] = self.steps.fill_profile(survivor, absorbed)
         undo["cv_swapped"], cv = self.steps.keep_newest_cv(survivor, absorbed)
@@ -167,9 +167,9 @@ class PersonMergeService:
             "into_freelancer_id": survivor.id,
             "into_user_id": s_user.id,
             "moved": {key: [str(i) for i in ids] for key, ids in moved.items()},
-            "lasciati": left,
+            "left_behind": left_behind,
             "cv": cv,
-            "card_from_regenerate": flagged,
+            "card_to_regenerate": flagged,
             **undo,
         }
         merged = AdminAction(
@@ -191,9 +191,9 @@ class PersonMergeService:
                         "from_freelancer_id": absorbed.id,
                         "from_user_id": a_user.id,
                         "moved": {key: len(ids) for key, ids in moved.items()},
-                        "lasciati": left,
+                        "left_behind": left_behind,
                         "cv": cv,
-                        "card_from_regenerate": flagged,
+                        "card_to_regenerate": flagged,
                     }
                 ),
             )
@@ -204,9 +204,9 @@ class PersonMergeService:
             absorbed_freelancer_id=absorbed.id,
             action_id=merged.id,
             moved={key: len(ids) for key, ids in moved.items()},
-            left=left,
+            left_behind=left_behind,
             cv=cv,
-            card_from_regenerate=flagged,
+            card_to_regenerate=flagged,
         )
 
     def plan(self, into_id: UUID, absorbed_id: UUID) -> dict[str, int]:
@@ -263,7 +263,7 @@ class PersonMergeService:
         # A field the survivor has changed since the merge keeps its new value: it is
         # restored only while it still holds what the merge wrote.
         user_undo = payload["user"]
-        left: dict[str, int] = {}
+        left_behind: dict[str, int] = {}
         users = UserService(self.session)
         # The LinkedIn first, and the survivor's before the absorbed one's: the unique
         # index allows one holder of a profile at a time.
@@ -274,22 +274,22 @@ class PersonMergeService:
                 s_user.linkedin_url = before
                 self.session.flush()
             else:
-                left["linkedin_sopravvissuto"] = 1
+                left_behind["surviving_linkedin"] = 1
         elif user_undo["survivor_linkedin_before"] != s_user.linkedin_url:
-            left["linkedin_sopravvissuto"] = 1
+            left_behind["surviving_linkedin"] = 1
         # A profile both cards held before the merge cannot be held by both again once
         # the unique index exists: the survivor keeps it, and the card that comes back
         # has none until an admin gives it one.
         profile = user_undo["absorbed_linkedin_before"]
         if profile is not None and users.by_linkedin(profile) is not None:
             profile = None
-            left["linkedin"] = 1
+            left_behind["linkedin"] = 1
         a_user.linkedin_url = profile
         a_user.merged_into_id = None
-        if s_user.phone == user_undo["survivor_telefono_after"]:
-            s_user.phone = user_undo["survivor_telefono_before"]
-        elif s_user.phone != user_undo["survivor_telefono_before"]:
-            left["phone"] = 1
+        if s_user.phone == user_undo["survivor_phone_after"]:
+            s_user.phone = user_undo["survivor_phone_before"]
+        elif s_user.phone != user_undo["survivor_phone_before"]:
+            left_behind["phone"] = 1
         for alias in user_undo["aliases"]:
             self.session.execute(
                 update(User).where(User.id == UUID(alias)).values(merged_into_id=a_user.id)
@@ -315,7 +315,7 @@ class PersonMergeService:
             else:
                 changed_since += 1
         if changed_since:
-            left["fields"] = changed_since
+            left_behind["fields"] = changed_since
         if payload["optout_copied"]:
             self.session.execute(
                 delete(CampaignOptout).where(
@@ -334,7 +334,7 @@ class PersonMergeService:
                     entity_id=entity_id,
                     kind="unmerged",
                     admin_id=admin_id,
-                    payload=audit_json({"action_id": action.id, "rimesse": put_back}),
+                    payload=audit_json({"action_id": action.id, "put_back": put_back}),
                 )
             )
         self.session.commit()
@@ -343,9 +343,9 @@ class PersonMergeService:
             absorbed_freelancer_id=absorbed.id,
             action_id=action.id,
             moved=put_back,
-            left=left,
+            left_behind=left_behind,
             cv=CV_RESTORED if payload["cv_swapped"] else CV_KEPT,
-            card_from_regenerate=False,
+            card_to_regenerate=False,
         )
 
     # ---- the checks -------------------------------------------------------------------

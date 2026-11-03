@@ -11,7 +11,7 @@ function stats(overrides: Partial<Record<string, unknown>> = {}) {
     total_members: 4,
     last_7_days: 3,
     recent: [
-      { id: 'l-1', user_id: 'u-1', nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', logged_at: '2026-09-11T12:04:00Z' },
+      { id: 'l-1', user_id: 'u-1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', logged_at: '2026-09-11T12:04:00Z' },
     ],
     next_cursor: null,
     ...overrides,
@@ -69,7 +69,7 @@ describe('the Accessi page', () => {
         200,
         stats({
           recent: [
-            { id: 'l-2', user_id: 'u-2', nome: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z' },
+            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z' },
           ],
         }),
       ),
@@ -94,7 +94,7 @@ describe('the Accessi page', () => {
         200,
         stats({
           recent: [
-            { id: 'l-2', user_id: 'u-2', nome: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z' },
+            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z' },
           ],
         }),
       ),

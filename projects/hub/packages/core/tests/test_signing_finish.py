@@ -63,7 +63,7 @@ def test_finish_downloads_and_mails_the_signed_copy_once(clean: Session) -> None
         (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
     ]
     assert all(
-        mail.attachments[0].filename == f"contratto-quadro-v{FRAMEWORK_VERSION}-firmato.pdf"
+        mail.attachments[0].filename == f"framework-agreement-v{FRAMEWORK_VERSION}-signed.pdf"
         and mail.attachments[0].content == framework.signed_pdf
         for mail in copies
     )

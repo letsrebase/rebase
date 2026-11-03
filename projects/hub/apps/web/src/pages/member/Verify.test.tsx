@@ -22,14 +22,14 @@ function answer(status: number, body: unknown) {
 
 const PROFILE = {
   id: 'f1',
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: null,
   cv_filename: 'cv.pdf',
   cv_size: 1024,
   daily_rate: '450.00',
-  posizione: 'Backend developer',
+  job_title: 'Backend developer',
   remote: 'remote',
   links: [],
   created_at: '2026-09-10T10:00:00Z',

@@ -44,7 +44,7 @@ ACCEPT = {"Accept": "application/json, text/event-stream", "Content-Type": "appl
 def ivan_token(mcp_engine: Engine) -> Iterator[str]:
     """An admin and a token of theirs; both removed after."""
     with session_factory(mcp_engine)() as session:
-        user = User(email="ivan@rebase.it", nome="Ivan", last_name="Fiore", role="admin")
+        user = User(email="ivan@rebase.it", first_name="Ivan", last_name="Fiore", role="admin")
         session.add(user)
         session.commit()
         _, raw = AdminTokenService(session).create(user.id, "Claude Code")

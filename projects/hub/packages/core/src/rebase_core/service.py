@@ -24,14 +24,14 @@ class SignupService:
         email = data.email.strip().lower()
         existing = self._find(email)
         if existing is not None:
-            return _read(self._fill_in_what_is_missing(existing, data), nuova=False)
+            return _read(self._fill_in_what_is_missing(existing, data), is_new=False)
         # The same LinkedIn profile under another address is the same person (REB-800):
         # the form attaches to the row already on the list instead of adding a second
         # one, and answers as for a repeat. The address typed this time is not kept: it
         # is unverified, and the person is reachable at the one already on file.
         same_profile = self._find_by_linkedin(data.linkedin_url)
         if same_profile is not None:
-            return _read(same_profile, nuova=False)
+            return _read(same_profile, is_new=False)
 
         # The first attribution of an address is the one that stays: a person who comes
         # back through another ad and types the same email is the same person.
@@ -44,7 +44,7 @@ class SignupService:
         )
         row = Signup(
             email=email,
-            nome=data.nome,
+            first_name=data.first_name,
             last_name=data.last_name,
             linkedin_url=data.linkedin_url,
             ref=data.ref,
@@ -61,8 +61,8 @@ class SignupService:
             winner = self._find(email) or self._find_by_linkedin(data.linkedin_url)
             if winner is None:  # the clash was on something else: not ours to hide
                 raise
-            return _read(winner, nuova=False)
-        return _read(row, nuova=True)
+            return _read(winner, is_new=False)
+        return _read(row, is_new=True)
 
     def list_recent(self, limit: int = LIST_LIMIT_DEFAULT) -> SignupList:
         """Who is on the list, newest first.
@@ -108,7 +108,7 @@ class SignupService:
         already there.
         """
         changed = False
-        for field in ("nome", "last_name", "linkedin_url"):
+        for field in ("first_name", "last_name", "linkedin_url"):
             value = getattr(data, field)
             if value is not None and not (getattr(row, field) or "").strip():
                 if field == "linkedin_url" and self._find_by_linkedin(value) is not None:
@@ -129,5 +129,5 @@ class SignupService:
         return self.session.scalar(select(Signup).where(func.lower(Signup.linkedin_url) == key))
 
 
-def _read(row: Signup, *, nuova: bool) -> SignupRead:
-    return SignupRead.model_validate(row, from_attributes=True).model_copy(update={"new": nuova})
+def _read(row: Signup, *, is_new: bool) -> SignupRead:
+    return SignupRead.model_validate(row, from_attributes=True).model_copy(update={"new": is_new})

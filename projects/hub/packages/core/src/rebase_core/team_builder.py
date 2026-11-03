@@ -23,7 +23,7 @@ summary that they work remotely, from elsewhere or have not said, so the company
 the member's work mode is on every read for the same reason. That sentence names no place
 of a person: the public read withholds a summary that names a member's card place the
 description itself does not (`team_public.public_summary`), the way it withholds such a
-motivazione. When the checks drop everyone the model chose, its summary describes a team
+reasoning. When the checks drop everyone the model chose, its summary describes a team
 that is not there, and the hub's own sentence (`NO_FIT_SENTENCE`) takes its place; an
 empty catalogue asks nobody and answers that sentence at once, for free.
 
@@ -31,9 +31,9 @@ empty catalogue asks nobody and answers that sentence at once, for free.
 (`bands.py`), read when the proposal is read, and the team's bands are their sum; the
 model sees a band in the catalogue and never a rate.
 
-**Every ask is a row, answered or not** (0028, DECISIONS.md 2026-09-29). Ivan: «è
-importante salvare tutte le richieste dopo il click proponi team anche se non ancora
-finalizzate/inviate così raccogliamo metriche di uso». A proposal Claude answered was
+**Every ask is a row, answered or not** (0028, DECISIONS.md 2026-09-29). Ivan: every ask
+after the click on «propose a team» is worth saving, even when it is not yet
+finalised or sent, so that we collect usage metrics. A proposal Claude answered was
 always a row; an ask that ended in `LlmUnavailable`, or that the caps refused
 (`record_refusal`), is one too, with `error` set, an empty summary and nobody in it,
 so «Proposte» in the admin area counts what people asked for and never filed. Such a
@@ -192,7 +192,7 @@ class TeamBuilder:
                 user_id=user_id,
                 company_id=company_id,
                 summary=NO_FIT_SENTENCE,
-                location={"locale": False, "dove": None},
+                location={"on_site": False, "place": None},
                 team=[],
                 bands=[],
                 response=None,
@@ -387,11 +387,13 @@ class TeamBuilder:
         if not ids:
             return {}
         rows = self.session.execute(
-            select(Freelancer.id, User.nome, User.last_name)
+            select(Freelancer.id, User.first_name, User.last_name)
             .join(User, User.id == Freelancer.user_id)
             .where(Freelancer.id.in_(list(set(ids))), Freelancer.deleted_at.is_(None))
         ).all()
-        return {freelancer_id: (nome, last_name) for freelancer_id, nome, last_name in rows}
+        return {
+            freelancer_id: (first_name, last_name) for freelancer_id, first_name, last_name in rows
+        }
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -473,7 +475,7 @@ class TeamBuilder:
             note=data.note,
             previous_id=previous.id if previous is not None else None,
             summary="",
-            location={"locale": False, "dove": None},
+            location={"on_site": False, "place": None},
             team=[],
             economics=_economics(None, None, dump=True),
             model=NO_CALL_MODEL,
@@ -540,7 +542,7 @@ class TeamBuilder:
                 continue
             team.append(
                 {
-                    "posizione": len(team) + 1,
+                    "position": len(team) + 1,
                     "freelancer_id": str(freelancer_id),
                     "role": member.role,
                     "reasoning": member.reasoning,
@@ -569,9 +571,9 @@ class TeamBuilder:
         since the proposal is left out, and so is one whose stored card no longer
         validates, logged by position; the row keeps them all. The cloud's and the
         admin's read name each member (§ 4.2); the public read names nobody, and it
-        withholds the card's `location`, and with it any field of the card, a motivazione
+        withholds the card's `location`, and with it any field of the card, a reasoning
         and the summary that name that place (`public_card`, `public_reason`,
-        `public_summary`), and a `location.dove` the visitor did not write
+        `public_summary`), and a `location.place` the visitor did not write
         (`public_place`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[
@@ -585,7 +587,7 @@ class TeamBuilder:
                         Freelancer.remote,
                         Freelancer.daily_rate,
                         FreelancerCard.card,
-                        User.nome,
+                        User.first_name,
                         User.last_name,
                         Freelancer.seniority_admin,
                         Freelancer.experience_years_admin,
@@ -597,7 +599,7 @@ class TeamBuilder:
                     row.remote,
                     row.daily_rate,
                     row.card,
-                    row.nome,
+                    row.first_name,
                     row.last_name,
                     row.seniority_admin,
                     row.experience_years_admin,
@@ -612,36 +614,36 @@ class TeamBuilder:
                 logger.info(
                     "team proposal %s: member %s left out of the read: not in the catalogue",
                     row.id,
-                    stored["posizione"],
+                    stored["position"],
                 )
                 continue
-            remote, rate, card, nome, last_name, seniority_admin, experience_years_admin = found[
-                freelancer_id
-            ]
+            remote, rate, card, first_name, last_name, seniority_admin, experience_years_admin = (
+                found[freelancer_id]
+            )
             try:
-                scheda = card_read(card, seniority_admin, experience_years_admin)
+                member_card = card_read(card, seniority_admin, experience_years_admin)
             except ValidationError:
                 logger.warning(
                     "team proposal %s: member %s left out of the read: the card is not a card",
                     row.id,
-                    stored["posizione"],
+                    stored["position"],
                 )
                 continue
-            cards.append(scheda)
+            cards.append(member_card)
             members.append(
                 TeamMemberRead(
-                    posizione=stored["posizione"],
+                    position=stored["position"],
                     freelancer_id=None if public else freelancer_id,
-                    nome=None if public else nome,
+                    first_name=None if public else first_name,
                     last_name=None if public else last_name,
                     role=stored["role"],
                     reasoning=(
-                        public_reason(stored["reasoning"], scheda)
+                        public_reason(stored["reasoning"], member_card)
                         if public
                         else stored["reasoning"]
                     ),
                     week_days=stored["week_days"],
-                    card=public_card(scheda, stored["role"]) if public else scheda,
+                    card=public_card(member_card, stored["role"]) if public else member_card,
                     mode=remote,
                     band=band_for(rate),
                 )
@@ -653,7 +655,7 @@ class TeamBuilder:
             people=row.people,
             summary=(
                 public_summary(
-                    row.id, row.summary, row.location.get("dove"), row.description, cards
+                    row.id, row.summary, row.location.get("place"), row.description, cards
                 )
                 if public
                 else row.summary
@@ -687,11 +689,11 @@ def _list_member(
     """A stored member as «Proposte» lists it: named when still on file, by id alone
     once removed."""
     freelancer_id = UUID(stored["freelancer_id"])
-    nome, last_name = names.get(freelancer_id, (None, None))
+    first_name, last_name = names.get(freelancer_id, (None, None))
     return TeamProposalListMember(
-        posizione=stored["posizione"],
+        position=stored["position"],
         freelancer_id=freelancer_id,
         role=stored["role"],
-        nome=nome,
+        first_name=first_name,
         last_name=last_name,
     )

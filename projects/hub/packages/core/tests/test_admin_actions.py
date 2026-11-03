@@ -30,11 +30,11 @@ PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 def _application(email: str = "ada@studio.it", **extra: object) -> FreelancerCreate:
     payload: dict[str, object] = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "email": email,
         "daily_rate": Decimal("450.00"),
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "remote": "remote",
         "links": ["https://github.com/ada"],
     }
@@ -77,17 +77,17 @@ def clean(hub_session: Session) -> Session:
 
 
 def test_field_changes_is_empty_when_nothing_really_moved() -> None:
-    assert field_changes({"posizione": "Dev"}, {"posizione": "Dev"}) == {}
+    assert field_changes({"job_title": "Dev"}, {"job_title": "Dev"}) == {}
 
 
 def test_field_changes_records_only_the_keys_that_differ() -> None:
     delta = field_changes(
-        {"posizione": "Dev", "note": "vecchia"}, {"posizione": "Tech lead", "note": "vecchia"}
+        {"job_title": "Dev", "note": "vecchia"}, {"job_title": "Tech lead", "note": "vecchia"}
     )
     assert delta == {
-        "changed": ["posizione"],
-        "before": {"posizione": "Dev"},
-        "after": {"posizione": "Tech lead"},
+        "changed": ["job_title"],
+        "before": {"job_title": "Dev"},
+        "after": {"job_title": "Tech lead"},
     }
 
 
@@ -127,13 +127,13 @@ def test_reject_cleared_columns_refuses_null_on_a_not_null_column() -> None:
 
 
 def test_reject_cleared_columns_allows_null_on_a_nullable_column() -> None:
-    reject_cleared_columns("freelancer", Freelancer, {"posizione": None})
+    reject_cleared_columns("freelancer", Freelancer, {"job_title": None})
 
 
 def test_coerce_stored_value_rebuilds_decimal_and_date_from_their_stored_strings() -> None:
     assert coerce_stored_value(Freelancer, "daily_rate", "450.00") == Decimal("450.00")
     assert coerce_stored_value(Company, "period_from", "2026-10-01") == date(2026, 10, 1)
-    assert coerce_stored_value(Freelancer, "posizione", None) is None
+    assert coerce_stored_value(Freelancer, "job_title", None) is None
 
 
 # ---- overriding a freelancer's fields --------------------------------------------------
@@ -146,10 +146,10 @@ def test_override_sets_a_field_and_records_who_changed_what(clean: Session) -> N
 
     overridden = service.override(
         row.id,
-        FreelancerOverride(posizione="Tech lead", daily_rate=Decimal("600")),
+        FreelancerOverride(job_title="Tech lead", daily_rate=Decimal("600")),
         admin_id,
     )
-    assert (overridden.posizione, overridden.daily_rate) == (
+    assert (overridden.job_title, overridden.daily_rate) == (
         "Tech lead",
         Decimal("600.00"),
     )
@@ -158,9 +158,9 @@ def test_override_sets_a_field_and_records_who_changed_what(clean: Session) -> N
     assert len(trail) == 1
     entry = trail[0]
     assert (entry.kind, entry.admin_id, entry.admin_name) == ("overridden", admin_id, "Ivan")
-    assert set(entry.payload["changed"]) == {"posizione", "daily_rate"}
-    assert entry.payload["before"]["posizione"] == "Backend developer"
-    assert entry.payload["after"]["posizione"] == "Tech lead"
+    assert set(entry.payload["changed"]) == {"job_title", "daily_rate"}
+    assert entry.payload["before"]["job_title"] == "Backend developer"
+    assert entry.payload["after"]["job_title"] == "Tech lead"
 
 
 def test_override_moves_identity_onto_the_linked_user_row(clean: Session) -> None:
@@ -168,10 +168,10 @@ def test_override_moves_identity_onto_the_linked_user_row(clean: Session) -> Non
     row, _ = service.apply(_application())
     admin_id = an_admin(clean)
 
-    overridden = service.override(row.id, FreelancerOverride(nome="Grace"), admin_id)
-    assert overridden.nome == "Grace"
+    overridden = service.override(row.id, FreelancerOverride(first_name="Grace"), admin_id)
+    assert overridden.first_name == "Grace"
     user = clean.get(User, clean.get(Freelancer, row.id).user_id)
-    assert user is not None and user.nome == "Grace"
+    assert user is not None and user.first_name == "Grace"
 
 
 def test_override_clears_a_nullable_field_and_refuses_to_clear_a_required_one(
@@ -181,8 +181,8 @@ def test_override_clears_a_nullable_field_and_refuses_to_clear_a_required_one(
     row, _ = service.apply(_application())
     admin_id = an_admin(clean)
 
-    cleared = service.override(row.id, FreelancerOverride(posizione=None), admin_id)
-    assert cleared.posizione is None
+    cleared = service.override(row.id, FreelancerOverride(job_title=None), admin_id)
+    assert cleared.job_title is None
 
     with pytest.raises(ValidationFailed):
         service.override(row.id, FreelancerOverride(status=None), admin_id)
@@ -193,7 +193,7 @@ def test_override_with_no_real_change_writes_no_audit_entry(clean: Session) -> N
     row, _ = service.apply(_application())
     admin_id = an_admin(clean)
 
-    service.override(row.id, FreelancerOverride(posizione="Backend developer"), admin_id)
+    service.override(row.id, FreelancerOverride(job_title="Backend developer"), admin_id)
     assert service.audit_timeline(row.id) == []
 
 
@@ -222,10 +222,10 @@ def test_an_override_nobody_can_sign_is_refused_and_leaves_the_field_alone(
     row, _ = service.apply(_application())
 
     with pytest.raises(IntegrityError):
-        service.override(row.id, FreelancerOverride(posizione="Tech lead"), uuid4())
+        service.override(row.id, FreelancerOverride(job_title="Tech lead"), uuid4())
     clean.rollback()
 
-    assert clean.get(Freelancer, row.id).posizione == "Backend developer"  # type: ignore[union-attr]
+    assert clean.get(Freelancer, row.id).job_title == "Backend developer"  # type: ignore[union-attr]
 
 
 def test_clear_cv_drops_the_bytes_and_never_puts_them_in_the_audit_entry(clean: Session) -> None:
@@ -330,13 +330,13 @@ def test_revert_restores_a_field_to_its_value_before_the_named_action(clean: Ses
     service = FreelancerService(clean)
     row, _ = service.apply(_application())
     admin_id = an_admin(clean)
-    service.override(row.id, FreelancerOverride(posizione="Tech lead"), admin_id)
+    service.override(row.id, FreelancerOverride(job_title="Tech lead"), admin_id)
     action_id = service.audit_timeline(row.id)[0].id
 
     reverted = service.revert(row.id, action_id, admin_id)
-    assert reverted.posizione == "Backend developer"
+    assert reverted.job_title == "Backend developer"
     trail = service.audit_timeline(row.id)
-    assert len(trail) == 2 and trail[0].payload["after"]["posizione"] == "Backend developer"
+    assert len(trail) == 2 and trail[0].payload["after"]["job_title"] == "Backend developer"
 
 
 def test_revert_refuses_on_a_delete_or_restore_entry(clean: Session) -> None:
@@ -356,7 +356,7 @@ def test_revert_refuses_an_action_that_belongs_to_a_different_entity(clean: Sess
     row, _ = service.apply(_application())
     other, _ = service.apply(_application(email="bob@studio.it"))
     admin_id = an_admin(clean)
-    service.override(other.id, FreelancerOverride(posizione="Tech lead"), admin_id)
+    service.override(other.id, FreelancerOverride(job_title="Tech lead"), admin_id)
     other_action = service.audit_timeline(other.id)[0].id
 
     with pytest.raises(NotFound):
@@ -372,7 +372,7 @@ def test_company_override_touches_the_row_and_the_contact_person_identity(clean:
     admin_id = an_admin(clean)
 
     overridden = service.override(
-        row.id, CompanyOverride(nome="Coyote", daily_budget=Decimal("650")), admin_id
+        row.id, CompanyOverride(first_name="Coyote", daily_budget=Decimal("650")), admin_id
     )
     assert overridden.contact_person.startswith("Coyote")
     assert overridden.daily_budget == Decimal("650.00")
@@ -544,7 +544,7 @@ def test_the_default_trail_is_best_effort_and_the_transactional_one_is_not(clean
     clean.rollback()
 
     entry = AdminActionService(clean).record(
-        "freelancer", uuid4(), "overridden", admin, {"changed": ["posizione"]}, commit=False
+        "freelancer", uuid4(), "overridden", admin, {"changed": ["job_title"]}, commit=False
     )
     assert entry is not None
     clean.rollback()  # never committed: the caller's transaction decides
@@ -564,7 +564,7 @@ def test_an_identity_override_and_its_entry_share_one_transaction(
 
     monkeypatch.setattr(AdminActionService, "record", refuse)
     with pytest.raises(RuntimeError):
-        FreelancerService(clean).override(read.id, FreelancerOverride(nome="Augusta"), admin)
+        FreelancerService(clean).override(read.id, FreelancerOverride(first_name="Augusta"), admin)
     clean.rollback()
 
-    assert clean.get(User, clean.get(Freelancer, read.id).user_id).nome == "Ada"  # type: ignore[union-attr]
+    assert clean.get(User, clean.get(Freelancer, read.id).user_id).first_name == "Ada"  # type: ignore[union-attr]

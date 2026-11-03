@@ -38,14 +38,14 @@ export function AdminAgents() {
     itemsOf: pageItems,
   })
 
-  const [nome, setNome] = useState(DEFAULT_NAME)
+  const [name, setName] = useState(DEFAULT_NAME)
   const [issued, setIssued] = useState<CreatedToken | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const create = useMutation({
     mutationFn: (name: string) => admin.createToken(name),
     onSuccess: (created) => {
       setIssued(created)
-      setNome(DEFAULT_NAME)
+      setName(DEFAULT_NAME)
       void client.invalidateQueries({ queryKey: keys.tokens() })
     },
   })
@@ -63,7 +63,7 @@ export function AdminAgents() {
 
   function mint(event: FormEvent) {
     event.preventDefault()
-    create.mutate(nome.trim() || DEFAULT_NAME)
+    create.mutate(name.trim() || DEFAULT_NAME)
   }
 
   async function copy(text: string, what: string) {
@@ -88,7 +88,7 @@ export function AdminAgents() {
           />
           {issued ? (
             <div className="space-y-2">
-              <Label htmlFor="mcp-token">Token «{issued.nome}»</Label>
+              <Label htmlFor="mcp-token">Token «{issued.name}»</Label>
               <div className="flex gap-2">
                 <Input id="mcp-token" readOnly value={issued.token} className="font-mono text-xs" />
                 <Button type="button" variant="outline" size="icon" aria-label="Copia il token" onClick={() => copy(issued.token, 'Il token')}>
@@ -103,14 +103,14 @@ export function AdminAgents() {
           ) : (
             <form onSubmit={mint} className="space-y-2">
               <p className="text-sm text-muted-foreground">Serve un token di accesso: viene mostrato una volta sola.</p>
-              <Label htmlFor="mcp-token-nome">Nome del token</Label>
+              <Label htmlFor="mcp-token-name">Nome del token</Label>
               <div className="flex gap-2">
                 <Input
-                  id="mcp-token-nome"
+                  id="mcp-token-name"
                   maxLength={120}
                   autoComplete="off"
-                  value={nome}
-                  onChange={(event) => setNome(event.target.value)}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
                 />
                 <Button type="submit" disabled={create.isPending}>
                   {create.isPending ? 'Creo…' : 'Crea il token'}
@@ -187,7 +187,7 @@ export function AdminAgents() {
                     {items.map((row: AdminToken) => (
                       <TableRow key={row.id}>
                         <TableCell>
-                          <p className="font-medium">{row.nome}</p>
+                          <p className="font-medium">{row.name}</p>
                           <p className="font-mono text-xs text-muted-foreground">{row.prefix}…</p>
                           {row.expires_at && (
                             <p className="text-xs text-muted-foreground">Scade il {formatDate(row.expires_at)}</p>
@@ -210,7 +210,7 @@ export function AdminAgents() {
                               onClick={() => revoke.mutate(row.id)}
                             >
                               Revoca
-                              <span className="sr-only"> {row.nome}</span>
+                              <span className="sr-only"> {row.name}</span>
                             </Button>
                           )}
                         </TableCell>

@@ -20,8 +20,8 @@ from rebase_core.mail import RESEND_URL
 # row's. `dettaglio` keeps which quota, so the page can say when the rest leaves.
 Outcome = Literal["accepted", "retry", "rejected", "stop", "quota"]
 
-SHARE_DAILY = "daily_quota_exceeded"
-SHARE_MONTHLY = "monthly_quota_exceeded"
+QUOTA_DAILY = "daily_quota_exceeded"
+QUOTA_MONTHLY = "monthly_quota_exceeded"
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class ResendCampaignSender:
         name = _field(raw, "name")
         if status == 409 and name == "concurrent_idempotent_requests":
             return SendOutcome("retry", detail=name)
-        if status == 429 and name in (SHARE_DAILY, SHARE_MONTHLY):
+        if status == 429 and name in (QUOTA_DAILY, QUOTA_MONTHLY):
             return SendOutcome("quota", detail=name)
         if status == 429 or status >= 500:
             return SendOutcome("retry", detail=f"Resend {status}")

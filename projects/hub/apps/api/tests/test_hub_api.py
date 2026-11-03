@@ -23,11 +23,11 @@ PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
 def _form(**overrides: str) -> dict[str, str]:
     form = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "email": "ada@studio.it",
         "daily_rate": "450,00",
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "remote": "remote",
         "utm_source": "linkedin",
     }
@@ -55,7 +55,7 @@ def test_an_application_with_a_cv_is_accepted_and_stored(
     assert response.json() == {"ok": True}
     row = api_session.execute(
         text(
-            "SELECT u.email AS email, f.tariffa_giornaliera, f.cv_filename, f.cv_size, "
+            "SELECT u.email AS email, f.daily_rate, f.cv_filename, f.cv_size, "
             "f.links, f.utm_source "
             "FROM freelancers f JOIN users u ON u.id = f.user_id"
         )
@@ -80,7 +80,7 @@ def test_a_rate_typed_with_italian_thousands_is_stored_as_that_number(
         files={"cv": ("cv.pdf", PDF, "application/pdf")},
     )
     assert response.status_code == 201, response.text
-    rate = api_session.execute(text("SELECT tariffa_giornaliera FROM freelancers")).scalar_one()
+    rate = api_session.execute(text("SELECT daily_rate FROM freelancers")).scalar_one()
     assert str(rate) == stored
 
 
@@ -134,7 +134,7 @@ def test_the_page_the_person_started_from_is_stored_beside_the_campaign(
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
     assert accepted.status_code == 201, accepted.text
-    row = api_session.execute(text("SELECT origine, utm_source FROM freelancers")).one()
+    row = api_session.execute(text("SELECT origin, utm_source FROM freelancers")).one()
     assert (row.origin, row.utm_source) == ("pigrocrm", "linkedin")
 
     refused = client.post(
@@ -164,7 +164,7 @@ def test_the_page_the_person_started_from_is_stored_beside_the_campaign(
         },
     )
     assert company.status_code == 201, company.text
-    assert api_session.execute(text("SELECT origine FROM companies")).scalar() == "home"
+    assert api_session.execute(text("SELECT origin FROM companies")).scalar() == "home"
 
 
 def test_a_cv_that_is_not_a_pdf_is_a_422_that_names_the_field(
@@ -222,13 +222,13 @@ def _card_and_identity(session: Session) -> tuple[object, ...]:
     the join, combined into one tuple a before/after snapshot can compare whole."""
     card = session.execute(
         text(
-            "SELECT tariffa_giornaliera, posizione, remoto, links, compilata_da, "
+            "SELECT daily_rate, job_title, remote, links, filled_by, "
             "cv_bytes, cv_filename, cv_mime, cv_size FROM freelancers"
         )
     ).one()
     identity = session.execute(
         text(
-            "SELECT u.nome, u.cognome, u.linkedin_url "
+            "SELECT u.first_name, u.last_name, u.linkedin_url "
             "FROM freelancers f JOIN users u ON u.id = f.user_id"
         )
     ).one()
@@ -239,7 +239,7 @@ def test_a_repeated_application_leaves_the_existing_card_unchanged(
     client: TestClient, api_session: Session
 ) -> None:
     """REB-272: this route is public and unauthenticated, so a second post to the same
-    address proves nothing about who sent it. Every field, `compilata_da` and the CV
+    address proves nothing about who sent it. Every field, `filled_by` and the CV
     bytes stay exactly as the first application left them, and the answer is still the
     same mute 201."""
     _clean(api_session)
@@ -250,7 +250,7 @@ def test_a_repeated_application_leaves_the_existing_card_unchanged(
     before = _card_and_identity(api_session)
     again = client.post(
         "/api/hub/freelancers",
-        data=_form(posizione="Tech lead", daily_rate="900,00"),
+        data=_form(job_title="Tech lead", daily_rate="900,00"),
         files={"cv": ("evil.pdf", PDF + b"v2", "application/pdf")},
     )
     assert again.status_code == 201, again.text
@@ -273,7 +273,7 @@ def test_a_repeated_application_sends_the_existing_card_a_magic_link_mail(
         == 201
     )
     assert sender.sent == []
-    again = client.post("/api/hub/freelancers", data=_form(posizione="Tech lead"))
+    again = client.post("/api/hub/freelancers", data=_form(job_title="Tech lead"))
     assert again.status_code == 201, again.text
     assert len(sender.sent) == 1
     mail = sender.sent[0]
@@ -321,7 +321,7 @@ def test_a_company_request_is_accepted_and_the_answer_says_nothing_else(
     assert response.status_code == 201, response.text
     assert response.json() == {"ok": True}
     row = api_session.execute(
-        text("SELECT nome_azienda, periodo_da, utm_source FROM companies")
+        text("SELECT company_name, period_from, utm_source FROM companies")
     ).one()
     assert (row.company_name, str(row.period_from), row.utm_source) == (
         "ACME Srl",
@@ -355,7 +355,7 @@ def test_the_three_public_writes_share_one_budget_per_client(
     assert (
         client.post(
             "/api/community/signups",
-            json={"email": "ada@studio.it", "nome": "Ada", "last_name": "L"},
+            json={"email": "ada@studio.it", "first_name": "Ada", "last_name": "L"},
         ).status_code
         == 201
     )
@@ -372,7 +372,7 @@ def test_one_ipv6_range_shares_one_budget_however_many_addresses_it_owns(
     """A /64 is one subscriber's whole allocation: keyed on the full address it would hand a
     script a fresh budget per request."""
     _clean(api_session)
-    body = {"email": "ada@studio.it", "nome": "Ada", "last_name": "L"}
+    body = {"email": "ada@studio.it", "first_name": "Ada", "last_name": "L"}
     for index in range(SIGNUPS_PER_MINUTE):
         sent = client.post(
             "/api/community/signups",

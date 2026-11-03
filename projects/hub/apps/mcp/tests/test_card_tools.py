@@ -25,7 +25,13 @@ def _ensure_admin(session: Session) -> UUID:
     """IVAN as a `users` row: a note and a trail entry name who wrote them, by foreign key."""
     if session.get(User, IVAN.id) is None:
         session.add(
-            User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, last_name="Sala", role="admin")
+            User(
+                id=IVAN.id,
+                email=IVAN.email,
+                first_name=IVAN.first_name,
+                last_name="Sala",
+                role="admin",
+            )
         )
         session.commit()
     return IVAN.id
@@ -43,11 +49,11 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
     try:
         with_cv, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
+                first_name="Ada",
                 last_name="Lovelace",
                 email="ada@studio.it",
                 daily_rate=Decimal("450"),
-                posizione="Backend developer",
+                job_title="Backend developer",
                 remote="remote",
             ),
             guide_bytes(),
@@ -63,9 +69,9 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
         without_cv = FreelancerService(session).draft_from_signup(
             signup_id,
             FreelancerDraft(
-                nome="Grace",
+                first_name="Grace",
                 last_name="Hopper",
-                posizione="Compiler engineer",
+                job_title="Compiler engineer",
                 sources=["https://example.com/grace"],
             ),
             _ensure_admin(session),
@@ -79,9 +85,9 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
             await client.call_tool("read_freelancer_cv", {"freelancer_id": str(with_cv.id)})
         )
         assert read["filename"] == "cv.pdf"
-        assert read["pagine"] == 6
+        assert read["pages"] == 6
         assert "prima fattura" in read["text"]
-        assert read["troncato"] is False
+        assert read["truncated"] is False
 
         refused = await client.call_tool(
             "read_freelancer_cv", {"freelancer_id": str(without_cv.id)}
@@ -125,7 +131,7 @@ async def test_the_model_is_asked_on_each_call_not_when_the_server_is_built(
         IVAN.id,
     )
     assert action.payload["source"] == "mcp" and action.payload["bulk"] is False
-    assert (action.payload["outcome"], action.payload["model"]) == ("scritta", MODEL)
+    assert (action.payload["outcome"], action.payload["model"]) == ("written", MODEL)
     assert "start_action_id" not in action.payload
     _wipe(factory)
 
@@ -195,7 +201,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
         )
         assert refused.is_error
 
-        listed = _payload(await client.call_tool("list_talents", {"fields": ["tutti"]}))
+        listed = _payload(await client.call_tool("list_talents", {"fields": ["all"]}))
         assert listed["items"][0]["has_anonymous_card"] is True
         detail = _payload(await client.call_tool("get_talent", {"talent_id": freelancer_id}))
         assert detail["has_anonymous_card"] is True

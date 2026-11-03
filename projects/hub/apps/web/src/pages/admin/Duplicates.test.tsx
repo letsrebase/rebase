@@ -17,31 +17,31 @@ function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function person(id: string, nome: string, last_name: string, extra: Partial<DuplicatePerson> = {}): DuplicatePerson {
+function person(id: string, firstName: string, last_name: string, extra: Partial<DuplicatePerson> = {}): DuplicatePerson {
   return {
     freelancer_id: id,
     user_id: `u-${id}`,
-    nome,
+    first_name: firstName,
     last_name,
-    email: `${nome.toLowerCase()}@${id}.it`,
+    email: `${firstName.toLowerCase()}@${id}.it`,
     created_at: '2026-09-10T10:00:00Z',
     cv_uploaded_at: null,
-    ha_cv: false,
+    has_cv: false,
     ...extra,
   }
 }
 
 /** The newer CV is on Grace's card, so she stays; Ada's is older. */
 const LINKED: DuplicatePair = {
-  survivor: person('f2', 'Grace', 'Hopper', { ha_cv: true, cv_uploaded_at: '2026-10-02T09:00:00Z' }),
-  absorbed: person('f1', 'Ada', 'Lovelace', { ha_cv: true, cv_uploaded_at: '2026-09-11T09:00:00Z' }),
+  survivor: person('f2', 'Grace', 'Hopper', { has_cv: true, cv_uploaded_at: '2026-10-02T09:00:00Z' }),
+  absorbed: person('f1', 'Ada', 'Lovelace', { has_cv: true, cv_uploaded_at: '2026-09-11T09:00:00Z' }),
   signals: ['linkedin'],
   mergeable: true,
 }
 const SAME_NAME: DuplicatePair = {
   survivor: person('f4', 'Marco', 'Rossi'),
   absorbed: person('f3', 'Marco', 'Rossi'),
-  signals: ['nome', 'phone'],
+  signals: ['first_name', 'phone'],
   mergeable: false,
 }
 const BOTH: DuplicateList = { mergeable: [LINKED], from_review: [SAME_NAME], signups: 0 }
@@ -52,9 +52,9 @@ const MERGED: MergeResult = {
   absorbed_freelancer_id: 'f1',
   action_id: 'act-1',
   moved: { logins: 3, comments: 2, matches: 1 },
-  left: {},
-  cv: 'invariato',
-  card_from_regenerate: true,
+  left_behind: {},
+  cv: 'kept',
+  card_to_regenerate: true,
 }
 
 function mount() {

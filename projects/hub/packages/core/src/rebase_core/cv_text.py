@@ -4,7 +4,7 @@ against a request without leaving the MCP (ORB-206).
 Extraction happens on read, not at upload: a CV weighs five megabytes at most and there
 are a few dozen, so the work is cheap, and a text computed on the way out can never fall
 behind the bytes it came from. No OCR: a scanned CV answers empty text and says so
-through `pagine`, so the caller can tell a scan from a card without a file.
+through `pages`, so the caller can tell a scan from a card without a file.
 
 The parse runs in a child process (`cv_text_worker`), never in the caller's (REB-889): the
 file is whatever a stranger uploaded, and `pypdf` has no time or memory bound of its own.
@@ -93,9 +93,9 @@ def extract_text(
         read = json.loads(done.stdout)
         return CvText(
             filename=filename,
-            pages=read["pagine"],
+            pages=read["pages"],
             text=read["text"],
-            truncated=read["troncato"],
+            truncated=read["truncated"],
         )
     except (ValueError, KeyError, TypeError):
         logger.warning("CV text not read: the parser's answer was not the shape")

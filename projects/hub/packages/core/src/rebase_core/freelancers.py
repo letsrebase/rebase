@@ -63,7 +63,7 @@ PDF_MAGIC = b"%PDF-"
 # The three fields a freelancer card shares with its `users` row (REB-281): an override
 # of one of these lands on the identity, never on the card, the same split
 # `rebase_core.members`' own `_IDENTITY_FIELDS` keeps for a self-edit.
-_ADMIN_IDENTITY_FIELDS = ("nome", "last_name", "linkedin_url")
+_ADMIN_IDENTITY_FIELDS = ("first_name", "last_name", "linkedin_url")
 # The sentence `apply` asks for in the magic-link mail sent instead of overwriting an
 # address already on file (REB-272): one more line in `magic_link_mail`'s voice, not a
 # mail of its own.
@@ -124,7 +124,7 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         cv_mime=row.cv_mime,
         cv_size=row.cv_size,
         links=list(row.links),
-        compilata_da=row.compilata_da,
+        filled_by=row.filled_by,
         origin=row.origin,
         utm_medium=row.utm_medium,
         utm_campaign=row.utm_campaign,
@@ -232,7 +232,7 @@ class FreelancerService:
             return freelancer_read(row, owner), False
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         user = UserService(self.session).get_or_create(
-            email, data.nome, data.last_name, data.linkedin_url
+            email, data.first_name, data.last_name, data.linkedin_url
         )
         row = Freelancer(user_id=user.id, **utm)
         self.session.add(row)
@@ -246,10 +246,10 @@ class FreelancerService:
             )
             row.cv_uploaded_at = utcnow()
         row.daily_rate = data.daily_rate
-        row.posizione = data.posizione
+        row.job_title = data.job_title
         row.remote = data.remote
         row.links = list(data.links)
-        row.compilata_da = "person"
+        row.filled_by = "person"
         try:
             # The card and its referral are one commit (REB-566): `apply` never writes a
             # card a retry would then skip, leaving it without the referral it came with.
@@ -282,7 +282,7 @@ class FreelancerService:
             raise NotFound("signup", signup_id)
         email = signup.email.strip().lower()
         row = self._find(email)
-        if row is not None and row.compilata_da == "person":
+        if row is not None and row.filled_by == "person":
             raise ValidationFailed(ENTITY, "email", "la persona ha già compilato la sua scheda")
         created = row is None
         if row is None:
@@ -292,7 +292,7 @@ class FreelancerService:
             if holder is not None and (owner is None or holder.id != owner.id):
                 raise ValidationFailed(ENTITY, "linkedin_url", LINKEDIN_HAS_CARD)
             user = UserService(self.session).get_or_create(
-                email, data.nome, data.last_name, data.linkedin_url
+                email, data.first_name, data.last_name, data.linkedin_url
             )
             row = Freelancer(user_id=user.id, **utm)
             self.session.add(row)
@@ -302,16 +302,16 @@ class FreelancerService:
             existing_user = self.session.get(User, row.user_id)
             if existing_user is not None:
                 UserService(self.session).require_free_linkedin(existing_user.id, data.linkedin_url)
-                existing_user.nome, existing_user.last_name, existing_user.linkedin_url = (
-                    data.nome,
+                existing_user.first_name, existing_user.last_name, existing_user.linkedin_url = (
+                    data.first_name,
                     data.last_name,
                     data.linkedin_url,
                 )
-        row.posizione = data.posizione
+        row.job_title = data.job_title
         row.daily_rate = data.daily_rate
         row.remote = data.remote
         row.links = list(data.links)
-        row.compilata_da = "admin"
+        row.filled_by = "admin"
         try:
             # The referral the visitor arrived with (REB-554) is made with the card, in one
             # commit, the way `apply` does: pending until the person's first magic-link
@@ -363,8 +363,8 @@ class FreelancerService:
         return FreelancerList(
             total=total,
             items=[
-                _read_with_logins(row, user, accessi, last, signed_up)
-                for row, user, accessi, last, signed_up in rows
+                _read_with_logins(row, user, login_count, last, signed_up)
+                for row, user, login_count, last, signed_up in rows
             ],
             total_lead=total_lead,
             lead=lead,
@@ -407,8 +407,8 @@ class FreelancerService:
         signup_row = self.session.scalar(
             select(Signup).where(func.lower(Signup.email) == user.email.lower())
         )
-        accessi, last = counted if counted is not None else (None, None)
-        read = _read_with_logins(row, user, accessi, last, signup_row)
+        login_count, last = counted if counted is not None else (None, None)
+        read = _read_with_logins(row, user, login_count, last, signup_row)
         read.note = NoteService(self.session).list(ENTITY, freelancer_id)
         detail = FreelancerDetail.model_validate(read)
         detail.signup_utm = _signup_utm(signup_row)
@@ -666,7 +666,7 @@ class FreelancerService:
                 .select_from(Freelancer)
                 .where(
                     Freelancer.cv_uploaded_at >= since,
-                    Freelancer.compilata_da == "person",
+                    Freelancer.filled_by == "person",
                 )
             )
             or 0

@@ -65,8 +65,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         cloud (e, nelle righe più vecchie, da un admin), dalla più recente, anche quando
         nessuna richiesta è poi stata inviata: la descrizione del progetto, quante
         persone sono state chieste, la nota di un «Rigenera», chi l'ha chiesto, il
-        riassunto, quanti membri aveva la proposta e chi erano (`team`: posizione,
-        `freelancer_id`, ruolo proposto, nome e cognome, vuoti per un talento nel
+        riassunto, quanti membri aveva la proposta e chi erano (`team`: `position`,
+        `freelancer_id`, `role` proposto, `first_name` e `last_name`, vuoti per un talento nel
         frattempo eliminato), e `request_id` della richiesta «Assumi team» se c'è.
         `error` è vuoto su una
         proposta che ha risposto e il codice del rifiuto (`llm_unavailable`,

@@ -3,7 +3,7 @@ import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
 import type { CampaignAction, CampaignMeta } from '@/lib/api'
-import { ActionLabels, CAMPAIGN_MAX_LENGTH } from '@/lib/campaigns'
+import { ACTION_LABELS, CAMPAIGN_MAX_LENGTH } from '@/lib/campaigns'
 import { linkProblem, metaOptions, type CampaignForm } from './form'
 
 /** Messaggio (REB-526): what the mail says and where its button leads. The preview
@@ -29,47 +29,47 @@ export function Message({
   // write in it, and the header says the draft waits for it.
   const problem = link ? ((form.buttonUrl.trim() !== '' ? linkProblem(form) : null) ?? linkRefused) : null
   return (
-    <section aria-labelledby="campagna-messaggio" className="space-y-4">
-      <h2 id="campagna-messaggio" className="text-lg font-semibold">
+    <section aria-labelledby="campaign-message" className="space-y-4">
+      <h2 id="campaign-message" className="text-lg font-semibold">
         Messaggio
       </h2>
       <div className="space-y-1.5">
-        <Label htmlFor="campagna-oggetto">Oggetto</Label>
+        <Label htmlFor="campaign-subject">Oggetto</Label>
         <Input
-          id="campagna-oggetto"
+          id="campaign-subject"
           maxLength={CAMPAIGN_MAX_LENGTH.subject}
           value={form.subject}
           onChange={(event) => onChange({ subject: event.target.value })}
         />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="campagna-testo">Testo</Label>
+        <Label htmlFor="campaign-text">Testo</Label>
         <Textarea
-          id="campagna-testo"
+          id="campaign-text"
           rows={10}
           maxLength={CAMPAIGN_MAX_LENGTH.text}
-          aria-describedby="campagna-testo-aiuto"
+          aria-describedby="campaign-text-help"
           value={form.text}
           onChange={(event) => onChange({ text: event.target.value })}
         />
-        <p id="campagna-testo-aiuto" className="text-xs text-muted-foreground">
+        <p id="campaign-text-help" className="text-xs text-muted-foreground">
           {'{nome}'} diventa il nome della persona. Una riga vuota separa i paragrafi.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="campagna-bottone-testo">Testo del bottone</Label>
+          <Label htmlFor="campaign-button-text">Testo del bottone</Label>
           <Input
-            id="campagna-bottone-testo"
+            id="campaign-button-text"
             maxLength={CAMPAIGN_MAX_LENGTH.button_text}
             value={form.buttonText}
             onChange={(event) => onChange({ buttonText: event.target.value })}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="campagna-bottone-meta">Dove porta</Label>
+          <Label htmlFor="campaign-button-meta">Dove porta</Label>
           <Select value={form.buttonMeta} onValueChange={(value) => onMeta(value as CampaignMeta)}>
-            <SelectTrigger id="campagna-bottone-meta" className="w-full">
+            <SelectTrigger id="campaign-button-meta" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -84,18 +84,18 @@ export function Message({
       </div>
       {link && (
         <div className="space-y-1.5">
-          <Label htmlFor="campagna-bottone-url">Indirizzo del link</Label>
+          <Label htmlFor="campaign-button-url">Indirizzo del link</Label>
           <Input
-            id="campagna-bottone-url"
+            id="campaign-button-url"
             type="url"
             placeholder="https://lu.ma/…"
             maxLength={CAMPAIGN_MAX_LENGTH.button_url}
             aria-invalid={problem !== null}
-            aria-describedby="campagna-bottone-url-aiuto"
+            aria-describedby="campaign-button-url-help"
             value={form.buttonUrl}
             onChange={(event) => onLink(event.target.value)}
           />
-          <p id="campagna-bottone-url-aiuto" className={problem ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+          <p id="campaign-button-url-help" className={problem ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
             {problem ?? 'Una pagina fuori dal hub: un evento su Luma, un gruppo WhatsApp, un modulo. Deve iniziare con https://.'}
           </p>
         </div>
@@ -104,19 +104,19 @@ export function Message({
         // Of a page the hub does not own, the click is all it sees (REB-530).
         <div className="space-y-1">
           <p className="text-sm">
-            <span className="text-muted-foreground">Cosa misuriamo:</span> {ActionLabels.click}
+            <span className="text-muted-foreground">Cosa misuriamo:</span> {ACTION_LABELS.click}
           </p>
           <p className="text-xs text-muted-foreground">Di una pagina fuori dal hub vediamo solo il clic sul bottone.</p>
         </div>
       ) : form.source === 'filters' ? (
         <div className="max-w-sm space-y-1.5">
-          <Label htmlFor="campagna-azione">Cosa misuriamo</Label>
+          <Label htmlFor="campaign-action">Cosa misuriamo</Label>
           <Select value={form.action} onValueChange={(value) => onChange({ action: value as CampaignAction })}>
-            <SelectTrigger id="campagna-azione" className="w-full">
+            <SelectTrigger id="campaign-action" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(ActionLabels)
+              {Object.entries(ACTION_LABELS)
                 .filter(([value]) => value !== 'pigro_customer' && value !== 'click')
                 .map(([value, label]) => (
                   <SelectItem key={value} value={value}>
@@ -133,7 +133,7 @@ export function Message({
         // state is picked.
         (form.source === 'list' || form.journeyStatus !== null) && (
           <p className="text-sm">
-            <span className="text-muted-foreground">Cosa misuriamo:</span> {ActionLabels[form.action]}
+            <span className="text-muted-foreground">Cosa misuriamo:</span> {ACTION_LABELS[form.action]}
           </p>
         )
       )}

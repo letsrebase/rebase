@@ -16,7 +16,7 @@ limits before it leaves, so a long value never becomes a permanent 422.
 
 Who runs it: a `BackgroundTasks` job right after the response (`link_after_response`), on
 every path that writes a request; `link_pending`, the recovery round of `rebase
-contracts-sweep`, which picks up only the rows in `da_collegare` or `errore` that are not
+contracts-sweep`, which picks up only the rows in `to_link` or `error` that are not
 being attempted right now (a row written before this shipped has a `NULL` state and is
 never picked up); and an admin's «Riprova», or «Collega a un altro deal» with a `deal_id`,
 which makes the door link that deal and create nothing. A request changed after it was
@@ -80,7 +80,7 @@ NOT_CONFIGURED = (
     "Il CRM non è configurato su questo ambiente: manca REBASE_PIGRO_ENGAGEMENTS_TOKEN."
 )
 NO_DRAFT_NOTE = "Nessuna bozza AI: il modello non ha risposto, la scheda è da compilare a mano."
-REMOTE_WORDS = {"remote": "da remoto", "hybrid": "hybrid", "on_site": "in sede"}
+REMOTE_WORDS = {"remote": "da remoto", "hybrid": "ibrido", "on_site": "in sede"}
 
 
 def _cut(value: str | None, limit: int) -> str | None:
@@ -123,7 +123,7 @@ class _Sent(NamedTuple):
     remote: str
     onsite_days: int | None
     headcount: int
-    nome: str
+    first_name: str
     last_name: str
     email: str
     phone: str | None
@@ -175,26 +175,26 @@ class CrmLeadService:
     # ---- the body ----------------------------------------------------------------------
 
     def payload(self, sent: _Sent, draft: LeadDraft | None, deal_id: UUID | None) -> dict[str, Any]:
-        """The door's `PUT` body (spec § 2, § 3): the company's name, the referente, the
+        """The door's `PUT` body (spec § 2, § 3): the company's name, the `referente`, the
         deal as built here, and `deal_id` for a request linked to a deal the CRM has.
-        Refused with `_NotAsked` for a referente with no name, which the door would refuse
+        Refused with `_NotAsked` for a `referente` with no name, which the door would refuse
         in English: `link` records it as `error`, so a retry after it is completed works."""
-        nome = _cut(sent.nome, PERSON_NAME_MAX)
-        if nome is None:
+        first_name = _cut(sent.first_name, PERSON_NAME_MAX)
+        if first_name is None:
             raise _NotAsked(CONTACT_PERSON_WITHOUT_NAME)
         role = draft.role if draft is not None else ""
         deal: dict[str, Any] = {
-            "nome": (f"{sent.company_name}: {role or sent.requested_role}")[:DEAL_NAME_MAX],
+            "name": (f"{sent.company_name}: {role or sent.requested_role}")[:DEAL_NAME_MAX],
             "expected_value": self._value(sent, draft),
             "expected_close_date": (
                 sent.period_from.isoformat() if sent.period_from > self.today() else None
             ),
-            "note": self._note(sent, draft),
+            "notes": self._note(sent, draft),
         }
         return {
             "company": sent.company_name[:COMPANY_MAX],
-            "contact_person": {
-                "nome": nome,
+            "contact": {
+                "first_name": first_name,
                 "last_name": _cut(sent.last_name, PERSON_NAME_MAX),
                 "email": sent.email,
                 "phone": _cut(sent.phone, PHONE_MAX),
@@ -223,9 +223,9 @@ class CrmLeadService:
     def _note(self, sent: _Sent, draft: LeadDraft | None) -> str:
         """Two blocks, in Italian: what the company wrote, `project` verbatim, and the
         AI's draft under its own heading."""
-        modo = REMOTE_WORDS.get(sent.remote, sent.remote)
+        mode = REMOTE_WORDS.get(sent.remote, sent.remote)
         if sent.onsite_days is not None:
-            modo += f", {sent.onsite_days} giorni a settimana in sede"
+            mode += f", {sent.onsite_days} giorni a settimana in sede"
         hub = f"{self.settings.hub_url.rstrip('/')}/admin/companies/{sent.company_id}"
         written = [
             "Richiesta arrivata dall'hub di rebase.",
@@ -236,7 +236,7 @@ class CrmLeadService:
             f"Inizio desiderato: {sent.period_from.strftime('%d/%m/%Y')}",
             f"Durata: {sent.duration}",
             f"Budget giornaliero: {sent.daily_budget:.2f} €",
-            f"Modalità: {modo}",
+            f"Modalità: {mode}",
             f"Richiesta sull'hub: {hub}",
             "",
             "Progetto, come l'ha scritto l'azienda:",
@@ -390,7 +390,7 @@ class CrmLeadService:
             if not self.configured:
                 _log.info(
                     "no REBASE_PIGRO_ENGAGEMENTS_TOKEN on this environment: request %s waits "
-                    "as da_collegare",
+                    "as to_link",
                     company_id,
                 )
                 return None
@@ -408,7 +408,7 @@ class CrmLeadService:
                 remote=row.remote,
                 onsite_days=row.onsite_days,
                 headcount=row.headcount,
-                nome=user.nome,
+                first_name=user.first_name,
                 last_name=user.last_name,
                 email=user.email,
                 phone=user.phone,
@@ -451,7 +451,7 @@ class CrmLeadService:
 
     @staticmethod
     def _write(row: Company, outcome: Outcome[_Lead]) -> None:
-        write(row, outcome, state="crm_status", error="crm_errore", copy=_copy_lead)
+        write(row, outcome, state="crm_status", error="crm_error", copy=_copy_lead)
 
     def _record(
         self, admin_id: UUID | None, company_id: UUID, outcome: Outcome[_Lead], deal_id: UUID | None

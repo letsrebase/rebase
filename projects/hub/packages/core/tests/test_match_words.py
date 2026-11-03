@@ -558,14 +558,14 @@ def test_a_match_state_the_words_do_not_know_still_names_its_letter() -> None:
 # ---- the check before saving ----------------------------------------------------------
 
 
-def _letter(**change: object) -> LetterFields:
+def _letter_fields(**change: object) -> LetterFields:
     fields: dict[str, object] = {
         "role": "Backend developer",
         "activities": "Le API del prodotto.",
         "start_date": date(2026, 10, 1),
         "fee": Decimal("450"),
         "mode": "to_work_unit",
-        "unit": "to_work_unit",
+        "unit": "a giornata",
         "payment_days": 30,
         "month_end": True,
     }
@@ -577,7 +577,7 @@ def test_the_check_of_a_day_rate_names_the_person_the_client_the_period_and_the_
     recap, what_happens = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(location="da remoto", data_fine=date(2026, 12, 31), commitment="3 mesi"),
+        _letter_fields(location="da remoto", end_date=date(2026, 12, 31), commitment="3 mesi"),
         "to_send",
         missing_tax_data=False,
     )
@@ -596,7 +596,7 @@ def test_the_check_of_a_lump_sum_without_the_optional_lines_and_without_tax_data
     recap, what_happens = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(
+        _letter_fields(
             fee=Decimal("12000.5"),
             mode="to_body",
             unit=None,
@@ -619,7 +619,7 @@ def test_the_check_of_a_lump_sum_without_the_optional_lines_and_without_tax_data
 
 def test_the_check_with_an_active_framework_sends_the_letter_at_once() -> None:
     recap, what_happens = check_sentences(
-        "Ada Lovelace", "ACME S.r.l.", _letter(), "active", missing_tax_data=False
+        "Ada Lovelace", "ACME S.r.l.", _letter_fields(), "active", missing_tax_data=False
     )
     assert recap[-1] == "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese."
     assert what_happens == "Il contratto quadro è già attivo: parte subito la lettera di incarico."
@@ -629,7 +629,7 @@ def test_the_check_prints_the_period_once_even_if_the_commitment_ends_with_one()
     recap, _ = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(commitment="Tre giorni a settimana,\nper tre mesi."),
+        _letter_fields(commitment="Tre giorni a settimana,\nper tre mesi."),
         "active",
         missing_tax_data=False,
     )
@@ -641,7 +641,7 @@ def test_the_check_of_an_occasional_lump_sum_says_gross_and_without_vat() -> Non
     recap, what_happens = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(fee=Decimal("5000"), mode="to_body", unit=None),
+        _letter_fields(fee=Decimal("5000"), mode="to_body", unit=None),
         "to_send",
         missing_tax_data=False,
         regime="occasional",
@@ -677,7 +677,7 @@ def test_an_occasional_check_names_the_occasional_documents(step: str, sentence:
     _, what_happens = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(),
+        _letter_fields(),
         step,  # type: ignore[arg-type]
         missing_tax_data=False,
         regime="occasional",
@@ -691,7 +691,7 @@ def test_an_occasional_letter_for_someone_with_to_vat_number_carries_the_warning
     recap, _ = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(),
+        _letter_fields(),
         "active",
         missing_tax_data=False,
         regime="occasional",
@@ -708,7 +708,7 @@ def test_an_occasional_letter_for_someone_with_to_vat_number_carries_the_warning
     ordinary, _ = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter(),
+        _letter_fields(),
         "active",
         missing_tax_data=False,
         has_vat_number=True,

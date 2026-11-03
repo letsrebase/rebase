@@ -121,7 +121,7 @@ def _talent(
     rate: Decimal | None = Decimal("450.00"),
     remote: str | None = "remote",
 ) -> UUID:
-    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", last_name=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", first_name=f"Ada{n}", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
@@ -129,7 +129,7 @@ def _talent(
         remote=remote,
         daily_rate=rate,
         status="new",
-        posizione="Backend developer",
+        job_title="Backend developer",
     )
     session.add(row)
     session.flush()
@@ -149,7 +149,7 @@ def _talent(
 
 
 def _user(session: Session, email: str, *, role: str = "member") -> UUID:
-    user = User(email=email, nome="Ivan", last_name="Admin", role=role)
+    user = User(email=email, first_name="Ivan", last_name="Admin", role=role)
     session.add(user)
     session.commit()
     return user.id
@@ -166,20 +166,22 @@ def _proposal(
     model: str = MODEL,
     roles: list[str] | None = None,
 ) -> UUID:
-    ruoli = roles or [f"Ruolo {index}" for index in range(1, len(members) + 1)]
+    role_names = roles or [f"Ruolo {index}" for index in range(1, len(members) + 1)]
     row = TeamProposal(
         description="Rifacciamo il gestionale degli ordini, sei mesi, da remoto, in Python.",
         summary=summary,
-        location={"locale": False, "dove": None},
+        location={"on_site": False, "place": None},
         team=[
             {
-                "posizione": index,
+                "position": index,
                 "freelancer_id": str(freelancer_id),
                 "role": role,
                 "reasoning": "Nove anni di API in Python.",
                 "week_days": 5,
             }
-            for index, (freelancer_id, role) in enumerate(zip(members, ruoli, strict=True), start=1)
+            for index, (freelancer_id, role) in enumerate(
+                zip(members, role_names, strict=True), start=1
+            )
         ],
         economics={"day": None, "month": None, "days_month": 22},
         model=model,
@@ -251,7 +253,7 @@ def test_request_from_a_proposal_files_the_talents_and_mails(clean: Session) -> 
     # One talent per member, in the proposal's order, with their own rate and band.
     assert [talent.freelancer_id for talent in read.talents] == [first, second]
     ada = read.talents[0]
-    assert (ada.nome, ada.last_name, ada.role) == ("Ada1", "Lovelace1", "Backend developer")
+    assert (ada.first_name, ada.last_name, ada.role) == ("Ada1", "Lovelace1", "Backend developer")
     assert ada.daily_rate == Decimal("450.00")
     assert ada.band == Band(min=500, max=650)  # 450 x 1.4 = 630
     assert ada.mail_sent_at is None and ada.answer is None and ada.answered_at is None
@@ -509,7 +511,7 @@ def test_list_filters_and_pages_by_cursor(clean: Session) -> None:
     clean.execute(
         update(TeamRequestTalent)
         .where(TeamRequestTalent.request_id == oldest.id, TeamRequestTalent.freelancer_id == first)
-        .values(answer="si", answered_at=NOW)
+        .values(answer="yes", answered_at=NOW)
     )
     clean.commit()
 
@@ -521,7 +523,7 @@ def test_list_filters_and_pages_by_cursor(clean: Session) -> None:
     assert rest.next_cursor is None
     [item] = rest.items
     assert (item.company, item.origin, item.status) == ("Uno Srl", "public", "new")
-    assert (item.total_talents, item.self_talents) == (2, 1)
+    assert (item.total_talents, item.yes_talents) == (2, 1)
     assert item.contacted_at is None
 
     contacted = service.list_recent(status="contacted", origin=None, limit=50, cursor=None)
@@ -658,10 +660,10 @@ def _mailer(
     )
 
 
-def _token(mail: Mail, answer: str = "si") -> str:
+def _token(mail: Mail, answer: str = "yes") -> str:
     """The raw token in the mail's link for `answer`, on the hub's own origin."""
     found = re.search(
-        rf"https://letsrebase\.com/hub/team/risposta\?t=([A-Za-z0-9_-]+)&r={answer}\n",
+        rf"https://letsrebase\.com/hub/team/answer\?t=([A-Za-z0-9_-]+)&r={answer}\n",
         mail.text,
     )
     assert found, mail.text
@@ -716,7 +718,7 @@ def test_contact_mails_every_talent_once(clean: Session) -> None:
         assert SUMMARY in mail.text
         assert mail.html is not None
         # One token per talent, behind both answers.
-        assert _token(mail, "si") == _token(mail, "no")
+        assert _token(mail, "yes") == _token(mail, "no")
         # No company and never the client's band: the talent reads their own rate.
         for secret in ("Acme", "wile@acme.it", Band(min=500, max=650).label(), "band"):
             assert secret not in mail.text and secret not in mail.html, secret
@@ -762,7 +764,7 @@ def test_contact_only_silent(clean: Session) -> None:
     service = _mailer(clean, sender)
     service.contact_talents(request.id, admin, only_silent=False)
     first, second, third = sender.sent
-    assert service.answer(_token(first), "si") == "si"
+    assert service.answer(_token(first), "yes") == "yes"
     assert service.answer(_token(third), "no") == "no"
     later = NOW + timedelta(days=2)
 
@@ -772,10 +774,10 @@ def test_contact_only_silent(clean: Session) -> None:
     assert again.to == "talento2@studio.it"
     assert _token(again) != _token(second)
     assert [talent.mail_sent_at for talent in read.talents] == [NOW, later, NOW]
-    assert [talent.answer for talent in read.talents] == ["si", None, "no"]
+    assert [talent.answer for talent in read.talents] == ["yes", None, "no"]
     assert read.contacted_at == NOW  # the first send's
     # The new link spent the old one, and answers.
-    assert service.answer(_token(second), "si") == "invalid"
+    assert service.answer(_token(second), "yes") == "invalid"
     assert _mailer(clean, now=later).answer(_token(again), "no") == "no"
 
     # Everyone answered: there is nobody left to write to.
@@ -819,7 +821,7 @@ def test_contact_skips_a_talent_gone_since_the_request(
             assert secret not in line
 
     # «Rimanda» skips them too: with only them silent, nobody is left to write to.
-    assert service.answer(_token(sender.sent[0]), "si") == "si"
+    assert service.answer(_token(sender.sent[0]), "yes") == "yes"
     with pytest.raises(InvalidState) as nobody:
         service.contact_talents(request.id, admin, only_silent=True)
     assert nobody.value.message == NOBODY_TO_CONTACT
@@ -891,7 +893,7 @@ def test_to_refused_mail_leaves_no_link_and_snooze_tries_again(
     # One mail left, so the request was contacted.
     assert read.status == "contacted" and read.contacted_at == NOW
     assert _row(clean, request.id, second).token_hash is None
-    assert _mailer(clean).answer(_token(refusing.sent[1]), "si") == "invalid"
+    assert _mailer(clean).answer(_token(refusing.sent[1]), "yes") == "invalid"
     [warning] = [
         record.getMessage() for record in logs.records if record.levelno >= logging.WARNING
     ]
@@ -925,7 +927,7 @@ def test_a_first_send_refused_whole_leaves_the_request_as_it_was(
     assert [talent.mail_sent_at for talent in read.talents] == [None, None]
     undone = [line for line in (r.getMessage() for r in logs.records) if "again" in line]
     assert undone == [
-        f"team request {request.id}: no availability mail left, the request is nuova again"
+        f"team request {request.id}: no availability mail left, the request is new again"
     ]
     retried = RecordingSender()
     again = _mailer(clean, retried).contact_talents(request.id, admin, only_silent=False)
@@ -968,7 +970,7 @@ def test_to_first_send_refused_whole_after_to_snooze_left_keeps_the_request_cont
     assert read.status == "contacted" and read.contacted_at == NOW
     assert [talent.mail_sent_at for talent in read.talents] == [later, later]
     assert "again" not in " ".join(record.getMessage() for record in logs.records)
-    assert _mailer(clean, now=later).answer(_token(delivered.sent[0]), "si") == "si"
+    assert _mailer(clean, now=later).answer(_token(delivered.sent[0]), "yes") == "yes"
 
 
 def test_availability_records_yes_and_no(clean: Session) -> None:
@@ -981,19 +983,19 @@ def test_availability_records_yes_and_no(clean: Session) -> None:
     later = NOW + timedelta(hours=3)
     service = _mailer(clean, tracker=Tracker(capture), now=later)
 
-    assert service.answer(_token(sender.sent[0], "si"), "si") == "si"
+    assert service.answer(_token(sender.sent[0], "yes"), "yes") == "yes"
     assert service.answer(_token(sender.sent[1], "no"), "no") == "no"
 
     read = service.requests.get(request.id)
     assert [(talent.answer, talent.answered_at) for talent in read.talents] == [
-        ("si", later),
+        ("yes", later),
         ("no", later),
     ]
     [item] = service.requests.list_recent(status=None, origin=None).items
-    assert (item.total_talents, item.self_talents) == (2, 1)
+    assert (item.total_talents, item.yes_talents) == (2, 1)
     # Counted with the answer alone: no talent, no request, no address.
     assert [(event, properties) for event, _, properties in capture.calls] == [
-        (TEAM_TALENT_ANSWER, {"answer": "si", "$process_person_profile": False}),
+        (TEAM_TALENT_ANSWER, {"answer": "yes", "$process_person_profile": False}),
         (TEAM_TALENT_ANSWER, {"answer": "no", "$process_person_profile": False}),
     ]
     assert TEAM_TALENT_ANSWER == "team_talent_answer"
@@ -1008,19 +1010,19 @@ def test_availability_token_is_one_use_and_expires(clean: Session) -> None:
     ada, bea, cleo = (_token(mail) for mail in sender.sent)
     service = _mailer(clean)
 
-    assert service.answer(ada, "si") == "si"
+    assert service.answer(ada, "yes") == "yes"
     # Spent: another answer, the same or the other, is refused and changes nothing.
     assert service.answer(ada, "no") == "invalid"
-    assert service.answer(ada, "si") == "invalid"
-    assert _row(clean, request.id, talents[0]).answer == "si"
+    assert service.answer(ada, "yes") == "invalid"
+    assert _row(clean, request.id, talents[0]).answer == "yes"
     # An unknown or an empty token is the same refusal.
-    assert service.answer("non-un-token", "si") == "invalid"
+    assert service.answer("non-un-token", "yes") == "invalid"
     assert service.answer("", "no") == "invalid"
     # Thirty days from the mail, and not a second more.
     assert timedelta(days=30) == ANSWER_MAX_AGE
     last = NOW + ANSWER_MAX_AGE - timedelta(seconds=1)
     assert _mailer(clean, now=last).answer(bea, "no") == "no"
-    assert _mailer(clean, now=NOW + ANSWER_MAX_AGE).answer(cleo, "si") == "invalid"
+    assert _mailer(clean, now=NOW + ANSWER_MAX_AGE).answer(cleo, "yes") == "invalid"
     assert _row(clean, request.id, talents[2]).answer is None
 
     with pytest.raises(ValidationFailed) as unknown:
@@ -1041,12 +1043,12 @@ def _contrast_with_white(colour: str) -> float:
 
 
 def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() -> None:
-    yes = "https://letsrebase.com/hub/team/risposta?t=abc&r=si"
-    no = "https://letsrebase.com/hub/team/risposta?t=abc&r=no"
+    yes = "https://letsrebase.com/hub/team/answer?t=abc&r=yes"
+    no = "https://letsrebase.com/hub/team/answer?t=abc&r=no"
 
     mail = team_availability_mail(
         "ada@studio.it",
-        nome="Ada",
+        first_name="Ada",
         role="Backend <developer>",
         summary="Un gestionale <script>alert(1)</script>.",
         rate=Decimal("1450.50"),
@@ -1081,7 +1083,7 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
 
     unrated = team_availability_mail(
         "ada@studio.it",
-        nome="Ada",
+        first_name="Ada",
         role="Designer",
         summary=None,
         rate=None,
@@ -1092,7 +1094,7 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
     assert "tariffa giornaliera" in unrated.text
     whole = team_availability_mail(
         "ada@studio.it",
-        nome="",
+        first_name="",
         role="Designer",
         summary="Un gestionale.",
         rate=Decimal("450.00"),

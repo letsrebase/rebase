@@ -6,7 +6,7 @@ import { Row } from '../list-kit'
  *  from the card's own `utm_source`, since the two can differ. */
 type SignupAttribution = NonNullable<Freelancer['signup_utm']>
 
-const SignupUtmLabels: [key: keyof SignupAttribution, label: string][] = [
+const SIGNUP_UTM_LABELS: [key: keyof SignupAttribution, label: string][] = [
   ['origin', 'Origine'],
   ['utm_source', 'Sorgente'],
   ['utm_medium', 'Medium'],
@@ -21,7 +21,7 @@ const SignupUtmLabels: [key: keyof SignupAttribution, label: string][] = [
  *  UTM onto the card at creation but a wizard card keeps its own, and the two can
  *  genuinely differ from what «Arrivato» shows above. */
 export function FreelancerSignup({ utm }: { utm: SignupAttribution | null | undefined }) {
-  const known = utm ? SignupUtmLabels.filter(([key]) => utm[key] != null) : []
+  const known = utm ? SIGNUP_UTM_LABELS.filter(([key]) => utm[key] != null) : []
   return (
     <section className="space-y-3 px-6 pb-6">
       <h2 className="text-sm font-medium">Iscrizione alla newsletter</h2>

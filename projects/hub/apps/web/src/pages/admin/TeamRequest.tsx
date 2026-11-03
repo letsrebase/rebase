@@ -41,9 +41,9 @@ function sentence(error: unknown, fallback: string): string {
 
 /** What the engine read about place in the company's description: whether the work is
  *  on site, and the place it named, if any. */
-function place(location: TeamProposal['location']): string {
-  if (location.locale) return location.dove ? `In sede, a ${location.dove}` : 'In sede, luogo non indicato'
-  return location.dove ? `Da remoto · ${location.dove}` : 'Da remoto'
+function placeLabel(location: TeamProposal['location']): string {
+  if (location.on_site) return location.place ? `In sede, a ${location.place}` : 'In sede, luogo non indicato'
+  return location.place ? `Da remoto · ${location.place}` : 'Da remoto'
 }
 
 /** The team's bands per day and per month, as the company read them; «Tariffa da
@@ -92,7 +92,7 @@ function moves(request: TeamRequest): Move[] {
  * this is the admin's page. «Contatta i talenti» (D1) mails the team from here, and the
  * answers fill the table's last column.
  */
-export function AdminRequestTeam() {
+export function AdminTeamRequest() {
   const { id } = useParams({ from: '/signedIn/admin/team/$id' })
   const row = useQuery({ queryKey: keys.teamRequest(id), queryFn: () => admin.teamRequest(id) })
   if (row.isError) {
@@ -133,7 +133,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
             <Row label="Descrizione">
               {request.description ? <p className="whitespace-pre-wrap">{request.description}</p> : '—'}
             </Row>
-            <Row label="Luogo">{request.proposal ? place(request.proposal.location) : '—'}</Row>
+            <Row label="Luogo">{request.proposal ? placeLabel(request.proposal.location) : '—'}</Row>
             {request.proposal && request.proposal.team.length > 0 && (
               <Row label="Fascia del team">{teamBands(request.proposal.economics)}</Row>
             )}
@@ -209,7 +209,7 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Team
     <TableRow>
       <TableCell>
         <Link to="/admin/freelance/$id" params={{ id: talent.freelancer_id }} className="font-medium hover:underline">
-          {`${talent.nome} ${talent.last_name}`}
+          {`${talent.first_name} ${talent.last_name}`}
         </Link>
       </TableCell>
       <TableCell className="min-w-64 space-y-1 whitespace-normal">

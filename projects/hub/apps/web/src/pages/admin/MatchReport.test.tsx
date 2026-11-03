@@ -11,7 +11,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoiceLabel, periodParam } from '@/lib/report'
-import { AdminActuals } from './MatchReport'
+import { AdminMatchReport } from './MatchReport'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -38,8 +38,8 @@ const INVOICE_12 = { number: '12/2026', kind: 'invoice' }
 const PROFORMA_4 = { number: '4/2026', kind: 'proforma' }
 
 /** A day of eight hours, all of them on `invoice` when there is one. */
-const day = (data: string, invoice?: { number: string; kind: string }, descriptions = ['Sviluppo']) => ({
-  data,
+const day = (date: string, invoice?: { number: string; kind: string }, descriptions = ['Sviluppo']) => ({
+  date,
   hours: '8.00',
   descriptions,
   invoices: invoice ? [invoiceLabel(invoice)] : [],
@@ -65,7 +65,7 @@ const REPORT = {
     day('2026-09-30', INVOICE_12),
     day('2026-10-01', INVOICE_12),
     {
-      data: '2026-10-02',
+      date: '2026-10-02',
       hours: '8.00',
       descriptions: ['Sviluppo API', 'Riunione'],
       invoices: ['12/2026'],
@@ -81,10 +81,10 @@ const REPORT = {
     day('2026-11-05'),
   ],
   by_week: [
-    { week: '2026-W40', da: '2026-09-28', a: '2026-10-04', hours: '32.00' },
-    { week: '2026-W41', da: '2026-10-05', a: '2026-10-11', hours: '16.00' },
-    { week: '2026-W44', da: '2026-10-26', a: '2026-11-01', hours: '16.00' },
-    { week: '2026-W45', da: '2026-11-02', a: '2026-11-08', hours: '32.00' },
+    { week: '2026-W40', from_date: '2026-09-28', to_date: '2026-10-04', hours: '32.00' },
+    { week: '2026-W41', from_date: '2026-10-05', to_date: '2026-10-11', hours: '16.00' },
+    { week: '2026-W44', from_date: '2026-10-26', to_date: '2026-11-01', hours: '16.00' },
+    { week: '2026-W45', from_date: '2026-11-02', to_date: '2026-11-08', hours: '32.00' },
   ],
   by_month: [
     { month: '2026-09', hours: '16.00' },
@@ -92,8 +92,8 @@ const REPORT = {
     { month: '2026-11', hours: '32.00' },
   ],
   invoices: [
-    { number: '4/2026', kind: 'proforma', data: '2026-10-31', status: 'confirmed', payment_status: 'from_unpaid', hours: '16.00' },
-    { number: '12/2026', kind: 'invoice', data: '2026-10-02', status: 'issued', payment_status: 'paid', hours: '27.00' },
+    { number: '4/2026', kind: 'proforma', date: '2026-10-31', status: 'confirmed', payment_status: 'from_unpaid', hours: '16.00' },
+    { number: '12/2026', kind: 'invoice', date: '2026-10-02', status: 'issued', payment_status: 'paid', hours: '27.00' },
   ],
 }
 
@@ -105,7 +105,7 @@ function mount(path: string) {
   const report = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/matches/$id/report',
-    component: AdminActuals,
+    component: AdminMatchReport,
     validateSearch: (search: Record<string, unknown>): { month?: string } => ({ month: periodParam(search.month) }),
   })
   const router = createRouter({
@@ -248,7 +248,7 @@ describe('«Consuntivo» (REB-503)', () => {
 
   it('reads «Tutto l’incarico» from the URL: every day, every month, every invoice with all its hours', async () => {
     serve(answer(200, REPORT))
-    mount('/admin/matches/m1/report?month=tutto')
+    mount('/admin/matches/m1/report?month=all')
 
     expect(await screen.findByRole('combobox', { name: 'Periodo' })).toHaveTextContent("Tutto l'incarico")
     expect(rows('Per giorno')).toHaveLength(12)

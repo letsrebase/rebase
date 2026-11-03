@@ -92,7 +92,7 @@ def test_the_read_model_computes_the_dates_only_for_an_active_framework() -> Non
         "draft_text": False,
         "sent_at": None,
         "signed_pdf": None,
-        "regime": "partita_iva",
+        "regime": "vat_registered",
     }
     signed = _framework(
         **common,
@@ -179,20 +179,20 @@ def test_the_read_model_names_the_documents_regime_and_type() -> None:
     )
     letter = ContractDocument(
         kind="letter",
-        regime="partita_iva",
+        regime="vat_registered",
         match_id=UUID("01a00000-0000-7000-8000-00000000001d"),
         number="2026-001",
         **DOCUMENT,
     )
     read = document_read(framework, date(2026, 10, 12), current_version="1.0")
-    assert (read.regime, read.kind) == (
+    assert (read.regime, read.label) == (
         "occasional",
         "Contratto quadro per prestazioni occasionali",
     )
     read = document_read(letter, date(2026, 10, 12), current_version="1.0")
-    assert (read.regime, read.kind) == ("partita_iva", "Lettera di incarico")
+    assert (read.regime, read.label) == ("vat_registered", "Lettera di incarico")
 
 
 def test_each_framework_compares_its_version_with_its_own_regimes_text() -> None:
-    assert current_framework_version("partita_iva") == text_version("framework-agreement")
+    assert current_framework_version("vat_registered") == text_version("framework-agreement")
     assert current_framework_version("occasional") == text_version("framework-agreement-occasional")

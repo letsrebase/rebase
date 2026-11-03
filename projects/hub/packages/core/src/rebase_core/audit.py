@@ -214,8 +214,8 @@ class AdminActionPayload(TypedDict, total=False):
     * a field override or clear (`field_changes`): `changed`, `before`, `after`;
     * `vetted`: `vetted`; a note or status entry: `source`, `text`, `note_id`;
     * `pigro_link`: `outcome`, `error`; `anon_cv_downloaded`: `reused`;
-    * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `lasciati`,
-      `cv`, `card_from_regenerate`, and `rimesse` on the undo;
+    * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `left_behind`,
+      `cv`, `card_to_regenerate`, and `put_back` on the undo;
     * the AI audit (REB-861): `provider`, `model`, `source`, `action`, `task`, and for a
       card regeneration its start (`limit`, `queued`, `batch`, `batch_id`) and its end
       (`start_action_id`, the counts, `cost_eur`, `failures`, `stop_reason`, ...)."""
@@ -236,14 +236,13 @@ class AdminActionPayload(TypedDict, total=False):
     into_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
     from_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
     moved: Annotated[dict[str, int | list[str]], _MAY_BE_ABSENT]
-    left: Annotated[dict[str, int], _MAY_BE_ABSENT]
-    rimesse: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    left_behind: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    put_back: Annotated[dict[str, int], _MAY_BE_ABSENT]
     cv: Annotated[str, _MAY_BE_ABSENT]
-    card_from_regenerate: Annotated[bool, _MAY_BE_ABSENT]
+    card_to_regenerate: Annotated[bool, _MAY_BE_ABSENT]
     action_id: Annotated[str, _MAY_BE_ABSENT]
     provider: Annotated[str, _MAY_BE_ABSENT]
     model: Annotated[str, _MAY_BE_ABSENT]
-    source: Annotated[str, _MAY_BE_ABSENT]
     action: Annotated[str, _MAY_BE_ABSENT]
     task: Annotated[str, _MAY_BE_ABSENT]
     limit: Annotated[int, _MAY_BE_ABSENT]
@@ -375,7 +374,7 @@ class AdminActionService:
                 entity_id=action.entity_id,
                 kind=action.kind,
                 admin_id=action.admin_id,
-                admin_name=f"{admin.nome} {admin.last_name}".strip(),
+                admin_name=f"{admin.first_name} {admin.last_name}".strip(),
                 payload=cast(AdminActionPayload, action.payload),
                 created_at=action.created_at,
             )

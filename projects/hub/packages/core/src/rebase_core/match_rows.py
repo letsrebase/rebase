@@ -32,13 +32,13 @@ FRAMEWORK, LETTER = "framework", "letter"
 
 
 def full_name(user: User) -> str:
-    return f"{user.nome} {user.last_name}".strip()
+    return f"{user.first_name} {user.last_name}".strip()
 
 
 def require_regime_fits(vat_number: str | None, regime: str) -> None:
-    """An ordinary letter prints the freelancer's partita IVA, so it needs saved tax data
+    """An ordinary letter prints the freelancer's `partita IVA`, so it needs saved tax data
     with one (REB-687). An occasional letter never prints one and is allowed either way:
-    the check warns a partita IVA holder (`match_words.HAS_VAT_NUMBER`). `check`,
+    the check warns a `partita IVA` holder (`match_words.HAS_VAT_NUMBER`). `check`,
     `preview` and `create` refuse on `regime`, the field «Tipo di lettera» sets."""
     if regime == VAT_REGISTERED and vat_number is None:
         raise ValidationFailed(ENTITY, "regime", ORDINARY_NEEDS_VAT_NUMBER)

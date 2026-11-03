@@ -66,7 +66,7 @@ describe('route', () => {
     expect(route('/pitch')).toEqual({ kind: 'page', file: '/pitch.html' })
     expect(route('/privacy')).toEqual({ kind: 'page', file: '/privacy.html' })
     expect(route('/terms')).toEqual({ kind: 'page', file: '/terms.html' })
-    expect(route('/terms')).toEqual({ kind: 'redirect', to: '/terms' })
+    expect(route('/termini')).toEqual({ kind: 'redirect', to: '/terms' })
   })
 
   it('serves PigroCRM its own page at /pigrocrm again (ORB-159), and keeps no redirect of its own', () => {
@@ -199,9 +199,9 @@ describe('llms.txt (REB-701)', () => {
     if (decision.kind !== 'generated') throw new Error('unreachable')
     const doors = decision.content.split('## Per entrare')[1]!.split('## Le domande')[0]!
     const paths = [...doors.matchAll(/^- \[[^\]]+\]\(([^)]+)\)$/gm)].map((m) => m[1])
-    // The home links /hub/freelance with and without ?da=...; it is one door.
+    // The home links /hub/freelance with and without ?from=...; it is one door.
     expect(paths).toEqual(
-      expect.arrayContaining([`${SITE_HOST}/hub/freelance`, `${SITE_HOST}/hub/aziende`, `${SITE_HOST}/hub/team`]),
+      expect.arrayContaining([`${SITE_HOST}/hub/freelance`, `${SITE_HOST}/hub/companies`, `${SITE_HOST}/hub/team`]),
     )
     expect(new Set(paths).size).toBe(paths.length)
     for (const path of paths) expect(path).not.toContain('?')

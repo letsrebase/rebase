@@ -63,7 +63,7 @@ def test_the_prefill_suggests_from_the_request_the_card_and_rebases_defaults(
     assert (letter.start_date, letter.commitment) == (date(2026, 10, 1), "3 mesi")
     assert letter.location == "in parte da remoto, con 2 giornate a settimana presso il Cliente"
     assert letter.customer_contact == "Wile E."
-    assert (letter.mode, letter.unit) == ("to_work_unit", "to_work_unit")
+    assert (letter.mode, letter.unit) == ("to_work_unit", "a giornata")
     assert letter.fee == Decimal("450.00")
     assert (letter.payment_days, letter.month_end) == (30, True)
     assert prefill.customer.customer_legal_name == "ACME Srl"
@@ -175,7 +175,7 @@ def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: 
         ),
         required_framework=True,
         missing_tax_data=False,
-        regime="partita_iva",
+        regime="vat_registered",
     )
     service.create(freelancer_id, _body(company_id), admin_id)
     _framework_now(clean, freelancer_id, "sent")
@@ -248,12 +248,12 @@ def test_the_proposal_lays_the_given_fields_over_the_prefill(clean: Session) -> 
         freelancer_id,
         company_id,
         customer={**CUSTOMER_REST, "customer_legal_name": "ACME S.r.l."},
-        letter={"role": "Staff engineer", "data_fine": "2026-12-31", "commitment": None},
+        letter={"role": "Staff engineer", "end_date": "2026-12-31", "commitment": None},
         match_id=match_id,
     )
     assert proposal.id == match_id
     assert proposal.customer.customer_legal_name == "ACME S.r.l."
-    assert (proposal.letter.role, proposal.letter.data_fine, proposal.letter.commitment) == (
+    assert (proposal.letter.role, proposal.letter.end_date, proposal.letter.commitment) == (
         "Staff engineer",
         date(2026, 12, 31),
         None,
@@ -299,7 +299,7 @@ def test_the_proposal_refuses_a_fee_that_is_not_an_amount_by_name(
             freelancer_id, company_id, customer=CUSTOMER_REST, letter={"fee": typed}
         )
     assert (refused.value.details["field"], refused.value.details["reason"]) == (
-        "lettera.compenso",
+        "letter.fee",
         "non valido",
     )
 
@@ -307,8 +307,8 @@ def test_the_proposal_refuses_a_fee_that_is_not_an_amount_by_name(
 @pytest.mark.parametrize(
     ("customer", "letter", "field"),
     [
-        ({**CUSTOMER_REST, "nome": "ACME"}, None, "cliente.nome"),
-        (CUSTOMER_REST, {"daily_budget": 777}, "lettera.budget_giornaliero"),
+        ({**CUSTOMER_REST, "first_name": "ACME"}, None, "customer.first_name"),
+        (CUSTOMER_REST, {"daily_budget": 777}, "letter.daily_budget"),
     ],
 )
 def test_the_proposal_refuses_an_unknown_key_by_name(
@@ -324,35 +324,35 @@ def test_the_proposal_refuses_an_unknown_key_by_name(
     ("customer", "letter", "field", "reason"),
     [
         # A client never matched before: the prefill knows only its name.
-        (None, None, "cliente.cliente_piva", "manca"),
-        (CUSTOMER_REST, {"fee": None}, "lettera.compenso", "manca"),
+        (None, None, "customer.customer_vat_number", "manca"),
+        (CUSTOMER_REST, {"fee": None}, "letter.fee", "manca"),
         # Pydantic's own checks say it in English: the admin reads «non valido».
-        (CUSTOMER_REST, {"fee": "abc"}, "lettera.compenso", "non valido"),
-        (CUSTOMER_REST, {"payment_days": "trenta"}, "lettera.giorni_pagamento", "non valido"),
+        (CUSTOMER_REST, {"fee": "abc"}, "letter.fee", "non valido"),
+        (CUSTOMER_REST, {"payment_days": "trenta"}, "letter.payment_days", "non valido"),
         # The hub's own checks already say it in Italian, and say why.
         (
             CUSTOMER_REST,
             {"commitment": "   "},
-            "lettera.impegno",
+            "letter.commitment",
             "serve un valore, non solo spazi",
         ),
         (
             CUSTOMER_REST,
-            {"data_fine": "2026-09-01"},
-            "lettera.data_fine",
+            {"end_date": "2026-09-01"},
+            "letter.end_date",
             "la fine prevista viene prima dell'inizio",
         ),
         (
             CUSTOMER_REST,
             {"payment_days": 45, "month_end": True},
-            "lettera.giorni_pagamento",
+            "letter.payment_days",
             "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)",
         ),
         # `SafeStr`'s own sentence names the field already: said once, not twice.
         (
             CUSTOMER_REST,
             {"role": "Backend\x00developer"},
-            "lettera.ruolo",
+            "letter.role",
             "il testo contiene un carattere nullo (\\x00), non ammesso",
         ),
     ],

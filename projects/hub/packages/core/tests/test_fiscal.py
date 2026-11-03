@@ -35,11 +35,11 @@ def clean(hub_session: Session) -> Iterator[Session]:
 def _card(session: Session) -> UUID:
     row, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name="Lovelace",
             email="ada@studio.it",
             daily_rate=Decimal("450"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
         ),
         PDF,
@@ -52,7 +52,7 @@ def _card(session: Session) -> UUID:
 def _data(**change: str | None) -> FiscalData:
     payload: dict[str, str | None] = {
         "tax_code": "LVLDAA85T50H501Z",
-        "partita_iva": "01234567890",
+        "vat_number": "01234567890",
         "domicile": "Via Roma 1, Milano",
         "certified_email": None,
     }
@@ -87,8 +87,8 @@ def test_the_audit_names_the_fields_that_changed_and_never_their_values(clean: S
     fiscal.save(card, _data(vat_number="09876543210"), admin_id)  # nothing moved
     trail = AdminActionService(clean).timeline("freelancer_fiscal", card)
     assert [action.kind for action in trail] == ["fiscal_updated", "fiscal_updated"]
-    assert trail[0].payload == {"changed": ["partita_iva"]}
-    assert trail[1].payload == {"changed": ["tax_code", "partita_iva", "domicile"]}
+    assert trail[0].payload == {"changed": ["vat_number"]}
+    assert trail[1].payload == {"changed": ["tax_code", "vat_number", "domicile"]}
     assert "09876543210" not in str([action.payload for action in trail])
 
 
@@ -166,14 +166,14 @@ def test_two_admins_saving_one_cards_tax_data_at_once_run_one_after_the_other(
         assert len(trail) == 3
         assert sorted(action.payload["changed"] for action in trail[:2]) == [
             ["domicile"],
-            ["partita_iva", "domicile"],
+            ["vat_number", "domicile"],
         ]
     finally:
         first.close()
         second.close()
 
 
-def test_tax_data_without_a_partita_iva_store_null_and_the_audit_names_it(
+def test_tax_data_without_a_vat_number_store_null_and_the_audit_names_it(
     clean: Session,
 ) -> None:
     admin_id, card = an_admin(clean), _card(clean)
@@ -188,7 +188,7 @@ def test_tax_data_without_a_partita_iva_store_null_and_the_audit_names_it(
     fiscal.save(card, _data(vat_number=""), admin_id)  # the same value: nothing moved
     trail = AdminActionService(clean).timeline("freelancer_fiscal", card)
     assert [action.payload for action in trail] == [
-        {"changed": ["partita_iva"]},
-        {"changed": ["tax_code", "partita_iva", "domicile"]},
+        {"changed": ["vat_number"]},
+        {"changed": ["tax_code", "vat_number", "domicile"]},
     ]
     assert "01234567890" not in str([action.payload for action in trail])

@@ -1,4 +1,4 @@
-/* Sends a signed-in visitor from `Login` straight to their own area (REB-349).
+/* Sends a signed-in visitor from `Accedi` straight to their own area (REB-349).
  *
  * Lorenzo, 2026-09-22: the Accedi button on the landing always sends a visitor to
  * login even with a session already open; it should send them straight to their own
@@ -17,7 +17,7 @@
  * `/hub/login`.
  *
  * The fetch is asynchronous and `utm.js`'s `carryUtm()` is not: on `/` and
- * `/pigrocrm`, `landing.js` has already appended `?da=...` (and any campaign keys)
+ * `/pigrocrm`, `landing.js` has already appended `?from=...` (and any campaign keys)
  * to the login link by the time this script's answer comes back, so the selector
  * matches the link by its path prefix rather than its exact value, and the rewrite
  * changes only the path, keeping whatever query string is already there.
@@ -33,7 +33,7 @@
     return me && me.role === 'admin' ? '/hub/admin' : '/hub/me'
   }
 
-  /** Points every `Login`/«Entra nella tua area» link at `to`'s path, keeping
+  /** Points every `Accedi`/«Entra nella tua area» link at `to`'s path, keeping
    *  whatever query string `utm.js` already gave it. Returns how many links were
    *  rewritten, for the test. */
   function rewrite(root, to) {

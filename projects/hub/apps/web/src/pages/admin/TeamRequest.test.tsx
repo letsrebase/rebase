@@ -10,7 +10,7 @@ import {
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AdminRequestTeam } from './TeamRequest'
+import { AdminTeamRequest } from './TeamRequest'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -37,10 +37,10 @@ const REQUEST = {
   proposal: {
     id: 'p1',
     summary: 'Una web app per i clienti di una fintech, con i pagamenti.',
-    location: { locale: true, dove: 'Milano' },
+    location: { on_site: true, place: 'Milano' },
     team: [
       {
-        posizione: 1,
+        position: 1,
         freelancer_id: 'f1',
         role: 'Backend developer',
         reasoning: 'Ha scritto API di pagamento per tre anni.',
@@ -50,7 +50,7 @@ const REQUEST = {
         band: { min: 500, max: 650 },
       },
       {
-        posizione: 2,
+        position: 2,
         freelancer_id: 'f2',
         role: 'Frontend developer',
         reasoning: 'React e TypeScript da sei anni.',
@@ -78,7 +78,7 @@ const REQUEST = {
   talents: [
     {
       freelancer_id: 'f1',
-      nome: 'Ada',
+      first_name: 'Ada',
       last_name: 'Lovelace',
       role: 'Backend developer',
       daily_rate: '450.00',
@@ -90,13 +90,13 @@ const REQUEST = {
     },
     {
       freelancer_id: 'f2',
-      nome: 'Grace',
+      first_name: 'Grace',
       last_name: 'Hopper',
       role: 'Frontend developer',
       daily_rate: null,
       band: null,
       mail_sent_at: '2026-09-25T12:00:00Z',
-      answer: 'si',
+      answer: 'yes',
       answered_at: '2026-09-26T09:30:00Z',
       contactable: true,
     },
@@ -110,7 +110,7 @@ const REQUEST = {
 function mount(path = '/admin/team/r1') {
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
-  const page = createRoute({ getParentRoute: () => signedIn, path: '/admin/team/$id', component: AdminRequestTeam })
+  const page = createRoute({ getParentRoute: () => signedIn, path: '/admin/team/$id', component: AdminTeamRequest })
   const list = createRoute({ getParentRoute: () => signedIn, path: '/admin/team', component: () => <p>lista</p> })
   const talent = createRoute({
     getParentRoute: () => signedIn,
@@ -454,7 +454,7 @@ describe('the talents’ availability on the request’s page (REB-517, spec § 
       talents: REQUEST.talents.map((talent) => ({
         ...talent,
         mail_sent_at: '2026-09-25T12:00:00Z',
-        answer: 'si',
+        answer: 'yes',
         answered_at: '2026-09-26T09:30:00Z',
       })),
     }

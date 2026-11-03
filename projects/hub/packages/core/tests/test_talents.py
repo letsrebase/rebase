@@ -62,7 +62,7 @@ def test_a_row_carries_the_vetted_date_and_whether_an_anonymous_card_exists(
     service = FreelancerService(clean_hub)
     ada, _ = service.apply(_application("ada@studio.it"), PDF, "cv.pdf", "application/pdf")
     grace, _ = service.apply(
-        _application("grace@studio.it", nome="Grace", last_name="Hopper"),
+        _application("grace@studio.it", first_name="Grace", last_name="Hopper"),
         PDF,
         "cv.pdf",
         "application/pdf",
@@ -175,7 +175,7 @@ def test_search_hits_a_partial_surname_and_an_email_domain(clean_hub: Session) -
         _application("ada@rossilab.it", last_name="Rossi"), PDF, "cv.pdf", "application/pdf"
     )
     FreelancerService(clean_hub).apply(
-        _application("bob@other.it", nome="Bob", last_name="Bianchi"),
+        _application("bob@other.it", first_name="Bob", last_name="Bianchi"),
         PDF,
         "cv.pdf",
         "application/pdf",
@@ -234,7 +234,7 @@ def test_card_only_filters_narrow_the_cards_and_drop_every_lead(clean_hub: Sessi
             "remote@studio.it",
             remote="remote",
             daily_rate=Decimal("300.00"),
-            posizione="Backend developer",
+            job_title="Backend developer",
         ),
         PDF,
         "cv.pdf",
@@ -245,7 +245,7 @@ def test_card_only_filters_narrow_the_cards_and_drop_every_lead(clean_hub: Sessi
             "onsite@studio.it",
             remote="on_site",
             daily_rate=Decimal("800.00"),
-            posizione="Designer",
+            job_title="Designer",
         ),
         PDF,
         "cv.pdf",
@@ -263,7 +263,7 @@ def test_card_only_filters_narrow_the_cards_and_drop_every_lead(clean_hub: Sessi
     by_rate = talents.list_recent(min_rate=Decimal("500"))
     assert [item.email for item in by_rate.items] == ["onsite@studio.it"]
 
-    by_position = talents.list_recent(posizione="design")
+    by_position = talents.list_recent(job_title="design")
     assert [item.email for item in by_position.items] == ["onsite@studio.it"]
 
 
@@ -418,7 +418,9 @@ def test_a_page_costs_a_fixed_number_of_statements_whatever_the_table_holds(
 
     def reads_for(people: int) -> int:
         for n in range(people):
-            FreelancerService(clean_hub).apply(_application(f"card{n}@studio.it", nome=f"Nome{n}"))
+            FreelancerService(clean_hub).apply(
+                _application(f"card{n}@studio.it", first_name=f"Nome{n}")
+            )
             _signup(clean_hub, f"lead{n}@studio.it")
         seen: list[str] = []
         engine = clean_hub.get_bind()

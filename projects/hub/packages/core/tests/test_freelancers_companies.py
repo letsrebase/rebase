@@ -28,11 +28,11 @@ PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 def _application(email: str = "ada@studio.it", **extra: object) -> FreelancerCreate:
     payload: dict[str, object] = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "email": email,
         "daily_rate": Decimal("450.00"),
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "remote": "remote",
         "links": ["https://github.com/ada"],
     }
@@ -87,14 +87,14 @@ def test_a_second_application_from_the_same_address_leaves_the_card_unchanged(
         first.id, StatusChange(status="contacted"), admin_id=an_admin(clean), source="web"
     )
     again, created_again = service.apply(
-        _application(email="ADA@studio.it", posizione="Tech lead", daily_rate=Decimal("600")),
+        _application(email="ADA@studio.it", job_title="Tech lead", daily_rate=Decimal("600")),
         PDF + b"v2",
         "cv-2.pdf",
         "application/pdf",
     )
     assert created_again is False
     assert again.id == first.id
-    assert (again.posizione, again.daily_rate, again.cv_filename) == (
+    assert (again.job_title, again.daily_rate, again.cv_filename) == (
         "Backend developer",
         Decimal("450.00"),
         "cv.pdf",
@@ -108,7 +108,7 @@ def test_apply_reports_whether_it_wrote_a_new_card(clean: Session) -> None:
     service = FreelancerService(clean)
     _, first_created = service.apply(_application())
     assert first_created is True
-    _, second_created = service.apply(_application(posizione="Tech lead"))
+    _, second_created = service.apply(_application(job_title="Tech lead"))
     assert second_created is False
 
 
@@ -143,9 +143,9 @@ def test_the_filename_keeps_only_its_last_segment() -> None:
         {"links": ["http://insecure.example/x"]},
         {"links": ["https://ok.example/" + "x" * 300]},
         {"links": [f"https://l{i}.example/" for i in range(11)]},
-        {"posizione": "   "},
+        {"job_title": "   "},
         {"linkedin_url": "https://example.com/ada"},
-        {"nome": "Ada‮"},
+        {"first_name": "Ada‮"},
     ],
 )
 def test_an_application_outside_the_form_is_refused_before_the_database(
@@ -265,7 +265,7 @@ def _signup(session: Session, email: str = "ada@studio.it", **extra: object) -> 
     from rebase_core.service import SignupService
     from rebase_core.signup_schemas import SignupCreate
 
-    payload: dict[str, object] = {"email": email, "nome": "Ada", "last_name": "Lovelace"}
+    payload: dict[str, object] = {"email": email, "first_name": "Ada", "last_name": "Lovelace"}
     payload.update(extra)
     read = SignupService(session).subscribe(SignupCreate(**payload))  # type: ignore[arg-type]
     return read.id
@@ -273,10 +273,10 @@ def _signup(session: Session, email: str = "ada@studio.it", **extra: object) -> 
 
 def _draft(**extra: object) -> FreelancerDraft:
     payload: dict[str, object] = {
-        "nome": "Ada",
+        "first_name": "Ada",
         "last_name": "Lovelace",
         "linkedin_url": "https://www.linkedin.com/in/ada",
-        "posizione": "Backend developer",
+        "job_title": "Backend developer",
         "links": ["https://github.com/ada"],
         "sources": ["https://www.linkedin.com/in/ada", "https://ada.dev"],
     }
@@ -286,7 +286,7 @@ def _draft(**extra: object) -> FreelancerDraft:
 
 def test_a_draft_needs_a_source_and_takes_only_https_ones() -> None:
     assert _draft().daily_rate is None and _draft().remote is None
-    for bad in ({"sources": []}, {"sources": ["http://ada.dev"]}, {"posizione": "   "}):
+    for bad in ({"sources": []}, {"sources": ["http://ada.dev"]}, {"job_title": "   "}):
         with pytest.raises(ValidationError):
             _draft(**bad)
 
@@ -297,14 +297,14 @@ def test_a_card_from_a_signup_is_incomplete_and_carries_the_signup_attribution(
     signup_id = _signup(clean, utm=SignupUtm(utm_source="openai"))
     read = FreelancerService(clean).draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
     assert read.email == "ada@studio.it" and read.utm_source == "openai"
-    assert read.compilata_da == "admin" and read.complete is False
+    assert read.filled_by == "admin" and read.complete is False
     assert (read.cv_filename, read.cv_size, read.daily_rate, read.remote) == (
         None,
         None,
         None,
         None,
     )
-    assert read.posizione == "Backend developer" and read.links == ["https://github.com/ada"]
+    assert read.job_title == "Backend developer" and read.links == ["https://github.com/ada"]
     assert read.status == "new"
     assert len(read.note) == 1
     comment = read.note[0]
@@ -327,10 +327,10 @@ def test_a_second_research_replaces_the_researched_fields_and_leaves_the_admins(
     admin = an_admin(clean)
     service.set_status(first.id, StatusChange(status="contacted"), admin_id=admin, source="web")
     again = service.draft_from_signup(
-        signup_id, _draft(posizione="CTO", sources=["https://ada.dev/about"]), admin, "mcp"
+        signup_id, _draft(job_title="CTO", sources=["https://ada.dev/about"]), admin, "mcp"
     )
     assert again.id == first.id
-    assert again.posizione == "CTO"
+    assert again.job_title == "CTO"
     assert again.status == "contacted"
     assert again.note[0].text.startswith("Scheda aggiornata dalla ricerca.")
     assert (again.note[0].source, len(again.note)) == ("mcp", 2)
@@ -341,9 +341,9 @@ def test_research_never_overwrites_a_card_the_person_filled(clean: Session) -> N
     service.apply(_application(), PDF, "Ada CV.pdf", "application/pdf")
     signup_id = _signup(clean)
     with pytest.raises(ValidationFailed) as refused:
-        service.draft_from_signup(signup_id, _draft(posizione="CTO"), an_admin(clean), "web")
+        service.draft_from_signup(signup_id, _draft(job_title="CTO"), an_admin(clean), "web")
     assert refused.value.details["field"] == "email"
-    assert service.list_recent().items[0].posizione == "Backend developer"
+    assert service.list_recent().items[0].job_title == "Backend developer"
 
 
 def test_a_draft_on_an_unknown_signup_is_not_found(clean: Session) -> None:
@@ -358,11 +358,11 @@ def test_the_wizard_does_not_take_over_a_researched_card(clean: Session) -> None
     service = FreelancerService(clean)
     signup_id = _signup(clean)
     drafted = service.draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
-    assert drafted.compilata_da == "admin"
+    assert drafted.filled_by == "admin"
     applied, created = service.apply(_application(), PDF, "Ada CV.pdf", "application/pdf")
     assert created is False
     assert applied.id == drafted.id
-    assert applied.compilata_da == "admin" and applied.complete is False
+    assert applied.filled_by == "admin" and applied.complete is False
 
 
 def test_an_application_without_a_cv_is_stored_and_waits_for_one(clean: Session) -> None:
@@ -412,12 +412,12 @@ def test_signups_without_a_card_are_the_leads_beside_the_cards(clean: Session) -
     service = FreelancerService(clean)
     service.apply(_application("ada@studio.it"), PDF, "cv.pdf", "application/pdf")
     _signup(clean, "ADA@studio.it")  # has a card: not a lead
-    _signup(clean, "nuovo@studio.it", nome="Nuovo", last_name="Arrivato")
+    _signup(clean, "nuovo@studio.it", first_name="Nuovo", last_name="Arrivato")
     everything = service.list_recent()
     assert [item.email for item in everything.items] == ["ada@studio.it"]
     assert [lead.email for lead in everything.lead] == ["nuovo@studio.it"]
     assert (everything.total, everything.total_lead) == (1, 1)
-    assert everything.lead[0].freelancer_id is None and everything.lead[0].nome == "Nuovo"
+    assert everything.lead[0].freelancer_id is None and everything.lead[0].first_name == "Nuovo"
     only_leads = service.list_recent(status="lead")
     assert only_leads.items == [] and [lead.email for lead in only_leads.lead] == [
         "nuovo@studio.it"

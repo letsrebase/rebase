@@ -420,7 +420,7 @@ def _seed(engine: Engine) -> dict[str, Any]:
             ("note_added", {"nota_id": "x", "fonte": "web", "testo": "t"}),
             ("card_regenerated", {"esito": "scritta", "ricostruita": True, "source": "cli"}),
             ("documents_sent", {"documento": "a", "kind": "quadro", "mail": True}),
-            ("merged", {"lasciati": {"x": 1}, "scheda_da_rigenerare": True, "cv": "kept"}),
+            ("merged", {"lasciati": {"x": 1}, "scheda_da_rigenerare": True, "cv": "invariato"}),
         ):
             _insert(
                 c,
@@ -676,7 +676,7 @@ def test_the_downgrade_gives_every_old_name_and_value_back(hub_postgres: Any) ->
             assert payloads["merged"] == {
                 "lasciati": {"x": 1},
                 "scheda_da_rigenerare": True,
-                "cv": "kept",
+                "cv": "invariato",
             }
             indexes = {i["name"] for i in inspect(engine).get_indexes("signups")}
             assert "uq_orbiters_signups_email_lower" in indexes

@@ -66,7 +66,7 @@ def test_a_fee_the_page_could_not_print_as_given_stops_the_build(
     fee: Value, complaint: str
 ) -> None:
     with pytest.raises(ContractFailed, match=complaint):
-        checked({"fee": fee})
+        checked({"compenso": fee})
 
 
 def test_the_payment_term_is_written_from_the_days_and_the_month_end() -> None:
@@ -104,11 +104,11 @@ def test_a_data_file_with_no_printable_number_is_refused(tmp_path: Path, raw: st
 
 
 def test_the_fee_is_written_the_italian_way_and_identifiers_as_given() -> None:
-    assert checked({"fee": 450})["fee"] == 450
-    assert rendered("fee", 450) == "450,00 €"
+    assert checked({"compenso": 450})["compenso"] == 450
+    assert rendered("compenso", 450) == "450,00 €"
     assert italian(Decimal("1234.5"), 2) == "1.234,50"
-    assert rendered("fee", 12000) == "12.000,00 €"
-    assert rendered("number", 2026001) == "2026001"
+    assert rendered("compenso", 12000) == "12.000,00 €"
+    assert rendered("numero", 2026001) == "2026001"
     assert rendered("giorni-preavviso", 30) == "30"
     assert rendered("results", "l'Incarico") == "l’Incarico"
 
@@ -217,7 +217,7 @@ def test_the_example_is_fiction() -> None:
 
 
 def test_the_payment_term_of_an_occasional_letter_counts_from_the_receipt() -> None:
-    """REB-687: a prestazione occasionale is paid on a ricevuta, not an invoice."""
+    """REB-687: a `prestazione occasionale` is paid on a `ricevuta`, not an invoice."""
     assert {"engagement-letter-occasional"} == RECEIPT_TEXTS
     assert checked({"giorni-pagamento": 30, "fine-mese": True}, receipt=True)[
         "termine-pagamento"

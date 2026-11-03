@@ -135,7 +135,7 @@ def test_a_signed_framework_shows_its_dates_its_copy_and_no_link(clean: Session)
     )
     copy = _service(clean).signed_pdf(user_id, signed)
     assert copy.content == fake.signed_pdf(envelope)
-    assert copy.filename == f"contratto-quadro-v{FRAMEWORK_VERSION}-firmato.pdf"
+    assert copy.filename == f"framework-agreement-v{FRAMEWORK_VERSION}-signed.pdf"
     [letter] = mine.letters
     assert letter.status == "sent" and letter.signing_url is not None
 
@@ -241,8 +241,8 @@ def test_an_occasional_framework_shows_beside_the_ordinary_one_with_its_own_link
     mine = _service(clean).for_user(_user_of(clean, freelancer_id))
 
     assert mine.framework is not None and mine.occasional_framework is not None
-    assert (mine.framework.regime, mine.framework.kind, mine.framework.active) == (
-        "partita_iva",
+    assert (mine.framework.regime, mine.framework.label, mine.framework.active) == (
+        "vat_registered",
         "Contratto quadro",
         True,
     )
@@ -250,10 +250,10 @@ def test_an_occasional_framework_shows_beside_the_ordinary_one_with_its_own_link
         "occasional",
         "sent",
     )
-    assert mine.occasional_framework.kind == "Contratto quadro per prestazioni occasionali"
+    assert mine.occasional_framework.label == "Contratto quadro per prestazioni occasionali"
     assert mine.occasional_framework.signing_url is not None
     assert mine.previous_frameworks == []
-    assert sorted((letter.kind, letter.status) for letter in mine.letters) == [
+    assert sorted((letter.label, letter.status) for letter in mine.letters) == [
         ("Lettera di incarico", "sent"),
         ("Lettera di incarico occasionale", "pending"),
     ]

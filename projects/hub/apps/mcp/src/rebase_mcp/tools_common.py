@@ -179,7 +179,7 @@ def as_remote(value: str | None) -> Remote | None:
 def search_term(value: str | None) -> str | None:
     """`q` bounded the way the API's `SearchQ` bounds it: an unbounded term reaching
     `ILIKE` and `similarity()` on every row is a denial of service with extra steps.
-    Every free-text filter of a list tool (`q`, `location`, `posizione`, `utm_source`,
+    Every free-text filter of a list tool (`q`, `location`, `job_title`, `utm_source`,
     `origin`, `origin_page`) goes through this."""
     if value is not None and len(value) > SEARCH_MAX_LENGTH:
         raise ToolError(f"la ricerca deve stare in {SEARCH_MAX_LENGTH} caratteri")

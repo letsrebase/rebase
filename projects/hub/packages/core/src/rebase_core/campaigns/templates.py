@@ -37,7 +37,7 @@ STATE_TEMPLATES: dict[str, Template] = {
             "profile_created",
         ),
         _t(
-            "scheda_vuota_nuovi",
+            "card_empty_new",
             "La tua scheda su rebase, la compilo io?",
             "Ciao {nome},\n\nla scheda che ti abbiamo aperto su rebase è ancora senza tariffa, "
             "modalità di lavoro e CV, e così non posso proporti a nessuna azienda.\n\n"
@@ -50,7 +50,7 @@ STATE_TEMPLATES: dict[str, Template] = {
             "card_complete",
         ),
         _t(
-            "scheda_vuota_entrati",
+            "card_empty_signed_in",
             "La tua scheda su rebase è rimasta vuota",
             "Ciao {nome},\n\nho visto che hai aperto la tua area su rebase, ma la scheda è "
             "rimasta com'era: senza tariffa, modalità di lavoro e CV. Qualcosa non ha "
@@ -84,7 +84,7 @@ STATE_TEMPLATES: dict[str, Template] = {
             "signed_in",
         ),
         _t(
-            "azienda_aperta",
+            "company_open",
             "La tua richiesta su rebase è ancora aperta?",
             "Ciao {nome},\n\nti riscrivo per la tua richiesta su rebase. È ancora aperta?\n\n"
             "Se è cambiato qualcosa, quante persone, da quando, con che budget, la aggiorni "

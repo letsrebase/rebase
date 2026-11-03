@@ -82,7 +82,7 @@ async def test_remote_is_one_of_its_three_words_before_to_card_is_drafted(
             "create_freelancer_from_signup",
             {
                 "signup_id": "01a00000-0000-7000-8000-000000000009",
-                "nome": "Ada",
+                "first_name": "Ada",
                 "last_name": "Lovelace",
                 "sources": ["https://www.linkedin.com/in/ada"],
                 "remote": "a casa",
@@ -96,7 +96,7 @@ async def test_remote_is_one_of_its_three_words_before_to_card_is_drafted(
 @pytest.mark.parametrize(
     ("tool", "arguments"),
     [
-        ("list_talents", {"posizione": "x" * (SEARCH_MAX_LENGTH + 1)}),
+        ("list_talents", {"job_title": "x" * (SEARCH_MAX_LENGTH + 1)}),
         ("list_talents", {"utm_source": "x" * (SEARCH_MAX_LENGTH + 1)}),
         ("list_talents", {"origin_page": "x" * (SEARCH_MAX_LENGTH + 1)}),
         ("list_talents", {"cursor": "x" * 10_000}),

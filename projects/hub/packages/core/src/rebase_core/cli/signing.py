@@ -26,10 +26,10 @@ def contracts_check() -> int:
     # Fiction only, as the public example is: no signer data and no person, so the check
     # can run anywhere and prints nothing anybody would mind reading.
     check_data: dict[str, Value] = {
-        "number": "2026-000",
+        "numero": "2026-000",
         "professionista-nome": "Nome Cognome",
         "cliente-ragione-sociale": "Azienda Esempio S.r.l.",
-        "fee": 450,
+        "compenso": 450,
     }
     try:
         for document in DOCUMENTS:

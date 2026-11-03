@@ -96,7 +96,7 @@ def _clock(client: TestClient, now: datetime) -> None:
 
 
 def _talent(session: Session, n: int = 1) -> UUID:
-    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", last_name=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", first_name=f"Ada{n}", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
@@ -104,7 +104,7 @@ def _talent(session: Session, n: int = 1) -> UUID:
         remote="remote",
         daily_rate=Decimal("450.00"),
         status="new",
-        posizione="Backend developer",
+        job_title="Backend developer",
     )
     session.add(row)
     session.flush()
@@ -134,10 +134,10 @@ def _proposal_row(
     row = TeamProposal(
         description=DESCRIPTION,
         summary=SUMMARY,
-        location={"locale": False, "dove": None},
+        location={"on_site": False, "place": None},
         team=[
             {
-                "posizione": index,
+                "position": index,
                 "freelancer_id": str(freelancer_id),
                 "role": "Backend developer",
                 "reasoning": "Nove anni di API in Python.",
@@ -166,7 +166,7 @@ def _proposal_row(
 def proposal_response(team: list[dict[str, Any]] | None = None) -> LlmResponse:
     body = {
         "summary": SUMMARY,
-        "location": {"locale": False, "dove": None},
+        "location": {"on_site": False, "place": None},
         "team": team
         if team is not None
         else [
@@ -196,7 +196,7 @@ def _propose(client: TestClient) -> Any:
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     # Signing in spends two of the five a minute the public writes share.
@@ -219,9 +219,9 @@ def test_public_proposal_answers_the_team_without_ids(client: TestClient, team: 
     # What it was asked with travels on the read (REB-675), for a page opened on it later.
     assert (body["description"], body["people"]) == (DESCRIPTION, None)
     [member] = body["team"]
-    assert member["posizione"] == 1
+    assert member["position"] == 1
     assert member["freelancer_id"] is None
-    assert member["nome"] is None and member["last_name"] is None
+    assert member["first_name"] is None and member["last_name"] is None
     assert member["card"]["location"] is None
     assert member["band"] == {"min": 500, "max": 650}
     assert str(freelancer_id) not in response.text
@@ -252,7 +252,7 @@ def test_public_proposal_is_422_on_a_short_description_or_a_foreign_previous(
     cloud = _proposal_row(team, [member], origin="cloud")
     foreign = client.post(
         "/api/hub/team/proposals",
-        json={"description": DESCRIPTION, "previous_id": str(cloud), "nota": "Più junior."},
+        json={"description": DESCRIPTION, "previous_id": str(cloud), "note": "Più junior."},
     )
     assert foreign.status_code == 422
     assert foreign.json()["detail"][0]["loc"] == ["body", "previous_id"]
@@ -567,9 +567,11 @@ def test_public_read_by_id_answers_a_fresh_public_proposal_and_404_for_the_rest(
         SUMMARY,
     )
     [read] = body["team"]
-    assert read["posizione"] == 1
+    assert read["position"] == 1
     assert (
-        read["freelancer_id"] is None and read["nome"] is None and read["card"]["location"] is None
+        read["freelancer_id"] is None
+        and read["first_name"] is None
+        and read["card"]["location"] is None
     )
     assert str(member) not in response.text and "Lovelace" not in response.text
     for proposal_id in (old, cloud, refused, MISSING):
@@ -741,7 +743,7 @@ def test_public_request_is_throttled(
 def test_an_admin_reads_and_works_a_request(
     client: TestClient, team: Session, sender: RecordingSender
 ) -> None:
-    team.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="Sala", role="admin"))
+    team.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="Sala", role="admin"))
     team.commit()
     _login(client, sender)
     member = _talent(team)
@@ -772,7 +774,7 @@ def test_an_admin_reads_and_works_a_request(
     assert rest["next_cursor"] is None
     item = rest["items"][0]
     assert (item["company"], item["origin"], item["status"]) == ("Uno Srl", "public", "new")
-    assert (item["total_talents"], item["self_talents"]) == (1, 0)
+    assert (item["total_talents"], item["yes_talents"]) == (1, 0)
 
     detail = client.get(f"/api/hub/team/requests/{ids[0]}")
     assert detail.status_code == 200, detail.text
@@ -780,7 +782,7 @@ def test_an_admin_reads_and_works_a_request(
     assert body["email"] == "wile@acme.it" and body["phone"] == "+39 345 1234567"
     assert body["proposal"]["team"][0]["freelancer_id"] == str(member)
     [talent] = body["talents"]
-    assert (talent["nome"], talent["last_name"]) == ("Ada1", "Lovelace1")
+    assert (talent["first_name"], talent["last_name"]) == ("Ada1", "Lovelace1")
     assert talent["daily_rate"] == "450.00"
 
     # «Proposte» (0028): the three asks, newest first, each naming its request.
@@ -803,17 +805,17 @@ def test_an_admin_reads_and_works_a_request(
     assert (unfiled["id"], unfiled["request_id"], unfiled["members"]) == (str(never), None, 2)
     assert unfiled["team"] == [
         {
-            "posizione": 1,
+            "position": 1,
             "freelancer_id": str(member),
             "role": "Backend developer",
-            "nome": "Ada1",
+            "first_name": "Ada1",
             "last_name": "Lovelace1",
         },
         {
-            "posizione": 2,
+            "position": 2,
             "freelancer_id": str(removed),
             "role": "Backend developer",
-            "nome": None,
+            "first_name": None,
             "last_name": None,
         },
     ]
@@ -871,7 +873,7 @@ def _admin_request(
     client: TestClient, team: Session, sender: RecordingSender, members: int = 2
 ) -> tuple[str, list[UUID]]:
     """An admin signed in, and a public request for a team of `members` talents."""
-    team.add(User(email=ADMIN_EMAIL, nome="Ivan", last_name="Sala", role="admin"))
+    team.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="Sala", role="admin"))
     team.commit()
     _login(client, sender)
     talents = [_talent(team, n) for n in range(1, members + 1)]
@@ -888,7 +890,7 @@ def _availability(sender: RecordingSender) -> list[Mail]:
 
 
 def _token(mail: Mail) -> str:
-    found = re.search(r"/hub/team/risposta\?t=([A-Za-z0-9_-]+)&r=si", mail.text)
+    found = re.search(r"/hub/team/answer\?t=([A-Za-z0-9_-]+)&r=yes", mail.text)
     assert found, mail.text
     return found.group(1)
 
@@ -908,14 +910,14 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
     # Sent after the answer, by the background task, to each talent once.
     first, second = _availability(mailbox)
     assert (first.to, second.to) == ("talento1@studio.it", "talento2@studio.it")
-    assert "https://letsrebase.com/hub/team/risposta?t=" in first.text
+    assert "https://letsrebase.com/hub/team/answer?t=" in first.text
     assert "Acme" not in first.text
 
     # A mail scanner's GET records nothing.
     assert client.get("/api/hub/team/availability", params={"t": _token(first)}).status_code == 405
-    answered = client.post("/api/hub/team/availability", json={"t": _token(first), "answer": "si"})
+    answered = client.post("/api/hub/team/availability", json={"t": _token(first), "answer": "yes"})
     assert answered.status_code == 200, answered.text
-    assert answered.json() == {"outcome": "si"}
+    assert answered.json() == {"outcome": "yes"}
     again = client.post("/api/hub/team/availability", json={"t": _token(first), "answer": "no"})
     assert again.json() == {"outcome": "invalid"}
     unknown = client.post("/api/hub/team/availability", json={"t": "non-un-token", "answer": "no"})
@@ -930,7 +932,7 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
     row = team.scalar(
         select(TeamRequestTalent).where(TeamRequestTalent.freelancer_id == talents[0])
     )
-    assert row is not None and row.answer == "si" and row.answered_at is not None
+    assert row is not None and row.answer == "yes" and row.answered_at is not None
 
     # «Contatta i talenti» is a first time only; «Rimanda» writes to the silent one.
     refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
@@ -948,9 +950,9 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
     assert nobody.json() == {"detail": NOBODY}
 
     detail = client.get(f"/api/hub/team/requests/{request_id}").json()
-    assert [talent["answer"] for talent in detail["talents"]] == ["si", "no"]
+    assert [talent["answer"] for talent in detail["talents"]] == ["yes", "no"]
     item = client.get("/api/hub/team/requests").json()["items"][0]
-    assert (item["total_talents"], item["self_talents"]) == (2, 1)
+    assert (item["total_talents"], item["yes_talents"]) == (2, 1)
 
 
 def test_contact_refuses_a_summary_that_names_the_company(
@@ -1034,10 +1036,10 @@ def test_the_answer_post_is_throttled(
     client: TestClient, team: Session, strict_rate_limit: None
 ) -> None:
     for _ in range(SIGNUPS_PER_MINUTE):
-        answered = client.post("/api/hub/team/availability", json={"t": "x", "answer": "si"})
+        answered = client.post("/api/hub/team/availability", json={"t": "x", "answer": "yes"})
         assert answered.json() == {"outcome": "invalid"}
 
-    refused = client.post("/api/hub/team/availability", json={"t": "x", "answer": "si"})
+    refused = client.post("/api/hub/team/availability", json={"t": "x", "answer": "yes"})
 
     assert refused.status_code == 429
     assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)

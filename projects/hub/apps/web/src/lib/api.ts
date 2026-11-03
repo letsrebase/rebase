@@ -159,12 +159,12 @@ function filled<T extends object>(params: T): Partial<T> {
 export type Remote = 'remote' | 'hybrid' | 'on_site'
 
 export interface FreelancerApplication {
-  nome: string
+  first_name: string
   last_name: string
   email: string
   linkedin_url: string
   daily_rate: string
-  posizione: string
+  job_title: string
   remote: Remote | ''
   links: string[]
   cv: File | null
@@ -183,11 +183,11 @@ export function applyAsFreelancer(
   // event itself (REB-215), and this is what puts it on the same person as the steps.
   if (distinctId) form.set('distinct_id', distinctId)
   if (ref) form.set('ref', ref)
-  form.set('nome', data.nome)
+  form.set('first_name', data.first_name)
   form.set('last_name', data.last_name)
   form.set('email', data.email)
   form.set('daily_rate', data.daily_rate)
-  form.set('posizione', data.posizione)
+  form.set('job_title', data.job_title)
   form.set('remote', data.remote)
   const linkedin = linkedinProfile(data.linkedin_url)
   if (linkedin) form.set('linkedin_url', linkedin)
@@ -294,7 +294,7 @@ export const team = {
 export type TeamRequestStatus = 'new' | 'contacted' | 'closed'
 export type TeamRequestOrigin = 'public' | 'cloud'
 /** A talent's answer to the availability mail (D1): `null` until they give one. */
-export type TalentAnswer = 'si' | 'no'
+export type TalentAnswer = 'yes' | 'no'
 
 export type TeamRequestTalent = Schemas['TeamRequestTalentRead']
 export type TeamRequest = Schemas['TeamRequestRead']
@@ -363,7 +363,7 @@ export type TalentList = Schemas['TalentList']
 
 /** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
  *  or the same telephone number. Only the first is a reason to merge. */
-export type DuplicateSignal = 'linkedin' | 'nome' | 'phone'
+export type DuplicateSignal = 'linkedin' | 'first_name' | 'phone'
 
 export type DuplicatePerson = Schemas['PersonRead']
 export type DuplicatePair = Schemas['DuplicatePairRead']
@@ -381,7 +381,7 @@ export type CreatedToken = Schemas['CreatedToken']
 export interface TalentsFilters {
   status?: string
   q?: string
-  posizione?: string
+  job_title?: string
   remote?: Remote
   min_rate?: string
   max_rate?: string
@@ -444,7 +444,7 @@ export interface MatchesFilters {
 export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled'
 export type CampaignAction = Schemas['CampaignDraft']['action']
 export type CampaignMeta = Schemas['CampaignDraft']['button_meta']
-export type RecipientStatus = 'in_coda' | 'sent' | 'skipped' | 'failed'
+export type RecipientStatus = 'queued' | 'sent' | 'skipped' | 'failed'
 
 export type Campaign = Schemas['CampaignRead']
 export type CampaignCounts = Schemas['CampaignCounts']
@@ -479,7 +479,7 @@ export type MatchPrefill = Narrow<
 
 /** The letter's text fields, in the order `engagement-letter.md` asks for them and the
  *  server's `LETTER_TEXT_FIELDS` lists them. */
-export const LetterTextKeys = [
+export const LETTER_TEXT_KEYS = [
   'role',
   'activities',
   'results',
@@ -506,14 +506,14 @@ export const LetterTextKeys = [
   'other_terms',
   'previous_reports',
 ] as const
-export type LetterTextKey = (typeof LetterTextKeys)[number]
+export type LetterTextKey = (typeof LETTER_TEXT_KEYS)[number]
 
 /** What `LetterFields` takes, as the wizard sends it: an empty text field is `null` and
  *  prints a blank line, and a missing required one is the API's 422 naming the field, so
  *  this is wider than the schema's own type (see `matchBody`). */
 export type Letter = Record<LetterTextKey, string | null> & {
   start_date: string
-  data_fine: string | null
+  end_date: string | null
   fee: string
   payment_days: number
   month_end: boolean
@@ -863,7 +863,7 @@ export const admin = {
   admins: (params: ListPageParams = {}) =>
     unwrap(client.GET('/api/hub/admins', { params: { query: filled(params) } })),
   /** Promotes whatever `users` row already answers to this address, or creates a bare
-   *  one from `nome`/`last_name` when none exists yet (REB-279, no password anywhere). */
+   *  one from `first_name`/`last_name` when none exists yet (REB-279, no password anywhere). */
   promote: (body: Schemas['PromoteRequest']) => unwrap(client.POST('/api/hub/admins/promote', { body })),
   /** Sets `role = 'member'`, fully reversible since nothing is deleted. */
   demote: (id: string) =>
@@ -873,7 +873,7 @@ export const admin = {
    *  REB-313. */
   tokens: (params: ListPageParams = {}) =>
     unwrap(client.GET('/api/hub/tokens', { params: { query: filled(params) } })),
-  createToken: (nome: string) => unwrap(client.POST('/api/hub/tokens', { body: { nome } })),
+  createToken: (name: string) => unwrap(client.POST('/api/hub/tokens', { body: { name } })),
   revokeToken: (id: string) =>
     unwrap(client.DELETE('/api/hub/tokens/{token_id}', { params: { path: { token_id: id } } })),
   notes: (kind: ThreadKind, id: string) =>
@@ -1035,7 +1035,7 @@ export const admin = {
     ),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
   contractPdfUrl: (documentId: string, signed = false) =>
-    `/api/hub/contract-documents/${encodeURIComponent(documentId)}/pdf${signed ? '?firmato=true' : ''}`,
+    `/api/hub/contract-documents/${encodeURIComponent(documentId)}/pdf${signed ? '?signed=true' : ''}`,
   /** The referral ledger (P-REB-44): every reward, newest first. */
   referrals: (params: ReferralLedgerParams = {}) =>
     unwrap(client.GET('/api/hub/referrals', { params: { query: filled(params) } }), reading<ReferralLedgerList>()),
@@ -1221,7 +1221,7 @@ export interface CloudFilters {
 
 /** One person of the builder's proposal in the cloud: the admin's shape and the name,
  *  which the cloud shows (spec § 4.2) and the public read never carries. */
-export type CloudTeamMember = Narrow<TeamMember, { nome: string; last_name: string }>
+export type CloudTeamMember = Narrow<TeamMember, { first_name: string; last_name: string }>
 export type CloudTeamProposal = Narrow<TeamProposal, { team: CloudTeamMember[] }>
 
 export const cloud = {

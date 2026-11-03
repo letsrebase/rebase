@@ -27,9 +27,9 @@ from rebase_core.models import (
     CAMPAIGN_STATES,
     CARD_SENIORITIES,
     COMPANY_STATES,
-    COMPILATA_DA,
     CONTRACT_KINDS,
     CONTRACT_STATES,
+    FILLED_BY,
     FREELANCER_STATES,
     MATCH_STATES,
     NOTE_SOURCES,
@@ -84,7 +84,7 @@ TeamProposalOrigin = Annotated[str, Field(json_schema_extra=enum_of(TEAM_PROPOSA
 TeamProposalError = Annotated[str, Field(json_schema_extra=enum_of(TEAM_PROPOSAL_ERRORS))]
 TalentAnswer = Annotated[str, Field(json_schema_extra=enum_of(TALENT_ANSWERS))]
 Seniority = Annotated[str, Field(json_schema_extra=enum_of(CARD_SENIORITIES))]
-CompilataDa = Annotated[str, Field(json_schema_extra=enum_of(COMPILATA_DA))]
+FilledBy = Annotated[str, Field(json_schema_extra=enum_of(FILLED_BY))]
 UserRole = Annotated[str, Field(json_schema_extra=enum_of(USER_ROLES))]
 NoteSource = Annotated[str, Field(json_schema_extra=enum_of(NOTE_SOURCES))]
 AdminActionKind = Annotated[str, Field(json_schema_extra=enum_of(ADMIN_ACTION_KINDS))]

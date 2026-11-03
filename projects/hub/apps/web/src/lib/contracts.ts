@@ -5,7 +5,7 @@
  */
 import {
   ApiError,
-  LetterTextKeys,
+  LETTER_TEXT_KEYS,
   type Customer,
   type CustomerDraft,
   type Company,
@@ -22,9 +22,8 @@ import {
 import { amountNumber, sentAmount } from './amount'
 import { formatDate } from './format'
 
-/** The tax form as typed: every field a string, and the box «Senza partita IVA
- *  (prestazione occasionale)» (REB-687), ticked exactly when the partita IVA is saved as
- *  `null`. */
+/** The tax form as typed: every field a string, and the box for an occasional engagement
+ *  with no VAT number (REB-687), ticked exactly when the VAT number is saved as `null`. */
 export type FiscalTextKey = keyof FiscalData
 export type FiscalDraft = Record<FiscalTextKey, string> & { without_vat_number: boolean }
 
@@ -125,7 +124,7 @@ export function fiscalToSave(saved: FiscalData | null, draft: FiscalDraft, editi
 }
 
 export type CustomerForm = Record<keyof Customer, string>
-export const CustomerEmpty: CustomerForm = { customer_legal_name: '', customer_vat_number: '', customer_registered_office: '' }
+export const CUSTOMER_EMPTY: CustomerForm = { customer_legal_name: '', customer_vat_number: '', customer_registered_office: '' }
 
 export function customerForm(draft: CustomerDraft): CustomerForm {
   return {
@@ -151,7 +150,7 @@ export function requestLine(company: Company): string {
 
 /** What a refusal can name that «Chi e per chi» asks: the client on the letter, and the
  *  freelancer's tax data (`tax` when they are missing altogether). */
-export const CustomerFields: ReadonlySet<string> = new Set<keyof Customer>([
+export const CUSTOMER_FIELDS: ReadonlySet<string> = new Set<keyof Customer>([
   'customer_legal_name',
   'customer_vat_number',
   'customer_registered_office',
@@ -170,7 +169,7 @@ export function customerLine(form: CustomerForm): string {
 
 export type LetterForm = Record<LetterTextKey, string> & {
   start_date: string
-  data_fine: string
+  end_date: string
   fee: string
   payment_days: string
   month_end: boolean
@@ -180,12 +179,12 @@ export type LetterFieldKey = keyof LetterForm
 /** A field an input or a textarea holds: every one but `month_end`, the checkbox. */
 export type LetterTextFieldKey = Exclude<LetterFieldKey, 'month_end'>
 
-const TEXT_EMPTY = Object.fromEntries(LetterTextKeys.map((key) => [key, ''])) as Record<LetterTextKey, string>
+const TEXT_EMPTY = Object.fromEntries(LETTER_TEXT_KEYS.map((key) => [key, ''])) as Record<LetterTextKey, string>
 
-export const LetterEmpty: LetterForm = {
+export const LETTER_EMPTY: LetterForm = {
   ...TEXT_EMPTY,
   start_date: '',
-  data_fine: '',
+  end_date: '',
   fee: '',
   payment_days: '',
   month_end: false,
@@ -201,11 +200,11 @@ export function amountForm(value: string): string {
 }
 
 export function letterForm(draft: LetterDraft): LetterForm {
-  const text = Object.fromEntries(LetterTextKeys.map((key) => [key, draft[key] ?? ''])) as Record<LetterTextKey, string>
+  const text = Object.fromEntries(LETTER_TEXT_KEYS.map((key) => [key, draft[key] ?? ''])) as Record<LetterTextKey, string>
   return {
     ...text,
     start_date: draft.start_date ?? '',
-    data_fine: draft.data_fine ?? '',
+    end_date: draft.end_date ?? '',
     fee: draft.fee === null ? '' : amountForm(draft.fee),
     payment_days: draft.payment_days === null ? '' : String(draft.payment_days),
     month_end: draft.month_end ?? false,
@@ -214,14 +213,14 @@ export function letterForm(draft: LetterDraft): LetterForm {
 }
 
 export function toLetter(form: LetterForm): Letter {
-  const text = Object.fromEntries(LetterTextKeys.map((key) => [key, form[key].trim() || null])) as Record<
+  const text = Object.fromEntries(LETTER_TEXT_KEYS.map((key) => [key, form[key].trim() || null])) as Record<
     LetterTextKey,
     string | null
   >
   return {
     ...text,
     start_date: form.start_date,
-    data_fine: form.data_fine || null,
+    end_date: form.end_date || null,
     fee: sentAmount(form.fee),
     payment_days: Number(form.payment_days),
     month_end: form.month_end,
@@ -245,13 +244,13 @@ export function expectedDaysToSend(text: string): number | null {
  *  here, because it has no field anywhere in this flow (spec § 1h). The page asks
  *  `mode` and `unit` as one choice, «Come si paga», and `payment_days` inside
  *  its sentence, «Pagamento a … giorni», so those three labels show nowhere on it. */
-export const LetterLabels: Record<LetterFieldKey, string> = {
+export const LETTER_LABELS: Record<LetterFieldKey, string> = {
   role: 'Ruolo',
   activities: 'Cosa farà',
   results: 'Risultati da consegnare',
   acceptance: 'Come il cliente accetta i risultati',
   start_date: 'Inizio',
-  data_fine: 'Fine prevista (facoltativa)',
+  end_date: 'Fine prevista (facoltativa)',
   commitment: 'Impegno',
   review_period: 'Periodo iniziale di verifica',
   location: 'Dove',
@@ -280,9 +279,9 @@ export const LetterLabels: Record<LetterFieldKey, string> = {
 }
 
 /** The letter's own sections, the order «Altre condizioni» keeps. */
-export const LetterGroups: readonly { title: string; fields: readonly LetterFieldKey[] }[] = [
+export const LETTER_GROUPS: readonly { title: string; fields: readonly LetterFieldKey[] }[] = [
   { title: 'Attività', fields: ['role', 'activities', 'results', 'acceptance'] },
-  { title: 'Tempi e impegno', fields: ['start_date', 'data_fine', 'commitment', 'review_period'] },
+  { title: 'Tempi e impegno', fields: ['start_date', 'end_date', 'commitment', 'review_period'] },
   { title: 'Modalità di lavoro', fields: ['location', 'coordination', 'customer_contact', 'rebase_contact'] },
   {
     title: 'Condizioni economiche',
@@ -297,14 +296,14 @@ export const LetterGroups: readonly { title: string; fields: readonly LetterFiel
   { title: 'Rapporti precedenti', fields: ['previous_reports'] },
 ]
 
-export const LetterRequired: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>([
+export const LETTER_REQUIRED: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>([
   'role',
   'activities',
   'start_date',
   'fee',
   'payment_days',
 ])
-export const LetterMultiline: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>([
+export const LETTER_MULTILINE: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>([
   'activities',
   'results',
   'acceptance',
@@ -315,18 +314,20 @@ export const LetterMultiline: ReadonlySet<LetterFieldKey> = new Set<LetterFieldK
 /** «Come si paga»: one choice that the letter prints twice, as `mode` and as the
  *  fee's `unit` («450,00 € a giornata»), so the page sets both. */
 export type PayMode = 'to_work_unit' | 'to_body'
+/** The words the letter prints after the fee (`unit`): what the core's `PAY_MODE_WORDS` says. */
+const PAY_UNIT_WORDS: Record<PayMode, string> = { to_work_unit: 'a giornata', to_body: 'a corpo' }
 
 export function payModeOf(form: LetterForm): PayMode {
   return form.mode.trim() === 'to_body' ? 'to_body' : 'to_work_unit'
 }
 
 export function withPayMode(form: LetterForm, mode: PayMode): LetterForm {
-  return { ...form, mode: mode, unit: mode }
+  return { ...form, mode, unit: PAY_UNIT_WORDS[mode] }
 }
 
 /** «Tipo di lettera» on «Chi e per chi» (REB-687), in the order the page shows them. */
 export const REGIME_OPTIONS: readonly { regime: Regime; label: string }[] = [
-  { regime: 'partita_iva', label: 'Incarico con partita IVA' },
+  { regime: 'vat_registered', label: 'Incarico con partita IVA' },
   { regime: 'occasional', label: 'Prestazione occasionale' },
 ]
 
@@ -359,14 +360,14 @@ export function switchPayMode(form: LetterForm, mode: PayMode, dayRate: string):
 }
 
 /** What only a fixed-price engagement prints, asked right after the fee «A corpo». */
-export const ToBodyFields: readonly LetterTextFieldKey[] = ['results', 'acceptance', 'billing_deadlines']
+export const TO_BODY_FIELDS: readonly LetterTextFieldKey[] = ['results', 'acceptance', 'billing_deadlines']
 
 /** What «Condizioni» asks in the open: what changes from one engagement to the next. */
-export const TermsFields: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>([
+export const TERMS_FIELDS: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>([
   'role',
   'activities',
   'start_date',
-  'data_fine',
+  'end_date',
   'commitment',
   'location',
   'mode',
@@ -374,13 +375,13 @@ export const TermsFields: ReadonlySet<LetterFieldKey> = new Set<LetterFieldKey>(
   'fee',
   'payment_days',
   'month_end',
-  ...ToBodyFields,
+  ...TO_BODY_FIELDS,
 ])
 
-const OtherSections = LetterGroups.map((group) => ({
+const OTHER_SECTIONS = LETTER_GROUPS.map((group) => ({
   title: group.title,
   fields: group.fields.filter(
-    (field): field is LetterTextFieldKey => field !== 'month_end' && !TermsFields.has(field),
+    (field): field is LetterTextFieldKey => field !== 'month_end' && !TERMS_FIELDS.has(field),
   ),
 }))
 
@@ -388,13 +389,13 @@ const OtherSections = LetterGroups.map((group) => ({
  *  in the letter's sections and order. A section left with one field would only repeat
  *  its label («Preavviso», «Giorni di preavviso»), so those fields share one last
  *  «Altro». */
-export const OtherTermsGroups: readonly { title: string; fields: readonly LetterTextFieldKey[] }[] = [
-  ...OtherSections.filter((group) => group.fields.length > 1),
-  { title: 'Altro', fields: OtherSections.filter((group) => group.fields.length === 1).flatMap((group) => group.fields) },
+export const OTHER_TERMS_GROUPS: readonly { title: string; fields: readonly LetterTextFieldKey[] }[] = [
+  ...OTHER_SECTIONS.filter((group) => group.fields.length > 1),
+  { title: 'Altro', fields: OTHER_SECTIONS.filter((group) => group.fields.length === 1).flatMap((group) => group.fields) },
 ].filter((group) => group.fields.length > 0)
 
-export const OtherTermsFields: ReadonlySet<string> = new Set(
-  OtherTermsGroups.flatMap((group) => group.fields),
+export const OTHER_TERMS_FIELDS: ReadonlySet<string> = new Set(
+  OTHER_TERMS_GROUPS.flatMap((group) => group.fields),
 )
 
 /** The letter as the API takes it. A day rate prints no deliverables, acceptance or
@@ -402,15 +403,15 @@ export const OtherTermsFields: ReadonlySet<string> = new Set(
  *  for a switch back, the letter does not get them. */
 export function letterToSend(form: LetterForm): Letter {
   if (payModeOf(form) === 'to_body') return toLetter(form)
-  return toLetter({ ...form, ...Object.fromEntries(ToBodyFields.map((field) => [field, ''])) })
+  return toLetter({ ...form, ...Object.fromEntries(TO_BODY_FIELDS.map((field) => [field, ''])) })
 }
 
 type Named = Pick<ContractDocument, 'kind' | 'number' | 'regime'>
 
 /** How a document is named in a button's label or a confirmation, the one place both
- *  the admin's «Match e contratti» (REB-407) and the member area's «Contratti»
- *  (REB-392) name a document: «del contratto quadro», «del contratto quadro per
- *  prestazioni occasionali» (REB-687), «della lettera n. 2026-001». Takes just the
+ *  the admin's matches-and-contracts page (REB-407) and the member area's contracts
+ *  (REB-392) name a document, as the object of "of": the framework agreement, the
+ *  occasional one (REB-687), a numbered letter. Takes just the
  *  fields a label needs, so a `MemberContract` names a document the same way a
  *  `ContractDocument` does. */
 export function whatOf(document: Named): string {
@@ -418,8 +419,7 @@ export function whatOf(document: Named): string {
   return document.regime === 'occasional' ? 'del contratto quadro per prestazioni occasionali' : 'del contratto quadro'
 }
 
-/** The same document as the object of a verb: «Firma il contratto quadro», «Annulla il
- *  contratto quadro per prestazioni occasionali», «Firma la lettera n. 2026-001». */
+/** The same document as the object of a verb (sign, cancel), with its article. */
 export function objectOf(document: Named): string {
   if (document.kind === 'letter') return `la lettera n. ${document.number}`
   return document.regime === 'occasional' ? 'il contratto quadro per prestazioni occasionali' : 'il contratto quadro'
@@ -440,10 +440,10 @@ export function closeDescription(match: Match): string {
 /** The headings «Match e contratti» moves the focus to when an action took away the
  *  control that started it: the card's, or the section's when the card went too. A
  *  framework agreement's card has one per regime (REB-687). */
-export const FrameworkHeadingId = 'contratti-quadro'
-export const MATCHES_HEADING_ID = 'contratti-match'
+export const FRAMEWORK_HEADING_ID = 'framework-contracts'
+export const MATCHES_HEADING_ID = 'match-contracts'
 export function frameworkHeadingId(regime: Regime): string {
-  return regime === 'occasional' ? `${FrameworkHeadingId}-occasionale` : FrameworkHeadingId
+  return regime === 'occasional' ? `${FRAMEWORK_HEADING_ID}-occasional` : FRAMEWORK_HEADING_ID
 }
 export function matchHeadingId(matchId: string): string {
   return `match-${matchId}`
@@ -463,8 +463,8 @@ export function cancelDescription(match: Match): string {
 
 /** The primary button of «Controlla e invia», with the freelancer's first name: «ad»
  *  before an a, as in «Invia ad Ada per la firma». */
-export function sendLabel(nome: string): string {
-  const name = nome.trim()
+export function sendLabel(firstName: string): string {
+  const name = firstName.trim()
   if (!name) return 'Invia per la firma'
   return `Invia ${/^[aàAÀ]/.test(name) ? 'ad' : 'a'} ${name} per la firma`
 }

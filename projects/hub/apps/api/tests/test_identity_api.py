@@ -54,11 +54,11 @@ def _apply(client: TestClient, email: str) -> None:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
+            "first_name": "Ada",
             "last_name": "Lovelace",
             "email": email,
             "daily_rate": "450",
-            "posizione": "Backend developer",
+            "job_title": "Backend developer",
             "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
@@ -68,7 +68,7 @@ def _apply(client: TestClient, email: str) -> None:
 
 def _enter(client: TestClient, sender: RecordingSender, email: str) -> dict:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match, sender.sent[-1].text
     entered = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert entered.status_code == 200, entered.text
@@ -78,7 +78,7 @@ def _enter(client: TestClient, sender: RecordingSender, email: str) -> dict:
 def _bootstrap_admin(api_session: Session, email: str = "ivan.reb278@rebase.it") -> None:
     """A `users` row already there, `role='admin'`: the shape migration A would leave
     behind for an admin who existed before REB-278 deployed."""
-    api_session.add(User(email=email, nome="Ivan", last_name="Fiore", role="admin"))
+    api_session.add(User(email=email, first_name="Ivan", last_name="Fiore", role="admin"))
     api_session.commit()
 
 
@@ -88,7 +88,7 @@ def test_me_widens_to_role_and_has_card(
     _apply(client, "ada.reb278@studio.it")
     entered = _enter(client, sender, "ada.reb278@studio.it")
     assert entered["role"] == "member" and entered["has_card"] is True
-    assert entered["complete"] is True and entered["nome"] == "Ada"
+    assert entered["complete"] is True and entered["first_name"] == "Ada"
     assert client.get("/api/hub/me").json() == entered
 
 
@@ -156,11 +156,11 @@ def test_promote_and_demote_routes(
 
     promoted = client.post(
         "/api/hub/admins/promote",
-        json={"email": "Lorenzo.Reb278@Rebase.it", "nome": "Lorenzo", "last_name": "Fiore"},
+        json={"email": "Lorenzo.Reb278@Rebase.it", "first_name": "Lorenzo", "last_name": "Fiore"},
     )
     assert promoted.status_code == 200, promoted.text
     body = promoted.json()
-    assert body["email"] == "lorenzo.reb278@rebase.it" and body["nome"] == "Lorenzo"
+    assert body["email"] == "lorenzo.reb278@rebase.it" and body["first_name"] == "Lorenzo"
     assert sender.sent and "/verify?t=" in sender.sent[-1].text  # a brand-new row gets a link
 
     admins = {row["email"] for row in client.get("/api/hub/admins").json()["items"]}
@@ -197,7 +197,7 @@ def test_the_last_admin_cannot_be_demoted_and_every_change_of_role_is_signed(
 
     promoted = client.post(
         "/api/hub/admins/promote",
-        json={"email": "lorenzo.reb278@rebase.it", "nome": "Lorenzo", "last_name": "Fiore"},
+        json={"email": "lorenzo.reb278@rebase.it", "first_name": "Lorenzo", "last_name": "Fiore"},
     ).json()
     assert client.post(f"/api/hub/admins/{promoted['id']}/demote").status_code == 200
 

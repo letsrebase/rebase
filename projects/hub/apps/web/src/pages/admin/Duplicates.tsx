@@ -27,17 +27,17 @@ import { Empty, Header } from './list-kit'
 
 const SIGNAL_LABELS: Record<DuplicateSignal, string> = {
   linkedin: 'Stesso profilo LinkedIn',
-  nome: 'Stesso nome',
+  first_name: 'Stesso nome',
   phone: 'Stesso telefono',
 }
 
 /** How a card is called on this page: the name, the address when it has none. */
 function personName(person: DuplicatePerson): string {
-  return `${person.nome} ${person.last_name}`.trim() || person.email
+  return `${person.first_name} ${person.last_name}`.trim() || person.email
 }
 
 function cvLine(person: DuplicatePerson): string {
-  if (!person.ha_cv) return 'Nessun CV'
+  if (!person.has_cv) return 'Nessun CV'
   return person.cv_uploaded_at ? `CV caricato il ${formatDate(person.cv_uploaded_at)}` : 'CV caricato'
 }
 

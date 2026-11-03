@@ -74,7 +74,7 @@ class StaleCardRead(ResponseModel):
     hub's facts, the position or a source changed."""
 
     freelancer_id: UUID
-    nome: str
+    first_name: str
     reason: Literal["prompt", "source"]
     generated_at: datetime | None
 

@@ -157,7 +157,7 @@ _HEADER_BREAKERS = {ord(char): None for char in '"\r\n'}
 
 def _multipart(payload: dict[str, Any], filename: str, pdf: bytes) -> tuple[str, bytes]:
     """`payload` as a JSON string and the PDF as `files`, the two parts the create takes.
-    The file name is the hub's own (`lettera-di-incarico-2026-001.pdf`), ASCII, and
+    The file name is the hub's own (`engagement-letter-2026-001.pdf`), ASCII, and
     becomes the envelope item's title and the sealed copy's name with `_signed`; the
     characters that would end the quoted header value or the header line are dropped, so
     no name can add a header or a part of its own."""

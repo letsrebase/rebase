@@ -48,7 +48,7 @@ def _card(session: Session, email: str) -> Freelancer | None:
 
 
 def _complete(card: Freelancer) -> bool:
-    return card_state(card.cv_size, card.daily_rate, card.posizione, card.remote) == "complete"
+    return card_state(card.cv_size, card.daily_rate, card.job_title, card.remote) == "complete"
 
 
 def snapshot(session: Session, candidate: Candidate, now: datetime) -> dict[str, Any]:
@@ -62,7 +62,7 @@ def snapshot(session: Session, candidate: Candidate, now: datetime) -> dict[str,
     return {
         "t": now.isoformat(),
         "has_card": card is not None,
-        "ha_cv": card is not None and card.cv_size is not None,
+        "has_cv": card is not None and card.cv_size is not None,
         "complete": card is not None and _complete(card),
         "requests": requests,
     }
@@ -164,10 +164,10 @@ def _earlier_clicks(
     chains: dict[UUID, list[UUID]] = {}
     for campaign_id in {r.campaign_id for r in recipients}:
         chain: list[UUID] = []
-        parent = session.scalar(select(Campaign.segue_id).where(Campaign.id == campaign_id))
+        parent = session.scalar(select(Campaign.follows_id).where(Campaign.id == campaign_id))
         while parent is not None and parent not in chain and len(chain) < _MAX_CHAIN:
             chain.append(parent)
-            parent = session.scalar(select(Campaign.segue_id).where(Campaign.id == parent))
+            parent = session.scalar(select(Campaign.follows_id).where(Campaign.id == parent))
         chains[campaign_id] = chain
     every_chain = {campaign for chain in chains.values() for campaign in chain}
     clicks: dict[tuple[UUID, str], list[datetime]] = {}
@@ -263,7 +263,7 @@ def _card_action(
             r.id: (card.id, moments[r.id])
             for r in recipients
             if (card := cards.get(r.email.lower())) is not None
-            and not (r.before or {}).get("ha_cv")
+            and not (r.before or {}).get("has_cv")
             and card.cv_size is not None
         }
         noted = _first_after(
@@ -288,7 +288,7 @@ def _card_action(
             created = not before.get("has_card") and card.created_at > moment
             answer[r.id] = card.created_at if created else None
         elif action == "cv":
-            if before.get("ha_cv") or card.cv_size is None:
+            if before.get("has_cv") or card.cv_size is None:
                 answer[r.id] = None
             else:
                 answer[r.id] = noted.get(r.id) or card.updated_at
@@ -334,7 +334,7 @@ def earlier_click(
     session: Session, recipient: CampaignRecipient, *, since: datetime | None = None
 ) -> datetime | None:
     """The first click the same address made on a mail of the campaigns `recipient`'s
-    campaign follows (`segue_id`, up the chain), or `None`. A follow-up row has no click
+    campaign follows (`follows_id`, up the chain), or `None`. A follow-up row has no click
     of its own until its mail has left, so without this the send-time check would mail
     somebody who clicked the earlier mail after the follow-up was scheduled (Greptile P1
     on #476). `since` given, as the tick's stamping gives it, only a click after that

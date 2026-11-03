@@ -4,9 +4,9 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SidebarNav } from '@/components/SidebarNav'
-import { AdminModelsAi } from './AiModels'
+import { AdminAiModels } from './AiModels'
 
-const ME = { nome: 'Ivan', last_name: 'Sala', email: 'ivan@rebase.it', role: 'admin' } as never
+const ME = { first_name: 'Ivan', last_name: 'Sala', email: 'ivan@rebase.it', role: 'admin' } as never
 const SECRET = 'sk-secret-abcd'
 
 function answer(status: number, body: unknown) {
@@ -112,8 +112,8 @@ const STALE = {
   batch_threshold: 10,
   batch: null,
   items: [
-    { freelancer_id: 'f1', nome: 'Ada Lovelace', reason: 'prompt', generated_at: '2026-09-25T10:00:00Z' },
-    { freelancer_id: 'f2', nome: 'Grace Hopper', reason: 'source', generated_at: null },
+    { freelancer_id: 'f1', first_name: 'Ada Lovelace', reason: 'prompt', generated_at: '2026-09-25T10:00:00Z' },
+    { freelancer_id: 'f2', first_name: 'Grace Hopper', reason: 'source', generated_at: null },
   ],
 }
 
@@ -128,7 +128,7 @@ function mount(config: unknown = CONFIG, overrides: Record<string, () => Respons
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const root = createRootRoute({ component: () => <Outlet /> })
-  const page = createRoute({ getParentRoute: () => root, path: '/', component: AdminModelsAi })
+  const page = createRoute({ getParentRoute: () => root, path: '/', component: AdminAiModels })
   const card = createRoute({ getParentRoute: () => root, path: '/admin/freelance/$id', component: () => <p>scheda</p> })
   const router = createRouter({ routeTree: root.addChildren([page, card]), history: createMemoryHistory() })
   render(

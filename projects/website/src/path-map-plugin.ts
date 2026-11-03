@@ -38,10 +38,10 @@ export const PAGES: Readonly<Record<string, string>> = {
 /** `location = <path> { return 301 <to>; }`. nginx's `return` drops the query string
  *  and so does this. The community page (`/community`) is gone (REB-72), a week after
  *  the landing took the front door for good: its name now lands there instead, and
- *  `/terms` is the terms page's name before REB-318 moved it to `/terms`; both kept
+ *  `/termini` is the terms page's name before REB-318 moved it to `/terms`; both kept
  *  so a bookmark, an ad or a newsletter link still lands. Its older name, `/orbiters`,
  *  was dropped on 2026-10-20 (REB-670): a plain 404 now. */
-export const REDIRECTS: Readonly<Record<string, string>> = { '/community': '/', '/terms': '/terms' }
+export const REDIRECTS: Readonly<Record<string, string>> = { '/community': '/', '/termini': '/terms' }
 
 /** Paths nginx serves via `try_files`, exactly like `PAGES`, whose file this plugin
  *  writes at build time instead of Vite building it from an HTML input named in

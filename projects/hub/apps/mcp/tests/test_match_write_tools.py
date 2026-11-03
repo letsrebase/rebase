@@ -48,7 +48,7 @@ from rebase_mcp.server import build_server
 GRACE = AdminRead(
     id=UUID("01a00000-0000-7000-8000-000000000002"),
     email="grace@rebase.it",
-    nome="Grace",
+    first_name="Grace",
     active=True,
     created_at=datetime(2026, 9, 10, tzinfo=UTC),
 )
@@ -67,7 +67,7 @@ SIGNED_AT = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
 # unlike anything else the flow prints (the client's own VAT number is another).
 TAX = {
     "tax_code": "LVLDAA85T50H501Z",
-    "partita_iva": "09876543210",
+    "vat_number": "09876543210",
     "domicile": "Via dei Segreti 7, Torino",
     "certified_email": "ada.lovelace@pec.it",
 }
@@ -158,16 +158,22 @@ def _seed(factory: sessionmaker[Session], *, fiscal: bool = True) -> tuple[str, 
     try:
         for admin in (IVAN, GRACE):
             session.add(
-                User(id=admin.id, email=admin.email, nome=admin.nome, last_name="", role="admin")
+                User(
+                    id=admin.id,
+                    email=admin.email,
+                    first_name=admin.first_name,
+                    last_name="",
+                    role="admin",
+                )
             )
         session.commit()
         card, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
+                first_name="Ada",
                 last_name="Lovelace",
                 email="ada@studio.it",
                 daily_rate=Decimal("450"),
-                posizione="Backend developer",
+                job_title="Backend developer",
                 remote="remote",
             ),
             PDF,
@@ -248,7 +254,7 @@ async def test_preview_match_answers_the_sentences_and_writes_nothing(world: Wor
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
             customer=CUSTOMER,
-            terms={"data_fine": "2026-12-31"},
+            terms={"end_date": "2026-12-31"},
         )
     assert body["recap"][0] == (
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, da remoto, dal 1° ottobre "
@@ -261,7 +267,7 @@ async def test_preview_match_answers_the_sentences_and_writes_nothing(world: Wor
     # What would be written: the client as given, the letter as the hub proposes it with
     # the one field laid over it.
     assert body["customer"] == CUSTOMER
-    assert body["terms"]["data_fine"] == "2026-12-31"
+    assert body["terms"]["end_date"] == "2026-12-31"
     assert body["terms"]["role"] == "Backend developer"
     assert Decimal(body["terms"]["fee"]) == Decimal("450")
     assert world.written() == before
@@ -290,7 +296,7 @@ async def test_preview_match_reads_the_fee_the_italian_way(
             terms={"fee": "tanto"},
         )
     assert Decimal(body["terms"]["fee"]) == Decimal(fee)
-    assert "condizioni.compenso: non valido" in garbage
+    assert "terms.fee: non valido" in garbage
 
 
 @pytest.mark.parametrize("typed", ["1e3", "1,000.00"])
@@ -307,7 +313,7 @@ async def test_preview_match_refuses_a_fee_pydantic_alone_would_misread(
             customer=CUSTOMER,
             terms={"fee": typed},
         )
-    assert "condizioni.compenso: non valido" in refused
+    assert "terms.fee: non valido" in refused
 
 
 async def test_create_match_saves_the_draft_with_the_fields_given(world: World) -> None:
@@ -321,7 +327,7 @@ async def test_create_match_saves_the_draft_with_the_fields_given(world: World) 
     assert (body["next_action"], body["other_actions"]) == ("send", ["cancel"])
     assert body["letter"]["pdf_url"] == _link(body["letter"])
     assert body["created_by"] == str(IVAN.id)
-    assert world.document(body["letter"]["id"]).data["role"] == "Staff engineer"
+    assert world.document(body["letter"]["id"]).data["ruolo"] == "Staff engineer"
 
 
 async def test_create_match_saves_the_expected_days_beside_the_letter(world: World) -> None:
@@ -337,7 +343,7 @@ async def test_create_match_saves_the_expected_days_beside_the_letter(world: Wor
             expected_days=40,
         )
     assert body["expected_days"] == 40
-    assert world.document(body["letter"]["id"]).data["role"] == "Staff engineer"
+    assert world.document(body["letter"]["id"]).data["ruolo"] == "Staff engineer"
     assert "expected_days" not in world.document(body["letter"]["id"]).data
 
 
@@ -359,7 +365,7 @@ async def test_create_match_refuses_an_out_of_range_expected_days(world: World) 
             expected_days=0,
         )
     # The core's own sentence (REB-502), not Pydantic's English and no longer «non valido».
-    assert refused == "giorni_previsti: I giorni previsti vanno da 1 a 366."
+    assert refused == "expected_days: I giorni previsti vanno da 1 a 366."
     assert world.written() == before
 
 
@@ -377,7 +383,7 @@ async def test_create_match_with_no_fields_takes_the_hubs_proposal(world: World)
         second["customer_registered_office"],
     ) == tuple(CUSTOMER.values())
     letter = world.document(second["letter"]["id"]).data
-    assert (letter["role"], letter["fee"]) == ("Backend developer", 450)
+    assert (letter["ruolo"], letter["compenso"]) == ("Backend developer", 450)
 
 
 async def test_create_match_refuses_a_field_by_the_name_the_tool_takes(world: World) -> None:
@@ -404,11 +410,11 @@ async def test_create_match_refuses_a_field_by_the_name_the_tool_takes(world: Wo
             "preview_match",
             freelancer_id=world.freelancer_id,
             company_id=world.company_id,
-            customer={**CUSTOMER, "nome": "ACME"},
+            customer={**CUSTOMER, "first_name": "ACME"},
         )
-    assert "condizioni.stipendio: non è un campo del match" in unknown
-    assert "condizioni.compenso: manca" in emptied
-    assert "cliente.nome: non è un campo del match" in stranger
+    assert "terms.stipendio: non è un campo del match" in unknown
+    assert "terms.fee: manca" in emptied
+    assert "customer.first_name: non è un campo del match" in stranger
     assert world.written() == before
 
 
@@ -440,7 +446,7 @@ async def test_send_match_for_signature_answers_the_pages_sentence(world: World)
         match = await _create(client, world, customer=CUSTOMER)
         report = await _call(client, "send_match_for_signature", match_id=match["id"])
     number = match["letter"]["number"]
-    assert report["messaggio"] == (
+    assert report["message"] == (
         f"Partito il contratto quadro: la lettera n. {number} partirà da sola dopo la sua firma."
     )
     assert (report["sent"], report["mail_sent"]) == ("framework", True)
@@ -499,7 +505,7 @@ async def test_a_match_goes_from_signature_to_closed_and_its_framework_to_notice
             True,
             True,
         )
-        assert signed["pdf_firmato_url"] == f"{_link(signed)}?firmato=true"
+        assert signed["pdf_signed_url"] == f"{_link(signed)}?signed=true"
         # The letter that waited for this framework agreement left by itself.
         letter_id = match["letter"]["id"]
         assert world.document(letter_id).status == "sent"
@@ -628,7 +634,7 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
                 tax_code="XYZ987",
-                vat_number=TAX["partita_iva"],
+                vat_number=TAX["vat_number"],
                 domicile=TAX["domicile"],
             )
             nul = await _refused(
@@ -636,7 +642,7 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                 "set_freelancer_tax_data",
                 freelancer_id=freelancer_id,
                 tax_code="LVLDAA85\x00T50H501Z",
-                vat_number=TAX["partita_iva"],
+                vat_number=TAX["vat_number"],
                 domicile=TAX["domicile"],
             )
             certified_email = await _refused(
@@ -656,14 +662,12 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                 customer=CUSTOMER,
             )
         assert before["missing_tax_data"] is True
-        assert (
-            refused == "codice_fiscale: il codice fiscale ha 16 caratteri, o 11 cifre per una ditta"
-        )
+        assert refused == "tax_code: il codice fiscale ha 16 caratteri, o 11 cifre per una ditta"
         assert "XYZ987" not in refused
         # `SafeStr`'s sentence already names the field: said once.
-        assert nul == "codice_fiscale: il testo contiene un carattere nullo (\\x00), non ammesso"
-        assert certified_email == "pec: non valido"
-        assert saved == {"dati_fiscali": "salvati"}
+        assert nul == "tax_code: il testo contiene un carattere nullo (\\x00), non ammesso"
+        assert certified_email == "certified_email: non valido"
+        assert saved == {"tax_data": "saved"}
         assert after["missing_tax_data"] is False
         session = factory()
         try:
@@ -682,7 +686,7 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
         _wipe(factory)
 
 
-async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
+async def test_set_freelancer_tax_data_without_a_vat_number_saves_none(
     factory: sessionmaker[Session],
 ) -> None:
     """REB-687: `vat_number` omitted or empty is none; given, it still has 11 digits."""
@@ -710,8 +714,8 @@ async def test_set_freelancer_tax_data_without_a_partita_iva_saves_none(
                 vat_number="0123",
                 **without,
             )
-        assert omitted == empty == {"dati_fiscali": "salvati"}
-        assert short == "partita_iva: la partita IVA ha 11 cifre"
+        assert omitted == empty == {"tax_data": "saved"}
+        assert short == "vat_number: la partita IVA ha 11 cifre"
         session = factory()
         try:
             row = session.scalars(
@@ -741,7 +745,7 @@ async def test_a_soft_deleted_freelancers_match_and_documents_are_not_found(
             assert f"match {match['id']} non trovato" in text, tool
         for tool in ("resend_signing_mail", "refresh_contract", "cancel_contract", "record_notice"):
             text = await _refused(client, tool, document_id=letter_id)
-            assert f"documento {letter_id} non trovato" in text, tool
+            assert f"document {letter_id} non trovato" in text, tool
         card = f"freelancer {world.freelancer_id} non trovato"
         for tool in ("preview_match", "create_match"):
             text = await _refused(
@@ -871,7 +875,7 @@ async def test_preview_and_create_match_take_the_hubs_letter_type_unless_told(
                 freelancer_id=freelancer_id,
                 company_id=company_id,
                 customer=CUSTOMER,
-                regime="partita_iva",
+                regime="vat_registered",
             )
             match = await _create(client, world, customer=CUSTOMER)
         assert proposed["regime"] == "occasional"
@@ -880,7 +884,7 @@ async def test_preview_and_create_match_take_the_hubs_letter_type_unless_told(
             'Senza partita IVA si fa solo la lettera occasionale: scegli "Prestazione '
             'occasionale" o salva la partita IVA.'
         )
-        assert (match["letter"]["regime"], match["letter"]["kind"]) == (
+        assert (match["letter"]["regime"], match["letter"]["label"]) == (
             "occasional",
             "Lettera di incarico occasionale",
         )
@@ -895,8 +899,8 @@ async def test_get_match_attaches_the_framework_of_the_matchs_own_regime(world: 
         read_ordinary = await _call(client, "get_match", match_id=ordinary["id"])
         read_occasional = await _call(client, "get_match", match_id=occasional["id"])
         page = await _call(client, "list_matches", freelancer_id=world.freelancer_id)
-    assert read_ordinary["framework"]["kind"] == "Contratto quadro"
-    assert read_occasional["framework"]["kind"] == "Contratto quadro per prestazioni occasionali"
+    assert read_ordinary["framework"]["label"] == "Contratto quadro"
+    assert read_occasional["framework"]["label"] == "Contratto quadro per prestazioni occasionali"
     assert read_occasional["framework"]["id"] != read_ordinary["framework"]["id"]
     assert page["framework"]["id"] == read_ordinary["framework"]["id"]
     assert page["occasional_framework"]["id"] == read_occasional["framework"]["id"]

@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TeamProposalsFilters } from '@/lib/api'
 import { strParam } from '@/router'
-import { AdminProposalsTeam } from './TeamProposals'
+import { AdminTeamProposals } from './TeamProposals'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -30,8 +30,8 @@ const FILED = {
   summary: 'Una fintech vuole una web app per i clienti: dashboard, pagamenti e open banking.',
   members: 2,
   team: [
-    { posizione: 1, freelancer_id: 'f1', role: 'Backend developer', nome: 'Ada', last_name: 'Lovelace' },
-    { posizione: 2, freelancer_id: 'f2', role: 'Designer', nome: null, last_name: null },
+    { position: 1, freelancer_id: 'f1', role: 'Backend developer', first_name: 'Ada', last_name: 'Lovelace' },
+    { position: 2, freelancer_id: 'f2', role: 'Designer', first_name: null, last_name: null },
   ],
   request_id: 'r1',
   created_at: '2026-09-29T10:00:00Z',
@@ -47,7 +47,7 @@ const NEVER_FILED = {
   origin: 'cloud',
   user_id: 'u1',
   members: 1,
-  team: [{ posizione: 1, freelancer_id: 'f3', role: 'Data engineer', nome: 'Grace', last_name: 'Hopper' }],
+  team: [{ position: 1, freelancer_id: 'f3', role: 'Data engineer', first_name: 'Grace', last_name: 'Hopper' }],
   request_id: null,
   created_at: '2026-09-28T10:00:00Z',
 }
@@ -75,7 +75,7 @@ function mount(path: string) {
   const list = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/team/proposals',
-    component: AdminProposalsTeam,
+    component: AdminTeamProposals,
     validateSearch: (search: Record<string, unknown>): TeamProposalsFilters => ({
       outcome: strParam(search.outcome),
     }),
@@ -200,7 +200,7 @@ describe('«Proposte» (0028): every «Proponi il team», filed or not', () => {
 
     await waitFor(() => expect(screen.queryByText(FILED.description)).toBeNull())
     expect(screen.getByText(FAILED.description)).toBeInTheDocument()
-    expect(spy.mock.calls.some((call) => String(call[0]) === '/api/hub/team/proposals?outcome=errore')).toBe(true)
+    expect(spy.mock.calls.some((call) => String(call[0]) === '/api/hub/team/proposals?outcome=error')).toBe(true)
     expect(router.state.location.search).toEqual({ outcome: 'error' })
     expect(within(pills).getByRole('button', { name: 'Fallite' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(pills).getByRole('button', { name: 'Tutte' })).toHaveAttribute('aria-pressed', 'false')
@@ -235,7 +235,7 @@ describe('«Proposte» (0028): every «Proponi il team», filed or not', () => {
 
   it('names the filter when an outcome leaves nothing', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { items: [], next_cursor: null }))
-    mount('/admin/team/proposals?outcome=errore')
+    mount('/admin/team/proposals?outcome=error')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 

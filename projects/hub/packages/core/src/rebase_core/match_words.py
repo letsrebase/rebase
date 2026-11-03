@@ -2,8 +2,8 @@
 (REB-477).
 
 «Match e contratti», the «Match» list and the MCP tools read the same sentence and the
-same next step from here, so the rules the web page used to hold (when «Invia per la
-firma» applies, which signing action a state has, when a match is cancelled or closed)
+same next step from here, so the rules the web page used to hold (when
+«Invia per la firma» applies, which signing action a state has, when a match is cancelled or closed)
 live and are tested in one place. Every function is pure: the caller hands the facts,
 each date already a day in Rome. The sentences say «il freelance», never a name: a
 document read does not carry one, and the page's title already names the person. The
@@ -21,6 +21,25 @@ from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED
 
 if TYPE_CHECKING:
     from rebase_core.contract_schemas import LetterFields, SendReport
+
+# What the page prints for each pay mode (`contract_schemas.PAY_MODES`): the contract text
+# is Italian.
+PAY_MODE_WORDS = {"to_work_unit": "a giornata", "to_body": "a corpo"}
+
+# A state as a sentence names it («questo è annullato»): the stored values are English, the
+# sentences are Italian.
+STATE_WORDS = {
+    "draft": "bozza",
+    "awaiting_signature": "in firma",
+    "active": "attivo",
+    "concluded": "concluso",
+    "cancelled": "annullato",
+    "generated": "generato",
+    "pending": "in attesa",
+    "sent": "inviato",
+    "signed": "firmato",
+    "notice_served": "disdetto",
+}
 
 Action = Literal[
     "send",
@@ -354,7 +373,8 @@ def match_words(
         return f"Lettera n. {number}{_period(letter_start, letter_end)}.", None, []
     if status == "cancelled":
         return f"La lettera n. {number} non va più firmata.{_refusal(letter)}", None, []
-    # `awaiting_signature` with a letter refused or cancelled on the signing site: the match stays in
+    # `awaiting_signature` with a letter refused or cancelled on the signing site: the match stays
+    # in
     # signature until an admin cancels it.
     if letter.status == "cancelled":
         return f"Lettera n. {number} annullata.{_refusal(letter)}", None, ["cancel"]
@@ -362,7 +382,7 @@ def match_words(
 
 
 def check_sentences(
-    nome: str,
+    first_name: str,
     customer: str,
     letter: "LetterFields",
     framework: FrameworkStep,
@@ -377,14 +397,14 @@ def check_sentences(
     the saved tax data have a partita IVA (`has_vat_number`)."""
     occasional = regime == OCCASIONAL
     where = f", {_flat(letter.location)}" if letter.location else ""
-    until = f" al {italian_date(letter.data_fine)}" if letter.data_fine is not None else ""
+    until = f" al {italian_date(letter.end_date)}" if letter.end_date is not None else ""
     recap = [
-        f"{nome} lavorerà per {customer} come {_flat(letter.role)}{where}, dal "
+        f"{first_name} lavorerà per {customer} come {_flat(letter.role)}{where}, dal "
         f"{italian_date(letter.start_date)}{until}."
     ]
     if letter.commitment:
         recap.append(f"Impegno: {_flat(letter.commitment).rstrip('.')}.")
-    unit = letter.unit or letter.mode
+    unit = letter.unit or PAY_MODE_WORDS.get(letter.mode or "")
     per = f" {_flat(unit)}" if unit else ""
     month_end = " fine mese" if letter.month_end else ""
     # The fee exactly as the letter prints it, «450,00 €», so step 3 and the PDF agree.

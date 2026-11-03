@@ -71,12 +71,12 @@ describe('the api client', () => {
     })
     await applyAsFreelancer(
       {
-        nome: 'Ada',
+        first_name: 'Ada',
         last_name: 'Lovelace',
         email: 'ada@studio.it',
         linkedin_url: '',
         daily_rate: '450',
-        posizione: 'Backend developer',
+        job_title: 'Backend developer',
         remote: 'remote',
         links: ['https://github.com/ada', '  '],
         cv,
@@ -86,7 +86,7 @@ describe('the api client', () => {
     const [url, init] = spy.mock.calls[0]!
     expect(url).toBe('/api/hub/freelancers')
     const body = init?.body as FormData
-    expect(body.get('nome')).toBe('Ada')
+    expect(body.get('first_name')).toBe('Ada')
     expect(body.get('utm_source')).toBe('linkedin')
     expect(body.has('linkedin_url')).toBe(false)
     expect(body.getAll('links')).toEqual(['https://github.com/ada'])
@@ -98,7 +98,7 @@ describe('the api client', () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     spy.mockResolvedValueOnce(
       answer(200, {
-        items: [{ id: '1', email: 'ivan@rebase.it', nome: 'Ivan', active: true, created_at: '2026-09-10T10:00:00Z' }],
+        items: [{ id: '1', email: 'ivan@rebase.it', first_name: 'Ivan', active: true, created_at: '2026-09-10T10:00:00Z' }],
         next_cursor: null,
       }),
     )
@@ -111,18 +111,18 @@ describe('the api client', () => {
     await admin.admins({ q: 'ivan', cursor: 'abc', limit: 10 })
     expect(spy.mock.calls[1]![0]).toBe('/api/hub/admins?q=ivan&cursor=abc&limit=10')
 
-    spy.mockResolvedValueOnce(answer(200, { id: '2', email: 'lorenzo@rebase.it', nome: 'Lorenzo', active: true, created_at: '2026-09-10T10:01:00Z' }))
-    const promoted = await admin.promote({ email: 'lorenzo@rebase.it', nome: 'Lorenzo' })
+    spy.mockResolvedValueOnce(answer(200, { id: '2', email: 'lorenzo@rebase.it', first_name: 'Lorenzo', active: true, created_at: '2026-09-10T10:01:00Z' }))
+    const promoted = await admin.promote({ email: 'lorenzo@rebase.it', first_name: 'Lorenzo' })
     const [url, init] = spy.mock.calls[2]!
     expect(url).toBe('/api/hub/admins/promote')
     expect(init?.method).toBe('POST')
-    expect(JSON.parse(init?.body as string)).toEqual({ email: 'lorenzo@rebase.it', nome: 'Lorenzo' })
-    expect(promoted.nome).toBe('Lorenzo')
+    expect(JSON.parse(init?.body as string)).toEqual({ email: 'lorenzo@rebase.it', first_name: 'Lorenzo' })
+    expect(promoted.first_name).toBe('Lorenzo')
   })
 
   it('demotes an admin by id, reversibly', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
-    spy.mockResolvedValueOnce(answer(200, { id: '2', email: 'lorenzo@rebase.it', nome: 'Lorenzo', active: true, created_at: '2026-09-10T10:01:00Z' }))
+    spy.mockResolvedValueOnce(answer(200, { id: '2', email: 'lorenzo@rebase.it', first_name: 'Lorenzo', active: true, created_at: '2026-09-10T10:01:00Z' }))
     const demoted = await admin.demote('2')
     const [url, init] = spy.mock.calls[0]!
     expect(url).toBe('/api/hub/admins/2/demote')
@@ -145,7 +145,7 @@ describe('the api client', () => {
         moved: { logins: 3 },
         left: {},
         cv: 'invariato',
-        card_from_regenerate: false,
+        card_to_regenerate: false,
       }),
     )
     const merged = await admin.mergeFreelancer('f2', 'f1')
@@ -231,7 +231,7 @@ describe('the api client', () => {
   it('sends only the filters that were set, and resolves a 204 with nothing', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     spy.mockResolvedValueOnce(answer(200, { total: 0, items: [], by_status: {}, next_cursor: null }))
-    await admin.talent({ status: 'lead', q: '', posizione: undefined, has_cv: false })
+    await admin.talent({ status: 'lead', q: '', job_title: undefined, has_cv: false })
     expect(spy.mock.calls[0]![0]).toBe('/api/hub/talent?status=lead&has_cv=false')
 
     spy.mockResolvedValueOnce(new Response(null, { status: 204 }))

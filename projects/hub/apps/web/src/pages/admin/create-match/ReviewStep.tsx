@@ -23,7 +23,7 @@ function ToContracts({ freelancerId }: { freelancerId: string }) {
 export function ReviewStep({
   review,
   expectedDays,
-  nome,
+  firstName,
   regime,
   onBack,
   onSave,
@@ -38,7 +38,7 @@ export function ReviewStep({
   review: Review
   /** The match's own estimate, beside the letter's sentences: the check does not say it. */
   expectedDays: number | null
-  nome: string
+  firstName: string
   /** «Tipo di lettera» from step 1 (REB-687): it names the previews. */
   regime: Regime
   onBack: () => void
@@ -88,7 +88,7 @@ export function ReviewStep({
           {saving ? 'Salvo…' : 'Salva senza inviare'}
         </Button>
         <Button type="button" onClick={onSend} disabled={saving || sending || sent}>
-          {sending ? 'Invio…' : sendLabel(nome)}
+          {sending ? 'Invio…' : sendLabel(firstName)}
         </Button>
       </div>
       {failure && (

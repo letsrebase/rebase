@@ -181,7 +181,7 @@ def test_the_hub_adds_its_completed_years_to_what_the_cv_allows() -> None:
 def test_anonymity_is_read_against_everything_the_person_holds() -> None:
     known = KnownIdentifiers(
         last_name="Lovelace",
-        nome="Ada",
+        first_name="Ada",
         github_login="adal",
         repo_names=["analytical-engine"],
         hostnames=["lovelace.dev"],

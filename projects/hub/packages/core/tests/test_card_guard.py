@@ -11,7 +11,7 @@ from rebase_core.team_schemas import Card
 
 KNOWN = KnownIdentifiers(
     last_name="Lovelace",
-    nome="Ada",
+    first_name="Ada",
     github_login="ada-codes",
     repo_names=["my-lib", "billing_engine", "app", "api"],
     hostnames=["mario.dev", "www.ada-writes.example"],

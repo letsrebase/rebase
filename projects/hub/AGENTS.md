@@ -590,7 +590,7 @@ Resend key; it is the missing webhook secret that keeps «Mandami una prova» an
 refused there, so the preview never has a sent row to stamp.
 
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
-`draft` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a
+`draft` with `fonte = lista` and `follows_id`. It keeps the earlier campaign's action and a
 copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
 campaign's sent rows with no action, each checked live with `done_at_many` (one statement per kind of fact for the whole list), less the rows
 whose mail bounced or drew a complaint, which the page's «Riscrivi (N)» leaves out too. The gap rule

@@ -233,7 +233,7 @@ class KnownIdentifiers:
     goes through this guard: it is the named card, and it is not anonymous."""
 
     last_name: str
-    nome: str = ""
+    first_name: str = ""
     github_login: str | None = None
     repo_names: list[str] = field(default_factory=list)
     hostnames: list[str] = field(default_factory=list)
@@ -244,9 +244,9 @@ class KnownIdentifiers:
     phones: list[str] = field(default_factory=list)
 
     @classmethod
-    def empty(cls, last_name: str = "", nome: str = "") -> "KnownIdentifiers":
+    def empty(cls, last_name: str = "", first_name: str = "") -> "KnownIdentifiers":
         """The no-source case: the person's name, and nothing from a source."""
-        return cls(last_name=last_name, nome=nome)
+        return cls(last_name=last_name, first_name=first_name)
 
 
 def _phrase(identifier: str, *, legal: bool = False) -> tuple[str, ...] | None:
@@ -332,7 +332,7 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
 
     surnames = {name for name in (known.last_name.strip(), known.cv_last_name.strip()) if name}
     given: set[str] = set()
-    for first in (known.nome.strip(), known.cv_nome.strip()):
+    for first in (known.first_name.strip(), known.cv_nome.strip()):
         given |= {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
     given.discard("")
     emails = [email.strip().lower() for email in known.emails if email.strip()]

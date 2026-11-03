@@ -80,7 +80,7 @@ export function AdminLogins() {
                         <TableRow key={login.id}>
                           <TableCell>
                             <p className="font-medium">
-                              {login.nome} {login.last_name}
+                              {login.first_name} {login.last_name}
                             </p>
                             <p className="text-xs text-muted-foreground">{login.email}</p>
                           </TableCell>

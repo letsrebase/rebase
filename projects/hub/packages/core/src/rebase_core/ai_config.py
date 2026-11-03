@@ -681,7 +681,7 @@ class AiConfigService:
         if row.saved_by is not None:
             user = self.session.get(User, row.saved_by)
             if user is not None:
-                saved_by_name = f"{user.nome} {user.last_name}".strip()
+                saved_by_name = f"{user.first_name} {user.last_name}".strip()
         configured = row.key_ciphertext is not None
         return ProviderRead(
             provider=row.provider,
@@ -697,7 +697,7 @@ class AiConfigService:
         on (`SourceService.set_enabled`, which owns the writes and their audit)."""
         rows = self.session.scalars(select(AiSource).order_by(AiSource.kind)).all()
         names = {
-            row.updated_by: f"{user.nome} {user.last_name}".strip()
+            row.updated_by: f"{user.first_name} {user.last_name}".strip()
             for row in rows
             if row.updated_by is not None and (user := self.session.get(User, row.updated_by))
         }

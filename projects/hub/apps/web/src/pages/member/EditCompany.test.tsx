@@ -59,7 +59,7 @@ const NEWEST = {
 
 const PROFILE = {
   id: 'c1',
-  nome: 'Wile',
+  first_name: 'Wile',
   last_name: 'E.',
   email: 'wile@acme.it',
   linkedin_url: null,
@@ -71,7 +71,7 @@ const PROFILE = {
   cv_filename: null,
   cv_size: null,
   daily_rate: null,
-  posizione: null,
+  job_title: null,
   remote: null,
   links: [],
   complete: false,

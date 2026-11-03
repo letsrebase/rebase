@@ -2,16 +2,16 @@ import { useMutation } from '@tanstack/react-query'
 import { useSearch } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
-import { forgetAnswerLink, readAnswerLink, type AnswerLink } from '@/lib/answer-link'
+import { answerOf, forgetAnswerLink, readAnswerLink, type AnswerLink } from '@/lib/answer-link'
 import { ApiError, team, type TalentAnswer, type TeamAvailabilityAnswer, type TeamAvailabilityOutcome } from '@/lib/api'
 
 /** The question and the three outcomes, spec § 3.2's own sentences. */
 const QUESTIONS: Record<TalentAnswer, string> = {
-  si: 'Vuoi confermare che sei disponibile?',
+  yes: 'Vuoi confermare che sei disponibile?',
   no: 'Vuoi confermare che non sei disponibile?',
 }
 const OUTCOMES: Record<TeamAvailabilityOutcome, string> = {
-  si: 'Grazie, abbiamo registrato la tua disponibilità',
+  yes: 'Grazie, abbiamo registrato la tua disponibilità',
   no: 'Grazie, abbiamo registrato che non sei disponibile',
   invalid: 'Questo link non è più valido',
 }
@@ -47,7 +47,7 @@ function refused(error: unknown): boolean {
 
 /**
  * Where the two buttons of the availability mail land (REB-517, spec § 3.2),
- * `/hub/team/answer?t=…&r=si|no`: the question and «Conferma», and nothing recorded
+ * `/hub/team/answer?t=…&r=yes|no`: the question and «Conferma», and nothing recorded
  * until the click, since a mail scanner opens every link in a message on its own. The
  * token and the answer come from `readAnswerLink`, which `main.tsx` took out of the URL
  * before anything could record it and the tab keeps across a reload, with the search
@@ -68,7 +68,7 @@ export function TeamAnswer() {
       if (refused(error)) forgetAnswerLink()
     },
   })
-  const answer: TalentAnswer | null = r === 'si' || r === 'no' ? r : null
+  const answer = answerOf(r)
   if (!t) return <Outcome text={REOPEN} />
   if (answer === null) return <Outcome text={OUTCOMES.invalid} />
   if (confirm.isSuccess) return <Outcome text={OUTCOMES[confirm.data.outcome]} announce />

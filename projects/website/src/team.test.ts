@@ -45,7 +45,7 @@ const PROPOSAL = {
   location: { locale: false, dove: null },
   team: [
     {
-      posizione: 1,
+      position: 1,
       role: 'Backend developer',
       reasoning: 'Ha costruito le API di pagamento di due banche.',
       week_days: 5,
@@ -54,7 +54,7 @@ const PROPOSAL = {
       band: { min: 400, max: 500 },
     },
     {
-      posizione: 2,
+      position: 2,
       role: 'Frontend developer',
       reasoning: 'Porta React.',
       week_days: 3,
@@ -142,7 +142,7 @@ describe('mount', () => {
 
   it('refuses a form without its parts rather than failing later', () => {
     const api = load()
-    document.body.innerHTML = '<form data-team data-result="#nowhere"><textarea name="descrizione"></textarea></form>'
+    document.body.innerHTML = '<form data-team data-result="#nowhere"><textarea name="description"></textarea></form>'
     expect(api.mount(document.querySelector('form') as HTMLFormElement)).toBe(false)
   })
 
@@ -154,7 +154,7 @@ describe('mount', () => {
     textarea.setAttribute('aria-invalid', 'true')
     textarea.setAttribute('aria-describedby', 'team-error')
     const chips = [...form.querySelectorAll<HTMLButtonElement>('button[data-example]')]
-    const count = form.querySelector('select[name="persone"]') as HTMLSelectElement
+    const count = form.querySelector('select[name="people"]') as HTMLSelectElement
     expect(count.value).toBe('1')
     expect(chips).toHaveLength(4)
     for (const chip of chips) {
@@ -284,7 +284,7 @@ describe('mount', () => {
     expect(result.querySelector('a.cta')).toBeNull()
     expect(textarea.disabled).toBe(true)
     expect(button.disabled).toBe(true)
-    expect((form.querySelector('select[name="persone"]') as HTMLSelectElement).disabled).toBe(true)
+    expect((form.querySelector('select[name="people"]') as HTMLSelectElement).disabled).toBe(true)
     for (const chip of form.querySelectorAll<HTMLButtonElement>('button[data-example]')) expect(chip.disabled).toBe(true)
 
     resolveCall(answer(503, { detail: 'Il team builder è spento.' }))

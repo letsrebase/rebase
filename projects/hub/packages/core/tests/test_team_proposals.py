@@ -112,7 +112,7 @@ def test_list_recent_pages_filters_and_names_the_request(clean_hub: Session) -> 
     # REB-607: the row names who it held, so the admin can open the profile from the
     # list; an attempt and a team nobody fit name nobody.
     [held] = filed.team
-    assert (held.posizione, held.freelancer_id, held.role, held.nome, held.last_name) == (
+    assert (held.position, held.freelancer_id, held.role, held.first_name, held.last_name) == (
         1,
         first,
         "Backend developer",
@@ -149,10 +149,10 @@ def test_list_recent_keeps_a_deleted_talent_by_id_and_names_the_rest(clean_hub: 
         TeamProposal(
             description=DESCRIPTION,
             summary=SUMMARY,
-            location={"locale": False, "dove": None},
+            location={"on_site": False, "place": None},
             team=[
                 {
-                    "posizione": index,
+                    "position": index,
                     "freelancer_id": str(freelancer_id),
                     "role": role,
                     "reasoning": "Serve.",
@@ -175,7 +175,7 @@ def test_list_recent_keeps_a_deleted_talent_by_id_and_names_the_rest(clean_hub: 
 
     [row] = make_builder(clean_hub, Scripted([])).list_recent().items
     assert row.members == 3
-    assert [(m.posizione, m.freelancer_id, m.role, m.nome, m.last_name) for m in row.team] == [
+    assert [(m.position, m.freelancer_id, m.role, m.first_name, m.last_name) for m in row.team] == [
         (1, gone, "Designer", None, None),
         (2, kept, "Backend developer", "Ada", "Lovelace1"),
         (3, soft, "Data engineer", None, None),

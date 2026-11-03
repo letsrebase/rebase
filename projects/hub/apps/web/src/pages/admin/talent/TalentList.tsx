@@ -15,7 +15,7 @@ import {
   useDebounce,
 } from '@/lib/adminList'
 import { amountFilter } from '@/lib/amount'
-import { FREELANCER_LIST_STATES, RemoteLabels } from '@/lib/format'
+import { FREELANCER_LIST_STATES, REMOTE_LABELS } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { DuplicatesLink } from '../DuplicateMarks'
 import { AmountFilter, Empty, FilterField, Header, LoadMore, StateFilter } from '../list-kit'
@@ -80,9 +80,9 @@ export function AdminTalents() {
         </div>
       </Header>
       <div className="grid gap-4 border-b px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
-        <FilterField label="Cerca" htmlFor="talenti-q">
+        <FilterField label="Cerca" htmlFor="talents-q">
           <Input
-            id="talenti-q"
+            id="talents-q"
             type="search"
             maxLength={200}
             placeholder="Nome, cognome, email, posizione…"
@@ -90,24 +90,24 @@ export function AdminTalents() {
             onChange={(event) => setQInput(event.target.value)}
           />
         </FilterField>
-        <FilterField label="Posizione" htmlFor="talenti-posizione">
+        <FilterField label="Posizione" htmlFor="talents-job-title">
           <Input
-            id="talenti-posizione"
-            value={search.posizione ?? ''}
-            onChange={(event) => setFilter('posizione', event.target.value || undefined)}
+            id="talents-job-title"
+            value={search.job_title ?? ''}
+            onChange={(event) => setFilter('job_title', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Da remoto" htmlFor="talenti-remoto">
+        <FilterField label="Da remoto" htmlFor="talents-remote">
           <Select
             value={search.remote ?? ANY}
             onValueChange={(value) => setFilter('remote', value === ANY ? undefined : (value as Remote))}
           >
-            <SelectTrigger id="talenti-remoto">
+            <SelectTrigger id="talents-remote">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Tutti</SelectItem>
-              {Object.entries(RemoteLabels).map(([value, label]) => (
+              {Object.entries(REMOTE_LABELS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>
@@ -116,70 +116,70 @@ export function AdminTalents() {
           </Select>
         </FilterField>
         <AmountFilter
-          id="talenti-tariffa-min"
+          id="talents-min-rate"
           label="Tariffa min (€/giorno)"
           value={search.min_rate}
           onChange={(value) => setFilter('min_rate', value)}
         />
         <AmountFilter
-          id="talenti-tariffa-max"
+          id="talents-max-rate"
           label="Tariffa max (€/giorno)"
           value={search.max_rate}
           onChange={(value) => setFilter('max_rate', value)}
         />
-        <FilterField label="Pagina di provenienza" htmlFor="talenti-origine">
+        <FilterField label="Pagina di provenienza" htmlFor="talents-origin">
           <Input
-            id="talenti-origine"
+            id="talents-origin"
             placeholder="home, pigrocrm…"
             value={search.origin_page ?? ''}
             onChange={(event) => setFilter('origin_page', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="UTM source" htmlFor="talenti-utm-source">
+        <FilterField label="UTM source" htmlFor="talents-utm-source">
           <Input
-            id="talenti-utm-source"
+            id="talents-utm-source"
             value={search.utm_source ?? ''}
             onChange={(event) => setFilter('utm_source', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Ha un CV" htmlFor="talenti-has-cv">
+        <FilterField label="Ha un CV" htmlFor="talents-has-cv">
           <Select value={boolToSelect(search.has_cv)} onValueChange={(value) => setFilter('has_cv', selectToBool(value))}>
-            <SelectTrigger id="talenti-has-cv">
+            <SelectTrigger id="talents-has-cv">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Tutti</SelectItem>
-              <SelectItem value="si">Sì</SelectItem>
+              <SelectItem value="yes">Sì</SelectItem>
               <SelectItem value="no">No</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>
-        <FilterField label="Ha fatto accesso" htmlFor="talenti-con-accessi">
+        <FilterField label="Ha fatto accesso" htmlFor="talents-with-logins">
           <Select
             value={boolToSelect(search.with_logins)}
             onValueChange={(value) => setFilter('with_logins', selectToBool(value))}
           >
-            <SelectTrigger id="talenti-con-accessi">
+            <SelectTrigger id="talents-with-logins">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Tutti</SelectItem>
-              <SelectItem value="si">Sì</SelectItem>
+              <SelectItem value="yes">Sì</SelectItem>
               <SelectItem value="no">No</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>
-        <FilterField label="Creato dal" htmlFor="talenti-creato-da">
+        <FilterField label="Creato dal" htmlFor="talents-created-from">
           <Input
-            id="talenti-creato-da"
+            id="talents-created-from"
             type="date"
             value={search.created_from ?? ''}
             onChange={(event) => setFilter('created_from', event.target.value || undefined)}
           />
         </FilterField>
-        <FilterField label="Creato al" htmlFor="talenti-creato-a">
+        <FilterField label="Creato al" htmlFor="talents-created-to">
           <Input
-            id="talenti-creato-a"
+            id="talents-created-to"
             type="date"
             value={search.created_to ?? ''}
             onChange={(event) => setFilter('created_to', event.target.value || undefined)}

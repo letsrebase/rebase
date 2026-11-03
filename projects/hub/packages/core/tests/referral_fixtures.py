@@ -39,6 +39,7 @@ from rebase_core.contract_schemas import (
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
+from rebase_core.match_words import PAY_MODE_WORDS
 from rebase_core.matches import MatchService
 from rebase_core.models import (
     Match,
@@ -54,7 +55,7 @@ from rebase_core.users import UserService
 
 
 def _member(session: Session, email: str = "mario@community.it") -> UUID:
-    user = User(email=email, nome="Mario", last_name="Rossi", role="member")
+    user = User(email=email, first_name="Mario", last_name="Rossi", role="member")
     session.add(user)
     session.commit()
     return user.id
@@ -69,11 +70,11 @@ def _card(
 ) -> UUID:
     row, _ = FreelancerService(session).apply(
         FreelancerCreate(
-            nome="Ada",
+            first_name="Ada",
             last_name="Lovelace",
             email=email,
             daily_rate=Decimal("450"),
-            posizione="Backend developer",
+            job_title="Backend developer",
             remote="remote",
             ref=ref,
             utm=SignupUtm(utm_source=utm_source) if utm_source else None,
@@ -115,7 +116,7 @@ def _log_in(session: Session, email: str) -> None:
     users = UserService(session, Settings(_env_file=None))  # type: ignore[call-arg]
     mail = users.request_link(email)
     assert mail is not None
-    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", mail.text)
+    token = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", mail.text)
     assert token is not None
     assert users.enter(token.group(1)) is not None
 
@@ -136,7 +137,7 @@ def _match_body(
             start_date=date(2026, 10, 1),
             fee=Decimal("450"),
             mode=mode,
-            unit=mode,
+            unit=PAY_MODE_WORDS[mode],
             payment_days=30,
             month_end=True,
         ),
@@ -168,7 +169,11 @@ def _sent_with_body(
 def _signup_with(session: Session, **extra: object) -> UUID:
     from rebase_core.service import SignupService
 
-    payload: dict[str, object] = {"email": "cold@studio.it", "nome": "Cold", "last_name": "Lead"}
+    payload: dict[str, object] = {
+        "email": "cold@studio.it",
+        "first_name": "Cold",
+        "last_name": "Lead",
+    }
     payload.update(extra)
     return SignupService(session).subscribe(SignupCreate(**payload)).id  # type: ignore[arg-type]
 
@@ -179,9 +184,9 @@ def _draft_for(session: Session, signup_id: UUID) -> UUID:
         .draft_from_signup(
             signup_id,
             FreelancerDraft(
-                nome="Cold",
+                first_name="Cold",
                 last_name="Lead",
-                posizione="Backend developer",
+                job_title="Backend developer",
                 sources=["https://cold.dev"],
             ),
             an_admin(session),

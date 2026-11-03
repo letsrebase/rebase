@@ -49,15 +49,19 @@ def _seed(factory: sessionmaker[Session]) -> tuple[str, str]:
     `users` row this file needs because the match names its author."""
     session = factory()
     try:
-        session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, last_name="", role="admin"))
+        session.add(
+            User(
+                id=IVAN.id, email=IVAN.email, first_name=IVAN.first_name, last_name="", role="admin"
+            )
+        )
         session.commit()
         card, _ = FreelancerService(session).apply(
             FreelancerCreate(
-                nome="Ada",
+                first_name="Ada",
                 last_name="Lovelace",
                 email="ada@studio.it",
                 daily_rate=Decimal("450"),
-                posizione="Backend developer",
+                job_title="Backend developer",
                 remote="remote",
             ),
             PDF,

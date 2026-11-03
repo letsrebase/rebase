@@ -217,23 +217,23 @@ def test_payload_from_a_match_with_the_columns(clean: Session) -> None:
     body = _service(clean, RecordedPigro([(500, b"")])).payload(match, letter, user, company)
 
     assert body == {
-        "freelancer": {"email": "ada@studio.it", "nome": "Ada", "last_name": "Lovelace"},
+        "freelancer": {"email": "ada@studio.it", "first_name": "Ada", "last_name": "Lovelace"},
         "letter": {
             "number": letter.number,
             "role": "Backend developer",
-            "company": "ACME Srl",
+            "company_name": "ACME Srl",
             "start_date": "2026-10-01",
-            "data_fine": "2026-12-31",
+            "end_date": "2026-12-31",
             "fee": "400.00",
             "expected_days": 40,
         },
         "rebase": {
-            "ragione_sociale": "rebase S.r.l.",
-            "partita_iva": "00000000000",
+            "legal_name": "rebase S.r.l.",
+            "vat_number": "00000000000",
             "tax_code": "00000000000",
-            "indirizzo": "Milano",
+            "address": "Milano",
             "certified_email": "rebase@pec.example",
-            "codice_sdi": "0000000",
+            "sdi_code": "0000000",
         },
     }
     json.dumps(body)
@@ -252,12 +252,12 @@ def test_payload_from_an_older_match_parses_the_printed_letter(clean: Session) -
     clean.commit()
     assert letter.data["data-inizio"] == "1° ottobre 2026"
 
-    lettera = _service(clean, RecordedPigro([(500, b"")])).payload(match, letter, user, company)[
-        "letter"
-    ]
+    letter_body = _service(clean, RecordedPigro([(500, b"")])).payload(
+        match, letter, user, company
+    )["letter"]
 
-    assert (lettera["start_date"], lettera["data_fine"]) == ("2026-10-01", "2026-12-31")
-    assert (lettera["fee"], lettera["expected_days"]) == ("450.00", None)
+    assert (letter_body["start_date"], letter_body["end_date"]) == ("2026-10-01", "2026-12-31")
+    assert (letter_body["fee"], letter_body["expected_days"]) == ("450.00", None)
 
 
 def test_payload_normalises_rebase_fiscal_data(clean: Session) -> None:
@@ -275,9 +275,9 @@ def test_payload_normalises_rebase_fiscal_data(clean: Session) -> None:
 
     rebase = service.payload(*_parts(clean, match_id))["rebase"]
 
-    assert rebase["partita_iva"] == "01234567890"
-    assert rebase["codice_sdi"] is None
-    assert rebase["indirizzo"] == "V" * 255
+    assert rebase["vat_number"] == "01234567890"
+    assert rebase["sdi_code"] is None
+    assert rebase["address"] == "V" * 255
     assert normalise_vat("IT 0123 456 7890") == "01234567890"
     assert normalise_vat("01234567890") == "01234567890"
     assert normalise_vat("0123456789") is None
@@ -327,7 +327,7 @@ def test_link_sends_rebase_data_the_crm_would_refuse_as_null(
     [(_method, _url, _headers, sent)] = http.calls
     rebase = json.loads(sent)["rebase"]
     assert rebase[key] is None
-    assert rebase["partita_iva"] == "00000000000"
+    assert rebase["vat_number"] == "00000000000"
 
 
 def test_payload_refuses_a_letter_that_is_not_signed(clean: Session) -> None:
@@ -571,7 +571,7 @@ def test_link_leaves_a_match_another_caller_already_linked(
         try:
             other.execute(
                 text(
-                    "UPDATE matches SET pigro_stato = 'collegato', pigro_url = :url, "
+                    "UPDATE matches SET pigro_status = 'linked', pigro_url = :url, "
                     "pigro_slug = 'ada-lovelace' WHERE id = :id"
                 ),
                 {"url": winner, "id": match_id},
@@ -653,7 +653,7 @@ def test_link_keeps_a_link_made_after_its_409_was_asked(hub_engine: Engine, clea
         try:
             other.execute(
                 text(
-                    "UPDATE matches SET pigro_stato = 'collegato', pigro_url = :url, "
+                    "UPDATE matches SET pigro_status = 'linked', pigro_url = :url, "
                     "pigro_linked_at = :at WHERE id = :id"
                 ),
                 {"url": DEAL_URL, "at": NOW + timedelta(seconds=1), "id": match_id},
@@ -686,7 +686,7 @@ def test_link_writes_nothing_on_a_match_closed_while_pigro_answered(
         other = session_factory(hub_engine)()
         try:
             other.execute(
-                text("UPDATE matches SET stato = 'concluso' WHERE id = :id"), {"id": match_id}
+                text("UPDATE matches SET status = 'concluded' WHERE id = :id"), {"id": match_id}
             )
             other.commit()
         finally:
@@ -717,13 +717,13 @@ def test_link_on_422_is_rejected(clean: Session) -> None:
     fastapi = {
         "detail": [
             {
-                "loc": ["body", "rebase", "partita_iva"],
+                "loc": ["body", "rebase", "vat_number"],
                 "msg": "String should match pattern '^\\d{11}$'",
                 "type": "string_pattern_mismatch",
                 "input": "0123",
             },
             {
-                "loc": ["body", "rebase", "partita_iva"],
+                "loc": ["body", "rebase", "vat_number"],
                 "msg": "Value error, twice",
                 "type": "value_error",
                 "input": "0123",
@@ -742,20 +742,20 @@ def test_link_on_422_is_rejected(clean: Session) -> None:
         "type": "https://pigrocrm.dev/errors/validation_failed",
         "title": "Dati non validi",
         "status": 422,
-        "detail": "customer.codice_sdi: deve essere di 7 caratteri",
+        "detail": "customer.sdi_code: deve essere di 7 caratteri",
         "code": "validation_failed",
         "instance": f"/api/rebase/engagements/{match_id}",
         "entity": "customer",
-        "field": "codice_sdi",
+        "field": "sdi_code",
         "reason": "deve essere di 7 caratteri",
         "expected": "7 caratteri",
     }
     for body, sentence in (
         (
             json.dumps(fastapi).encode(),
-            "rebase.partita_iva: non valido; lettera.giorni_previsti: non valido",
+            "rebase.vat_number: non valido; letter.expected_days: non valido",
         ),
-        (json.dumps(problem).encode(), "customer.codice_sdi: deve essere di 7 caratteri"),
+        (json.dumps(problem).encode(), "customer.sdi_code: deve essere di 7 caratteri"),
         (json.dumps({"detail": [{"msg": "Field required"}]}).encode(), "HTTP 422"),
         (b"", "HTTP 422"),
     ):
@@ -892,7 +892,7 @@ def test_link_records_an_admin_action_when_an_admin_asked(clean: Session) -> Non
 def test_the_mail_says_where_the_hours_go() -> None:
     mail = engagement_ready_mail(
         "ada@studio.it",
-        nome="Ada",
+        first_name="Ada",
         number="2026-001",
         company="ACME <Srl>",
         deal_url=DEAL_URL + '?"x"',
@@ -910,7 +910,7 @@ def test_the_mail_says_where_the_hours_go() -> None:
 
     plain = engagement_ready_mail(
         "ada@studio.it",
-        nome="",
+        first_name="",
         number="2026-001",
         company="ACME Srl",
         deal_url=DEAL_URL,
@@ -1003,12 +1003,12 @@ def _invoice(
     return {
         # One id per invoice, so two of them never merge when windows are joined.
         "id": str(uuid5(NAMESPACE_URL, f"{kind}/{number}/{year}")),
-        "kind": kind,
+        "type": kind,
         "year": year,
         "number": number,
         "status": "emessa",
-        "payment_status": "from_unpaid",
-        "data": "2027-01-31",
+        "payment_status": "unpaid",
+        "date": "2027-01-31",
         **extra,
     }
 
@@ -1017,11 +1017,11 @@ def _entry(
     day: str, hours: str, description: str = "", invoice: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     return {
-        "data": day,
+        "date": day,
         "hours": hours,
         "description": description,
-        "fatturabile": True,
-        "fattura": invoice,
+        "billable": True,
+        "invoice": invoice,
     }
 
 
@@ -1037,15 +1037,15 @@ def _crm(
         "deal_url": DEAL_URL,
         "deal": {
             "id": str(DEAL),
-            "nome": "Lettera n. 2026-001 · Backend developer per ACME Srl",
-            "tariffa_oraria": "56.250000",
-            "ore_preventivate": "320.00",
+            "name": "Lettera n. 2026-001 · Backend developer per ACME Srl",
+            "hourly_rate": "56.250000",
+            "budgeted_hours": "320.00",
             "status": "in_progress",
         },
-        "giorni": days,
-        "hours_total": "0.00",
-        "invoiced_hours": invoiced,
-        "hours_uninvoiced": not_invoiced,
+        "days": days,
+        "total_hours": "0.00",
+        "billed_hours": invoiced,
+        "unbilled_hours": not_invoiced,
         "invoices": invoices or [],
     }
 
@@ -1063,14 +1063,14 @@ def test_report_groups_by_iso_week_and_month() -> None:
             _entry("2027-01-01", "4.00", "API"),
             _entry("2027-01-04", "8.00", "Test"),
         ],
-        [{**invoice, "hours": "20.00"}, {**proforma, "hours": "2.50", "data": None}],
+        [{**invoice, "hours": "20.00"}, {**proforma, "hours": "2.50", "date": None}],
         invoiced="20.00",
         not_invoiced="14.50",
     )
 
     fields = group_report(crm, None)
 
-    days = [(d.data, d.hours, d.descriptions, d.invoices) for d in fields["by_day"]]
+    days = [(d.date, d.hours, d.descriptions, d.invoices) for d in fields["by_day"]]
     # 28 December: three entries, two on invoice 12 and one on proforma 3, both named once.
     assert days == [
         (
@@ -1091,7 +1091,7 @@ def test_report_groups_by_iso_week_and_month() -> None:
         [],
         [],
     ]
-    weeks = [(w.week, w.da, w.a, w.hours) for w in fields["by_week"]]
+    weeks = [(w.week, w.from_date, w.to_date, w.hours) for w in fields["by_week"]]
     assert weeks == [
         ("2026-W53", date(2026, 12, 28), date(2027, 1, 3), Decimal("26.50")),
         ("2027-W01", date(2027, 1, 4), date(2027, 1, 10), Decimal("8.00")),
@@ -1114,7 +1114,7 @@ def test_report_groups_by_iso_week_and_month() -> None:
         None,
     )
     assert fields["equivalent_days"] == Decimal("4.31")
-    invoices = [(i.number, i.kind, i.data, i.status, i.hours) for i in fields["invoices"]]
+    invoices = [(i.number, i.kind, i.date, i.status, i.hours) for i in fields["invoices"]]
     assert invoices == [
         ("12/2026", "fattura", date(2027, 1, 31), "emessa", Decimal("20.00")),
         ("3/2026", "proforma", None, "emessa", Decimal("2.50")),
@@ -1150,7 +1150,7 @@ def test_report_gives_each_invoice_its_own_share_of_a_day() -> None:
 
     days = group_report(crm, None)["by_day"]
 
-    assert [(d.data, d.hours, d.invoices) for d in days] == [
+    assert [(d.date, d.hours, d.invoices) for d in days] == [
         (date(2026, 11, 2), Decimal("8.00"), ["14/2026"]),
         (date(2026, 11, 3), Decimal("8.00"), ["13/2026", "14/2026", "proforma 14/2026"]),
     ]
@@ -1200,12 +1200,12 @@ def _linked_match(session: Session, start: date | None) -> UUID:
 
 
 def _asked(http: RecordedPigro) -> list[tuple[str, str]]:
-    """The `da` and `a` of every report request, in order."""
+    """The `from` and `to` of every report request, in order."""
     periods = []
     for method, url, _headers, _sent in http.calls:
         assert method == "GET"
         query = parse_qs(urlsplit(url).query)
-        periods.append((query["da"][0], query["a"][0]))
+        periods.append((query["from"][0], query["to"][0]))
     return periods
 
 
@@ -1250,7 +1250,7 @@ def test_report_answers_the_whole_engagement_by_default(clean: Session) -> None:
 
 
 def test_report_of_a_letter_that_starts_tomorrow_is_empty(clean: Session) -> None:
-    """A letter signed before its start: `da` would come after `a`, which the CRM
+    """A letter signed before its start: `from` would come after `to`, which the CRM
     refuses with a 422. Today alone is asked for, and the report is empty."""
     today = date(2026, 9, 30)
     match_id = _linked_match(clean, today + timedelta(days=1))
@@ -1321,7 +1321,7 @@ def test_report_walks_800_day_windows(clean: Session) -> None:
         (start.isoformat(), end_of_first.isoformat()),
         ((end_of_first + timedelta(days=1)).isoformat(), today.isoformat()),
     ]
-    assert [(d.data, d.hours) for d in report.by_day] == [
+    assert [(d.date, d.hours) for d in report.by_day] == [
         (start, Decimal("8.00")),
         (today, Decimal("8.00")),
     ]
@@ -1382,7 +1382,7 @@ def test_report_on_409_leaves_a_state_written_meanwhile(hub_engine: Engine, clea
         try:
             other.execute(
                 text(
-                    "UPDATE matches SET pigro_stato = 'errore', pigro_errore = 'HTTP 503' "
+                    "UPDATE matches SET pigro_status = 'error', pigro_error = 'HTTP 503' "
                     "WHERE id = :id"
                 ),
                 {"id": match_id},
@@ -1417,7 +1417,7 @@ def test_report_on_409_keeps_a_link_made_after_it_was_asked(
         try:
             other.execute(
                 text(
-                    "UPDATE matches SET pigro_stato = 'collegato', pigro_errore = NULL, "
+                    "UPDATE matches SET pigro_status = 'linked', pigro_error = NULL, "
                     "pigro_linked_at = :at WHERE id = :id"
                 ),
                 {"at": NOW + timedelta(seconds=1), "id": match_id},

@@ -91,7 +91,7 @@ def _clock(client: TestClient, now: datetime) -> None:
 
 def _login(client: TestClient, sender: RecordingSender, email: str = CONTACT_PERSON) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
     sender.sent.clear()
@@ -125,7 +125,7 @@ def _open(
     minutes old) come after it, as a proposal made in the cloud does."""
     admin = session.scalar(select(User).where(User.email == "ivan@rebase.it"))
     if admin is None:
-        admin = User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin")
+        admin = User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin")
         session.add(admin)
         session.commit()
     company_id = _company(session, company)
@@ -150,7 +150,9 @@ def _talent(
     vetted: bool = False,
 ) -> UUID:
     slug = last_name.lower()
-    user = User(email=f"{slug}@studio.it", nome="Ada", last_name=last_name, phone="+39 333 9998877")
+    user = User(
+        email=f"{slug}@studio.it", first_name="Ada", last_name=last_name, phone="+39 333 9998877"
+    )
     session.add(user)
     session.flush()
     row = Freelancer(
@@ -158,7 +160,7 @@ def _talent(
         remote="remote",
         daily_rate=Decimal("463.21"),
         status=status,
-        posizione="Backend developer",
+        job_title="Backend developer",
         links=[f"https://{slug}.dev"],
         cv_bytes=PDF,
         cv_filename=f"CV {last_name}.pdf",
@@ -210,10 +212,10 @@ def _proposal_row(
     row = TeamProposal(
         description=DESCRIPTION,
         summary=SUMMARY,
-        location={"locale": False, "dove": None},
+        location={"on_site": False, "place": None},
         team=[
             {
-                "posizione": index,
+                "position": index,
                 "freelancer_id": str(freelancer_id),
                 "role": "Backend developer",
                 "reasoning": "Nove anni di API in Python.",
@@ -238,7 +240,7 @@ def _proposal_row(
 def proposal_response() -> LlmResponse:
     body = {
         "summary": SUMMARY,
-        "location": {"locale": False, "dove": None},
+        "location": {"on_site": False, "place": None},
         "team": [
             {
                 "id": "t1",
@@ -296,7 +298,7 @@ def test_the_cloud_is_closed_to_anyone_without_a_live_grant(
     assert all(answer.json() == {"detail": CLOSED} for answer in refused)
 
     # An admin is no exception: the cloud is a company's.
-    cloud.add(User(email="ivan@rebase.it", nome="Ivan", last_name="Sala", role="admin"))
+    cloud.add(User(email="ivan@rebase.it", first_name="Ivan", last_name="Sala", role="admin"))
     cloud.commit()
     _login(client, sender, "ivan@rebase.it")
     assert [answer.status_code for answer in _every_route(client, ada)] == [403] * 4
@@ -338,8 +340,8 @@ def test_the_cloud_lists_the_talents_by_name_and_filters_them(
     assert [item["freelancer_id"] for item in body["items"]] == [str(hopper), str(lovelace)]
     assert body["roles"] == [CARD["role"]] and body["capped"] is False
     first = body["items"][0]
-    assert (first["nome"], first["last_name"], first["vetted"]) == ("Ada", "Hopper", True)
-    assert first["links"] == ["https://hopper.dev"] and first["ha_cv"] is True
+    assert (first["first_name"], first["last_name"], first["vetted"]) == ("Ada", "Hopper", True)
+    assert first["links"] == ["https://hopper.dev"] and first["has_cv"] is True
     assert (
         first["card"]["profile_summary"] == CARD["profile_summary"]
         and first["card"]["location"] is None
@@ -403,7 +405,7 @@ def test_a_cloud_proposal_is_the_callers_and_keeps_the_ids(
     # The cloud's read keeps who each member is, and the card's place: it shows the CV.
     assert member["freelancer_id"] == str(ada) and member["card"]["location"] == CARD["location"]
     # And their name, which the builder's result shows as each card's heading.
-    assert (member["nome"], member["last_name"]) == ("Ada", "Lovelace")
+    assert (member["first_name"], member["last_name"]) == ("Ada", "Lovelace")
     row = cloud.get(TeamProposal, UUID(body["id"]))
     assert row is not None and (row.origin, row.user_id) == ("cloud", user_id)
 

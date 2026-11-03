@@ -16,8 +16,7 @@ import { MemberReferral } from '@/pages/member/Referral'
 
 // `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
 // whoever is behind it (REB-377's identity-cookie chooser, its own effect that sends an
-// already-authenticated visitor straight to their dashboard, and REB-482's "Crea un
-// nuovo spazio" beside the chooser too) and offers "Crea il tuo spazio" to anyone with
+// already-authenticated visitor straight to their dashboard, and REB-482's "Crea un nuovo spazio" beside the chooser too) and offers "Crea il tuo spazio" to anyone with
 // nothing to open yet. `/app/register` used to sit here and always opened its own
 // two-step form first, even to a member who already had a space -- its own hub-lookup
 // only ran after that, one screen further in, and only then offered a link to enter
@@ -37,8 +36,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** What the wizard's own field says about one answer of a request (`remote`'s «Ibrido ·
- *  3 giorni in sede», `headcount`'s «2 persone»), so the list and the edit form use
+/** What the wizard's own field says about one answer of a request (the hybrid option
+ *  with its on-site days, the headcount with its noun), so the list and the edit form use
  *  the same words. */
 function said(id: 'remote' | 'headcount', request: MemberRequest): string {
   const field = COMPANY_FIELDS.find((candidate) => candidate.id === id)
@@ -94,7 +93,7 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
 }
 
 /** What the person sent, under the wizard's own questions, and the perks. The email is
- *  shown and not editable: it is the address the link proved.
+ *  shown but cannot be edited: it is the address the link proved.
  *
  *  `useMe()` answers member and admin alike (REB-279): a `users` row is no longer
  *  guaranteed to carry a freelancer card, so the card section renders only when
@@ -103,22 +102,22 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *  wizard-shaped section reading from fields that are all `null`. A person can carry
  *  both, and both render together. The two perks render only for a freelancer or an
  *  admin (`value` truthy or `profile.role === 'admin'`), never for a company-only
- *  referente: PigroCRM and the guide are pitched at a solo freelancer, and neither
+ *  contact person: PigroCRM and the guide are pitched at a solo freelancer, and neither
  *  means anything to a company that came here to find people (REB-385, Lorenzo
- *  2026-09-23). A person who is both a freelancer and a company referente still
+ *  2026-09-23). A person who is both a freelancer and a company contact person still
  *  qualifies through the freelancer card, so both perks keep showing.
  *
- *  A card also gets «Contratti» (REB-392), which reads its own route and renders
+ *  A card also gets the contracts section (REB-392), which reads its own route and renders
  *  nothing wizard-shaped.
  *
- *  A company sees every request it filed, newest first, each with its own «Modifica»
- *  (REB-602), and «Richiedi una nuova figura» as the section's action.
+ *  A company sees every request it filed, newest first, each with its own edit button
+ *  (REB-602), and a button to ask for a new role as the section's action.
  *
  *  One column at every viewport, one section per row (REB-641): the referral link, the
  *  feature to highlight (REB-610), opens the page; then the card, the requests, the role
- *  (a «Ruolo» row, only for a non-admin with neither a card nor a request), the perks,
- *  and «Contratti» last. Under the name, the header holds one badge per role the person
- *  holds: Freelance (a card), Azienda (a request), Amministratore (REB-601).
+ *  (a role row, only for a non-admin with neither a card nor a request), the perks,
+ *  and the contracts last. Under the name, the header holds one badge per role the person
+ *  holds: freelancer (a card), company (a request), administrator (REB-601).
  *  It was two columns from `lg` between REB-602 and REB-641, the referral, the card and
  *  the contracts on the left and the rest on the right, and the two stacks never lined
  *  up: a reader scanned both to find one thing. The column is `max-w-3xl`: wider than
@@ -127,7 +126,7 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *  columns had, which in one column put a ledger row's answer a screen away from its
  *  label.
  *
- *  The `negato` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
+ *  The `denied` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
  *  `/admin/*`: this is where they land, with a sentence saying why instead of a blank
  *  screen or a raw 403 (REB-279's own access rule). Logout lives in the signed-in
  *  shell's sidebar now, not here, so there is one button for it instead of two. */
@@ -142,8 +141,8 @@ export function Area() {
   const showPerks = value !== null || profile.role === 'admin'
 
   const cardSection = value && (
-    <section aria-labelledby="me-scheda" className="space-y-3">
-      <h2 id="me-scheda" className="text-lg font-semibold tracking-tight">
+    <section aria-labelledby="me-card" className="space-y-3">
+      <h2 id="me-card" className="text-lg font-semibold tracking-tight">
         La tua scheda
       </h2>
       {!profile.complete && (
@@ -188,9 +187,9 @@ export function Area() {
   )
 
   const requestsSection = requests.length > 0 && (
-    <section aria-labelledby="me-richieste" className="space-y-3">
+    <section aria-labelledby="me-requests" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="me-richieste" className="text-lg font-semibold tracking-tight">
+        <h2 id="me-requests" className="text-lg font-semibold tracking-tight">
           {requests.length === 1 ? 'La tua richiesta' : 'Le tue richieste'}
         </h2>
         <Button asChild variant="outline" size="sm">
@@ -208,9 +207,9 @@ export function Area() {
     </section>
   )
 
-  // What this person is: the singular forms of the admin sidebar's Talenti, Aziende and
-  // Amministratori, with «Freelance» as the member area calls a talent. A member with none of them gets no line and
-  // keeps the «Ruolo» row below; an admin with nothing else is already named here, so
+  // What this person is: the singular forms of the admin sidebar's "Talenti", "Aziende" and
+  // "Amministratori", with "Freelance" as the member area calls a talent. A member with none of them gets no line and
+  // keeps the "Ruolo" row below; an admin with nothing else is already named here, so
   // that row would only say it twice (REB-601).
   const roles = [
     profile.has_card && 'Freelance',
@@ -277,7 +276,7 @@ export function Area() {
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">La tua area</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {profile.nome} {profile.last_name}
+            {profile.first_name} {profile.last_name}
           </h1>
           {roles.length > 0 && (
             <div role="group" aria-label="Ruoli" className="mt-2 flex flex-wrap gap-2">

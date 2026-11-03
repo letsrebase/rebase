@@ -17,7 +17,7 @@ export const NONE = ''
 export interface TalentsFiltersForm {
   status: string
   q: string
-  posizione: string
+  job_title: string
   remote: string
   min_rate: string
   max_rate: string
@@ -44,7 +44,7 @@ export interface CompaniesFiltersForm {
 export const TalentsFiltersEmpty: TalentsFiltersForm = {
   status: ANY,
   q: '',
-  posizione: '',
+  job_title: '',
   remote: ANY,
   min_rate: '',
   max_rate: '',
@@ -85,7 +85,7 @@ function otherSet<T extends object>(values: T, empty: T, main: readonly (keyof T
 /** Everything the page edits, in one value: the page's draft is a function of it, so
  *  "has anything changed since the last save" is one string comparison. */
 export interface CampaignForm {
-  nome: string
+  name: string
   source: Source
   journeyStatus: string | null
   list: List
@@ -99,13 +99,13 @@ export interface CampaignForm {
    *  is picked, so going back to «Un link» finds it, and never sent with that one. */
   buttonUrl: string
   action: CampaignAction
-  /** The campaign a `list` draft follows (`Campaign.segue_id`): `null` for a `status`
+  /** The campaign a `list` draft follows (`Campaign.follows_id`): `null` for a `status`
    *  or `filters` form, which picks its own audience instead. */
   segueId: string | null
 }
 
 export const EMPTY_FORM: CampaignForm = {
-  nome: '',
+  name: '',
   source: 'status',
   journeyStatus: null,
   list: 'talents',
@@ -148,7 +148,7 @@ function storedAmount(value: unknown): string {
   return text.trim() !== '' && Number.isFinite(number) ? number.toFixed(2) : text
 }
 
-/** The name a draft is saved under while the title field is empty: `nome` is
+/** The name a draft is saved under while the title field is empty: `name` is
  *  `min_length=1` server-side (fix 1, REB-472 round 1), and a blank one never leaves
  *  this page (REB-524 strips it server-side too). */
 export function defaultName(source: Source): string {
@@ -165,7 +165,7 @@ function filtersOf(form: CampaignForm): Record<string, unknown> | null {
       list: form.list,
       status: picked(t.status),
       q: typed(t.q),
-      posizione: typed(t.posizione),
+      job_title: typed(t.job_title),
       remote: picked(t.remote),
       min_rate: amountFilter(typed(t.min_rate)),
       max_rate: amountFilter(typed(t.max_rate)),
@@ -193,7 +193,7 @@ function filtersOf(form: CampaignForm): Record<string, unknown> | null {
 
 /** What a `list` saves: the mail alone. Whom it reaches and what it measures come from
  *  the campaign it follows, and the API refuses a change to either (`LIST_IS_FIXED`). */
-export type ListPatch = Pick<CampaignDraft, 'nome' | 'subject' | 'text' | 'button_text' | 'button_meta' | 'button_url'>
+export type ListPatch = Pick<CampaignDraft, 'name' | 'subject' | 'text' | 'button_text' | 'button_meta' | 'button_url'>
 
 /** The address the button carries: «Un link»'s own, trimmed, and nothing at all for any
  *  other destination, so the request of a hub button stays what it always was and the
@@ -210,7 +210,7 @@ function linkOf(form: CampaignForm): string | undefined {
 export function payloadOf(form: CampaignForm): CampaignDraft | ListPatch | null {
   if (form.source === 'list') {
     return {
-      nome: form.nome.trim() || defaultName(form.source),
+      name: form.name.trim() || defaultName(form.source),
       subject: form.subject,
       text: form.text,
       button_text: form.buttonText,
@@ -220,7 +220,7 @@ export function payloadOf(form: CampaignForm): CampaignDraft | ListPatch | null 
   }
   if (form.source === 'status' && form.journeyStatus === null) return null
   return {
-    nome: form.nome.trim() || defaultName(form.source),
+    name: form.name.trim() || defaultName(form.source),
     source: form.source,
     journey_status: form.source === 'status' ? form.journeyStatus : null,
     filters: filtersOf(form),
@@ -246,7 +246,7 @@ export function keyOf(payload: CampaignDraft | ListPatch | null): string | null 
 export function formFromCampaign(c: Campaign): CampaignForm {
   const base: CampaignForm = {
     ...EMPTY_FORM,
-    nome: c.nome,
+    name: c.name,
     source: c.source,
     journeyStatus: c.journey_status,
     subject: c.subject,
@@ -255,7 +255,7 @@ export function formFromCampaign(c: Campaign): CampaignForm {
     buttonMeta: c.button_meta,
     buttonUrl: c.button_url ?? '',
     action: c.action,
-    segueId: c.segue_id,
+    segueId: c.follows_id,
   }
   if (c.source !== 'filters' || !c.filters) return base
   const f = c.filters as Record<string, unknown>
@@ -267,7 +267,7 @@ export function formFromCampaign(c: Campaign): CampaignForm {
       talents: {
         status,
         q: stored(f.q),
-        posizione: stored(f.posizione),
+        job_title: stored(f.job_title),
         remote: stored(f.remote) || ANY,
         min_rate: storedAmount(f.min_rate),
         max_rate: storedAmount(f.max_rate),
@@ -309,13 +309,13 @@ export function withTemplate(
   form: CampaignForm,
   template: CampaignTemplate | undefined,
   value: string,
-  touched: { mail: boolean; nome: boolean; meta?: boolean },
+  touched: { mail: boolean; name: boolean; meta?: boolean },
 ): CampaignForm {
   const next = { ...form, journeyStatus: value }
   if (!template) return next
   const keepMeta = touched.mail || touched.meta === true
   next.action = keepMeta && form.buttonMeta === 'link' ? 'click' : template.action
-  if (!touched.nome) next.nome = template.label
+  if (!touched.name) next.name = template.label
   if (!keepMeta) next.buttonMeta = template.button_meta
   if (touched.mail) return next
   return {

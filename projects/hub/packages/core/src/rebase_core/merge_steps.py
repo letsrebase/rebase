@@ -24,11 +24,11 @@ from rebase_core.models import (
 
 # What the `cv` of a merge answers: the survivor ends with no CV, its own, the absorbed
 # card's, or (an undo) the older one put back.
-CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED = "nessuno", "invariato", "assorbita", "ripristinato"
+CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED = "none", "kept", "absorbed", "restored"
 CV_OUTCOMES = (CV_NONE, CV_KEPT, CV_ABSORBED, CV_RESTORED)
 # Fields of the card the survivor takes from the absorbed one when it has none.
 _FILLED_FIELDS = (
-    "posizione",
+    "job_title",
     "daily_rate",
     "remote",
     "seniority_admin",
@@ -179,7 +179,7 @@ class MergeSteps:
         undo: dict[str, Any] = {
             "survivor_linkedin_before": survivor.linkedin_url,
             "absorbed_linkedin_before": absorbed.linkedin_url,
-            "survivor_telefono_before": survivor.phone,
+            "survivor_phone_before": survivor.phone,
             "aliases": [],
         }
         absorbed_profile = absorbed.linkedin_url
@@ -199,7 +199,7 @@ class MergeSteps:
         undo["aliases"] = [str(a) for a in aliases]
         absorbed.merged_into_id = survivor.id
         undo["survivor_linkedin_after"] = survivor.linkedin_url
-        undo["survivor_telefono_after"] = survivor.phone
+        undo["survivor_phone_after"] = survivor.phone
         return undo
 
     def retarget_proposals(self, source: UUID, target: UUID) -> list[str]:

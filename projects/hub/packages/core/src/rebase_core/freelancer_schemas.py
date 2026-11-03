@@ -27,9 +27,7 @@ from rebase_core.schema_common import (
 )
 from rebase_core.signup_schemas import SignupListItem, SignupUtm
 from rebase_core.validation import SafeStr
-from rebase_core.vocabulary import CompilataDa, FreelancerStatus, RemoteOption, Seniority
-
-FreelancerStatus = Literal["new", "contacted", "active", "discarded"]
+from rebase_core.vocabulary import FilledBy, FreelancerStatus, RemoteOption, Seniority
 
 
 class FreelancerFields(BaseModel):
@@ -39,15 +37,15 @@ class FreelancerFields(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
     daily_rate: Decimal = Field(max_digits=7, decimal_places=2, ge=MIN_RATE, le=MAX_RATE)
-    posizione: SafeStr = Field(min_length=1, max_length=JOB_TITLE_MAX_LENGTH)
+    job_title: SafeStr = Field(min_length=1, max_length=JOB_TITLE_MAX_LENGTH)
     remote: Remote
     links: list[SafeStr] = Field(default_factory=list, max_length=LINKS_MAX)
 
-    @field_validator("nome", "last_name", "posizione", mode="after")
+    @field_validator("first_name", "last_name", "job_title", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         return clean_text(value, what="un valore")
@@ -102,10 +100,10 @@ class FreelancerDraft(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
-    posizione: SafeStr | None = Field(default=None, max_length=JOB_TITLE_MAX_LENGTH)
+    job_title: SafeStr | None = Field(default=None, max_length=JOB_TITLE_MAX_LENGTH)
     daily_rate: Decimal | None = Field(
         default=None, max_digits=7, decimal_places=2, ge=MIN_RATE, le=MAX_RATE
     )
@@ -113,12 +111,12 @@ class FreelancerDraft(BaseModel):
     links: list[SafeStr] = Field(default_factory=list, max_length=LINKS_MAX)
     sources: list[SafeStr] = Field(min_length=1, max_length=SOURCES_MAX)
 
-    @field_validator("nome", "last_name", mode="after")
+    @field_validator("first_name", "last_name", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         return clean_text(value, what="un valore")
 
-    @field_validator("posizione", mode="after")
+    @field_validator("job_title", mode="after")
     @classmethod
     def _trimmed_or_none(cls, value: str | None) -> str | None:
         return None if value is None else clean_text(value, what="una posizione")
@@ -144,7 +142,7 @@ class FreelancerRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    first_name: str
     last_name: str
     email: str
     linkedin_url: str | None
@@ -157,12 +155,12 @@ class FreelancerRead(ResponseModel):
     cv_mime: str | None
     cv_size: int | None
     daily_rate: Decimal | None
-    posizione: str | None
+    job_title: str | None
     remote: RemoteOption | None
     links: list[str]
     status: FreelancerStatus
     # Who wrote the seven answers last: `person` or `admin` (`COMPILATA_DA`).
-    compilata_da: CompilataDa
+    filled_by: FilledBy
     # How many times the person entered through a magic link, and the last time (ORB-158).
     # Filled by the service with one grouped join; `0` and `None` for a card never opened.
     logins: int = 0
@@ -227,23 +225,23 @@ class FreelancerOverride(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    first_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     last_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
     daily_rate: Decimal | None = Field(
         default=None, max_digits=7, decimal_places=2, ge=MIN_RATE, le=MAX_RATE
     )
-    posizione: SafeStr | None = Field(default=None, max_length=JOB_TITLE_MAX_LENGTH)
+    job_title: SafeStr | None = Field(default=None, max_length=JOB_TITLE_MAX_LENGTH)
     remote: Remote | None = None
     links: list[SafeStr] | None = Field(default=None, max_length=LINKS_MAX)
     status: FreelancerStatus | None = None
-    compilata_da: Literal["person", "admin"] | None = None
+    filled_by: Literal["person", "admin"] | None = None
     # The level an admin sets over the card's own (REB-799): `null` takes the correction
     # off, and the card's reading shows again.
     seniority_admin: Literal["junior", "mid", "senior", "lead"] | None = None
     experience_years_admin: int | None = Field(default=None, ge=0, le=60)
 
-    @field_validator("nome", "last_name", "posizione", mode="after")
+    @field_validator("first_name", "last_name", "job_title", mode="after")
     @classmethod
     def _trimmed(cls, value: str | None) -> str | None:
         return clean_text(value, what="un valore") if value is not None else None

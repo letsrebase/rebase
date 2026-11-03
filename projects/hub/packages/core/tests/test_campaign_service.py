@@ -105,7 +105,7 @@ def test_switching_source_clears_the_other_sources_column(
     )
     service.update(with_filters.id, CampaignPatch(source="status", journey_status="missing_cv"))
     filters_is_null = clean.execute(
-        text("select 1 from campaigns where id = :id and filtri is null"),
+        text("select 1 from campaigns where id = :id and filters is null"),
         {"id": with_filters.id},
     ).scalar()
     assert filters_is_null == 1
@@ -115,7 +115,7 @@ def test_switching_source_clears_the_other_sources_column(
         with_state.id, CampaignPatch(source="filters", filters=TalentsFilters(list="talents"))
     )
     journey_status_is_null = clean.execute(
-        text("select 1 from campaigns where id = :id and stato_percorso is null"),
+        text("select 1 from campaigns where id = :id and journey_status is null"),
         {"id": with_state.id},
     ).scalar()
     assert journey_status_is_null == 1
@@ -173,7 +173,7 @@ def test_a_save_that_changes_nothing_keeps_the_test(clean: Session) -> None:  # 
     service.update(
         campaign.id,
         CampaignPatch(
-            nome=same.nome,
+            name=same.name,
             source=same.source,
             journey_status=same.journey_status,
             subject=same.subject,
@@ -193,7 +193,7 @@ def test_a_rename_after_the_test_asks_for_a_new_one(clean: Session) -> None:  # 
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _who = ready(service, clean, clock)
     clock.at += timedelta(minutes=1)
-    renamed = service.update(campaign.id, CampaignPatch(nome="Manca il CV, secondo giro"))
+    renamed = service.update(campaign.id, CampaignPatch(name="Manca il CV, secondo giro"))
     assert renamed.slug != campaign.slug
     assert renamed.ready is False
     with pytest.raises(InvalidState, match="Manda una prova"):
@@ -205,7 +205,7 @@ def test_a_filter_save_that_changes_nothing_keeps_the_test(clean: Session) -> No
     service = CampaignService(clean, SETTINGS, clock=clock)
     who = admin(clean)
     person(clean, "ada@studio.it")
-    filters = TalentsFilters(list="talents", posizione="Backend", min_rate=Decimal("300"))
+    filters = TalentsFilters(list="talents", job_title="Backend", min_rate=Decimal("300"))
     created = service.create(who.id, draft(source="filters", journey_status=None, filters=filters))
     clock.at += timedelta(minutes=1)
     service.send_test(created.id, as_admin(who), RecordingCampaignSender())
@@ -214,14 +214,14 @@ def test_a_filter_save_that_changes_nothing_keeps_the_test(clean: Session) -> No
         created.id,
         CampaignPatch(
             source="filters",
-            filters=TalentsFilters(list="talents", posizione="Backend", min_rate=Decimal("300")),
+            filters=TalentsFilters(list="talents", job_title="Backend", min_rate=Decimal("300")),
         ),
     )
     assert unchanged.ready is True
     clock.at += timedelta(minutes=1)
     changed = service.update(
         created.id,
-        CampaignPatch(filters=TalentsFilters(list="talents", posizione="Frontend")),
+        CampaignPatch(filters=TalentsFilters(list="talents", job_title="Frontend")),
     )
     assert changed.ready is False
 
@@ -250,8 +250,8 @@ def test_scheduling_freezes_the_list_minus_the_unticked_and_the_excluded(
     assert scheduled.status == "scheduled" and scheduled.scheduled_for == clock.at
     rows = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).all()
     assert [r.email for r in rows] == ["nocv@studio.it"]
-    assert rows[0].status == "in_coda" and len(rows[0].code) == 8
-    assert rows[0].before["ha_cv"] is False and len(rows[0].unsubscribe_token) >= 40
+    assert rows[0].status == "queued" and len(rows[0].code) == 8
+    assert rows[0].before["has_cv"] is False and len(rows[0].unsubscribe_token) >= 40
 
 
 def test_an_odd_unticked_address_does_not_stop_the_send(
@@ -261,11 +261,11 @@ def test_an_odd_unticked_address_does_not_stop_the_send(
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _ = ready(service, clean, clock)
     everyone = ScheduleRequest.model_validate(
-        {"esclusi": [" NoCV@Studio.it ", "OTHER@studio.it", "odd..legacy@studio.it"]}
+        {"excluded": [" NoCV@Studio.it ", "OTHER@studio.it", "odd..legacy@studio.it"]}
     )
     with pytest.raises(ValidationFailed, match="nessuno riceverebbe"):
         service.schedule(campaign.id, everyone)
-    odd_only = ScheduleRequest.model_validate({"esclusi": ["odd..legacy@studio.it"]})
+    odd_only = ScheduleRequest.model_validate({"excluded": ["odd..legacy@studio.it"]})
     assert service.schedule(campaign.id, odd_only).status == "scheduled"
     rows = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).all()
     assert sorted(r.email for r in rows) == ["nocv@studio.it", "other@studio.it"]
@@ -282,22 +282,22 @@ def test_renaming_a_draft_moves_its_slug_to_the_new_name(
     filters = TalentsFilters(list="talents")
     created = service.create(
         who.id,
-        draft(nome="Campagna da filtri", source="filters", journey_status=None, filters=filters),
+        draft(name="Campagna da filtri", source="filters", journey_status=None, filters=filters),
     )
     day = f"{created.created_at.astimezone(UTC):%Y-%m-%d}"
-    renamed = service.update(created.id, CampaignPatch(nome="Richiamo di ottobre"))
+    renamed = service.update(created.id, CampaignPatch(name="Richiamo di ottobre"))
     assert renamed.slug == f"c-{day}-richiamo-di-ottobre"
-    again = service.update(created.id, CampaignPatch(nome="Richiamo di ottobre", subject="x"))
+    again = service.update(created.id, CampaignPatch(name="Richiamo di ottobre", subject="x"))
     assert again.slug == renamed.slug
-    second = service.create(who.id, draft(nome="Altra"))
-    clash = service.update(second.id, CampaignPatch(nome="Richiamo di ottobre"))
+    second = service.create(who.id, draft(name="Altra"))
+    clash = service.update(second.id, CampaignPatch(name="Richiamo di ottobre"))
     assert clash.slug == f"c-{day}-richiamo-di-ottobre-2"
     untouched = service.update(created.id, CampaignPatch(subject="y"))
     assert untouched.slug == renamed.slug
 
 
 @pytest.mark.parametrize(
-    ("day", "ora", "utc"),
+    ("day", "at_time", "utc"),
     [
         (date(2026, 10, 24), time(9, 30), datetime(2026, 10, 24, 7, 30, tzinfo=UTC)),  # CEST
         (date(2026, 10, 25), time(9, 30), datetime(2026, 10, 25, 8, 30, tzinfo=UTC)),  # CET
@@ -311,14 +311,17 @@ def test_renaming_a_draft_moves_its_slug_to_the_new_name(
 def test_a_scheduled_time_is_rome_wall_clock_across_dst(
     clean: Session,  # noqa: F811  (fixture)
     day: date,
-    ora: time,
+    at_time: time,
     utc: datetime,
 ) -> None:
     """Review Focus 2."""
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _ = ready(service, clean, clock)
-    assert service.schedule(campaign.id, ScheduleRequest(day=day, ora=ora)).scheduled_for == utc
+    assert (
+        service.schedule(campaign.id, ScheduleRequest(day=day, at_time=at_time)).scheduled_for
+        == utc
+    )
 
 
 def test_a_time_that_does_not_exist_or_has_passed_is_refused(
@@ -328,9 +331,9 @@ def test_a_time_that_does_not_exist_or_has_passed_is_refused(
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _ = ready(service, clean, clock)
     with pytest.raises(ValidationFailed, match="cambio d'ora"):
-        service.schedule(campaign.id, ScheduleRequest(day=date(2027, 3, 28), ora=time(2, 30)))
+        service.schedule(campaign.id, ScheduleRequest(day=date(2027, 3, 28), at_time=time(2, 30)))
     with pytest.raises(ValidationFailed, match="già passato"):
-        service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 24), ora=time(9, 30)))
+        service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 24), at_time=time(9, 30)))
     with pytest.raises(ValidationFailed, match="giorno e ora"):
         service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 30)))
 
@@ -341,7 +344,7 @@ def test_back_to_draft_drops_the_frozen_list_and_cancel_skips_what_is_left(
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _ = ready(service, clean, clock)
-    service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 30), ora=time(9, 30)))
+    service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 30), at_time=time(9, 30)))
     assert service.back_to_draft(campaign.id).status == "draft"
     assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == 0
     service.schedule(campaign.id, ScheduleRequest())
@@ -504,8 +507,8 @@ def test_from_mail_needs_this_campaigns_slug_and_this_persons_code(clean: Sessio
     """Review Focus 5: a forwarded mail carries the slug with somebody else's code."""
     campaign = campaign_row(clean, status="sent", sent_at=T0, action="signed_in")
     later = T0 + timedelta(hours=1)
-    ada = User(email="ada@studio.it", nome="Ada", last_name="L")
-    bob = User(email="bob@studio.it", nome="Bob", last_name="L")
+    ada = User(email="ada@studio.it", first_name="Ada", last_name="L")
+    bob = User(email="bob@studio.it", first_name="Bob", last_name="L")
     clean.add_all([ada, bob])
     clean.flush()
     clean.add(
@@ -541,7 +544,7 @@ def test_from_mail_is_the_login_that_stamped_the_entry_not_any_matching_login(
     campaign = campaign_row(clean, status="sent", sent_at=T0, action="signed_in")
     earlier = T0 + timedelta(hours=1)
     later = T0 + timedelta(hours=2)
-    ada = User(email="ada@studio.it", nome="Ada", last_name="L")
+    ada = User(email="ada@studio.it", first_name="Ada", last_name="L")
     clean.add(ada)
     clean.flush()
     clean.add(Login(user_id=ada.id, logged_at=earlier))
@@ -565,7 +568,7 @@ def test_a_card_that_carries_the_slug_was_created_from_the_mail(clean: Session) 
         button_meta="wizard",
     )
     later = T0 + timedelta(hours=1)
-    giulia = User(email="giulia@studio.it", nome="Giulia", last_name="B")
+    giulia = User(email="giulia@studio.it", first_name="Giulia", last_name="B")
     clean.add(giulia)
     clean.flush()
     # The wizard stores the button link's `utm_term` on the card (item 2, Greptile P1):
@@ -595,7 +598,7 @@ def test_to_card_with_the_slug_but_another_persons_code_is_not_from_mail(clean: 
         button_meta="wizard",
     )
     later = T0 + timedelta(hours=1)
-    nina = User(email="nina@studio.it", nome="Nina", last_name="B")
+    nina = User(email="nina@studio.it", first_name="Nina", last_name="B")
     clean.add(nina)
     clean.flush()
     clean.add(
@@ -623,7 +626,7 @@ def test_a_draft_is_deleted_and_nothing_else_is(clean: Session) -> None:  # noqa
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _ = ready(service, clean, clock)
-    kept = service.create(admin(clean).id, draft(nome="Resta"))
+    kept = service.create(admin(clean).id, draft(name="Resta"))
     service.delete(campaign.id)
     clean.expire_all()
     assert clean.get(Campaign, campaign.id) is None
@@ -638,7 +641,7 @@ def test_a_draft_moved_back_from_scheduled_is_a_draft_again_and_can_go(
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)
     campaign, _ = ready(service, clean, clock)
-    service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 30), ora=time(9, 30)))
+    service.schedule(campaign.id, ScheduleRequest(day=date(2026, 9, 30), at_time=time(9, 30)))
     service.back_to_draft(campaign.id)
     service.delete(campaign.id)
     clean.expire_all()
@@ -720,7 +723,7 @@ def test_a_draft_whose_rows_carry_a_send_or_an_outcome_is_not_deleted(
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)
     created = service.create(admin(clean).id, draft())
-    fields: dict[str, object] = {"status": "in_coda", "sent_at": None, stamp: T0}
+    fields: dict[str, object] = {"status": "queued", "sent_at": None, stamp: T0}
     _recipient(clean, created.id, "ada@studio.it", **fields)
     with pytest.raises(InvalidState, match=DRAFT_HAS_HISTORY):
         service.delete(created.id)

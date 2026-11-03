@@ -212,10 +212,10 @@ def cards_eval(
     what was invented. Prints per person and in total the supported fields, the
     contradictions, the guard failures, the identifiers found, the latency and the cost of
     the writing and of the judging apart, and how the run stands against a baseline:
-    `--baseline RUN_ID`, or the newest finished run of the live configuration, or
-    «nessun riferimento». `--prompt-version 1` writes with the CV-alone prompt of before
-    the sources, for a baseline of it. A provider that is switched off is refused, «Il
-    fornitore è spento», unless `--allow-disabled` says this evaluation may send CVs to
+    `--baseline RUN_ID`, or the newest finished run of the live configuration, or a
+    line saying there is none. `--prompt-version 1` writes with the CV-alone prompt of before
+    the sources, for a baseline of it. A provider that is switched off is refused with
+    a sentence, unless `--allow-disabled` says this evaluation may send CVs to
     it (the report says so). No live card and no task setting is touched; the calls are
     recorded under the `card` task with `purpose="eval"`, so they count against its daily
     cap, which can end the run early: it then says so, exits 1 and is never taken as a

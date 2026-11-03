@@ -116,44 +116,44 @@ export function AdminCreateCompany() {
           rebase.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field id="nuova-azienda" label="Azienda">
-            <Input id="nuova-azienda" required value={form.company_name} onChange={(e) => set('company_name')(e.target.value)} />
+          <Field id="new-company" label="Azienda">
+            <Input id="new-company" required value={form.company_name} onChange={(e) => set('company_name')(e.target.value)} />
           </Field>
-          <Field id="nuova-figura" label="Figura richiesta">
-            <Input id="nuova-figura" required value={form.requested_role} onChange={(e) => set('requested_role')(e.target.value)} />
+          <Field id="new-role" label="Figura richiesta">
+            <Input id="new-role" required value={form.requested_role} onChange={(e) => set('requested_role')(e.target.value)} />
           </Field>
-          <Field id="nuova-nome" label="Nome del referente">
-            <Input id="nuova-nome" required value={form.contact_first_name} onChange={(e) => set('contact_first_name')(e.target.value)} />
+          <Field id="new-first-name" label="Nome del referente">
+            <Input id="new-first-name" required value={form.contact_first_name} onChange={(e) => set('contact_first_name')(e.target.value)} />
           </Field>
-          <Field id="nuova-cognome" label="Cognome del referente">
-            <Input id="nuova-cognome" required value={form.contact_last_name} onChange={(e) => set('contact_last_name')(e.target.value)} />
+          <Field id="new-last-name" label="Cognome del referente">
+            <Input id="new-last-name" required value={form.contact_last_name} onChange={(e) => set('contact_last_name')(e.target.value)} />
           </Field>
-          <Field id="nuova-email" label="Email">
-            <Input id="nuova-email" type="email" required value={form.email} onChange={(e) => set('email')(e.target.value)} />
+          <Field id="new-email" label="Email">
+            <Input id="new-email" type="email" required value={form.email} onChange={(e) => set('email')(e.target.value)} />
           </Field>
-          <Field id="nuova-telefono" label="Telefono">
-            <Input id="nuova-telefono" type="tel" required value={form.phone} onChange={(e) => set('phone')(e.target.value)} />
+          <Field id="new-phone" label="Telefono">
+            <Input id="new-phone" type="tel" required value={form.phone} onChange={(e) => set('phone')(e.target.value)} />
           </Field>
         </div>
-        <Field id="nuova-progetto" label="Progetto">
-          <Textarea id="nuova-progetto" required rows={5} value={form.project} onChange={(e) => set('project')(e.target.value)} />
+        <Field id="new-project" label="Progetto">
+          <Textarea id="new-project" required rows={5} value={form.project} onChange={(e) => set('project')(e.target.value)} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field id="nuova-inizio" label="Inizio desiderato">
-            <Input id="nuova-inizio" type="date" required value={form.period_from} onChange={(e) => set('period_from')(e.target.value)} />
+          <Field id="new-start" label="Inizio desiderato">
+            <Input id="new-start" type="date" required value={form.period_from} onChange={(e) => set('period_from')(e.target.value)} />
           </Field>
-          <Field id="nuova-durata" label="Durata">
-            <Input id="nuova-durata" required value={form.duration} onChange={(e) => set('duration')(e.target.value)} />
+          <Field id="new-duration" label="Durata">
+            <Input id="new-duration" required value={form.duration} onChange={(e) => set('duration')(e.target.value)} />
           </Field>
-          <Field id="nuova-budget" label="Budget giornaliero (€)">
-            <Input id="nuova-budget" inputMode="decimal" required value={form.daily_budget} onChange={(e) => set('daily_budget')(e.target.value)} />
+          <Field id="new-budget" label="Budget giornaliero (€)">
+            <Input id="new-budget" inputMode="decimal" required value={form.daily_budget} onChange={(e) => set('daily_budget')(e.target.value)} />
           </Field>
-          <Field id="nuova-risorse" label="Persone richieste">
-            <Input id="nuova-risorse" type="number" min={1} required value={form.headcount} onChange={(e) => set('headcount')(e.target.value)} />
+          <Field id="new-headcount" label="Persone richieste">
+            <Input id="new-headcount" type="number" min={1} required value={form.headcount} onChange={(e) => set('headcount')(e.target.value)} />
           </Field>
-          <Field id="nuova-remoto" label="Modalità">
+          <Field id="new-remote" label="Modalità">
             <Select value={form.remote} onValueChange={(value) => set('remote')(value as Remote)}>
-              <SelectTrigger id="nuova-remoto">
+              <SelectTrigger id="new-remote">
                 <SelectValue placeholder="Scegli" />
               </SelectTrigger>
               <SelectContent>
@@ -166,17 +166,17 @@ export function AdminCreateCompany() {
             </Select>
           </Field>
           {form.remote === 'hybrid' && (
-            <Field id="nuova-giorni" label="Giorni in sede a settimana">
-              <Input id="nuova-giorni" type="number" min={1} max={5} required value={form.onsite_days} onChange={(e) => set('onsite_days')(e.target.value)} />
+            <Field id="new-days" label="Giorni in sede a settimana">
+              <Input id="new-days" type="number" min={1} max={5} required value={form.onsite_days} onChange={(e) => set('onsite_days')(e.target.value)} />
             </Field>
           )}
         </div>
         <Field
-          id="nuova-deal"
+          id="new-deal"
           label="Deal nel CRM"
           hint="Se l’azienda è già nel CRM con un deal aperto, incolla il suo indirizzo o il suo id: la richiesta si collega a quel deal e il CRM non crea né un secondo cliente né un secondo deal. Senza, la richiesta viene registrata come deal nuovo."
         >
-          <Input id="nuova-deal" placeholder="…/app/deal/…" value={form.deal} onChange={(e) => set('deal')(e.target.value)} />
+          <Input id="new-deal" placeholder="…/app/deal/…" value={form.deal} onChange={(e) => set('deal')(e.target.value)} />
         </Field>
         {(problem ?? failure) && (
           <p role="alert" className="text-sm text-destructive">

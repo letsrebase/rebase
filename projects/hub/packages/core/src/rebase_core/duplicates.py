@@ -47,7 +47,7 @@ from rebase_core.schema_common import ResponseModel
 from rebase_core.vocabulary import enum_of
 
 LINKEDIN = "linkedin"
-NOME = "nome"
+NOME = "first_name"
 PHONE = "phone"
 SIGNALS = (LINKEDIN, NOME, PHONE)
 DuplicateSignal = Annotated[str, Field(json_schema_extra=enum_of(SIGNALS))]
@@ -69,17 +69,17 @@ UNIQUE_INDEXES = (
 @dataclass(frozen=True)
 class Person:
     """One live card with the few columns that decide who survives a merge. Never the
-    CV's bytes: `cv_uploaded_at` and `ha_cv` say what there is to know."""
+    CV's bytes: `cv_uploaded_at` and `has_cv` say what there is to know."""
 
     user_id: UUID
     freelancer_id: UUID
     email: str
-    nome: str
+    first_name: str
     last_name: str
     admin: bool
     created_at: datetime
     cv_uploaded_at: datetime | None
-    ha_cv: bool
+    has_cv: bool
 
     @property
     def rank(self) -> tuple[bool, datetime, datetime]:
@@ -87,7 +87,7 @@ class Person:
         merged away), then the newest CV, then the newest card."""
         stamp = (
             self.cv_uploaded_at.replace(tzinfo=None)
-            if self.ha_cv and self.cv_uploaded_at
+            if self.has_cv and self.cv_uploaded_at
             else _MIN_DATE
         )
         return (self.admin, stamp, self.created_at.replace(tzinfo=None))
@@ -127,11 +127,11 @@ class DuplicateReport:
     signups: list[LeadDuplicate] = field(default_factory=list)
 
 
-def _name_key(nome: str, last_name: str) -> str | None:
+def _name_key(first_name: str, last_name: str) -> str | None:
     """The name as a person would be recognised by it: accents, case, spaces and the
     order of the two words left out. `None` when either is empty."""
     parts = []
-    for word in (nome, last_name):
+    for word in (first_name, last_name):
         folded = unicodedata.normalize("NFKD", word)
         text_ = "".join(ch for ch in folded if not unicodedata.combining(ch))
         text_ = re.sub(r"[\W_]+", "", text_.lower())
@@ -166,7 +166,7 @@ def _live_people() -> Select[*tuple[Any, ...]]:
             Freelancer.cv_uploaded_at,
             Freelancer.cv_size,
             User.email,
-            User.nome,
+            User.first_name,
             User.last_name,
             User.role,
             User.linkedin_url,
@@ -190,17 +190,17 @@ def _pairs_among(rows: Sequence[Row[Any]]) -> list[DuplicatePair]:
             user_id=row.user_id,
             freelancer_id=row.id,
             email=row.email,
-            nome=row.nome,
+            first_name=row.first_name,
             last_name=row.last_name,
             admin=row.role == "admin",
             created_at=row.created_at,
             cv_uploaded_at=row.cv_uploaded_at,
-            ha_cv=row.cv_size is not None,
+            has_cv=row.cv_size is not None,
         )
         people[row.id] = person
         if (key := linkedin_key(row.linkedin_url)) is not None:
             by_linkedin[key].append(person)
-        if (name := _name_key(row.nome, row.last_name)) is not None:
+        if (name := _name_key(row.first_name, row.last_name)) is not None:
             by_name[name].append(person)
         if (phone := _phone_key(row.phone)) is not None:
             by_phone[phone].append(person)
@@ -356,8 +356,8 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
     for row in page:
         if (profile := linkedin_key(row.linkedin_url)) is not None:
             profiles.add(profile)
-        if _name_key(row.nome, row.last_name) is not None:
-            first, last = _ascii_word(row.nome), _ascii_word(row.last_name)
+        if _name_key(row.first_name, row.last_name) is not None:
+            first, last = _ascii_word(row.first_name), _ascii_word(row.last_name)
             names.update((f"{first}|{last}", f"{last}|{first}"))
         if (number := _phone_key(row.phone)) is not None:
             digits = re.sub(r"[^0-9]", "", number)
@@ -372,7 +372,7 @@ def _neighbours(session: Session, page: Sequence[Row[Any]]) -> list[Row[Any]]:
         # The two words in either order, as `_name_key` reads them. One expression, so it is
         # computed once per row: a row-value `IN` repeats it for every pair.
         both = (
-            _ascii_word_sql(User.nome)
+            _ascii_word_sql(User.first_name)
             .concat(literal_column("'|'"))
             .concat(_ascii_word_sql(User.last_name))
         )
@@ -419,12 +419,12 @@ class PersonRead(ResponseModel):
 
     freelancer_id: UUID
     user_id: UUID
-    nome: str
+    first_name: str
     last_name: str
     email: str
     created_at: datetime
     cv_uploaded_at: datetime | None
-    ha_cv: bool
+    has_cv: bool
 
 
 class DuplicatePairRead(ResponseModel):
@@ -448,12 +448,12 @@ def _person_read(person: Person) -> PersonRead:
     return PersonRead(
         freelancer_id=person.freelancer_id,
         user_id=person.user_id,
-        nome=person.nome,
+        first_name=person.first_name,
         last_name=person.last_name,
         email=person.email,
         created_at=person.created_at,
         cv_uploaded_at=person.cv_uploaded_at,
-        ha_cv=person.ha_cv,
+        has_cv=person.has_cv,
     )
 
 

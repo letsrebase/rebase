@@ -19,7 +19,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def read_freelancer_cv(freelancer_id: str) -> dict[str, Any]:
         """Il testo del CV di un freelance, per id, come lo legge pypdf: `text` pagina
-        dopo pagina, `pagine` quante ne ha il file, `troncato` se il testo è stato
+        dopo pagina, `pages` quante ne ha il file, `truncated` se il testo è stato
         tagliato (oltre venti pagine o duecentomila caratteri), `filename` il nome del
         file. Un CV scansionato risponde `text` vuoto con le sue pagine; una scheda
         senza CV risponde una frase. Solo lettura: serve a confrontare una scheda con
@@ -58,7 +58,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         ancora prodotto una scheda; `error` l'ultimo motivo per cui non c'è, o per cui
         quella che c'è è più vecchia del CV attuale. `seniority` e `experience_years` sono quelli
         effettivi: la correzione dell'admin (`seniority_admin`, `experience_years_admin`, da
-        `override_freelancer`) se c'è, altrimenti quelli di Claude; `experience_years` è `None` quando
+        `override_freelancer`) se c'è, altrimenti quelli di Claude; `experience_years` è `None`
+        quando
         il CV non data nessun ruolo, e `seniority_uncertain` dice allora che la seniority
         è solo una lettura delle responsabilità. Una scheda che dopo la riscrittura
         rivela ancora il genere non viene scritta: `error` lo dice. Solo lettura; per

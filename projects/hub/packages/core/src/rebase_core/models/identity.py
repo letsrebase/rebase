@@ -22,7 +22,7 @@ from rebase_core.linkedin import (
 UTM_MAX_LENGTH = 200
 UTM_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id")
 NAME_MAX_LENGTH = 120
-# A phone number for a company's own referente (REB-380): companies only ask for it
+# A phone number for a company's own contact person (REB-380): companies only ask for it
 # today, so it stays optional at this level and required only by `CompanyCreate`'s own
 # validation -- the same split `Freelancer`'s signup-born columns already keep between
 # what the database allows and what a wizard demands.
@@ -35,12 +35,12 @@ REFERRAL_CODE_LENGTH = 10
 # Every column added after the production table already existed, with the width each
 # one needs. Migration 0001 adopts that table as it stands and adds these with
 # `ADD COLUMN IF NOT EXISTS`, which is how the rows PigroCRM's sidecar collected keep
-# their place. The UTM six arrived on 2026-09-08, `nome`/`last_name`/`linkedin_url` right
+# their place. The UTM six arrived on 2026-09-08, `first_name`/`last_name`/`linkedin_url` right
 # after; the tuple stays because `test_migrations.py` proves the adoption against a
 # table that predates all of them.
 LATE_COLUMNS: tuple[tuple[str, int], ...] = (
     *((column, UTM_MAX_LENGTH) for column in UTM_COLUMNS),
-    ("nome", NAME_MAX_LENGTH),
+    ("first_name", NAME_MAX_LENGTH),
     ("last_name", NAME_MAX_LENGTH),
     ("linkedin_url", LINKEDIN_URL_MAX_LENGTH),
 )
@@ -71,7 +71,7 @@ class Signup(Base, PrimaryKeyMixin):
     # address have no name to give, so the columns stay nullable rather than being
     # backfilled with `''`, which would claim a name was recorded and found empty.
     # An empty column is filled in the next time that address signs up (`SignupService`).
-    nome: Mapped[str | None] = mapped_column(String(NAME_MAX_LENGTH), default=None)
+    first_name: Mapped[str | None] = mapped_column(String(NAME_MAX_LENGTH), default=None)
     last_name: Mapped[str | None] = mapped_column(String(NAME_MAX_LENGTH), default=None)
     # Optional for everyone, always: a freelance with no LinkedIn is still a freelance.
     linkedin_url: Mapped[str | None] = mapped_column(String(LINKEDIN_URL_MAX_LENGTH), default=None)
@@ -88,7 +88,7 @@ class Signup(Base, PrimaryKeyMixin):
         return canonical_linkedin(value)
 
     __table_args__ = (
-        Index("uq_orbiters_signups_email_lower", func.lower(email), unique=True),
+        Index("uq_signups_email_lower", func.lower(email), unique=True),
         # The same fact for the landing's list (REB-800); see `uq_users_linkedin_lower`.
         Index(
             "uq_signups_linkedin_lower",
@@ -96,14 +96,14 @@ class Signup(Base, PrimaryKeyMixin):
             unique=True,
             postgresql_where=text(PROFILE_SQL_PREDICATE),
         ),
-        # Trigram search on the merged talenti list (REB-285): a bare sign-up has no
-        # linked `users` row, so its own `nome`/`last_name`/`email` are what `q` matches
+        # Trigram search on the merged talents list (REB-285): a bare sign-up has no
+        # linked `users` row, so its own `first_name`/`last_name`/`email` are what `q` matches
         # against. Migration 0013 creates the GIN indexes that serve these.
         Index(
-            "ix_signups_name_trgm",
-            "nome",
+            "ix_signups_first_name_trgm",
+            "first_name",
             postgresql_using="gin",
-            postgresql_ops={"nome": "gin_trgm_ops"},
+            postgresql_ops={"first_name": "gin_trgm_ops"},
         ),
         Index(
             "ix_signups_last_name_trgm",
@@ -132,7 +132,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     competing for one row's identity (design record 2026-09-17, decision (c)): Lorenzo
     and Ivan are freelancers on some engagements, a company's own referente on others,
     and admins throughout. `role` is `member` or `admin` (`USER_ROLES`), validated in
-    the service layer the way `status` and `compilata_da` already are -- two values on a
+    the service layer the way `status` and `filled_by` already are -- two values on a
     handful of rows do not buy a `user_roles` table. `active`, carried over from
     `admin_users.active` by REB-278's migration, still means only "this admin's tokens
     and sessions keep failing the same way": nothing deactivates a member yet, matching
@@ -143,7 +143,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    nome: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
     last_name: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
     linkedin_url: Mapped[str | None] = mapped_column(String(LINKEDIN_URL_MAX_LENGTH), default=None)
     phone: Mapped[str | None] = mapped_column(String(PHONE_MAX_LENGTH), default=None)
@@ -162,14 +162,14 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
 
     __table_args__ = (
         Index("uq_users_email_lower", func.lower(email), unique=True),
-        # Trigram search (REB-285): `nome`/`last_name`/`email` back both the talenti
+        # Trigram search (REB-285): `first_name`/`last_name`/`email` back both the talents
         # search (a card's identity lives here since REB-281) and the companies search
-        # (a request's referente). Migration 0013 creates the GIN indexes.
+        # (a request's contact person). Migration 0013 creates the GIN indexes.
         Index(
-            "ix_users_name_trgm",
-            "nome",
+            "ix_users_first_name_trgm",
+            "first_name",
             postgresql_using="gin",
-            postgresql_ops={"nome": "gin_trgm_ops"},
+            postgresql_ops={"first_name": "gin_trgm_ops"},
         ),
         Index(
             "ix_users_last_name_trgm",

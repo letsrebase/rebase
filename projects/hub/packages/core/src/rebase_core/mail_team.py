@@ -73,7 +73,7 @@ def _euro(amount: Decimal) -> str:
 def team_availability_mail(
     to: str,
     *,
-    nome: str,
+    first_name: str,
     role: str,
     summary: str | None,
     rate: Decimal | None,
@@ -92,7 +92,7 @@ def team_availability_mail(
     and so are the links, which carry an `&`."""
     e = html_escape.escape
     subject = "Un progetto per te: sei disponibile?"
-    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    greeting = f"Ciao {first_name}," if first_name else "Ciao,"
     intro = "abbiamo un progetto per cui il tuo profilo è adatto."
     if summary:
         intro += " Eccolo, in breve:"
@@ -161,7 +161,7 @@ def team_availability_mail(
     return Mail(to=to, subject=subject, text=text, html=frame(subject, "\n".join(rows)))
 
 
-def talent_cloud_opened_mail(to: str, *, nome: str, company: str, url: str) -> Mail:
+def talent_cloud_opened_mail(to: str, *, first_name: str, company: str, url: str) -> Mail:
     """The talent cloud open for a company (REB-518, spec § 4.1), to the referente of the
     request an admin opened it from: the subject names the company, the body says what
     the cloud is and that the way in is the one they already have, the magic link to
@@ -170,7 +170,7 @@ def talent_cloud_opened_mail(to: str, *, nome: str, company: str, url: str) -> M
     company wizard, so both are escaped in the HTML, and so is the link."""
     e = html_escape.escape
     subject = f"Il talent cloud di rebase è aperto per {company}"
-    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    greeting = f"Ciao {first_name}," if first_name else "Ciao,"
     opened = (
         f"il talent cloud di rebase è aperto per {company}: i profili dei talenti della "
         "community, per nome e con il CV, e il team builder per chiederci un team o una "

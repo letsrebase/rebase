@@ -46,18 +46,17 @@ FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 class TalentsFilters(ResponseModel):
     """The Talenti list's own filters (`GET /api/hub/talent`, `talents.py:191`), stored
     on the campaign and replayed through `TalentsService` when the list is shown and when
-    a mail is about to leave. `origin` is the marketing page the person started from
-    (`home`, `pigrocrm`), stored under that key since before the list named it
-    `origin_page` (REB-798); `audience._from_talents` translates it on replay."""
+    a mail is about to leave. `origin_page` is the marketing page the person started from
+    (`home`, `pigrocrm`)."""
 
     list: Literal["talents"]
     status: str | None = Field(default=None, max_length=20)
     q: str | None = Field(default=None, max_length=SEARCH_MAX_LENGTH)
-    posizione: str | None = Field(default=None, max_length=160)
+    job_title: str | None = Field(default=None, max_length=160)
     remote: str | None = Field(default=None, max_length=10)
     min_rate: FilterAmount | None = None
     max_rate: FilterAmount | None = None
-    origin: str | None = Field(default=None, max_length=40)
+    origin_page: str | None = Field(default=None, max_length=40)
     utm_source: str | None = Field(default=None, max_length=200)
     has_cv: bool | None = None
     with_logins: bool | None = None
@@ -92,7 +91,7 @@ def _not_blank(value: str) -> str:
     if not value:
         # A custom error, not a `ValueError`: its message reaches the page as it
         # stands, with no «Value error,» in front of the sentence.
-        raise PydanticCustomError("nome_vuoto", NAME_IS_BLANK)
+        raise PydanticCustomError("blank_name", NAME_IS_BLANK)
     return value
 
 
@@ -119,7 +118,7 @@ Meta = Literal["area", "wizard", "pigro", "request", "link"]
 
 
 class CampaignDraft(BaseModel):
-    nome: CampaignName
+    name: CampaignName
     source: Literal["status", "filters"]
     journey_status: str | None = Field(default=None, max_length=30)
     filters: Filters | None = None
@@ -140,11 +139,11 @@ class CampaignDraft(BaseModel):
 # `IntegrityError`, a 500, instead of a sentence naming the field. `journey_status` and
 # `filters` are not here: the row legitimately holds `NULL` in one of them, depending on
 # `source`.
-_NOT_NULLABLE = ("nome", "source", "subject", "text", "button_text", "button_meta", "action")
+_NOT_NULLABLE = ("name", "source", "subject", "text", "button_text", "button_meta", "action")
 
 
 class CampaignPatch(BaseModel):
-    nome: CampaignName | None = None
+    name: CampaignName | None = None
     source: Literal["status", "filters"] | None = None
     journey_status: str | None = Field(default=None, max_length=30)
     filters: Filters | None = None
@@ -182,11 +181,11 @@ Unticked = Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True
 
 
 class ScheduleRequest(BaseModel):
-    """`day` and `ora` are Europe/Rome wall-clock time, both or neither; neither is
-    «Invia adesso». `esclusi` are the addresses the admin unticked on step 1."""
+    """`day` and `at_time` are Europe/Rome wall-clock time, both or neither; neither is
+    «Invia adesso». `excluded` are the addresses the admin unticked on step 1."""
 
     day: date | None = None
-    ora: time | None = None
+    at_time: time | None = None
     excluded: list[Unticked] = []
 
 
@@ -196,7 +195,7 @@ class NeverWriteRequest(BaseModel):
 
 class CampaignCounts(ResponseModel):
     recipients: int = 0
-    in_coda: int = 0
+    queued: int = 0
     sent: int = 0
     skipped: int = 0
     failed: int = 0
@@ -211,12 +210,12 @@ class CampaignRead(ResponseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     slug: str
     source: CampaignSource
     journey_status: str | None
     filters: Filters | None
-    segue_id: UUID | None
+    follows_id: UUID | None
     subject: str
     text: str
     button_text: str
@@ -257,7 +256,7 @@ class RecipientRead(ResponseModel):
 
     id: UUID
     email: str
-    nome: str | None
+    name: str | None
     kind: RecipientKind
     status: RecipientState
     reason: str | None
@@ -284,7 +283,7 @@ class CampaignDetail(ResponseModel):
 
 class AudienceRowRead(ResponseModel):
     email: str
-    nome: str | None
+    name: str | None
     kind: RecipientKind
     excluded: str | None
 

@@ -67,7 +67,7 @@ def test_the_pass_reads_only_people_a_card_is_written_for(clean_hub: Session) ->
     for person in (kept, turned_down):
         service.refetch(person)
     clean_hub.execute(
-        text("UPDATE freelancers SET stato = 'scartato' WHERE id = :i"), {"i": turned_down}
+        text("UPDATE freelancers SET status = 'discarded' WHERE id = :i"), {"i": turned_down}
     )
     clean_hub.commit()
 

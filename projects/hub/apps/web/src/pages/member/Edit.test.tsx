@@ -21,7 +21,7 @@ function answer(status: number, body: unknown) {
 
 const PROFILE = {
   id: 'f1',
-  nome: 'Ada',
+  first_name: 'Ada',
   last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: null,
@@ -29,7 +29,7 @@ const PROFILE = {
   cv_filename: 'Ada CV.pdf',
   cv_size: 2048,
   daily_rate: '450.00',
-  posizione: 'Backend developer',
+  job_title: 'Backend developer',
   remote: 'remote',
   links: [],
   created_at: '2026-09-10T10:00:00Z',
@@ -97,25 +97,25 @@ describe('/me/edit', () => {
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async (_url, init) =>
         init?.method === 'PATCH'
-          ? answer(200, { ...PROFILE, posizione: 'Staff engineer' })
+          ? answer(200, { ...PROFILE, job_title: 'Staff engineer' })
           : answer(200, PROFILE),
       )
     mount()
     const user = userEvent.setup()
-    const posizione = await screen.findByLabelText('Posizione')
-    expect(posizione).toHaveValue('Backend developer')
-    await user.clear(posizione)
-    await user.type(posizione, 'Staff engineer')
+    const jobTitle = await screen.findByLabelText('Posizione')
+    expect(jobTitle).toHaveValue('Backend developer')
+    await user.clear(jobTitle)
+    await user.type(jobTitle, 'Staff engineer')
     await user.click(screen.getByRole('button', { name: 'Salva' }))
     await screen.findByRole('heading', { name: 'La tua area' })
     const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
     expect(patch[0]).toBe('/api/hub/me')
     expect(JSON.parse(patch[1]!.body as string)).toEqual({
-      nome: 'Ada',
+      first_name: 'Ada',
       last_name: 'Lovelace',
       linkedin_url: null,
       daily_rate: '450.00',
-      posizione: 'Staff engineer',
+      job_title: 'Staff engineer',
       remote: 'remote',
       links: [],
     })

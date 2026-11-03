@@ -9,7 +9,7 @@ import { admin, type Freelancer, type FreelancerOverride, type Note } from '@/li
 import { failureMessage } from '@/lib/adminList'
 import {
   FREELANCER_STATES,
-  RemoteLabels,
+  REMOTE_LABELS,
   VETTED_LABEL,
   formatBytes,
   formatDate,
@@ -40,7 +40,7 @@ import { FreelancerSignup, RecentEvents } from './Subscription'
 
 /** Who the answers on a card come from, as the detail's «Scheda» row says it. */
 function ownership(f: Freelancer): string {
-  if (f.compilata_da === 'person') return 'compilata dalla persona'
+  if (f.filled_by === 'person') return 'compilata dalla persona'
   return f.complete ? 'scritta dall’admin' : 'scritta dall’admin, da completare'
 }
 
@@ -113,7 +113,7 @@ export function AdminFreelancerDetail() {
   const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')
   return (
     <>
-      <Header title={`${f.nome} ${f.last_name}`}>
+      <Header title={`${f.first_name} ${f.last_name}`}>
         <div className="flex flex-wrap items-center gap-2">
           <StatePill status={f.status} />
           {f.vetted_at && <VettedPill />}
@@ -173,11 +173,11 @@ export function AdminFreelancerDetail() {
             <CvPhoneRows phone={f.phone ?? null} person={person} />
             <CvEmailRow email={f.email} person={person} />
             <CvCityRow person={person} />
-            <Row label="Posizione">{f.posizione ?? '—'}</Row>
+            <Row label="Posizione">{f.job_title ?? '—'}</Row>
             <Row label="Tariffa a giornata">
               {f.daily_rate === null ? '—' : formatMoney(f.daily_rate)}
             </Row>
-            <Row label="Modalità">{f.remote ? RemoteLabels[f.remote] : '—'}</Row>
+            <Row label="Modalità">{f.remote ? REMOTE_LABELS[f.remote] : '—'}</Row>
             <Row label="LinkedIn">
               {f.linkedin_url ? (
                 <WebLink href={f.linkedin_url} />

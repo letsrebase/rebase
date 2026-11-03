@@ -11,7 +11,7 @@ import {
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LetterTextKeys, type Fiscal, type Regime } from '@/lib/api'
+import { LETTER_TEXT_KEYS, type Fiscal, type Regime } from '@/lib/api'
 import { AdminCreateMatch } from './CreateMatch'
 
 function answer(status: number, body: unknown) {
@@ -50,7 +50,7 @@ function bodies(spy: ReturnType<typeof routeFetch>, method: string, url: string)
 
 const pdf = () => new Response('%PDF-1.7 anteprima', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
 
-const PERSON = { id: 'f1', nome: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' }
+const PERSON = { id: 'f1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it' }
 const OPEN = {
   id: 'c1',
   company_name: 'Rossi Studio',
@@ -89,23 +89,23 @@ function prefill({
   fee = '450.00' as string | null,
   customer = ROSSI_CUSTOMER as Record<string, string | null>,
   tax = TAX as Fiscal | null,
-  regime = 'partita_iva' as Regime,
+  regime = 'vat_registered' as Regime,
 } = {}) {
   return {
     tax,
     customer,
     regime,
     letter: {
-      ...Object.fromEntries(LetterTextKeys.map((key) => [key, null])),
+      ...Object.fromEntries(LETTER_TEXT_KEYS.map((key) => [key, null])),
       role: 'Backend developer',
       activities: 'Piattaforma di prenotazione',
       commitment: '3 mesi',
       location: 'da remoto',
       customer_contact: 'Mario Rossi',
       mode: 'to_work_unit',
-      unit: 'to_work_unit',
+      unit: 'a giornata',
       start_date: '2026-10-01',
-      data_fine: null,
+      end_date: null,
       fee,
       payment_days: 30,
       month_end: true,
@@ -126,7 +126,7 @@ const CHECK = {
   what_happens: 'Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma.',
   required_framework: true,
   missing_tax_data: false,
-  regime: 'partita_iva',
+  regime: 'vat_registered',
 }
 const CHECK_NO_FRAMEWORK = {
   ...CHECK,
@@ -146,8 +146,8 @@ function routes(extra: Record<string, Handler> = {}) {
       customer: { customer_legal_name: 'Verdi Snc', customer_vat_number: '11122233344', customer_registered_office: 'Torino' },
     }),
     'POST /api/hub/freelancers/f1/matches/check': CHECK,
-    'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
-    'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+    'POST /api/hub/freelancers/f1/matches/preview?document=letter': pdf,
+    'POST /api/hub/freelancers/f1/matches/preview?document=framework': pdf,
     'POST /api/hub/freelancers/f1/matches': { id: 'm1' },
     ...extra,
   })
@@ -168,7 +168,7 @@ function ContractsStub() {
 function mount() {
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
-  const nuovo = createRoute({
+  const newMatch = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/freelance/$id/match/new',
     component: AdminCreateMatch,
@@ -179,7 +179,7 @@ function mount() {
     component: ContractsStub,
   })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([nuovo, contracts])]),
+    routeTree: root.addChildren([signedIn.addChildren([newMatch, contracts])]),
     history: createMemoryHistory({ initialEntries: ['/admin/freelance/f1/match/new'] }),
   })
   render(
@@ -246,7 +246,7 @@ describe('«Crea match» in three steps (REB-476)', () => {
       role: 'Backend developer',
       activities: 'Piattaforma di prenotazione',
       mode: 'to_work_unit',
-      unit: 'to_work_unit',
+      unit: 'a giornata',
       fee: '450.00',
       payment_days: 30,
       month_end: true,
@@ -478,7 +478,7 @@ describe('step 1, «Chi e per chi»', () => {
   it('forgets a refused tax save once another request is picked', async () => {
     routes({
       'PUT /api/hub/freelancers/f1/fiscal': () =>
-        answer(422, { detail: [{ loc: ['body', 'partita_iva'], msg: 'la partita IVA ha 11 cifre' }] }),
+        answer(422, { detail: [{ loc: ['body', 'vat_number'], msg: 'la partita IVA ha 11 cifre' }] }),
     })
     mount()
     await pick(/Rossi Studio/)
@@ -791,7 +791,7 @@ describe('step 2, «Condizioni»', () => {
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
     expect(body.letter).toMatchObject({
       mode: 'to_body',
-      unit: 'to_body',
+      unit: 'a corpo',
       fee: '12000.00',
       results: 'Il modulo di prenotazione',
     })
@@ -810,7 +810,7 @@ describe('step 2, «Condizioni»', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
-    expect(body.letter).toMatchObject({ mode: 'to_work_unit', unit: 'to_work_unit', fee: '450.00', results: null })
+    expect(body.letter).toMatchObject({ mode: 'to_work_unit', unit: 'a giornata', fee: '450.00', results: null })
   })
 
   it('keeps a fee the admin typed when switching between «A giornata» and «A corpo»', async () => {
@@ -888,7 +888,7 @@ describe('step 2, «Condizioni»', () => {
   it('names the end date the server refused for ending before the start (REB-412)', async () => {
     routes({
       'POST /api/hub/freelancers/f1/matches/check': () =>
-        answer(422, { detail: [{ loc: ['body', 'letter', 'data_fine'], msg: "la fine prevista viene prima dell'inizio" }] }),
+        answer(422, { detail: [{ loc: ['body', 'letter', 'end_date'], msg: "la fine prevista viene prima dell'inizio" }] }),
     })
     mount()
     await toTerms()
@@ -944,7 +944,7 @@ describe('step 2, «Condizioni»', () => {
     await toTerms()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await waitFor(() =>
-      expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/preview?document=lettera')).toHaveLength(1),
+      expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/preview?document=letter')).toHaveLength(1),
     )
     held.resolve(answer(200, CHECK))
     expect(await screen.findByRole('link', { name: 'Apri il contratto quadro (PDF)' })).toBeInTheDocument()
@@ -952,7 +952,7 @@ describe('step 2, «Condizioni»', () => {
 
   it('shows a preview that could not be written, and keeps no blob of it', async () => {
     routes({
-      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': () =>
+      'POST /api/hub/freelancers/f1/matches/preview?document=framework': () =>
         answer(503, { detail: 'Non riesco a scrivere il PDF adesso.' }),
     })
     mount()
@@ -1045,7 +1045,7 @@ describe('step 3, «Controlla e invia»', () => {
     expect(screen.getByRole('button', { name: 'Invia ad Ada per la firma' })).toBeEnabled()
     // The check and the previews were asked about the same match.
     const [checked] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
-    const [previewed] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/preview?document=lettera')
+    const [previewed] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/preview?document=letter')
     expect(previewed).toEqual(checked)
   })
 
@@ -1179,7 +1179,7 @@ describe('«Giorni previsti», the expected days (REB-502)', () => {
     mount()
     await toTerms()
     const days = screen.getByLabelText('Giorni previsti')
-    expect(days).toHaveAttribute('id', 'match-giorni_previsti')
+    expect(days).toHaveAttribute('id', 'match-expected-days')
     expect(days).toHaveAttribute('type', 'number')
     expect(days).toHaveAttribute('inputmode', 'numeric')
     expect(days).toHaveValue(null)
@@ -1307,7 +1307,7 @@ describe('«Tipo di lettera» (REB-687)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
-    expect(body.regime).toBe('partita_iva')
+    expect(body.regime).toBe('vat_registered')
   })
 
   it('saves nothing again when tax data without a partita IVA are opened and left as they were', async () => {
@@ -1359,6 +1359,6 @@ describe('«Tipo di lettera» (REB-687)', () => {
     const [saved] = bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')
     expect(saved.vat_number).toBeNull()
     const [checked] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
-    expect(checked.regime).toBe('partita_iva')
+    expect(checked.regime).toBe('vat_registered')
   })
 })

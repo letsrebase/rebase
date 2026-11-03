@@ -14,7 +14,7 @@ class GuideDownloadRead(ResponseModel):
     id: UUID
     user_id: UUID
     freelancer_id: UUID | None
-    nome: str
+    first_name: str
     last_name: str
     email: str
     downloaded_at: datetime
@@ -27,7 +27,7 @@ class LoginRead(ResponseModel):
 
     id: UUID
     user_id: UUID
-    nome: str
+    first_name: str
     last_name: str
     email: str
     logged_at: datetime

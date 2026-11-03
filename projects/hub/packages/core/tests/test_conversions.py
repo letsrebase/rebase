@@ -183,7 +183,9 @@ def test_the_address_is_sent_hashed_only_when_the_installation_switched_it_on() 
 def test_the_name_and_the_profile_never_travel() -> None:
     """There is no field for them, by construction: `Visitor` has nowhere to put a name
     or a LinkedIn URL, so no call site can decide to send one."""
-    assert not {"nome", "last_name", "linkedin_url", "name"} & set(Visitor.__dataclass_fields__)
+    assert not {"first_name", "last_name", "linkedin_url", "name"} & set(
+        Visitor.__dataclass_fields__
+    )
 
 
 def test_a_very_long_user_agent_is_cut_rather_than_dropping_the_event() -> None:

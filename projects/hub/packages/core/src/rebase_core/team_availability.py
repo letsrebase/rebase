@@ -53,7 +53,7 @@ NO_SENDER = (
 # How long a talent can answer the availability mail (spec § 3.6), from when it left.
 ANSWER_MAX_AGE = timedelta(days=30)
 CONTACTED = "talents_contacted"
-Answer = Literal["si", "no", "invalid"]
+Answer = Literal["yes", "no", "invalid"]
 
 
 def _token_hash(raw: str) -> str:
@@ -165,11 +165,11 @@ class TeamAvailabilityService:
                     token_hash=talent.token_hash,
                     mail=team_availability_mail(
                         user.email,
-                        nome=user.nome,
+                        first_name=user.first_name,
                         role=talent.role,
                         summary=summary,
                         rate=freelancer.daily_rate,
-                        yes_url=f"{page}?t={raw}&r=si",
+                        yes_url=f"{page}?t={raw}&r=yes",
                         no_url=f"{page}?t={raw}&r=no",
                     ),
                 )
@@ -256,7 +256,7 @@ class TeamAvailabilityService:
         self.session.commit()
         if self.tracker is not None:
             self.tracker.team_event(TEAM_TALENT_ANSWER, {"answer": answer})
-        return "si" if answer == "si" else "no"
+        return "yes" if answer == "yes" else "no"
 
     def _undo_contact(self, batch: AvailabilityBatch) -> None:
         """What a batch refused whole wrote on the request, taken back where it still

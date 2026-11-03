@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session, aliased
 from rebase_core.audit import utcnow
 from rebase_core.contract_schemas import DAY_RATE
 from rebase_core.errors import NotFound, ValidationFailed
-from rebase_core.match_words import LETTER
+from rebase_core.match_words import LETTER, PAY_MODE_WORDS
 from rebase_core.models import (
     REFERRAL_CODE_LENGTH,
     REFERRAL_STATES,
@@ -118,12 +118,13 @@ def can_mature(kind: str, status: str) -> bool:
 
 
 def letter_unit(data: Mapping[str, Any]) -> str:
-    """How a letter prices its fee, `to_work_unit` or `to_body` (`PAY_MODES`): its stored
-    `mode`, which the reward's base is decided on by equality. The one reading of
-    that field, shared by the reward at signing, its projection, and the lists that show
-    the letter's fee. A letter without one (none is written without it) reads as `""`,
-    which `reward_base` prices as a lump sum."""
-    return str(data.get("mode") or "")
+    """How a letter prices its fee, `to_work_unit` or `to_body` (`PAY_MODES`): its printed
+    `modalita`, read back as the mode it was written from, which the reward's base is
+    decided on by equality. The one reading of that field, shared by the reward at
+    signing, its projection, and the lists that show the letter's fee. A letter without one
+    (none is written without it) reads as `""`, which `reward_base` prices as a lump sum."""
+    printed = data.get("modalita")
+    return next((mode for mode, word in PAY_MODE_WORDS.items() if word == printed), "")
 
 
 def match_reward_base(match: Match, mode: str) -> Decimal | None:
@@ -268,7 +269,7 @@ class ReferralService:
         be squatted (REB-646), and a signed document must not state an attribution nobody
         has proved, so it reads as no referrer at all."""
         row = self.session.execute(
-            select(User.nome, User.last_name)
+            select(User.first_name, User.last_name)
             .select_from(Referral)
             .join(User, User.id == Referral.referrer_user_id)
             .where(
@@ -277,7 +278,7 @@ class ReferralService:
                 Referral.status == VERIFIED,
             )
         ).first()
-        return None if row is None else f"{row.nome} {row.last_name}".strip()
+        return None if row is None else f"{row.first_name} {row.last_name}".strip()
 
     # ---- the referral's proof, and the reward at the first signed letter ---------------
 
@@ -307,7 +308,7 @@ class ReferralService:
         verified = self.session.execute(
             update(Referral)
             .where(Referral.status == TO_VERIFY, Referral.created_at <= at, owned)
-            .values(status=VERIFIED, verified_at=at, verified_via="accesso")
+            .values(status=VERIFIED, verified_at=at, verified_via="login")
             .returning(Referral.id, Referral.kind, Referral.entity_id)
         ).all()
         for referral_id, kind, entity_id in verified:
@@ -396,7 +397,7 @@ class ReferralService:
 
     def for_user(self, user_id: UUID) -> MemberReferral:
         freelancer_rows = self.session.execute(
-            select(Referral.created_at, User.nome, User.last_name, Freelancer.status)
+            select(Referral.created_at, User.first_name, User.last_name, Freelancer.status)
             .select_from(Referral)
             .join(Freelancer, Freelancer.id == Referral.entity_id)
             .join(User, User.id == Freelancer.user_id)
@@ -411,14 +412,17 @@ class ReferralService:
         referred = [
             MemberReferralItem(
                 kind="freelancer",
-                nome=f"{row.nome} {row.last_name}".strip(),
+                first_name=f"{row.first_name} {row.last_name}".strip(),
                 created_at=row.created_at,
                 status=row.status,
             )
             for row in freelancer_rows
         ] + [
             MemberReferralItem(
-                kind="company", nome=row.company_name, created_at=row.created_at, status=row.status
+                kind="company",
+                first_name=row.company_name,
+                created_at=row.created_at,
+                status=row.status,
             )
             for row in company_rows
         ]
@@ -456,7 +460,7 @@ class ReferralService:
         each match with its current letter, the one whose `mode` a projection reads.
         A reward on this match shows its real figures and state; one already earned on
         another match is `already_accrued`, since a referral pays once; none yet is
-        `previsto`, projected at the current rate."""
+        `expected`, projected at the current rate."""
         if not rows:
             return {}
         freelancer_ids = {match.freelancer_id for match, _ in rows}
@@ -468,7 +472,7 @@ class ReferralService:
             for row in self.session.execute(
                 select(
                     Referral,
-                    referrer.nome.label("nome"),
+                    referrer.first_name.label("first_name"),
                     referrer.last_name.label("last_name"),
                     card.id.label("card_id"),
                 )
@@ -523,7 +527,7 @@ class ReferralService:
                 out.setdefault(match.id, []).append(
                     MatchReferral(
                         kind=kind,
-                        referrer_name=f"{found.nome} {found.last_name}".strip(),
+                        referrer_name=f"{found.first_name} {found.last_name}".strip(),
                         referrer_freelancer_id=found.card_id,
                         rate=rate_shown,
                         amount=amount,

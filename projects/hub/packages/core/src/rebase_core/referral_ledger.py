@@ -121,7 +121,7 @@ class ReferralLedgerService:
                 company.company_name,
                 company.requested_role,
                 match.freelancer_id,
-                f"{user.nome} {user.last_name}".strip(),
+                f"{user.first_name} {user.last_name}".strip(),
                 freelancer_deleted_at is not None,
                 letter,
             )
@@ -141,12 +141,12 @@ class ReferralLedgerService:
         freelancer_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "freelancer"}
         company_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "company"}
         if freelancer_ids:
-            for entity_id, nome, last_name, deleted_at in self.session.execute(
-                select(Freelancer.id, User.nome, User.last_name, Freelancer.deleted_at)
+            for entity_id, first_name, last_name, deleted_at in self.session.execute(
+                select(Freelancer.id, User.first_name, User.last_name, Freelancer.deleted_at)
                 .join(User, User.id == Freelancer.user_id)
                 .where(Freelancer.id.in_(freelancer_ids))
             ):
-                names["freelancer", entity_id] = f"{nome} {last_name}".strip()
+                names["freelancer", entity_id] = f"{first_name} {last_name}".strip()
                 if deleted_at is not None:
                     deleted.add(("freelancer", entity_id))
         if company_ids:
@@ -246,7 +246,7 @@ class ReferralLedgerService:
             select(
                 Referral,
                 ReferralReward,
-                referrer.nome.label("referrer_name"),
+                referrer.first_name.label("referrer_name"),
                 referrer.last_name.label("referrer_last_name"),
                 referrer.email.label("referrer_email"),
                 card.id.label("referrer_freelancer_id"),

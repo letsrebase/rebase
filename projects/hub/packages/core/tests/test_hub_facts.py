@@ -28,7 +28,7 @@ def clean(hub_session: Session) -> Iterator[Session]:
 
 
 def _user(session: Session, email: str, **extra: Any) -> User:
-    user = User(email=email, nome="Ada", last_name="Lovelace", **extra)
+    user = User(email=email, first_name="Ada", last_name="Lovelace", **extra)
     session.add(user)
     session.flush()
     return user
@@ -126,7 +126,7 @@ def test_only_dated_matches_counted_in_completed_months(clean: Session) -> None:
 
     facts = _facts(clean, person)
 
-    assert [(m.dal, m.months, m.outcome) for m in facts.matches] == [
+    assert [(m.since, m.months, m.outcome) for m in facts.matches] == [
         ("2025-01", 3, "completed"),
         ("2025-06", 1, "completed"),
     ]

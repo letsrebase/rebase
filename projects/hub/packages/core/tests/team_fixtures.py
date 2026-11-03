@@ -75,15 +75,15 @@ def proposal_response(
     team: list[dict[str, Any]] | None = None,
     *,
     summary: str = SUMMARY,
-    locale: bool = False,
-    dove: str | None = None,
+    on_site: bool = False,
+    place: str | None = None,
     text: str | None = None,
     stop_reason: str = "end_turn",
     refusal_category: str | None = None,
 ) -> LlmResponse:
     body = {
         "summary": summary,
-        "location": {"locale": locale, "dove": dove},
+        "location": {"on_site": on_site, "place": place},
         "team": team if team is not None else [],
     }
     answer = None if stop_reason == "refusal" else (text if text is not None else json.dumps(body))
@@ -116,7 +116,7 @@ def a_talent(
 ) -> UUID:
     """A freelancer with a name, a link and, unless `card` says otherwise, the card of
     `fakes_cards`: everything the catalogue must leave out sits in the row beside it."""
-    user = User(email=f"talento{n}@studio.it", nome="Ada", last_name=f"Lovelace{n}")
+    user = User(email=f"talento{n}@studio.it", first_name="Ada", last_name=f"Lovelace{n}")
     session.add(user)
     session.flush()
     row = Freelancer(
@@ -126,7 +126,7 @@ def a_talent(
         status=status,
         deleted_at=NOW if deleted else None,
         links=[f"https://github.com/ada{n}"],
-        posizione="Backend developer",
+        job_title="Backend developer",
     )
     if freelancer_id is not None:
         row.id = freelancer_id
@@ -149,7 +149,7 @@ def a_talent(
 
 
 def a_user(session: Session, email: str) -> UUID:
-    user = User(email=email, nome="Referente", last_name="Azienda")
+    user = User(email=email, first_name="Referente", last_name="Azienda")
     session.add(user)
     session.commit()
     return user.id

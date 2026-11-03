@@ -51,7 +51,7 @@ def _bullet(text: str, title: str | None = None) -> Point:
 CV = AnonymousCv(
     language="it",
     title="Oracle DBA e Security Engineer",
-    sommario=(
+    summary=(
         "Database administrator e security engineer con dodici anni su Oracle in banche, "
         "telecomunicazioni e pubblica amministrazione. Ha guidato migrazioni a Oracle 19c "
         "di decine di database critici, progettato piani di disaster recovery provati sul "
@@ -59,13 +59,13 @@ CV = AnonymousCv(
         "Lavora bene tra team di sviluppo, sicurezza e audit, e scrive procedure che "
         "restano in uso dopo il suo passaggio."
     ),
-    esperienze=[
+    experience=[
         Experience(
             role="Security Consultant e Oracle DBA (libero professionista)",
             company="Consulenza indipendente",
             location="Remoto",
             period="Luglio 2022 – oggi",
-            punti=[
+            points=[
                 _bullet(
                     "Mappatura dei controlli ISO 27001 e NIST CSF sui processi IT, gap "
                     "analysis e piano di rimedio approvato dalla direzione sicurezza.",
@@ -99,7 +99,7 @@ CV = AnonymousCv(
             company="Banca Meridiana S.p.A.",
             location="Milano, IT",
             period="Marzo 2018 – Giugno 2022",
-            punti=[
+            points=[
                 _bullet(
                     "Migrazione di 25 database da Oracle 11g a 19c con downtime sotto le "
                     "due ore per ciascuno, pianificata con i team applicativi."
@@ -122,7 +122,7 @@ CV = AnonymousCv(
             company="Telco Servizi S.r.l.",
             location="Roma, IT",
             period="Settembre 2014 – Febbraio 2018",
-            punti=[
+            points=[
                 _bullet("Amministrazione di Oracle 11g e PostgreSQL per il billing."),
                 _bullet(
                     "Riduzione del 40% dei tempi di chiusura mensile con partizionamento e "
@@ -141,7 +141,7 @@ CV = AnonymousCv(
             company="Regione Campania – Direzione Sistemi Informativi",
             location="Napoli, IT",
             period="Settembre 2012 – Agosto 2014",
-            punti=[
+            points=[
                 _bullet(
                     "Sviluppo di procedure PL/SQL per il sistema dei tributi regionali e "
                     "dei relativi report."
@@ -155,7 +155,7 @@ CV = AnonymousCv(
             company="Sistemi Informativi Sud S.r.l.",
             location="Napoli, IT",
             period="Gennaio 2012 – Agosto 2012",
-            punti=[
+            points=[
                 _bullet("Installazione e patching di Oracle 10g e 11g."),
                 _bullet("Script di manutenzione in Bash e PL/SQL."),
             ],
@@ -182,21 +182,21 @@ CV = AnonymousCv(
         Group(area="Strumenti", entries=["Jira", "Confluence", "ServiceNow", "Git"]),
         Group(area="Metodologie", entries=["Agile", "Scrum", "Change management"]),
     ],
-    formazione=[
+    education=[
         Title(
             title="Laurea magistrale in Ingegneria Informatica",
-            istituto="Università degli Studi di Napoli Federico II",
+            institution="Università degli Studi di Napoli Federico II",
             location="Napoli, IT",
             period="2009 – 2011",
         ),
         Title(
             title="Laurea triennale in Ingegneria Informatica",
-            istituto="Università degli Studi di Napoli Federico II",
+            institution="Università degli Studi di Napoli Federico II",
             location="Napoli, IT",
             period="2006 – 2009",
         ),
     ],
-    certificazioni=[
+    certifications=[
         "Oracle Certified Professional (OCP) 19c",
         "CISSP",
         "ISO/IEC 27001 Lead Auditor",
@@ -243,7 +243,7 @@ def test_every_role_and_section_prints() -> None:
     text = _text(pdf)
     assert "Oracle DBA e Security Engineer" in text
     assert "Senior · 12 anni di esperienza · Roma · Ibrido" in text
-    for role in CV.esperienze:
+    for role in CV.experience:
         assert role.role in text
         assert role.company is not None and role.company in text
         assert role.period is not None and role.period in text
@@ -285,7 +285,7 @@ def test_the_fixture_fills_two_a4_pages_and_every_page_has_the_footer() -> None:
 
 @needs_typst
 def test_headings_follow_language() -> None:
-    text = _text(TypstCvRenderer().render(CV.model_copy(update={"lingua": "en"}), HEAD))
+    text = _text(TypstCvRenderer().render(CV.model_copy(update={"language": "en"}), HEAD))
     for english, italian in (
         ("Profile", "Profilo"),
         ("Experience", "Esperienze"),
@@ -302,7 +302,7 @@ def test_headings_follow_language() -> None:
 @needs_typst
 def test_empty_sections_are_left_out() -> None:
     bare = CV.model_copy(
-        update={"certificazioni": [], "other_sections": [], "languages": [], "formazione": []}
+        update={"certifications": [], "other_sections": [], "languages": [], "education": []}
     )
     text = _text(TypstCvRenderer().render(bare, HEAD))
     assert _heading("Esperienze") in text
@@ -325,13 +325,13 @@ def test_markup_prints_literally() -> None:
     )
     cv = CV.model_copy(deep=True)
     cv.title = f"Titolo {markup[0]}"
-    cv.sommario = " ".join(f"«{piece}»" for piece in markup)
-    cv.esperienze[0].role = f"Ruolo {markup[1]}"
-    cv.esperienze[0].punti[0].title = f"Lead {markup[2]}"
-    cv.esperienze[0].punti[0].text = f"Testo {markup[3]} {markup[4]}"
+    cv.summary = " ".join(f"«{piece}»" for piece in markup)
+    cv.experience[0].role = f"Ruolo {markup[1]}"
+    cv.experience[0].points[0].title = f"Lead {markup[2]}"
+    cv.experience[0].points[0].text = f"Testo {markup[3]} {markup[4]}"
     cv.skills[0].area = f"Area {markup[5]}"
     cv.skills[0].entries = [f"Voce {markup[6]}"]
-    cv.certificazioni = [f"Cert {markup[7]}"]
+    cv.certifications = [f"Cert {markup[7]}"]
     cv.languages = [Language(language=f"Lingua {markup[8]}", level="C1")]
     pdf = TypstCvRenderer().render(cv, HEAD)
     reader = PdfReader(BytesIO(pdf))
@@ -380,7 +380,7 @@ def test_head_line() -> None:
 
 
 def _with_title(title: str) -> AnonymousCv:
-    return CV.model_copy(update={"titolo": title})
+    return CV.model_copy(update={"title": title})
 
 
 def test_filename() -> None:
@@ -431,7 +431,7 @@ def test_a_working_directory_that_cannot_be_made_is_the_sentence(
 def test_a_body_that_cannot_be_written_is_the_sentence() -> None:
     """A lone surrogate is a Python string and no UTF-8: the body cannot be written to
     `cv.json`, which is the print's failure, not a bare 500."""
-    broken = CV.model_copy(update={"sommario": "Testo \ud800 rotto"})
+    broken = CV.model_copy(update={"summary": "Testo \ud800 rotto"})
     with pytest.raises(CvPrintFailed) as failed:
         TypstCvRenderer().render(broken, HEAD)
     assert failed.value.message == "Non riesco a stampare il CV anonimo."
@@ -459,7 +459,7 @@ def test_a_failed_compile_logs_typsts_words_cut(
     assert "unknown variable: oops" in record.getMessage()
     assert "x" * 1900 in record.getMessage()
     assert "x" * 2000 not in record.getMessage()
-    assert CV.sommario not in record.getMessage()
+    assert CV.summary not in record.getMessage()
 
 
 @needs_typst
@@ -468,14 +468,14 @@ def test_blank_strings_print_nothing() -> None:
     heading over nothing, no separator with nothing on one side."""
     blank = CV.model_copy(
         update={
-            "sommario": "  ",
-            "esperienze": [
+            "summary": "  ",
+            "experience": [
                 Experience(
                     role="Backend developer",
                     company=" ",
                     location=" ",
                     period=" ",
-                    punti=[
+                    points=[
                         _bullet(" ", title="Consulenza"),
                         _bullet(" ", title=" "),
                         _bullet("Ha scritto le API.", title=" "),
@@ -486,8 +486,8 @@ def test_blank_strings_print_nothing() -> None:
                 Group(area=" ", entries=["Python", " ", "Go"]),
                 Group(area="Vuoto", entries=[" "]),
             ],
-            "formazione": [Title(title=" ", istituto=" ", location=" ", period=" ")],
-            "certificazioni": [" "],
+            "education": [Title(title=" ", institution=" ", location=" ", period=" ")],
+            "certifications": [" "],
             "languages": [
                 Language(language=" ", level="C1"),
                 Language(language="Inglese", level=" "),

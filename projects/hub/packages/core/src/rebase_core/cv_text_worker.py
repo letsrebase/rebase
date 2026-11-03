@@ -31,7 +31,7 @@ TRUNCATION_MARKER = "\n\n[…] testo troncato"
 
 
 def read_pdf(content: bytes) -> dict[str, object]:
-    """The file's pages as `{"pagine": count, "testo": text, "troncato": cut}`. Every
+    """The file's pages as `{"pages": count, "text": text, "truncated": cut}`. Every
     failure of the PDF itself is the same answer, empty text with the pages it managed to
     count, never an exception: an encrypted file, a truncated one, a `%PDF` header on
     something that is not a PDF. `pypdf` raises its own `PdfReadError` for some
@@ -56,13 +56,13 @@ def read_pdf(content: bytes) -> dict[str, object]:
                 truncated = True
                 break
     except Exception:  # noqa: BLE001 - see the docstring
-        return {"pagine": total, "text": "", "troncato": False}
+        return {"pages": total, "text": "", "truncated": False}
     joined = "\n".join(pages)
     if len(joined) > MAX_CHARS:
         joined = joined[:MAX_CHARS] + TRUNCATION_MARKER
     elif truncated:
         joined = joined + TRUNCATION_MARKER
-    return {"pagine": total, "text": joined, "troncato": truncated}
+    return {"pages": total, "text": joined, "truncated": truncated}
 
 
 def _limit_memory() -> None:

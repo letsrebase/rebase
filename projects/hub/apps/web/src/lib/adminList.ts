@@ -57,14 +57,14 @@ export function useCursorList<Page extends CursorPage, Item>({
 
 /** «No filter» for a `Select`, which needs a non-empty string: the query string simply
  *  omits the key instead, same reasoning as `ANY` in the CRM's own fatture list. */
-export const ANY = 'tutti'
+export const ANY = 'all'
 
 export function boolToSelect(value: boolean | undefined): string {
-  return value === undefined ? ANY : value ? 'si' : 'no'
+  return value === undefined ? ANY : value ? 'yes' : 'no'
 }
 
 export function selectToBool(value: string): boolean | undefined {
-  return value === 'si' ? true : value === 'no' ? false : undefined
+  return value === 'yes' ? true : value === 'no' ? false : undefined
 }
 
 /** «Nessun risultato per questi filtri» when a search or a filter narrowed an

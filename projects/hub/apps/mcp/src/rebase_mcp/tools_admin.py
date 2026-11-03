@@ -28,7 +28,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         `team_proposal`) fornitore, modello, livello di ragionamento, massimo di token,
         tetto giornaliero in euro, quanto ha speso oggi e perché non può partire, se non
         può; i prezzi per milione di token e la spesa del mese per compito e fornitore.
-        `registro` sono le ultime 50 voci del registro della configurazione, dalla più
+        `trail` sono le ultime 50 voci del registro della configurazione, dalla più
         recente, ognuna con l'amministratore: le chiavi, gli interruttori, i compiti e i
         prezzi cambiati, e ogni rigenerazione delle schede, quando è stata avviata (`source`
         `web` o `cli`, quante schede, se col Batch API) e quando è finita (quante scritte,
@@ -40,7 +40,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
             service = AiConfigService(s, deps.team_settings())
             return {
                 **service.read().model_dump(mode="json"),
-                "registro": [entry.model_dump(mode="json") for entry in service.trail(50)],
+                "trail": [entry.model_dump(mode="json") for entry in service.trail(50)],
             }
 
         return deps.call(read)
