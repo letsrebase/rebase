@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { DealsList } from '@/features/deals/DealsList'
+import { legacyParam } from '@/lib/legacySearch'
 import { booleanSearchParam } from '@/lib/searchParams'
 
 /**
@@ -34,7 +35,8 @@ export const Route = createFileRoute('/app/deal/list')({
   ): { search?: string; invoiced_unwon?: boolean; to_invoice?: boolean } => ({
     search:
       typeof search.search === 'string' && search.search.length > 0 ? search.search : undefined,
-    invoiced_unwon: booleanSearchParam(search.invoiced_unwon),
-    to_invoice: booleanSearchParam(search.to_invoice),
+    // Links written before the English rename carry the Italian names of both.
+    invoiced_unwon: booleanSearchParam(legacyParam(search, 'invoiced_unwon', 'fatturato_non_vinto')),
+    to_invoice: booleanSearchParam(legacyParam(search, 'to_invoice', 'da_fatturare')),
   }),
 })

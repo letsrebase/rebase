@@ -47,14 +47,14 @@ export const CASH_BASES: readonly { id: CashBase; label: string; phrase: string 
 ]
 
 const LEGACY_TABS: Record<string, TabId> = {
-  economica: 'economic',
-  commerciale: 'commercial',
-  scadenziario: 'receivables',
-  anno: 'year',
-  giornate: 'work_units',
+  'economica': 'economic',
+  'commerciale': 'commercial',
+  'scadenziario': 'receivables',
+  'anno': 'year',
+  'giornate': 'work_units',
 }
 
-const LEGACY_BASES: Record<string, CashBase> = { competenza: 'accrual', incasso: 'collection' }
+const LEGACY_BASES: Record<string, CashBase> = { 'competenza': 'accrual', 'incasso': 'collection' }
 
 export type DashboardSearch = { tab: TabId; from: string; to: string; base: CashBase }
 

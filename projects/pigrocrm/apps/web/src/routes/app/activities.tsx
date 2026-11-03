@@ -1,8 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { attributionOf } from '@/lib/attribution'
+import { legacyParam } from '@/lib/legacySearch'
 import { TaskPage } from '@/features/tasks/TaskPage'
 import { EVERYONE, ME } from '@/features/tasks/filters'
 import { isVista, vistaOf, type Vista } from '@/features/tasks/vista'
+
+const LEGACY_VIEWS: Record<string, Vista> = { 'oggi': 'today', 'tutte': 'all' }
+const LEGACY_ASSIGNEES: Record<string, string> = { 'io': ME, 'tutte': EVERYONE }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -46,16 +50,25 @@ export const Route = createFileRoute('/app/activities')({
   // `?view=` is the tab: «oggi» or «tutte» (`vistaOf` says what an address without it means).
   validateSearch: (
     search: Record<string, unknown>,
-  ): { open?: string; assigned?: string; view?: Vista; from?: string } => ({
-    open: typeof search.open === 'string' && UUID_RE.test(search.open) ? search.open : undefined,
+  ): { open?: string; assigned?: string; view?: Vista; from?: string } => {
+    // Links already sent (push payloads, the Monday digest, bookmarks) carry the Italian words of
+    // before the English rename of 2026-11-02 (the open, assigned and view parameters, and the
+    // words io, tutte, oggi).
+    // Each opens the same screen as the word it became.
+    const open = legacyParam(search, 'open', 'apri')
+    const assignedRaw = legacyParam(search, 'assigned', 'assegnata')
+    const assigned = LEGACY_ASSIGNEES[String(assignedRaw)] ?? assignedRaw
+    const viewRaw = legacyParam(search, 'view', 'vista')
+    const view = LEGACY_VIEWS[String(viewRaw)] ?? viewRaw
+    return {
+    open: typeof open === 'string' && UUID_RE.test(open) ? open : undefined,
     assigned:
-      typeof search.assigned === 'string' &&
-      (search.assigned === ME || search.assigned === EVERYONE || UUID_RE.test(search.assigned))
-        ? search.assigned
-        : undefined,
-    view: isVista(search.view) ? search.view : undefined,
+      typeof assigned === 'string' &&
+      (assigned === ME || assigned === EVERYONE || UUID_RE.test(assigned)) ? assigned : undefined,
+    view: isVista(view) ? view : undefined,
     // `?from=digest` rides along from the digest mail's link (`?da=digest` in mails sent before
     // the English rename), where PostHog reads the return.
     from: attributionOf(search),
-  }),
+    }
+  },
 })

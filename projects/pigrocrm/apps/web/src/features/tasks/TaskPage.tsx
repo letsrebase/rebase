@@ -10,12 +10,12 @@ import { VIEWS, type Vista } from './vista'
 
 /**
  * `/app/activities`, the one page for tasks (REB-873): two views under one title, «Oggi»
- * (what is late and what falls due, the page `/app/tasks?view=today` used to be) and «Tutte» (the whole
+ * (what is late and what falls due, the page `/app/oggi` used to be) and «Tutte» (the whole
  * list as a table). A tab strip in the header switches between them.
  *
  * The view comes in as a prop and every change goes back out through `onVistaChange`, like
  * the dashboard's tabs: the route pushes it into the URL, so a link to either view is an
- * address and the digest's old `/app/tasks?view=today` can redirect to the first.
+ * address and the digest's old `/app/oggi` can redirect to the first.
  *
  * The tasks a link asks to open (`?open=<id>`, from the global search, a reminder or a
  * mail) opens in its dialog here, over whichever view is current, and is read by id and not

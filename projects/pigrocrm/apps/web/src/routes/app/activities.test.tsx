@@ -1,6 +1,6 @@
 /**
  * The addresses that open the Tasks page keep answering after «Oggi» became its first
- * view (REB-873): the old `/app/tasks?view=today`, the `?open=` of a search hit, a reminder or a mail,
+ * view (REB-873): the old `/app/oggi`, the `?open=` of a search hit, a reminder or a mail,
  * and the `?assigned=` the Oggi view sends the rows it left out with.
  */
 import { isRedirect } from '@tanstack/react-router'
@@ -17,7 +17,17 @@ const validate = ActivitiesRoute.options.validateSearch as (search: Record<strin
 }
 
 describe('the /app/activities route', () => {
-  it('keeps `?apri=` and `?assegnata=` as before', () => {
+  it('reads the Italian parameters of links sent before the rename as their English words', () => {
+    expect(validate({ 'apri': ID, 'assegnata': 'tutte', 'vista': 'tutte', 'da': 'digest' })).toEqual({
+      open: ID,
+      assigned: 'all',
+      view: 'all',
+      from: 'digest',
+    })
+    expect(validate({ 'assegnata': 'io', 'vista': 'oggi' })).toMatchObject({ assigned: 'me', view: 'today' })
+  })
+
+  it('keeps `?open=` and `?assigned=`', () => {
     expect(validate({ open: ID, assigned: 'all' })).toEqual({
       open: ID,
       assigned: 'all',
@@ -25,10 +35,10 @@ describe('the /app/activities route', () => {
       from: undefined,
     })
     expect(validate({ assigned: ID }).assigned).toBe(ID)
-    expect(validate({ assigned: 'io' }).assigned).toBe('io')
+    expect(validate({ assigned: 'me' }).assigned).toBe('me')
   })
 
-  it('drops an `apri` that is not an id and an assignee that is none of the three', () => {
+  it('drops an `open` that is not an id and an assignee that is none of the three', () => {
     expect(validate({ open: 'drop table', assigned: 'Mario' })).toEqual({
       open: undefined,
       assigned: undefined,
@@ -37,7 +47,7 @@ describe('the /app/activities route', () => {
     })
   })
 
-  it('reads `?vista=` as one of the two views and drops the rest', () => {
+  it('reads `?view=` as one of the two views and drops the rest', () => {
     expect(validate({ view: 'today' }).view).toBe('today')
     expect(validate({ view: 'all' }).view).toBe('all')
     expect(validate({ view: 'tomorrow' }).view).toBeUndefined()

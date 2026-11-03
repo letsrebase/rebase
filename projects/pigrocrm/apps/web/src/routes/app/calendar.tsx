@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CalendarPage } from '@/features/calendar/CalendarPage'
 import { monthOf } from '@/features/calendar/month'
+import { legacyParam } from '@/lib/legacySearch'
 
 // Only `Route` is exported: a route file exporting anything else opts that route out of
 // the router plugin's automatic code-splitting -- the same reason the calendar's own
@@ -29,7 +30,7 @@ export const Route = createFileRoute('/app/calendar')({
   // pasted URL becomes «this month» rather than a request the server refuses and a page
   // that shows a banner about a query string.
   validateSearch: (search: Record<string, unknown>): { month?: string } => {
-    const raw = search.month
+    const raw = legacyParam(search, 'month', 'mese')
     const month = typeof raw === 'string' && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(raw) ? raw : undefined
     return { month }
   },

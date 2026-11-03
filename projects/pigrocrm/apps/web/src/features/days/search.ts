@@ -1,4 +1,5 @@
 import { toIsoMonth } from '@/lib/dates'
+import { legacyParam } from '@/lib/legacySearch'
 
 export interface DaysSearch {
   /** One contract's days; omitted, every contract's. */
@@ -26,12 +27,12 @@ function text(value: unknown, pattern: RegExp): string | undefined {
  * pasted URL with a bad month opens the page's default instead of an error.
  */
 export function validateDaysSearch(search: Record<string, unknown>): DaysSearch {
-  return { contract: text(search.contract, UUID), month: text(search.month, Month) }
+  return { contract: text(search.contract, UUID), month: text(legacyParam(search, 'month', 'mese'), Month) }
 }
 
 export function validateNewDaySearch(search: Record<string, unknown>): NewDaySearch {
-  // `?data=` is what links written before the English rename say.
-  return { contract: text(search.contract, UUID), date: text(search.date ?? search.data, DatePattern) }
+  // Links written before the English rename say `data` for the date.
+  return { contract: text(search.contract, UUID), date: text(legacyParam(search, 'date', 'data'), DatePattern) }
 }
 
 /** The first and last day of `AAAA-MM`, as the API's `da` and `a`. */

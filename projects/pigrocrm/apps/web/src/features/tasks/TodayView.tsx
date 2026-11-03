@@ -109,7 +109,7 @@ function Section({
 /**
  * The «Oggi» view of the Tasks page, and the first one a person sees: what is late,
  * what falls today, what comes in the next seven days and what has no date at all, in that
- * order (spec 2026-09-03 §5; REB-725). It was the page at `/app/tasks?view=today`, which now redirects
+ * order (spec 2026-09-03 §5; REB-725). It was the page at `/app/oggi`, which now redirects
  * here (REB-873).
  *
  * Opens on the signed-in person's own tasks and says so in the select; «Di chiunque»

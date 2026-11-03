@@ -77,7 +77,7 @@ function Held({ initial }: { initial: string }) {
   return <AllView tabs={null} assignee={assignee} onAssigneeChange={setAssignee} />
 }
 
-function renderPage(initialAssignee = 'io') {
+function renderPage(initialAssignee = 'me') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
@@ -107,7 +107,7 @@ describe('toFilters', () => {
   })
 
   it('turns «mine» into the caller, and another person into their id', () => {
-    expect(toFilters({ ...base, assignee: 'io' })).toMatchObject({
+    expect(toFilters({ ...base, assignee: 'me' })).toMatchObject({
       assigned_to: ME,
       include_unassigned: true,
     })

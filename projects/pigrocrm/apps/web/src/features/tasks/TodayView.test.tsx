@@ -92,7 +92,7 @@ function Held({ initial }: { initial: string }) {
   return <TodayView tabs={null} assignee={assignee} onAssigneeChange={setAssignee} />
 }
 
-function renderPage(initialAssignee = 'io') {
+function renderPage(initialAssignee = 'me') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
@@ -195,7 +195,7 @@ describe('TodayView', () => {
     // Tasks page's own default.
     expect(screen.getByRole('link', { name: 'scheda Tutte' })).toHaveAttribute(
       'data-search',
-      JSON.stringify({ view: 'all', assigned: 'io' }),
+      JSON.stringify({ view: 'all', assigned: 'me' }),
     )
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Filtra per assegnatario' }))
