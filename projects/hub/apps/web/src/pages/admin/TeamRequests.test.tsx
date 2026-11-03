@@ -96,10 +96,10 @@ describe('«Richieste team» (REB-514, spec § 3.5)', () => {
     expect(cellUnder(acme, 'Stato')).toHaveTextContent('Nuova')
     expect(cellUnder(acme, 'Talenti')).toHaveTextContent('1 sì su 3')
 
-    const bianchi = screen.getByRole('link', { name: 'Bianchi Srl' }).closest('tr')!
-    expect(cellUnder(bianchi, 'Origine')).toHaveTextContent('Cloud')
-    expect(cellUnder(bianchi, 'Stato')).toHaveTextContent('Contattata')
-    expect(cellUnder(bianchi, 'Talenti')).toHaveTextContent('0 sì su 2')
+    const secondRow = screen.getByRole('link', { name: 'Bianchi Srl' }).closest('tr')!
+    expect(cellUnder(secondRow, 'Origine')).toHaveTextContent('Cloud')
+    expect(cellUnder(secondRow, 'Stato')).toHaveTextContent('Contattata')
+    expect(cellUnder(secondRow, 'Talenti')).toHaveTextContent('0 sì su 2')
 
     expect(spy).toHaveBeenCalledWith('/api/hub/team/requests', expect.anything())
     expect(screen.queryByRole('button', { name: 'Mostra altri' })).toBeNull()
