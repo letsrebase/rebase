@@ -64,6 +64,14 @@ describe('the rate in force', () => {
     expect(activeRateCard([closed, open], '2025-12-31')).toBeNull()
   })
 
+  it('never takes a fee card for the rate a day is priced by', () => {
+    const fee = rateCard({ id: 'fee', type: 'fixed_recurring', valid_from: '2026-01-01', delivery_period: 'monthly' })
+    const upfront = rateCard({ id: 'upfront', type: 'one_off', valid_from: '2026-01-01' })
+    const day = rateCard({ id: 'day', valid_from: '2026-03-01' })
+    expect(activeRateCard([fee, upfront, day], '2026-03-02')?.id).toBe('day')
+    expect(activeRateCard([fee, upfront, day], '2026-02-01')).toBeNull()
+  })
+
   it('allows a fraction the card lists, compared as numbers and not as strings', () => {
     expect(allowsFraction(rateCard({ allowed_fractions: ['1.00', '0.5'] }), '0.50')).toBe(true)
     expect(allowsFraction(rateCard({ allowed_fractions: ['1.00'] }), '0.50')).toBe(false)

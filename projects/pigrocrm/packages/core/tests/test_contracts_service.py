@@ -137,6 +137,11 @@ def _rate_card_payload(**overrides: object) -> RateCardCreate:
     return RateCardCreate(**payload)  # type: ignore[arg-type]
 
 
+def _daily_payload(**overrides: object) -> RateCardCreate:
+    """A day rate: the only card type whose validity cannot overlap another's."""
+    return _rate_card_payload(type="daily", unit="day", **overrides)
+
+
 def test_a_rate_card_can_be_created_and_listed_for_its_contract(db_session: Session) -> None:
     customer = make_customer(db_session)
     contracts = ContractService(db_session)
@@ -169,13 +174,13 @@ def test_rate_card_create_turns_an_overlap_into_a_clean_conflict_not_a_raw_db_er
 
     rate_cards.create(
         contract.id,
-        _rate_card_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
+        _daily_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
         ADMIN,
     )
     with pytest.raises(Conflict):
         rate_cards.create(
             contract.id,
-            _rate_card_payload(valid_from=date(2026, 6, 1), valid_to=date(2026, 12, 31)),
+            _daily_payload(valid_from=date(2026, 6, 1), valid_to=date(2026, 12, 31)),
             ADMIN,
         )
 
@@ -196,7 +201,7 @@ def test_an_overlap_conflict_leaves_the_callers_other_pending_work_alone(
     rate_cards = RateCardService(db_session)
     rate_cards.create(
         contract.id,
-        _rate_card_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
+        _daily_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
         ADMIN,
     )
     pending = Customer(legal_name="Pending S.r.l.")
@@ -205,7 +210,7 @@ def test_an_overlap_conflict_leaves_the_callers_other_pending_work_alone(
     with pytest.raises(Conflict):
         rate_cards.create(
             contract.id,
-            _rate_card_payload(valid_from=date(2026, 6, 1), valid_to=date(2026, 12, 31)),
+            _daily_payload(valid_from=date(2026, 6, 1), valid_to=date(2026, 12, 31)),
             ADMIN,
         )
 
@@ -805,12 +810,12 @@ def test_a_new_rate_can_close_the_open_one_the_day_before_in_the_same_call(
     customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
-    first = rate_cards.create(contract.id, _rate_card_payload(valid_from=date(2026, 1, 1)), ADMIN)
+    first = rate_cards.create(contract.id, _daily_payload(valid_from=date(2026, 1, 1)), ADMIN)
     assert first.valid_to is None
 
     second = rate_cards.create(
         contract.id,
-        _rate_card_payload(valid_from=date(2027, 1, 1), amount=Decimal("1200.00")),
+        _daily_payload(valid_from=date(2027, 1, 1), amount=Decimal("1200.00")),
         ADMIN,
         close_previous=True,
     )
@@ -828,10 +833,10 @@ def test_without_close_previous_the_overlap_is_still_refused_and_nothing_moves(
     customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
-    rate_cards.create(contract.id, _rate_card_payload(valid_from=date(2026, 1, 1)), ADMIN)
+    rate_cards.create(contract.id, _daily_payload(valid_from=date(2026, 1, 1)), ADMIN)
 
     with pytest.raises(Conflict):
-        rate_cards.create(contract.id, _rate_card_payload(valid_from=date(2027, 1, 1)), ADMIN)
+        rate_cards.create(contract.id, _daily_payload(valid_from=date(2027, 1, 1)), ADMIN)
 
     assert [c.valid_to for c in rate_cards.list_for_contract(contract.id, ADMIN)] == [None]
 
@@ -846,15 +851,15 @@ def test_a_close_that_ends_in_an_overlap_is_rolled_back_with_the_insert(
     rate_cards = RateCardService(db_session)
     earlier = rate_cards.create(
         contract.id,
-        _rate_card_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
+        _daily_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
         ADMIN,
     )
-    rate_cards.create(contract.id, _rate_card_payload(valid_from=date(2026, 9, 1)), ADMIN)
+    rate_cards.create(contract.id, _daily_payload(valid_from=date(2026, 9, 1)), ADMIN)
 
     with pytest.raises(Conflict):
         rate_cards.create(
             contract.id,
-            _rate_card_payload(valid_from=date(2026, 5, 1), valid_to=date(2026, 10, 1)),
+            _daily_payload(valid_from=date(2026, 5, 1), valid_to=date(2026, 10, 1)),
             ADMIN,
             close_previous=True,
         )
@@ -868,9 +873,9 @@ def test_closing_the_previous_rate_says_so_in_the_timeline(db_session: Session) 
     customer = make_customer(db_session)
     contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
     rate_cards = RateCardService(db_session)
-    rate_cards.create(contract.id, _rate_card_payload(valid_from=date(2026, 1, 1)), ADMIN)
+    rate_cards.create(contract.id, _daily_payload(valid_from=date(2026, 1, 1)), ADMIN)
     rate_cards.create(
-        contract.id, _rate_card_payload(valid_from=date(2027, 1, 1)), ADMIN, close_previous=True
+        contract.id, _daily_payload(valid_from=date(2027, 1, 1)), ADMIN, close_previous=True
     )
 
     added = [
@@ -890,7 +895,7 @@ def test_a_rate_card_can_be_edited_and_its_validity_reopened(db_session: Session
     rate_cards = RateCardService(db_session)
     card = rate_cards.create(
         contract.id,
-        _rate_card_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
+        _daily_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
         ADMIN,
     )
 
@@ -908,10 +913,10 @@ def test_a_rate_card_edit_that_overlaps_another_is_a_clean_conflict(db_session: 
     rate_cards = RateCardService(db_session)
     first = rate_cards.create(
         contract.id,
-        _rate_card_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
+        _daily_payload(valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30)),
         ADMIN,
     )
-    rate_cards.create(contract.id, _rate_card_payload(valid_from=date(2026, 7, 1)), ADMIN)
+    rate_cards.create(contract.id, _daily_payload(valid_from=date(2026, 7, 1)), ADMIN)
 
     with pytest.raises(Conflict):
         rate_cards.update(contract.id, first.id, RateCardUpdate(valid_to=date(2026, 8, 31)), ADMIN)

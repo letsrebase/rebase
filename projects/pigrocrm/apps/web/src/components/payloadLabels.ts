@@ -75,6 +75,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   excerpt: 'Estratto',
   excerpt_type: 'Tipo estratto',
   expected_close_date: 'Data chiusura prevista',
+  expected_quantity: 'Quantità prevista',
   expected_value: 'Valore previsto',
   expected_volume: 'Volume atteso',
   expense_policy: 'Politica spese',

@@ -182,13 +182,18 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         allowed_fractions: list[float] | None = None,
         minimum_hours: OptionalMoney = None,
         delivery_period: str | None = None,
+        expected_quantity: OptionalMoney = None,
         close_previous: bool = False,
     ) -> dict[str, Any]:
         """Create a rate card for a contract. `valid_from`/`valid_to` in `YYYY-MM-DD` format;
         without `valid_to` the card is open-ended. A period that overlaps another card of the
         contract is rejected, unless `close_previous` is true: then the card in force on
-        `valid_from` is closed the day before. `minimum_hours` applies only to `type =
-        'hourly'`, `delivery_period` only to `'fixed_recurring'`.
+        `valid_from` is closed the day before. Only `daily` and `hourly` cards cannot overlap
+        each other (they price the worked days); fee cards (`fixed_recurring`, `one_off`) overlap
+        freely and refuse `close_previous`. `minimum_hours` applies only to `type = 'hourly'`.
+        `delivery_period` applies to `'fixed_recurring'`, and to a `daily` or `hourly` card
+        (`one_off`, `monthly` or `annual`) only together with `expected_quantity`, the days or
+        hours forecast per period; a day or hour card carries both or neither.
         """
         payload: dict[str, Any] = {
             "valid_from": valid_from,
@@ -198,6 +203,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             "unit": unit,
             "minimum_hours": minimum_hours,
             "delivery_period": delivery_period,
+            "expected_quantity": expected_quantity,
         }
         # Omitted rather than `None`: `RateCardCreate.allowed_fractions` has no `None`
         # branch (its default is `[1]`, mirroring `RateCard.allowed_fractions`'s own

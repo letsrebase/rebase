@@ -10597,6 +10597,8 @@ export interface components {
             minimum_hours?: number | string | null;
             /** Delivery Period */
             delivery_period?: ("monthly" | "quarterly" | "annual" | "one_off") | null;
+            /** Expected Quantity */
+            expected_quantity?: number | string | null;
         };
         /** RateCardRead */
         RateCardRead: {
@@ -10629,6 +10631,8 @@ export interface components {
             minimum_hours: string | null;
             /** Delivery Period */
             delivery_period: string | null;
+            /** Expected Quantity */
+            expected_quantity: string | null;
             /**
              * Created At
              * Format: date-time
@@ -10643,7 +10647,8 @@ export interface components {
         /**
          * RateCardUpdate
          * @description A partial patch of a rate card. The conditional shape (`minimum_hours` only for
-         *     `hourly`, `delivery_period` only for `fixed_recurring`) and the validity order
+         *     `hourly`, `expected_quantity` only for `daily` or `hourly`, `delivery_period` for
+         *     `fixed_recurring` or together with `expected_quantity`) and the validity order
          *     are checked against the *merged* row by `RateCardService.update`; the overlap is
          *     the database's, as on create.
          */
@@ -10664,6 +10669,8 @@ export interface components {
             minimum_hours?: number | string | null;
             /** Delivery Period */
             delivery_period?: ("monthly" | "quarterly" | "annual" | "one_off") | null;
+            /** Expected Quantity */
+            expected_quantity?: number | string | null;
         };
         /**
          * RateDescription
@@ -42548,7 +42555,7 @@ export interface operations {
     create_rate_card_api_contracts__contract_id__rate_cards_post: {
         parameters: {
             query?: {
-                /** @description Closes, the day before, the rate card in force at this one's start date, instead of refusing the overlap */
+                /** @description Closes, the day before, the day or hour rate card in force at this one's start date, instead of refusing the overlap; refused on a fee card */
                 close_previous?: boolean;
             };
             header?: never;

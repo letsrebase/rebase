@@ -157,9 +157,16 @@ def test_a_rate_card_can_be_created_with_its_own_defaults(db_session: Session) -
 def test_two_overlapping_rate_cards_on_one_contract_are_refused(db_session: Session) -> None:
     customer = make_customer(db_session)
     contract = _contract(db_session, customer)
-    _rate_card(db_session, contract, valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30))
+    _rate_card(db_session, contract, type="daily", unit="day", valid_to=date(2026, 6, 30))
     with pytest.raises(IntegrityError):
-        _rate_card(db_session, contract, valid_from=date(2026, 6, 1), valid_to=date(2026, 12, 31))
+        _rate_card(
+            db_session,
+            contract,
+            type="daily",
+            unit="day",
+            valid_from=date(2026, 6, 1),
+            valid_to=date(2026, 12, 31),
+        )
 
 
 def test_two_adjacent_rate_cards_on_one_contract_are_accepted(db_session: Session) -> None:
@@ -181,9 +188,16 @@ def test_two_open_ended_rate_cards_on_one_contract_overlap_and_are_refused(
     unbounded-on-this-side range, not a range with no members."""
     customer = make_customer(db_session)
     contract = _contract(db_session, customer)
-    _rate_card(db_session, contract, valid_from=date(2026, 1, 1), valid_to=None)
+    _rate_card(db_session, contract, type="daily", unit="day", valid_to=None)
     with pytest.raises(IntegrityError):
-        _rate_card(db_session, contract, valid_from=date(2026, 6, 1), valid_to=None)
+        _rate_card(
+            db_session,
+            contract,
+            type="daily",
+            unit="day",
+            valid_from=date(2026, 6, 1),
+            valid_to=None,
+        )
 
 
 def test_overlapping_rate_cards_on_different_contracts_are_both_accepted(
@@ -199,6 +213,71 @@ def test_overlapping_rate_cards_on_different_contracts_are_both_accepted(
         db_session, contract_b, valid_from=date(2026, 1, 1), valid_to=date(2026, 12, 31)
     )
     assert second.contract_id == contract_b.id
+
+
+def test_a_day_and_an_hour_rate_in_force_together_are_refused(db_session: Session) -> None:
+    """The one rate a worked day is priced by: `daily` and `hourly` share the exclusion."""
+    contract = _contract(db_session, make_customer(db_session))
+    _rate_card(db_session, contract, type="daily", unit="day")
+    with pytest.raises(IntegrityError):
+        _rate_card(db_session, contract, type="hourly", unit="hour")
+
+
+def test_fee_cards_overlap_each_other_and_a_day_rate(db_session: Session) -> None:
+    contract = _contract(db_session, make_customer(db_session))
+    _rate_card(db_session, contract, type="daily", unit="day")
+    _rate_card(db_session, contract, type="fixed_recurring", delivery_period="monthly")
+    _rate_card(db_session, contract, type="fixed_recurring", delivery_period="annual")
+    one_off = _rate_card(db_session, contract, type="one_off", unit="flat")
+    assert one_off.expected_quantity is None
+
+
+def test_a_day_card_carries_a_forecast_as_a_pair_or_not_at_all(db_session: Session) -> None:
+    contract = _contract(db_session, make_customer(db_session))
+    card = _rate_card(
+        db_session,
+        contract,
+        type="daily",
+        unit="day",
+        delivery_period="monthly",
+        expected_quantity=Decimal("10.00"),
+    )
+    assert card.expected_quantity == Decimal("10.00")
+    for lone in ({"delivery_period": "monthly"}, {"expected_quantity": Decimal("3.00")}):
+        with pytest.raises(IntegrityError), db_session.begin_nested():
+            _rate_card(
+                db_session,
+                contract,
+                type="hourly",
+                unit="hour",
+                valid_from=date(2030, 1, 1),
+                **lone,
+            )
+
+
+def test_a_day_card_forecast_period_is_one_off_monthly_or_annual(db_session: Session) -> None:
+    contract = _contract(db_session, make_customer(db_session))
+    with pytest.raises(IntegrityError):
+        _rate_card(
+            db_session,
+            contract,
+            type="daily",
+            unit="day",
+            delivery_period="quarterly",
+            expected_quantity=Decimal("1.00"),
+        )
+
+
+def test_expected_quantity_is_refused_on_a_fee_card(db_session: Session) -> None:
+    contract = _contract(db_session, make_customer(db_session))
+    with pytest.raises(IntegrityError):
+        _rate_card(
+            db_session,
+            contract,
+            type="fixed_recurring",
+            delivery_period="monthly",
+            expected_quantity=Decimal("2.00"),
+        )
 
 
 # ---- ck_rate_cards_ore_minime_only_orario / ck_rate_cards_periodo_only_ricorrente --

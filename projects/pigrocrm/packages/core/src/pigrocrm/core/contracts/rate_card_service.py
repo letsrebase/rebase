@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.contracts.models import RateCard
+from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, RateCard
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.contracts.rules import check_rate_card_shape
 from pigrocrm.core.contracts.schemas import RateCardCreate, RateCardRead, RateCardUpdate
@@ -54,6 +54,13 @@ class RateCardService:
 
         payload = data.model_dump()
         check_rate_card_shape(payload)
+        if close_previous and data.type not in RATE_CARD_DAY_HOUR_TYPES:
+            raise ValidationFailed(
+                "rate_card",
+                "close_previous",
+                "si può chiudere la tariffa in vigore solo per una scheda 'daily' o 'hourly'",
+                expected="close_previous assente per una scheda di costo fisso",
+            )
         payload["contract_id"] = contract_id
 
         rate_card = RateCard(**payload)
@@ -86,13 +93,17 @@ class RateCardService:
         return RateCardRead.model_validate(rate_card)
 
     def _close_card_in_force(self, contract_id: UUID, start: date) -> RateCard | None:
-        """Ends, the day before `start`, the card that began earlier and is still in
-        force on `start` -- the one a new rate from `start` replaces. The exclusion
+        """Ends, the day before `start`, the day or hour card that began earlier and is
+        still in force on `start` -- the one a new rate from `start` replaces. The exclusion
         constraint allows at most one such card per contract. A card that began on or
         after `start` is not touched, so a genuine overlap is refused as ever. Returns
         the card it closed, so the timeline can say why its end moved."""
         for card in self.repo.list_for_contract(contract_id):
-            if card.valid_from < start and (card.valid_to is None or card.valid_to >= start):
+            if (
+                card.type in RATE_CARD_DAY_HOUR_TYPES
+                and card.valid_from < start
+                and (card.valid_to is None or card.valid_to >= start)
+            ):
                 card.valid_to = start - timedelta(days=1)
                 self.session.flush()
                 return card
@@ -110,7 +121,14 @@ class RateCardService:
         reject_cleared_columns("rate_card", RateCard, changes)
         merged = {
             key: changes.get(key, getattr(card, key))
-            for key in ("valid_from", "valid_to", "type", "minimum_hours", "delivery_period")
+            for key in (
+                "valid_from",
+                "valid_to",
+                "type",
+                "minimum_hours",
+                "delivery_period",
+                "expected_quantity",
+            )
         }
         check_rate_card_shape(merged)
         if merged["valid_to"] is not None and merged["valid_to"] < merged["valid_from"]:

@@ -131,8 +131,8 @@ def create_rate_card(
     close_previous: Annotated[
         bool,
         Query(
-            description="Closes, the day before, the rate card in force at this one's start "
-            "date, instead of refusing the overlap"
+            description="Closes, the day before, the day or hour rate card in force at this one's "
+            "start date, instead of refusing the overlap; refused on a fee card"
         ),
     ] = False,
 ) -> RateCardRead:

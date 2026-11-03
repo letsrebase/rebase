@@ -1,6 +1,6 @@
 import { formatMoney } from '@/features/invoices/format'
 import type { StatusTone } from '@/components/StatusPill'
-import type { ContractExpense, ContractState, RateCardCreateBody } from './queries'
+import type { ContractExpense, ContractState, RateCard, RateCardCreateBody } from './queries'
 
 /**
  * What the contract screens call each closed value the API stores, and the tone a state
@@ -172,4 +172,25 @@ const capPercent = new Intl.NumberFormat('it-IT', {
  *  scaled here: the figure on screen is the one the server holds. */
 export function formatCapPercent(value: string): string {
   return capPercent.format(value as `${number}`)
+}
+
+/**
+ * The day or hour card in force on `start`, when one began earlier: the one a new day or
+ * hour rate from `start` would overlap, and the one «chiudi il giorno prima» ends. Fee
+ * cards overlap freely and are never replaced this way. A hint to the person only; the
+ * server decides what it closes and the database what it refuses.
+ */
+export function cardInForceOn(
+  cards: readonly RateCard[],
+  start: string,
+  except?: string,
+): RateCard | undefined {
+  if (start === '') return undefined
+  return cards.find(
+    (card) =>
+      (card.type === 'daily' || card.type === 'hourly') &&
+      card.id !== except &&
+      card.valid_from < start &&
+      (card.valid_to === null || card.valid_to >= start),
+  )
 }

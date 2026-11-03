@@ -32,6 +32,7 @@ RateCardPeriod = Literal["monthly", "quarterly", "annual", "one_off"]
 AMOUNT_MAX_DIGITS = 12
 MINIMUM_HOURS_MAX_DIGITS = 6
 FRACTION_MAX_DIGITS = 4
+EXPECTED_QUANTITY_MAX_DIGITS = 8
 DECIMAL_PLACES = 2
 
 # `customer_share_cap` mirrors `Contract.customer_share_cap`'s Numeric(5, 2): a
@@ -272,9 +273,14 @@ class RateCardCreate(BaseModel):
     minimum_hours: Decimal | None = Field(
         default=None, max_digits=MINIMUM_HOURS_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
-    # Meaningful, and refused outside it, only for tipo == "ricorrente_fisso" -- see
-    # ck_rate_cards_periodo_only_ricorrente_fisso.
+    # A fee card's period; a `daily` or `hourly` card carries one (one_off, monthly or
+    # annual) only together with `expected_quantity` -- see
+    # ck_rate_cards_period_only_fixed_recurring.
     delivery_period: RateCardPeriod | None = None
+    # The days or hours forecast per delivery period; `daily` and `hourly` only.
+    expected_quantity: Decimal | None = Field(
+        default=None, gt=0, max_digits=EXPECTED_QUANTITY_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    )
 
     @model_validator(mode="after")
     def _valid_to_not_before_valid_from(self) -> "RateCardCreate":
@@ -291,7 +297,8 @@ class RateCardCreate(BaseModel):
 
 class RateCardUpdate(BaseModel):
     """A partial patch of a rate card. The conditional shape (`minimum_hours` only for
-    `hourly`, `delivery_period` only for `fixed_recurring`) and the validity order
+    `hourly`, `expected_quantity` only for `daily` or `hourly`, `delivery_period` for
+    `fixed_recurring` or together with `expected_quantity`) and the validity order
     are checked against the *merged* row by `RateCardService.update`; the overlap is
     the database's, as on create."""
 
@@ -309,6 +316,9 @@ class RateCardUpdate(BaseModel):
         default=None, max_digits=MINIMUM_HOURS_MAX_DIGITS, decimal_places=DECIMAL_PLACES
     )
     delivery_period: RateCardPeriod | None = None
+    expected_quantity: Decimal | None = Field(
+        default=None, gt=0, max_digits=EXPECTED_QUANTITY_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    )
 
 
 class RateCardRead(BaseModel):
@@ -324,6 +334,7 @@ class RateCardRead(BaseModel):
     allowed_fractions: list[Decimal]
     minimum_hours: Decimal | None
     delivery_period: str | None
+    expected_quantity: Decimal | None
     created_at: datetime
     updated_at: datetime
 

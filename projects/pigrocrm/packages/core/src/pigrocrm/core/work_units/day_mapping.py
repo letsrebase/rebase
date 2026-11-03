@@ -27,7 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from pigrocrm.core.contracts.models import RateCard
+from pigrocrm.core.contracts.models import RATE_CARD_DAY_HOUR_TYPES, RateCard
 from pigrocrm.core.money import round_money, sum_money
 from pigrocrm.core.work_units.models import WorkUnit
 
@@ -52,13 +52,19 @@ class WorkUnitDayMappingProposal(BaseModel):
 
 
 def resolve_rate_card(rate_cards: Sequence[RateCard], data: date) -> RateCard | None:
-    """Mastro's `resolveRateCard` (`rate-card.ts:101-110`): the one rate card, among
-    a contract's, in force on `data` -- both `valid_from`/`valid_to` inclusive, a
-    `None` `valid_to` meaning still open. Assumes the contract's own cards obey the
-    database's own non-overlap exclusion constraint (`ck_rate_cards_no_overlap`), so
-    at most one ever matches; this function does not itself re-validate that."""
+    """Mastro's `resolveRateCard` (`rate-card.ts:101-110`): the one day or hour rate
+    card, among a contract's, in force on `data` -- both `valid_from`/`valid_to`
+    inclusive, a `None` `valid_to` meaning still open. Fee cards (`fixed_recurring`,
+    `one_off`) are never the rate a day is priced by and overlap freely, so they are
+    skipped. Assumes the contract's own day and hour cards obey the database's
+    non-overlap exclusion constraint (`ck_rate_cards_no_overlap`), so at most one ever
+    matches; this function does not itself re-validate that."""
     for card in rate_cards:
-        if card.valid_from <= data and (card.valid_to is None or data <= card.valid_to):
+        if (
+            card.type in RATE_CARD_DAY_HOUR_TYPES
+            and card.valid_from <= data
+            and (card.valid_to is None or data <= card.valid_to)
+        ):
             return card
     return None
 

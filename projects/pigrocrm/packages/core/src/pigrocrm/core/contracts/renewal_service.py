@@ -139,6 +139,7 @@ class ContractRenewalService:
                     allowed_fractions=list(card.allowed_fractions),
                     minimum_hours=card.minimum_hours,
                     delivery_period=card.delivery_period,
+                    expected_quantity=card.expected_quantity,
                 )
             )
         self.session.flush()
