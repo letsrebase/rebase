@@ -155,6 +155,20 @@ TASK_RULE: dict[str, str] = {
     "overdue_invoice": "fattura_scaduta",
 }
 
+# The `kind` of a contract's expense policy (`contracts.expense_policy`), and the type of a
+# reminder (`reminder_preference.type`): codes 0068 renamed that a message lists as the values
+# a field accepts.
+EXPENSE_POLICY_KIND: dict[str, str] = {
+    "not_reimbursable": "non_rimborsabile",
+    "reimbursable": "rimborsabile",
+    "reimbursable_with_cap": "rimborsabile_con_tetto",
+}
+
+REMINDER_TYPE: dict[str, str] = {
+    "task_due": "attivita_due",
+    "task_overdue": "attivita_overdue",
+}
+
 # The door a note came through, as a card names it («fonte: sistema»); the other sources
 # (`web`, `mcp`, `rebase`) were English words already.
 NOTE_SOURCE: dict[str, str] = {"system": "sistema"}

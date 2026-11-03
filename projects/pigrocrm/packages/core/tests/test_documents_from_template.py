@@ -364,5 +364,12 @@ def test_to_payment_reminder_template_cannot_become_to_document(
         service.create_from_template(_payload(customer, payment_reminder), ADMIN)
     assert excinfo.value.details["field"] == "template_id"
     assert "sollecito" in excinfo.value.details["reason"]
+    # The accepted types are listed in the words a person reads, never the English codes.
+    expected = excinfo.value.details["expected"]
+    assert expected == (
+        "un template fra: contratto, documento, fattura, fattura_xml, offerta, proforma, "
+        "rapporto_ore, verbale"
+    )
+    assert "invoice" not in expected and "minutes" not in expected
     # Nothing was left behind by the refusal.
     assert service.list(DocumentListQuery(customer_id=customer.id), ADMIN).items == []

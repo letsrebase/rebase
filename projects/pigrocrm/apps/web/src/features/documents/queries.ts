@@ -64,13 +64,16 @@ export const OFFER_STATE_TONE: Record<OfferState, StatusTone> = {
   rejected: 'danger',
 }
 
+/** What a `documents.type` is (`DocumentRead.type`), the types the server's `DOCUMENT_TYPES` accepts. */
+export type DocumentType = Document['type']
+
 /**
  * One word for every `documents.type` the API stores, the invoice side included: the
  * customer's Documenti tab lists the generated invoice PDF, its FatturaPA XML and the
- * proforma beside the offers, and a code without a word printed the English enum raw.
- * `payment_reminder` is a template type, kept for the template picker that shares this table.
+ * proforma beside the offers, and a code without a word printed the English enum raw. A
+ * `Record` over the API's own union, so a type added there is a compile error here.
  */
-export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+const DOCUMENT_TYPE_WORDS: Record<DocumentType, string> = {
   offer: 'Offerta',
   contract: 'Contratto',
   minutes: 'Verbale',
@@ -79,7 +82,23 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   invoice_xml: 'Fattura XML',
   proforma: 'Proforma',
   hours_report: 'Rapporto ore',
-  payment_reminder: 'Sollecito',
+}
+
+/** The two template types no document can be (`TemplateType` in `templates/schemas.py`). */
+const TEMPLATE_ONLY_WORDS = { email: 'Email', payment_reminder: 'Sollecito' }
+
+/** A word for every type a document or a template can have. */
+export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  ...DOCUMENT_TYPE_WORDS,
+  ...TEMPLATE_ONLY_WORDS,
+}
+
+/**
+ * Whether a template of this type can make a document: the server refuses any other
+ * (`DocumentTemplating.require_template`), so the picker does not offer it.
+ */
+export function canMakeDocument(templateType: string): templateType is DocumentType {
+  return Object.hasOwn(DOCUMENT_TYPE_WORDS, templateType)
 }
 
 function ownerQuery(owner: DocumentOwner): { customer_id?: string; deal_id?: string } {

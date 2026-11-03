@@ -16,6 +16,7 @@ import { isBlank } from '@/lib/formValues'
 import type { FieldDefinition, FieldType } from '@/lib/schema'
 import {
   DOCUMENT_TYPE_LABELS,
+  canMakeDocument,
   useCreateFromTemplate,
   useTemplateDescription,
   useTemplatePreview,
@@ -67,6 +68,9 @@ interface Props {
 
 export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
   const templates = useTemplates()
+  // Only a template whose type can make a document: the server refuses the others (an email
+  // body, a payment reminder), so a choice that can only fail is not shown.
+  const offered = (templates.data?.items ?? []).filter((template) => canMakeDocument(template.type))
   const [templateId, setTemplateId] = useState<string | null>(null)
   const description = useTemplateDescription(templateId)
   const preview = useTemplatePreview()
@@ -156,7 +160,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
 
         {!templateId && !templates.isError && (
           <ul className="divide-y border">
-            {(templates.data?.items ?? []).map((template) => (
+            {offered.map((template) => (
               <li key={template.id}>
                 <button
                   type="button"
@@ -168,7 +172,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
                 </button>
               </li>
             ))}
-            {templates.data?.items.length === 0 && (
+            {templates.data !== undefined && offered.length === 0 && (
               <li className="px-4 py-3 text-muted-foreground">
                 Nessun template. Creane uno in Impostazioni → Template.
               </li>
