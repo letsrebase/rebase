@@ -37,17 +37,17 @@ def world(db_engine: Engine) -> Iterator[tuple[Any, UUID, UUID]]:
         user = User(
             email=f"timer-{uuid4()}@example.test",
             password_hash="x",
-            nome="Timer",
+            name="Timer",
             role="admin",
         )
         stage = PipelineStage(
-            nome=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
+            name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
         customer = Customer(legal_name=f"Cliente {uuid4()}")
         setup.add_all([user, stage, customer])
         setup.flush()
         deal = Deal(
-            nome="Progetto", customer_id=customer.id, pipeline_stage_id=stage.id, probability=10
+            name="Progetto", customer_id=customer.id, pipeline_stage_id=stage.id, probability=10
         )
         setup.add(deal)
         setup.flush()

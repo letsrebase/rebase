@@ -38,11 +38,11 @@ def _deleted_customer(session: Session) -> Customer:
 
 
 def _deal(session: Session, customer: Customer, *, deleted: bool = False) -> Deal:
-    stage = PipelineStage(nome=f"Aperto {uuid4()}", position=0, default_probability=20, type="open")
+    stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=20, type="open")
     session.add(stage)
     session.flush()
     deal = Deal(
-        nome="Un deal",
+        name="Un deal",
         customer_id=customer.id,
         pipeline_stage_id=stage.id,
         probability=20,
@@ -84,7 +84,7 @@ def test_a_live_document_is_work(db_session: Session) -> None:
 def test_a_live_time_entry_is_work(db_session: Session) -> None:
     deal = _deal(db_session, _deleted_customer(db_session), deleted=True)
     user = User(
-        email=f"ore-{uuid4()}@example.test", password_hash="x", nome="Ore", role="collaborator"
+        email=f"ore-{uuid4()}@example.test", password_hash="x", name="Ore", role="collaborator"
     )
     db_session.add(user)
     db_session.flush()

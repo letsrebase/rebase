@@ -29,7 +29,7 @@ def _user(session: Session, *, role: str = "collaborator", active: bool = True) 
     user = User(
         email=f"u-{uuid4()}@example.test",
         password_hash="x",
-        nome="Persona",
+        name="Persona",
         role=role,
         active=active,
     )

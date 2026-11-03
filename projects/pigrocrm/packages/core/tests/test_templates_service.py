@@ -362,7 +362,7 @@ def test_the_default_offer_renders_with_the_five_answers_and_the_document_scope(
     db_session: Session,
 ) -> None:
     """What `DocumentService.create_from_template` does with it: the declared answers
-    plus `customer`, `emittente` and `today` from the record. No hole, no error."""
+    plus `cliente`, `emittente` and `oggi` from the record. No hole, no error."""
     service = TemplateService(db_session)
     created = service.seed_defaults(ADMIN)
     offer = next(t for t in created if t.name == OFFER_TEMPLATE_NAME)

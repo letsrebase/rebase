@@ -266,7 +266,7 @@ def test_an_unresolvable_variable_fails_naming_the_path_and_the_line() -> None:
 
 # --- Fix round 1, item 4: `field` names the specific variable or dotted path at
 # fault -- the same structured detail across every error this module raises --
-# rather than the generic "corpo_markdown" constant that used to appear here and
+# rather than the generic "body_markdown" constant that used to appear here and
 # in the #each "not a list" error, recoverable only by parsing free-text `reason`.
 
 

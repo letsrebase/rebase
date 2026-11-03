@@ -24,12 +24,12 @@ def _customer(session: Session, *, legal_name: str, email: str | None) -> Custom
 def test_roster_collects_both_tables_lowercased_and_deduplicated(db_session: Session) -> None:
     customer = _customer(db_session, legal_name="Acme", email="Info@Acme.IT")
     db_session.add(
-        Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     )
     # The same address on a person and on a customer is one address, not two: a `q`
     # that repeats a clause wastes the length budget the 20-address batch depends on.
     db_session.add(
-        Person(nome="Bob", last_name="Rossi", email="info@acme.it", customer_id=customer.id)
+        Person(first_name="Bob", last_name="Rossi", email="info@acme.it", customer_id=customer.id)
     )
     db_session.flush()
 
@@ -43,7 +43,7 @@ def test_roster_ignores_soft_deleted_and_null_addresses(db_session: Session) -> 
     _customer(db_session, legal_name="Blank", email=None)
     db_session.add(
         Person(
-            nome="Via",
+            first_name="Via",
             last_name="Via",
             email="via@example.it",
             customer_id=kept.id,
@@ -59,10 +59,10 @@ def test_resolving_returns_every_entity_the_address_touches(
     db_session: Session, seeded_open_stage_id: UUID
 ) -> None:
     customer = _customer(db_session, legal_name="Acme", email="info@acme.it")
-    person = Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+    person = Person(first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     db_session.add(person)
     db_session.flush()
-    deal = Deal(nome="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
+    deal = Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
     db_session.add(deal)
     db_session.flush()
 
@@ -86,7 +86,7 @@ def test_resolving_ignores_soft_deleted_entities(
     dead_customer = _customer(db_session, legal_name="Morta", email="shared@acme.it")
     dead_customer.deleted_at = datetime.now(UTC)
     dead_person = Person(
-        nome="Ex",
+        first_name="Ex",
         last_name="Collega",
         email="shared@acme.it",
         customer_id=live_customer.id,
@@ -95,7 +95,7 @@ def test_resolving_ignores_soft_deleted_entities(
     db_session.add(dead_person)
     db_session.flush()
     dead_deal = Deal(
-        nome="Chiuso",
+        name="Chiuso",
         customer_id=live_customer.id,
         pipeline_stage_id=seeded_open_stage_id,
         deleted_at=datetime.now(UTC),
@@ -117,13 +117,13 @@ def test_resolving_does_not_reach_a_deleted_customer_through_a_live_person(
     dead_customer = _customer(db_session, legal_name="Archiviata", email=None)
     dead_customer.deleted_at = datetime.now(UTC)
     person = Person(
-        nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=dead_customer.id
+        first_name="Ada", last_name="Byron", email="ada@acme.it", customer_id=dead_customer.id
     )
     db_session.add(person)
     db_session.flush()
     db_session.add(
         Deal(
-            nome="Vecchio",
+            name="Vecchio",
             customer_id=dead_customer.id,
             pipeline_stage_id=seeded_open_stage_id,
         )
@@ -180,10 +180,10 @@ def test_resolving_many_addresses_costs_a_fixed_number_of_queries(
     number, and the answer for each address is the one the single lookup gave."""
     customer = _customer(db_session, legal_name="Acme", email="info@acme.it")
     db_session.add(
-        Deal(nome="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
+        Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
     )
     people = [
-        Person(nome=f"P{i}", last_name="X", email=f"p{i}@acme.it", customer_id=customer.id)
+        Person(first_name=f"P{i}", last_name="X", email=f"p{i}@acme.it", customer_id=customer.id)
         for i in range(30)
     ]
     db_session.add_all(people)
@@ -211,7 +211,7 @@ def test_resolving_nothing_runs_no_query(db_session: Session) -> None:
 
 def test_known_among_answers_only_for_the_candidates_it_is_given(db_session: Session) -> None:
     customer = _customer(db_session, legal_name="Acme", email="Info@Acme.it")
-    db_session.add(Person(nome="Ada", last_name="B", email="ada@acme.it", customer_id=customer.id))
+    db_session.add(Person(first_name="Ada", last_name="B", email="ada@acme.it", customer_id=customer.id))
     gone = _customer(db_session, legal_name="Gone", email="gone@acme.it")
     gone.deleted_at = datetime.now(UTC)
     db_session.flush()
@@ -232,10 +232,10 @@ def test_domains_taken_are_the_domains_the_crm_files_under_a_customer(
     acme = _customer(db_session, legal_name="Acme", email="info@acme.it")
     acme.website = "https://www.acme.com/chi-siamo"
     db_session.add(
-        Person(nome="Ada", last_name="B", email="ada@studio-rossi.it", customer_id=acme.id)
+        Person(first_name="Ada", last_name="B", email="ada@studio-rossi.it", customer_id=acme.id)
     )
-    db_session.add(Person(nome="Bob", last_name="B", email="bob@gmail.com", customer_id=acme.id))
-    orphan = Person(nome="Zed", last_name="Z", email="zed@senza-cliente.it")
+    db_session.add(Person(first_name="Bob", last_name="B", email="bob@gmail.com", customer_id=acme.id))
+    orphan = Person(first_name="Zed", last_name="Z", email="zed@senza-cliente.it")
     db_session.add(orphan)
     gone = _customer(db_session, legal_name="Gone", email="gone@archiviata.it")
     gone.deleted_at = datetime.now(UTC)

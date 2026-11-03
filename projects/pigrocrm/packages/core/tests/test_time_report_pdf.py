@@ -135,12 +135,12 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
 
     report = TimeReportService(db_session, storage=None)
     variables = report.variables_for(seeded_deal_id, "2026-03", WRITER)
-    assert variables["period"] == "marzo 2026"
-    assert variables["hours_total"] == "3.75"
+    assert variables["periodo"] == "marzo 2026"
+    assert variables["totale_ore"] == "3.75"
     assert variables["numero_voci"] == "2"
-    assert [v["data"] for v in variables["entries"]] == ["04/03/2026", "20/03/2026"]
-    assert variables["entries"][0]["description"] == HOSTILE
-    assert variables["entries"][0]["hours"] == "2.50"
+    assert [v["data"] for v in variables["voci"]] == ["04/03/2026", "20/03/2026"]
+    assert variables["voci"][0]["descrizione"] == HOSTILE
+    assert variables["voci"][0]["ore"] == "2.50"
     # `report_variables` is the pure function `variables_for` delegates the actual
     # figure-building to, once deal/customer/entries are already fetched -- imported
     # here (unused otherwise in this file) so the module surface this task's own
@@ -225,4 +225,4 @@ def test_the_compilation_date_is_italys_own_day_not_the_processs(
     variables = TimeReportService(db_session, storage=None).variables_for(
         seeded_deal_id, "2025-12", WRITER
     )
-    assert variables["today"] == "01/01/2026"
+    assert variables["oggi"] == "01/01/2026"

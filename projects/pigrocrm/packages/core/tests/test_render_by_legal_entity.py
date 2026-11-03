@@ -181,8 +181,8 @@ def test_the_invoice_pdf_carries_the_issuing_legal_entity_s_logo(
 
 def test_the_invoice_header_without_a_logo_sets_the_name_in_type() -> None:
     scope = {
-        "emittente": {"legal_name": "Studio Rossi", "address_display": ""},
-        "tax": {"regime_display": "RF19 Regime forfettario"},
+        "emittente": {"ragione_sociale": "Studio Rossi", "indirizzo_display": ""},
+        "fiscale": {"regime_display": "RF19 Regime forfettario"},
     }
     header = invoice_pdf.build_invoice_header(scope)
     assert "#image(" not in header and 'weight: "bold")[Studio Rossi]' in header
@@ -233,7 +233,7 @@ def test_to_reminder_signs_as_the_invoice_s_legal_entity_and_names_its_iban(
     _fiscal(db_session, second.id, "IT60X0542811101000000654321")
     payment_reminders = PaymentRemindersService(db_session, settings=SETTINGS)
     scope = payment_reminders._legal_entity_scope(ADMIN, second.id)["emittente"]
-    assert (scope["legal_name"], scope["email_signature"]) == (
+    assert (scope["ragione_sociale"], scope["firma_email"]) == (
         "Rebase S.r.l.",
         "Rebase, con affetto",
     )

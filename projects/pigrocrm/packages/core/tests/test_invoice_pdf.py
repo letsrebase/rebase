@@ -136,34 +136,34 @@ def _export(
 
 def test_amounts_read_the_italian_way_with_the_currency() -> None:
     scope = build_scope(_export(), reference=None)
-    assert scope["invoice"]["total"] == "1.760,00 €"
-    assert scope["lines"][0]["total_price"] == "1.760,00 €"
+    assert scope["fattura"]["totale"] == "1.760,00 €"
+    assert scope["righe"][0]["prezzo_totale"] == "1.760,00 €"
 
 
 def test_dates_read_dd_mm_yyyy_throughout_the_document() -> None:
     scope = build_scope(_export(accrual=(date(2026, 8, 1), date(2026, 8, 31))), reference=None)
-    assert scope["invoice"]["data"] == "11-08-2026"
-    assert scope["invoice"]["due_date"] == "30-09-2026"
-    assert scope["invoice"]["periodo_competenza"] == "dal 01-08-2026 al 31-08-2026"
+    assert scope["fattura"]["data"] == "11-08-2026"
+    assert scope["fattura"]["data_scadenza"] == "30-09-2026"
+    assert scope["fattura"]["periodo_competenza"] == "dal 01-08-2026 al 31-08-2026"
 
 
 def test_the_first_line_names_the_fiscal_document_type_and_a_proforma_names_none() -> None:
     """`TD01 fattura` is what the inherited layout prints; a proforma is not a fiscal
     document, so it gets no TD code, and it is the only one that carries the
     declaration the template wraps in a condition."""
-    invoice = build_scope(_export(), reference=None)["invoice"]
-    assert invoice["label"] == "TD01 fattura"
-    assert invoice["number"] == "2026/7"
+    invoice = build_scope(_export(), reference=None)["fattura"]
+    assert invoice["etichetta"] == "TD01 fattura"
+    assert invoice["numero"] == "2026/7"
     assert invoice["dichiarazione_proforma"] == ""
 
-    proforma = build_scope(_export(), reference="PROV-2026-0001")["invoice"]
-    assert proforma["label"] == "Fattura proforma"
-    assert proforma["number"] == "PROV-2026-0001"
+    proforma = build_scope(_export(), reference="PROV-2026-0001")["fattura"]
+    assert proforma["etichetta"] == "Fattura proforma"
+    assert proforma["numero"] == "PROV-2026-0001"
     assert proforma["dichiarazione_proforma"] == PROFORMA_DECLARATION
 
 
 def test_the_customer_reads_on_two_lines_separated_by_bars() -> None:
-    customer = build_scope(_export(), reference=None)["customer"]
+    customer = build_scope(_export(), reference=None)["cliente"]
     assert customer["riga_identita"] == "Acme S.r.l. | IVA: IT12345678901 | CF: 12345678901"
     assert (
         customer["riga_recapiti"]
@@ -189,14 +189,14 @@ def test_a_customer_missing_a_field_loses_the_segment_not_the_label() -> None:
             "country": "GB",
         }
     )
-    customer = build_scope(_export(customer=foreign), reference=None)["customer"]
+    customer = build_scope(_export(customer=foreign), reference=None)["cliente"]
     assert customer["riga_identita"] == "Acme S.r.l. | IVA: GB123456789"
     assert customer["riga_recapiti"] == "1 Old Street, EC1V 9HL London GB"
 
 
 def test_the_legal_entity_block_carries_what_the_inherited_header_printed() -> None:
     scope = build_scope(_export(), reference=None)
-    assert scope["emittente"]["identifier_vat"] == "IT01234567890"
+    assert scope["emittente"]["identificativo_iva"] == "IT01234567890"
     # An emitter row with no country yet reads `IT`, the same fallback the XML applies.
     without_country = LEGAL_ENTITY.model_copy(update={"country": ""})
     export = _export().model_copy(
@@ -206,9 +206,9 @@ def test_the_legal_entity_block_carries_what_the_inherited_header_printed() -> N
             )
         }
     )
-    assert build_scope(export, reference=None)["emittente"]["identifier_vat"] == "IT01234567890"
-    assert scope["emittente"]["address_display"] == "Via Roma 1, 20053 Milano (MI) IT"
-    assert scope["tax"]["regime_display"] == "RF19 Regime forfettario"
+    assert build_scope(export, reference=None)["emittente"]["identificativo_iva"] == "IT01234567890"
+    assert scope["emittente"]["indirizzo_display"] == "Via Roma 1, 20053 Milano (MI) IT"
+    assert scope["fiscale"]["regime_display"] == "RF19 Regime forfettario"
 
 
 def test_the_vat_column_shows_the_vat_nature_when_there_is_no_rate_and_the_rate_otherwise() -> None:
@@ -217,12 +217,12 @@ def test_the_vat_column_shows_the_vat_nature_when_there_is_no_rate_and_the_rate_
         _line("Licenza", "200.00", rate="22.00", vat_nature=None, number=2),
     )
     scope = build_scope(_export(lines=lines, vat_amount="44.00"), reference=None)
-    assert [r["iva"] for r in scope["lines"]] == ["N2.2", "22%"]
+    assert [r["iva"] for r in scope["righe"]] == ["N2.2", "22%"]
 
 
 def test_the_payment_row_carries_the_code_and_its_words() -> None:
     payment = build_scope(_export(), reference=None)["pagamento"]
-    assert payment["code"] == "MP05"
+    assert payment["codice"] == "MP05"
     assert payment["dettagli"] == "Bonifico IBAN IT60X0542811101000000123456"
 
 
@@ -233,11 +233,11 @@ def test_the_totals_block_appears_only_when_there_is_vat() -> None:
     flat-rate invoice above 77,47 EUR carries one, its declaration under the rule
     already states it, and a `2,00 €` row under the VAT row would read as charged to the
     customer when the total does not include it."""
-    assert build_scope(_export(), reference=None)["invoice"]["mostra_totali"] is False
+    assert build_scope(_export(), reference=None)["fattura"]["mostra_totali"] is False
     assert (
-        build_scope(_export(stamp_duty="2.00"), reference=None)["invoice"]["mostra_totali"] is False
+        build_scope(_export(stamp_duty="2.00"), reference=None)["fattura"]["mostra_totali"] is False
     )
-    assert build_scope(_export(vat_amount="22.00"), reference=None)["invoice"]["mostra_totali"]
+    assert build_scope(_export(vat_amount="22.00"), reference=None)["fattura"]["mostra_totali"]
 
 
 # --- the rendered document ----------------------------------------------------------
@@ -326,14 +326,14 @@ def test_the_order_reference_reads_as_one_line_with_the_parts_it_has() -> None:
         ),
         reference=None,
     )
-    assert whole["invoice"]["riferimento_ordine"] == (
+    assert whole["fattura"]["riferimento_ordine"] == (
         "n. ODA-14 del 09-10-2026, CIG Z0A1B2C3D4, CUP J41E22000110005"
     )
     number = build_scope(_export(order={"purchase_order_number": "8"}), reference=None)
-    assert number["invoice"]["riferimento_ordine"] == "n. 8"
+    assert number["fattura"]["riferimento_ordine"] == "n. 8"
     tender_code = build_scope(
         _export(order={"purchase_order_number": "8", "purchase_order_tender_code": "Z0A1B2C3D4"}),
         reference=None,
     )
-    assert tender_code["invoice"]["riferimento_ordine"] == "n. 8, CIG Z0A1B2C3D4"
-    assert build_scope(_export(), reference=None)["invoice"]["riferimento_ordine"] == ""
+    assert tender_code["fattura"]["riferimento_ordine"] == "n. 8, CIG Z0A1B2C3D4"
+    assert build_scope(_export(), reference=None)["fattura"]["riferimento_ordine"] == ""
