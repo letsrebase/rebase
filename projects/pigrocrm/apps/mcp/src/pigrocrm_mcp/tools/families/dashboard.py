@@ -26,9 +26,6 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         rate, sent offers awaiting a reply, closings expected in the next 30 days, accepted
         offers whose deal is not won. `date_from` and `date_to` (`YYYY-MM-DD`) go together;
         without them, the current month. `weighted_value` is an estimate, not invoiced revenue.
-        `open_monthly_recurring` and `closings.won_monthly_recurring` are per-month figures
-        (what the recurring lines of the open deals, and of the deals won in the period, bring
-        in each month): never add them to a total.
         `legal_entity_id` filters by company; without it, all companies are summed.
         """
         # `IsoDateStr`, the alias this file already uses for a date parameter: the runtime

@@ -156,18 +156,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         expected_date: IsoDateStr = None,
         deal_id: str | None = None,
     ) -> dict[str, Any]:
-        """The «does it fit?» simulator: adds the estimate of a deal to the year's real revenue
-        and re-evaluates every active threshold, without saving. Requires `budgeted_value`, or
-        `budgeted_hours` with `hourly_rate` (a deal not yet saved), or the `deal_id` of a saved
-        deal, never both: with `deal_id` the addition is the share of the deal's value lines
-        that falls in `year` (a monthly fee starting in October adds three months, an annual one
-        its single payment; a line with no start follows the deal's expected close date, else
-        `expected_date`, else today). `legal_entity_id` as in `get_ceiling_headroom`.
-        With `contract_id` the estimate is also read against the cap on the customer's share
-        (`customer_share_cap`) in the anniversary year of the contract that contains
-        `expected_date` (YYYY-MM-DD, default today): `contract_cap` gives the share before and
-        after and whether it `rientra` (fits); with `deal_id` that estimate is the deal's share in
-        that anniversary year.
+        """The «does it fit?» simulator: adds a deal's estimate to the year's real revenue and
+        re-evaluates every active threshold, without saving. Give `budgeted_value`, or
+        `budgeted_hours` with `hourly_rate`, or a saved deal's `deal_id` (its value lines' share
+        in `year`), never both. `legal_entity_id` as in `get_ceiling_headroom`. With
+        `contract_id` it is also read against the contract's cap on the customer's share
+        (`customer_share_cap`), over the anniversary year containing `expected_date`
+        (default today): `contract_cap` gives the share before and after and
+        whether it `rientra`.
         """
         return timetracking.simulate_ceiling(
             context,
