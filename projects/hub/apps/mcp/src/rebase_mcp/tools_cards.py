@@ -54,8 +54,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         summary, never the person's name nor any of their links. `mode` is the profile's
         current work mode and `band` the price band from the current rate,
         both read on the fly, never stored on the card; `cv_sha256`, `model` and
-        `generated_at` of when it was written. `card` is `None` until no CV has
-        yet produced a card; `error` the last reason why there is none, or why
+        `generated_at` of when it was written. `card` is `None` as long as no CV has
+        produced a card; `error` the last reason why there is none, or why
         the one there is is older than the current CV. `seniority` and `experience_years` are
         the effective ones: the admin's correction (`seniority_admin`, `experience_years_admin`,
         from `override_freelancer`) if there is one, otherwise Claude's; `experience_years` is

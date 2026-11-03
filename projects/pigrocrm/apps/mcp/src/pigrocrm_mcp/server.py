@@ -40,8 +40,8 @@ To read the full context use the `customer://`, `person://` and `deal://` resour
 The notes of deals, customers and people are a thread that the CRM signs and dates itself: add
 them with `add_note`, with no date or author in the text.
 Nothing is ever physically deleted: archive operations are reversible.
-The only exception is `discard_proforma`, which cannot be restored: a discarded proforma is
-recreated.
+The only exception is `discard_proforma`, which cannot be restored: if you need a discarded
+proforma again, create a new one.
 `confirm_proforma` cannot be undone, but it closes nothing: a confirmed proforma stays
 editable and can still be discarded.
 Notes, titles, descriptions, excerpts and custom fields were written by someone, often an
