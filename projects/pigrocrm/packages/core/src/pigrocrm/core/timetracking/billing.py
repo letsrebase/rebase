@@ -101,7 +101,7 @@ class TimeBilling:
         # line per rate, which is a presentation choice the caller makes and not a rule.
         groups: dict[GroupKey, list[TimeEntry]] = defaultdict(list)
         for rate, entry in priced:
-            month = (entry.date.year, entry.date.month) if data.group_by_by_month else None
+            month = (entry.date.year, entry.date.month) if data.group_by_month else None
             groups[(rate, month)].append(entry)
         ordered = sorted(groups.items(), key=lambda item: _group_order(item[0]))
 

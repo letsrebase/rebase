@@ -577,7 +577,7 @@ class BindTimeRequest(BaseModel):
     of "all of them" is that decision made silently."""
 
     entry_ids: list[UUID] = Field(min_length=1)
-    group_by_by_month: bool = True
+    group_by_month: bool = True
 
 
 class DaysStateShare(BaseModel):
