@@ -60,7 +60,7 @@ DUE = "prova-digest-due"
 # Provisioned like the others and left as it is born: nobody has entered a customer, a
 # deal, an invoice or an hour, which is the one space that hears nothing (§2).
 EMPTY = "prova-digest-vuoto"
-TITOLARI = {UNO: "uno@studio.it", DUE: "due@studio.it"}
+OWNERS = {UNO: "uno@studio.it", DUE: "due@studio.it"}
 SPACES = (UNO, DUE, EMPTY)
 OWNER_EMPTY = "vuoto@studio.it"
 # The root installation: its own database, and `PIGROCRM_ROOT_SLUG` in its links.
@@ -120,10 +120,10 @@ def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
                 TenantSignup(
                     slug=slug,
                     name=f"Studio {slug}",
-                    email=TITOLARI.get(slug, OWNER_EMPTY),
+                    email=OWNERS.get(slug, OWNER_EMPTY),
                 )
             )
-            if slug in TITOLARI:
+            if slug in OWNERS:
                 _one_invoice(settings, slug, _last_week(settings))
         yield
     finally:
@@ -285,7 +285,7 @@ def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | No
 def _my(sender: RecordingSender) -> list[Mail]:
     """Only the mails addressed to this file's two owners: the registry is shared with
     whatever else has provisioned a space on this container."""
-    return [mail for mail in sender.sent if mail.to in set(TITOLARI.values())]
+    return [mail for mail in sender.sent if mail.to in set(OWNERS.values())]
 
 
 # --- the command ---------------------------------------------------------------------
@@ -305,10 +305,10 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
     # report where every section is empty is the one mail §2 exists to prevent.
     assert f"{EMPTY}: vuoto" in out
     assert OWNER_EMPTY not in {mail.to for mail in cron.sent}
-    assert sorted(mail.to for mail in _my(cron)) == sorted(TITOLARI.values())
+    assert sorted(mail.to for mail in _my(cron)) == sorted(OWNERS.values())
     # Each space's links are the root's public URL plus its own slug: `space_base_settings`
     # per space, and not the root's for everybody.
-    for slug, address in TITOLARI.items():
+    for slug, address in OWNERS.items():
         mail = next(mail for mail in _my(cron) if mail.to == address)
         assert f"{PUBLIC_URL}/{slug}/app" in mail.text
         assert _weeks(settings, slug) == [iso]
@@ -412,7 +412,7 @@ def test_slug_visits_that_space_and_leaves_the_others_alone(
     out = capsys.readouterr().out
     assert f"{DUE}: inviato a 1" in out
     assert UNO not in out
-    assert [mail.to for mail in _my(cron)] == [TITOLARI[DUE]]
+    assert [mail.to for mail in _my(cron)] == [OWNERS[DUE]]
     assert _weeks(settings, UNO) == []
 
 
@@ -478,7 +478,7 @@ def test_force_with_a_day_of_that_week_sends_it_again(
     assert cli.main(["digest", "--slug", UNO, "--force", "--date", monday.isoformat()]) == 0
 
     assert capsys.readouterr().out.strip() == f"{UNO}: inviato a 1"
-    assert [mail.to for mail in _my(cron)] == [TITOLARI[UNO], TITOLARI[UNO]]
+    assert [mail.to for mail in _my(cron)] == [OWNERS[UNO], OWNERS[UNO]]
     assert _weeks(settings, UNO) == [iso]
 
 
@@ -516,7 +516,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     assert DUE not in captured.out
     # The type and never the text: a psycopg error carries the connection's URL.
     assert captured.err.strip() == f"{DUE}: saltato (OperationalError)"
-    assert [mail.to for mail in _my(cron)] == [TITOLARI[UNO]]
+    assert [mail.to for mail in _my(cron)] == [OWNERS[UNO]]
     assert _weeks(settings, DUE) == []
 
 
@@ -554,11 +554,11 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
     that cannot be reached is a line an operator can act on, never a traceback -- and
     never the URL, which carries the password."""
     sender = RecordingSender()
-    rotto = Settings(
+    broken = Settings(
         database_url="postgresql+psycopg://utente:segreta@127.0.0.1:1/nessuno",
         _env_file=None,  # type: ignore[call-arg]
     )
-    monkeypatch.setattr(cli, "get_settings", lambda: rotto)
+    monkeypatch.setattr(cli, "get_settings", lambda: broken)
     monkeypatch.setattr(cli_cron, "sender_from_settings", lambda _settings: sender)
     monkeypatch.setattr(cli_cron, "tracker_from_settings", lambda _settings: None)
 

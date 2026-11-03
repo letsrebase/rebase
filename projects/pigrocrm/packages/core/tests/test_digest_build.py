@@ -69,7 +69,7 @@ class Corpus(NamedTuple):
     # `(data_emissione, totale)` of every issued invoice this file writes, so the two
     # month totals can be checked against the corpus instead of against a second call to
     # the same sum.
-    emissioni: tuple[tuple[date, Decimal], ...]
+    issues: tuple[tuple[date, Decimal], ...]
 
 
 def _last_week() -> tuple[date, date]:
@@ -79,8 +79,8 @@ def _last_week() -> tuple[date, date]:
     day invisible: the corpus would move with the bug.
     """
     today = today_local(SETTINGS)
-    lunedi = today - timedelta(days=today.isoweekday() - 1 + 7)
-    return lunedi, lunedi + timedelta(days=6)
+    monday = today - timedelta(days=today.isoweekday() - 1 + 7)
+    return monday, monday + timedelta(days=6)
 
 
 def _require_empty(session: Session) -> None:
@@ -129,7 +129,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
     factory = session_factory(db_engine)
     date_from, date_to = _last_week()
     today = today_local(SETTINGS)
-    emissioni: list[tuple[date, Decimal]] = []
+    issues: list[tuple[date, Decimal]] = []
     with factory() as session:
         _require_empty(session)
         legal_entity_id = committed_default_legal_entity(session)
@@ -193,11 +193,11 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
             )
             session.add(invoice)
             session.flush()
-            emissioni.append((issue_date, amount))
+            issues.append((issue_date, amount))
             return invoice
 
         deal_open = _deal("Deal aperto", open, "5000.00")
-        deal_mosso = _deal("Deal mosso", won, "3000.00")
+        deal_moved = _deal("Deal mosso", won, "3000.00")
 
         # Issued in the week. On an *open* deal, so it also lights the «invoiced but not
         # won» signal and the report has a `signals` list that is not empty.
@@ -253,7 +253,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         )
         session.add(
             Document(
-                deal_id=deal_mosso.id,
+                deal_id=deal_moved.id,
                 type="offer",
                 title=f"{_PREFIX} Offerta",
                 status="sent",
@@ -265,7 +265,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         def _stage_changed(day: date) -> Activity:
             return Activity(
                 entity_type="deal",
-                entity_id=deal_mosso.id,
+                entity_id=deal_moved.id,
                 kind="stage_changed",
                 actor_id=user.id,
                 actor_type="user",
@@ -282,7 +282,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
         session.add(_stage_changed(date_from - timedelta(days=3)))
         session.commit()
     try:
-        yield Corpus(db_engine, date_from, date_to, tuple(emissioni))
+        yield Corpus(db_engine, date_from, date_to, tuple(issues))
     finally:
         with factory() as session:
             corpus_customers = select(Customer.id).where(Customer.legal_name.like(f"{_PREFIX} %"))
@@ -419,7 +419,7 @@ def test_the_months_are_the_register_sums_and_not_a_second_count(corpus: Corpus)
 
     def _sum(first: date, last: date) -> Decimal:
         return sum(
-            (amount for day, amount in corpus.emissioni if first <= day <= last),
+            (amount for day, amount in corpus.issues if first <= day <= last),
             Decimal("0.00"),
         )
 
@@ -494,9 +494,9 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
         )
         session.commit()
 
-    aggiornato = _build(corpus.engine, (corpus.date_from, corpus.date_to))
-    assert aggiornato.won_to_invoice == 1
-    assert "won_to_invoice" in [s.code for s in aggiornato.signals]
+    updated = _build(corpus.engine, (corpus.date_from, corpus.date_to))
+    assert updated.won_to_invoice == 1
+    assert "won_to_invoice" in [s.code for s in updated.signals]
 
 
 def test_the_pipeline_carries_only_the_stages_that_hold_something(corpus: Corpus) -> None:
@@ -786,9 +786,9 @@ def test_deal_ids_and_invoice_ids_are_the_real_rows(corpus: Corpus) -> None:
         issued = session.execute(
             select(Invoice.id).where(Invoice.year == 2026, Invoice.number == 1)
         ).scalar_one()
-        mosso = session.execute(
+        moved = session.execute(
             select(Deal.id).where(Deal.name == f"{_PREFIX} Deal mosso")
         ).scalar_one()
     assert [i.invoice_id for i in digest.issued] == [issued]
-    assert [m.deal_id for m in digest.deal_moves] == [mosso]
+    assert [m.deal_id for m in digest.deal_moves] == [moved]
     assert isinstance(digest.issued[0].invoice_id, UUID)

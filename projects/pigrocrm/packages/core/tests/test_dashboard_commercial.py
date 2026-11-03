@@ -194,7 +194,7 @@ def test_the_ceiling_is_at_max_period_days_exactly(seeded: Seeded) -> None:
 
 
 @pytest.mark.parametrize(
-    ("da", "a"),
+    ("date_from", "date_to"),
     [(date(2026, 3, 1), None), (None, date(2026, 3, 31))],
 )
 def test_supplying_only_one_bound_is_refused(
@@ -205,7 +205,7 @@ def test_supplying_only_one_bound_is_refused(
     `if self.da is None` alone accepts the other spelling."""
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date_from, date_to)
-    assert caught.value.details["field"] == ("da" if date_from is None else "a")
+    assert caught.value.details["field"] == ("from" if date_from is None else "to")
 
 
 # -- one instant -----------------------------------------------------------------

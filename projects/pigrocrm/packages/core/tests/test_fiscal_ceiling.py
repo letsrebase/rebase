@@ -27,9 +27,9 @@ from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, SOCIAL_SECURITY_SURCHAR
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 
 REVENUE_CEILING = IT_FLAT_RATE_PACK.ceilings[0]
-FUORIUSCITA_CEILING = IT_FLAT_RATE_PACK.ceilings[1]
-assert REVENUE_CEILING.id == "soglia_ricavi"
-assert FUORIUSCITA_CEILING.id == "soglia_fuoriuscita_immediata"
+EXIT_CEILING = IT_FLAT_RATE_PACK.ceilings[1]
+assert REVENUE_CEILING.id == "revenue_ceiling"
+assert EXIT_CEILING.id == "immediate_exit_ceiling"
 
 YEAR = 2024
 
@@ -108,15 +108,15 @@ def test_reached_at_the_threshold_itself() -> None:
 
 
 def test_the_immediate_exit_ceiling_uses_its_own_higher_alert_ratio() -> None:
-    below = evaluate_ceiling(FUORIUSCITA_CEILING, Decimal("89999.99"))
-    at_ratio = evaluate_ceiling(FUORIUSCITA_CEILING, Decimal("90000.00"))  # 0.9 * 100000
+    below = evaluate_ceiling(EXIT_CEILING, Decimal("89999.99"))
+    at_ratio = evaluate_ceiling(EXIT_CEILING, Decimal("90000.00"))  # 0.9 * 100000
     assert below.alert_level is None
     assert at_ratio.alert_level == ("In avvicinamento alla fuoriuscita immediata dal regime")
 
 
 def test_a_revenue_over_the_hard_ceiling_breaches_both() -> None:
     assert evaluate_ceiling(REVENUE_CEILING, Decimal("120000.00")).exceeded is True
-    assert evaluate_ceiling(FUORIUSCITA_CEILING, Decimal("120000.00")).exceeded is True
+    assert evaluate_ceiling(EXIT_CEILING, Decimal("120000.00")).exceeded is True
 
 
 # --- paid_revenue_for_calendar_year / evaluate_pack: real rows ---------------------
@@ -179,9 +179,9 @@ def test_evaluate_pack_evaluates_both_ceilings_off_one_paid_revenue_figure(
     _paid(db_session, number=1, year=YEAR, lines=[("Consulenza", Decimal("90000.00"))])
     statuses = {s.ceiling.id: s for s in evaluate_pack(IT_FLAT_RATE_PACK, db_session, YEAR)}
 
-    assert statuses["soglia_ricavi"].exceeded is True
-    assert statuses["soglia_fuoriuscita_immediata"].exceeded is False
-    assert statuses["soglia_fuoriuscita_immediata"].alert_level == (
+    assert statuses["revenue_ceiling"].exceeded is True
+    assert statuses["immediate_exit_ceiling"].exceeded is False
+    assert statuses["immediate_exit_ceiling"].alert_level == (
         "In avvicinamento alla fuoriuscita immediata dal regime"
     )
 

@@ -46,7 +46,7 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 # The scenario from the finding, to the euro: eight billable hours at a hundred an hour on
 # a deal that has been won and not yet invoiced. 800.00 of `accrued_value` and one
-# `vinto_da_fatturare` signal are the two numbers that have to move together.
+# `won_to_invoice` signal are the two numbers that have to move together.
 _HOURS = "8.00"
 _RATE = "100.000000"
 _VALUE = Decimal("800.00")

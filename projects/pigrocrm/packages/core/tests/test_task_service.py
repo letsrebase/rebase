@@ -262,7 +262,7 @@ def test_it_can_be_unhooked_from_every_entity(service: TaskService, customer_id:
 
 def test_an_unknown_key_is_refused_rather_than_ignored(service: TaskService) -> None:
     with pytest.raises(ValueError):
-        TaskUpdate(titol="typo")  # type: ignore[call-arg]
+        TaskUpdate(titel="typo")  # type: ignore[call-arg]
 
 
 def test_assigning_to_a_disabled_user_is_refused(service: TaskService, db_session: Session) -> None:
@@ -477,10 +477,10 @@ def test_today_mine_and_nobodys_leaves_out_to_colleagues(
 ) -> None:
     freeze(monkeypatch)
     yesterday = TODAY_IN_ITALY - timedelta(days=1)
-    io, collega = _person(db_session, "Io"), _person(db_session, "Collega")
+    io, colleague = _person(db_session, "Io"), _person(db_session, "Collega")
     _create(service, title="mia", due_date=yesterday, assigned_to=io)
     _create(service, title="di nessuno", due_date=yesterday)
-    _create(service, title="del collega", due_date=yesterday, assigned_to=collega)
+    _create(service, title="del collega", due_date=yesterday, assigned_to=colleague)
     archived = _create(service, title="archived", due_date=yesterday)
     service.soft_delete(archived.id, ADMIN)  # type: ignore[attr-defined]
 
@@ -495,17 +495,17 @@ def test_today_mine_and_nobodys_leaves_out_to_colleagues(
 def test_list_mine_and_nobodys_is_an_or_and_needs_an_assignee(
     service: TaskService, db_session: Session
 ) -> None:
-    io, collega = _person(db_session, "Io"), _person(db_session, "Collega")
+    io, colleague = _person(db_session, "Io"), _person(db_session, "Collega")
     _create(service, title="mia", assigned_to=io)
     _create(service, title="di nessuno")
-    _create(service, title="del collega", assigned_to=collega)
+    _create(service, title="del collega", assigned_to=colleague)
 
     def titles(**kw: object) -> set[str]:
         return {a.title for a in service.list(TaskListQuery(**kw), ADMIN).items}  # type: ignore[arg-type]
 
     assert titles(assigned_to=io) == {"mia"}
     assert titles(assigned_to=io, include_unassigned=True) == {"mia", "di nessuno"}
-    assert titles(assigned_to=collega, include_unassigned=True) == {"del collega", "di nessuno"}
+    assert titles(assigned_to=colleague, include_unassigned=True) == {"del collega", "di nessuno"}
     assert {"mia", "di nessuno", "del collega"} <= titles(include_unassigned=True)
 
 
