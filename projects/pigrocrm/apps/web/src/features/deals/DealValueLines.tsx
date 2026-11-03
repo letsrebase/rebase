@@ -74,8 +74,8 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
             role="group"
             aria-label={`Riga ${n}`}
           >
-            <div className="grid gap-3 sm:grid-cols-6">
-              <div className="space-y-1 sm:col-span-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 space-y-1">
                 <Label htmlFor={`${line.key}-description`}>Descrizione</Label>
                 <Input
                   id={`${line.key}-description`}
@@ -85,7 +85,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                   onChange={(event) => patch(line.key, { description: event.target.value })}
                 />
               </div>
-              <div className="space-y-1 sm:col-span-1">
+              <div className="space-y-1">
                 <Label htmlFor={`${line.key}-unit`}>Unità</Label>
                 <Select
                   value={line.unit}
@@ -107,7 +107,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1">
                 <Label htmlFor={`${line.key}-period`}>Periodo</Label>
                 <Select
                   value={line.delivery_period}
@@ -131,10 +131,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-6">
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1">
                 <Label htmlFor={`${line.key}-price`}>
                   {flat ? 'Importo (€)' : `Prezzo per ${line.unit === 'day' ? 'giorno' : 'ora'} (€)`}
                 </Label>
@@ -150,7 +147,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                 />
               </div>
               {!flat && (
-                <div className="space-y-1 sm:col-span-1">
+                <div className="space-y-1">
                   <Label htmlFor={`${line.key}-quantity`}>Quantità</Label>
                   <Input
                     id={`${line.key}-quantity`}
@@ -163,7 +160,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                   />
                 </div>
               )}
-              <div className="space-y-1 sm:col-span-2">
+              <div className="space-y-1">
                 <Label htmlFor={`${line.key}-start`}>Inizio</Label>
                 <Input
                   id={`${line.key}-start`}
@@ -174,7 +171,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
                 />
               </div>
               {showDuration && (
-                <div className="space-y-1 sm:col-span-1">
+                <div className="space-y-1">
                   <Label htmlFor={`${line.key}-duration`}>Durata (mesi)</Label>
                   <Input
                     id={`${line.key}-duration`}
@@ -220,7 +217,7 @@ export function DealValueLines({ lines, onChange, preview, problem }: Props) {
       </p>
 
       <dl
-        className="grid gap-3 rounded-md bg-muted p-3 text-sm sm:grid-cols-3"
+        className="grid grid-cols-3 gap-3 rounded-md bg-muted p-3 text-sm"
         aria-label="Valore del deal"
       >
         <div>
