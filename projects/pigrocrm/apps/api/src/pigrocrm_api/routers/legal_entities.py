@@ -1,11 +1,12 @@
-"""The aziende of a space, and each one's fiscal profile (REB-616, spec 2026-10-03 §3).
+"""The legal entities of a space, and each one's fiscal profile (REB-616, spec 2026-10-03 §3).
 
 These routes replace `GET/PUT /api/emitter` and `GET/PUT /api/fiscal-profile`, which
-addressed one row with no id. `POST /api/aziende` arrived last, with milestone 5 (§9,
-REB-631): creating a second azienda waited until the register, the customer chain, the
-rendering and the per-azienda taxes could serve it, and it is born with its fiscal
+addressed one row with no id. `POST /api/legal-entities` arrived last, with milestone 5 (§9,
+REB-631): creating a second legal entity waited until the register, the customer chain, the
+rendering and the per-legal-entity taxes could serve it, and it is born with its fiscal
 profile in the same request (§1.2). Everything an admin could do to the one profile
-before, they do to `/api/legal-entities/{id}` now; the SPA reads the id from `GET /api/aziende`.
+before, they do to `/api/legal-entities/{id}` now; the SPA reads the id from
+`GET /api/legal-entities`.
 
 Admin-only writes are enforced by the services (`actor.require_admin`), not by a router
 dependency: there is no role dependency in this codebase, and adding one here would

@@ -1,11 +1,11 @@
-"""The azienda boundary over HTTP, as the application role sees it (REB-634, spec
+"""The legal entity boundary over HTTP, as the application role sees it (REB-634, spec
 2026-10-03 §3, §4).
 
 Every other file in this tree talks to Postgres as the suite's superuser, which is
 outside every row-level policy by Postgres's own rule. This one builds a committed
-two-azienda world as that superuser and then serves requests through sessions opened as
+two-legal entity world as that superuser and then serves requests through sessions opened as
 the role the boot creates (`db/role.py`): `LOGIN NOSUPERUSER NOBYPASSRLS`, which is what
-production's `pigrocrm_app` is. A scoped member's cookie must then get their azienda's
+production's `pigrocrm_app` is. A scoped member's cookie must then get their legal entity's
 rows and nothing else from every list, every dashboard, the search and a read by id, and
 a write the policy refuses must come back as a 404 and never as a 500.
 """
@@ -88,7 +88,7 @@ def _seed(session: Session, legal_entity: UUID, tag: str, stage: PipelineStage) 
     session.add(customer)
     session.flush()
     deal = Deal(
-        nome=f"{_PREFIX} {tag} deal",
+        name=f"{_PREFIX} {tag} deal",
         customer_id=customer.id,
         legal_entity_id=legal_entity,
         pipeline_stage_id=stage.id,
@@ -158,19 +158,19 @@ def _seed(session: Session, legal_entity: UUID, tag: str, stage: PipelineStage) 
 
 @pytest.fixture
 def world(api_engine: Engine) -> Iterator[ScopedWorld]:
-    """Two aziende with one of everything each, an admin who sees the whole space and a
-    collaboratore scoped to «ltd», all committed; and the application role on the
+    """Two legal entities with one of everything each, an admin who sees the whole space and a
+    collaborator scoped to «ltd», all committed; and the application role on the
     worker's database. Undone row by row at the end, since this file writes for real."""
     factory = session_factory(api_engine)
     with factory() as session:
         studio = session.execute(
-            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity).where(LegalEntity.is_default.is_(True))
         ).scalar_one()
-        ltd = LegalEntity(nome=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB")
+        ltd = LegalEntity(name=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB")
         stage = PipelineStage(
-            nome=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
+            name=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
         )
-        category = CostCategory(nome=f"{_PREFIX} categoria")
+        category = CostCategory(name=f"{_PREFIX} categoria")
         session.add_all([ltd, stage, category])
         session.flush()
         studio_rows = _seed(session, studio.id, "studio", stage)
@@ -178,12 +178,12 @@ def world(api_engine: Engine) -> Iterator[ScopedWorld]:
         session.commit()
         users = UserService(session)
         admin = users.create(
-            UserCreate(email=ADMIN, password=PASSWORD, nome=f"{_PREFIX} Admin", role="admin"),
+            UserCreate(email=ADMIN, password=PASSWORD, name=f"{_PREFIX} Admin", role="admin"),
             Actor.system(),
         )
         member = users.create(
             UserCreate(
-                email=MEMBER, password=PASSWORD, nome=f"{_PREFIX} Member", role="collaborator"
+                email=MEMBER, password=PASSWORD, name=f"{_PREFIX} Member", role="collaborator"
             ),
             Actor.system(),
         )
@@ -301,10 +301,10 @@ def test_the_search_answers_inside_the_scope(served: TestClient, world: ScopedWo
     client = _login(served, MEMBER)
     response = client.get("/api/search", params={"q": _PREFIX})
     assert response.status_code == 200, response.text
-    hits = {hit["id"] for group in response.json()["gruppi"] for hit in group["hits"]}
+    hits = {hit["id"] for group in response.json()["groups"] for hit in group["hits"]}
     # Five classes, and a contract is not one of them (spec 2026-09 §11.1).
     assert hits == {str(x) for x in world.ltd_rows} - {str(world.ltd_rows.contract)}
-    assert all(group["total"] <= 1 for group in response.json()["gruppi"])
+    assert all(group["total"] <= 1 for group in response.json()["groups"])
 
 
 def test_the_dashboards_sum_the_scope_alone(served: TestClient, world: ScopedWorld) -> None:
@@ -319,7 +319,9 @@ def test_the_dashboards_sum_the_scope_alone(served: TestClient, world: ScopedWor
     receivables = client.get("/api/dashboard/receivables")
     assert receivables.status_code == 200, receivables.text
     assert Decimal(receivables.json()["total"]) == Decimal("100.00")
-    economic = client.get("/api/dashboard/economic", params={"da": "2026-03-01", "a": "2026-03-31"})
+    economic = client.get(
+        "/api/dashboard/economic", params={"from": "2026-03-01", "to": "2026-03-31"}
+    )
     assert economic.status_code == 200, economic.text
     assert Decimal(economic.json()["pnl"]["in_progress"]["revenue"]) == Decimal("100.00")
 
@@ -343,9 +345,9 @@ def test_the_admin_who_sees_everything_still_does(served: TestClient, world: Sco
 def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     served: TestClient, world: ScopedWorld
 ) -> None:
-    """Two refusals with the same status. Moving a customer onto the other azienda is
-    stopped by the service, which cannot resolve an azienda the policy hides. A cost
-    without a deal and without an azienda is shared («tutte»'s alone, §1.7), and nothing
+    """Two refusals with the same status. Moving a customer onto the other legal entity is
+    stopped by the service, which cannot resolve an legal entity the policy hides. A cost
+    without a deal and without an legal entity is shared («all entities»'s alone, §1.7), and nothing
     in the service says a scoped member may not write one: Postgres does, with
     `insufficient_privilege`, and the API turns that into the same problem document a
     missing row gets instead of the 500 it was."""
@@ -358,7 +360,7 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
         "/api/costs",
         json={
             "category_id": str(world.category),
-            "data": "2026-03-10",
+            "date": "2026-03-10",
             "amount": "12.00",
             "description": f"{_PREFIX} condiviso",
         },
@@ -366,7 +368,7 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     assert shared.status_code == 404, shared.text
     problem = shared.json()
     assert problem["code"] == "not_found"
-    assert "legal_entities" in problem["detail"]
+    assert "aziende" in problem["detail"]
     # A later request on the same client is served, by a fresh session: the refusal
     # poisoned nothing.
     assert _ids(client, "/api/customers") == {str(world.ltd_rows.customer)}
@@ -396,7 +398,7 @@ def test_an_invitation_carries_its_scope_and_the_list_shows_it(
     admin = _login(served, ADMIN)
     created = admin.post(
         "/api/users/invites",
-        json={"email": INVITED, "nome": "Bea", "legal_entities": [str(world.ltd)]},
+        json={"email": INVITED, "name": "Bea", "legal_entities": [str(world.ltd)]},
     )
     assert created.status_code == 201, created.text
     assert created.json()["legal_entities"] == [str(world.ltd)]
@@ -415,10 +417,10 @@ def test_accepting_a_scoped_invitation_through_the_role_opens_a_scoped_account(
 
     with session_factory(world.engine)() as session:
         _, raw = InvitationService(session).create(
-            InvitationCreate(email=INVITED, nome="Bea", legal_entities=[world.ltd]),
+            InvitationCreate(email=INVITED, name="Bea", legal_entities=[world.ltd]),
             Actor(id=world.admin_id, type="user", role="admin"),
         )
-    accepted = served.post("/api/auth/invite", json={"t": raw, "nome": None})
+    accepted = served.post("/api/auth/invite", json={"t": raw, "name": None})
     assert accepted.status_code == 200, accepted.text
     try:
         assert accepted.json()["legal_entities"] == [str(world.ltd)]
@@ -447,7 +449,7 @@ def test_a_scoped_admin_is_refused_the_space_level_writes(
             UserCreate(
                 email=f"{_PREFIX.lower()}-second@pigro.it",
                 password=PASSWORD,
-                nome=f"{_PREFIX} Second",
+                name=f"{_PREFIX} Second",
                 role="admin",
             ),
             Actor.system(),
@@ -463,7 +465,7 @@ def test_a_scoped_admin_is_refused_the_space_level_writes(
         assert problem["code"] == "permission_denied" and "invite_user" in problem["detail"]
         assert "senza limiti di azienda" in problem["reason"]
         assert client.post("/api/pipeline-stages/seed").status_code == 403
-        # What the azienda's own admin keeps: the fiscal profile of an azienda in scope.
+        # What the legal entity's own admin keeps: the fiscal profile of an legal entity in scope.
         assert client.get(f"/api/legal-entities/{world.ltd}").status_code == 200
     finally:
         with factory() as session:

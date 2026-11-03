@@ -225,7 +225,7 @@ def test_the_callback_never_renders_the_upstream_error_to_the_browser(
     assert response.status_code == 307
     location = response.headers["location"]
     # An empty space, so the Home (REB-222); the page is the next test's subject.
-    assert location == "/app/?outcome=negato"
+    assert location == "/app/?outcome=denied"
     assert "access_denied" not in location
 
 
@@ -247,7 +247,7 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
         "/api/gmail/oauth/callback?code=abc&state=mai-emesso", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/?outcome=errore"
+    assert response.headers["location"] == "/app/?outcome=error"
 
 
 def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
@@ -266,23 +266,23 @@ def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
         assert response.status_code == 307, response.text
         return str(response.headers["location"])
 
-    assert landing() == "/app/?outcome=negato"
+    assert landing() == "/app/?outcome=denied"
 
     customer = Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={})
     api_session.add(customer)
     api_session.flush()
-    assert landing() == "/app/settings/gmail?outcome=negato"
+    assert landing() == "/app/settings/gmail?outcome=denied"
 
     customer.deleted_at = datetime.now(UTC)
     api_session.flush()
-    assert landing() == "/app/?outcome=negato"
+    assert landing() == "/app/?outcome=denied"
 
 
 def test_to_collaborator_is_brought_back_to_first_steps_not_to_settings_they_cannot_open(
     collaborator_client: TestClient, gmail_ready: TestClient, api_session: Session
 ) -> None:
-    """A collaboratore may connect their own mailbox (`require_write`), from the start
-    page's Gmail door, but Impostazioni is admin-only: a consent that ended there would
+    """A collaborator may connect their own mailbox (`require_write`), from the start
+    page's Gmail door, but Settings is admin-only: a consent that ended there would
     answer «Accesso riservato». With work in the space the way back is «Primi passi»,
     the other page that carries the door and reads the same outcome table."""
     api_session.add(Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={}))
@@ -291,7 +291,7 @@ def test_to_collaborator_is_brought_back_to_first_steps_not_to_settings_they_can
         "/api/gmail/oauth/callback?error=access_denied", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/get-started?outcome=negato"
+    assert response.headers["location"] == "/app/get-started?outcome=denied"
 
 
 # --- a session that ran out on Google's screens (REB-446) -----------------------------
@@ -373,7 +373,7 @@ def test_a_consent_that_outlasts_the_access_cookie_still_connects_the_mailbox(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?outcome=collegato"
+    assert back.headers["location"] == "/app/?outcome=connected"
     assert google.codes == ["4/0A-code"]
     assert "set-cookie" not in back.headers
     assert logged_in.post("/api/auth/refresh").status_code == 200
@@ -416,7 +416,7 @@ def test_a_consent_that_comes_back_with_no_live_session_lands_on_a_page_not_on_j
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/get-started?outcome=sessione"
+    assert back.headers["location"] == "/app/get-started?outcome=session_expired"
     assert google.codes == []
 
 
@@ -443,7 +443,7 @@ def test_a_token_another_tab_rotated_seconds_ago_still_identifies_the_browser(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?outcome=collegato"
+    assert back.headers["location"] == "/app/?outcome=connected"
     assert google.codes == ["4/0A-code"]
 
 
@@ -453,7 +453,7 @@ def test_the_callback_with_no_cookie_at_all_is_a_page_too(client: TestClient) ->
     for query in ({}, {"code": "c", "state": "s"}, {"error": "access_denied"}):
         back = client.get("/api/gmail/oauth/callback", params=query, follow_redirects=False)
         assert back.status_code == 307, (query, back.text)
-        assert back.headers["location"] == "/app/get-started?outcome=sessione"
+        assert back.headers["location"] == "/app/get-started?outcome=session_expired"
 
 
 def test_another_persons_state_is_refused_on_a_refresh_only_session(
@@ -469,7 +469,7 @@ def test_another_persons_state_is_refused_on_a_refresh_only_session(
         json={
             "email": "collab@pigro.it",
             "password": "supersegreta1",
-            "nome": "C",
+            "name": "C",
             "role": "collaborator",
         },
     )
@@ -488,7 +488,7 @@ def test_another_persons_state_is_refused_on_a_refresh_only_session(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?outcome=errore"
+    assert back.headers["location"] == "/app/?outcome=error"
     assert google.codes == []
     assert logged_in.get("/api/gmail/account").json()["account"] is None
     count = api_session.execute(text("select count(*) from google_accounts")).scalar_one()
@@ -507,7 +507,7 @@ def test_to_refusal_on_googles_side_on_to_refresh_only_session_is_still_denied(
         follow_redirects=False,
     )
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/?outcome=negato"
+    assert back.headers["location"] == "/app/?outcome=denied"
     assert google.codes == []
 
 
@@ -523,7 +523,7 @@ def test_a_readonly_person_on_a_refresh_only_session_is_still_refused_as_a_role(
         json={
             "email": "sola@pigro.it",
             "password": "supersegreta1",
-            "nome": "S",
+            "name": "S",
             "role": "readonly",
         },
     )
@@ -555,7 +555,7 @@ def test_a_deactivated_person_with_a_live_refresh_cookie_has_no_session_here(
     state = _start(logged_in)
     _lose_access_cookie(logged_in)
     api_session.execute(
-        text("update users set attivo = false where email = :e"), {"e": "admin@pigro.it"}
+        text("update users set active = false where email = :e"), {"e": "admin@pigro.it"}
     )
     api_session.flush()
 
@@ -566,7 +566,7 @@ def test_a_deactivated_person_with_a_live_refresh_cookie_has_no_session_here(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/get-started?outcome=sessione"
+    assert back.headers["location"] == "/app/get-started?outcome=session_expired"
     assert google.codes == []
 
 
@@ -707,7 +707,7 @@ def test_a_revoked_credential_is_reported_with_its_own_sentence_and_no_token(
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["banner"] == "revoked"
-    assert "revoked" in payload["banner_text"]
+    assert "revocato" in payload["banner_text"]
     assert payload["account"]["email_address"] == "io@example.it"
     assert "refresh_token" not in response.text
     assert "ciphertext" not in response.text

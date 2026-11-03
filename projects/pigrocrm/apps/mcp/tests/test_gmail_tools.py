@@ -89,7 +89,7 @@ def gmail_actor(mcp_session: Session) -> Actor:
     user = User(
         email="agent-owner@example.test",
         password_hash="x",
-        nome="Owner",
+        name="Owner",
         role="admin",
         active=True,
     )
@@ -305,7 +305,7 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
     # Mail written by somebody else: each item carries the marker, the list stays a list.
     assert all(row["provenance"] == PROVENANCE_TEXT_FREE for row in rows)
     assert [row["id"] for row in rows] == [str(message_id)]
-    assert rows[0]["da"] == CLIENT
+    assert rows[0]["from"] == CLIENT
     assert rows[0]["subject"] == "Preventivo per il rifacimento del sito"
     # The listing is a listing: the body belongs to `get_gmail_message`, so an agent
     # that only needs to know a conversation exists does not pull a customer's whole
@@ -570,7 +570,9 @@ async def test_no_tool_prepares_a_payment_reminder(gmail_server: Any) -> None:
     becoming an automated persecution, with nobody having decided to chase it at all."""
     names = await _tool_names(gmail_server)
 
-    assert not [name for name in names if "reminder" in name and not name.startswith("list_")]
+    assert not [
+        name for name in names if "payment_reminder" in name and not name.startswith("list_")
+    ]
     assert not [name for name in names if "sollecit" in name]
 
 

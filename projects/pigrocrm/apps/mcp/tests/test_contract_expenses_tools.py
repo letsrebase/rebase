@@ -37,7 +37,7 @@ def _contract_id(mcp_session: Session, *, expense_policy: dict[str, object]) -> 
 
 
 def _category_id(mcp_session: Session) -> str:
-    category = CostCategory(nome="Trasferte", position=0)
+    category = CostCategory(name="Trasferte", position=0)
     mcp_session.add(category)
     mcp_session.flush()
     mcp_session.commit()
@@ -54,7 +54,7 @@ async def test_create_reports_the_trigger_computed_reimbursable(server, mcp_sess
             {
                 "contract_id": contract_id,
                 "category_id": category_id,
-                "data": "2026-03-05",
+                "date": "2026-03-05",
                 "amount": "42.00",
                 "description": "Biglietto treno",
             },
@@ -67,7 +67,7 @@ async def test_create_reports_the_trigger_computed_reimbursable(server, mcp_sess
 async def test_create_flags_non_reimbursable_without_failing(server, mcp_session) -> None:
     contract_id = _contract_id(
         mcp_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(mcp_session)
 
@@ -77,7 +77,7 @@ async def test_create_flags_non_reimbursable_without_failing(server, mcp_session
             {
                 "contract_id": contract_id,
                 "category_id": category_id,
-                "data": "2026-03-05",
+                "date": "2026-03-05",
                 "amount": "42.00",
                 "description": "Biglietto treno",
                 "pre_authorized": False,
@@ -101,7 +101,7 @@ async def test_a_bad_argument_comes_back_as_guidance_not_a_pydantic_dump(
             {
                 "contract_id": contract_id,
                 "category_id": category_id,
-                "data": "2026-03-05",
+                "date": "2026-03-05",
                 "amount": "42.00",
                 "description": "Biglietto treno",
                 "pre_authorized": True,
@@ -115,7 +115,7 @@ async def test_a_bad_argument_comes_back_as_guidance_not_a_pydantic_dump(
 async def test_update_recomputes_reimbursable_and_list_reflects_it(server, mcp_session) -> None:
     contract_id = _contract_id(
         mcp_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(mcp_session)
 
@@ -125,7 +125,7 @@ async def test_update_recomputes_reimbursable_and_list_reflects_it(server, mcp_s
             {
                 "contract_id": contract_id,
                 "category_id": category_id,
-                "data": "2026-03-05",
+                "date": "2026-03-05",
                 "amount": "42.00",
                 "description": "Biglietto treno",
                 "pre_authorized": False,

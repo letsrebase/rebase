@@ -208,9 +208,13 @@ def project_revenue(
     contract_id: UUID,
     session: SessionDep,
     actor: ActorDep,
-    da: Annotated[date, Query(description="Inizio della finestra, YYYY-MM-DD, inclusa")],
-    a: Annotated[date, Query(description="Fine della finestra, YYYY-MM-DD, esclusa")],
-    come_di: Annotated[
+    date_from: Annotated[
+        date, Query(alias="from", description="Inizio della finestra, YYYY-MM-DD, inclusa")
+    ],
+    date_to: Annotated[
+        date, Query(alias="to", description="Fine della finestra, YYYY-MM-DD, esclusa")
+    ],
+    as_of: Annotated[
         date | None,
         Query(description="Data di riferimento per la finestra di irrevocabilità; default oggi"),
     ] = None,
@@ -218,5 +222,5 @@ def project_revenue(
     """Il ricavo «programmato» oltre la finestra di irrevocabilità, più il contributo
     dell'eventuale assunzione di rinnovo -- una figura distinta dal `projected` di
     `GET /api/analytics/overview`, mai combinata con esso."""
-    query = ContractProjectionQuery(da=da, a=a, come_di=come_di)
+    query = ContractProjectionQuery(date_from=date_from, date_to=date_to, as_of=as_of)
     return ContractProjectionService(session).project(contract_id, query, actor)

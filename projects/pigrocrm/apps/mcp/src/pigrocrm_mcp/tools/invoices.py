@@ -287,8 +287,8 @@ def set_payment_state(
 def describe_fiscal_profile(
     context: McpContext, legal_entity_id: str | None = None
 ) -> dict[str, Any]:
-    """The fiscal parameters of one azienda; none means the default, which on a space
-    with one azienda is the only one (REB-616, spec 2026-10-03 §7)."""
+    """The fiscal parameters of one legal entity; none means the default, which on a space
+    with one legal entity is the only one (REB-616, spec 2026-10-03 §7)."""
     return FiscalProfileService(context.session).describe(
         context.actor, parse_legal_entity_id(legal_entity_id)
     )
@@ -310,33 +310,34 @@ def update_fiscal_profile(
     )
 
 
-# What an agent needs to pick an azienda, and nothing it does not: the two flags, the
+# What an agent needs to pick an legal entity, and nothing it does not: the two flags, the
 # nation and the three names (REB-616).
 LEGAL_ENTITY_FIELDS: Final[set[str]] = {
     "id",
-    "nome",
+    "name",
     "legal_name",
     "vat_number",
     "country",
-    "predefinita",
+    "is_default",
     "active",
 }
 
 
-# What `describe_legal_entity` adds beyond the row and `update_legal_entity` ignores on the way back.
-READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"ha_logo", "ha_firma"})
+# What `describe_legal_entity` adds beyond the row and `update_legal_entity` ignores on the way
+# back.
+READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"has_logo", "has_signature"})
 
 
 def suggest_legal_entity(context: McpContext, country: str | None) -> dict[str, Any]:
-    """The azienda `LegalEntityService.propose` picks for a customer of `country`
+    """The legal entity `LegalEntityService.propose` picks for a customer of `country`
     (REB-624, spec 2026-10-03 §1.6), in the shape `list_legal_entities` answers."""
     row = LegalEntityService(context.session).propose(country)
     return LegalEntityRead.model_validate(row).model_dump(mode="json", include=LEGAL_ENTITY_FIELDS)
 
 
 def list_legal_entities(context: McpContext) -> list[dict[str, Any]]:
-    """Every active azienda of the space, the default first: id, short name, ragione
-    sociale, nazione and the two flags, which is what an agent needs to pick one."""
+    """Every active legal entity of the space, the default first: id, short name, legal
+    name, country and the two flags, which is what an agent needs to pick one."""
     return [
         a.model_dump(mode="json", include=LEGAL_ENTITY_FIELDS)
         for a in LegalEntityService(context.session).list(context.actor)
@@ -351,7 +352,7 @@ def describe_legal_entity(
     `LegalEntityService.get` is one of the two reads in this product deliberately left
     un-role-gated at the service layer, because the PDF header needs it for every
     role -- so there is no role for which this is agent-only knowledge. The logo and the
-    signature appear as `ha_logo` and `ha_firma`, since REB-627: the files are uploaded
+    signature appear as `has_logo` and `has_signature`, since REB-627: the files are uploaded
     over the REST API and their keys are the server's. The write on the same row is
     `update_legal_entity` (ORB-188). Without `id`, the two state flags, the timestamps and the
     two image flags, what this returns can be handed back to the write unchanged:
@@ -368,56 +369,58 @@ def describe_legal_entity(
         **profile.model_dump(
             mode="json", exclude={*TEMPLATE_EXCLUDED_FIELDS, "logo_key", "signature_key"}
         ),
-        "ha_logo": profile.logo_key is not None,
-        "ha_firma": profile.signature_key is not None,
+        "has_logo": profile.logo_key is not None,
+        "has_signature": profile.signature_key is not None,
     }
 
 
 def create_legal_entity(
     context: McpContext, data: dict[str, Any], tax_profile: dict[str, Any]
 ) -> dict[str, Any]:
-    """A second azienda with its fiscal profile, in one call (REB-631, spec 2026-10-03
+    """A second legal entity with its fiscal profile, in one call (REB-631, spec 2026-10-03
     §7): `data` in `LegalEntityCreate`'s shape, `tax_profile` in `FiscalProfileUpsert`'s,
     the two bodies the REST route takes as one. Admin-only through the service, and
     agent-allowed like `update_legal_entity` since ORB-188: setting a space up is not a
     fiscal act. The two image flags are dropped as `update_legal_entity` drops them, so an
     agent that copies `describe_legal_entity`'s answer as a starting point is not refused."""
-    data = LegalEntityCreate.model_validate(
+    payload = LegalEntityCreate.model_validate(
         {
             **{key: value for key, value in data.items() if key not in READ_ONLY_FLAGS},
             "fiscal_profile": tax_profile,
         }
     )
-    return LegalEntityService(context.session).create(data, context.actor).model_dump(mode="json")
+    return (
+        LegalEntityService(context.session).create(payload, context.actor).model_dump(mode="json")
+    )
 
 
 def update_legal_entity(
     context: McpContext, data: dict[str, Any], legal_entity_id: str | None = None
 ) -> dict[str, Any]:
-    """One azienda's row, replaced (ORB-188): ragione sociale, partita IVA or codice
-    fiscale, address, PEC, codice SDI, contacts. Admin-only through the service, which
-    also checks the partita IVA and the codice SDI by shape. With no `legal_entity_id` it is
-    the default azienda, created on the spot when the space has none yet: the first
+    """One legal entity's row, replaced (ORB-188): legal name, VAT number or tax
+    code, address, PEC, SDI code, contacts. Admin-only through the service, which
+    also checks the VAT number and the SDI code by shape. With no `legal_entity_id` it is
+    the default legal entity, created on the spot when the space has none yet: the first
     thing a person asks the assistant they just connected is to set it (REB-188), and
-    a prompt written for a one-azienda space keeps working."""
+    a prompt written for a one-legal entity space keeps working."""
     # Spelled as `LegalEntityService(...)` on each call rather than bound to a local:
     # `test_mcp_surface_coverage.py` resolves receivers per function, so a local would be
     # read too; this stays as written because it reads the same either way.
     # The two image flags `describe_legal_entity` answers are read-only facts, not columns:
     # dropped here so the read can be handed back whole, as the tool's own docstring
     # prescribes, without `LegalEntityUpsert` refusing them as extra keys.
-    data = LegalEntityUpsert.model_validate(
+    payload = LegalEntityUpsert.model_validate(
         {key: value for key, value in data.items() if key not in READ_ONLY_FLAGS}
     )
     target = parse_legal_entity_id(legal_entity_id)
     if target is None:
         return (
             LegalEntityService(context.session)
-            .upsert_default(data, context.actor)
+            .upsert_default(payload, context.actor)
             .model_dump(mode="json")
         )
     return (
         LegalEntityService(context.session)
-        .update(target, data, context.actor)
+        .update(target, payload, context.actor)
         .model_dump(mode="json")
     )

@@ -27,7 +27,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": COLLABORATOR_PASSWORD, "nome": "Test", "role": role},
+        json={"email": email, "password": COLLABORATOR_PASSWORD, "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -210,7 +210,7 @@ def test_the_import_and_the_gaps_are_keyed_by_the_legal_entity_named(
     before milestone 5, has a register of its own. The same number lands on both, and
     the gaps of one never show on the other's route."""
     second = LegalEntity(
-        nome="rebase",
+        name="rebase",
         legal_name="Rebase S.r.l.",
         vat_number="09876543210",
         address="Via Po 1",

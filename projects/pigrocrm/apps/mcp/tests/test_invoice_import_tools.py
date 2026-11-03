@@ -200,7 +200,7 @@ async def test_the_import_and_the_gaps_take_the_legal_entity_they_are_for(
 
     _seed_fiscal_and_legal_entity_profiles(mcp_session)
     second = LegalEntity(
-        nome="rebase",
+        name="rebase",
         legal_name="Rebase S.r.l.",
         vat_number="09876543210",
         address="Via Po 1",

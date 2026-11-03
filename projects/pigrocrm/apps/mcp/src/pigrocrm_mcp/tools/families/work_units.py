@@ -35,8 +35,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def list_work_units(
         contract_id: str | None = None,
-        da: IsoDateStr = None,
-        a: IsoDateStr = None,
+        date_from: IsoDateStr = None,
+        date_to: IsoDateStr = None,
         status: str | None = None,
         legal_entity_id: str | None = None,
         limit: Annotated[
@@ -45,16 +45,16 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         ] = 200,
     ) -> dict[str, Any]:
         """Elenca le giornate di contratto, dalla più recente. Serve `contract_id` o una data
-        (`da`, `a`, incluse, `YYYY-MM-DD`). `status`: `proposed`, `approved`, `worked`,
+        (`date_from`, `date_to`, incluse, `YYYY-MM-DD`). `status`: `proposed`, `approved`, `worked`,
         `worked_without_approval`, `invoiced`, `paid`, `disputed`, `revoked`,
-        `rejected`, `non_billable`. `troncato: true` = ce n'erano più di `limit`.
+        `rejected`, `non_billable`. `truncated: true` = ce n'erano più di `limit`.
         `legal_entity_id` filtra per azienda.
         """
         return work_units.search(
             context,
             contract_id=contract_id,
-            da=da,
-            a=a,
+            date_from=date_from,
+            date_to=date_to,
             status=status,
             legal_entity_id=parse_legal_entity_id(legal_entity_id),
             limit=cast(int, limit),

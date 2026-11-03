@@ -54,13 +54,13 @@ def _upsert(**parts: dict[str, Any]) -> dict[str, Any]:
     """The body of spec § 2.3, with any part's fields overridden by name -- the same
     shape as `test_engagements.py`'s own `_upsert`, as JSON rather than a model."""
     body: dict[str, dict[str, Any]] = {
-        "freelancer": {"email": FREELANCER_EMAIL, "nome": "Ada", "last_name": "Lovelace"},
+        "freelancer": {"email": FREELANCER_EMAIL, "first_name": "Ada", "last_name": "Lovelace"},
         "letter": {
             "number": "3/2026",
             "role": "Backend developer",
-            "legal_entity": "Acme S.r.l.",
+            "company_name": "Acme S.r.l.",
             "start_date": "2026-10-01",
-            "data_fine": "2026-12-31",
+            "end_date": "2026-12-31",
             "fee": "400.00",
             "expected_days": 40,
         },
@@ -149,7 +149,7 @@ def _log_hours(settings: Settings, slug: str, deal_id: UUID, day: date, descript
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=admin.id,
-                data=day,
+                date=day,
                 hours=Decimal("8.00"),
                 description=description,
             ),
@@ -299,7 +299,7 @@ def test_report_answers_the_hours(door_client: TestClient, container_settings: S
 
     report = door_client.get(
         f"/api/rebase/engagements/{match_id}/report",
-        params={"da": first.isoformat()},
+        params={"from": first.isoformat()},
         headers=_bearer(),
     )
     assert report.status_code == 200, report.text
@@ -307,9 +307,9 @@ def test_report_answers_the_hours(door_client: TestClient, container_settings: S
     assert body["slug"] == linked["slug"]
     assert body["deal_url"] == linked["deal_url"]
     assert [g["description"] for g in body["days"]] == ["Setup", "API"]
-    assert body["hours_total"] == "16.00"
-    assert body["invoiced_hours"] == "0.00"
-    assert body["hours_uninvoiced"] == "16.00"
+    assert body["total_hours"] == "16.00"
+    assert body["billed_hours"] == "0.00"
+    assert body["unbilled_hours"] == "16.00"
 
 
 def _gone_problem(refused: httpx.Response) -> None:
@@ -376,7 +376,7 @@ def test_report_reversed_period_is_422(door_client: TestClient) -> None:
 
     refused = door_client.get(
         f"/api/rebase/engagements/{match_id}/report",
-        params={"da": "2026-10-02", "a": "2026-10-01"},
+        params={"from": "2026-10-02", "to": "2026-10-01"},
         headers=_bearer(),
     )
     assert refused.status_code == 422, refused.text

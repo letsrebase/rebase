@@ -33,7 +33,7 @@ def _contract_id(logged_in: TestClient, *, expense_policy: dict[str, Any]) -> st
 
 
 def _category_id(logged_in: TestClient) -> str:
-    response = logged_in.post("/api/cost-categories", json={"nome": "Trasferte"})
+    response = logged_in.post("/api/cost-categories", json={"name": "Trasferte"})
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
@@ -46,7 +46,7 @@ def test_create_reports_the_trigger_computed_reimbursable(logged_in: TestClient)
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "42.00",
             "description": "Biglietto treno",
         },
@@ -60,7 +60,7 @@ def test_create_reports_the_trigger_computed_reimbursable(logged_in: TestClient)
 def test_create_flags_non_reimbursable_without_a_422(logged_in: TestClient) -> None:
     contract_id = _contract_id(
         logged_in,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(logged_in)
 
@@ -68,7 +68,7 @@ def test_create_flags_non_reimbursable_without_a_422(logged_in: TestClient) -> N
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "42.00",
             "description": "Biglietto treno",
             "pre_authorized": False,
@@ -88,7 +88,7 @@ def test_pre_authorized_without_to_reference_is_to_422_naming_the_field(
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "42.00",
             "description": "Biglietto treno",
             "pre_authorized": True,
@@ -103,7 +103,7 @@ def test_create_on_an_unknown_contract_is_a_404(logged_in: TestClient) -> None:
         "/api/contracts/00000000-0000-0000-0000-000000000000/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "42.00",
             "description": "Biglietto treno",
         },
@@ -118,7 +118,7 @@ def test_list_and_update_round_trip(logged_in: TestClient) -> None:
         f"/api/contracts/{contract_id}/expenses",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "42.00",
             "description": "Biglietto treno",
         },
@@ -159,4 +159,4 @@ def test_create_refuses_a_malformed_expense_policy_with_422(logged_in: TestClien
         },
     )
     assert response.status_code == 422, response.text
-    assert "politica_spese.kind" in response.text
+    assert "expense_policy.kind" in response.text

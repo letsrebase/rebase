@@ -69,10 +69,10 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         # `position` well past the defaults, so the ordering of anything already there is
         # left alone.
         open = PipelineStage(
-            nome=STAGE_OPEN, position=900, default_probability=50, type="open", code=None
+            name=STAGE_OPEN, position=900, default_probability=50, type="open", code=None
         )
         won = PipelineStage(
-            nome=STAGE_WON, position=901, default_probability=100, type="won", code=None
+            name=STAGE_WON, position=901, default_probability=100, type="won", code=None
         )
         session.add_all([open, won])
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
@@ -80,7 +80,7 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         session.flush()
         session.add(
             Deal(
-                nome=f"{_PREFIX} aperto",
+                name=f"{_PREFIX} aperto",
                 customer_id=customer.id,
                 pipeline_stage_id=open.id,
                 expected_value=Decimal("1000.00"),
@@ -90,7 +90,7 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         )
         session.add(
             Deal(
-                nome=f"{_PREFIX} vinto",
+                name=f"{_PREFIX} vinto",
                 customer_id=customer.id,
                 pipeline_stage_id=won.id,
                 expected_value=Decimal("5000.00"),
@@ -106,9 +106,9 @@ def dashboard_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Any]:
         )
     finally:
         with factory() as session:
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             session.commit()
     # `automation_config` is deliberately left alone. `describe_automations` creates the
     # single row on demand and this file never changes it, so what would be left behind is
@@ -183,8 +183,8 @@ async def test_the_tool_promises_the_agent_a_date_and_a_default(dashboard_server
         )
         payload = _payload(await client.call_tool("get_commercial_dashboard", {}))
 
-    assert payload["period"] == {"da": first.isoformat(), "a": last.isoformat()}
-    for bound in ("da", "a"):
+    assert payload["period"] == {"date_from": first.isoformat(), "date_to": last.isoformat()}
+    for bound in ("date_from", "date_to"):
         advertised = tool.input_schema["properties"][bound]
         formats = {branch.get("format") for branch in advertised.get("anyOf", [advertised])}
         assert "date" in formats, advertised
@@ -242,10 +242,10 @@ async def test_the_period_is_taken_from_the_arguments_and_echoed_back(
     async with Client(dashboard_server) as client:
         payload = _payload(
             await client.call_tool(
-                "get_commercial_dashboard", {"da": "2026-03-01", "a": "2026-03-31"}
+                "get_commercial_dashboard", {"date_from": "2026-03-01", "date_to": "2026-03-31"}
             )
         )
-    assert payload["period"] == {"da": "2026-03-01", "a": "2026-03-31"}
+    assert payload["period"] == {"date_from": "2026-03-01", "date_to": "2026-03-31"}
 
 
 async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
@@ -261,11 +261,11 @@ async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    ("arguments", "perche"),
+    ("arguments", "why"),
     [
-        ({"da": "2026-03-31", "a": "2026-03-01"}, "il periodo è invertito"),
-        ({"da": "2026-03-01"}, "metà periodo non è un periodo"),
-        ({"da": "non-una-data", "a": "2026-03-31"}, "la data non è ISO"),
+        ({"date_from": "2026-03-31", "date_to": "2026-03-01"}, "il periodo è invertito"),
+        ({"date_from": "2026-03-01"}, "metà periodo non è un periodo"),
+        ({"date_from": "non-una-data", "date_to": "2026-03-31"}, "la data non è ISO"),
     ],
 )
 async def test_a_bad_period_is_an_error_the_agent_can_read(
@@ -290,7 +290,7 @@ async def test_the_session_survives_a_rejected_period(dashboard_server: Any) -> 
     session, which is exactly the kind of state that outlives a naive error path."""
     async with Client(dashboard_server) as client:
         rejected = await client.call_tool(
-            "get_commercial_dashboard", {"da": "2026-03-31", "a": "2026-03-01"}
+            "get_commercial_dashboard", {"date_from": "2026-03-31", "date_to": "2026-03-01"}
         )
         assert rejected.is_error
         after = await client.call_tool("get_commercial_dashboard", {})
@@ -351,8 +351,8 @@ async def test_every_dashboard_tool_offers_the_legal_entity_and_echoes_it(
         ):
             assert "legal_entity_id" in tools[name].input_schema["properties"], name
             assert "legal_entity_id" in (tools[name].description or ""), name
-            tutte = _payload(await client.call_tool(name, {}))
-            assert tutte["legal_entity_id"] is None, name
+            all_entities = _payload(await client.call_tool(name, {}))
+            assert all_entities["legal_entity_id"] is None, name
             scoped = _payload(await client.call_tool(name, {"legal_entity_id": nobody}))
             assert scoped["legal_entity_id"] == nobody, name
         commercial = _payload(
@@ -391,20 +391,20 @@ async def test_the_operational_feed_hides_account_events_from_an_agent_token(
     try:
         async with Client(dashboard_server) as client:
             feed = _payload(await client.call_tool("get_operational_dashboard", {}))
-        raw = json.dumps(feed["recent_task"])
+        raw = json.dumps(feed["recent_activity"])
         assert marker not in raw
         assert f"{_PREFIX}-tok" not in raw
-        assert {row["entity_type"] for row in feed["recent_task"]}.isdisjoint(
+        assert {row["entity_type"] for row in feed["recent_activity"]}.isdisjoint(
             {"invitation", "user", "digest"}
         )
         # The business row is still there: the filter narrows the feed, it does not empty it.
-        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["recent_task"]]
+        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["recent_activity"]]
 
         # A person administering the space keeps the whole feed.
         person = Actor(id=None, type="user", role="admin")
         with factory() as session:
             full = DashboardService(session).get_operational_dashboard(person)
-        assert "invitation" in {row.entity_type for row in full.recent_task}
+        assert "invitation" in {row.entity_type for row in full.recent_activity}
     finally:
         with factory() as session:
             session.execute(delete(Activity).where(Activity.id.in_(ids)))

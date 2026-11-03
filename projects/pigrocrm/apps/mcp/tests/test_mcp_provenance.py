@@ -60,7 +60,7 @@ def test_every_free_text_key_marks_so_removing_one_is_a_failing_test() -> None:
         "payload",
         # PMCP-04: names and roles are text somebody typed too.
         "legal_name",
-        "nome",
+        "first_name",
         "last_name",
         "role",
         "supplier",
@@ -148,7 +148,7 @@ async def test_every_entity_resource_opens_with_the_marker(
     from pigrocrm.core.people.schemas import PersonCreate
     from pigrocrm.core.people.service import PersonService
 
-    person = PersonService(mcp_session).create(PersonCreate(nome="Anna"), ADMIN)
+    person = PersonService(mcp_session).create(PersonCreate(first_name="Anna"), ADMIN)
     NoteService(mcp_session).add("deal", seeded_deal_id, NoteCreate(text="nota di un deal"), ADMIN)
 
     async with Client(server) as client:

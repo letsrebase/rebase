@@ -36,8 +36,8 @@ os.environ.setdefault("PIGROCRM_JWT_SECRET", TEST_JWT_SECRET)
 
 
 def _ensure_committed_default(engine: Engine) -> None:
-    """One committed default azienda in the worker's database (REB-623): since the
-    chain, a customer row and everything under it need an azienda, and a world that
+    """One committed default legal entity in the worker's database (REB-623): since the
+    chain, a customer row and everything under it need an legal entity, and a world that
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
@@ -45,12 +45,12 @@ def _ensure_committed_default(engine: Engine) -> None:
 
     with engine.begin() as connection:
         if connection.execute(
-            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
         ).first():
             return
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
 
@@ -72,18 +72,18 @@ def api_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def api_session(api_engine: Engine) -> Iterator[Session]:
     connection = api_engine.connect()
     transaction = connection.begin()
-    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # The default legal entity every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
     from pigrocrm.core.legal_entities.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
     if not connection.execute(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).first():
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
@@ -152,7 +152,7 @@ def client(api_session: Session, tmp_path: Path) -> Iterator[TestClient]:
 @pytest.fixture
 def admin_user(api_session: Session):
     return UserService(api_session).create(
-        UserCreate(email=ADMIN_EMAIL, password=ADMIN_PASSWORD, nome="Admin", role="admin"),
+        UserCreate(email=ADMIN_EMAIL, password=ADMIN_PASSWORD, name="Admin", role="admin"),
         Actor.system(),
     )
 
@@ -172,7 +172,7 @@ def _client_as(client: TestClient, session: Session, *, email: str, role: Role) 
     over real HTTP -- not only at the service layer, where every existing test in
     this suite already covers it."""
     UserService(session).create(
-        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Test", role=role),
+        UserCreate(email=email, password=ADMIN_PASSWORD, name="Test", role=role),
         Actor.system(),
     )
     response = client.post("/api/auth/login", json={"email": email, "password": ADMIN_PASSWORD})

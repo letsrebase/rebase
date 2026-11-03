@@ -62,13 +62,13 @@ def delete(context: McpContext, note_id: str) -> dict[str, str]:
 
 
 def thread(context: McpContext, entity_type: str, entity_id: UUID) -> dict[str, Any]:
-    """The `note` and `note_totale` keys a `get_*` answer adds to the record: the latest
+    """The `note` and `note_total` keys a `get_*` answer adds to the record: the latest
     `THREAD_LIMIT` notes, newest first, and how many the record has."""
     service = NoteService(context.session)
     notes = service.list_for_entity(entity_type, entity_id, context.actor, limit=THREAD_LIMIT)
     return {
         "note": [note.model_dump(mode="json") for note in notes],
-        "note_totale": service.count_for_entity(entity_type, entity_id, context.actor),
+        "note_total": service.count_for_entity(entity_type, entity_id, context.actor),
     }
 
 

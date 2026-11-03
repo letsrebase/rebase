@@ -47,8 +47,8 @@ def _payload(result: Any) -> dict[str, Any]:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-def _member(session: Session, nome: str, key: str, role: str) -> User:
-    user = User(email=f"{key}@example.test", password_hash="x", nome=nome, role=role)
+def _member(session: Session, name: str, key: str, role: str) -> User:
+    user = User(email=f"{key}@example.test", password_hash="x", name=name, role=role)
     session.add(user)
     session.flush()
     return user
@@ -101,9 +101,9 @@ def records(mcp_session: Session, seeded_customer_id: str) -> dict[str, UUID]:
     PipelineService(mcp_session).seed_defaults(SYSTEM)
     customer = UUID(seeded_customer_id)
     deal = DealService(mcp_session).create(
-        DealCreate(nome="Progetto", customer_id=customer), SYSTEM
+        DealCreate(name="Progetto", customer_id=customer), SYSTEM
     )
-    person = PersonService(mcp_session).create(PersonCreate(nome="Anna"), SYSTEM)
+    person = PersonService(mcp_session).create(PersonCreate(first_name="Anna"), SYSTEM)
     return {"deal": deal.id, "customer": customer, "person": person.id}
 
 
@@ -143,7 +143,7 @@ async def test_a_note_is_signed_with_the_token_owner_and_the_mcp_channel(
     assert added["editable"] is True
     assert "provenance" in added
     assert thread["note"] == [{k: v for k, v in added.items() if k != "provenance"}]
-    assert thread["note_totale"] == 1
+    assert thread["note_total"] == 1
 
 
 async def test_no_note_tool_takes_an_author_or_a_date(marco_server: Any) -> None:
@@ -270,7 +270,7 @@ async def test_an_admin_edits_and_deletes_a_note_of_somebody_else(
     assert edited["edited_by"] == "Anna Neri"
     assert deleted == {"status": "eliminata", "note_id": second["id"]}
     assert [note["text"] for note in thread["note"]] == ["Corretta"]
-    assert thread["note_totale"] == 1
+    assert thread["note_total"] == 1
 
 
 async def test_a_note_the_system_or_rebase_wrote_is_refused_even_to_an_admin(
@@ -346,11 +346,11 @@ async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there
     assert len(texts) == 50
     assert texts[0] == "nota 054"
     assert texts[-1] == "nota 005"
-    assert read["note_totale"] == 55
+    assert read["note_total"] == 55
     assert read["provenance"] == PROVENANCE_TEXT_FREE
     description = tools[GET_TOOLS[entity_type][0]].description
     assert "ultime 50 note" in description
-    assert "note_totale" in description
+    assert "note_total" in description
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
@@ -425,11 +425,13 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
         deal = _payload(
             await client.call_tool(
                 "create_deal",
-                {"nome": "Progetto", "customer_id": customer["id"], "note": "In trattativa"},
+                {"name": "Progetto", "customer_id": customer["id"], "note": "In trattativa"},
             )
         )
         person = _payload(
-            await client.call_tool("create_person", {"nome": "Anna", "note": "Referente tecnico"})
+            await client.call_tool(
+                "create_person", {"first_name": "Anna", "note": "Referente tecnico"}
+            )
         )
         threads = {
             "customer": await _thread(client, "customer", UUID(customer["id"])),
@@ -454,7 +456,7 @@ async def test_create_without_a_note_writes_none(marco_server: Any) -> None:
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         thread = await _thread(client, "customer", UUID(customer["id"]))
 
-    assert thread["note"] == [] and thread["note_totale"] == 0
+    assert thread["note"] == [] and thread["note_total"] == 0
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])

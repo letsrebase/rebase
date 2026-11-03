@@ -26,8 +26,8 @@ SETUP = Actor(id=None, type="system", role="admin")
 
 
 def _ensure_committed_default(engine: Engine) -> None:
-    """One committed default azienda in the worker's database (REB-623): since the
-    chain, a customer row and everything under it need an azienda, and a world that
+    """One committed default legal entity in the worker's database (REB-623): since the
+    chain, a customer row and everything under it need an legal entity, and a world that
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
@@ -35,12 +35,12 @@ def _ensure_committed_default(engine: Engine) -> None:
 
     with engine.begin() as connection:
         if connection.execute(
-            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
         ).first():
             return
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
 
@@ -60,18 +60,18 @@ def mcp_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     connection = mcp_engine.connect()
     transaction = connection.begin()
-    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # The default legal entity every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
     from pigrocrm.core.legal_entities.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
     if not connection.execute(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).first():
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", legal_name="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
@@ -156,11 +156,11 @@ def seeded_template_id(mcp_session: Session) -> str:
     )
     template = TemplateService(mcp_session).create(
         TemplateCreate(
-            nome="Consulenza CTO",
-            type="offerta",
-            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
+            name="Consulenza CTO",
+            type="offer",
+            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{subject}}",
             declared_variables=[
-                TemplateVariable(nome="oggetto", label="Oggetto", type="text", required=True)
+                TemplateVariable(name="subject", label="Oggetto", type="text", required=True)
             ],
         ),
         SETUP,
@@ -177,7 +177,7 @@ def seeded_user_id(mcp_session: Session):
     conftest.py`'s identical fixture."""
     from pigrocrm.core.auth.models import User
 
-    user = User(email="worker-mcp@example.test", password_hash="x", nome="Worker")
+    user = User(email="worker-mcp@example.test", password_hash="x", name="Worker")
     mcp_session.add(user)
     mcp_session.flush()
     return user.id
@@ -192,11 +192,11 @@ def seeded_deal_id(mcp_session: Session, seeded_customer_id: str):
     from pigrocrm.core.deals.models import Deal
     from pigrocrm.core.pipeline.models import PipelineStage
 
-    stage = PipelineStage(nome="Aperto", position=0, default_probability=10, type="open")
+    stage = PipelineStage(name="Aperto", position=0, default_probability=10, type="open")
     mcp_session.add(stage)
     mcp_session.flush()
     deal = Deal(
-        nome="Progetto MCP",
+        name="Progetto MCP",
         customer_id=UUID(seeded_customer_id),
         pipeline_stage_id=stage.id,
         probability=10,

@@ -80,7 +80,7 @@ OPERATIONAL_KEYS = {
     "week",
     "backlog",
     "signals",
-    "recent_task",
+    "recent_activity",
 }
 
 RECEIVABLES_KEYS = {
@@ -122,7 +122,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         # connection, and a second one would wait on its unique index for the whole
         # test, so this one is named on each invoice below instead of being found.
         legal_entity_id = committed_default_legal_entity(
-            session, nome=f"{_PREFIX} Azienda", predefinita=False
+            session, name=f"{_PREFIX} Azienda", is_default=False
         )
         assert legal_entity_id is not None
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
@@ -130,7 +130,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         session.add(customer)
         session.flush()
         open = Deal(
-            nome=f"{_PREFIX} aperto",
+            name=f"{_PREFIX} aperto",
             customer_id=customer.id,
             pipeline_stage_id=stages["lead"].id,
             expected_value=Decimal("1000.00"),
@@ -139,9 +139,9 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         )
         session.add(open)
         won = Deal(
-            nome=f"{_PREFIX} vinto",
+            name=f"{_PREFIX} vinto",
             customer_id=customer.id,
-            pipeline_stage_id=stages["vinto"].id,
+            pipeline_stage_id=stages["won"].id,
             expected_value=Decimal("5000.00"),
             probability=100,
             closed_at=today_local(),
@@ -165,7 +165,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         # is deliberately load-bearing on six figures at once: `pnl.in_progress` (its deal
         # sits on an open stage), `issued_invoices`, `unpaid`, `expired`, and two of
         # the three operational signals -- `invoiced_unwon` and
-        # `scaduto_non_incassato`. Without it, the money-as-a-string test below would be
+        # `overdue_unpaid`. Without it, the money-as-a-string test below would be
         # asserting the type of `"0.00"` on every path, which a dashboard wired to nothing
         # at all would pass just as well.
         #
@@ -245,7 +245,7 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage))
             remove_legal_entity(session, legal_entity_id)
@@ -304,16 +304,20 @@ def test_the_endpoint_returns_what_the_service_returns(
 def test_the_period_round_trips_through_the_query_string(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-01", "a": "2026-03-31"})
-    assert response.json()["period"] == {"da": "2026-03-01", "a": "2026-03-31"}
+    response = logged_in.get(
+        "/api/dashboard/sales", params={"from": "2026-03-01", "to": "2026-03-31"}
+    )
+    assert response.json()["period"] == {"date_from": "2026-03-01", "date_to": "2026-03-31"}
 
 
 def test_an_inverted_period_is_a_422_naming_the_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-31", "a": "2026-03-01"})
+    response = logged_in.get(
+        "/api/dashboard/sales", params={"from": "2026-03-31", "to": "2026-03-01"}
+    )
     assert response.status_code == 422
-    assert response.json()["field"] == "da"
+    assert response.json()["field"] == "from"
 
 
 @pytest.mark.parametrize(("da", "a"), [("2026-03-01", None), (None, "2026-03-31")])
@@ -322,10 +326,10 @@ def test_half_a_period_is_a_422_naming_the_missing_bound(
 ) -> None:
     """Both spellings, because a rule written as `if da is None` alone accepts the other
     one -- and `field` is what `fieldErrorFrom` in the web client reads."""
-    params = {key: value for key, value in (("da", da), ("a", a)) if value is not None}
+    params = {key: value for key, value in (("from", da), ("to", a)) if value is not None}
     response = logged_in.get("/api/dashboard/sales", params=params)
     assert response.status_code == 422
-    assert response.json()["field"] == ("da" if da is None else "a")
+    assert response.json()["field"] == ("from" if da is None else "to")
 
 
 def test_money_is_serialised_as_a_string(logged_in: TestClient, dashboard_corpus: Engine) -> None:
@@ -367,7 +371,7 @@ def test_the_economic_dashboard_is_one_request(
     a `revenue` key at the top level would mean somebody had recombined the two columns on
     the way out."""
     response = logged_in.get(
-        "/api/dashboard/economic", params={"da": "2026-03-01", "a": "2026-03-31"}
+        "/api/dashboard/economic", params={"from": "2026-03-01", "to": "2026-03-31"}
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -416,7 +420,7 @@ def test_the_economic_dashboard_carries_no_fiscal_field(
     this file ever being edited -- fails here too.
     """
     body = logged_in.get("/api/dashboard/economic").text
-    for forbidden in ("imponibile_fiscale", "substitute_tax", "contributi", "netto_stimato"):
+    for forbidden in ("taxable_amount", "substitute_tax", "contributions", "estimated_net_income"):
         assert forbidden not in body, forbidden
 
 
@@ -426,10 +430,10 @@ def test_an_inverted_period_on_the_economic_endpoint_is_a_422_naming_the_field(
     """The same `PeriodQuery.resolve`, so the same answer: the route adds no validation
     of its own and must not lose the one the service performs."""
     response = logged_in.get(
-        "/api/dashboard/economic", params={"da": "2026-03-31", "a": "2026-03-01"}
+        "/api/dashboard/economic", params={"from": "2026-03-31", "to": "2026-03-01"}
     )
     assert response.status_code == 422
-    assert response.json()["field"] == "da"
+    assert response.json()["field"] == "from"
 
 
 # -- the operational dashboard ---------------------------------------------------
@@ -464,12 +468,12 @@ def test_a_period_on_the_operational_endpoint_is_ignored_not_honoured(
     answer is byte-for-byte the one given without it, rather than merely a 200 -- a route
     that had quietly grown a period would still answer 200.
 
-    `calculated_at` and `recent_task` are excluded: the first is a different instant
+    `calculated_at` and `recent_activity` are excluded: the first is a different instant
     by construction, and the second is a global feed any other committed activity moves.
     """
     plain = logged_in.get("/api/dashboard/operational").json()
     with_period = logged_in.get(
-        "/api/dashboard/operational", params={"da": "2020-01-01", "a": "2020-01-31"}
+        "/api/dashboard/operational", params={"from": "2020-01-01", "to": "2020-01-31"}
     )
     assert with_period.status_code == 200, with_period.text
     body = with_period.json()
@@ -497,9 +501,9 @@ def test_every_signal_carries_a_drill_through_link(
     body = logged_in.get("/api/dashboard/operational").json()
     assert [s["code"] for s in body["signals"]] == [
         "invoiced_unwon",
-        "vinto_da_fatturare",
-        "scaduto_non_incassato",
-        "concentrazione_sopra_soglia",
+        "won_to_invoice",
+        "overdue_unpaid",
+        "concentration_above_threshold",
     ]
     assert all(s["link"] for s in body["signals"])
     # The corpus's invoice makes two of the four non-zero, so the links below are being
@@ -509,7 +513,7 @@ def test_every_signal_carries_a_drill_through_link(
     # `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, below.
     counts = {s["code"]: s["count"] for s in body["signals"]}
     assert counts["invoiced_unwon"] >= 1
-    assert counts["scaduto_non_incassato"] >= 1
+    assert counts["overdue_unpaid"] >= 1
 
 
 def test_every_signal_link_names_a_filter_the_api_actually_declares(
@@ -525,7 +529,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     OpenAPI schema of the list endpoint it corresponds to, then sent for real: declared,
     accepted, and narrowing. A parameter FastAPI does not declare is one it ignores.
 
-    `concentrazione_sopra_soglia` is not in this loop, by design and not by omission: its
+    `concentration_above_threshold` is not in this loop, by design and not by omission: its
     own link is the concentration table itself, not a filtered list -- there is no
     "customers over the threshold" endpoint for a query parameter to narrow, so it would
     fail this loop's `items` assumption for a reason unrelated to the one the loop checks.
@@ -537,7 +541,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     assert body["signals"], "no signals, so this test proved nothing"
 
     for signal in body["signals"]:
-        if signal["code"] == "concentrazione_sopra_soglia":
+        if signal["code"] == "concentration_above_threshold":
             continue
         parts = urlsplit(signal["link"])
         target = SIGNAL_LINK_TARGETS[parts.path]
@@ -579,7 +583,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
         # The corpus's own azienda (non-default, see `dashboard_corpus`), named on the
         # row since the column default only knows a default.
         legal_entity_id = session.execute(
-            select(LegalEntity.id).where(LegalEntity.nome == f"{_PREFIX} Azienda")
+            select(LegalEntity.id).where(LegalEntity.name == f"{_PREFIX} Azienda")
         ).scalar_one()
         customer_id = customer.id
         session.add(
@@ -604,15 +608,15 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
         session.commit()
     try:
         body = logged_in.get("/api/dashboard/operational").json()
-        signal = next(s for s in body["signals"] if s["code"] == "concentrazione_sopra_soglia")
-        assert signal["link"] == "/app/?tab=economica"
+        signal = next(s for s in body["signals"] if s["code"] == "concentration_above_threshold")
+        assert signal["link"] == "/app?tab=economic"
 
         threshold = logged_in.get("/api/settings/space").json()["preferred_concentration_threshold"]
         overview = logged_in.get("/api/analytics/overview", params={"year": year}).json()
-        sopra_threshold = [
+        above_threshold = [
             row for row in overview["customer_concentration"] if row["share"] > threshold
         ]
-        assert len(sopra_threshold) == signal["count"]
+        assert len(above_threshold) == signal["count"]
         assert signal["count"] >= 1, "the added customer alone should cross the default share"
     finally:
         with session_factory(dashboard_corpus)() as session:
@@ -809,7 +813,7 @@ def test_the_runs_endpoint_returns_the_recent_activities(logged_in: TestClient) 
     response = logged_in.get("/api/automation-runs", params={"limit": 5})
     assert response.status_code == 200
     runs = response.json()
-    assert "automazione.configurazione_modificata" in [run["kind"] for run in runs]
+    assert "automation.config_changed" in [run["kind"] for run in runs]
     # A configuration change is not about a deal, and a bare `entity_id` here would render
     # as a link to a deal that does not exist.
     assert all(run["deal_id"] is None for run in runs)
@@ -831,15 +835,15 @@ def test_every_dashboard_takes_the_legal_entity_and_echoes_it(
 ) -> None:
     """The arithmetic is proven in `packages/core/tests/test_dashboard_per_azienda.py`;
     this is the wire: the parameter exists on all four, it is echoed back (`null` for
-    «tutte»), and under an azienda that owns nothing every figure the corpus put on
+    «all_entities»), and under an azienda that owns nothing every figure the corpus put on
     the page reads empty, while the page keeps its shape."""
     schema = logged_in.get("/openapi.json").json()
     declared = {p["name"] for p in schema["paths"][f"/api/dashboard/{path}"]["get"]["parameters"]}
     assert "legal_entity_id" in declared
 
-    tutte = logged_in.get(f"/api/dashboard/{path}")
-    assert tutte.status_code == 200, tutte.text
-    assert tutte.json()["legal_entity_id"] is None
+    all_entities = logged_in.get(f"/api/dashboard/{path}")
+    assert all_entities.status_code == 200, all_entities.text
+    assert all_entities.json()["legal_entity_id"] is None
 
     nobody = str(uuid4())
     scoped = logged_in.get(f"/api/dashboard/{path}", params={"legal_entity_id": nobody})

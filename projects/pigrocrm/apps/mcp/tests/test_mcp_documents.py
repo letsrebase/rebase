@@ -46,7 +46,7 @@ from pigrocrm.core.timetracking.schemas import TimeEntryCreate  # noqa: E402
 from pigrocrm.core.timetracking.service import TimeEntryService  # noqa: E402
 from pigrocrm_mcp.server import build_server  # noqa: E402
 
-# A Drive file id of the shape the titolare types into Impostazioni → Drive.
+# A Drive file id of the shape the owner types into Settings → Drive.
 STORAGE_FOLDER = "1CartellaScritturaMCP"
 REFRESH_TOKEN = "1//0gMcpDriveStorageRefresh"
 DRIVE_MAILBOX = "titolare@example.it"
@@ -94,8 +94,8 @@ async def test_describe_template_reports_the_variables_before_anyone_is_asked(
         result = await client.call_tool("describe_template", {"template_id": seeded_template_id})
 
     described = _payload(result)
-    assert [v["nome"] for v in described["variables"]] == ["subject"]
-    assert described["nome"] == "Consulenza CTO"
+    assert [v["name"] for v in described["variables"]] == ["subject"]
+    assert described["name"] == "Consulenza CTO"
 
 
 @needs_binaries
@@ -164,9 +164,9 @@ async def test_get_document_versions_lists_them_newest_first(server, seeded_offe
 
 async def test_the_four_document_tools_the_audit_added_are_registered(server) -> None:
     """Each was reachable over REST and excluded from MCP with a reason that only said
-    nobody had written the tool yet -- `TemplateService.preview` "non ha ancora
-    un'audience agentica", `DocumentService.regenerate` "e' una decisione della persona
-    che l'ha vista", `soft_delete`/`restore` "l'MCP non archivia documenti". None of the
+    nobody had written the tool yet -- `TemplateService.preview` "has no agent
+    audience yet", `DocumentService.regenerate` "is a decision for the person who
+    saw it", `soft_delete`/`restore` "MCP does not archive documents". None of the
     four decides anything a person has not already decided, and the last two are the
     archive/restore pair this surface already exposes for customers, deals, people,
     costs and time entries."""
@@ -193,10 +193,10 @@ async def test_preview_template_renders_without_creating_a_document(
             "preview_template",
             {
                 "template_id": seeded_template_id,
-                # `customer` is supplied by the caller here, unlike
+                # `cliente` is supplied by the caller here, unlike
                 # `create_document_from_template`, which reads it off the record: a
                 # preview is not filed under anything, so there is no record to read.
-                "variables": {"subject": "Advisory", "customer": {"legal_name": "ACME"}},
+                "variables": {"subject": "Advisory", "cliente": {"ragione_sociale": "ACME"}},
             },
         )
         assert not result.is_error, result.content[0].text
@@ -330,7 +330,7 @@ async def test_describe_legal_entity_reads_the_issuer_every_header_prints(
     assert profile["vat_number"] == "01234567890"
     # Whether a logo is set, never its storage key (REB-627): the keys are the server's,
     # and an agent that reads this hands it back to `update_legal_entity` unchanged.
-    assert profile["ha_logo"] is False
+    assert profile["has_logo"] is False
     assert "logo_key" not in profile
 
 
@@ -375,7 +375,7 @@ def _connected_drive(session: Session) -> GoogleDriveAccount:
     """
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
         role="admin",
         active=True,
@@ -510,7 +510,7 @@ async def test_binding_hours_to_a_draft_writes_through_the_servers_own_storage(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 2),
+            date=date(2026, 3, 2),
             hours=Decimal("4.00"),
             description="Analisi",
             billable=True,
@@ -570,7 +570,7 @@ def document_with_pdf(mcp_session: Session, seeded_customer_id: str, tmp_path: P
 async def test_read_document_text_returns_what_is_written_inside_the_pdf(
     server, document_with_pdf: str
 ) -> None:
-    """The reason the tool exists: a codice destinatario that lives only on a signed
+    """The reason the tool exists: a recipient code that lives only on a signed
     order form was, until this, recoverable solely by downloading the file and reading
     it by eye -- which an agent cannot do."""
     async with Client(server) as client:

@@ -58,7 +58,7 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
     """A collaboratore in the root database and a PAT of theirs; both removed after."""
     with session_factory(mcp_engine)() as session:
         user = UserService(session).create(
-            UserCreate(email=EMAIL, password="lunghissima1", nome="Trasporto", role="collaborator"),
+            UserCreate(email=EMAIL, password="lunghissima1", name="Trasporto", role="collaborator"),
             Actor.system(),
         )
         actor = Actor(id=user.id, type="user", role="collaborator")
@@ -370,10 +370,10 @@ async def test_a_build_that_fails_is_this_applications_own_500(
     raw, _ = root_token
     _, client = served
 
-    async def esplode(*args: Any, **kwargs: Any) -> Any:
+    async def explodes(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("il build esplode")
 
-    monkeypatch.setattr(McpHttpApp, "_build", esplode)
+    monkeypatch.setattr(McpHttpApp, "_build", explodes)
     response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
     assert response.status_code == 500
     assert response.json() == {"detail": "errore interno"}
@@ -449,7 +449,7 @@ def spaces(http_settings: Settings) -> Iterator[dict[str, tuple[str, UUID]]]:
         with session_factory(registry)() as session:
             for slug in SPACES:
                 TenantService(session, http_settings).provision(
-                    TenantSignup(slug=slug, nome="Ada", email=f"ada@{slug}.it")
+                    TenantSignup(slug=slug, name="Ada", email=f"ada@{slug}.it")
                 )
         for slug in SPACES:
             tokens[slug] = _space_token(http_settings, slug)
@@ -653,14 +653,14 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
     with session_factory(mcp_engine)() as session:
         users = UserService(session)
         admin = users.create(
-            UserCreate(email=ADMIN_EMAIL, password="lunghissima1", nome="Admin PAT", role="admin"),
+            UserCreate(email=ADMIN_EMAIL, password="lunghissima1", name="Admin PAT", role="admin"),
             Actor.system(),
         )
         survivor = users.create(
             UserCreate(
                 email=SURVIVOR_EMAIL,
                 password="lunghissima1",
-                nome="Superstite",
+                name="Superstite",
                 role="admin",
             ),
             Actor.system(),
@@ -673,10 +673,10 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
         # (`conftest.py`'s engine fixture); a database without one gets a row here,
         # and the teardown below removes only what is not the default.
         if (
-            session.execute(select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))).first()
+            session.execute(select(LegalEntity.id).where(LegalEntity.is_default.is_(True))).first()
             is None
         ):
-            session.add(LegalEntity(nome="Radice", legal_name="Radice", predefinita=True))
+            session.add(LegalEntity(name="Radice", legal_name="Radice", is_default=True))
         session.commit()
         admin_id = admin.id
     try:
@@ -689,7 +689,7 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             )
             session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
             session.execute(delete(FiscalProfile))
-            session.execute(delete(LegalEntity).where(LegalEntity.predefinita.is_(False)))
+            session.execute(delete(LegalEntity).where(LegalEntity.is_default.is_(False)))
             session.execute(
                 update(Customer).where(Customer.owner_id.in_(ids)).values(owner_id=None)
             )

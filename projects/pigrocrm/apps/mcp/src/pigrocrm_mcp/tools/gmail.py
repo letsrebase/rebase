@@ -182,11 +182,11 @@ def register(
                 {
                     "id": str(row.id),
                     "thread": row.gmail_thread_id,
-                    "direzione": row.direction,
-                    "da": row.from_address,
-                    "a": row.to_addresses,
+                    "direction": row.direction,
+                    "from": row.from_address,
+                    "to": row.to_addresses,
                     "subject": row.subject,
-                    "data": row.internal_date.isoformat(),
+                    "date": row.internal_date.isoformat(),
                     "excerpt": row.snippet,
                 }
                 for row in rows
@@ -203,16 +203,16 @@ def register(
         return {
             "id": str(row.id),
             "thread": row.gmail_thread_id,
-            "direzione": row.direction,
+            "direction": row.direction,
             "provenance": _provenance(row),
             "subject": row.subject,
-            "da": row.from_address,
-            "a": row.to_addresses,
+            "from": row.from_address,
+            "to": row.to_addresses,
             "cc": row.cc_addresses,
-            "data": row.internal_date.isoformat(),
+            "date": row.internal_date.isoformat(),
             "body": row.body_text,
             "truncated": row.body_truncated,
-            "html_scartato": row.body_html_discarded,
+            "html_discarded": row.body_html_discarded,
             # name, mime and size only. The bytes are never stored and never travel
             # (spec 5.4).
             "attachments": row.attachments,

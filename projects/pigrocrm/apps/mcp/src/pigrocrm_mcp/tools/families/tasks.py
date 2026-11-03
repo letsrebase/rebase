@@ -1,4 +1,4 @@
-"""Attività (commitments) and the calendar."""
+"""Tasks (commitments) and the calendar."""
 
 from collections.abc import Callable
 from typing import Any, cast
@@ -18,7 +18,7 @@ from pigrocrm_mcp.tools.params import (
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
-    # -- Attività e calendario (slice 10) -------------------------------------
+    # -- Tasks e calendario (slice 10) -------------------------------------
     #
     # On the default surface, all of it: nothing here consumes a number, touches the
     # fiscal register or rewrites a rate, so none of it is one of the forbidden. The one
@@ -71,8 +71,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         personalizzati. Lo stato non si cambia da qui: usa `complete_task`,
         `cancel_task` o `reopen_task`.
 
-        Qui `null` non svuota: per togliere la scadenza serve `scadenza_da_rimuovere: true`; per
-        staccarla da cliente, deal, persona o fattura serve `riferimento_da_rimuovere: true`.
+        Qui `null` non svuota: per togliere la scadenza serve `due_date_to_remove: true`; per
+        staccarla da cliente, deal, persona o fattura serve `reference_to_remove: true`.
         `assigned_to` è l'id di una persona: lo trovi in `list_members`.
         """
         return calendar_tools.update(context, task_id, changes)
@@ -139,7 +139,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     ) -> dict[str, Any]:
         """Elenca gli impegni. `status`: `open`, `completed` o `cancelled`; senza, tornano tutti.
         `due_within` è inclusivo e esclude le attività senza scadenza: per quelle usa
-        `senza_scadenza: true`. `sort`: `created_at` o `due_date`.
+        `without_due_date: true`. `sort`: `created_at` o `due_date`.
         """
         return calendar_tools.search(
             context,

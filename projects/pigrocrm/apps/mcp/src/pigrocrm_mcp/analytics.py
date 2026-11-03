@@ -19,8 +19,8 @@ response, the duration and the error flag; this module decides five things aroun
   `context` argument on every tool to capture the agent's intent; that alters every
   tool's input schema, which the surface tests pin and which every connected agent has
   already learned. Off. It would also file every exception a tool raises as an
-  `$exception` for Error Tracking; `_guard` raises on purpose to hand an agent «cliente
-  non trovato», and that is guidance, not a defect. Off too: `$mcp_tool_call` keeps
+  `$exception` for Error Tracking; `_guard` raises on purpose to hand an agent «customer
+  not found», and that is guidance, not a defect. Off too: `$mcp_tool_call` keeps
   `$mcp_is_error` and the error type regardless. The same goes for the two the SDK turned
   on by default in 7.56.0, model capture (a required `llm_model` argument on every
   tool) and conversation correlation (a `conversation_id` argument whose description

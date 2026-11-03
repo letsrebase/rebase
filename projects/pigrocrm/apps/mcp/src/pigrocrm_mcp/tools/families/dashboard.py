@@ -20,41 +20,45 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_commercial_dashboard(
-        da: IsoDateStr = None, a: IsoDateStr = None, legal_entity_id: str | None = None
+        date_from: IsoDateStr = None, date_to: IsoDateStr = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Quadro commerciale: pipeline per stato, deal chiusi nel periodo con tasso di
         conversione, offerte inviate in attesa, chiusure previste nei 30 giorni successivi,
-        offerte accettate il cui deal non è vinto. `da` e `a` (`YYYY-MM-DD`) vanno insieme;
-        senza, mese corrente. `weighted_value` è una stima, non fatturato. `legal_entity_id` filtra
-        per azienda; senza, tutte sommate.
+        offerte accettate il cui deal non è vinto. `date_from` e `date_to` (`YYYY-MM-DD`) vanno
+        insieme; senza, mese corrente. `weighted_value` è una stima, non fatturato.
+        `legal_entity_id` filtra per azienda; senza, tutte sommate.
         """
         # `IsoDateStr`, the alias this file already uses for a date parameter: the runtime
         # type stays `str | None` so a malformed date is rejected inside `PeriodQuery`,
         # inside the guarded call, and the agent gets this project's own rendered guidance
         # instead of an SDK rejection whose wording is not ours -- while `list_tools()`
         # still advertises `format: date`. `model_validate` on a dict rather than
-        # `PeriodoQuery(da=da, a=a)`: the two do the same coercion, and the keyword form
-        # would be a type error to a reader (and to mypy) that says nothing true about the
-        # runtime.
+        # `PeriodQuery(date_from=..., date_to=...)`: the two do the same coercion, and the
+        # keyword form would be a type error to a reader (and to mypy) that says nothing true
+        # about the runtime.
         return dashboard_tools.get_commercial_dashboard(
             context,
-            PeriodQuery.model_validate({"da": da, "a": a, "legal_entity_id": legal_entity_id}),
+            PeriodQuery.model_validate(
+                {"date_from": date_from, "date_to": date_to, "legal_entity_id": legal_entity_id}
+            ),
         )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_economic_dashboard(
-        da: IsoDateStr = None, a: IsoDateStr = None, legal_entity_id: str | None = None
+        date_from: IsoDateStr = None, date_to: IsoDateStr = None, legal_entity_id: str | None = None
     ) -> dict[str, Any]:
         """Conto economico del periodo: ricavi, costi diretti, costo del lavoro e margine in due
         colonne, `closed` e `in_progress`, da non sommare; più spese generali, maturato non
-        fatturato, `unpaid` e `expired` (senza periodo). `da` e `a` (`YYYY-MM-DD`) vanno
-        insieme; senza, mese corrente. Nessuna stima fiscale. `legal_entity_id` filtra per azienda;
-        senza, tutte sommate.
+        fatturato, `unpaid` e `expired` (senza periodo). `date_from` e `date_to` (`YYYY-MM-DD`)
+        vanno insieme; senza, mese corrente. Nessuna stima fiscale. `legal_entity_id` filtra per
+        azienda; senza, tutte sommate.
         """
         return dashboard_tools.get_economic_dashboard(
             context,
-            PeriodQuery.model_validate({"da": da, "a": a, "legal_entity_id": legal_entity_id}),
+            PeriodQuery.model_validate(
+                {"date_from": date_from, "date_to": date_to, "legal_entity_id": legal_entity_id}
+            ),
         )
 
     # Registered by Task C6, with the same reasoning. No parameters at all: §6's dashboard

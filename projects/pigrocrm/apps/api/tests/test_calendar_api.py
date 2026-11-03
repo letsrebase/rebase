@@ -34,7 +34,7 @@ def _deal(client: TestClient) -> str:
     """A deal, and the pipeline it needs to exist in: a deal with no stage is refused,
     so the seed is part of the fixture rather than an assumption about the database."""
     assert client.post("/api/pipeline-stages/seed").status_code == 200
-    created = client.post("/api/deals", json={"nome": "Progetto", "customer_id": _customer(client)})
+    created = client.post("/api/deals", json={"name": "Progetto", "customer_id": _customer(client)})
     assert created.status_code == 201, created.text
     return str(created.json()["id"])
 
@@ -55,7 +55,7 @@ def test_a_month_with_nothing_in_it_answers_an_empty_grid(logged_in: TestClient)
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["days"] == []
-    assert (body["da"], body["a"]) == (FIRST.isoformat(), LAST.isoformat())
+    assert (body["date_from"], body["date_to"]) == (FIRST.isoformat(), LAST.isoformat())
     # A string, like every other Decimal in this API: the browser reads it digit by
     # digit and never through a binary float.
     assert body["total_hours"] == "0.00"
@@ -80,8 +80,8 @@ def test_an_activity_appears_on_its_day_with_its_state(logged_in: TestClient) ->
     body = logged_in.get("/api/calendar", params={"month": Month}).json()
 
     assert [day["day"] for day in body["days"]] == [FIRST.isoformat()]
-    assert [item["title"] for item in body["days"][0]["attivita"]] == ["Sollecitare Rossi"]
-    assert body["days"][0]["attivita"][0]["status"] == "open"
+    assert [item["title"] for item in body["days"][0]["tasks"]] == ["Sollecitare Rossi"]
+    assert body["days"][0]["tasks"][0]["status"] == "open"
 
 
 def test_an_activity_without_a_date_is_outside_the_grid(logged_in: TestClient) -> None:
@@ -107,7 +107,7 @@ def test_the_calendar_shows_the_hours_of_whoever_is_asking(
         json={
             "deal_id": deal_id,
             "user_id": _me(logged_in),
-            "data": FIRST.isoformat(),
+            "date": FIRST.isoformat(),
             "hours": "8.00",
             "description": "Giornata",
         },
@@ -252,7 +252,7 @@ def test_a_day_can_carry_hours_a_commitment_and_nothing_else_it_did_not_earn(
         json={
             "deal_id": deal_id,
             "user_id": _me(logged_in),
-            "data": FIRST.isoformat(),
+            "date": FIRST.isoformat(),
             "hours": "4.00",
             "description": "Mezza",
         },
@@ -263,7 +263,7 @@ def test_a_day_can_carry_hours_a_commitment_and_nothing_else_it_did_not_earn(
 
     assert day["day"] == FIRST.isoformat()
     assert day["hours"] == "4.00"
-    assert len(day["attivita"]) == 1
+    assert len(day["tasks"]) == 1
     # No invoice falls due that day, and the key is there and empty rather than absent:
     # a client should not have to distinguish «no invoices» from «this field is missing».
     assert day["invoices"] == []

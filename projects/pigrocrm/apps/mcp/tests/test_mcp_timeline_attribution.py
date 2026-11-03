@@ -44,8 +44,8 @@ def _payload(result: Any) -> dict:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-def _member(session: Session, nome: str, key: str) -> User:
-    user = User(email=f"{key}@example.test", password_hash="x", nome=nome, role="admin")
+def _member(session: Session, name: str, key: str) -> User:
+    user = User(email=f"{key}@example.test", password_hash="x", name=name, role="admin")
     session.add(user)
     session.flush()
     return user
@@ -78,12 +78,14 @@ async def test_every_row_an_agent_writes_carries_the_token_owner_and_the_mcp_cha
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         await client.call_tool("add_note", {"customer_id": customer["id"], "text": "una nota"})
         person = _payload(
-            await client.call_tool("create_person", {"nome": "Anna", "customer_id": customer["id"]})
+            await client.call_tool(
+                "create_person", {"first_name": "Anna", "customer_id": customer["id"]}
+            )
         )
         await client.call_tool("add_note", {"person_id": person["id"], "text": "una nota"})
         deal = _payload(
             await client.call_tool(
-                "create_deal", {"nome": "Progetto", "customer_id": customer["id"]}
+                "create_deal", {"name": "Progetto", "customer_id": customer["id"]}
             )
         )
         await client.call_tool("move_deal", {"deal_id": deal["id"], "stage_id": stages[-1]["id"]})

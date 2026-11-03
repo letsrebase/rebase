@@ -86,7 +86,7 @@ async def test_a_wrong_typed_value_inside_changes_produces_guidance(
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         deal = _payload(
-            await client.call_tool("create_deal", {"nome": "X", "customer_id": customer["id"]})
+            await client.call_tool("create_deal", {"name": "X", "customer_id": customer["id"]})
         )
         result = await client.call_tool(
             "update_deal", {"deal_id": deal["id"], "changes": {"probability": "not-a-number"}}
@@ -140,7 +140,7 @@ async def test_to_wrong_typed_probability_on_create_deal_produces_guidance(
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "create_deal",
-            {"nome": "X", "customer_id": customer["id"], "probability": "molto alta"},
+            {"name": "X", "customer_id": customer["id"], "probability": "molto alta"},
         )
 
     assert result.is_error
@@ -157,7 +157,7 @@ async def test_a_wrong_typed_money_field_on_create_deal_produces_guidance(
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         result = await client.call_tool(
             "create_deal",
-            {"nome": "X", "customer_id": customer["id"], "expected_value": "un sacco"},
+            {"name": "X", "customer_id": customer["id"], "expected_value": "un sacco"},
         )
 
     assert result.is_error
@@ -176,7 +176,7 @@ async def test_create_deal_still_accepts_to_normal_numeric_probability(
         deal = _payload(
             await client.call_tool(
                 "create_deal",
-                {"nome": "X", "customer_id": customer["id"], "probability": 42},
+                {"name": "X", "customer_id": customer["id"], "probability": 42},
             )
         )
 

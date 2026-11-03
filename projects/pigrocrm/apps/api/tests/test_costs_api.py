@@ -14,7 +14,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "role": role},
+        json={"email": email, "password": "supersegreta1", "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -24,7 +24,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
 
 
 def _seed_category(logged_in: TestClient) -> str:
-    response = logged_in.post("/api/cost-categories", json={"nome": "Software e licenze"})
+    response = logged_in.post("/api/cost-categories", json={"name": "Software e licenze"})
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
@@ -35,7 +35,7 @@ def test_post_creates_and_returns_a_decimal_as_a_string(logged_in: TestClient) -
         "/api/costs",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "120.00",
             "description": "Licenza annuale",
         },
@@ -43,7 +43,7 @@ def test_post_creates_and_returns_a_decimal_as_a_string(logged_in: TestClient) -
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["amount"] == "120.00"
-    assert '"importo":"120.00"' in response.text.replace(" ", "")
+    assert '"amount":"120.00"' in response.text.replace(" ", "")
 
 
 def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) -> None:
@@ -52,7 +52,7 @@ def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) 
         "/api/costs",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "-45.50",
             "description": "Nota di credito",
         },
@@ -64,7 +64,7 @@ def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) 
         "/api/costs",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "0.00",
             "description": "x",
         },
@@ -79,7 +79,7 @@ def test_soft_delete_then_restore_over_http(logged_in: TestClient) -> None:
         "/api/costs",
         json={
             "category_id": category_id,
-            "data": "2026-03-05",
+            "date": "2026-03-05",
             "amount": "10.00",
             "description": "x",
         },
@@ -93,13 +93,13 @@ def test_soft_delete_then_restore_over_http(logged_in: TestClient) -> None:
 
 
 def test_cost_category_lifecycle_over_http(logged_in: TestClient) -> None:
-    created = logged_in.post("/api/cost-categories", json={"nome": "Viaggi"})
+    created = logged_in.post("/api/cost-categories", json={"name": "Viaggi"})
     assert created.status_code == 201
     category_id = created.json()["id"]
 
-    renamed = logged_in.patch(f"/api/cost-categories/{category_id}", json={"nome": "Trasferte"})
+    renamed = logged_in.patch(f"/api/cost-categories/{category_id}", json={"name": "Trasferte"})
     assert renamed.status_code == 200
-    assert renamed.json()["nome"] == "Trasferte"
+    assert renamed.json()["name"] == "Trasferte"
 
     archived = logged_in.post(f"/api/cost-categories/{category_id}/archive")
     assert archived.status_code == 200
@@ -112,7 +112,7 @@ def test_cost_category_lifecycle_over_http(logged_in: TestClient) -> None:
 
 def test_only_an_admin_may_write_a_cost_category(logged_in: TestClient) -> None:
     collaborator = _second_actor(logged_in, "collaborator")
-    response = collaborator.post("/api/cost-categories", json={"nome": "Materiali"})
+    response = collaborator.post("/api/cost-categories", json={"name": "Materiali"})
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
 

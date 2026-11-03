@@ -112,19 +112,19 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
         # `code=None`, so these are user-created stages as far as `seed_defaults` is
         # concerned and never collide with a seeded `lead`/`vinto` on the unique index.
         open = PipelineStage(
-            nome=f"{_PREFIX} aperto", position=910, default_probability=50, type="open", code=None
+            name=f"{_PREFIX} aperto", position=910, default_probability=50, type="open", code=None
         )
         won = PipelineStage(
-            nome=f"{_PREFIX} vinto", position=911, default_probability=100, type="won", code=None
+            name=f"{_PREFIX} vinto", position=911, default_probability=100, type="won", code=None
         )
-        category = CostCategory(nome=f"{_PREFIX} generali", position=910, code=None)
-        user = User(email=f"{_PREFIX.lower()}@example.test", password_hash="x", nome="Worker")
+        category = CostCategory(name=f"{_PREFIX} generali", position=910, code=None)
+        user = User(email=f"{_PREFIX.lower()}@example.test", password_hash="x", name="Worker")
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([open, won, category, user, customer])
         session.flush()
 
         open_deal = Deal(
-            nome=f"{_PREFIX} in corso",
+            name=f"{_PREFIX} in corso",
             customer_id=customer.id,
             pipeline_stage_id=open.id,
             expected_value=Decimal("1000.00"),
@@ -132,7 +132,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
             custom_fields={},
         )
         won_deal = Deal(
-            nome=f"{_PREFIX} vinto",
+            name=f"{_PREFIX} vinto",
             customer_id=customer.id,
             pipeline_stage_id=won.id,
             expected_value=Decimal("5000.00"),
@@ -229,7 +229,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
                 Cost(
                     deal_id=won_deal.id,
                     category_id=category.id,
-                    data=date(_YEAR, _MONTH, 8),
+                    date=date(_YEAR, _MONTH, 8),
                     amount=Decimal("310.00"),
                     description=f"{_PREFIX} costo diretto sul vinto",
                     custom_fields={},
@@ -239,7 +239,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
                 Cost(
                     deal_id=None,
                     category_id=category.id,
-                    data=date(_YEAR, _MONTH, 5),
+                    date=date(_YEAR, _MONTH, 5),
                     amount=Decimal("120.00"),
                     description=f"{_PREFIX} spesa generale",
                     custom_fields={},
@@ -254,7 +254,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
                 TimeEntry(
                     deal_id=open_deal.id,
                     user_id=user.id,
-                    data=date(_YEAR, _MONTH, 12),
+                    date=date(_YEAR, _MONTH, 12),
                     hours=Decimal("6.00"),
                     description=f"{_PREFIX} analisi",
                     billable=True,
@@ -273,7 +273,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
                 TimeEntry(
                     deal_id=won_deal.id,
                     user_id=user.id,
-                    data=date(_YEAR, _MONTH, 14),
+                    date=date(_YEAR, _MONTH, 14),
                     hours=Decimal("9.00"),
                     description=f"{_PREFIX} consegna",
                     billable=False,
@@ -310,8 +310,8 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
 
         seeded = _Seeded(
             customer_id=customer.id,
-            open_deal_name=open_deal.nome,
-            won_deal_name=won_deal.nome,
+            open_deal_name=open_deal.name,
+            won_deal_name=won_deal.name,
             legal_entity_id=legal_entity_id,
         )
         session.commit()
@@ -329,11 +329,11 @@ def _teardown(factory: sessionmaker[Any], legal_entity_id: UUID | None = None) -
         session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
         session.execute(delete(Invoice).where(Invoice.memo.like(f"{_PREFIX} %")))
         session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
-        session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+        session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
         session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-        session.execute(delete(CostCategory).where(CostCategory.nome.like(f"{_PREFIX} %")))
+        session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.email.like(f"{_PREFIX.lower()}%")))
-        session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+        session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
         remove_legal_entity(session, legal_entity_id)
         session.commit()
 
@@ -462,8 +462,8 @@ async def test_the_arguments_are_inferred_from_the_signatures(mcp_server: Any) -
     by_name = {prompt.name: prompt for prompt in await mcp_server.list_prompts()}
 
     assert {arg.name: arg.required for arg in by_name["pipeline-review"].arguments} == {
-        "da": False,
-        "a": False,
+        "date_from": False,
+        "date_to": False,
     }
     assert {arg.name: arg.required for arg in by_name["month-close"].arguments} == {
         "year": True,
@@ -493,7 +493,7 @@ async def test_every_prompt_returns_at_least_one_user_message(
     assert any(message.role == "user" for message in rendered.messages), name
 
 
-# -- revisione-pipeline ----------------------------------------------------------
+# -- pipeline-review ----------------------------------------------------------
 
 
 async def test_review_pipeline_carries_the_dashboard_as_text(mcp_server: Any) -> None:
@@ -533,7 +533,7 @@ async def test_a_period_where_nothing_closed_reports_a_dash_and_not_zero_per_cen
     lost everything"; nothing closed means something else, and a briefing that renders the
     second as the first is telling the reader a bad month was a catastrophe."""
     rendered = await mcp_server.get_prompt(
-        "pipeline-review", {"da": "2019-01-01", "a": "2019-01-31"}
+        "pipeline-review", {"date_from": "2019-01-01", "date_to": "2019-01-31"}
     )
     text_block = _text_of(rendered)
     assert "Tasso di conversione: —" in text_block
@@ -553,7 +553,7 @@ async def test_review_pipeline_on_an_empty_database_is_to_valid_message(
     assert "Tasso di conversione: —" in text_block
 
 
-# -- chiusura-mese ---------------------------------------------------------------
+# -- month-close ---------------------------------------------------------------
 
 
 async def test_closing_month_takes_to_year_and_to_month(mcp_server: Any) -> None:
@@ -567,7 +567,7 @@ async def test_closing_month_refuses_month_thirteen_by_name(mcp_server: Any) -> 
     which argument to change.
 
     Asserted on the whole sentence a client receives: «mese» alone is also in the prompt's
-    name, so mcp 2.2's bare «Error rendering prompt chiusura-mese» passed the old check while
+    name, so mcp 2.2's bare «Error rendering prompt month-close» passed the old check while
     the diagnosis was lost (REB-451)."""
     async with Client(mcp_server) as client:
         with pytest.raises(MCPError) as caught:
@@ -590,7 +590,7 @@ async def test_closing_month_on_an_empty_database_renders_to_null_margin_as_to_d
     assert "| Margine % | — | — |" in text_block
 
 
-# -- ore-da-registrare -----------------------------------------------------------
+# -- hours-to-log -----------------------------------------------------------
 
 
 async def test_hours_to_log_names_the_days_and_the_tool_that_records_them(
@@ -636,7 +636,7 @@ async def test_hours_to_log_on_an_empty_database_is_to_valid_message(
     assert text_block.count("| 2") == 7
 
 
-# -- stato-cliente ---------------------------------------------------------------
+# -- customer-status ---------------------------------------------------------------
 
 
 async def test_status_customer_embeds_the_existing_resource(
@@ -704,7 +704,7 @@ async def test_status_customer_on_an_unknown_customer_reaches_the_assistant_as_t
 
     The assertion is on what a client receives, in both protocol eras, and not on the
     exception the server raises in process. mcp 2.2's `Prompt.render` passes an `MCPError`
-    through and replaces anything else with «Error rendering prompt stato-cliente», with no
+    through and replaces anything else with «Error rendering prompt customer-status», with no
     text after it; the modern protocol then answers «Internal server error» for that, and
     the legacy one did already on mcp 2.0 (REB-451). The guard's `MCPError` is what reaches
     the assistant as the domain's own sentence, whole."""
@@ -760,7 +760,10 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
 
     assert "boom" not in caught.value.message
     assert "Rivedi" not in caught.value.message
-    assert caught.value.message in {"Internal server error", "Error rendering prompt stato-cliente"}
+    assert caught.value.message in {
+        "Internal server error",
+        "Error rendering prompt customer-status",
+    }
     assert caught.value.code not in {DOMAIN_REFUSAL, INVALID_PARAMS}
 
 
@@ -771,16 +774,16 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
 # *size*, and a test that only checked the words in a prompt would pass on a briefing that
 # pasted the whole register into the model's context window on every render.
 
-# Field names, not concepts. Criterion 10: "verificato per nome di campo, non per
-# intenzione". The first four are the fiscal estimate's own fields (slice 4 §11); the last
+# Field names, not concepts. Criterion 10: checked by field name, not by
+# intent. The first four are the fiscal estimate's own fields (slice 4 §11); the last
 # three are the parameters it is derived from, which are just as sensitive and would let a
 # reader reconstruct it.
 FORBIDDEN_FISCAL_FIELDS = frozenset(
     {
-        "imponibile_fiscale",
+        "taxable_amount",
         "substitute_tax",
-        "contributi",
-        "netto_stimato",
+        "contributions",
+        "estimated_net_income",
         "profitability_coefficient",
         "substitute_tax_rate",
         "social_security_rate",
@@ -1036,7 +1039,7 @@ async def test_closing_month_matches_the_pnl_value_by_value(
     da, a = month_bounds(_YEAR, _MONTH)
     with prompt_corpus.factory() as session:
         pnl = AnalyticsService(session).period_pnl(
-            PeriodPnlQuery(da=da, a=a, customer_id=None), ADMIN
+            PeriodPnlQuery(date_from=da, date_to=a, customer_id=None), ADMIN
         )
 
     text_block = _text_of(

@@ -49,18 +49,22 @@ def list_work_units(
     legal_entity_id: Annotated[
         UUID | None, Query(description="Solo i contratti di questa azienda; omesso, tutte")
     ] = None,
-    da: Annotated[date | None, Query(description="Dal giorno, YYYY-MM-DD, incluso")] = None,
-    a: Annotated[date | None, Query(description="Al giorno, YYYY-MM-DD, incluso")] = None,
+    date_from: Annotated[
+        date | None, Query(alias="from", description="Dal giorno, YYYY-MM-DD, incluso")
+    ] = None,
+    date_to: Annotated[
+        date | None, Query(alias="to", description="Al giorno, YYYY-MM-DD, incluso")
+    ] = None,
     status: Annotated[WorkUnitStatus | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
 ) -> WorkUnitList:
-    """Le giornate, dalla più recente. Serve almeno un contratto o una data (`da`, `a`):
+    """Le giornate, dalla più recente. Serve almeno un contratto o una data (`from`, `to`):
     il registro intero di uno spazio non è una domanda che una schermata faccia."""
     query = WorkUnitListQuery(
         contract_id=contract_id,
         legal_entity_id=legal_entity_id,
-        da=da,
-        a=a,
+        date_from=date_from,
+        date_to=date_to,
         status=status,
         limit=limit,
     )

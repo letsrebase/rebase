@@ -1,6 +1,6 @@
-"""The azienda over MCP (REB-624, spec 2026-10-03 §1.6, §7): `suggest_legal_entity`, the
+"""The legal entity over MCP (REB-624, spec 2026-10-03 §1.6, §7): `suggest_legal_entity`, the
 `country` and `legal_entity_id` of `create_customer`, and the `legal_entity_id` every list and
-search tool takes. The second azienda is written by row, since no tool creates one
+search tool takes. The second legal entity is written by row, since no tool creates one
 before milestone 5 (§9).
 """
 
@@ -38,8 +38,8 @@ def _payload(result: Any) -> Any:
     return result.structured_content or json.loads(result.content[0].text)
 
 
-def _second_legal_entity(session: Session, nome: str = "rebase ltd", country: str = "GB") -> str:
-    row = LegalEntity(nome=nome, legal_name=nome.title(), country=country)
+def _second_legal_entity(session: Session, name: str = "rebase ltd", country: str = "GB") -> str:
+    row = LegalEntity(name=name, legal_name=name.title(), country=country)
     session.add(row)
     session.flush()
     return str(row.id)
@@ -79,11 +79,11 @@ async def test_suggest_legal_entity_answers_the_rule_create_customer_applies(
             assert proposed["id"] == expected, country
             assert set(proposed) == {
                 "id",
-                "nome",
+                "name",
                 "legal_name",
                 "vat_number",
                 "country",
-                "predefinita",
+                "is_default",
                 "active",
             }
         created = _payload(
@@ -109,7 +109,7 @@ async def test_a_value_that_is_not_an_id_is_refused_in_words_and_never_the_defau
 ) -> None:
     async with Client(server) as client:
         refused = await client.call_tool(
-            "create_customer", {"legal_name": "X", "legal_entity_id": "la predefinita"}
+            "create_customer", {"legal_name": "X", "legal_entity_id": "la is_default"}
         )
         assert refused.is_error
         assert "non e' l'id di un'azienda" in refused.content[0].text
@@ -129,21 +129,21 @@ async def test_the_lists_narrow_to_the_legal_entity_named(
     no azienda's list shows. The other lists share the repositories the core suite
     narrows row by row, and the schema test above holds the parameter on each."""
     default = _default_id(mcp_session)
-    second = _second_legal_entity(mcp_session, nome="rebase", country="IT")
-    category = CostCategory(nome="Viaggi")
+    second = _second_legal_entity(mcp_session, name="rebase", country="IT")
+    category = CostCategory(name="Viaggi")
     mcp_session.add(category)
     mcp_session.flush()
     on_deal = Cost(
         deal_id=seeded_deal_id,
         legal_entity_id=UUID(default),
         category_id=category.id,
-        data=date(2026, 3, 1),
+        date=date(2026, 3, 1),
         amount=Decimal("10.00"),
         description="Treno",
     )
     shared = Cost(
         category_id=category.id,
-        data=date(2026, 3, 2),
+        date=date(2026, 3, 2),
         amount=Decimal("5.00"),
         description="Software",
     )
@@ -159,7 +159,7 @@ async def test_the_lists_narrow_to_the_legal_entity_named(
         # `create_deal` has no stage parameter: the deal starts in the pipeline's first. The
         # test used to pass `pipeline_stage_id`, which the SDK dropped without a word.
         created = await client.call_tool(
-            "create_deal", {"nome": "Zeta Quattro deal", "customer_id": beta["id"]}
+            "create_deal", {"name": "Zeta Quattro deal", "customer_id": beta["id"]}
         )
         assert not created.is_error, created.content[0].text
 
@@ -175,32 +175,32 @@ async def test_the_lists_narrow_to_the_legal_entity_named(
         }
 
         deals = _payload(await client.call_tool("search_deals", {"legal_entity_id": second}))
-        assert [d["nome"] for d in deals["items"]] == ["Zeta Quattro deal"]
+        assert [d["name"] for d in deals["items"]] == ["Zeta Quattro deal"]
         default_deals = _payload(
             await client.call_tool("search_deals", {"legal_entity_id": default})
         )
-        default_names = {d["nome"] for d in default_deals["items"]}
+        default_names = {d["name"] for d in default_deals["items"]}
         assert "Progetto MCP" in default_names and "Zeta Quattro deal" not in default_names
 
         found = _payload(
             await client.call_tool(
-                "search_everything", {"deadline": "Zeta Quattro", "legal_entity_id": default}
+                "search_everything", {"term": "Zeta Quattro", "legal_entity_id": default}
             )
         )
-        assert all(group["hits"] == [] for group in found["gruppi"])
+        assert all(group["hits"] == [] for group in found["groups"])
         found = _payload(
             await client.call_tool(
-                "search_everything", {"deadline": "Zeta Quattro", "legal_entity_id": second}
+                "search_everything", {"term": "Zeta Quattro", "legal_entity_id": second}
             )
         )
-        assert next(g for g in found["gruppi"] if g["entity"] == "deal")["total"] == 1
+        assert next(g for g in found["groups"] if g["entity"] == "deal")["total"] == 1
 
         own = _payload(
             await client.call_tool(
                 "create_cost",
                 {
                     "category_id": str(category.id),
-                    "data": "2026-03-03",
+                    "date": "2026-03-03",
                     "amount": "7.00",
                     "description": "Licenza",
                     "legal_entity_id": second,

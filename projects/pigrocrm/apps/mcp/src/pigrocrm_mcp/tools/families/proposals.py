@@ -72,8 +72,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         attesa, che una persona decide dall'app. `document_id` è il documento da cui `excerpt`
         è stato letto verbatim (`excerpt_type='quoted'`) o trascritto da una scansione
         (`'transcribed'`). Gli altri campi sono quelli di `create_contract`, più la prima scheda
-        tariffaria (`rate_card_*`, come `create_rate_card`). Nulla viene creato finché la
-        proposta non è accettata.
+        tariffaria (`rate_card_*`, come `create_rate_card`). Nulla nasce prima dell'accettazione.
         """
         rate_card: dict[str, Any] = {
             "valid_from": rate_card_valid_from,
@@ -126,7 +125,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         contract_id: str,
         excerpt: str,
         confidence: Confidence,
-        data: str,
+        date: str,
         quantity: QuantityArg,
         description: str,
         channel: str,
@@ -153,7 +152,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 "confidence_reason": confidence_reason,
                 "proposed_fields": {
                     "contract_id": contract_id,
-                    "data": data,
+                    "date": date,
                     "quantity": quantity,
                     "description": description,
                     "approval": {

@@ -22,7 +22,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def create_person(
-        nome: str,
+        first_name: str,
         last_name: str | None = None,
         email: str | None = None,
         phone: str | None = None,
@@ -38,7 +38,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         return people.create(
             context,
             {
-                "nome": nome,
+                "first_name": first_name,
                 "last_name": last_name,
                 "email": email,
                 "phone": phone,
@@ -61,7 +61,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_person(person_id: str) -> dict[str, Any]:
-        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `person://<id>`).
         """
         return people.get(context, person_id)

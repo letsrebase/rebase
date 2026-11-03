@@ -83,9 +83,9 @@ def world(mcp_engine: Engine) -> Iterator[World]:
     factory = session_factory(mcp_engine)
     with factory() as session:
         studio = session.execute(
-            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity).where(LegalEntity.is_default.is_(True))
         ).scalar_one()
-        ltd = LegalEntity(nome=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB")
+        ltd = LegalEntity(name=f"{_PREFIX} ltd", legal_name=f"{_PREFIX} Ltd", country="GB")
         session.add(ltd)
         session.flush()
         studio_customer, studio_invoice = _customer_and_invoice(session, studio.id, "studio")
@@ -131,11 +131,11 @@ async def _as(world: World, actor: Actor, tmp_path: Path) -> tuple[set[str], set
             Settings(_env_file=None),  # type: ignore[call-arg]
         )
         async with Client(server) as client:
-            found = await client.call_tool("search_everything", {"deadline": _PREFIX})
+            found = await client.call_tool("search_everything", {"term": _PREFIX})
             invoices = await client.call_tool("list_invoices", {})
     finally:
         session.close()
-    hits = {hit["id"] for group in _payload(found)["gruppi"] for hit in group["hits"]}
+    hits = {hit["id"] for group in _payload(found)["groups"] for hit in group["hits"]}
     return hits, {item["id"] for item in _payload(invoices)["items"]}
 
 

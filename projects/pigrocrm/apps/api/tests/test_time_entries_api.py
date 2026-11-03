@@ -17,7 +17,7 @@ def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "role": role},
+        json={"email": email, "password": "supersegreta1", "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -35,7 +35,7 @@ def _seed_deal_and_user(logged_in: TestClient) -> tuple[str, str]:
     customer = logged_in.post("/api/customers", json={"legal_name": "ACME Srl"})
     assert customer.status_code == 201, customer.text
     deal = logged_in.post(
-        "/api/deals", json={"nome": "Progetto", "customer_id": customer.json()["id"]}
+        "/api/deals", json={"name": "Progetto", "customer_id": customer.json()["id"]}
     )
     assert deal.status_code == 201, deal.text
     user = logged_in.post(
@@ -43,7 +43,7 @@ def _seed_deal_and_user(logged_in: TestClient) -> tuple[str, str]:
         json={
             "email": "worker@pigro.it",
             "password": "supersegreta1",
-            "nome": "Worker",
+            "name": "Worker",
             "role": "collaborator",
         },
     )
@@ -61,7 +61,7 @@ def test_post_creates_and_returns_decimals_as_strings(logged_in: TestClient) -> 
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": "2026-03-10",
+            "date": "2026-03-10",
             "hours": "3.50",
             "description": "Sviluppo",
             "applied_rate": "80.000000",
@@ -72,7 +72,7 @@ def test_post_creates_and_returns_decimals_as_strings(logged_in: TestClient) -> 
     assert body["hours"] == "3.50"
     assert body["applied_rate"] == "80.000000"
     assert body["line_value"] == "280.00"
-    assert '"ore":"3.50"' in response.text.replace(" ", "")
+    assert '"hours":"3.50"' in response.text.replace(" ", "")
 
 
 def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClient) -> None:
@@ -85,7 +85,7 @@ def test_a_get_of_the_time_report_never_archives_a_document(logged_in: TestClien
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": "2026-03-10",
+            "date": "2026-03-10",
             "hours": "2.00",
             "description": "Sviluppo",
             "applied_rate": "80.000000",
@@ -116,7 +116,7 @@ def test_a_closed_period_is_a_409_problem_document_naming_the_month(
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": "2026-03-10",
+            "date": "2026-03-10",
             "hours": "1.00",
             "description": "x",
         },
@@ -136,13 +136,13 @@ def test_a_future_date_is_a_422_naming_the_field(logged_in: TestClient) -> None:
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": "2099-01-01",
+            "date": "2099-01-01",
             "hours": "1.00",
             "description": "x",
         },
     )
     assert response.status_code == 422
-    assert response.json()["field"] == "data"
+    assert response.json()["field"] == "date"
 
 
 def test_over_range_hours_are_refused_before_the_database(logged_in: TestClient) -> None:
@@ -154,7 +154,7 @@ def test_over_range_hours_are_refused_before_the_database(logged_in: TestClient)
         json={
             "deal_id": deal_id,
             "user_id": user_id,
-            "data": "2026-03-10",
+            "date": "2026-03-10",
             "hours": "80.00",
             "description": "x",
         },
@@ -174,7 +174,7 @@ def test_recalculate_requires_admin(logged_in: TestClient) -> None:
     collaborator = _second_actor(logged_in, "collaborator")
     response = collaborator.post(
         f"/api/deals/{deal_id}/rates/recalculate",
-        json={"da": "2026-03-01", "a": "2026-03-31"},
+        json={"date_from": "2026-03-01", "date_to": "2026-03-31"},
     )
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"

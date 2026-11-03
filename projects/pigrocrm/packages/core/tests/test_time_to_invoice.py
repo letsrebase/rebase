@@ -169,7 +169,7 @@ def test_one_line_per_rate_when_the_monthly_grouping_is_turned_off(
     seeded_user_id: UUID,
     local_storage: LocalFileStorage,
 ) -> None:
-    """`group_by_by_month=False` collapses the same hours to one line per rate.
+    """`group_by_month=False` collapses the same hours to one line per rate.
 
     The monthly cut is what a client usually expects, but it is a presentation choice
     and not a rule, so it is a field on the request rather than a constant -- and the
@@ -197,7 +197,7 @@ def test_one_line_per_rate_when_the_monthly_grouping_is_turned_off(
 
     collapsed = service.bind_to_invoice(
         billable_deal_id,
-        BindTimeRequest(entry_ids=[e.id for e in entries], group_by_by_month=False),
+        BindTimeRequest(entry_ids=[e.id for e in entries], group_by_month=False),
         ADMIN,
     )
     lines = _lines(db_session, collapsed.id)

@@ -168,7 +168,7 @@ _VIETATE: dict[Method, str] = {
 #     of its own regardless -- it is the guard `list_children` and the two `read_*` apply
 #     internally, and reaching it would require the very `DriveReader` that
 #     `test_no_unconditional_module_can_even_obtain_a_drive_reader` denies.
-_OUTSIDE_FROM_SETACCIO: dict[Method, str] = {
+_OUTSIDE_FROM_SIEVE: dict[Method, str] = {
     ("TimeBilling", "bind_to_invoice"): "precede l'emissione (slice 4 §11); not a `*Service` class",
     ("DriveReader", "list_children"): (
         "elenca una cartella del Drive personale del titolare (slice 9 §4.2)"
@@ -260,7 +260,7 @@ _INTERNE: dict[Method, str] = {
         "`packages/core/tests/test_in_transaction_callers.py` lo impone sull'AST di ogni "
         "sito di chiamata dei tre pacchetti: un tool che la esponesse sarebbe esattamente "
         "il bypass di autorizzazione che quella guardia esiste per impedire. Lo spostamento "
-        "di stage resta raggiungibile dall'agente sotto il suo nome vero, `move_deal`, "
+        "di stage resta raggiungibile dall'agente sotto il suo name vero, `move_deal`, "
         "che autorizza, registra e committa"
     ),
     ("LegalEntityService", "as_template_values"): "alimenta il renderer dei template",
@@ -270,7 +270,7 @@ _INTERNE: dict[Method, str] = {
         "non e' un'azione a se'"
     ),
     ("LegalEntityService", "resolve"): (
-        "lettura interna: la riga che un `legal_entity_id` nomina, o la predefinita quando e' "
+        "lettura interna: la riga che un `legal_entity_id` nomina, o la is_default quando e' "
         "`None`; e' cio' che ogni servizio chiama per se', e `describe_legal_entity` la espone"
     ),
     ("LegalEntityService", "single"): (
@@ -453,7 +453,7 @@ _CREDENZIALI: dict[Method, str] = {
     ("EmailSendService", "send"): (
         "**l'invio non sara' mai un tool**, ed e' la decisione permanente di questa "
         "fetta: B2-10 l'ha confermata invece di riaprirla. Un'email che parte "
-        "dall'indirizzo del titolare parla in suo nome a un cliente, non si richiama, e "
+        "dall'indirizzo del titolare parla in suo name a un cliente, non si richiama, e "
         "il destinatario e' una persona esterna al CRM: stessa famiglia di "
         "`GmailOAuthService.disconnect`, con in piu' che un agente che tenesse la "
         "*lettura* della posta e l'*invio* sullo stesso canale avrebbe la sorgente di "
@@ -494,8 +494,8 @@ _CREDENZIALI: dict[Method, str] = {
     ("MagicLinkService", "enter"): "e' il passo di login via mail, non un'operazione",
     # REB-376 (design 2026-09-23 §1-2): `IdentityService` vive nel registro, non in
     # una singola CRM -- l'MCP server e' avviato per un solo spazio (`ScopedSessionProvider`)
-    # e non ha mai una sessione sul database del registro, quindi nessuno di questi
-    # metodi e' raggiungibile da un tool anche in linea di principio.
+    # and never has a session on the registry database, so none of these
+    # methods is reachable from a tool even in principle.
     ("IdentityService", "request"): "e' il passo di login via mail, un layer sopra -- come sopra",
     ("IdentityService", "enter"): "e' il passo di login via mail, un layer sopra -- come sopra",
     ("IdentityService", "upsert_and_issue"): (
@@ -517,11 +517,11 @@ _CREDENZIALI: dict[Method, str] = {
         "e' la verifica di liveness dietro il cookie del chooser (REB-377), sullo stesso "
         "registro senza sessione MCP -- come sopra"
     ),
-    # REB-290 (spec 2026-09-17 §6): ogni metodo di `InvitationService` e' dichiarato,
-    # non esposto. Invitare persone e' amministrazione dello spazio, la stessa ragione
-    # che gia' tiene `UserService` fuori dai tool; in piu' qui c'e' il token grezzo,
-    # che `create` e `resend` rispondono solo perche' il chiamante e' la rotaia che
-    # lo imbuca in una mail, e un canale agentico lo leggerebbe nel contesto.
+    # REB-290 (spec 2026-09-17 §6): every method of `InvitationService` is declared,
+    # not exposed. Inviting people is administration of the space, the same reason
+    # that already keeps `UserService` out of the tools; on top of that there is the raw
+    # token, which `create` and `resend` return only because the caller is the rail that
+    # puts it in an email, and an agentic channel would read it in its context.
     ("InvitationService", "create"): (
         "invitare una persona e' amministrazione dello spazio (come `UserService."
         "create`), e il token grezzo della risposta esiste solo per finire in una "
@@ -610,7 +610,7 @@ _CONFIGURATION: dict[Method, str] = {
         "fact, for every user, is what `describe_slack` reads"
     ),
     ("LegalEntityService", "set_default"): (
-        "Impostazioni → Aziende: quale azienda e' la predefinita decide a chi vanno le "
+        "Impostazioni → Aziende: quale azienda e' la is_default decide a chi vanno le "
         "letture implicite di tutto lo spazio (REB-616, spec 2026-10-03 §3); una scelta "
         "dell'amministratore dal pannello, non di un agente"
     ),
@@ -642,7 +642,7 @@ _CONFIGURATION: dict[Method, str] = {
         "e' la stessa famiglia di `PipelineService.update`, un grado piu' seria. Un agente "
         "che potesse spegnere A1 e poi spostare un deal non lascerebbe traccia della "
         "differenza fra «l'automazione non e' scattata» e «l'ho disattivata io». "
-        "L'esclusione non e' cautela di questo file: e' l'unico nome di "
+        "L'esclusione non e' cautela di questo file: e' l'unico name di "
         "`MCP_EXCLUDED_SLICE6` (packages/core/tests/test_architecture.py), che la spec "
         "§11.1 fissa a esattamente uno, e la lettura corrispondente -- "
         "`describe_automations` -- ha un tool, quindi all'agente resta visibile tutto "
@@ -708,8 +708,8 @@ _BYTE: dict[Method, str] = {
 #    `EmailDraftService.delete` below is not because nothing is lost with it: a proforma
 #    never took a number, its reference sequence tolerates a gap, and `get_invoice`
 #    showed everything needed to recreate it. `InvoiceService.update` left at ORB-61 as
-#    `update_proforma`: its reason here was "note interne e campi custom, congelati dopo
-#    l'emissione: nessuna audience agentica", and it was true of the two fields the
+#    `update_proforma`: its reason here was "internal notes and custom fields, frozen
+#    after issuance: no agentic audience", and it was true of the two fields the
 #    method carried when it was written. The method now also moves a proforma's own
 #    document date (ORB-63) and its accrual period, the two header facts an agent that
 #    composes "la proforma di agosto" has to be able to state, and both are frozen by the
@@ -753,12 +753,12 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "read by the `status_customer` prompt for the receivables of one customer; an agent "
         "already reads them through `list_invoices` and `get_receivables_dashboard`"
     ),
-    ("ContractEmailService", "create"): "il testo che esce a nome del titolare lo salva la "
+    ("ContractEmailService", "create"): "il testo che esce a name del titolare lo salva la "
     "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
     ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",
     ("ContractEmailService", "prepare"): "prepara una bozza con gli allegati d'archivio e "
     "precede l'invio, che non ha un tool MCP e non lo avra' mai (routers/email_drafts.py)",
-    ("ContractRegisterService", "csv_filename"): "il nome del file che build_csv consegna",
+    ("ContractRegisterService", "csv_filename"): "il name del file che build_csv consegna",
     ("CustomerService", "create_from_suggestions"): (
         "crea insieme, in una transazione, i clienti spuntati nella lista delle proposte "
         "Gmail della Home e di Clienti (REB-223): un agente crea gli stessi clienti e le "
@@ -799,7 +799,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "servizio, non il CRM, e l'unico adapter che vi arriva e' `POST /api/tenants`"
     ),
     ("TenantService", "availability"): (
-        "la domanda che la pagina di iscrizione fa mentre la persona scrive il nome: senza "
+        "la domanda che la pagina di iscrizione fa mentre la persona scrive il name: senza "
         "actor, sul registro degli spazi, non sul CRM"
     ),
     ("TenantService", "get"): (
@@ -880,20 +880,20 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "read only by the admin's Drive page as part of Drive health; "
         "describe_drive_account already exposes its result through health (REB-562)"
     ),
-    # Le cinque righe qui sotto sono cio' che resta di 5B-2 dopo che **B2-10 ha deciso
-    # la superficie MCP di questa fetta**, come B1-14 aveva deciso quella di 5B-1.
-    # `EmailDraftService.create` e `PaymentRemindersService.candidates` erano qui e non ci sono
-    # piu': sono `draft_email` e `list_payment_reminder_candidates`. La riga di
-    # separazione non e' lettura contro scrittura, ed e' bene dirla per intero perche' e'
-    # l'unica cosa che tiene insieme le esclusioni rimaste:
+    # The five rows below are what is left of 5B-2 after **B2-10 decided the MCP
+    # surface of this slice**, as B1-14 had decided that of 5B-1.
+    # `EmailDraftService.create` and `PaymentRemindersService.candidates` were here and
+    # are gone: they are `draft_email` and `list_payment_reminder_candidates`. The
+    # dividing line is not read versus write, and it is worth stating in full because it
+    # is the only thing holding the remaining exclusions together:
     #
-    #   * si espone la *preparazione* di un testo neutro che qualcuno ha chiesto. La
-    #     bozza e' inerte -- nessuno strumento di questa superficie puo' spedirla -- e la
-    #     meta' mancante e' una persona che la legge prima che parta. Che sia meta'
-    #     operazione e' il progetto: la revisione e' cio' che rende accettabile l'invio, e
-    #     una bozza e' l'artefatto che la rende economica;
-    #   * non si espone niente che *tocchi una bozza che l'agente non ha scritto*, e
-    #     niente che scriva una richiesta di denaro a nome del titolare.
+    #   * what is exposed is the *preparation* of a neutral text that someone asked for.
+    #     The draft is inert -- no tool on this surface can send it -- and the
+    #     missing half is a person who reads it before it goes out. That it is half an
+    #     operation is the design: review is what makes sending acceptable, and
+    #     a draft is the artifact that makes review cheap;
+    #   * nothing is exposed that *touches a draft the agent did not write*, and
+    #     nothing that writes a request for money in the owner's name.
     ("EmailDraftService", "update"): "riscrivere una bozza che l'agente non ha scritto "
     "romperebbe l'unica garanzia su cui poggia `draft_email`: che il testo che parte sia "
     "il testo che una persona ha letto. Un agente che potesse riscrivere una bozza gia' "
@@ -916,7 +916,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "e' concessa qui",
     ("PaymentRemindersService", "create_reminder"): "**preparare un sollecito non e' preparare "
     "un'email**, ed e' qui che passa la riga fra questa esclusione e `draft_email`. Il "
-    "testo non e' neutro: e' una richiesta di denaro a nome del titolare, con il suo IBAN "
+    "testo non e' neutro: e' una richiesta di denaro a name del titolare, con il suo IBAN "
     "dentro. E prepararlo *consuma* una delle tre posizioni che il registro concede per "
     "fattura (spec 7.3): un agente che preparasse solleciti spenderebbe il tetto che "
     "impedisce a una fattura contestata di diventare una persecuzione automatica, senza "
@@ -977,26 +977,27 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 }
 
 
-# Nessuna settima categoria di esclusioni *definitive*. Il task A8 ne aveva aperta una --
-# `_IN_ATTESA_DI_DECISIONE`, una sola voce, `SearchService.search_everything` --
-# dichiarandola provvisoria e scrivendo che A11 avrebbe dovuto **cancellarla**, non
-# aggiornarla. A11 ha registrato il tool `search_everything` (`tools/families/shared.py`),
-# quindi il metodo e' ora raggiungibile e la riga e' sparita insieme alla sua
-# categoria. Se fosse rimasta, `test_no_declared_exclusion_is_actually_reachable` sarebbe
-# diventato rosso: e' quel test a rendere impossibile lasciare qui un'esclusione che non
-# esclude piu' niente.
+# No seventh category of *definitive* exclusions. Task A8 had opened one --
+# `_IN_ATTESA_DI_DECISIONE`, a single entry, `SearchService.search_everything` --
+# declaring it provisional and writing that A11 should have to **delete** it, not
+# update it. A11 registered the `search_everything` tool (`tools/families/shared.py`),
+# so the method is now reachable and the row disappeared together with its
+# category. Had it stayed, `test_no_declared_exclusion_is_actually_reachable` would
+# have gone red: that test is what makes it impossible to leave here an exclusion that
+# no longer excludes anything.
 #
-# Vale la pena dirlo perche' una categoria vuota lasciata in piedi "per il prossimo che
-# serve" e' esattamente il posto dove una decisione non presa si nasconde: l'elenco qui
-# sopra contiene solo scelte definitive, e chi ne aggiunge una provvisoria deve riaprire
-# un blocco a se' con il proprio nome, non riempire uno gia' pronto.
+# It is worth saying because an empty category left standing "for the next one that
+# needs it" is exactly the place where a decision not taken hides: the list above
+# only holds definitive choices, and whoever adds a provisional one must open a
+# separate block of its own with its own name, not fill one that is already ready.
 #
-# Il task 4 di questa stessa fetta (9B) aveva aperto un blocco cosi', `_IN_ATTESA_
-# DI_DRIVE_T7`, con una sola voce, `("GoogleDriveAccountService", "health")`: la
-# scrittura di `health` esisteva gia' ma il tool che la rende raggiungibile da un
-# agente, `describe_drive_account`, non ancora. Il task 7 (`tools/drive.py`) ha
-# registrato quel tool, quindi il metodo e' ora raggiungibile e la riga e' sparita
-# insieme alla sua categoria -- la stessa cancellazione, non aggiornamento, che A11
+# Task 4 of this same slice (9B) had opened a block like that, `_IN_ATTESA_
+# DI_DRIVE_T7`, with a single entry, `("GoogleDriveAccountService", "health")`: the
+# `health` write already existed but the tool that makes it reachable by an
+# agent, `describe_drive_account`, did not yet. Task 7 (`tools/drive.py`) registered
+# that tool, so the method is now reachable and the row disappeared together with
+# its category -- the same deletion, not an update, that A11 applied to
+# `_IN_ATTESA_DI_DECISIONE`.
 # ha applicato a `_IN_ATTESA_DI_DECISIONE`.
 # Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it, REB-359
 # left one: `_IN_ATTESA_DI_REB_362`, seven entries on `WorkUnitService`/`ApprovalService`,
@@ -1231,12 +1232,12 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
     `LegalEntityService.upsert` standing in for `FiscalProfileService.upsert`, which
     is the exact confusion the qualified list exists to prevent.
 
-    `_OUTSIDE_FROM_SETACCIO` counts on the same side of the equality as `_VIETATE`, which
+    `_OUTSIDE_FROM_SIEVE` counts on the same side of the equality as `_VIETATE`, which
     is what keeps it from becoming a place to hide a ban: a name moved there to avoid
     writing a category still has to appear in `FORBIDDEN_SERVICE_CALLS`, and
     `test_nothing_hides_in_the_out_of_sweep_block` checks its receivers really are
     outside the sweep rather than merely declared to be."""
-    declared = {method for _, method in _VIETATE} | {method for _, method in _OUTSIDE_FROM_SETACCIO}
+    declared = {method for _, method in _VIETATE} | {method for _, method in _OUTSIDE_FROM_SIEVE}
     assert declared == set(FORBIDDEN_SERVICE_CALLS) | {
         method for _, method in FORBIDDEN_QUALIFIED_CALLS
     }
@@ -1244,7 +1245,7 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
 
 
 def test_nothing_hides_in_the_out_of_sweep_block() -> None:
-    """`_OUTSIDE_FROM_SETACCIO` is an escape hatch, so it needs a lock.
+    """`_OUTSIDE_FROM_SIEVE` is an escape hatch, so it needs a lock.
 
     Its whole justification is that the receiver is not a class this file's inventory
     can enumerate. A `*Service` method listed there would be excluded from the
@@ -1253,7 +1254,7 @@ def test_nothing_hides_in_the_out_of_sweep_block() -> None:
     still exists -- a reason with nothing holding it to reality, which is precisely what
     the six categories above were built to avoid.
     """
-    for service, method in _OUTSIDE_FROM_SETACCIO:
+    for service, method in _OUTSIDE_FROM_SIEVE:
         assert service not in SERVICES, (
             f"'{service}' e' un servizio di packages/core: la sua esclusione va in una "
             "delle sei categorie sopra, dove il metodo viene verificato ancora esistente"
@@ -1264,7 +1265,7 @@ def test_nothing_hides_in_the_out_of_sweep_block() -> None:
     # `test_the_privileged_module_is_the_only_place_they_appear` requires every one of
     # them to be *called* from a privileged module, which a deleted or renamed method
     # cannot be. This file stays a pure AST walk with no import from `packages/core`.
-    assert ("DriveReader", "read_text") in _OUTSIDE_FROM_SETACCIO
+    assert ("DriveReader", "read_text") in _OUTSIDE_FROM_SIEVE
 
 
 def test_no_qualified_ban_is_reachable_from_a_resource_either() -> None:

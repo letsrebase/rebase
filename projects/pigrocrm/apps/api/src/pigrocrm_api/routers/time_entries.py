@@ -41,8 +41,10 @@ class TimeEntryListParams(KeysetParams, CustomParams):
         default=None, description="Solo le ore sui deal di questa azienda; omesso, tutte"
     )
     user_id: UUID | None = None
-    da: date | None = Field(default=None, description="Data minima, YYYY-MM-DD")
-    a: date | None = Field(default=None, description="Data massima, YYYY-MM-DD")
+    date_from: date | None = Field(
+        default=None, alias="from", description="Data minima, YYYY-MM-DD"
+    )
+    date_to: date | None = Field(default=None, alias="to", description="Data massima, YYYY-MM-DD")
     billable: bool | None = None
     invoiced: bool | None = Field(
         default=None, description="true = già su una riga di fattura; false = da fatturare"

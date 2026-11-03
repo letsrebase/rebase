@@ -121,13 +121,13 @@ def test_the_addresses_at_the_customers_domain_come_with_their_counts(
     body = response.json()
     assert body["domain"] == "acme.it"
     assert [
-        (c["address"], c["nome"], c["conversations"], c["already_in_directory"])
-        for c in body["corrispondenti"]
+        (c["address"], c["name"], c["conversations"], c["already_in_directory"])
+        for c in body["matching"]
     ] == [
         ("marco@acme.it", "Marco Bianchi", 2, False),
         ("sara@acme.it", "Sara Verdi", 1, False),
     ]
-    assert body["corrispondenti"][0]["last_message"] is not None
+    assert body["matching"][0]["last_message"] is not None
     assert "riservato" not in response.text
 
 
@@ -139,14 +139,14 @@ def test_an_address_in_the_address_book_is_marked_as_known(
     admin_user: Any,
 ) -> None:
     customer = _acme(api_session)
-    api_session.add(Person(nome="Marco", email="marco@acme.it", customer_id=customer.id))
+    api_session.add(Person(first_name="Marco", email="marco@acme.it", customer_id=customer.id))
     api_session.flush()
     _connect(api_session, admin_user.id)
     _mail(google, 1, "marco@acme.it", MAILBOX, days_ago=3)
 
     body = logged_in.get(f"/api/gmail/customers/{customer.id}/correspondents").json()
 
-    assert [c["already_in_directory"] for c in body["corrispondenti"]] == [True]
+    assert [c["already_in_directory"] for c in body["matching"]] == [True]
 
 
 def test_a_customer_without_a_domain_or_a_mailbox_answers_conflict(
@@ -158,7 +158,7 @@ def test_a_customer_without_a_domain_or_a_mailbox_answers_conflict(
     _connect(api_session, admin_user.id)
     response = logged_in.get(f"/api/gmail/customers/{bare.id}/correspondents")
     assert response.status_code == 409, response.text
-    assert "domain" in response.json()["detail"]
+    assert "dominio" in response.json()["detail"]
 
 
 def test_an_unknown_customer_is_not_found(
@@ -194,12 +194,16 @@ def test_one_address_becomes_a_person_of_the_customer(
 
     response = logged_in.post(
         f"/api/customers/{customer.id}/people-from-mail",
-        json={"address": "Marco@Acme.it", "nome": "Bianchi, Marco"},
+        json={"address": "Marco@Acme.it", "name": "Bianchi, Marco"},
     )
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert (body["nome"], body["last_name"], body["email"]) == ("Marco", "Bianchi", "marco@acme.it")
+    assert (body["first_name"], body["last_name"], body["email"]) == (
+        "Marco",
+        "Bianchi",
+        "marco@acme.it",
+    )
     assert body["customer_id"] == str(customer.id)
     person = api_session.execute(select(Person).where(Person.email == "marco@acme.it")).scalar_one()
     assert person.customer_id == customer.id
@@ -232,7 +236,7 @@ def test_a_missing_or_domainless_customer_cannot_take_a_person(
     api_session.flush()
     response = logged_in.post(f"/api/customers/{bare.id}/people-from-mail", json=body)
     assert response.status_code == 409, response.text
-    assert "domain" in response.json()["detail"]
+    assert "dominio" in response.json()["detail"]
 
 
 def test_a_readonly_person_can_neither_ask_nor_add(

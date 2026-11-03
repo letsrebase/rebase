@@ -26,8 +26,8 @@ def search(
     context: McpContext,
     *,
     contract_id: str | None,
-    da: str | None,
-    a: str | None,
+    date_from: str | None,
+    date_to: str | None,
     status: str | None,
     legal_entity_id: UUID | None,
     limit: int,
@@ -35,8 +35,8 @@ def search(
     query = WorkUnitListQuery(
         contract_id=UUID(contract_id) if contract_id else None,
         legal_entity_id=legal_entity_id,
-        da=iso_date(da, "da"),
-        a=iso_date(a, "a"),
+        date_from=iso_date(date_from, "date_from"),
+        date_to=iso_date(date_to, "date_to"),
         status=literal_arg("status", status, WorkUnitStatus),
         limit=limit,
     )

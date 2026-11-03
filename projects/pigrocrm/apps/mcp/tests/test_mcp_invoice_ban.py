@@ -509,8 +509,8 @@ def test_the_source_scan_actually_reads_more_than_one_file() -> None:
     # read right past until the 9C final review. Anchored on two of the four so that a
     # sweep silently narrowing back to `tools/` fails here instead of leaving every ban
     # below green over a directory it no longer looks at.
-    assert "def stato_cliente(" in source  # prompts/customer.py
-    assert "def chiusura_mese(" in source  # prompts/dashboards.py
+    assert "def status_customer(" in source  # prompts/customer.py
+    assert "def closing_month(" in source  # prompts/dashboards.py
 
 
 def test_the_registration_scan_reads_every_module_and_not_only_the_first() -> None:
@@ -555,7 +555,7 @@ def test_no_tool_reaches_a_forbidden_operation_under_another_name(method: str) -
     offenders_in_source = f".{method}(" in _tools_source()
     assert not offenders_in_source, (
         f"'.{method}(' compare in qualche modulo sotto tools/, ma quell'operazione "
-        f"{_REASON} Il divieto vale sulla chiamata, non sul nome del tool che vi "
+        f"{_REASON} Il divieto vale sulla chiamata, non sul name del tool che vi "
         "arriva: rinominare il tool o spostare la chiamata in un altro modulo non la "
         "rende ammissibile."
     )
@@ -662,7 +662,7 @@ def test_the_structural_ban_has_a_second_line_on_the_credential_itself() -> None
     assert attesi | REST_ONLY_FORBIDDEN == set(FULL_ACCESS_ACTIONS), (
         "le due meta' del divieto sono divergenti: FORBIDDEN vieta il tool, "
         "FULL_ACCESS_ACTIONS vieta l'operazione a qualunque credenziale di tipo "
-        "agente. Un nome aggiunto a una sola delle due lascia proprio il buco che la "
+        "agente. Un name aggiunto a una sola delle due lascia proprio il buco che la "
         "seconda e' stata scritta per chiudere -- l'assenza del tool non impedisce la "
         "stessa chiamata via REST con lo stesso token. Un'operazione vietata che non ha "
         "nessun tool va elencata e motivata in REST_ONLY_FORBIDDEN, non lasciata come "
@@ -780,10 +780,10 @@ def test_the_privileged_module_is_the_only_place_they_appear() -> None:
             "coprendo la cosa sbagliata"
         )
 
-    dentro, outside = _privileged_imports_of_server()
-    assert dentro == {module.stem for module in PRIVILEGED_MODULES}, (
+    inside, outside = _privileged_imports_of_server()
+    assert inside == {module.stem for module in PRIVILEGED_MODULES}, (
         "un modulo privilegiato non e' importato dentro `if resolved_settings."
-        f"mcp_full_access:`: dentro la guardia ci sono {sorted(dentro)}"
+        f"mcp_full_access:`: dentro la guardia ci sono {sorted(inside)}"
     )
     assert not outside, (
         f"{sorted(outside)} sono importati fuori dalla guardia: verrebbero registrati "
@@ -833,10 +833,10 @@ def _privileged_imports_of_server() -> tuple[set[str], set[str]]:
                     found |= {alias.name for alias in node.names}
         return found
 
-    nomi = {module.stem for module in PRIVILEGED_MODULES}
-    dentro = imported_names(list(guards)) & nomi
-    all = imported_names([tree]) & nomi
-    return dentro, all - dentro
+    names = {module.stem for module in PRIVILEGED_MODULES}
+    inside = imported_names(list(guards)) & names
+    all = imported_names([tree]) & names
+    return inside, all - inside
 
 
 def _agent_reachable_source() -> str:
@@ -877,8 +877,8 @@ def test_the_wide_scan_really_reads_the_resources_the_prompts_and_the_server() -
     source = _agent_reachable_source()
     assert "def render_customer(" in source  # resources/entities.py
     assert "def customer_resource(" in source  # server.py's inline @mcp.resource
-    assert "def stato_cliente(" in source  # prompts/customer.py
-    assert "def revisione_pipeline(" in source  # prompts/dashboards.py
+    assert "def status_customer(" in source  # prompts/customer.py
+    assert "def review_pipeline(" in source  # prompts/dashboards.py
     assert "def search_everything(" in source  # tools/families/shared.py, i.e. the old width
 
 
@@ -902,7 +902,7 @@ def test_no_unconditional_module_can_even_obtain_a_drive_reader() -> None:
 
     assert "drive_reader_for" not in unconditional, (
         "un modulo registrato sempre puo' costruire un DriveReader: da li' ogni "
-        "metodo di lettura di Drive e' raggiungibile, anche quelli il cui nome non "
+        "metodo di lettura di Drive e' raggiungibile, anche quelli il cui name non "
         "compare in FORBIDDEN_SERVICE_CALLS"
     )
     assert "drive_reader_for" in privileged, (

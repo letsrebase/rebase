@@ -39,7 +39,7 @@ def owner(mcp_engine: Engine) -> Iterator[Owner]:
     factory = session_factory(mcp_engine)
     with factory() as session:
         user = UserService(session).create(
-            UserCreate(email=EMAIL, password="supersegreta1", nome="Stdio", role="collaborator"),
+            UserCreate(email=EMAIL, password="supersegreta1", name="Stdio", role="collaborator"),
             Actor.system(),
         )
         _, raw = PatService(session, settings=Settings(_env_file=None)).create(  # type: ignore[call-arg]

@@ -32,11 +32,11 @@ def _create_deactivated_user(session: Session, email: str) -> None:
     # space's last one, even from the system actor, and this helper's test is about
     # the login answer, not about the guard.
     users.create(
-        UserCreate(email="superstite-auth@pigro.it", password=None, nome="S", role="admin"),
+        UserCreate(email="superstite-auth@pigro.it", password=None, name="S", role="admin"),
         Actor.system(),
     )
     user = users.create(
-        UserCreate(email=email, password="supersegreta1", nome="Disattivato", role="admin"),
+        UserCreate(email=email, password="supersegreta1", name="Disattivato", role="admin"),
         Actor.system(),
     )
     users.update(user.id, UserUpdate(active=False), Actor.system())
@@ -278,7 +278,7 @@ def test_a_valid_token_is_never_refused_by_the_lock_its_neighbours_earned(
     """The backoff is per client address, so a revoked token in a cron job behind the same
     egress must not lock out the working ones: a token that resolves passes whatever the
     address has failed with."""
-    raw = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    raw = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
     bare = TestClient(logged_in.app)
     bad = {"Authorization": "Bearer pgc_inventato"}
     for _ in range(FREE_BEARER_FAILURES + 2):
@@ -560,7 +560,7 @@ def test_logout_consumes_every_refresh_token_the_browser_sends(
 
 def test_a_personal_access_token_authenticates_too(logged_in: TestClient) -> None:
     """The same API serves the browser and the agent; only the credential differs."""
-    raw = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    raw = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
 
     bare = TestClient(logged_in.app)
     response = bare.get("/api/auth/me", headers={"Authorization": f"Bearer {raw}"})

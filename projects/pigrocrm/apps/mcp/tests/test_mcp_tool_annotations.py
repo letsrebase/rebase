@@ -190,7 +190,7 @@ def test_compact_schema_drops_the_keywords_and_keeps_the_values() -> None:
             "default": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
             "status": {"enum": ["title", "default"], "default": "title", "type": "string"},
             "lines": {"items": {"title": "Riga", "type": "object"}, "type": "array"},
-            "da": {"type": "integer", "default": 0},
+            "date_from": {"type": "integer", "default": 0},
         },
         "required": ["title"],
     }
@@ -201,7 +201,7 @@ def test_compact_schema_drops_the_keywords_and_keeps_the_values() -> None:
             "default": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "status": {"enum": ["title", "default"], "default": "title", "type": "string"},
             "lines": {"items": {"type": "object"}, "type": "array"},
-            "da": {"type": "integer", "default": 0},
+            "date_from": {"type": "integer", "default": 0},
         },
         "required": ["title"],
     }

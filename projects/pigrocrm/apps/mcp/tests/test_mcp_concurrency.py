@@ -123,13 +123,13 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
         # never collides with the seeded `lead`/`vinto` on the unique index. `position`
         # well past the defaults leaves any existing ordering alone.
         won = PipelineStage(
-            nome=STAGE_WON, position=910, default_probability=100, type="won", code=None
+            name=STAGE_WON, position=910, default_probability=100, type="won", code=None
         )
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([won, customer])
         session.flush()
         deal = Deal(
-            nome=f"{_PREFIX} deal vinto",
+            name=f"{_PREFIX} deal vinto",
             customer_id=customer.id,
             pipeline_stage_id=won.id,
             expected_value=Decimal("4000.00"),
@@ -171,9 +171,9 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             remove_legal_entity(session, legal_entity_id)
             session.commit()
 
@@ -420,7 +420,7 @@ async def test_ten_concurrent_searches_also_succeed(concurrent_server: Any) -> N
     dashboards do not, the problem is the longer-held connection of an aggregation query
     rather than the session sharing itself.
     """
-    results = await _gather_calls(concurrent_server, "search_everything", {"deadline": _PREFIX})
+    results = await _gather_calls(concurrent_server, "search_everything", {"term": _PREFIX})
     assert all(not result.is_error for result in results), [
         str(result.content) for result in results if result.is_error
     ]

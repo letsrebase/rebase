@@ -80,7 +80,7 @@ async def test_a_dated_commitment_lands_on_its_day(server) -> None:
 
     month = _payload(result)
     assert [day["day"] for day in month["days"]] == [FIRST.isoformat()]
-    assert [item["title"] for item in month["days"][0]["attivita"]] == ["Sollecitare Rossi"]
+    assert [item["title"] for item in month["days"][0]["tasks"]] == ["Sollecitare Rossi"]
 
 
 async def test_completing_and_cancelling_are_two_different_closures(server) -> None:
@@ -204,7 +204,7 @@ async def _owner_server(mcp_session, tmp_path):
     from pigrocrm_mcp.server import build_server
 
     def member(key: str) -> User:
-        user = User(email=f"{key}@example.test", password_hash="x", nome=key, role="admin")
+        user = User(email=f"{key}@example.test", password_hash="x", name=key, role="admin")
         mcp_session.add(user)
         mcp_session.flush()
         return user
