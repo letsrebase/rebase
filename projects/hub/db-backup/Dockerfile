@@ -19,7 +19,7 @@
 # The scripts are copied in rather than mounted, so a deploy that changes one is a
 # changed image and compose recreates the container; a bind-mounted file would be a
 # change compose cannot see, and the loop would go on running the old script.
-FROM postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+FROM postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
 
 RUN apk add --no-cache curl openssl
 
