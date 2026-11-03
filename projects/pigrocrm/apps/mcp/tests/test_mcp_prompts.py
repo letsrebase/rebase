@@ -774,8 +774,8 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
 # *size*, and a test that only checked the words in a prompt would pass on a briefing that
 # pasted the whole register into the model's context window on every render.
 
-# Field names, not concepts. Criterion 10: "verificato per name di campo, non per
-# intenzione". The first four are the fiscal estimate's own fields (slice 4 §11); the last
+# Field names, not concepts. Criterion 10: checked by field name, not by
+# intent. The first four are the fiscal estimate's own fields (slice 4 §11); the last
 # three are the parameters it is derived from, which are just as sensitive and would let a
 # reader reconstruct it.
 FORBIDDEN_FISCAL_FIELDS = frozenset(

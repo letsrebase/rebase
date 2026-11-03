@@ -613,10 +613,10 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
 
         threshold = logged_in.get("/api/settings/space").json()["preferred_concentration_threshold"]
         overview = logged_in.get("/api/analytics/overview", params={"year": year}).json()
-        sopra_threshold = [
+        above_threshold = [
             row for row in overview["customer_concentration"] if row["share"] > threshold
         ]
-        assert len(sopra_threshold) == signal["count"]
+        assert len(above_threshold) == signal["count"]
         assert signal["count"] >= 1, "the added customer alone should cross the default share"
     finally:
         with session_factory(dashboard_corpus)() as session:
@@ -835,15 +835,15 @@ def test_every_dashboard_takes_the_legal_entity_and_echoes_it(
 ) -> None:
     """The arithmetic is proven in `packages/core/tests/test_dashboard_per_azienda.py`;
     this is the wire: the parameter exists on all four, it is echoed back (`null` for
-    «tutte»), and under an azienda that owns nothing every figure the corpus put on
+    «all_entities»), and under an azienda that owns nothing every figure the corpus put on
     the page reads empty, while the page keeps its shape."""
     schema = logged_in.get("/openapi.json").json()
     declared = {p["name"] for p in schema["paths"][f"/api/dashboard/{path}"]["get"]["parameters"]}
     assert "legal_entity_id" in declared
 
-    tutte = logged_in.get(f"/api/dashboard/{path}")
-    assert tutte.status_code == 200, tutte.text
-    assert tutte.json()["legal_entity_id"] is None
+    all_entities = logged_in.get(f"/api/dashboard/{path}")
+    assert all_entities.status_code == 200, all_entities.text
+    assert all_entities.json()["legal_entity_id"] is None
 
     nobody = str(uuid4())
     scoped = logged_in.get(f"/api/dashboard/{path}", params={"legal_entity_id": nobody})

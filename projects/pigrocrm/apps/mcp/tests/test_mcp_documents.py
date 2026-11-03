@@ -46,7 +46,7 @@ from pigrocrm.core.timetracking.schemas import TimeEntryCreate  # noqa: E402
 from pigrocrm.core.timetracking.service import TimeEntryService  # noqa: E402
 from pigrocrm_mcp.server import build_server  # noqa: E402
 
-# A Drive file id of the shape the titolare types into Impostazioni → Drive.
+# A Drive file id of the shape the owner types into Settings → Drive.
 STORAGE_FOLDER = "1CartellaScritturaMCP"
 REFRESH_TOKEN = "1//0gMcpDriveStorageRefresh"
 DRIVE_MAILBOX = "titolare@example.it"
@@ -164,9 +164,9 @@ async def test_get_document_versions_lists_them_newest_first(server, seeded_offe
 
 async def test_the_four_document_tools_the_audit_added_are_registered(server) -> None:
     """Each was reachable over REST and excluded from MCP with a reason that only said
-    nobody had written the tool yet -- `TemplateService.preview` "non ha ancora
-    un'audience agentica", `DocumentService.regenerate` "e' una decisione della persona
-    che l'ha vista", `soft_delete`/`restore` "l'MCP non archivia documenti". None of the
+    nobody had written the tool yet -- `TemplateService.preview` "has no agent
+    audience yet", `DocumentService.regenerate` "is a decision for the person who
+    saw it", `soft_delete`/`restore` "MCP does not archive documents". None of the
     four decides anything a person has not already decided, and the last two are the
     archive/restore pair this surface already exposes for customers, deals, people,
     costs and time entries."""
@@ -570,7 +570,7 @@ def document_with_pdf(mcp_session: Session, seeded_customer_id: str, tmp_path: P
 async def test_read_document_text_returns_what_is_written_inside_the_pdf(
     server, document_with_pdf: str
 ) -> None:
-    """The reason the tool exists: a codice destinatario that lives only on a signed
+    """The reason the tool exists: a recipient code that lives only on a signed
     order form was, until this, recoverable solely by downloading the file and reading
     it by eye -- which an agent cannot do."""
     async with Client(server) as client:

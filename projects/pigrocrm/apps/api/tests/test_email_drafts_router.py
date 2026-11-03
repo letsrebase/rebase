@@ -427,8 +427,8 @@ def test_a_readonly_actor_cannot_verify_an_outcome(
 def test_editing_a_failed_draft_reopens_it_and_clears_the_stale_error(
     logged_in: TestClient, customer_id: str, api_session: Session
 ) -> None:
-    """Spec 6.3(a): «la bozza intatta con l'errore accanto, il composer si riapre con il
-    testo dentro». Keeping `failed` after an edit would leave an error sentence beside
+    """Spec 6.3(a): the draft intact with the error beside it, the composer reopens with the
+    text inside. Keeping `failed` after an edit would leave an error sentence beside
     text it no longer describes, which reads as a failure that has just happened -- the
     stale-banner defect, stored in a column."""
     draft = _create(logged_in, customer_id)

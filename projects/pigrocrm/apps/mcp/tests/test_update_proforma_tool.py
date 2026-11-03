@@ -184,7 +184,7 @@ async def test_update_proforma_refuses_to_invoice_and_to_consumed_proforma(
 async def test_a_proforma_takes_its_purchase_order_at_creation_and_on_update(
     server: Any, mcp_session: Session
 ) -> None:
-    """REB-693: the order goes in on `create_proforma`, a CIG is added on
+    """REB-693: the order goes in on `create_proforma`, a tender code (CIG) is added on
     `update_proforma` without touching what was stored, `get_invoice` reads it back,
     and a CIG with no number comes back as the service's sentence, not a raw dump."""
     customer_id = _customer(mcp_session)

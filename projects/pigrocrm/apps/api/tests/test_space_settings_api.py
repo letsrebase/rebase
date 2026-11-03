@@ -1,4 +1,4 @@
-"""Impostazioni → Spazio over HTTP, and the rows actually changing what every route sees."""
+"""Settings → Space over HTTP, and the rows actually changing what every route sees."""
 
 from fastapi.testclient import TestClient
 

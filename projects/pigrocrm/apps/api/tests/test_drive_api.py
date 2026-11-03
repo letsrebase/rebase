@@ -582,8 +582,8 @@ def test_an_explicit_null_storage_folder_id_clears_it(
     logged_in: TestClient, drive_ready: TestClient, api_session: Session, admin_user: Any
 ) -> None:
     """The other half: `null` was named, so it is written. Clearing the write folder is
-    something a person is allowed to ask for -- "lasciala vuota per non scrivere alcun
-    documento" is what the settings page offers -- and it must stay reachable."""
+    something a person is allowed to ask for -- the option to leave it empty so that no
+    document is written is what the settings page offers -- and it must stay reachable."""
     _connected_account(api_session, admin_user.id, storage_folder_id=STORAGE_ID)
 
     response = logged_in.patch(
@@ -674,7 +674,7 @@ def test_the_account_endpoint_says_no_space_storage_is_in_effect(
     assert response.json()["space_storage"] == {"in_effect": False, "holder": None}
 
 
-def test_the_account_endpoint_names_no_space_storage_to_to_collaborator(
+def test_the_account_endpoint_names_no_space_storage_to_collaborator(
     logged_in: TestClient, drive_ready: TestClient, api_session: Session
 ) -> None:
     """A collaboratore chooses no write folder (`set_roots`'s own `require_admin`), so

@@ -351,8 +351,8 @@ async def test_every_dashboard_tool_offers_the_legal_entity_and_echoes_it(
         ):
             assert "legal_entity_id" in tools[name].input_schema["properties"], name
             assert "legal_entity_id" in (tools[name].description or ""), name
-            tutte = _payload(await client.call_tool(name, {}))
-            assert tutte["legal_entity_id"] is None, name
+            all_entities = _payload(await client.call_tool(name, {}))
+            assert all_entities["legal_entity_id"] is None, name
             scoped = _payload(await client.call_tool(name, {"legal_entity_id": nobody}))
             assert scoped["legal_entity_id"] == nobody, name
         commercial = _payload(

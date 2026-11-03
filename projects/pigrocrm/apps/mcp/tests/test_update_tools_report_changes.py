@@ -284,13 +284,13 @@ async def test_clearing_a_contract_field_is_reported(
 
 async def test_clearing_an_task_date_by_flag_is_reported_as_cleared(server) -> None:
     async with Client(server) as client:
-        attivita = await _create(
+        task_row = await _create(
             client, "create_task", {"title": "Richiamare", "due_date": "2026-11-30"}
         )
         result = await _create(
             client,
             "update_task",
-            {"task_id": attivita["id"], "changes": {"due_date_to_remove": True}},
+            {"task_id": task_row["id"], "changes": {"due_date_to_remove": True}},
         )
 
     assert result["due_date"] is None

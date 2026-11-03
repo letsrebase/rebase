@@ -281,8 +281,8 @@ def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
 def test_to_collaborator_is_brought_back_to_first_steps_not_to_settings_they_cannot_open(
     collaborator_client: TestClient, gmail_ready: TestClient, api_session: Session
 ) -> None:
-    """A collaboratore may connect their own mailbox (`require_write`), from the start
-    page's Gmail door, but Impostazioni is admin-only: a consent that ended there would
+    """A collaborator may connect their own mailbox (`require_write`), from the start
+    page's Gmail door, but Settings is admin-only: a consent that ended there would
     answer «Accesso riservato». With work in the space the way back is «Primi passi»,
     the other page that carries the door and reads the same outcome table."""
     api_session.add(Customer(legal_name="Acme S.r.l.", country="IT", custom_fields={}))

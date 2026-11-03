@@ -370,10 +370,10 @@ async def test_a_build_that_fails_is_this_applications_own_500(
     raw, _ = root_token
     _, client = served
 
-    async def esplode(*args: Any, **kwargs: Any) -> Any:
+    async def explodes(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("il build esplode")
 
-    monkeypatch.setattr(McpHttpApp, "_build", esplode)
+    monkeypatch.setattr(McpHttpApp, "_build", explodes)
     response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
     assert response.status_code == 500
     assert response.json() == {"detail": "errore interno"}

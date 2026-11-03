@@ -1,7 +1,7 @@
-"""The azienda over HTTP (REB-624, spec 2026-10-03 §1.6, §3): the proposal route, the
-customer routes that take an `legal_entity_id`, and every list that narrows to one azienda.
+"""The legal entity over HTTP (REB-624, spec 2026-10-03 §1.6, §3): the proposal route, the
+customer routes that take an `legal_entity_id`, and every list that narrows to one legal entity.
 
-The second azienda is written by row, since no route creates one before milestone 5
+The second legal entity is written by row, since no route creates one before milestone 5
 (§9). The rows under test are made through the routes where a route exists and through
 the core services where creating them over HTTP would need the fiscal set-up the test
 is not about (a contract, an invoice).
@@ -77,7 +77,7 @@ def test_the_proposal_route_answers_the_legal_entity_the_nation_proposes(
 
     assert proposed(country="GB") == british
     assert proposed(country="gb") == british
-    # No azienda of that nation: the one foreign azienda for a foreign customer.
+    # No legal entity of that nation: the one foreign legal entity for a foreign customer.
     assert proposed(country="DE") == british
     assert proposed(country="IT") == default
     assert proposed() == default

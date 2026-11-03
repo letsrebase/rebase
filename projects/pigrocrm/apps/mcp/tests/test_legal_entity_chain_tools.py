@@ -1,6 +1,6 @@
-"""The azienda over MCP (REB-624, spec 2026-10-03 §1.6, §7): `suggest_legal_entity`, the
+"""The legal entity over MCP (REB-624, spec 2026-10-03 §1.6, §7): `suggest_legal_entity`, the
 `country` and `legal_entity_id` of `create_customer`, and the `legal_entity_id` every list and
-search tool takes. The second azienda is written by row, since no tool creates one
+search tool takes. The second legal entity is written by row, since no tool creates one
 before milestone 5 (§9).
 """
 
