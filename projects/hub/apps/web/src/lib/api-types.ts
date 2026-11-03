@@ -2543,7 +2543,7 @@ export interface components {
          * AdminList
          * @description Every admin (ORB-123), oldest first with no search term so the page still reads
          *     as a history, or best-match first once `q` narrows it (REB-313, the shape REB-285
-         *     gives Talenti and Aziende). `next_cursor` is `None` on the last page.
+         *     gives «Talenti» and «Aziende»). `next_cursor` is `None` on the last page.
          */
         AdminList: {
             /** Items */

@@ -85,9 +85,10 @@ PUBLISHED_KEYWORDS = {
     "description", "summary", "title", "help", "instructions", "epilog",
     "response_description",
 }  # fmt: skip
-# An OpenAPI response object (`responses={401: {"description": ...}}`): a dict literal
-# whose string keys are all among these and include `description`.
-RESPONSE_OBJECT_KEYS = {"description", "content", "model", "headers", "links"}
+# An OpenAPI response or header object (`responses={401: {"description": ...}}`,
+# `"headers": {"Retry-After": {"description": ..., "schema": ...}}`): a dict literal whose
+# string keys are all among these and include `description`.
+RESPONSE_OBJECT_KEYS = {"description", "content", "model", "headers", "links", "schema"}
 
 
 def _is_response_object(node: ast.Dict, marked: set[int]) -> bool:

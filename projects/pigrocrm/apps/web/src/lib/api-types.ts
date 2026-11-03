@@ -12972,7 +12972,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -13106,7 +13106,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -13251,7 +13251,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -13407,7 +13407,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -13565,7 +13565,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -13821,7 +13821,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -38832,7 +38832,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -39096,7 +39096,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -39625,7 +39625,7 @@ export interface operations {
             /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
             429: {
                 headers: {
-                    /** @description Secondi da attendere prima di riprovare. */
+                    /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
