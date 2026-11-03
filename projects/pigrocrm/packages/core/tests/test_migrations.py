@@ -2552,3 +2552,149 @@ def _read_0069(url: str, column: str) -> tuple[Any, ...]:
         return columns, snapshot, timeline
     finally:
         engine.dispose()
+
+
+def test_0070_gives_every_valued_deal_one_lump_sum_line_and_drops_with_the_values_kept(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-928 over deals planted at 0069: two with a value, one with none. Up, each valued
+    deal has one `flat`, `one_off` line of quantity 1 at its value and the unvalued one has
+    none; the table is forced and policied. Down, the table is gone and the values stay."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    stage = "00000000-0000-7000-8000-0000000000f1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    values = {"d1": "1234.50", "d2": "0.00", "d3": None}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0069")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, name, position, default_probability, type) "
+                    f"VALUES ('{stage}', 'Lead', 0, 10, 'open')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, "
+                    f"custom_fields) VALUES ('{customer}', 'C', 'IT', '{entity}', '{{}}')"
+                )
+            )
+            for key, value in values.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO deals (id, name, customer_id, legal_entity_id, "
+                        "pipeline_stage_id, probability, expected_value, custom_fields) VALUES "
+                        f"('00000000-0000-7000-8000-0000000000{key}', :name, '{customer}', "
+                        f"'{entity}', '{stage}', 10, :value, '{{}}')"
+                    ),
+                    {"name": key, "value": value},
+                )
+        engine.dispose()
+
+        upgrade(config, "0070")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            lines = connection.execute(
+                text(
+                    "SELECT d.name, l.position, l.unit, l.delivery_period, l.unit_price, "
+                    "l.quantity, l.start, l.duration_months FROM deal_value_lines l "
+                    "JOIN deals d ON d.id = l.deal_id ORDER BY d.name"
+                )
+            ).all()
+        engine.dispose()
+        assert [tuple(row) for row in lines] == [
+            ("d1", 0, "flat", "one_off", Decimal("1234.50"), Decimal("1.00"), None, None),
+            ("d2", 0, "flat", "one_off", Decimal("0.00"), Decimal("1.00"), None, None),
+        ]
+        assert _table_shape(url, "deal_value_lines") == (True, True, {"legal_entity_scope"})
+
+        downgrade(config, "0069")
+        assert _table_shape(url, "deal_value_lines")[0] is False
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            kept = connection.execute(
+                text("SELECT name, expected_value FROM deals ORDER BY name")
+            ).all()
+        engine.dispose()
+        assert [tuple(row) for row in kept] == [
+            ("d1", Decimal("1234.50")),
+            ("d2", Decimal("0.00")),
+            ("d3", None),
+        ]
+
+
+def test_0070_refuses_a_line_the_service_would_refuse(pigrocrm_postgres: Any) -> None:
+    """The CHECKs are the second line behind `DealService`: a flat line of quantity 2, a flat
+    one-off with a duration, a negative price and a zero quantity are each refused by the
+    database, and `(deal_id, position)` is unique."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0070")
+        engine: Engine = create_engine(url)
+        deal = "00000000-0000-7000-8000-0000000000d1"
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000e1', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, name, position, default_probability, type) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000f1', 'Lead', 0, 10, 'open')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, "
+                    "custom_fields) VALUES ('00000000-0000-7000-8000-0000000000c1', 'C', 'IT', "
+                    "'00000000-0000-7000-8000-0000000000e1', '{}')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO deals (id, name, customer_id, legal_entity_id, "
+                    "pipeline_stage_id, probability, custom_fields) VALUES "
+                    f"('{deal}', 'D', '00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000e1', "
+                    "'00000000-0000-7000-8000-0000000000f1', 10, '{}')"
+                )
+            )
+
+        def insert(position: int, unit: str, period: str, price: str, qty: str, months: str):  # type: ignore[no-untyped-def]
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO deal_value_lines (id, deal_id, position, unit, "
+                        "delivery_period, unit_price, quantity, duration_months) VALUES "
+                        f"(gen_random_uuid(), '{deal}', {position}, '{unit}', '{period}', "
+                        f"{price}, {qty}, {months})"
+                    )
+                )
+
+        insert(0, "flat", "monthly", "10", "1", "null")
+        for args in (
+            (1, "flat", "monthly", "10", "2", "null"),
+            (1, "flat", "one_off", "10", "1", "3"),
+            (1, "flat", "one_off", "-1", "1", "null"),
+            (1, "day", "monthly", "10", "0", "null"),
+            (1, "day", "monthly", "10", "1", "0"),
+            (1, "week", "monthly", "10", "1", "null"),
+            (1, "flat", "quarterly", "10", "1", "null"),
+            (0, "flat", "monthly", "10", "1", "null"),
+        ):
+            with pytest.raises(IntegrityError):
+                insert(*args)
+        insert(1, "day", "one_off", "800", "5", "1")
+        engine.dispose()
