@@ -229,8 +229,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         engagement letter with its number and, if the freelancer has no active framework
         agreement nor one already out for signature of the same type as the letter, a new
         framework agreement of that type. Nothing is sent: for signing there is
-        `send_match_for_signature`. `customer` and `terms` as in `preview_match`, and so is
-        `regime`, which you should call first to reread the sentences. The freelancer's tax
+        `send_match_for_signature`. `customer`, `terms` and `regime` work as in
+        `preview_match`, which you should call first to reread the sentences. The freelancer's tax
         data is required (`set_freelancer_tax_data`). `expected_days`, the days expected for
         the Pigro report (between 1 and 366, optional), lives on the match and not on the
         letter: its text stays that of «Impegno». `match_id`, a UUID chosen by the caller,
