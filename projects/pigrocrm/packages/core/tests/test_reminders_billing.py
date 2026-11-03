@@ -873,6 +873,22 @@ def test_a_one_off_fee_is_covered_by_an_invoice_dated_on_or_after_the_end(world:
     assert world.raised("on_completion_unbilled") == {}
 
 
+def test_a_days_only_invoice_does_not_cover_the_one_off_fee_of_a_contract_with_a_daily_card(
+    world: World,
+) -> None:
+    contract = world.contract("on_completion", end=_ago(10))
+    _one_off(world, contract)
+    world.fee(contract, type="daily", amount=Decimal("500.00"), unit="day", delivery_period=None)
+    days = world.invoice(issue_date=_ago(5))
+    world.day(contract, _ago(20), invoice_line_id=world.line(days).id)
+
+    assert set(world.raised("on_completion_unbilled")) == {contract.id}
+
+    world.line(world.invoice(issue_date=_ago(4)))  # a line no day is bound to: the fee
+
+    assert world.raised("on_completion_unbilled") == {}
+
+
 def test_a_one_off_fee_not_in_force_at_the_end_or_on_a_running_contract_is_not_raised(
     world: World,
 ) -> None:

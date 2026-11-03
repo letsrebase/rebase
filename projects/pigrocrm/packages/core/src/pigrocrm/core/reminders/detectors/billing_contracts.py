@@ -372,8 +372,9 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
     """Contracts billed on completion, ended at least `bound` days ago (never fewer than
     one), with something still unbilled: worked days on no invoice line, and/or a one-off
     fee (an `one_off` rate card in force on the contract's `end`) that no issued
-    invoice of the customer dated on or after `end` covers. A contract with both is
-    raised once, counted from `end` either way, and the text names both."""
+    invoice of the customer dated on or after `end` covers; on a contract that also bills
+    days, an invoice of days alone does not (the rule of `detect_fixed_fee`, REB-937). A
+    contract with both is raised once, counted from `end` either way, and the text names both."""
     ended = (~_PERIODIC, Contract.end.is_not(None), Contract.end < ctx.today)
     has_fee = exists().where(RateCard.contract_id == Contract.id, RateCard.type == ONE_OFF_FEE_TYPE)
     contracts = _live_contracts(ctx, *ended, or_(_has_unbilled_days(), has_fee))
@@ -386,7 +387,10 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
             )
         ):
             cards[card.contract_id].append(card)
-    latest = _latest_invoice_by_customer(ctx, {c.customer_id for c in contracts.values()})
+    customers = {c.customer_id for c in contracts.values()}
+    latest = _latest_invoice_by_customer(ctx, customers)
+    latest_fee = _latest_invoice_by_customer(ctx, customers, beyond_days=True)
+    day_billers = _bills_days(ctx, list(contracts))
     resolver = LinkResolver(ctx.session)
     resolver.preload(customers=(contract.customer_id for contract in contracts.values()))
     found: list[Detection] = []
@@ -396,7 +400,7 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
         if late < max(ctx.bound(ON_COMPLETION), 1):
             continue
         end = contract.end
-        covered = latest.get(contract.customer_id)
+        covered = (latest_fee if contract.id in day_billers else latest).get(contract.customer_id)
         fee_unbilled = (covered is None or covered < end) and any(
             card.valid_from <= end and (card.valid_to is None or card.valid_to >= end)
             for card in cards.get(contract.id, ())
