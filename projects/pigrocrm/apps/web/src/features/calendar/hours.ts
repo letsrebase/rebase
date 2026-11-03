@@ -9,7 +9,7 @@
 
 /** The hours «giornata» fills in, and half of one. Defaults in a field, never columns:
  *  a day is eight hours on a deal and stays an ordinary time entry. */
-export const WorkUnit = '8.00'
+export const FULL_DAY = '8.00'
 export const HALF = '4.00'
 
 /**

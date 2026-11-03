@@ -6,9 +6,9 @@
 import { describe, expect, it } from 'vitest'
 import { validateDaysSearch, validateNewDaySearch } from '@/features/days/search'
 import { validateProposalsSearch } from '@/features/proposals/search'
-import { Route as CalendarRoute } from './app/calendar'
-import { Route as DealListRoute } from './app/deal/list'
-import { Route as InvoicesRoute } from './app/invoices/index'
+import { Route as CalendarRoute } from '@/routes/app/calendar'
+import { Route as DealListRoute } from '@/routes/app/deal/list'
+import { Route as InvoicesRoute } from '@/routes/app/invoices/index'
 
 type Validate = (search: Record<string, unknown>) => Record<string, unknown>
 

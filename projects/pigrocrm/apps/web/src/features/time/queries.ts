@@ -89,11 +89,14 @@ export function useDealRates(dealId: string, userId: string | undefined) {
   })
 }
 
-/** Invalidates the summary and the deal's own timeline alongside the list: an hour
+/** Invalidates the summary, the deal's own timeline and the calendar alongside the list: an hour
  *  changes all three, and a stale summary next to a fresh list is the shape of bug
  *  that makes people stop trusting the screen. */
 function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>, dealId?: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries() })
+  // The calendar's month carries the hours of each day (and the day panel reads them), so an
+  // hour written from the register, the week grid or the panel itself makes it stale too.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
   if (dealId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.dealTimeSummary(dealId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('deal', dealId) })

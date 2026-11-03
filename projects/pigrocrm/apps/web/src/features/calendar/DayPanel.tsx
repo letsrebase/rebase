@@ -27,7 +27,7 @@ import { toProblem } from '@/lib/api'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
-import { WorkUnit, HALF, normaliseHours } from './hours'
+import { FULL_DAY, HALF, normaliseHours } from './hours'
 import type { CalendarDay } from './queries'
 
 /**
@@ -163,14 +163,14 @@ function LogHours({
   const deals = useDeals()
   const log = useLogTime()
   const [dealId, setDealId] = useState('')
-  const [ore, setHours] = useState(WorkUnit)
+  const [typed, setTyped] = useState(FULL_DAY)
   const [description, setDescription] = useState('')
 
-  const valid = normaliseHours(ore)
+  const valid = normaliseHours(typed)
 
   /**
    * `quante` is passed in rather than read from state, and that is not a style choice:
-   * `setHours(WorkUnit)` followed by `submit()` sent whatever was in the field *before*
+   * `setTyped(FULL_DAY)` followed by `submit()` sent whatever was in the field *before*
    * the click, because a `useState` setter does not update the current render's value.
    * Pressing «Giornata» after typing 4 logged four hours and said «giornata».
    */
@@ -225,9 +225,9 @@ function LogHours({
           <Input
             id="hours-of-day-input"
             inputMode="decimal"
-            value={ore}
-            onChange={(event) => setHours(event.target.value)}
-            aria-invalid={ore.trim() !== '' && valid === null}
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            aria-invalid={typed.trim() !== '' && valid === null}
             aria-label="Ore"
           />
         </div>
@@ -245,7 +245,7 @@ function LogHours({
         <Button
           size="sm"
           disabled={dealId === '' || valid === null || log.isPending}
-          onClick={() => submit(ore)}
+          onClick={() => submit(typed)}
         >
           Registra {valid === null ? '—' : formatItalianQuantity(valid)} h
         </Button>
@@ -254,8 +254,8 @@ function LogHours({
           variant="outline"
           disabled={dealId === '' || log.isPending}
           onClick={() => {
-            setHours(WorkUnit)
-            submit(WorkUnit)
+            setTyped(FULL_DAY)
+            submit(FULL_DAY)
           }}
         >
           Giornata (8h)
@@ -265,14 +265,14 @@ function LogHours({
           variant="outline"
           disabled={dealId === '' || log.isPending}
           onClick={() => {
-            setHours(HALF)
+            setTyped(HALF)
             submit(HALF)
           }}
         >
           Mezza (4h)
         </Button>
       </div>
-      {ore.trim() !== '' && valid === null && (
+      {typed.trim() !== '' && valid === null && (
         <p className="text-sm text-muted-foreground">
           Le ore vanno scritte come numero, da 0,25 a 24 — per esempio 7,5 oppure 3.
         </p>

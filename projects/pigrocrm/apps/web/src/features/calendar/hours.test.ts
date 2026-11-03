@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WorkUnit, HALF, normaliseHours } from './hours'
+import { FULL_DAY, HALF, normaliseHours } from './hours'
 
 describe('normaliseHours', () => {
   it('takes the ordinary shapes somebody types', () => {
@@ -38,7 +38,7 @@ describe('normaliseHours', () => {
   })
 
   it('has presets that are themselves valid hours', () => {
-    expect(normaliseHours(WorkUnit)).toBe(WorkUnit)
+    expect(normaliseHours(FULL_DAY)).toBe(FULL_DAY)
     expect(normaliseHours(HALF)).toBe(HALF)
   })
 })
