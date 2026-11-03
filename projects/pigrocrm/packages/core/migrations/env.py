@@ -60,11 +60,15 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        # Since 0048 every azienda-scoped table carries FORCE ROW LEVEL SECURITY, which
+        # Since 0048 every legal-entity-scoped table carries FORCE ROW LEVEL SECURITY, which
         # binds the owner too; a data migration that backfills one of them (0045 to
         # 0047 did) would otherwise touch zero rows and report success. Session-level,
         # since Alembic may open a transaction per revision (REB-634).
+        # The GUC was `pigrocrm.aziende` up to revision 0067 and is `pigrocrm.legal_entities`
+        # from 0068 (REB-898): both are set, so a run that crosses the rename, and a
+        # database that stops on either side of it, find the policies of its revision open.
         connection.execute(text("SELECT set_config('pigrocrm.aziende', '*', false)"))
+        connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
         connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
