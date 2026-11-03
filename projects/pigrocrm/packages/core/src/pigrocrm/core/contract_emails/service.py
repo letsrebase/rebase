@@ -76,8 +76,8 @@ _SAMPLE: dict[str, Any] = {
 
 
 def variables() -> list[ContractEmailVariable]:
-    named = [ContractEmailVariable(nome=v.nome, label=v.label) for v in TEMPLATE_VARIABLES]
-    named.extend(ContractEmailVariable(nome=n, label=n) for n in LEGAL_ENTITY_VARIABLES)
+    named = [ContractEmailVariable(name=v.name, label=v.label) for v in TEMPLATE_VARIABLES]
+    named.extend(ContractEmailVariable(name=n, label=n) for n in LEGAL_ENTITY_VARIABLES)
     return named
 
 
@@ -127,7 +127,7 @@ class ContractEmailService:
         rows = self.session.scalars(
             select(ContractEmailTemplate)
             .where(ContractEmailTemplate.contract_id == contract_id)
-            .order_by(func.lower(ContractEmailTemplate.nome))
+            .order_by(func.lower(ContractEmailTemplate.name))
         )
         return [ContractEmailTemplateRead.model_validate(r) for r in rows]
 
@@ -139,15 +139,15 @@ class ContractEmailService:
         self._check_renders(data.subject, data.body)
         row = ContractEmailTemplate(
             contract_id=contract_id,
-            nome=data.nome,
+            name=data.name,
             subject=data.subject,
             body=data.body,
             attachments=list(dict.fromkeys(data.attachments)),
         )
-        with self._unique_name(data.nome):
+        with self._unique_name(data.name):
             self.session.add(row)
         self.activities.record(
-            CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"nome": data.nome}
+            CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"name": data.name}
         )
         self.session.commit()
         return ContractEmailTemplateRead.model_validate(row)
@@ -165,26 +165,26 @@ class ContractEmailService:
         subject = changes["subject"] if changes.get("subject") is not None else row.subject
         body = changes["body"] if changes.get("body") is not None else row.body
         self._check_renders(subject, body)
-        nome = changes["nome"] if changes.get("nome") is not None else row.nome
-        with self._unique_name(nome):
-            for field in ("nome", "subject", "body", "active"):
+        name = changes["name"] if changes.get("name") is not None else row.name
+        with self._unique_name(name):
+            for field in ("name", "subject", "body", "active"):
                 if changes.get(field) is not None:
                     setattr(row, field, changes[field])
             if changes.get("attachments") is not None:
                 row.attachments = list(dict.fromkeys(changes["attachments"]))
         self.activities.record(
-            CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"nome": row.nome}
+            CONTRACT_ENTITY, contract_id, "email_template_saved", actor, {"name": row.name}
         )
         self.session.commit()
         return ContractEmailTemplateRead.model_validate(row)
 
-    def _unique_name(self, nome: str) -> AbstractContextManager[None]:
+    def _unique_name(self, name: str) -> AbstractContextManager[None]:
         """The writes of a save, in a SAVEPOINT: two saves of one name at once are refused by
         the unique index, and only that write is rolled back."""
         return savepoint(
             self.session,
             lambda exc: Conflict(
-                ENTITY, "questo contratto ha già un modello con questo nome", nome=nome
+                ENTITY, "questo contratto ha già un modello con questo nome", name=name
             ),
         )
 
@@ -209,7 +209,7 @@ class ContractEmailService:
 
     def _days_of(self, contract_id: UUID, invoice: Invoice) -> tuple[date, date, Decimal]:
         row = self.session.execute(
-            select(func.min(WorkUnit.data), func.max(WorkUnit.data), func.sum(WorkUnit.quantity))
+            select(func.min(WorkUnit.date), func.max(WorkUnit.date), func.sum(WorkUnit.quantity))
             .join(InvoiceLine, InvoiceLine.id == WorkUnit.invoice_line_id)
             .where(InvoiceLine.invoice_id == invoice.id, WorkUnit.contract_id == contract_id)
         ).one()
@@ -277,12 +277,12 @@ class ContractEmailService:
         da, a, quantity = self._days_of(contract_id, invoice)
         values = self._values(contract, invoice, da, a, quantity, actor)
         attachments = [
-            ContractEmailAttachment(type="invoice_pdf", nome=f"Fattura {values['invoice_number']}")
+            ContractEmailAttachment(type="invoice_pdf", name=f"Fattura {values['invoice_number']}")
             for kind in template.attachments
             if kind == "invoice_pdf"
         ] + [
             ContractEmailAttachment(
-                type="register_pdf", nome=f"Registro giornate {values['period']}"
+                type="register_pdf", name=f"Registro giornate {values['period']}"
             )
             for kind in template.attachments
             if kind == "register_pdf"

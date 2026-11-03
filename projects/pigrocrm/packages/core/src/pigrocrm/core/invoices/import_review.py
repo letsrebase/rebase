@@ -183,10 +183,10 @@ def match_customer(
     customers (REB-783)."""
     vat_number = normalise_fiscal_id(customer.vat_number)
     cf = normalise_fiscal_id(customer.tax_code)
-    customer = CustomerRepository(session).match_by_fiscal_id(
+    found = CustomerRepository(session).match_by_fiscal_id(
         vat_number=vat_number, tax_code=cf, legal_entity_id=legal_entity_id
     )
-    return customer.id if customer is not None else None
+    return found.id if found is not None else None
 
 
 # A customer's contracts with their rate cards, read once per `review_invoices` call:

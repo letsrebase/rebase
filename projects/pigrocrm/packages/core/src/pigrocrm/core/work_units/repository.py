@@ -42,12 +42,12 @@ class WorkUnitRepository:
                 WorkUnit.status == status,
                 WorkUnit.invoice_line_id.is_(None),
             )
-            .order_by(WorkUnit.data.asc(), WorkUnit.id.asc())
+            .order_by(WorkUnit.date.asc(), WorkUnit.id.asc())
         )
         if da is not None:
-            stmt = stmt.where(WorkUnit.data >= da)
+            stmt = stmt.where(WorkUnit.date >= da)
         if a is not None:
-            stmt = stmt.where(WorkUnit.data <= a)
+            stmt = stmt.where(WorkUnit.date <= a)
         return list(self.session.execute(stmt).scalars())
 
     def labelled(self, work_unit_id: UUID) -> tuple[WorkUnit, Contract, Customer] | None:
@@ -82,7 +82,7 @@ class WorkUnitRepository:
         stmt = (
             select(WorkUnit)
             .where(WorkUnit.contract_id == contract_id)
-            .order_by(WorkUnit.data.asc(), WorkUnit.id.asc())
+            .order_by(WorkUnit.date.asc(), WorkUnit.id.asc())
         )
         return list(self.session.execute(stmt).scalars())
 
@@ -100,12 +100,12 @@ class WorkUnitRepository:
         if query.legal_entity_id is not None:
             stmt = stmt.where(Contract.legal_entity_id == query.legal_entity_id)
         if query.da is not None:
-            stmt = stmt.where(WorkUnit.data >= query.da)
+            stmt = stmt.where(WorkUnit.date >= query.da)
         if query.a is not None:
-            stmt = stmt.where(WorkUnit.data <= query.a)
+            stmt = stmt.where(WorkUnit.date <= query.a)
         if query.status is not None:
             stmt = stmt.where(WorkUnit.status == query.status)
-        stmt = stmt.order_by(WorkUnit.data.desc(), WorkUnit.id.desc()).limit(query.limit + 1)
+        stmt = stmt.order_by(WorkUnit.date.desc(), WorkUnit.id.desc()).limit(query.limit + 1)
         return [(row[0], row[1], row[2]) for row in self.session.execute(stmt).all()]
 
 

@@ -29,7 +29,7 @@ PROPOSAL_TARGET_TYPES: tuple[str, ...] = ("contract", "work_unit")
 # located in the document's own text; `transcribed` exists only for a scanned page with
 # no text layer, and is never rendered as a quotation for the same reason mastro's own
 # comment gives -- nothing here can verify a string against a page image.
-PROPOSAL_TIPI_EXCERPT: tuple[str, ...] = ("quoted", "transcribed")
+PROPOSAL_EXCERPT_TYPES: tuple[str, ...] = ("quoted", "transcribed")
 # mastro's `proposalStatus` (`proposal.ts:18`).
 PROPOSAL_STATUSES: tuple[str, ...] = ("pending", "accepted", "rejected")
 
@@ -70,7 +70,7 @@ class Proposal(Base, PrimaryKeyMixin, TimestampMixin):
     # exactly as `approval.excerpt` (REB-359) sits next to the days it covers.
     excerpt: Mapped[str] = mapped_column(Text, nullable=False)
     excerpt_type: Mapped[str] = mapped_column(
-        String(12), nullable=False, default="quoted", server_default=text("'citato'")
+        String(12), nullable=False, default="quoted", server_default=text("'quoted'")
     )
     # The producer's own declared confidence, 0 to 1, never computed after the fact
     # (`proposal.ts:90-91`).
@@ -79,7 +79,7 @@ class Proposal(Base, PrimaryKeyMixin, TimestampMixin):
     )
     confidence_reason: Mapped[str | None] = mapped_column(Text, default=None)
     status: Mapped[str] = mapped_column(
-        String(12), nullable=False, default="pending", server_default=text("'in_attesa'")
+        String(12), nullable=False, default="pending", server_default=text("'pending'")
     )
     # Set once, alongside stato, never edited afterwards -- kept separately from
     # campi_proposti rather than as a computed diff: "the diff between the two is the
@@ -99,11 +99,11 @@ class Proposal(Base, PrimaryKeyMixin, TimestampMixin):
             f"target_type IN {PROPOSAL_TARGET_TYPES!r}", name="ck_proposals_target_type"
         ),
         CheckConstraint(
-            f"tipo_estratto IN {PROPOSAL_TIPI_EXCERPT!r}", name="ck_proposals_excerpt_type"
+            f"excerpt_type IN {PROPOSAL_EXCERPT_TYPES!r}", name="ck_proposals_excerpt_type"
         ),
-        CheckConstraint(f"stato IN {PROPOSAL_STATUSES!r}", name="ck_proposals_status"),
+        CheckConstraint(f"status IN {PROPOSAL_STATUSES!r}", name="ck_proposals_status"),
         CheckConstraint(
-            "target_type = 'contratto' OR contract_id IS NOT NULL",
+            "target_type = 'contract' OR contract_id IS NOT NULL",
             name="ck_proposals_contract_id_required_unless_contract",
         ),
         # The review queue's own access path: "every pending proposal, oldest first" --

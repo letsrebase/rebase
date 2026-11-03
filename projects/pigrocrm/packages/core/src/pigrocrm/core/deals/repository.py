@@ -93,7 +93,7 @@ class DealRepository:
         """
         if not deal_ids:
             return {}
-        rows = self.session.execute(select(Deal.id, Deal.nome).where(Deal.id.in_(deal_ids))).all()
+        rows = self.session.execute(select(Deal.id, Deal.name).where(Deal.id.in_(deal_ids))).all()
         return {row[0]: row[1] for row in rows}
 
     def add(self, deal: Deal) -> Deal:
@@ -161,7 +161,7 @@ class DealRepository:
             select(
                 PipelineStage.id,
                 PipelineStage.code,
-                PipelineStage.nome,
+                PipelineStage.name,
                 PipelineStage.type,
                 PipelineStage.position,
                 func.count(Deal.id).label("number"),
@@ -189,7 +189,7 @@ class DealRepository:
             .group_by(
                 PipelineStage.id,
                 PipelineStage.code,
-                PipelineStage.nome,
+                PipelineStage.name,
                 PipelineStage.type,
                 PipelineStage.position,
             )
@@ -199,7 +199,7 @@ class DealRepository:
             PipelineStageSummary(
                 stage_id=str(row.id),
                 stage_code=row.code,
-                stage_name=row.nome,
+                stage_name=row.name,
                 stage_type=row.type,
                 position=row.position,
                 number=row.number,
@@ -340,7 +340,7 @@ class DealRepository:
             # on ILIKE's default. Mirrors CustomerRepository.list/PersonRepository.list
             # exactly.
             like = f"%{escape_like(query.search.lower())}%"
-            stmt = stmt.where(Deal.nome.ilike(like, escape="\\"))
+            stmt = stmt.where(Deal.name.ilike(like, escape="\\"))
         if query.customer_id:
             stmt = stmt.where(Deal.customer_id == query.customer_id)
         if query.legal_entity_id:

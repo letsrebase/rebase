@@ -15,7 +15,8 @@ factors and an eleven-digit result. Every *derived* amount is therefore bounded 
 column widths is necessary and is not sufficient.
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -197,20 +198,20 @@ class InvoiceCreate(BaseModel):
     deal_id: UUID | None = None
     type: InvoiceType = "invoice"
     memo: SafeStr | None = Field(default=None, max_length=MEMO_MAX_LENGTH)
-    note_interne: SafeStr | None = None
+    internal_notes: SafeStr | None = None
     # A proforma's own document date (ORB-63): omitted means today in the issuer's
     # calendar. Refused on a `invoice`, whose date is the register's and is decided at
     # `issue` (spec 6.2). The service applies both rules; the schema only carries it.
-    issue_date: date | None = None
+    issue_date: dt.date | None = None
     # The accrual period (ORB-61): both or neither, in order, checked by the service
     # against the merged row and by the table on every write path.
-    accrual_from: date | None = None
-    accrual_to: date | None = None
+    accrual_from: dt.date | None = None
+    accrual_to: dt.date | None = None
     # The customer's purchase order (REB-693): its number, and optionally its date, CIG
     # and CUP. The widths are the columns'; stripping, case and ANAC's lengths are
     # `invoices/order.py`'s, applied by the service on the merged row.
     purchase_order_number: PurchaseOrderNumberStr | None = None
-    purchase_order_date: date | None = None
+    purchase_order_date: dt.date | None = None
     purchase_order_tender_code: OrderCodeStr | None = None
     purchase_order_project_code: OrderCodeStr | None = None
     lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=MAX_LINES)
@@ -237,20 +238,20 @@ class InvoiceUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     memo: SafeStr | None = Field(default=None, max_length=MEMO_MAX_LENGTH)
-    note_interne: SafeStr | None = None
-    issue_date: date | None = None
+    internal_notes: SafeStr | None = None
+    issue_date: dt.date | None = None
     # The due date, written by hand on a document that is still editable (REB-326).
     # Set, it is what `issue` prints and what the fattura born from a proforma carries;
     # cleared (an explicit null), `issue` derives it again from the customer's terms.
     # Frozen with the rest of the header afterwards, like the three dates above.
-    due_date: date | None = None
-    accrual_from: date | None = None
-    accrual_to: date | None = None
+    due_date: dt.date | None = None
+    accrual_from: dt.date | None = None
+    accrual_to: dt.date | None = None
     # The purchase order (REB-693), frozen with the rest of the header after emission.
     # An explicit null clears a field; the service refuses a date, CIG or CUP left
     # without the number on the merged row.
     purchase_order_number: PurchaseOrderNumberStr | None = None
-    purchase_order_date: date | None = None
+    purchase_order_date: dt.date | None = None
     purchase_order_tender_code: OrderCodeStr | None = None
     purchase_order_project_code: OrderCodeStr | None = None
     custom_fields: dict[str, Any] | None = None
@@ -262,7 +263,7 @@ class InvoiceIssue(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    issue_date: date | None = None
+    issue_date: dt.date | None = None
 
 
 class InvoiceAnnul(BaseModel):
@@ -274,7 +275,7 @@ class InvoiceAnnul(BaseModel):
 class InvoiceTransmitted(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data: date
+    date: dt.date
 
 
 class PaymentState(BaseModel):
@@ -285,7 +286,7 @@ class PaymentState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     payment_status: PaymentStatus
-    payment_date: date | None = None
+    payment_date: dt.date | None = None
 
 
 class InvoiceLineImport(BaseModel):
@@ -383,16 +384,16 @@ class InvoiceImport(BaseModel):
     # SdI file name embeds `anno * 10000 + numero`), and turn `undeclared_gaps` into a
     # two-hundred-thousand-element list. Refused at the schema, before any lock is taken.
     number: int = Field(ge=1, le=MAX_NUMBER)
-    issue_date: date
-    due_date: date | None = None
+    issue_date: dt.date
+    due_date: dt.date | None = None
     customer_id: UUID
     deal_id: UUID | None = None
     memo: SafeStr | None = Field(default=None, max_length=MEMO_MAX_LENGTH)
     # Declared, like everything else about an imported document, when the source knew
     # it; the previous system did not carry a period, so the usual import leaves both
     # out and the row stays `NULL` (ORB-61).
-    accrual_from: date | None = None
-    accrual_to: date | None = None
+    accrual_from: dt.date | None = None
+    accrual_to: dt.date | None = None
     lines: list[InvoiceLineImport] = Field(min_length=1, max_length=MAX_LINES)
     taxable_amount: Decimal = Field(
         max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
@@ -401,10 +402,10 @@ class InvoiceImport(BaseModel):
     stamp_duty: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
     total: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
     payment_status: PaymentStatus = "unpaid"
-    payment_date: date | None = None
-    transmitted_externally_at: date | None = None
+    payment_date: dt.date | None = None
+    transmitted_externally_at: dt.date | None = None
     pdf_source: PdfSource | None = None
-    note_interne: SafeStr | None = None
+    internal_notes: SafeStr | None = None
     # `"external"` and not the name of the tool the invoice came out of: the CRM's whole
     # interest in the field is "this document was issued somewhere else, so there is no
     # XML and no PDF of ours" -- and the value is read back by the API and printed by the
@@ -464,12 +465,12 @@ class InvoiceRead(BaseModel):
     year: int | None
     number: int | None
     reference: str | None
-    issue_date: date | None
-    due_date: date | None
-    accrual_from: date | None
-    accrual_to: date | None
+    issue_date: dt.date | None
+    due_date: dt.date | None
+    accrual_from: dt.date | None
+    accrual_to: dt.date | None
     purchase_order_number: str | None
-    purchase_order_date: date | None
+    purchase_order_date: dt.date | None
     purchase_order_tender_code: str | None
     purchase_order_project_code: str | None
     sdi_document_type: str
@@ -480,16 +481,16 @@ class InvoiceRead(BaseModel):
     total: Decimal
     memo: str | None
     payment_status: str
-    payment_date: date | None
-    transmitted_externally_at: date | None
+    payment_date: dt.date | None
+    transmitted_externally_at: dt.date | None
     xml_hash_sha256: str | None
     pdf_document_id: UUID | None
     xml_document_id: UUID | None
     imported_from: str | None
     origin_proforma_id: UUID | None
-    cancelled_at: date | None
+    cancelled_at: dt.date | None
     cancellation_reason: str | None
-    note_interne: str | None
+    internal_notes: str | None
     snapshot_version: int | None
     # On a document that can still change: the due date «Emetti» would print if pressed
     # today, either the one written on the row or the one the customer's terms give
@@ -497,7 +498,7 @@ class InvoiceRead(BaseModel):
     # nothing to forecast. Filled by `InvoiceService.get` alone: it needs the customer's
     # terms and the profile, two more statements a list page (which prints no forecast)
     # must not pay per page.
-    expected_due_date: date | None = None
+    expected_due_date: dt.date | None = None
     # The customer's `legal_name`, denormalised onto the read shape exactly as
     # `DealRead.customer_legal_name` is (ORB-98): the name lives on `customers` and
     # renaming a customer must not need a second write here. `InvoiceService._read`
@@ -581,8 +582,8 @@ class InvoiceForExport(BaseModel):
 
     year: int = Field(ge=YEAR_MIN, le=YEAR_MAX)
     number: int = Field(ge=1, le=MAX_NUMBER)
-    issue_date: date
-    due_date: date | None
+    issue_date: dt.date
+    due_date: dt.date | None
     sdi_document_type: str = Field(max_length=SDI_DOCUMENT_TYPE_MAX_LENGTH)
     currency: str = Field(max_length=CURRENCY_MAX_LENGTH)
     taxable_amount: Decimal = Field(
@@ -595,14 +596,14 @@ class InvoiceForExport(BaseModel):
     # Read off the row, like `memo`, and frozen by the same rule: `InvoiceService.
     # update` refuses both once the document has left the draft state, so what the
     # exporter writes on every `DettaglioLinee` is what the document said at issue.
-    accrual_from: date | None = None
-    accrual_to: date | None = None
+    accrual_from: dt.date | None = None
+    accrual_to: dt.date | None = None
     # Read off the row and frozen by the same rule as the period (REB-693): what the
     # exporter writes in `DatiOrdineAcquisto` is what the document said at issue.
     purchase_order_number: str | None = Field(
         default=None, max_length=PURCHASE_ORDER_NUMBER_MAX_LENGTH
     )
-    purchase_order_date: date | None = None
+    purchase_order_date: dt.date | None = None
     purchase_order_tender_code: str | None = Field(default=None, max_length=ORDER_CODE_MAX_LENGTH)
     purchase_order_project_code: str | None = Field(default=None, max_length=ORDER_CODE_MAX_LENGTH)
     snapshot: InvoiceSnapshot

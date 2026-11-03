@@ -1,6 +1,7 @@
 """Every Pydantic shape the day-lifecycle domain exposes -- spec §§5-6."""
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -21,7 +22,7 @@ WorkUnitStatus = Literal[
     "rejected",
     "non_billable",
 ]
-ApprovalChannel = Literal["email", "certified_mail", "registered_mail", "courier", "altro"]
+ApprovalChannel = Literal["email", "certified_mail", "registered_mail", "courier", "other"]
 
 QUANTITY_MAX_DIGITS = 6
 QUANTITY_DECIMAL_PLACES = 2
@@ -40,7 +41,7 @@ class WorkUnitCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     contract_id: UUID
-    data: date
+    date: dt.date
     quantity: Decimal = Field(
         gt=0, max_digits=QUANTITY_MAX_DIGITS, decimal_places=QUANTITY_DECIMAL_PLACES
     )
@@ -61,7 +62,7 @@ class WorkUnitRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     contract_id: UUID
-    data: date
+    date: dt.date
     quantity: Decimal = Field(
         gt=0, max_digits=QUANTITY_MAX_DIGITS, decimal_places=QUANTITY_DECIMAL_PLACES
     )
@@ -85,7 +86,7 @@ class WorkUnitRead(BaseModel):
 
     id: UUID
     contract_id: UUID
-    data: date
+    date: dt.date
     quantity: Decimal
     description: str
     status: str
@@ -159,8 +160,8 @@ class WorkUnitListQuery(BaseModel):
 
     contract_id: UUID | None = None
     legal_entity_id: UUID | None = None
-    da: date | None = None
-    a: date | None = None
+    da: dt.date | None = None
+    a: dt.date | None = None
     status: WorkUnitStatus | None = None
     limit: int = Field(default=LIST_LIMIT_DEFAULT, ge=1, le=LIST_LIMIT_MAX)
 
@@ -204,8 +205,8 @@ class WorkUnitDetail(WorkUnitRow):
     """
 
     requires_prior_approval: bool
-    start_contract: date
-    contract_end: date | None
+    start_contract: dt.date
+    contract_end: dt.date | None
     # The same fact the alert engine reads: a day outside the contract's own term.
     out_of_term: TermViolation | None
     approval: ApprovalDetail | None

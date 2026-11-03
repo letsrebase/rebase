@@ -110,7 +110,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
                 type=type,
             )
             for index, (code, type, probability) in enumerate(
-                (("aperto", "open", 20), ("vinto", "won", 100), ("perso", "lost", 0))
+                (("aperto", "open", 20), ("won", "won", 100), ("lost", "lost", 0))
             )
         }
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
@@ -198,18 +198,18 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         # A second invoice on the same deal: the signal counts *deals*, so this must not
         # make it two.
         _invoice(invoiced_open, payment_status="incassata")
-        invoiced_lost = _deal("fatturato perso", "perso")
+        invoiced_lost = _deal("fatturato perso", "lost")
         _invoice(invoiced_lost, payment_status="incassata")
         # An invoiced deal already won: the state the signal exists to say is missing.
-        invoiced_won = _deal("fatturato vinto", "vinto")
+        invoiced_won = _deal("fatturato vinto", "won")
         _invoice(invoiced_won, payment_status="incassata")
 
         # -- vinto ma da fatturare -------------------------------------------------
-        won_backlog = _deal("vinto arretrato", "vinto")
+        won_backlog = _deal("vinto arretrato", "won")
         # Two entries on one deal, for the same reason: one signal, not two.
         _entry(won_backlog)
         _entry(won_backlog, hours="2.00")
-        won_already_invoiced = _deal("vinto gia fatturato", "vinto")
+        won_already_invoiced = _deal("vinto gia fatturato", "won")
         invoice_lines = _invoice(won_already_invoiced, payment_status="incassata")
         line = InvoiceLine(
             invoice_id=invoice_lines.id,
@@ -223,8 +223,8 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         session.add(line)
         session.flush()
         _entry(won_already_invoiced, invoice_line_id=line.id)
-        _entry(_deal("vinto non fatturabile", "vinto"), billable=False)
-        _entry(_deal("vinto cancellato", "vinto"), deleted=True)
+        _entry(_deal("vinto non fatturabile", "won"), billable=False)
+        _entry(_deal("vinto cancellato", "won"), deleted=True)
         _entry(_deal("aperto arretrato", "aperto"))
 
         # -- scaduto e non incassato -----------------------------------------------
@@ -491,7 +491,7 @@ def test_the_invoiced_but_not_won_filter_composes_with_the_others(seeded: Seeded
     silently dropped the caller's own filters would answer a different question."""
     rows = _deals(
         seeded.engine,
-        DealListQuery(invoiced_unwon=True, stage_id=seeded.stages["vinto"], limit=_ALL),
+        DealListQuery(invoiced_unwon=True, stage_id=seeded.stages["won"], limit=_ALL),
     )
     assert rows == []
 

@@ -288,13 +288,13 @@ class InvoicePaExporter:
         )
         if transmitter is None:
             raise ValidationFailed(
-                "legal_entities",
+                "legal_entity",
                 "tax_code",
                 "serve un codice fiscale o una partita IVA dell'emittente per il "
                 "blocco IdTrasmittente",
                 expected="11 cifre oppure 16 caratteri",
             )
-        self._id_tax(block, "IdTrasmittente", transmitter, "legal_entities", "tax_code")
+        self._id_tax(block, "IdTrasmittente", transmitter, "legal_entity", "tax_code")
 
         sequential = etree.SubElement(block, "ProgressivoInvio")
         sequential.text = send_sequential(invoice.year, invoice.number)
@@ -339,7 +339,7 @@ class InvoicePaExporter:
                 contacts,
                 "Email",
                 (legal_entity.email or "").strip(),
-                entity="legal_entities",
+                entity="legal_entity",
                 field="email",
                 max_length=EMAIL_MAX,
                 min_length=EMAIL_MIN,
@@ -377,23 +377,23 @@ class InvoicePaExporter:
         vat_number = normalise_fiscal_id(legal_entity.vat_number)
         if vat_number is None:
             raise ValidationFailed(
-                "legal_entities",
+                "legal_entity",
                 "vat_number",
                 "l'emittente deve avere una partita IVA valida: IdFiscaleIVA e' "
                 "obbligatorio per il cedente/prestatore",
                 expected="11 cifre",
             )
-        self._id_tax(master_data, "IdFiscaleIVA", vat_number, "legal_entities", "vat_number")
+        self._id_tax(master_data, "IdFiscaleIVA", vat_number, "legal_entity", "vat_number")
         tax_code = normalise_fiscal_id(legal_entity.tax_code)
         if tax_code is not None:
             self._text(
                 master_data,
                 "CodiceFiscale",
                 tax_code,
-                entity="legal_entities",
+                entity="legal_entity",
                 field="tax_code",
             )
-        self._directory(master_data, legal_entity, "legal_entities")
+        self._directory(master_data, legal_entity, "legal_entity")
         regime = etree.SubElement(master_data, "RegimeFiscale")
         # From `fiscal_profile.regime_code`, never a constant in the source: the
         # whole point of the profile. `None` is a foreign azienda's profile (REB-619),
@@ -410,7 +410,7 @@ class InvoicePaExporter:
             )
         regime.text = invoice.snapshot.tax.regime_code
 
-        self._headquarters(supplier, legal_entity, "legal_entities")
+        self._headquarters(supplier, legal_entity, "legal_entity")
 
         phone = (legal_entity.phone or "").strip()
         email = (legal_entity.email or "").strip()
@@ -429,7 +429,7 @@ class InvoicePaExporter:
                     contacts,
                     "Email",
                     email,
-                    entity="legal_entities",
+                    entity="legal_entity",
                     field="email",
                     max_length=EMAIL_MAX,
                     min_length=EMAIL_MIN,

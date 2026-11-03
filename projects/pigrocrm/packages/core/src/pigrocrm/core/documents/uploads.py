@@ -298,7 +298,7 @@ class DocumentUploads:
         in the caller's session for every later statement of that transaction to see --
         the exact failure `import_issued` orders its own checks to avoid.
 
-        `origin` is recorded, sanitized, on `document.importato`: a PDF nobody in this
+        `origin` is recorded, sanitized, on `document.imported`: a PDF nobody in this
         CRM produced has to be able to answer "where did this come from?" years later,
         and "a file was uploaded" is not that answer. Its shape is the caller's --
         `{"drive_file_id": ..., "mime": ...}` for the Drive path -- because the CRM will
@@ -349,7 +349,7 @@ class DocumentUploads:
         self.ctx.activities.record(
             ENTITY,
             document.id,
-            "document.importato",
+            "document.imported",
             actor,
             {"origin": origin, "title": document.title, "type": document.type},
         )

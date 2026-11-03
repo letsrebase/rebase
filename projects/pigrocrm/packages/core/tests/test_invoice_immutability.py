@@ -259,8 +259,8 @@ def test_the_internal_notes_and_custom_fields_stay_mutable_forever(
     service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     assert (
         service.update(
-            invoice_id, InvoiceUpdate(note_interne="sostituita da 2/2026"), ADMIN
-        ).note_interne
+            invoice_id, InvoiceUpdate(internal_notes="sostituita da 2/2026"), ADMIN
+        ).internal_notes
         == "sostituita da 2/2026"
     )
 

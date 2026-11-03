@@ -42,14 +42,14 @@ INVALID_TOKEN = "token non valido o revocato"
 
 
 def _audit_payload(record: PersonalAccessToken) -> dict[str, object]:
-    return {"token_id": record.id, "nome": record.nome, "full_access": record.full_access}
+    return {"token_id": record.id, "name": record.name, "full_access": record.full_access}
 
 
 class PatRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     prefix: str
     # What the owner chose for this token (REB-810). The token reaches the privileged
     # surface only where the space's own switch is open too, which `resolve` decides.
@@ -83,7 +83,7 @@ class PatService:
         # inheriting whatever `.env` the process happened to load.
         self.settings = settings or get_settings()
 
-    def create(self, nome: str, actor: Actor, *, full_access: bool = False) -> tuple[PatRead, str]:
+    def create(self, name: str, actor: Actor, *, full_access: bool = False) -> tuple[PatRead, str]:
         if actor.id is None:
             raise ValidationFailed("token", "actor", "serve un utente autenticato")
         # A token outlives the revocation the first link by mail performs, so an
@@ -99,7 +99,7 @@ class PatService:
         raw = PAT_PREFIX + secrets.token_urlsafe(32)
         record = PersonalAccessToken(
             user_id=actor.id,
-            nome=nome,
+            name=name,
             token_hash=_digest(raw),
             prefix=raw[: len(PAT_PREFIX) + PREFIX_VISIBLE_CHARS],
             full_access=full_access,
@@ -198,21 +198,21 @@ class PatService:
         """The live tokens of the members other than the caller, for an administrator."""
         actor.require_unscoped_admin("list_team_tokens")
         stmt = (
-            select(PersonalAccessToken, User.nome)
+            select(PersonalAccessToken, User.name)
             .join(User, User.id == PersonalAccessToken.user_id)
             .where(
                 PersonalAccessToken.revoked_at.is_(None),
                 PersonalAccessToken.user_id != actor.id,
             )
-            .order_by(User.nome, PersonalAccessToken.created_at.desc())
+            .order_by(User.name, PersonalAccessToken.created_at.desc())
         )
         return [
             TeamPatRead(
                 **PatRead.model_validate(record).model_dump(),
                 user_id=record.user_id,
-                owner_name=nome,
+                owner_name=name,
             )
-            for record, nome in self.session.execute(stmt)
+            for record, name in self.session.execute(stmt)
         ]
 
     def revoke_all_for(self, user_id: UUID, actor: Actor) -> None:

@@ -15,13 +15,13 @@ class TemplateRepository:
     def get(self, template_id: UUID) -> Template | None:
         return self.session.get(Template, template_id)
 
-    def get_by_name(self, nome: str) -> Template | None:
+    def get_by_name(self, name: str) -> Template | None:
         """Case-insensitive, matching the `uq_templates_nome` functional unique index
         on `lower(nome)` (models.py) exactly. `func.lower(Template.nome)` references
         the mapped column -- never a string literal, which `func.lower` would bind as
         a constant instead of a column reference, the exact bug Task 6 found and fixed
         in its own brief's sample code for the index itself."""
-        stmt = select(Template).where(func.lower(Template.nome) == nome.lower())
+        stmt = select(Template).where(func.lower(Template.name) == name.lower())
         return self.session.execute(stmt).scalars().first()
 
     def add(self, template: Template) -> Template:
@@ -45,7 +45,7 @@ class TemplateRepository:
             # wrapped in the wildcard this method builds -- see
             # `CustomerRepository.list`'s identical comment for why.
             like = f"%{escape_like(query.search.lower())}%"
-            stmt = stmt.where(Template.nome.ilike(like, escape="\\"))
+            stmt = stmt.where(Template.name.ilike(like, escape="\\"))
         if query.cursor:
             stmt = stmt.where(Template.id > query.cursor)
 

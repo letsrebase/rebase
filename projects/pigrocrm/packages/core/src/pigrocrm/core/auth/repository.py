@@ -44,12 +44,12 @@ class UserRepository:
         return self.session.execute(stmt).scalar_one_or_none()
 
     def list_all(self) -> list[User]:
-        return list(self.session.execute(select(User).order_by(User.nome)).scalars())
+        return list(self.session.execute(select(User).order_by(User.name)).scalars())
 
     def list_active(self) -> list[User]:
         return list(
             self.session.execute(
-                select(User).where(User.active.is_(True)).order_by(User.nome)
+                select(User).where(User.active.is_(True)).order_by(User.name)
             ).scalars()
         )
 

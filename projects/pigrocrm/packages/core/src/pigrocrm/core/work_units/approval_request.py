@@ -17,7 +17,7 @@ the text is one: it names the contract, lists the dates with the part of the day
 work is, and asks for a written reply before the first date.
 """
 
-from datetime import date
+import datetime as dt
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -74,7 +74,7 @@ class ApprovalRequestDay(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    data: date
+    date: dt.date
     quantity: Decimal = Field(max_digits=4, decimal_places=2)
     description: SafeStr = Field(min_length=1)
 
@@ -93,7 +93,7 @@ class ApprovalRequestCompose(BaseModel):
 
     @model_validator(mode="after")
     def _one_row_per_date(self) -> "ApprovalRequestCompose":
-        dates = [day.data for day in self.days]
+        dates = [day.date for day in self.days]
         if len(set(dates)) != len(dates):
             raise ValueError("una data e' indicata due volte")
         return self
@@ -124,7 +124,7 @@ class ApprovalRequestPrepared(BaseModel):
     work_units: list[WorkUnitRead]
 
 
-def italian_date(day: date) -> str:
+def italian_date(day: dt.date) -> str:
     """`lunedì 2 novembre 2026`, spelled here rather than by a locale lookup: an ICU or libc
     default that changed would reword a request already in a client's inbox."""
     return f"{WEEKDAYS[day.weekday()]} {day.day} {MONTHS[day.month - 1]} {day.year}"
@@ -133,9 +133,9 @@ def italian_date(day: date) -> str:
 def compose(title: str, days: list[ApprovalRequestDay]) -> ApprovalRequestMessage:
     """The request for `days` of the contract `title`, oldest date first (the order a
     reader confirming a week expects), asking for a written reply before the first."""
-    ordered = sorted(days, key=lambda day: day.data)
+    ordered = sorted(days, key=lambda day: day.date)
     rows = [
-        f"- {italian_date(day.data)}: "
+        f"- {italian_date(day.date)}: "
         f"{'giornata intera' if day.quantity == FULL else 'mezza giornata'}, {day.description}"
         for day in ordered
     ]
@@ -145,7 +145,7 @@ def compose(title: str, days: list[ApprovalRequestDay]) -> ApprovalRequestMessag
         "seguenti giornate:\n\n"
         + "\n".join(rows)
         + "\n\nLe chiedo di confermarmi per iscritto, rispondendo a questa email, entro "
-        f"{italian_date(ordered[0].data)}, indicando le date approvate.\n\n"
+        f"{italian_date(ordered[0].date)}, indicando le date approvate.\n\n"
         "Grazie."
     )
     return ApprovalRequestMessage(
@@ -209,7 +209,7 @@ class ApprovalRequestService:
                 days.create(
                     WorkUnitCreate(
                         contract_id=contract_id,
-                        data=day.data,
+                        date=day.date,
                         quantity=day.quantity,
                         description=day.description,
                         status="proposed",
@@ -218,7 +218,7 @@ class ApprovalRequestService:
                     "Richiesta di approvazione preparata",
                     commit=False,
                 )
-                for day in sorted(data.days, key=lambda day: day.data)
+                for day in sorted(data.days, key=lambda day: day.date)
             ]
             draft = EmailDraftService(self.session, settings=self.settings).create(
                 EmailDraftCreate(
@@ -238,7 +238,7 @@ class ApprovalRequestService:
         return ApprovalRequestPrepared(draft=draft, work_units=proposed)
 
     def _taken(self, contract_id: UUID, data: ApprovalRequestPrepare) -> list[str]:
-        asked = {day.data for day in data.days}
+        asked = {day.date for day in data.days}
         live = WorkUnitRepository(self.session).list_labelled(
             WorkUnitListQuery(
                 contract_id=contract_id,
@@ -248,7 +248,7 @@ class ApprovalRequestService:
             )
         )
         return sorted(
-            work_unit.data.isoformat()
+            work_unit.date.isoformat()
             for work_unit, _, _ in live
-            if work_unit.data in asked and work_unit.status not in ("revoked", "rejected")
+            if work_unit.date in asked and work_unit.status not in ("revoked", "rejected")
         )

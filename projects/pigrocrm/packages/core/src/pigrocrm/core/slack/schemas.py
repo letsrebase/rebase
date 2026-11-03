@@ -54,7 +54,7 @@ class SlackMemberRead(BaseModel):
     """One user of the space and what Slack knows of them."""
 
     user_id: UUID
-    nome: str
+    name: str
     email: str
     state: MatchState
     # The address of the Slack member, shown when it is not the user's own (a manual fix).

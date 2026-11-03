@@ -41,7 +41,7 @@ class PipelineRepository:
         )
 
     def list(self) -> list[PipelineStage]:
-        stmt = select(PipelineStage).order_by(PipelineStage.position, PipelineStage.nome)
+        stmt = select(PipelineStage).order_by(PipelineStage.position, PipelineStage.name)
         return list(self.session.execute(stmt).scalars())
 
     def add(self, stage: PipelineStage) -> PipelineStage:

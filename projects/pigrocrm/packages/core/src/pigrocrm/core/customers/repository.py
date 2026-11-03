@@ -151,7 +151,7 @@ class CustomerRepository:
         # hold only for the deals the archiver happens to see.
         return int(
             self.session.execute(
-                text("SELECT deal_attivi_del_cliente(:customer_id)"), {"customer_id": customer_id}
+                text("SELECT active_deals_of_customer(:customer_id)"), {"customer_id": customer_id}
             ).scalar_one()
         )
 

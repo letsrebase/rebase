@@ -217,7 +217,7 @@ class DealService:
 
         deal = self.repo.add(Deal(**payload))
         self.activities.record(
-            ENTITY, deal.id, "created", actor, {"nome": deal.nome, "stage": stage.nome}
+            ENTITY, deal.id, "created", actor, {"name": deal.name, "stage": stage.name}
         )
         append_first_note(self.session, ENTITY, deal.id, first_note, actor)
         self.session.commit()
@@ -304,7 +304,7 @@ class DealService:
         _settle_closure_date(deal, previous, target)
 
         self.activities.record(
-            ENTITY, deal.id, "stage_changed", actor, {"from": previous.nome, "to": target.nome}
+            ENTITY, deal.id, "stage_changed", actor, {"from": previous.name, "to": target.name}
         )
         self.session.commit()
         return self._read(deal)
@@ -422,7 +422,7 @@ class DealService:
         # Past the row-level policies (REB-634): the customer may sit in an azienda the
         # deal's reader cannot see, and «not found» must not read as «not archived».
         archived = self.session.execute(
-            text("SELECT cliente_archiviato(:customer_id)"), {"customer_id": deal.customer_id}
+            text("SELECT customer_archived(:customer_id)"), {"customer_id": deal.customer_id}
         ).scalar_one_or_none()
         if archived is None:
             raise NotFound("customer", deal.customer_id)

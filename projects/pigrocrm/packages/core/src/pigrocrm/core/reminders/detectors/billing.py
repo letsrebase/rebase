@@ -51,7 +51,12 @@ from pigrocrm.core.mail import day_short, euro
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver, Links
-from pigrocrm.core.reminders.detectors.text import days, days_fa, entries, hours
+from pigrocrm.core.reminders.detectors.text import (
+    format_days,
+    format_days_ago,
+    format_entries,
+    format_hours,
+)
 from pigrocrm.core.timetracking.models import TimeEntry
 
 OVERDUE = REMINDER_TYPES["invoice_overdue"]
@@ -133,7 +138,7 @@ def detect_overdue(ctx: DetectorContext) -> list[Detection]:
                 title=f"Incasso in ritardo: {_label(row.year, row.number)}",
                 detail=(
                     f"{euro(row.total)} da incassare, scaduta il "
-                    f"{day_short(row.due_date)} ({days_fa(late)}){_who(link)}"
+                    f"{day_short(row.due_date)} ({format_days_ago(late)}){_who(link)}"
                 ),
                 entity="invoice",
                 entity_id=row.id,
@@ -183,7 +188,7 @@ def detect_not_transmitted(ctx: DetectorContext) -> list[Detection]:
                 recipients=ctx.directory.recipients(link.owners, row.legal_entity_id),
                 title=f"Fattura non trasmessa: {_label(row.year, row.number)}",
                 detail=(
-                    f"Emessa {day_short(row.issue_date)}, da {days(age)} "
+                    f"Emessa {day_short(row.issue_date)}, da {format_days(age)} "
                     f"il file non risulta consegnato all'intermediario{_who(link)}"
                 ),
                 entity="invoice",
@@ -232,7 +237,7 @@ def detect_proforma(ctx: DetectorContext) -> list[Detection]:
                 title=f"Proforma da fatturare: {what}",
                 detail=(
                     f"{euro(invoice.total)}, confermata {day_short(day)}: "
-                    f"{days(age)} e non è ancora diventata una fattura{_who(link)}"
+                    f"{format_days(age)} e non è ancora diventata una fattura{_who(link)}"
                 ),
                 entity="proforma",
                 entity_id=invoice.id,
@@ -258,7 +263,7 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
     # found» under the row policies must not read as «not yet invoiced» (the same guard as
     # `AnalyticsRepository.unbilled_backlog`).
     visible_line = select(InvoiceLine.id).where(InvoiceLine.id == TimeEntry.invoice_line_id)
-    oldest = func.min(TimeEntry.data)
+    oldest = func.min(TimeEntry.date)
     rows = ctx.session.execute(
         select(Deal, oldest, func.sum(TimeEntry.hours), func.count(TimeEntry.id))
         .join(Deal, Deal.id == TimeEntry.deal_id)
@@ -285,10 +290,10 @@ def detect_hours_unbilled(ctx: DetectorContext) -> list[Detection]:
                 subject_id=deal.id,
                 measure=float(age),
                 recipients=ctx.directory.recipients(link.owners, deal.legal_entity_id),
-                title=f"Ore da fatturare: {deal.nome}",
+                title=f"Ore da fatturare: {deal.name}",
                 detail=(
-                    f"{hours(total)} in {entries(entries)} non sono su una fattura emessa, "
-                    f"la più vecchia è del {day_short(first)} ({days(age)}){_who(link)}"
+                    f"{format_hours(total)} in {format_entries(entries)} non sono su una fattura emessa, "
+                    f"la più vecchia è del {day_short(first)} ({format_days(age)}){_who(link)}"
                 ),
                 entity="deal",
                 entity_id=deal.id,

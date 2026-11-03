@@ -154,7 +154,7 @@ LATIN_SPELLINGS = str.maketrans(
 # value the writer never emits would be its own kind of drift, so each role is checked
 # for the field it actually contributes.
 RECIPIENT_ENTITY = "customer"
-ISSUER_ENTITY = "legal_entities"
+ISSUER_ENTITY = "legal_entity"
 # FPR12 allows an `IdCodice` of up to 28 characters, which is what makes room for the
 # registers of other countries. Italy's own two shapes are narrower and are checked by
 # `normalise_fiscal_id`; outside Italy there is no shape this exporter can meaningfully

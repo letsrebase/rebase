@@ -110,8 +110,8 @@ def serve_activities(session: Session, rows: Iterable[Activity]) -> list[Activit
     from pigrocrm.core.auth.models import User
 
     if wanted:
-        found = session.execute(select(User.id, User.nome).where(User.id.in_(wanted)))
-        names = {user_id: nome for user_id, nome in found}
+        found = session.execute(select(User.id, User.name).where(User.id.in_(wanted)))
+        names = {user_id: name for user_id, name in found}
     result: list[ActivityRead] = []
     for activity in activities:
         read = ActivityRead.model_validate(activity)

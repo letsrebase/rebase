@@ -61,7 +61,7 @@ class DeclaredVariable:
     learn a tenth type.
     """
 
-    nome: str
+    name: str
     label: str
     type: str
     required: bool
@@ -146,7 +146,7 @@ def _resolve(path: tuple[str, ...], scopes: list[dict[str, Any]]) -> tuple[bool,
     return False, None
 
 
-def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | None:
+def _first_root_line_referencing(nodes: tuple[Node, ...], name: str) -> int | None:
     """The template line of the first node -- a bare `{{nome...}}`, or the path an
     `#if`/`#each` itself names -- whose top-level path segment is `nome`, at the
     *root* level only. Mirrors `parser.declared_paths`'s own root/loop_relative
@@ -166,10 +166,10 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | No
         for node in items:
             match node:
                 case VariableNode(path=path, line=line):
-                    if not inside_each and path[0] == nome:
+                    if not inside_each and path[0] == name:
                         return line
                 case IfNode(path=path, line=line, then=then, otherwise=otherwise):
-                    if not inside_each and path[0] == nome:
+                    if not inside_each and path[0] == name:
                         return line
                     found = walk(then, inside_each=inside_each)
                     if found is not None:
@@ -178,7 +178,7 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], nome: str) -> int | No
                     if found is not None:
                         return found
                 case EachNode(path=path, line=line, body=body):
-                    if not inside_each and path[0] == nome:
+                    if not inside_each and path[0] == name:
                         return line
                     found = walk(body, inside_each=True)
                     if found is not None:
@@ -205,14 +205,14 @@ def _check_declared(
     to enrich a caught `ValidationFailed` with that fact, not this pure function.
     """
     for variable in declared:
-        if variable.required and _is_blank(values.get(variable.nome)):
+        if variable.required and _is_blank(values.get(variable.name)):
             reason = f"variabile obbligatoria mancante: {variable.label}"
-            line = _first_root_line_referencing(nodes, variable.nome)
+            line = _first_root_line_referencing(nodes, variable.name)
             if line is not None:
                 reason = f"riga {line}: {reason}"
             raise ValidationFailed(
                 ENTITY,
-                variable.nome,
+                variable.name,
                 reason,
                 expected="un valore non vuoto",
             )
@@ -270,7 +270,7 @@ def render_template(
     # `#if`, the same as `False`, `0` or `[]`; and `format_value(None)` is `""`
     # for a bare substitution. `type` therefore still is not consulted here --
     # matching it correctly does not require branching on it.
-    optional_defaults: dict[str, Any] = {v.nome: None for v in declared if not v.required}
+    optional_defaults: dict[str, Any] = {v.name: None for v in declared if not v.required}
     scopes: list[dict[str, Any]] = [{**optional_defaults, **values}]
     out: list[str] = []
     _render_nodes(nodes, scopes, out, context)

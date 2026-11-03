@@ -71,8 +71,8 @@ NOT_CONFIGURED = "Spazio dei lead non configurato"
 BUSY = "Un'altra richiesta della stessa persona è in corso: riprova tra poco."
 NO_SUCH_DEAL = "il deal non esiste in questo spazio"
 # `activities.kind` of the two events this route adds to a deal's timeline.
-KIND_FILED = "hub.richiesta_ricevuta"
-KIND_LINKED = "hub.richiesta_collegata"
+KIND_FILED = "hub.request_received"
+KIND_LINKED = "hub.request_linked"
 
 
 class LeadsSpaceNotConfigured(Exception):
@@ -255,7 +255,7 @@ class LeadService:
                     PersonService(space)
                     ._insert(
                         PersonCreate(
-                            nome=data.contact_person.nome,
+                            first_name=data.contact_person.first_name,
                             last_name=data.contact_person.last_name,
                             email=email,
                             phone=data.contact_person.phone,
@@ -275,7 +275,7 @@ class LeadService:
             )
         deal = DealService(space).create(
             DealCreate(
-                nome=data.deal.nome,
+                name=data.deal.name,
                 customer_id=customer_id,
                 expected_value=data.deal.expected_value,
                 expected_close_date=data.deal.expected_close_date,

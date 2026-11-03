@@ -164,7 +164,7 @@ class DriveEntry:
     """
 
     id: str
-    nome: str
+    name: str
     mime: str
     size: int | None
     modificato_il: datetime | None
@@ -654,7 +654,7 @@ def _entry(item: dict[str, Any]) -> DriveEntry:
     mime = str(item.get("mimeType") or "")
     return DriveEntry(
         id=str(item.get("id") or ""),
-        nome=str(item.get("name") or ""),
+        name=str(item.get("name") or ""),
         mime=mime,
         size=_as_int(item.get("size")),
         modificato_il=_moment(item.get("modifiedTime")),

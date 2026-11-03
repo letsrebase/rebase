@@ -12,9 +12,9 @@ character missing from either is caught here, when it is typed, rather than by t
 customer's accounts office after the invoice has gone.
 """
 
+import datetime as dt
 import re
 from dataclasses import dataclass
-from datetime import date
 
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.constants import ENTITY
@@ -39,15 +39,15 @@ _PROJECT_CODE_RE = re.compile(r"[A-Za-z0-9]{15}")
 @dataclass(frozen=True)
 class Order:
     number: str | None
-    data: date | None
+    date: dt.date | None
     tender_code: str | None
     cup: str | None
 
-    def columns(self) -> dict[str, str | date | None]:
+    def columns(self) -> dict[str, str | dt.date | None]:
         """The four values under the invoice's own column names, in `ORDER_FIELDS`
         order."""
         return dict(
-            zip(ORDER_FIELDS, (self.number, self.data, self.tender_code, self.cup), strict=True)
+            zip(ORDER_FIELDS, (self.number, self.date, self.tender_code, self.cup), strict=True)
         )
 
 
@@ -97,7 +97,7 @@ def _code(
 
 
 def checked_order(
-    number: str | None, data: date | None, tender_code: str | None, cup: str | None
+    number: str | None, data: dt.date | None, tender_code: str | None, cup: str | None
 ) -> Order:
     """The four values as they will be stored, or a `ValidationFailed` naming the field.
 

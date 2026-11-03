@@ -124,7 +124,7 @@ def test_accepting_an_offer_moves_the_deal_in_the_same_transaction(
         reread_deal = other.get(Deal, deal.id)
         assert reread_document is not None and reread_deal is not None
         assert reread_document.status == "accepted"
-        assert reread_deal.pipeline_stage_id == stages["vinto"].id
+        assert reread_deal.pipeline_stage_id == stages["won"].id
 
 
 def test_an_error_between_the_automation_and_the_commit_undoes_both(
@@ -238,7 +238,7 @@ def test_a_concurrent_reader_sees_neither_half_until_the_commit(
         final_deal = after.get(Deal, deal_id)
         assert final_document is not None and final_deal is not None
         assert final_document.status == "accepted"
-        assert final_deal.pipeline_stage_id == stages["vinto"].id
+        assert final_deal.pipeline_stage_id == stages["won"].id
 
 
 def test_with_the_won_stage_deleted_accepting_still_succeeds(
@@ -247,7 +247,7 @@ def test_with_the_won_stage_deleted_accepting_still_succeeds(
     """§16 criterion 7's second half. A missing target stage is a *declared* condition:
     the offer is accepted, and the non-execution is on the record."""
     session, document, deal, stages = committed
-    won = session.get(PipelineStage, stages["vinto"].id)
+    won = session.get(PipelineStage, stages["won"].id)
     assert won is not None
     session.delete(won)
     session.commit()

@@ -8,7 +8,8 @@ caller's session is poisoned. This project has closed that family of defects sev
 times; it is not reopened on four new tables.
 """
 
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -50,7 +51,7 @@ CostOrigin = Literal["manual", "user", "absent"]
 class TimeEntryCreate(BaseModel):
     deal_id: UUID
     user_id: UUID
-    data: date
+    date: dt.date
     hours: Decimal = Field(
         max_digits=HOURS_MAX_DIGITS, decimal_places=HOURS_SCALE, ge=HOURS_MIN, le=HOURS_MAX
     )
@@ -67,7 +68,7 @@ class TimeEntryCreate(BaseModel):
     applied_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    note_interne: SafeStr | None = None
+    internal_notes: SafeStr | None = None
     custom_fields: dict[str, Any] = {}
 
 
@@ -80,7 +81,7 @@ class TimeEntryUpdate(BaseModel):
     # when that user is deactivated -- an operation that needs the field to exist.
     deal_id: UUID | None = None
     user_id: UUID | None = None
-    data: date | None = None
+    date: dt.date | None = None
     hours: Decimal | None = Field(
         default=None,
         max_digits=HOURS_MAX_DIGITS,
@@ -96,7 +97,7 @@ class TimeEntryUpdate(BaseModel):
     applied_cost: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_SCALE, ge=0
     )
-    note_interne: SafeStr | None = None
+    internal_notes: SafeStr | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -106,7 +107,7 @@ class TimeEntryRead(BaseModel):
     id: UUID
     deal_id: UUID
     user_id: UUID
-    data: date
+    date: dt.date
     hours: Decimal
     description: str
     billable: bool
@@ -120,7 +121,7 @@ class TimeEntryRead(BaseModel):
     line_value: Decimal | None = None
     line_cost: Decimal | None = None
     invoice_line_id: UUID | None
-    note_interne: str | None
+    internal_notes: str | None
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -131,8 +132,8 @@ class TimeEntryListQuery(BaseModel):
     # Through the deal: an entry's azienda is its deal's (REB-623).
     legal_entity_id: UUID | None = None
     user_id: UUID | None = None
-    da: date | None = None
-    a: date | None = None
+    da: dt.date | None = None
+    a: dt.date | None = None
     billable: bool | None = None
     # Three states, not two: `True` = already on an invoice line, `False` = not yet,
     # `None` = do not filter. It is the "how much do I have to invoice?" query.
@@ -173,7 +174,7 @@ class TimerStop(BaseModel):
 
     deal_id: UUID | None = None
     description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
-    data: date | None = None
+    date: dt.date | None = None
 
 
 class TimerRead(BaseModel):
@@ -194,7 +195,7 @@ class CostCreate(BaseModel):
     # cost («condivisa») and an id ties it to one azienda.
     legal_entity_id: UUID | None = None
     category_id: UUID
-    data: date
+    date: dt.date
     amount: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)
     description: SafeStr = Field(max_length=DESCRIPTION_MAX_LENGTH)
     supplier: SafeStr | None = Field(default=None, max_length=SUPPLIER_MAX_LENGTH)
@@ -208,7 +209,7 @@ class CostUpdate(BaseModel):
     deal_id: UUID | None = None
     legal_entity_id: UUID | None = None
     category_id: UUID | None = None
-    data: date | None = None
+    date: dt.date | None = None
     amount: Decimal | None = Field(
         default=None, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE
     )
@@ -225,7 +226,7 @@ class CostRead(BaseModel):
     deal_id: UUID | None
     legal_entity_id: UUID | None
     category_id: UUID
-    data: date
+    date: dt.date
     amount: Decimal
     description: str
     supplier: str | None
@@ -245,8 +246,8 @@ class CostListQuery(BaseModel):
     # row of their own that has to be selectable.
     only_general: bool = False
     category_id: UUID | None = None
-    da: date | None = None
-    a: date | None = None
+    da: dt.date | None = None
+    a: dt.date | None = None
     custom: dict[str, Any] | None = None
     limit: int = Field(default=50, ge=1, le=200)
     cursor: UUID | None = None
@@ -258,7 +259,7 @@ class CostPage(BaseModel):
 
 
 class CostCategoryCreate(BaseModel):
-    nome: SafeStr = Field(max_length=CATEGORY_NAME_MAX_LENGTH)
+    name: SafeStr = Field(max_length=CATEGORY_NAME_MAX_LENGTH)
     position: int = Field(default=0, ge=CATEGORY_POSITION_MIN, le=CATEGORY_POSITION_MAX)
     # `code` is never caller-supplied: it is the stable identity of a *seeded*
     # category, and letting a user claim one would let them collide with a future seed.
@@ -269,7 +270,7 @@ class CostCategoryCreate(BaseModel):
 class CostCategoryUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nome: SafeStr | None = Field(default=None, max_length=CATEGORY_NAME_MAX_LENGTH)
+    name: SafeStr | None = Field(default=None, max_length=CATEGORY_NAME_MAX_LENGTH)
     position: int | None = Field(default=None, ge=CATEGORY_POSITION_MIN, le=CATEGORY_POSITION_MAX)
 
 
@@ -277,7 +278,7 @@ class CostCategoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     position: int
     code: str | None
     archived: bool
@@ -336,8 +337,8 @@ class DealTimeSummary(BaseModel):
 
 
 class RecalculateRatesRequest(BaseModel):
-    da: date
-    a: date
+    da: dt.date
+    a: dt.date
 
 
 class UserRatesUpdate(BaseModel):

@@ -59,7 +59,7 @@ from pigrocrm.core.mail import day_short
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver
-from pigrocrm.core.reminders.detectors.text import days, days_fa, work_units
+from pigrocrm.core.reminders.detectors.text import format_days, format_days_ago, work_units
 from pigrocrm.core.work_units.models import WorkUnit
 
 PERIOD_CLOSED = REMINDER_TYPES["billable_period_closed"]
@@ -141,10 +141,10 @@ def _unbilled_by_contract(
     """The unbilled days of the live contracts `where` selects, oldest first."""
     days: dict[UUID, list[tuple[date, Decimal]]] = defaultdict(list)
     for contract_id, day, quantity in ctx.session.execute(
-        select(WorkUnit.contract_id, WorkUnit.data, WorkUnit.quantity)
+        select(WorkUnit.contract_id, WorkUnit.date, WorkUnit.quantity)
         .join(Contract, Contract.id == WorkUnit.contract_id)
         .where(Contract.deleted_at.is_(None), *where, *_unbilled_days())
-        .order_by(WorkUnit.data)
+        .order_by(WorkUnit.date)
     ):
         days[contract_id].append((day, Decimal(quantity)))
     return days
@@ -205,7 +205,7 @@ def detect_period_closed(ctx: DetectorContext) -> list[Detection]:
                 detail=(
                     f"{work_units(total)} di lavoro ancora da fatturare "
                     f"(la più vecchia del {day_short(oldest)}): il suo periodo è finito "
-                    f"{day_short(end)}, {days_fa(late)}{customer}"
+                    f"{day_short(end)}, {format_days_ago(late)}{customer}"
                 ),
                 entity="contract",
                 entity_id=contract.id,
@@ -314,7 +314,7 @@ def detect_fixed_fee(ctx: DetectorContext) -> list[Detection]:
                 title=f"Canone da fatturare: {contract.title}",
                 detail=(
                     f"Il periodo dal {day_short(start)} al {day_short(end)} è chiuso "
-                    f"da {days(late)} e nessuna fattura lo copre{customer}"
+                    f"da {format_days(late)} e nessuna fattura lo copre{customer}"
                 ),
                 entity="contract",
                 entity_id=contract.id,
@@ -376,7 +376,7 @@ def detect_on_completion(ctx: DetectorContext) -> list[Detection]:
                 recipients=recipients,
                 title=f"Contratto concluso da fatturare: {contract.title}",
                 detail=(
-                    f"Concluso {day_short(end)} ({days_fa(late)}): {' e '.join(what)}{customer}"
+                    f"Concluso {day_short(end)} ({format_days_ago(late)}): {' e '.join(what)}{customer}"
                 ),
                 entity="contract",
                 entity_id=contract.id,
@@ -393,7 +393,7 @@ def detect_days_unlinked(ctx: DetectorContext) -> list[Detection]:
     earliest: dict[UUID, date] = {
         customer_id: day
         for customer_id, day in ctx.session.execute(
-            select(Contract.customer_id, func.min(WorkUnit.data))
+            select(Contract.customer_id, func.min(WorkUnit.date))
             .join(Contract, Contract.id == WorkUnit.contract_id)
             .where(Contract.deleted_at.is_(None), *_unbilled_days())
             .group_by(Contract.customer_id)

@@ -137,7 +137,7 @@ class InvoiceEmission:
         # writer would refuse after the number is spent. A foreign azienda issues no XML
         # (REB-619), so none of them applies to its document.
         if not abroad:
-            check_party_exportable(snapshot.legal_entity, "legal_entities")
+            check_party_exportable(snapshot.legal_entity, "legal_entity")
             check_party_exportable(snapshot.customer, "customer")
             check_recipient_routing(snapshot.customer)
             check_recipient_identity(snapshot.customer)
@@ -293,7 +293,7 @@ class InvoiceEmission:
                 purchase_order_date=source.purchase_order_date,
                 purchase_order_tender_code=source.purchase_order_tender_code,
                 purchase_order_project_code=source.purchase_order_project_code,
-                note_interne=source.note_interne,
+                internal_notes=source.internal_notes,
                 taxable_amount=ZERO,
                 vat_amount=ZERO,
                 stamp_duty=ZERO,
@@ -389,10 +389,10 @@ class InvoiceEmission:
                 "la consegna si registra una volta sola: e' il fatto su cui si decide "
                 "se un annullamento e' ancora possibile",
             )
-        check_transmission_date(data.data, invoice.issue_date, today_local())
-        invoice.transmitted_externally_at = data.data
+        check_transmission_date(data.date, invoice.issue_date, today_local())
+        invoice.transmitted_externally_at = data.date
         ctx.activities.record(
-            ENTITY, invoice.id, "transmitted_externally", actor, {"data": data.data.isoformat()}
+            ENTITY, invoice.id, "transmitted_externally", actor, {"data": data.date.isoformat()}
         )
         ctx.session.commit()
         return ctx.read(invoice)

@@ -60,8 +60,8 @@ from pigrocrm.core.templates.schemas import (
 ENTITY = "template"
 
 
-def _conflicting_name(nome: str) -> Conflict:
-    return Conflict(ENTITY, "esiste già un template con questo nome", nome=nome)
+def _conflicting_name(name: str) -> Conflict:
+    return Conflict(ENTITY, "esiste già un template con questo nome", name=name)
 
 
 # The default offer a space is born with (spec 2026-09-12 §6.5). Flat variables on
@@ -70,17 +70,17 @@ def _conflicting_name(nome: str) -> Conflict:
 # `customer.*`, `emittente.*` and `today` come from `DocumentTemplating.template_scope`.
 OFFER_TEMPLATE_NAME = "Offerta"
 OFFER_TEMPLATE_VARIABLES: tuple[dict[str, Any], ...] = (
-    {"nome": "subject", "label": "Oggetto", "type": "text", "required": True},
-    {"nome": "ambito", "label": "Ambito e obiettivi", "type": "textarea", "required": True},
-    {"nome": "attivita", "label": "Attività", "type": "textarea", "required": True},
+    {"name": "subject", "label": "Oggetto", "type": "text", "required": True},
+    {"name": "ambito", "label": "Ambito e obiettivi", "type": "textarea", "required": True},
+    {"name": "attivita", "label": "Attività", "type": "textarea", "required": True},
     {
-        "nome": "fee",
+        "name": "fee",
         "label": "Condizioni economiche",
         "type": "textarea",
         "required": True,
     },
     {
-        "nome": "pagamento",
+        "name": "pagamento",
         "label": "Fatturazione e pagamento",
         "type": "textarea",
         "required": True,
@@ -103,13 +103,13 @@ class TemplateService:
         # (parser.py's own ENTITY/FIELD constants), so there is nothing to catch or
         # re-wrap here.
         parse_template(data.body_markdown)
-        if self.repo.get_by_name(data.nome) is not None:
-            raise _conflicting_name(data.nome)
+        if self.repo.get_by_name(data.name) is not None:
+            raise _conflicting_name(data.name)
 
         template = Template(**data.model_dump())
         try:
             self.repo.add(template)
-            self.activities.record(ENTITY, template.id, "created", actor, {"nome": template.nome})
+            self.activities.record(ENTITY, template.id, "created", actor, {"name": template.name})
             self.session.commit()
         except IntegrityError as exc:
             # The pre-check above cannot cover two concurrent creates that both pass
@@ -119,7 +119,7 @@ class TemplateService:
             # Conflict rather than a raw IntegrityError. The rollback is mandatory:
             # without it the caller's session is unusable on its next statement.
             self.session.rollback()
-            raise _conflicting_name(data.nome) from exc
+            raise _conflicting_name(data.name) from exc
         return TemplateRead.model_validate(template)
 
     def update(self, template_id: UUID, data: TemplateUpdate, actor: Actor) -> TemplateRead:
@@ -135,8 +135,8 @@ class TemplateService:
         reject_cleared_columns(ENTITY, Template, changes)
         if "body_markdown" in changes:
             parse_template(changes["body_markdown"])
-        if "nome" in changes:
-            existing = self.repo.get_by_name(changes["nome"])
+        if "name" in changes:
+            existing = self.repo.get_by_name(changes["name"])
             # `existing is not template`, not merely `is not None`: renaming a
             # template to a case-only variant of its own current name (e.g.
             # "Offerta" -> "OFFERTA") must not conflict with itself. Both `existing`
@@ -144,7 +144,7 @@ class TemplateService:
             # lookup that resolves to this same row returns the identical Python
             # object, not merely an equal one.
             if existing is not None and existing is not template:
-                raise _conflicting_name(changes["nome"])
+                raise _conflicting_name(changes["name"])
         for key, value in changes.items():
             setattr(template, key, value)
 
@@ -155,7 +155,7 @@ class TemplateService:
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
-            raise _conflicting_name(changes.get("nome", template.nome)) from exc
+            raise _conflicting_name(changes.get("name", template.name)) from exc
         return TemplateRead.model_validate(template)
 
     def get(self, template_id: UUID, actor: Actor) -> TemplateRead:
@@ -211,11 +211,11 @@ class TemplateService:
         used_names = {path[0] for path in root_paths}
         return TemplateDescription(
             id=template.id,
-            nome=template.nome,
+            name=template.name,
             type=template.type,
             variables=declared,
             used_journeys=[list(path) for path in root_paths],
-            variables_not_used=[v.nome for v in declared if v.nome not in used_names],
+            variables_not_used=[v.name for v in declared if v.name not in used_names],
         )
 
     def declared_variables(self, template: Template) -> tuple[DeclaredVariable, ...]:
@@ -238,7 +238,7 @@ class TemplateService:
         """
         return tuple(
             DeclaredVariable(
-                nome=v["nome"],
+                name=v["name"],
                 label=v["etichetta"],
                 type=v["tipo"],
                 required=v["obbligatoria"],
@@ -319,12 +319,12 @@ class TemplateService:
             ),
         )
         created: list[TemplateRead] = []
-        for nome, type, body, variables in seeds:
-            if self.repo.get_by_name(nome) is not None:
+        for name, type, body, variables in seeds:
+            if self.repo.get_by_name(name) is not None:
                 continue
             template = self.repo.add(
                 Template(
-                    nome=nome,
+                    name=name,
                     type=type,
                     body_markdown=body,
                     declared_variables=list(variables),
@@ -332,7 +332,7 @@ class TemplateService:
                 )
             )
             self.activities.record(
-                "template", template.id, "created", actor, {"nome": nome, "seed": True}
+                "template", template.id, "created", actor, {"name": name, "seed": True}
             )
             created.append(TemplateRead.model_validate(template))
         self.session.commit()

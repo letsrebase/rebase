@@ -117,16 +117,16 @@ def test_pipeline_summary_includes_the_closed_stages_last(
     period filter in this query and never was, and the period question belongs to
     `closed_in_period` on the same card.
     """
-    _deal(db_session, customer, stages["vinto"].id)
-    _deal(db_session, customer, stages["perso"].id)
+    _deal(db_session, customer, stages["won"].id)
+    _deal(db_session, customer, stages["lost"].id)
 
     rows = DealRepository(db_session).pipeline_summary()
 
     per_code = {row.stage_code: row for row in rows}
-    assert per_code["vinto"].number == 1
-    assert per_code["perso"].number == 1
-    assert per_code["vinto"].stage_type == "won"
-    assert per_code["perso"].stage_type == "lost"
+    assert per_code["won"].number == 1
+    assert per_code["lost"].number == 1
+    assert per_code["won"].stage_type == "won"
+    assert per_code["lost"].stage_type == "lost"
     # In `position` order, which is what puts the two closed stages at the end: the
     # order is the contract, because the card renders the rows as they arrive.
     assert [row.stage_code for row in rows] == sorted(
@@ -175,8 +175,8 @@ def test_a_stage_with_no_deals_still_appears_with_zeroes(
     row and reports one value-less deal in a stage that has no deals at all.
     """
     rows = {r.stage_code: r for r in DealRepository(db_session).pipeline_summary()}
-    assert {"lead", "contattato", "offer", "negoziazione"} <= set(rows)
-    empty = rows["negoziazione"]
+    assert {"lead", "contacted", "offer", "negotiation"} <= set(rows)
+    empty = rows["negotiation"]
     assert empty.number == 0
     assert empty.without_value == 0
     assert empty.total_value == Decimal("0.00")
@@ -252,10 +252,10 @@ def test_a_deal_without_a_value_contributes_nothing_to_the_weighted_value(
 def test_closed_in_period_counts_won_and_lost_by_closed_at(
     db_session: Session, customer: Customer, stages: dict[str, Any]
 ) -> None:
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 10), value="1000.00")
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 20), value="2000.00")
-    _deal(db_session, customer, stages["perso"].id, closed_at=date(2026, 3, 15))
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 4, 1))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10), value="1000.00")
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 20), value="2000.00")
+    _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 15))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 4, 1))
 
     result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
     assert result.won == 2
@@ -268,7 +268,7 @@ def test_closed_in_period_counts_won_and_lost_by_closed_at(
 def test_closed_in_period_ignores_a_soft_deleted_deal(
     db_session: Session, customer: Customer, stages: dict[str, Any]
 ) -> None:
-    row = _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 10))
+    row = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
     row.deleted_at = datetime.now(UTC)
     db_session.flush()
     result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
@@ -279,11 +279,11 @@ def test_closed_in_period_ignores_a_soft_deleted_deal(
 def test_the_period_bounds_are_inclusive(
     db_session: Session, customer: Customer, stages: dict[str, Any]
 ) -> None:
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 1))
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 31))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 1))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 31))
     # One day outside each end, to prove the bounds are bounds and not decoration.
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 2, 28))
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 4, 1))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 2, 28))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 4, 1))
     result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
     assert result.won == 2
 
@@ -293,8 +293,8 @@ def test_the_conversion_rate_is_a_ratio_of_two_counts(
 ) -> None:
     """**§3 exception 2.** `vinti / (vinti + persi)`, two decimals."""
     for _ in range(3):
-        _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 10))
-    _deal(db_session, customer, stages["perso"].id, closed_at=date(2026, 3, 10))
+        _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
+    _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 10))
 
     result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
     assert result.conversion_rate == Decimal("75.00")
@@ -310,9 +310,9 @@ def test_the_conversion_rate_rounds_half_up(
     the whole reason `money.round_money` exists and is used here rather than a local
     `quantize`.
     """
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 10))
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
     for _ in range(31):
-        _deal(db_session, customer, stages["perso"].id, closed_at=date(2026, 3, 10))
+        _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 10))
 
     result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
     assert result.won == 1 and result.lost == 31
@@ -334,7 +334,7 @@ def test_the_conversion_rate_is_zero_when_everything_was_lost(
     db_session: Session, customer: Customer, stages: dict[str, Any]
 ) -> None:
     """The other half of the same distinction, which a `null`-only test would not catch."""
-    _deal(db_session, customer, stages["perso"].id, closed_at=date(2026, 3, 10))
+    _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 10))
     result = DealRepository(db_session).closed_in_period(date(2026, 3, 1), date(2026, 3, 31))
     assert result.conversion_rate == Decimal("0.00")
 
@@ -346,9 +346,9 @@ def test_deals_closed_before_the_column_existed_are_reported_not_counted(
     dashboard says how many rather than counting them as zero or putting them in the wrong
     month -- a guessed conversion rate is plausible and wrong, which is the worst
     combination."""
-    _deal(db_session, customer, stages["vinto"].id, closed_at=None)
-    _deal(db_session, customer, stages["perso"].id, closed_at=None)
-    _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 10))
+    _deal(db_session, customer, stages["won"].id, closed_at=None)
+    _deal(db_session, customer, stages["lost"].id, closed_at=None)
+    _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 10))
 
     repo = DealRepository(db_session)
     assert repo.closed_in_period(date(2026, 3, 1), date(2026, 3, 31)).won == 1
@@ -373,7 +373,7 @@ def test_expected_closures_counts_open_deals_in_the_window(
     _deal(
         db_session,
         customer,
-        stages["vinto"].id,
+        stages["won"].id,
         expected_close_date=date(2026, 3, 20),
         closed_at=date(2026, 2, 1),
     )
@@ -480,8 +480,8 @@ def test_the_signal_counts_accepted_offers_whose_deal_is_not_won(
     automation goes quiet, this count speaks. A `COUNT` across a join, which §3 permits --
     a `SUM` across one it does not."""
     open_deal = _deal(db_session, customer, stages["lead"].id)
-    won_deal = _deal(db_session, customer, stages["vinto"].id, closed_at=date(2026, 3, 1))
-    lost_deal = _deal(db_session, customer, stages["perso"].id, closed_at=date(2026, 3, 1))
+    won_deal = _deal(db_session, customer, stages["won"].id, closed_at=date(2026, 3, 1))
+    lost_deal = _deal(db_session, customer, stages["lost"].id, closed_at=date(2026, 3, 1))
     for deal, title in (
         (open_deal, "Da sistemare"),
         (won_deal, "A posto"),

@@ -21,7 +21,7 @@ KIND_DELETED = "note_deleted"
 
 
 def display_name(user: User) -> str:
-    return user.nome[:AUTHOR_MAX_LENGTH]
+    return user.name[:AUTHOR_MAX_LENGTH]
 
 
 def append_note(

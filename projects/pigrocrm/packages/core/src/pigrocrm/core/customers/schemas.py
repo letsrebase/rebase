@@ -203,7 +203,7 @@ class PersonFromSuggestion(BaseModel):
 
     address: SafeStr = Field(max_length=EMAIL_MAX_LENGTH)
     # The display name the mail headers gave, or "" when they gave none.
-    nome: SafeStr = Field(default="", max_length=LEGAL_NAME_MAX_LENGTH)
+    name: SafeStr = Field(default="", max_length=LEGAL_NAME_MAX_LENGTH)
 
 
 class CustomerFromSuggestion(BaseModel):

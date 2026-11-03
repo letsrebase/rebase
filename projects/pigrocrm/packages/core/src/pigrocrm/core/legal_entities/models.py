@@ -34,7 +34,7 @@ def default_legal_entity_id(context: Any) -> UUID | None:
     function inventing one.
     """
     found: UUID | None = context.connection.execute(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).scalar_one_or_none()
     return found
 
@@ -49,8 +49,8 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     the name they already carry. The fiscal columns mirror `customers` exactly rather
     than being free text, because FatturaPA is built on them (slice 3).
 
-    What the row gained: `nome`, the short name the selector shows («studio rossi»,
-    distinct from `legal_name`); `predefinita`, exactly one `True` per space,
+    What the row gained: `name`, the short name the selector shows («studio rossi»,
+    distinct from `legal_name`); `is_default`, exactly one `True` per space,
     enforced by the partial unique index below and not by a check in the service; and
     `active`, because an azienda that issued an invoice is never deleted, only switched
     off. The two partial unique indexes on the upper-cased fiscal ids are what makes
@@ -65,8 +65,8 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     # what the migration backfilled for every row that already existed and what the
     # service derives when a write names none: a row built without a short name is
     # not a row without a name.
-    nome: Mapped[str] = mapped_column(String(80), nullable=False, default=_name_from_legal_name)
-    predefinita: Mapped[bool] = mapped_column(
+    name: Mapped[str] = mapped_column(String(80), nullable=False, default=_name_from_legal_name)
+    is_default: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     active: Mapped[bool] = mapped_column(
@@ -103,24 +103,24 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
         # was switched off: enforced here, not only in `set_default`/`deactivate`, because
         # the two can race each other across transactions.
         CheckConstraint(
-            "NOT (predefinita AND NOT attiva)", name="ck_legal_entities_default_active"
+            "NOT (is_default AND NOT active)", name="ck_legal_entities_default_active"
         ),
         Index(
             "uq_legal_entities_default",
-            "predefinita",
+            "is_default",
             unique=True,
-            postgresql_where=text("predefinita"),
+            postgresql_where=text("is_default"),
         ),
         Index(
             "uq_legal_entities_vat_number",
             func.upper(vat_number),
             unique=True,
-            postgresql_where=text("partita_iva IS NOT NULL"),
+            postgresql_where=text("vat_number IS NOT NULL"),
         ),
         Index(
             "uq_legal_entities_tax_code",
             func.upper(tax_code),
             unique=True,
-            postgresql_where=text("codice_fiscale IS NOT NULL"),
+            postgresql_where=text("tax_code IS NOT NULL"),
         ),
     )

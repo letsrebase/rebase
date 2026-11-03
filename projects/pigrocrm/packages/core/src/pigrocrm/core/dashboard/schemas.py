@@ -280,7 +280,7 @@ class OperationalDashboard(BaseModel):
     week: WeekHours
     backlog: UnbilledBacklog
     signals: list[Signal]
-    recent_task: list[ActivityRead]
+    recent_activity: list[ActivityRead]
 
 
 class BandDueDate(BaseModel):

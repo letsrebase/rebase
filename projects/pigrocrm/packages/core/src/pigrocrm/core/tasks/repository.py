@@ -28,10 +28,10 @@ class TaskRepository:
             return None
         return row
 
-    def add(self, attivita: Task) -> Task:
-        self.session.add(attivita)
+    def add(self, task: Task) -> Task:
+        self.session.add(task)
         self.session.flush()
-        return attivita
+        return task
 
     def in_range(self, da: date, a: date) -> list[Task]:
         """Every live activity whose `due_date` falls in `[da, a]`, earliest first.

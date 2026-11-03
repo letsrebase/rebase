@@ -42,7 +42,7 @@ class Person:
 
     id: UUID
     email: str
-    nome: str
+    name: str
     admin: bool
     legal_entities: tuple[UUID, ...] | None
 
@@ -100,7 +100,7 @@ def _person(user: User) -> Person:
     return Person(
         id=user.id,
         email=user.email,
-        nome=user.nome,
+        name=user.name,
         admin=user.role == "admin",
         legal_entities=scope_of(user),
     )

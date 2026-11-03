@@ -328,17 +328,17 @@ class PaymentRemindersService:
         self.activities.record(
             "customer",
             customer.id,
-            "gmail.sollecito_preparato",
+            "gmail.payment_reminder_prepared",
             actor,
             {
                 "invoice_id": str(invoice_id),
-                "numero": self._number(invoice),
+                "number": self._number(invoice),
                 "sequence": sequence,
-                "livello": level,
+                "level": level,
                 "email_draft_id": str(draft.id),
-                # Deliberately not "inviato": this records that a reminder was *prepared*.
+                # Deliberately not "sent": this records that a reminder was *prepared*.
                 # The send has its own entry, written by the send path.
-                "inviato": False,
+                "sent": False,
             },
         )
         self.session.commit()

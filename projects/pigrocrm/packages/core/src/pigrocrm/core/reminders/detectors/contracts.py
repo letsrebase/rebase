@@ -37,7 +37,7 @@ from pigrocrm.core.mail import day_short
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver
-from pigrocrm.core.reminders.detectors.text import days
+from pigrocrm.core.reminders.detectors.text import format_days
 
 EXPIRING = REMINDER_TYPES["contract_expiring"]
 RENEWAL = REMINDER_TYPES["renewal_window_open"]
@@ -136,7 +136,7 @@ def detect_expiring(ctx: DetectorContext) -> list[Detection]:
     for contract in contracts:
         assert contract.end is not None
         left = (contract.end - ctx.today).days
-        when = "today" if left == 0 else f"fra {days(left)}"
+        when = "today" if left == 0 else f"fra {format_days(left)}"
         found.append(
             _detection(
                 ctx,
@@ -184,7 +184,7 @@ def detect_renewal_window(ctx: DetectorContext) -> list[Detection]:
     for contract, deadline in pairs:
         assert contract.end is not None
         left = (deadline - ctx.today).days
-        when = "today" if left == 0 else f"fra {days(left)}"
+        when = "today" if left == 0 else f"fra {format_days(left)}"
         found.append(
             _detection(
                 ctx,

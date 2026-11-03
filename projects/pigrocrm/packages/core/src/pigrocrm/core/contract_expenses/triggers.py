@@ -20,53 +20,53 @@ equivalent.
 """
 
 CONTRACT_EXPENSE_TRIGGER_SQL: str = """
-CREATE OR REPLACE FUNCTION contract_expense_set_rimborsabile() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION contract_expense_set_reimbursable() RETURNS TRIGGER AS $$
 DECLARE
-    v_politica jsonb;
+    v_policy jsonb;
     v_kind text;
-    v_richiede_preautorizzazione boolean;
+    v_requires_pre_authorization boolean;
 BEGIN
-    SELECT c.politica_spese INTO v_politica
+    SELECT c.expense_policy INTO v_policy
     FROM contracts c WHERE c.id = NEW.contract_id;
 
-    IF v_politica IS NULL THEN
+    IF v_policy IS NULL THEN
         RAISE EXCEPTION 'contract_expenses.contract_id % does not reference a contract',
             NEW.contract_id
             USING ERRCODE = 'foreign_key_violation';
     END IF;
 
-    v_kind := v_politica ->> 'kind';
+    v_kind := v_policy ->> 'kind';
     IF v_kind IS NULL THEN
         RAISE EXCEPTION
-            'contracts.politica_spese for contract % has no "kind" tag: %',
-            NEW.contract_id, v_politica
+            'contracts.expense_policy for contract % has no "kind" tag: %',
+            NEW.contract_id, v_policy
             USING ERRCODE = 'check_violation';
     END IF;
-    v_richiede_preautorizzazione := COALESCE(
-        (v_politica ->> 'richiede_preautorizzazione')::boolean, false
+    v_requires_pre_authorization := COALESCE(
+        (v_policy ->> 'requires_pre_authorization')::boolean, false
     );
 
     -- mastro's own `expense_set_reimbursable`, translated one for one: never
-    -- reimbursable at all under 'non_rimborsabile', regardless of
+    -- reimbursable at all under 'not_reimbursable', regardless of
     -- pre-authorisation; otherwise reimbursable unless the policy requires
     -- pre-authorisation and this expense does not have it -- in which case it is
     -- still recorded, just flagged, never rejected outright.
-    NEW.rimborsabile := (v_kind <> 'non_rimborsabile')
-        AND (NOT v_richiede_preautorizzazione OR NEW.pre_autorizzata);
+    NEW.reimbursable := (v_kind <> 'not_reimbursable')
+        AND (NOT v_requires_pre_authorization OR NEW.pre_authorized);
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_contract_expenses_set_rimborsabile ON contract_expenses;
-CREATE TRIGGER trg_contract_expenses_set_rimborsabile
+DROP TRIGGER IF EXISTS trg_contract_expenses_set_reimbursable ON contract_expenses;
+CREATE TRIGGER trg_contract_expenses_set_reimbursable
     BEFORE INSERT OR UPDATE ON contract_expenses
-    FOR EACH ROW EXECUTE FUNCTION contract_expense_set_rimborsabile();
+    FOR EACH ROW EXECUTE FUNCTION contract_expense_set_reimbursable();
 """
 
 DROP_CONTRACT_EXPENSE_TRIGGER_SQL: str = """
-DROP TRIGGER IF EXISTS trg_contract_expenses_set_rimborsabile ON contract_expenses;
-DROP FUNCTION IF EXISTS contract_expense_set_rimborsabile();
+DROP TRIGGER IF EXISTS trg_contract_expenses_set_reimbursable ON contract_expenses;
+DROP FUNCTION IF EXISTS contract_expense_set_reimbursable();
 """
 
 __all__ = ["CONTRACT_EXPENSE_TRIGGER_SQL", "DROP_CONTRACT_EXPENSE_TRIGGER_SQL"]

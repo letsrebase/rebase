@@ -61,7 +61,7 @@ class DocumentTemplating:
             raise ValidationFailed(
                 ENTITY,
                 "template_id",
-                f"il template '{template.nome}' è di tipo '{template.type}', "
+                f"il template '{template.name}' è di tipo '{template.type}', "
                 "che non è un tipo di documento",
                 expected=f"un template fra: {', '.join(sorted(DOCUMENT_TIPI))}",
             )
@@ -199,7 +199,7 @@ class DocumentTemplating:
 
         document.current_version = 1
         self.ctx.activities.record(
-            ENTITY, document.id, "created_from_template", actor, {"template": template.nome}
+            ENTITY, document.id, "created_from_template", actor, {"template": template.name}
         )
         self.ctx.session.commit()
         return DocumentRead.model_validate(document)

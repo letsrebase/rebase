@@ -27,7 +27,7 @@ class LegalEntityRepository:
         if only_active:
             query = query.where(LegalEntity.active.is_(True))
         query = query.order_by(
-            LegalEntity.predefinita.desc(), LegalEntity.nome, LegalEntity.created_at
+            LegalEntity.is_default.desc(), LegalEntity.name, LegalEntity.created_at
         )
         return list(self.session.execute(query).scalars().all())
 
@@ -39,7 +39,7 @@ class LegalEntityRepository:
         yet (between signup and `ensure_defaults`). With one azienda this is the row
         every consumer that used to ask for «the» emitter now gets."""
         return (
-            self.session.execute(select(LegalEntity).where(LegalEntity.predefinita.is_(True)))
+            self.session.execute(select(LegalEntity).where(LegalEntity.is_default.is_(True)))
             .scalars()
             .first()
         )

@@ -125,7 +125,7 @@ class PersonService:
         )
 
         person = self.repo.add(Person(**payload))
-        self.activities.record(ENTITY, person.id, "created", actor, {"nome": person.nome})
+        self.activities.record(ENTITY, person.id, "created", actor, {"first_name": person.first_name})
         append_first_note(self.session, ENTITY, person.id, first_note, actor)
         return person
 

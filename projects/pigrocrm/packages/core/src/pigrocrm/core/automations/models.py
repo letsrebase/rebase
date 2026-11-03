@@ -21,7 +21,7 @@ class AutomationConfig(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "automation_config"
     __table_args__ = (
         CheckConstraint(
-            "a4_deal_fermo_giorni BETWEEN 1 AND 365", name="ck_automation_config_stalled_deal_days"
+            "a4_stalled_deal_days BETWEEN 1 AND 365", name="ck_automation_config_stalled_deal_days"
         ),
     )
 
