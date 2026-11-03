@@ -89,6 +89,49 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             },
         )
 
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def convert_deal_to_contract(
+        deal_id: str,
+        title: str,
+        start: str,
+        end: str | None,
+        renewal_type: str,
+        termination_notice_days: int,
+        billing_cadence: str,
+        expense_policy: dict[str, Any],
+        renewal_notice_days: int | None = None,
+    ) -> dict[str, Any]:
+        """Turn a won deal into a `draft` contract for its customer, one rate card per value line.
+        Only a won deal with lines and no contract; its lines are locked afterwards. Pass the
+        `title`, `start` and `end` (`null`: none) of `preview_deal_contract` once the person
+        confirmed them; the other arguments are those of `create_contract`. Payment terms stay
+        empty (the customer's apply). Ask for confirmation first.
+        """
+        return contracts.convert_deal(
+            context,
+            deal_id,
+            {
+                "title": title,
+                "start": start,
+                "end": end,
+                "renewal_type": renewal_type,
+                "renewal_notice_days": renewal_notice_days,
+                "termination_notice_days": termination_notice_days,
+                "billing_cadence": billing_cadence,
+                "expense_policy": expense_policy,
+            },
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def preview_deal_contract(deal_id: str) -> dict[str, Any]:
+        """What `convert_deal_to_contract` would start from: the `title`, `start` and `end` the deal
+        suggests (`end` null: no line has one, ask for the delivery date) and the rate `cards` its
+        lines become. Saves nothing.
+        """
+        return contracts.propose_from_deal(context, deal_id)
+
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_contract(contract_id: str) -> dict[str, Any]:

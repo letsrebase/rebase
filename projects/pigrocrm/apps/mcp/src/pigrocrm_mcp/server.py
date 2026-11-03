@@ -64,6 +64,8 @@ one `day`/`hour` line is in force on a date. Upfront 20000 plus 500 a month open
 `[{"unit": "flat", "delivery_period": "one_off", "unit_price": 20000}, {"unit": "flat",
 "delivery_period": "monthly", "unit_price": 500}]`. A deal answers `expected_value`,
 `one_off_value` and `monthly_recurring_value`; `preview_deal_value` computes them unsaved.
+A won deal with lines becomes a contract with `convert_deal_to_contract` (see
+`preview_deal_contract`), once; the deal then answers `contract_id` and its lines are locked.
 """
 
 

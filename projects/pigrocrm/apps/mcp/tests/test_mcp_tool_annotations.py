@@ -42,8 +42,11 @@ SURFACES: dict[str, dict[str, Any]] = {
 # The card's done-when: the default list under 90 KB. Full access opens 19 more tools and is
 # allowed to cost what they cost; both numbers are measured by `_listing_bytes`.
 # REB-879: 91.5 KB, up from 90 KB, for `add_note`, `update_note` and `delete_note`.
-DEFAULT_BUDGET_BYTES = 91_500
-FULL_ACCESS_BUDGET_BYTES = 105_000
+# REB-933: 94 KB and 106 KB, up from 91.5 KB and 105 KB, for `convert_deal_to_contract` and
+# `preview_deal_contract`: the first takes the eight fields of a contract and cannot say less,
+# the second is how an agent reads what to pass for three of them.
+DEFAULT_BUDGET_BYTES = 94_000
+FULL_ACCESS_BUDGET_BYTES = 106_000
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
