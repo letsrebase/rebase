@@ -246,7 +246,7 @@ describe('DealForm', () => {
     // decimal and not a date, so before this these three keys came back as a 422 from
     // Pydantic and the estimate the user was trying to take back stayed put -- reading,
     // in the budget report, as an infinite overrun. `null` is what clears them now, and
-    // `nome` in the same payload proves the text spelling did not move.
+    // `name` in the same payload proves the text spelling did not move.
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,

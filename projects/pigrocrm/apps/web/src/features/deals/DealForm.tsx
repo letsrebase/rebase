@@ -23,7 +23,7 @@ import type { FieldDefinition } from '@/lib/schema'
 import type { Deal } from './queries'
 
 const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
+  { key: 'name', label: 'Nome', type: 'text', required: true, options: [] },
   { key: 'expected_value', label: 'Valore previsto', type: 'currency', required: false, options: [] },
   { key: 'probability', label: 'Probabilità (%)', type: 'number', required: false, options: [] },
   {
@@ -170,7 +170,7 @@ export function DealForm({
   }
 
   function submit() {
-    // `nome` clears on `""`, while `expected_value`, `budgeted_hours`,
+    // `name` clears on `""`, while `expected_value`, `budgeted_hours`,
     // `budgeted_value` and `expected_close_date` clear on `null` -- sending `""`
     // for those four was a 422 from Pydantic: an estimate typed once could not be taken
     // back. `customer_id` and `owner_id` are handled below instead.

@@ -22,7 +22,7 @@ interface AuthValue {
   /** Spends a link-by-mail token (`/app/verify?t=...`) and publishes the session. */
   enterWithLink: (t: string) => Promise<void>
   /** Spends an invitation (`/app/invite?t=...`, REB-291), creating the account and
-   *  publishing the session; `nome` is sent only when the peek asked for one. */
+   *  publishing the session; `name` is sent only when the peek asked for one. */
   enterWithInvite: (t: string, name?: string) => Promise<void>
   logout: () => Promise<void>
 }

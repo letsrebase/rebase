@@ -9,7 +9,7 @@ import type { Cost } from './queries'
  * `src/features/**`, so the dialog module exports its component and nothing else.
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
+  { key: 'date', label: 'Data', type: 'date', required: true, options: [] },
   { key: 'amount', label: 'Importo (€)', type: 'currency', required: true, options: [] },
   { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
   { key: 'supplier', label: 'Fornitore', type: 'text', required: false, options: [] },

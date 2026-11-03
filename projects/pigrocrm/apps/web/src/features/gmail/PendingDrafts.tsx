@@ -374,7 +374,7 @@ function DraftCard({
             <dt className="text-muted-foreground">Allegati</dt>
             <dd className="wrap-anywhere">
               {draft.attachments.length === 0
-                ? 'none'
+                ? 'nessuno'
                 : draft.attachments.map((attachment) => attachment.filename).join(', ')}
             </dd>
           </dl>

@@ -10,7 +10,7 @@ import { EmailTemplateDialog } from './EmailTemplateDialog'
 import { SendInvoiceDialog } from './SendInvoiceDialog'
 import { useEmailTemplates, useUpdateEmailTemplate, type EmailTemplate } from './emailQueries'
 
-const ATTACHMENT_LABEL = { invoice_pdf: 'invoice', register_pdf: 'register' } as const
+const ATTACHMENT_LABEL = { invoice_pdf: 'fattura', register_pdf: 'registro' } as const
 
 function Archive({ contractId, template }: { contractId: string; template: EmailTemplate }) {
   const update = useUpdateEmailTemplate(contractId, template.id)

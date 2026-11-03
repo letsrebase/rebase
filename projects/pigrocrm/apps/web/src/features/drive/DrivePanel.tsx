@@ -31,7 +31,7 @@ import {
 const DRIVE_ID_PATTERN = /^[A-Za-z0-9_-]{10,128}$/
 
 const STATUS_LABEL: Record<string, string> = {
-  active: 'active',
+  active: 'attiva',
   expired: 'consenso scaduto',
   revoked: 'consenso revocato',
   disconnected: 'scollegata',

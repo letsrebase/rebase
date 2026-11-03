@@ -117,7 +117,7 @@ function Register({ overview }: { overview: YearOverview }) {
         <TableFooter>
           <TableRow>
             <TableCell colSpan={3} className="font-semibold">
-              Totale registro · {total.invoices} {total.invoices === 1 ? 'invoice' : 'invoices'}
+              Totale registro · {total.invoices} {total.invoices === 1 ? 'fattura' : 'fatture'}
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
               {money(total.taxable_amount)}
@@ -143,7 +143,7 @@ function Register({ overview }: { overview: YearOverview }) {
               <li key={declaration.sentence}>
                 «{declaration.sentence}»{' '}
                 <span className="tabular-nums">
-                  ({declaration.invoices} {declaration.invoices === 1 ? 'invoice' : 'invoices'})
+                  ({declaration.invoices} {declaration.invoices === 1 ? 'fattura' : 'fatture'})
                 </span>
               </li>
             ))}

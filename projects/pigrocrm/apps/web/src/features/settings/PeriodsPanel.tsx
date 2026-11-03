@@ -10,14 +10,14 @@ import { useUsers } from './queries'
 import { useClosePeriod, usePeriodLocks, useReopenPeriod } from './queries.timetracking'
 
 const Months = [
-  'january',
-  'february',
+  'gennaio',
+  'febbraio',
   'marzo',
   'aprile',
   'maggio',
-  'june',
+  'giugno',
   'luglio',
-  'august',
+  'agosto',
   'settembre',
   'ottobre',
   'novembre',

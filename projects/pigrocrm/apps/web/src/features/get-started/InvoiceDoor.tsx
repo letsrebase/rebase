@@ -108,7 +108,7 @@ function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void 
   )
 }
 
-/** Every customer whose name is exactly `nome`, read through the whole search rather
+/** Every customer whose name is exactly `name`, read through the whole search rather
  *  than its first page: the search is a substring match over several fields, oldest
  *  first, so an exact name can sit behind any number of partial ones. */
 async function customerNamed(name: string): Promise<{ id: string; legal_name: string } | null> {

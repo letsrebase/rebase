@@ -154,8 +154,8 @@ export function visibleTypes(types: PreferenceType[], scope: Scope, isAdmin: boo
 }
 
 const UNIT_WORDS: Record<PreferenceType['unit'], string> = {
-  days: 'days',
-  hours: 'hours',
+  days: 'giorni',
+  hours: 'ore',
   minutes: 'minuti',
   percent: '%',
 }

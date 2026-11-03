@@ -14,7 +14,7 @@ import type { SessionUser } from './auth'
  */
 export const ROLE_LABELS: Record<SessionUser['role'], string> = {
   admin: 'amministratore',
-  collaborator: 'collaborator',
+  collaborator: 'collaboratore',
   readonly: 'sola lettura',
 }
 

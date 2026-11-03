@@ -3,7 +3,7 @@ import type { FieldDefinition } from './schema'
 import { asBody, isBlank, toFormValues, toRequestBody, type FormValues } from './formValues'
 
 const FIELDS: FieldDefinition[] = [
-  { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
+  { key: 'name', label: 'Nome', type: 'text', required: true, options: [] },
   { key: 'value', label: 'Valore', type: 'currency', required: false, options: [] },
   { key: 'days', label: 'Giorni', type: 'number', required: false, options: [] },
 ]

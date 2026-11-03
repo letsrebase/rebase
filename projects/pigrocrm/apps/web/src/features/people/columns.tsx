@@ -46,7 +46,7 @@ export function displayNative(value: string | null): string {
 /**
  * «Mario Rossi», or «Mario» for a person whose surname nobody filled in.
  *
- * Not `${nome} ${cognome}`: `last_name` is nullable *and* can hold the explicit `""` a
+ * Not `${first_name} ${last_name}`: `last_name` is nullable *and* can hold the explicit `""` a
  * cleared native column leaves behind (see `displayNative` above), either of which
  * would otherwise produce a trailing space and, worse, a second initial taken from
  * nothing.
@@ -81,10 +81,10 @@ export function buildPersonColumns(
   const native: ColumnDef<DataTableFeatures, Person>[] = [
     {
       header: 'Nome',
-      accessorKey: 'nome',
+      accessorKey: 'first_name',
       // The row *is* a person, so the first cell carries their identity (design spec
       // §4): initials, the full name, and the company underneath when the row brought
-      // one. The accessor stays the bare `nome` -- it is what this column's own tests
+      // one. The accessor stays the bare `first_name` -- it is what this column's own tests
       // read and what a future sort or export would use -- while `cell` shows the whole
       // name, because initials taken from a first name alone say almost nothing.
       cell: ({ row }) => (

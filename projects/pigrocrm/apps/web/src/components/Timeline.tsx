@@ -136,8 +136,8 @@ function TriggeredBy({ entry }: { entry: ActivityEntry }) {
  *    for a payload the backend constructs as `{"from": ..., "to": ...}`), so
  *    anything that assumed the first key was always "from" would be reading the
  *    wrong side of the transition at random.
- *  - `created`'s payload is per-entity (`legal_name` for a customer, `nome`
- *    for a person, `nome`+`stage` for a deal) and `deleted`/`restored` carry `{}`
+ *  - `created`'s payload is per-entity (`legal_name` for a customer, `name`
+ *    for a person, `name`+`stage` for a deal) and `deleted`/`restored` carry `{}`
  *    -- both land in the generic fallback, which is `null` for the empty case
  *    (the label above already says everything there is to say) and an
  *    ugly-but-true `snake_case: value` dump otherwise, which beats saying

@@ -276,7 +276,7 @@ function ImportInvoicesDialog({ onClose }: { onClose: () => void }) {
               <Button onClick={() => void confirm()} disabled={countWrites(rows, declined) === 0}>
                 {countWrites(rows, declined) === 0
                   ? 'Niente da importare'
-                  : `Importa ${plural(countWrites(rows, declined), 'invoice', 'invoices')}`}
+                  : `Importa ${plural(countWrites(rows, declined), 'fattura', 'fatture')}`}
               </Button>
             </>
           ) : stage.kind === 'done' ? (
@@ -361,7 +361,7 @@ function ReviewPanel({
                 <span className="font-medium">{party.name}</span>
                 <span className="text-muted-foreground">
                   {party.taxId !== '' ? `${party.taxId} · ` : ''}
-                  {plural(party.invoices, 'invoice', 'invoices')}
+                  {plural(party.invoices, 'fattura', 'fatture')}
                 </span>
               </label>
               <ExistingCustomerPicker

@@ -71,7 +71,7 @@ export function TimeEntriesTab({ dealId }: { dealId: string }) {
               {summary.data.hours_without_rate > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {summary.data.hours_without_rate}{' '}
-                  {summary.data.hours_without_rate === 1 ? 'entry' : 'entries'} senza tariffa,
+                  {summary.data.hours_without_rate === 1 ? 'voce' : 'voci'} senza tariffa,
                   esclusa dal valore maturato
                 </p>
               )}

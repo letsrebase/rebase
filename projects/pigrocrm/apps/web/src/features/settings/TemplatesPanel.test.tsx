@@ -129,7 +129,7 @@ describe('TemplatesPanel', () => {
         {
           code: 'validation_failed',
           entity: 'template',
-          field: 'nome',
+          field: 'name',
           reason: 'non può essere vuoto',
           detail: 'non può essere vuoto',
         },

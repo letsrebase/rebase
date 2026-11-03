@@ -115,7 +115,7 @@ export function PipelinePanel() {
 
   const columns: ColumnDef<DataTableFeatures, Stage>[] = [
     { header: 'Posizione', accessorKey: 'position' },
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Probabilità', id: 'probability', accessorFn: (row) => `${row.default_probability}%` },
     {
       header: 'Tipo',

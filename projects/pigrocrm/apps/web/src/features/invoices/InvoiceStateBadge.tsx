@@ -29,7 +29,7 @@ import {
  *  `"external"` row never can. An unrecognised value (there is only ever one column to
  *  misread) falls back to the same generic pill the old single-value check rendered. */
 const IMPORTED_BADGE_LABELS: Record<string, string> = {
-  external: 'imported',
+  external: 'importata',
   fatturapa: 'FatturaPA',
 }
 
@@ -67,7 +67,7 @@ export function InvoiceStateBadge({
           states and must not read as a sixth one sitting in the same row. */}
       {showImportedBadge && provenance != null ? (
         <Badge variant="pill" className="text-muted-foreground">
-          {IMPORTED_BADGE_LABELS[provenance] ?? 'imported'}
+          {IMPORTED_BADGE_LABELS[provenance] ?? 'importata'}
         </Badge>
       ) : null}
     </span>

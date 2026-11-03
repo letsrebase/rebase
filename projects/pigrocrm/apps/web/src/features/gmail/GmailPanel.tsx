@@ -20,7 +20,7 @@ import {
 
 /** The four statuses, in the words their owner would use. */
 const STATUS_LABEL: Record<string, string> = {
-  active: 'active',
+  active: 'attiva',
   expired: 'consenso scaduto',
   revoked: 'consenso revocato',
   disconnected: 'scollegata',

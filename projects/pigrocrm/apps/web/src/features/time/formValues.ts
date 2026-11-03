@@ -15,7 +15,7 @@ import type { TimeEntry } from './queries'
  * it is an admin operation with no picker control (`FieldType` has no user type).
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
+  { key: 'date', label: 'Data', type: 'date', required: true, options: [] },
   { key: 'hours', label: 'Ore', type: 'number', required: true, options: [] },
   { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
   { key: 'billable', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
@@ -26,7 +26,7 @@ export const NATIVE_FIELDS: FieldDefinition[] = [
     required: false,
     options: [],
   },
-  { key: 'note_interne', label: 'Note interne', type: 'textarea', required: false, options: [] },
+  { key: 'internal_notes', label: 'Note interne', type: 'textarea', required: false, options: [] },
 ]
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
@@ -37,7 +37,7 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
  *  `ImmutableField` after pressing Salva is a worse explanation than a field that is
  *  simply not there. */
 export const LOCKED_KEYS = new Set([
-  'data',
+  'date',
   'hours',
   'description',
   'billable',

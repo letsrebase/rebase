@@ -204,7 +204,7 @@ export function TokensPanel() {
   }
 
   const columns: ColumnDef<DataTableFeatures, TokenRecord>[] = [
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Prefisso', id: 'prefix', cell: (info) => <code>{info.row.original.prefix}</code> },
     accessColumn<TokenRecord>(),
     {
@@ -256,7 +256,7 @@ export function TokensPanel() {
 
   const teamColumns: ColumnDef<DataTableFeatures, TeamTokenRecord>[] = [
     { header: 'Titolare', accessorKey: 'owner_name' },
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Prefisso', id: 'prefix', cell: (info) => <code>{info.row.original.prefix}</code> },
     accessColumn<TeamTokenRecord>(),
     {

@@ -265,7 +265,7 @@ function DayCell({
           )}
           {open > 0 && (
             <span className="text-xs text-muted-foreground">
-              {open} {open === 1 ? 'due_date' : 'due_dates'}
+              {open} {open === 1 ? 'scadenza' : 'scadenze'}
             </span>
           )}
           {closed > 0 && open === 0 && (

@@ -17,7 +17,7 @@ export function buildCostColumns(
   const native: ColumnDef<DataTableFeatures, Cost>[] = [
     {
       header: 'Data',
-      id: 'data',
+      id: 'date',
       accessorFn: (row) => formatIsoDateItalian(row.date),
       // `DateCell` formats the raw ISO value through the same `lib/dates.ts` this
       // accessor uses, and adds the calendar icon (design spec §4).

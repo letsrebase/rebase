@@ -200,7 +200,7 @@ describe('CostCategoriesPanel', () => {
           title: 'Dati non validi',
           status: 422,
           entity: 'cost_category',
-          field: 'nome',
+          field: 'name',
           reason: 'nome vuoto',
           expected: 'un nome non vuoto',
           detail: 'nome vuoto',

@@ -63,7 +63,7 @@ export function UsersPanel() {
     (invites.data ?? []).some((i) => Array.isArray(i.legal_entities))
 
   const columns: ColumnDef<DataTableFeatures, UserRecord>[] = [
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Email', accessorKey: 'email' },
     {
       header: 'Ruolo',

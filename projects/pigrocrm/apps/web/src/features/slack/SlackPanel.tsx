@@ -45,7 +45,7 @@ const MATCH_TONE: Record<SlackMember['state'], StatusTone> = {
 }
 
 const STATUS_LABEL: Record<SlackWorkspace['status'], string> = {
-  active: 'active',
+  active: 'attivo',
   revoked: 'accesso revocato',
   disconnected: 'scollegato',
 }

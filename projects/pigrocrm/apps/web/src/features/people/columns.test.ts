@@ -195,7 +195,7 @@ describe('displayNative', () => {
 
 /**
  * The first cell of a person's row: initials, the full name, and the company under it
- * when the row brought one (design spec §4). The accessor stays the bare `nome`, which
+ * when the row brought one (design spec §4). The accessor stays the bare `first_name`, which
  * is what the tests above read; this is the other half.
  */
 describe('the person as an entity in the first cell', () => {

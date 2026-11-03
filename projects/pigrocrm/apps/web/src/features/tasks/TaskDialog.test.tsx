@@ -47,7 +47,7 @@ const search = {
           label: 'Acme sito',
           subtitle: 'Acme',
           score: '1.0000',
-          field: 'nome',
+          field: 'name',
         },
       ],
       total: 1,

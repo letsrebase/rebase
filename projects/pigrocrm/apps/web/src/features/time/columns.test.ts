@@ -86,7 +86,7 @@ function column(id: string) {
 
 describe('how an hour reads', () => {
   it('puts a calendar icon before the date', () => {
-    const { container } = renderCell('data', ENTRY)
+    const { container } = renderCell('date', ENTRY)
     expect(screen.getByText('05/03/2026')).toBeInTheDocument()
     expect(container.querySelector('svg')).not.toBeNull()
   })

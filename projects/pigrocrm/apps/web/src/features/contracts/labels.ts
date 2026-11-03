@@ -125,10 +125,10 @@ export const RATE_TIPI: Record<RateCardCreateBody['type'], string> = {
 
 export const RateUnit: Record<RateCardCreateBody['unit'], string> = {
   hour: 'ora',
-  day: 'day',
-  month: 'month',
-  year: 'year',
-  flat: 'flat',
+  day: 'giorno',
+  month: 'mese',
+  year: 'anno',
+  flat: 'forfait',
 }
 
 export const RatePeriods: Record<NonNullable<RateCardCreateBody['delivery_period']>, string> = {

@@ -56,10 +56,10 @@ const RATE_KIND_LABELS: Record<string, string> = {
 
 const RATE_UNIT_LABELS: Record<string, string> = {
   ora: 'ora',
-  day: 'day',
-  month: 'month',
-  year: 'year',
-  flat: 'flat',
+  day: 'giorno',
+  month: 'mese',
+  year: 'anno',
+  flat: 'forfait',
 }
 
 const PERIOD_LABELS: Record<string, string> = {
@@ -193,12 +193,12 @@ function wholeNumber(value: unknown): string | null {
 
 function days(value: unknown): string | null {
   const count = wholeNumber(value)
-  return count === null ? null : `${count} ${count === '1' ? 'day' : 'days'}`
+  return count === null ? null : `${count} ${count === '1' ? 'giorno' : 'giorni'}`
 }
 
 /** «1 giorno», «0,5 giorni»: the singular is the quantity written exactly «1». */
 function quantityInDays(quantity: string | null): string | null {
-  return quantity === null ? null : `${quantity} ${quantity === '1' ? 'day' : 'days'}`
+  return quantity === null ? null : `${quantity} ${quantity === '1' ? 'giorno' : 'giorni'}`
 }
 
 /** A value the screen has no word for, as the JSON it is. */

@@ -204,7 +204,7 @@ export function TemplatesPanel() {
   }
 
   const columns: ColumnDef<DataTableFeatures, Template>[] = [
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     {
       header: 'Tipo',
       id: 'type',

@@ -130,9 +130,9 @@ export function CostCategoriesPanel() {
   const [problem, setProblem] = useState<string | null>(null)
   // Separate from `problem` on purpose: the list banner sits behind the dialog overlay,
   // so a create that fails there would report itself somewhere nobody can see. Kept as
-  // the whole problem document, not just its `detail`, because a 422 naming `nome`
+  // the whole problem document, not just its `detail`, because a 422 naming `name`
   // belongs on the input the person typed into -- the shape `PipelinePanel`'s own
-  // create dialog already uses for the identical `ValidationFailed(entity, "nome", ...)`.
+  // create dialog already uses for the identical `ValidationFailed(entity, "name", ...)`.
   const [dialogProblem, setDialogProblem] = useState<ProblemDetail | null>(null)
   const dialogFieldError = dialogProblem ? fieldErrorFrom(dialogProblem) : null
   // Only what no control can show: a 409 on a duplicate name carries no `field` at

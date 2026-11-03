@@ -260,7 +260,7 @@ describe('how a deal row reads', () => {
   /**
    * The line under the deal's name is who the work is for -- what turns a list of
    * project names into a list of work (design spec §4). It has to be asserted on the
-   * *rendered* cell: the column's `accessorFn` is still the bare `nome`, so a
+   * *rendered* cell: the column's `accessorFn` is still the bare `name`, so a
    * misspelled `customer_legal_name` here would leave every `cellValue` assertion
    * in this file green.
    */
