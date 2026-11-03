@@ -1,0 +1,13 @@
+{
+  "name": "@rebase/english-lint",
+  "private": true,
+  "type": "module",
+  "description": "Fails on Italian identifiers and Italian prose in comments (REB-904). Python files are read with tokenize and ast; TypeScript with the repository's typescript package.",
+  "scripts": {
+    "test": "python3 -m unittest discover -s . -p 'test_*.py'",
+    "check": "python3 english_lint.py"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}
