@@ -9,9 +9,11 @@ import pytest
 
 from pigrocrm.core.money import (
     line_value,
+    percent_to_share,
     percentage_of,
     round_hours,
     round_money,
+    share,
     sum_hours,
     sum_money,
 )
@@ -82,3 +84,13 @@ def test_percentage_of_zero_is_none_not_zero() -> None:
     assert percentage_of(Decimal("-500.00"), Decimal("0.00")) is None
     assert percentage_of(Decimal("250.00"), Decimal("1000.00")) == Decimal("25.00")
     assert percentage_of(Decimal("1.00"), Decimal("3.00")) == Decimal("33.33")
+
+
+def test_share_is_zero_when_there_is_nothing_to_scale_against() -> None:
+    assert share(Decimal("25"), Decimal("100")) == 0.25
+    assert share(Decimal("25"), Decimal("0")) == 0.0
+    assert share(Decimal("25"), Decimal("-1")) == 0.0
+
+
+def test_percent_to_share_reads_a_stored_percentage_as_a_ratio() -> None:
+    assert percent_to_share(Decimal("50.00")) == 0.5

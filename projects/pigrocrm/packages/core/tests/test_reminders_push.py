@@ -5,6 +5,10 @@ server that keeps what it is handed: the body is decrypted with the subscription
 key (RFC 8291), the VAPID header is verified against the key the app hands the browser
 (RFC 8292), and the status codes a push service answers are mapped. The headless Chrome
 run in the pull request is the other half: a real browser, a real push service.
+
+The sender resolves a host itself, once, and connects to what it checked (B-13): its tests
+give it a `resolve` of their own, which answers the loopback address the local service
+listens on, where the default one would refuse it.
 """
 
 from __future__ import annotations
@@ -12,18 +16,23 @@ from __future__ import annotations
 import base64
 import json
 import os
+import ssl
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import http_ece
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,13 +49,14 @@ from pigrocrm.core.reminders.links import (
     url_prefix,
 )
 from pigrocrm.core.reminders.push import (
+    NotPublicAddress,
     PushMessage,
     PushTarget,
     WebPushSender,
     generate_vapid_keys,
     push_public_key,
     push_sender_from_settings,
-    resolves_publicly,
+    resolve_public,
     vapid_public_key,
 )
 from pigrocrm.core.reminders.push_subscriptions import (
@@ -80,8 +90,7 @@ class PushService:
     requests: list[Received] = field(default_factory=list)
 
 
-@pytest.fixture
-def service() -> Iterator[PushService]:
+def _serve(context: ssl.SSLContext | None = None) -> Iterator[PushService]:
     holder: PushService
 
     class Handler(BaseHTTPRequestHandler):
@@ -103,7 +112,11 @@ def service() -> Iterator[PushService]:
             return
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    holder = PushService(url=f"http://127.0.0.1:{server.server_port}")
+    scheme = "http"
+    if context is not None:
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+    holder = PushService(url=f"{scheme}://127.0.0.1:{server.server_port}")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -111,6 +124,49 @@ def service() -> Iterator[PushService]:
     finally:
         server.shutdown()
         server.server_close()
+
+
+@pytest.fixture
+def service() -> Iterator[PushService]:
+    yield from _serve()
+
+
+TLS_HOST = "push.example.test"
+
+
+@pytest.fixture
+def tls_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[PushService]:
+    """A push service over TLS whose certificate is for `TLS_HOST` and which the sender's
+    session trusts: the way to see that a connection is still verified against the name."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, TLS_HOST)])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName(TLS_HOST)]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    pem = tmp_path / "service.pem"
+    pem.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    pem_key = tmp_path / "service-key.pem"
+    pem_key.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(pem, pem_key)
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(pem))
+    yield from _serve(context)
 
 
 @dataclass
@@ -146,7 +202,9 @@ MESSAGE = PushMessage(
 
 
 def _sender(private: str, *, timeout: float = 5) -> WebPushSender:
-    return WebPushSender(private, SUBJECT, guard=lambda _: True, timeout=timeout)
+    return WebPushSender(
+        private, SUBJECT, resolve=lambda host, port: ["127.0.0.1"], timeout=timeout
+    )
 
 
 # -- the transport, against a push service -------------------------------------------------------
@@ -239,30 +297,111 @@ def test_a_push_service_that_does_not_answer_in_time_is_a_failure_not_a_hang(
     assert outcome == "failed"
 
 
-def test_an_endpoint_that_resolves_to_this_machine_is_not_called_at_all(
+def test_a_name_is_resolved_once_and_the_connection_goes_to_what_was_checked(
+    service: PushService,
+) -> None:
+    """DNS rebinding: a name that answers a harmless address to the check and an address
+    inside the network to the connect. The sender asks once and uses that answer."""
+    private, _ = generate_vapid_keys()
+    answers = [["127.0.0.1"], ["10.0.0.9"]]
+    asked: list[str] = []
+
+    def resolve(host: str, port: int) -> list[str]:
+        asked.append(host)
+        return answers[len(asked) - 1]
+
+    sender = WebPushSender(private, SUBJECT, resolve=resolve, timeout=5)
+    port = service.url.rsplit(":", 1)[1]
+
+    outcome = sender.send(Browser.new().target(f"http://push.example.test:{port}/push/x"), MESSAGE)
+
+    assert outcome == "accepted"
+    assert asked == ["push.example.test"], "one lookup, not one for the check and one to connect"
+    assert [r.path for r in service.requests] == ["/push/x"]
+    host_header = {k.lower(): v for k, v in service.requests[0].headers.items()}["host"]
+    assert host_header == f"push.example.test:{port}", "the request still names the service"
+
+
+def test_the_certificate_is_still_checked_against_the_name_not_the_pinned_address(
+    tls_service: PushService,
+) -> None:
+    private, _ = generate_vapid_keys()
+    sender = _sender(private)
+    port = tls_service.url.rsplit(":", 1)[1]
+
+    right = sender.send(Browser.new().target(f"https://{TLS_HOST}:{port}/push/x"), MESSAGE)
+    other = sender.send(Browser.new().target(f"https://other.example.test:{port}/push/y"), MESSAGE)
+
+    assert right == "accepted"
+    assert other == "failed", "a certificate for another name is refused, whatever the address"
+    assert [r.path for r in tls_service.requests] == ["/push/x"]
+
+
+def test_a_host_that_does_not_resolve_is_a_failure_and_nothing_is_sent(
     service: PushService,
 ) -> None:
     private, _ = generate_vapid_keys()
-    default_guard = WebPushSender(private, SUBJECT)  # the real guard
 
-    outcome = default_guard.send(Browser.new().target(f"{service.url}/push/x"), MESSAGE)
+    def resolve(host: str, port: int) -> list[str]:
+        raise OSError("no such host")
+
+    sender = WebPushSender(private, SUBJECT, resolve=resolve, timeout=5)
+
+    assert sender.send(Browser.new().target(f"{service.url}/push/x"), MESSAGE) == "failed"
+    assert service.requests == []
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "[::1]", "0.0.0.0"])  # noqa: S104
+def test_an_endpoint_that_resolves_to_this_machine_is_not_called_at_all(
+    service: PushService, host: str
+) -> None:
+    private, _ = generate_vapid_keys()
+    default_guard = WebPushSender(private, SUBJECT)  # the real resolver and policy
+    port = service.url.rsplit(":", 1)[1]
+
+    outcome = default_guard.send(Browser.new().target(f"http://{host}:{port}/push/x"), MESSAGE)
 
     assert outcome == "failed"
     assert service.requests == []
 
 
+def _lookup(*addresses: str) -> Callable[..., list[tuple[Any, ...]]]:
+    """A `getaddrinfo` that answers these addresses."""
+
+    def lookup(host: str, port: int, **_: object) -> list[tuple[Any, ...]]:
+        return [(2, 1, 6, "", (address, port)) for address in addresses]
+
+    return lookup
+
+
+def test_a_host_with_only_public_addresses_resolves_to_them_in_order_without_repeats() -> None:
+    found = resolve_public(
+        "fcm.googleapis.com",
+        443,
+        lookup=_lookup("142.250.180.74", "2a00:1450::4", "142.250.180.74"),
+    )
+
+    assert found == ["142.250.180.74", "2a00:1450::4"]
+
+
 @pytest.mark.parametrize(
-    "endpoint",
+    "addresses",
     [
-        "https://localhost/x",
-        "https://127.0.0.1/x",
-        "https://[::1]/x",
-        "https://10.0.0.5/x",
-        "https:///x",
+        (),
+        ("127.0.0.1",),
+        ("::1",),
+        ("10.0.0.5",),
+        ("169.254.169.254",),
+        ("fe80::1%eth0",),
+        # One private answer among public ones is enough to refuse the host.
+        ("142.250.180.74", "10.0.0.5"),
     ],
 )
-def test_the_guard_refuses_what_is_not_the_public_internet(endpoint: str) -> None:
-    assert resolves_publicly(endpoint) is False
+def test_a_host_that_resolves_to_anything_but_public_addresses_is_refused(
+    addresses: tuple[str, ...],
+) -> None:
+    with pytest.raises(NotPublicAddress):
+        resolve_public("push.example.test", 443, lookup=_lookup(*addresses))
 
 
 # -- the server's key pair -----------------------------------------------------------------------

@@ -18,7 +18,8 @@ Three rules decide what a call writes:
   duplicate a person archives.
 - Every request gets a deal of its own, even when the customer has an open one, except
   when the body names a `deal_id` (an admin linking the request to a deal the CRM already
-  has): then that deal gets the marker and an activity, and nothing else is created.
+  has): then that deal gets the marker, an activity and the request's note, and no
+  customer, person or deal is created.
 
 A session advisory lock on the lowercased email serialises the calls of one person, so two
 requests from them, or the wizard's job racing the hub's sweep, cannot both create a
@@ -50,6 +51,7 @@ from pigrocrm.core.engagements.service import (
     deal_url,
 )
 from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import PersonCreate
 from pigrocrm.core.people.service import PersonService
@@ -173,9 +175,9 @@ class LeadService:
         email: str,
         deal_id: UUID,
     ) -> LeadRead:
-        """§ 2 case 1: the request joins a deal the CRM already has, and nothing else is
-        created. A deal that already carries this request's marker is the answer of a
-        retry and is left as it is."""
+        """§ 2 case 1: the request joins a deal the CRM already has, and no customer, person
+        or deal is created. A deal that already carries this request's marker is the answer
+        of a retry and is left as it is."""
         deal = DealRepository(space).get(deal_id)
         if deal is None:
             raise ValidationFailed(ENTITY, "deal_id", NO_SUCH_DEAL)
@@ -183,15 +185,18 @@ class LeadService:
         person_id = self._person_id(space, email, deal.customer_id)
         if marker in deal.rebase_refs:
             return self._answer(slug, deal.customer_id, person_id, deal.id, creato=False)
-        # Recorded first and left to the reference's commit: the entry survives only with
-        # the reference it is about (`ActivityService.record` joins the caller's transaction).
+        # Recorded first and left to the reference's commit: the entries survive only with
+        # the reference they are about (`ActivityService.record` joins the caller's
+        # transaction). The prospect's sentence goes to the deal's thread, where it can be
+        # edited or deleted, and not into the append-only timeline payload.
         ActivityService(space).record(
             "deal",
             deal.id,
             KIND_LINKED,
             Actor.rebase(),
-            {"richiesta": str(request_id), "azienda": data.azienda, "nota": data.deal.note},
+            {"richiesta": str(request_id), "azienda": data.azienda},
         )
+        append_first_note(space, "deal", deal.id, data.deal.note, Actor.rebase())
         DealService(space).attach_rebase_ref(deal.id, marker, Actor.rebase())
         return self._answer(slug, deal.customer_id, person_id, deal.id, creato=False)
 

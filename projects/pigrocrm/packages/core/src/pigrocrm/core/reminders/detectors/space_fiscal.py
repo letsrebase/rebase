@@ -30,7 +30,6 @@ admin sees every azienda unless somebody limited them, and then only theirs.
 
 from __future__ import annotations
 
-import weakref
 from decimal import Decimal
 from uuid import uuid5
 
@@ -56,31 +55,13 @@ IMMEDIATE_CEILING = "soglia_fuoriuscita_immediata"
 
 _HUNDRED = Decimal(100)
 
-
 _Aziende = list[tuple[LegalEntity, FiscalPack]]
-
-# One evaluation builds one `DetectorContext` and hands it to `applies` and `detect` of
-# both types, so the aziende are read once per evaluation and shared by the four calls.
-# Keyed by the context's identity and dropped when the context is collected: the cache
-# never outlives an evaluation, so it can never show a later one the data of an earlier.
-_LOADED: dict[int, tuple[weakref.ref[DetectorContext], _Aziende]] = {}
-
-
-def _forfettario_aziende(ctx: DetectorContext) -> _Aziende:
-    """The active aziende under the forfettario with the pack that governs them, the
-    default azienda first, read once per evaluation."""
-    key = id(ctx)
-    hit = _LOADED.get(key)
-    if hit is not None and hit[0]() is ctx:
-        return hit[1]
-    found = _load_aziende(ctx)
-    _LOADED[key] = (weakref.ref(ctx, lambda _: _LOADED.pop(key, None)), found)
-    return found
 
 
 def _load_aziende(ctx: DetectorContext) -> _Aziende:
     """The active aziende under the forfettario with the pack that governs them, the
-    default azienda first."""
+    default azienda first. Asked for through `ctx.once`: the two types and their «applies
+    when» read it once per evaluation."""
     rows = ctx.session.execute(
         select(LegalEntity, FiscalProfile)
         .join(FiscalProfile, FiscalProfile.azienda_id == LegalEntity.id)
@@ -105,7 +86,7 @@ def _load_aziende(ctx: DetectorContext) -> _Aziende:
 
 
 def _applies(ctx: DetectorContext) -> bool:
-    return bool(_forfettario_aziende(ctx))
+    return bool(ctx.once(_load_aziende))
 
 
 def _ceiling(pack: FiscalPack, ceiling_id: str) -> Ceiling | None:
@@ -138,7 +119,7 @@ def detect_approaching(ctx: DetectorContext) -> list[Detection]:
     ceiling."""
     anno = ctx.today.year
     found: list[Detection] = []
-    for azienda, pack in _forfettario_aziende(ctx):
+    for azienda, pack in ctx.once(_load_aziende):
         recipients = admins_seeing(ctx, azienda.id)
         if not recipients:
             continue
@@ -183,7 +164,7 @@ def detect_overrun(ctx: DetectorContext) -> list[Detection]:
     anno = ctx.today.year
     analytics = AnalyticsService(ctx.session)
     found: list[Detection] = []
-    for azienda, pack in _forfettario_aziende(ctx):
+    for azienda, pack in ctx.once(_load_aziende):
         recipients = admins_seeing(ctx, azienda.id)
         ceiling = _ceiling(pack, REVENUE_CEILING)
         if not recipients or ceiling is None:

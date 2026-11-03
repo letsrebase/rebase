@@ -14,7 +14,7 @@ a read-only surface, which is the place nobody looks for one.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from pigrocrm.core.search.schemas import (
     MAX_TERM_LENGTH,
@@ -25,10 +25,15 @@ from pigrocrm.core.search.schemas import (
 )
 from pigrocrm.core.search.service import SearchService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/search", tags=["search"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/search",
+    tags=["search"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("", response_model=SearchResults)

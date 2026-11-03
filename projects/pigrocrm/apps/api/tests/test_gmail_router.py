@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import pigrocrm_api.routers.gmail as gmail_router
+import pigrocrm_api.google_tokens as google_tokens
 from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
@@ -40,7 +40,7 @@ from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAcc
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.tokens import TokenGrant
 from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE
-from pigrocrm_api.routers.gmail import token_client_key
+from pigrocrm_api.google_tokens import token_client_key
 
 # Deliberately literal rather than imported from `fakes.gmail_fixtures`: that package
 # lives under `packages/core/tests`, which is only on `sys.path` once a test from that
@@ -324,7 +324,7 @@ class _Google:
 @pytest.fixture
 def google(gmail_ready: TestClient, monkeypatch: pytest.MonkeyPatch) -> _Google:
     fake = _Google()
-    monkeypatch.setitem(gmail_router._token_clients, token_client_key(_configured()), fake)
+    monkeypatch.setitem(google_tokens._token_clients, token_client_key(_configured()), fake)
     return fake
 
 

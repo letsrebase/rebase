@@ -7,6 +7,7 @@ the period, each conversation is read as headers only, and nothing is stored.
 """
 
 import time
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -495,18 +496,18 @@ def test_the_import_takes_the_lock_before_it_reads(
 ) -> None:
     calls: list[str] = []
     real_lock = CustomerRepository.lock_imports
-    real_domains = AddressRoster.customer_domains
+    real_domains = AddressRoster.domains_taken
 
     def lock(self: CustomerRepository) -> None:
         calls.append("lock")
         real_lock(self)
 
-    def domains(self: AddressRoster) -> frozenset[str]:
+    def domains(self: AddressRoster, candidates: Iterable[str]) -> frozenset[str]:
         calls.append("read")
-        return real_domains(self)
+        return real_domains(self, candidates)
 
     monkeypatch.setattr(CustomerRepository, "lock_imports", lock)
-    monkeypatch.setattr(AddressRoster, "customer_domains", domains)
+    monkeypatch.setattr(AddressRoster, "domains_taken", domains)
     CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
     assert calls[:2] == ["lock", "read"]
 

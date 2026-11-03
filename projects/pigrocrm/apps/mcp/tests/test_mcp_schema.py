@@ -14,7 +14,7 @@ from pigrocrm_mcp.errors import to_agent_message
 from pigrocrm_mcp.resources import entities
 from pigrocrm_mcp.server import DOMAIN_REFUSAL
 
-ADMIN = Actor(id=None, type="mcp", role="admin")
+ADMIN = Actor(id=None, type="system", role="admin")  # setup is not an agent's (agent_actions.py)
 
 
 def _payload(result) -> dict:

@@ -1,18 +1,23 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, status
 
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import PeriodLockCreate, PeriodLockRead
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/period-locks", tags=["period-locks"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/period-locks",
+    tags=["period-locks"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("", response_model=list[PeriodLockRead])
 def list_locks(
-    session: SessionDep, actor: ActorDep, anno: Annotated[int | None, Query()] = None
+    session: SessionDep, anno: Annotated[int | None, Query()] = None
 ) -> list[PeriodLockRead]:
     return PeriodLockService(session).list_locks(anno=anno)
 

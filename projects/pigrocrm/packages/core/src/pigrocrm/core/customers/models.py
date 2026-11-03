@@ -54,6 +54,13 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             postgresql_ops={"codice_fiscale": "gin_trgm_ops"},
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        # The Gmail roster resolves an address with `lower(email) = :needle`, which neither
+        # the plain email index nor the trigram one can serve (migration 0067).
+        Index(
+            "ix_customers_email_lower",
+            text("lower(email)"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         Index(
             "ix_customers_email_trgm",
             "email",

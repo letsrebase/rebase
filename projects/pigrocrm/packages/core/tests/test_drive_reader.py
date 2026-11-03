@@ -33,6 +33,7 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import TEXT_MAX_BYTES_DEFAULT, Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.drive import reader as reader_module
 from pigrocrm.core.drive.errors import DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
@@ -46,7 +47,6 @@ from pigrocrm.core.drive.reader import (
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import DriveTransport, UserTokens
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.text import DOCX_MIME, PDF_MIME, PROVENIENZA, TEXT_TRUNCATION_MARKER
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -243,10 +243,17 @@ def test_a_page_token_is_forwarded_and_the_next_one_comes_back() -> None:
     """
     drive = _tree()
 
-    def one_at_a_time(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+    def one_at_a_time(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> Any:
         if "q=" in url:
             url = f"{url}&pageSize=1"
-        return drive(method, url, headers, body)
+        return drive(method, url, headers, body, max_bytes=max_bytes)
 
     reader = _reader(drive, http=one_at_a_time)
     first = reader.list_children(ROOT_FOLDER)
@@ -368,11 +375,16 @@ def _refusing(drive: FakeDrive, file_id: str, status: int) -> Any:
     """
 
     def call(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         if f"/files/{file_id}" in url:
-            return status, b'{"error": {"message": "insufficientFilePermissions"}}'
-        return drive(method, url, headers, body)
+            return status, b'{"error": {"message": "insufficientFilePermissions"}}', {}
+        return drive(method, url, headers, body, max_bytes=max_bytes)
 
     return call
 
@@ -399,7 +411,7 @@ def test_a_403_on_an_ancestor_is_reported_and_not_read_as_outside_the_roots() ->
     with pytest.raises(Conflict) as excinfo:
         reader.is_within_roots(PDF_FILE)
 
-    assert excinfo.value.details["status"] == 403
+    assert excinfo.value.details["upstream_status"] == 403
     # Re-stamped by `_guarded`, like every other transport failure out of this module.
     assert excinfo.value.details["entity"] == "drive_file"
 
@@ -509,6 +521,28 @@ def test_read_bytes_refuses_bytes_that_arrive_over_the_ceiling_even_undeclared()
 
     with pytest.raises(Conflict):
         _reader(drive).read_bytes(DOC_FILE, max_bytes=4)
+
+
+def test_an_undeclared_oversized_answer_is_not_read_past_one_byte_over_the_ceiling() -> None:
+    """An export declares no size, so the ceiling is enforced on what arrives -- and what
+    arrives is cut by the transport at `max_bytes + 1`, so a Google Doc of any length is
+    never buffered whole. Asserted on the bytes the transport handed back."""
+    drive = _tree()
+    drive.files[DOC_FILE].data = b"x" * 10_000
+    reads: list[int] = []
+    real = DriveTransport.bytes
+
+    def spy(self: DriveTransport, *args: Any, **kwargs: Any) -> bytes:
+        payload = real(self, *args, **kwargs)
+        reads.append(len(payload))
+        return payload
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(DriveTransport, "bytes", spy)
+        with pytest.raises(Conflict):
+            _reader(drive).read_bytes(DOC_FILE, max_bytes=100)
+
+    assert reads == [101]
 
 
 # --- text ----------------------------------------------------------------------------
@@ -635,7 +669,7 @@ def test_a_google_failure_mid_read_is_about_the_drive_file_and_not_a_crm_documen
 
     A Google 500 while listing a folder the titolare named used to arrive as
     «document_blob: elenco fallito (500)». There is no CRM document anywhere in that
-    operation: `InvoiceService._resolve_original_pdf`'s docstring documents the
+    operation: `OriginalPdfResolver.resolve`'s docstring documents the
     opposite ("each already arrive as a `Conflict` under the entity `drive_file`"), and
     an adapter routing on the entity -- which is what `details["entity"]` is *for* --
     would send somebody to the documents screen to look for a row that was never
@@ -653,7 +687,7 @@ def test_a_google_failure_mid_read_is_about_the_drive_file_and_not_a_crm_documen
 
     assert excinfo.value.details["entity"] == "drive_file"
     assert "document_blob" not in excinfo.value.message
-    assert excinfo.value.details["status"] == 500
+    assert excinfo.value.details["upstream_status"] == 500
     assert excinfo.value.details["what"]
 
 
@@ -867,7 +901,7 @@ def test_already_authorized_is_the_only_way_past_that_gate(
     """`ALREADY_AUTHORIZED` replaced an `action=None` default, and the difference is the
     point of it: the exemption now has to be *written* at the call site.
 
-    Its one legitimate user is `InvoiceService._drive_reader`, whose operation
+    Its one legitimate user is `OriginalPdfResolver._drive_reader`, whose operation
     (`import_issued_invoice`) is itself on the ban list and was checked by `import_issued`
     under that name before this is reached -- so the same agent credential that is
     refused above composes a reader here, having already been refused, or allowed, once.

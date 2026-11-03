@@ -20,6 +20,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
     actor_for,
@@ -63,17 +64,10 @@ SUBJECT = "Offerta — così"
 MB = 1024 * 1024
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme", email="info@acme.it")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _draft(
     session: Session, account: GoogleAccount, customer: Customer | None = None, **overrides: Any
 ) -> EmailDraftRead:
-    owner = customer if customer is not None else _customer(session)
+    owner = customer if customer is not None else make_customer(session, email="info@acme.it")
     payload = EmailDraftCreate(
         entity_type="customer",
         entity_id=owner.id,
@@ -131,7 +125,7 @@ def test_the_sent_draft_names_the_file_that_left_with_it(
     send's own answer is built the same way. The name it reports is the name in the MIME
     part that actually left, which is the whole point of reading one before pressing."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta Q1")
     db_session.add(document)
     db_session.flush()
@@ -270,7 +264,7 @@ def test_the_sent_message_is_filed_against_the_people_it_actually_concerns(
     the customer they belong to, and a sent message visible on the person but not on the
     customer is the conversation that lies, in the other direction."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     person = Person(customer_id=customer.id, nome="Ada", cognome="Rossi", email="ada@acme.it")
     db_session.add(person)
     db_session.flush()
@@ -344,7 +338,7 @@ def test_an_oversized_attachment_is_refused_and_the_draft_stays_editable(
     while the message is being composed, and the draft ends up in a state the composer
     can reopen rather than frozen in `in_invio`."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta")
     db_session.add(document)
     db_session.flush()
@@ -567,7 +561,7 @@ def test_two_concurrent_sends_produce_one_email_one_row_and_one_conflict(
         with factory() as setup:
             account = connected_account(setup)
             user_id, account_id = account.user_id, account.id
-            customer = _customer(setup)
+            customer = make_customer(setup, email="info@acme.it")
             customer_id = customer.id
             draft = _draft(setup, account, customer)
             setup.commit()
@@ -763,7 +757,7 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
         with factory() as setup:
             account = connected_account(setup)
             user_id, account_id = account.user_id, account.id
-            customer = _customer(setup)
+            customer = make_customer(setup, email="info@acme.it")
             customer_id = customer.id
             read = _draft(setup, account, customer)
             setup.commit()
@@ -870,7 +864,7 @@ def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
         with factory() as setup:
             account = connected_account(setup)
             user_id, account_id = account.user_id, account.id
-            customer = _customer(setup)
+            customer = make_customer(setup, email="info@acme.it")
             customer_id = customer.id
             read = _draft(setup, account, customer)
             setup.commit()

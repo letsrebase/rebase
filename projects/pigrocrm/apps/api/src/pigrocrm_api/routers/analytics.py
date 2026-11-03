@@ -11,8 +11,9 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
+from pydantic import Field
 
 from pigrocrm.core.analytics.schemas import (
     BudgetPage,
@@ -31,10 +32,17 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import KeysetParams
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/analytics",
+    tags=["analytics"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 # `from` and `to` on the wire, as spec §11 writes them; `da`/`a` as the parameter names,
 # because `from` is a Python keyword. The alias is what keeps both true, and it is
@@ -95,22 +103,20 @@ def period_pnl(
     )
 
 
+class BudgetParams(KeysetParams):
+    da: date = Field(alias="from", description="Inizio del periodo, YYYY-MM-DD")
+    a: date = Field(alias="to", description="Fine del periodo, YYYY-MM-DD")
+    customer_id: UUID | None = None
+
+
 @router.get("/budget", response_model=BudgetPage)
 def budget_vs_actual(
-    session: SessionDep,
-    actor: ActorDep,
-    da: FromDate,
-    a: ToDate,
-    customer_id: Annotated[UUID | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[UUID | None, Query()] = None,
+    session: SessionDep, actor: ActorDep, params: Annotated[BudgetParams, Query()]
 ) -> BudgetPage:
     """The period filter is mandatory and the list is paginated from the first commit
     (residual B3): a margins view is by its nature a list of deals, so unbounded growth
     stops being invisible here."""
-    return AnalyticsService(session).budget_vs_actual(
-        BudgetQuery(da=da, a=a, customer_id=customer_id, limit=limit, cursor=cursor), actor
-    )
+    return AnalyticsService(session).budget_vs_actual(params.to_query(BudgetQuery), actor)
 
 
 @router.get("/overview", response_model=EconomicOverview)
@@ -268,8 +274,4 @@ def year_csv(
     fattura e poi il registro, con i due totali. UTF-8 con BOM, punto e virgola e
     virgola decimale, il formato che Excel italiano apre senza conversioni."""
     filename, content = AnalyticsService(session).build_year_csv(anno, actor, azienda_id)
-    return Response(
-        content=content,
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return attachment_response(content, "text/csv; charset=utf-8", filename)

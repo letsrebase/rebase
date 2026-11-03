@@ -20,6 +20,11 @@ therefore never raises. Applied recursively to every `dict` and `list` value it 
     is exactly what this module exists to prevent. They are converted rather than
     dropped because an audit payload's whole job is to name *which* row and *when* --
     the configuration audit entries (`auth`, `fields`, `pipeline`) carry both.
+  - an `Enum` becomes its value, `bytes` become text (undecodable bytes replaced), and a
+    tuple is walked like a list. Any other value `json.dumps` could not encode (a
+    `Decimal`, a set, an object) becomes its `str()`, the way `json.dumps(default=str)`
+    would: a value of a type nobody anticipated is recorded readable, not allowed to
+    fail the write.
 
 This is the same class of defect the custom-field validator closes (see
 `pigrocrm.core.fields.validator`): untrusted data reaching a strict storage layer with
@@ -31,6 +36,7 @@ option that does not fail the write this payload is merely riding along with.
 
 import math
 from datetime import date
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
@@ -60,10 +66,14 @@ def _sanitize_value(value: Any, depth: int) -> Any:
         if depth >= MAX_DEPTH:
             return _DEPTH_PLACEHOLDER
         return {key: _sanitize_value(inner, depth + 1) for key, inner in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, list | tuple):
         if depth >= MAX_DEPTH:
             return _DEPTH_PLACEHOLDER
         return [_sanitize_value(inner, depth + 1) for inner in value]
+    if isinstance(value, Enum):
+        return _sanitize_value(value.value, depth)
+    if value is None or isinstance(value, bool | int):
+        return value
     if isinstance(value, float):
         return _sanitize_float(value)
     if isinstance(value, str):
@@ -74,7 +84,9 @@ def _sanitize_value(value: Any, depth: int) -> Any:
     # `.isoformat()` is defined on both with the meaning we want.
     if isinstance(value, date):
         return value.isoformat()
-    return value
+    if isinstance(value, bytes | bytearray | memoryview):
+        return _sanitize_string(bytes(value).decode(errors="replace"))
+    return _sanitize_string(str(value))
 
 
 def sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:

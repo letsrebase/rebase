@@ -2,13 +2,12 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 
 from pigrocrm.core.work_units.dispute_bundle import build_dispute_bundle
 from pigrocrm.core.work_units.schemas import (
     LIST_LIMIT_DEFAULT,
-    LIST_LIMIT_MAX,
     WorkUnitCreate,
     WorkUnitDetail,
     WorkUnitList,
@@ -19,10 +18,17 @@ from pigrocrm.core.work_units.schemas import (
     WorkUnitTransitionIn,
 )
 from pigrocrm.core.work_units.service import WorkUnitService
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import PAGE_LIMIT_MAX
 
-router = APIRouter(prefix="/api/work-units", tags=["giornate"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/work-units",
+    tags=["giornate"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=WorkUnitRead, status_code=status.HTTP_201_CREATED)
@@ -46,7 +52,7 @@ def list_work_units(
     da: Annotated[date | None, Query(description="Dal giorno, YYYY-MM-DD, incluso")] = None,
     a: Annotated[date | None, Query(description="Al giorno, YYYY-MM-DD, incluso")] = None,
     stato: Annotated[WorkUnitStato | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
+    limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = LIST_LIMIT_DEFAULT,
 ) -> WorkUnitList:
     """Le giornate, dalla più recente. Serve almeno un contratto o una data (`da`, `a`):
     il registro intero di uno spazio non è una domanda che una schermata faccia."""
@@ -71,11 +77,7 @@ def dispute_bundle(
     fattura) e, sotto `source/`, l'originale archiviato su cui poggia l'approvazione, byte
     per byte. Aperto a ogni ruolo, come la pagina della giornata."""
     filename, content = build_dispute_bundle(session, storage, work_unit_id, actor)
-    return Response(
-        content=content,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return attachment_response(content, "application/zip", filename)
 
 
 @router.get("/{work_unit_id}", response_model=WorkUnitDetail)

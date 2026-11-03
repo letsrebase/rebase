@@ -16,25 +16,18 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.contract_expenses.models import ContractExpense
 from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.timetracking.models import CostCategory
-
-
-def _customer(db_session: Session) -> Customer:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}")
-    db_session.add(customer)
-    db_session.flush()
-    return customer
 
 
 def _contract(db_session: Session, *, politica_spese: dict[str, Any]) -> Contract:
     contract = Contract(
-        customer_id=_customer(db_session).id,
+        customer_id=make_customer(db_session).id,
         titolo="Consulenza",
         inizio=date(2026, 1, 1),
         tipo_rinnovo="nessuno",

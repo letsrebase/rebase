@@ -26,10 +26,18 @@ from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAcc
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, reminder_key
+from pigrocrm.core.reminders.detect import DetectorContext
 from pigrocrm.core.reminders.detectors import DETECTORS
+from pigrocrm.core.reminders.directory import Directory
 from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
-from pigrocrm.core.reminders.models import ReminderAck, ReminderDelivery, ReminderSnooze
-from pigrocrm.core.reminders.preferences import ReminderPreferenceService
+from pigrocrm.core.reminders.jobs import REMINDER_PASS_JOB
+from pigrocrm.core.reminders.models import (
+    ReminderAck,
+    ReminderDelivery,
+    ReminderJobRun,
+    ReminderSnooze,
+)
+from pigrocrm.core.reminders.preferences import ReminderPreferenceService, ReminderSettings
 from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
@@ -182,6 +190,62 @@ def test_the_severity_is_each_recipients_own(world: World) -> None:
     # Nobody else is told about an attività with no link and an assignee, but the space's
     # owner is not either: the assignee is a recipient, so the fallback does not apply.
     assert set(severities) == {world.alice.id}
+
+
+@pytest.mark.parametrize("who", ["owner", "alice", "bob", "carol"])
+def test_a_persons_list_is_what_the_whole_space_raises_for_them(world: World, who: str) -> None:
+    """`reminders_of` runs less than `evaluate` (a type only the admins are told is not run
+    for somebody who is not one, and nobody else's severity is resolved) and says the same
+    about the person."""
+    world.attivita(TODAY - timedelta(days=3), assegnata_a=world.alice.id, deal_id=world.deal.id)
+    world.attivita(TODAY, customer_id=world.customer.id)
+    world.deal.data_chiusura_prevista = TODAY - timedelta(days=5)
+    # Something only the admins are told: the reminder pass itself has not run for hours.
+    world.session.add(ReminderJobRun(job=REMINDER_PASS_JOB, ran_at=NOON - timedelta(hours=5)))
+    user = getattr(world, who)
+    everything = world.evaluate()
+    expected = [r for r in everything.reminders if r.user_id == user.id]
+    assert expected, f"{who} is told of nothing, so the comparison proves nothing"
+    assert ("job_late" in {r.type for r in expected}) == (who == "owner")
+
+    mine = ReminderEngine(world.session, SETTINGS).reminders_of(user.id, today=TODAY, now=NOON)
+
+    assert mine == expected
+
+
+def test_somebody_who_cannot_be_told_has_no_list(world: World) -> None:
+    world.attivita(TODAY - timedelta(days=3), assegnata_a=world.alice.id)
+    left = world.user(attivo=False)
+
+    mine = ReminderEngine(world.session, SETTINGS).reminders_of(left.id, today=TODAY, now=NOON)
+
+    assert mine == []
+
+
+def test_what_detectors_share_is_read_once_per_evaluation_and_never_across_two(
+    world: World,
+) -> None:
+    reads: list[DetectorContext] = []
+
+    def load(ctx: DetectorContext) -> int:
+        reads.append(ctx)
+        return len(reads)
+
+    def context() -> DetectorContext:
+        return DetectorContext(
+            session=world.session,
+            today=TODAY,
+            now=NOON,
+            timezone=SETTINGS.timezone,
+            directory=Directory([], None),
+            settings=ReminderSettings([]),
+        )
+
+    first, second = context(), context()
+
+    assert [first.once(load), first.once(load), first.once(load)] == [1, 1, 1]
+    assert second.once(load) == 2, "a later evaluation is never shown an earlier one's data"
+    assert reads == [first, second]
 
 
 def _actor(user: User) -> Actor:

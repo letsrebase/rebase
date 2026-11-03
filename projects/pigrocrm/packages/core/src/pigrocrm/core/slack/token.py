@@ -2,9 +2,9 @@
 
 The one place the plaintext exists outside a request that is about to use it: `bot_token`
 returns it for the length of one call and the caller hands it to the client and keeps no
-copy. `unseal` is `gmail/crypto.py`'s, but its refusal names `PIGROCRM_GOOGLE_TOKEN_KEY` and
-a mailbox, which is the wrong instruction for Slack, so the refusal is re-worded here and
-the cause kept in the traceback.
+copy. `unseal` is `core/crypto.py`'s and its refusal is generic, so it is re-worded here to
+name `PIGROCRM_SLACK_TOKEN_KEY` and Slack, the instruction that fixes a bot token, and the
+cause is kept in the traceback.
 """
 
 from datetime import UTC, datetime
@@ -12,8 +12,8 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings, decode_slack_token_key
+from pigrocrm.core.crypto import unseal
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.gmail.crypto import unseal
 from pigrocrm.core.slack.errors import SLACK_ENTITY, SlackTokenRevoked
 from pigrocrm.core.slack.models import SlackWorkspace
 

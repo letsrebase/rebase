@@ -92,7 +92,7 @@ async def test_move_deal_without_a_destination_asks_for_one(server) -> None:
 
 
 async def test_move_deal_accepts_the_deals_own_field_name(server, mcp_session: Session) -> None:
-    PipelineService(mcp_session).seed_defaults(ADMIN)
+    PipelineService(mcp_session).seed_defaults(Actor(id=None, type="system", role="admin"))
     async with Client(server) as client:
         customer = (
             await client.call_tool("create_customer", {"ragione_sociale": "ACME"})

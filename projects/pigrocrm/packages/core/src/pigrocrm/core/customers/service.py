@@ -24,6 +24,7 @@ from pigrocrm.core.customers.schemas import (
 from pigrocrm.core.db import encode_cursor
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
+from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
@@ -150,74 +151,6 @@ class CustomerService:
             )
         return owner.id
 
-    def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Used by `create` only: `values` is the *complete* desired set of custom
-        fields for a brand-new row, so it is validated against every active
-        definition -- a required-but-absent field is genuinely missing here, not
-        merely untouched, unlike on a partial `update` (see `_update_custom_fields`)."""
-        return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
-
-    def _update_custom_fields(self, customer: Customer, provided: dict[str, Any]) -> dict[str, Any]:
-        """Validates only the keys the caller is touching, against active definitions
-        -- never the union with what is already stored on `customer`. An earlier
-        version merged `customer.custom_fields` with `provided` and validated the
-        result, which broke Task 7's contract for archiving a field ("hide it, keep
-        the data readable"): any archived key still present in storage failed the
-        "campo non definito" check on *every* future update, even one that never
-        mentions that key, and there was no way to clear it because the same check ran
-        before any notion of removal.
-
-        A key supplied with `None` removes that entry from the stored dict -- the one
-        way left to clear an obsolete value once its definition is archived -- unless
-        the key currently belongs to an active, `required=True` definition, in which
-        case it raises the same "campo obbligatorio" `ValidationFailed` that
-        `validate_custom_fields` would raise for `""` below. `None` and `""` are two
-        spellings of "this field has no value"; a first version of this method treated
-        them differently -- `""` reached `validate_custom_fields` and was correctly
-        rejected by its own is_blank/required check, while `None` went straight into
-        `to_remove` and never reached any required check at all, silently stripping a
-        required value with no error. On a *required* field the two spellings must be
-        rejected identically, or a caller strips the value just by choosing the other
-        one. This check only fires for a key that is currently active and required:
-        archived, undefined, or non-required keys keep the round 1 behavior above --
-        clearing an archived field's stored value must stay possible even if the
-        definition was required back when it was active.
-
-        A key supplied with any other (non-blank) value must belong to a currently
-        active definition: setting a *new* value on an archived key is refused, the
-        same as on an undefined one -- archiving means "closed to new input," not
-        "gone." Keys already stored that `provided` does not mention -- archived or
-        not, required or not -- are carried over untouched.
-
-        Filtering `specs` down to only the touched keys before calling
-        `validate_custom_fields` is what keeps this partial-update-shaped: that
-        function's own second pass walks every spec it is given and fails a blank
-        *required* one, which is correct when `values` is meant to be a complete set
-        (`_validated_custom`, above) but would wrongly fail an active required field
-        that this update never mentions at all if the full active spec list were
-        passed here unfiltered.
-        """
-        active_by_key = {spec.key: spec for spec in self.fields.specs_for(ENTITY)}
-
-        to_remove: set[str] = set()
-        for key, value in provided.items():
-            if value is not None:
-                continue
-            spec = active_by_key.get(key)
-            if spec is not None and spec.required:
-                raise ValidationFailed(
-                    ENTITY, key, "campo obbligatorio", expected="un valore non vuoto"
-                )
-            to_remove.add(key)
-
-        to_set = {key: value for key, value in provided.items() if value is not None}
-        touched_specs = [spec for spec in active_by_key.values() if spec.key in to_set]
-        validated = validate_custom_fields(ENTITY, touched_specs, to_set)
-
-        merged = {k: v for k, v in customer.custom_fields.items() if k not in to_remove}
-        merged.update(validated)
-        return merged
-
     def _insert(self, data: CustomerCreate, actor: Actor) -> Customer:
         """The write half of `create`, without the commit (design record
         `2026-09-23-mastro-invoice-import-onto-pigrocrm-design.md` §7 item 5):
@@ -238,7 +171,9 @@ class CustomerService:
         # Not a column: the first note of the customer, written below by the creating actor.
         first_note = payload.pop("note", None)
         _check_fiscal(payload, payload.get("nazione") or "IT")
-        payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
+        payload["custom_fields"] = validate_custom_fields(
+            ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
+        )
         payload["azienda_id"] = self._azienda_for(payload.get("azienda_id"), payload.get("nazione"))
         payload["owner_id"] = self._owner_for(payload.get("owner_id"), actor, creating=True)
 
@@ -292,8 +227,21 @@ class CustomerService:
         # and then sees what this one committed (`lock_imports`).
         self.repo.lock_imports()
         roster = AddressRoster(self.session)
-        taken = set(roster.customer_domains())
-        known = set(roster.known_addresses())
+        # Only the proposal's own domains and addresses are looked up, not the whole book.
+        taken = set(
+            roster.domains_taken(
+                domain
+                for choice in data.clienti
+                if (domain := customer_domain(sito_web=choice.dominio, email=None))
+            )
+        )
+        known = set(
+            roster.known_among(
+                person.indirizzo.strip().lower()
+                for choice in data.clienti
+                for person in choice.persone
+            )
+        )
         # Everything is checked before anything is written, so a refusal names the
         # first thing wrong and leaves the session as it found it.
         plan: list[tuple[str, CustomerFromSuggestion, list[tuple[str, str]]]] = []
@@ -384,7 +332,7 @@ class CustomerService:
                 f"{address} non è un indirizzo di {domain}",
                 expected=f"nome@{domain}",
             )
-        if address in set(AddressRoster(self.session).known_addresses()):
+        if AddressRoster(self.session).known_among([address]):
             raise Conflict(ENTITY, f"{address} è già in anagrafica", indirizzo=address)
         persons = PersonService(self.session)
         nome, cognome = _person_name(data.nome, address)
@@ -409,7 +357,7 @@ class CustomerService:
         # `data.custom_fields` directly rather than through `model_dump`: this method
         # must see a caller-supplied `None` *inside* the dict (e.g. {"settore": None},
         # meaning "remove this key") exactly as given, with no risk of it being
-        # confused with the field itself being absent -- see `_update_custom_fields`.
+        # confused with the field itself being absent -- see `merge_custom`.
         changes = supplied_changes(data, exclude={"custom_fields"})
         reject_cleared_columns(ENTITY, Customer, changes)
         # The country after this patch, not merely the one it mentions.
@@ -424,7 +372,9 @@ class CustomerService:
             # Said again, unchanged: nothing to write and nobody's permission to ask.
             changes.pop("owner_id", None)
         if data.custom_fields is not None:
-            changes["custom_fields"] = self._update_custom_fields(customer, data.custom_fields)
+            changes["custom_fields"] = merge_custom(
+                ENTITY, self.fields.specs_for(ENTITY), customer.custom_fields, data.custom_fields
+            )
         for key, value in changes.items():
             setattr(customer, key, value)
 

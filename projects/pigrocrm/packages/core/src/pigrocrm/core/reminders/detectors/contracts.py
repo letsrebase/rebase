@@ -37,6 +37,7 @@ from pigrocrm.core.mail import giorno_breve
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
 from pigrocrm.core.reminders.detectors.links import LinkResolver
+from pigrocrm.core.reminders.detectors.text import giorni
 
 EXPIRING = REMINDER_TYPES["contract_expiring"]
 RENEWAL = REMINDER_TYPES["renewal_window_open"]
@@ -86,11 +87,6 @@ def _has_renewal_clause(ctx: DetectorContext) -> bool:
             )
         )
     )
-
-
-def giorni(count: int) -> str:
-    """`1 giorno`, `20 giorni`: the Italian plural, so no detail ever reads «1 giorni»."""
-    return "1 giorno" if count == 1 else f"{count} giorni"
 
 
 def _detection(

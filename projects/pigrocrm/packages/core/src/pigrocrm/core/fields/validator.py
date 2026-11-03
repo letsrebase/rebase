@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fields.types import FieldSpec
 
-TRUE_VALUES = {True, "1", "true", "True", "si", "sì", "yes"}
-FALSE_VALUES = {False, "0", "false", "False", "no"}
+TRUE_STRINGS = frozenset({"1", "true", "True", "si", "sì", "yes"})
+FALSE_STRINGS = frozenset({"0", "false", "False", "no"})
 ALLOWED_URL_SCHEMES = {"http", "https"}
 # text/textarea/url all funnel through _clean_text: only these become text, so a
 # dict or a list can never be silently stringified into "{'a': 1}"-shaped garbage.
@@ -69,6 +69,9 @@ def _safe_decimal(value: Any) -> Decimal | None:
 
 
 def _coerce_number(entity: str, spec: FieldSpec, value: Any) -> float:
+    if isinstance(value, bool):
+        # `float(True)` is 1.0: a checkbox's answer is not a quantity.
+        _fail(entity, spec.key, f"'{_brief(value)}' non è un numero", "un numero")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError):
@@ -147,16 +150,18 @@ def _coerce_multiselect(entity: str, spec: FieldSpec, value: Any) -> list[str]:
 
 
 def _coerce_checkbox(entity: str, spec: FieldSpec, value: Any) -> bool:
-    try:
-        if value in TRUE_VALUES:
+    """A boolean, the integers 0 and 1, or one of the words clients are known to send. Not
+    any other number: set membership would have taken `1.0` for `True` because they hash
+    alike, which is an accident of Python and not a rule of the field."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return value == 1
+    if isinstance(value, str):
+        if value in TRUE_STRINGS:
             return True
-        if value in FALSE_VALUES:
+        if value in FALSE_STRINGS:
             return False
-    except TypeError:
-        # An unhashable value (a list, a dict) cannot be tested for set membership.
-        # A client sending arbitrary JSON can easily produce one; that is just
-        # another way of saying "not a recognisable boolean", not a crash.
-        pass
     _fail(entity, spec.key, f"'{_brief(value)}' non è un booleano", "true oppure false")
 
 

@@ -10,6 +10,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery, DocumentUpdate
 from pigrocrm.core.documents.service import DocumentService
+from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage import LocalFileStorage
@@ -117,9 +118,9 @@ def test_download_without_a_number_returns_the_current_version(
         DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="Offerta"), ADMIN
     )
     service.add_version(document.id, PDF, "application/pdf", ADMIN)
-    service.add_version(document.id, b"ultimo", "application/pdf", ADMIN)
+    service.add_version(document.id, b"%PDF-1.7\nultimo\n", "application/pdf", ADMIN)
     data, content_type, filename = service.download(document.id, None, ADMIN)
-    assert data == b"ultimo"
+    assert data == b"%PDF-1.7\nultimo\n"
     assert content_type == "application/pdf"
     assert filename.endswith(".pdf")
 
@@ -293,10 +294,10 @@ def test_two_racing_uploads_computing_the_same_version_number_become_a_clean_con
     document = service.create(
         DocumentCreate(customer_id=customer.id, tipo="offerta", titolo="Offerta"), ADMIN
     )
-    monkeypatch.setattr(DocumentService, "_next_numero", lambda self, document: 1)
+    monkeypatch.setattr(DocumentUploads, "next_numero", lambda self, document: 1)
     service.add_version(document.id, PDF, "application/pdf", ADMIN)
     with pytest.raises(Conflict):
-        service.add_version(document.id, b"perdente", "application/pdf", ADMIN)
+        service.add_version(document.id, b"%PDF-1.7\nperdente\n", "application/pdf", ADMIN)
     monkeypatch.undo()
 
     # The winner's bytes at v1 must be exactly what the winner wrote -- the loser's
@@ -362,3 +363,51 @@ def test_without_a_prefix_the_customer_folder_is_still_used(
     )
     version = service.add_version(document.id, b"ciao", "text/plain", ADMIN)
     assert version.storage_key.endswith(f"/{document.id}/v1.txt")
+
+
+@pytest.mark.parametrize(
+    ("content_type", "data"),
+    [
+        ("application/pdf", b"<html><script>alert(1)</script></html>"),
+        ("image/png", b"%PDF-1.7\nnot a png\n"),
+        ("image/jpeg", b"\x89PNG\r\n\x1a\nnot a jpeg"),
+        (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"%PDF-1.7\nnot a zip\n",
+        ),
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            b"<?xml version='1.0'?><x/>",
+        ),
+    ],
+)
+def test_bytes_that_do_not_start_like_the_declared_type_are_refused(
+    service: DocumentService, customer: Customer, content_type: str, data: bytes
+) -> None:
+    document = service.create(
+        DocumentCreate(customer_id=customer.id, tipo="documento", titolo="Falso"), ADMIN
+    )
+    with pytest.raises(ValidationFailed) as excinfo:
+        service.add_version(document.id, data, content_type, ADMIN)
+    assert excinfo.value.details["field"] == "content_type"
+    assert service.get(document.id, ADMIN).versione_corrente == 0
+
+
+@pytest.mark.parametrize(
+    ("content_type", "data"),
+    [
+        ("image/png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 8),
+        ("image/jpeg", b"\xff\xd8\xff\xe0" + b"\x00" * 8),
+        ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK\x03\x04x"),
+        ("text/plain", b"anything at all"),
+        ("application/xml", b"<a/>"),
+        ("application/pdf", b"\n\n%PDF-1.4\nwith leading whitespace\n"),
+    ],
+)
+def test_bytes_that_start_like_the_declared_type_are_accepted(
+    service: DocumentService, customer: Customer, content_type: str, data: bytes
+) -> None:
+    document = service.create(
+        DocumentCreate(customer_id=customer.id, tipo="documento", titolo="Vero"), ADMIN
+    )
+    assert service.add_version(document.id, data, content_type, ADMIN).numero == 1

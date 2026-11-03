@@ -157,7 +157,7 @@ def indirizzo_display(party: dict[str, Any]) -> str:
 
     Italy keeps the shape it always had, `CAP Comune (PR)`. Outside it, the postcode is
     printed as the record holds it (`EC1V 9HL`, not the `00000` the XML carries -- see
-    `fatturapa.CAP_ESTERO`) and the province is not printed at all. An Italian record
+    `fatturapa.constants.CAP_ESTERO`) and the province is not printed at all. An Italian record
     with no province yet, which a proforma may well have, loses the parentheses rather
     than printing them empty: the same defect in the domestic case.
     """
@@ -183,7 +183,7 @@ def identificativo_iva(party: dict[str, Any]) -> str:
     """`IT01234567890`: the country before the number, the way `IdPaese` precedes
     `IdCodice` in the XML, or `""` for a party with no VAT id. The previous system
     printed `IT` in front of a London customer's number; the country is the party's,
-    and an empty `nazione` falls back to `IT` exactly as `fatturapa.py` does, so the
+    and an empty `nazione` falls back to `IT` exactly as `fatturapa/exporter.py` does, so the
     PDF and the XML of one invoice never disagree on the prefix."""
     partita_iva = (party.get("partita_iva") or "").strip()
     if not partita_iva:

@@ -11,6 +11,7 @@ from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
@@ -134,27 +135,6 @@ class CostService:
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
 
-    def _update_custom_fields(self, cost: Cost, provided: dict[str, Any]) -> dict[str, Any]:
-        """Identical contract to `DealService._update_custom_fields` and
-        `TimeEntryService._update_custom_fields`; see either for the full reasoning."""
-        active_by_key = {spec.key: spec for spec in self.fields.specs_for(ENTITY)}
-        to_remove: set[str] = set()
-        for key, value in provided.items():
-            if value is not None:
-                continue
-            spec = active_by_key.get(key)
-            if spec is not None and spec.required:
-                raise ValidationFailed(
-                    ENTITY, key, "campo obbligatorio", expected="un valore non vuoto"
-                )
-            to_remove.add(key)
-        to_set = {k: v for k, v in provided.items() if v is not None}
-        touched = [spec for spec in active_by_key.values() if spec.key in to_set]
-        validated = validate_custom_fields(ENTITY, touched, to_set)
-        merged = {k: v for k, v in cost.custom_fields.items() if k not in to_remove}
-        merged.update(validated)
-        return merged
-
     def _require(self, cost_id: UUID, *, include_deleted: bool = False) -> Cost:
         cost = self.repo.get(cost_id, include_deleted=include_deleted)
         if cost is None:
@@ -232,7 +212,9 @@ class CostService:
         self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))
 
         if data.custom_fields is not None:
-            changes["custom_fields"] = self._update_custom_fields(cost, data.custom_fields)
+            changes["custom_fields"] = merge_custom(
+                ENTITY, self.fields.specs_for(ENTITY), cost.custom_fields, data.custom_fields
+            )
         for key, value in changes.items():
             setattr(cost, key, value)
         self.activities.record(ENTITY, cost.id, "updated", actor, {"changed": sorted(changes)})

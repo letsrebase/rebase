@@ -71,7 +71,7 @@ class GoogleDriveAccount(Base, PrimaryKeyMixin, TimestampMixin):
     google_sub: Mapped[str] = mapped_column(String(255), nullable=False)
     email_address: Mapped[str] = mapped_column(String(320), nullable=False)
     # AES-256-GCM, key from PIGROCRM_GOOGLE_TOKEN_KEY -- the same key and the same
-    # `seal`/`unseal` in `gmail/crypto.py`, since sealing is a property of the column
+    # `seal`/`unseal` in `core/crypto.py`, since sealing is a property of the column
     # shape and not of which Google product granted the token. Never logged, never
     # returned by any schema, never in an exception message.
     refresh_token_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)

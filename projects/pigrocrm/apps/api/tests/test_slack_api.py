@@ -33,8 +33,8 @@ from fakes.fake_slack import (  # noqa: E402
 )
 
 from pigrocrm.core.config import Settings, decode_slack_token_key, get_settings  # noqa: E402
+from pigrocrm.core.crypto import unseal  # noqa: E402
 from pigrocrm.core.db.sidecar import drop_database  # noqa: E402
-from pigrocrm.core.gmail.crypto import unseal  # noqa: E402
 from pigrocrm.core.slack.client import SlackClient  # noqa: E402
 from pigrocrm.core.slack.schemas import SLACK_BOT_SCOPES  # noqa: E402
 from pigrocrm.core.tenants import ensure_tenants_database, space_base_settings  # noqa: E402

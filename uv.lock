@@ -1128,6 +1128,7 @@ dependencies = [
     { name = "requests" },
     { name = "sqlalchemy" },
     { name = "tzdata" },
+    { name = "urllib3" },
     { name = "uuid-utils" },
 ]
 
@@ -1150,6 +1151,7 @@ requires-dist = [
     { name = "requests", specifier = "==2.34.2" },
     { name = "sqlalchemy", specifier = "==2.1.3" },
     { name = "tzdata", specifier = "==2026.4" },
+    { name = "urllib3", specifier = "==2.8.0" },
     { name = "uuid-utils", specifier = "==1.0.0" },
 ]
 

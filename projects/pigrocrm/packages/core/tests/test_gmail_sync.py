@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import pytest
-from fakes.fake_gmail import FakeGmail, FakeMessage, RecordedRequest
+from fakes.fake_gmail import API_HOST, FakeGmail, FakeMessage, RecordedRequest
 from fakes.gmail_fixtures import (
     MAILBOX,
     REFRESH_TOKEN,
@@ -40,11 +40,14 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.errors import Conflict, PermissionDenied
 from pigrocrm.core.gmail.errors import GmailUnavailable
-from pigrocrm.core.gmail.models import GmailMessage, GoogleOAuthState
+from pigrocrm.core.gmail.models import GmailMessage
 from pigrocrm.core.gmail.query import ADDRESS_BATCH_DEFAULT
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.roster import AddressRoster
 from pigrocrm.core.gmail.schemas import GmailMessageRead
+from pigrocrm.core.gmail.sync import GmailSyncService
+from pigrocrm.core.gmail.tokens import GoogleTokenClient
+from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.people.models import Person
 
 # Every address-bearing clause Gmail understands, as the query builder writes them. The
@@ -247,7 +250,13 @@ class _Paged:
         self.requests = inner.requests
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
     ) -> tuple[int, bytes, dict[str, str]]:
         status, payload, response_headers = self.inner(method, url, headers, body)
         parsed = urlparse(url)
@@ -646,26 +655,6 @@ def test_two_overlapping_syncs_store_each_message_once(
 # --- housekeeping and refusals -------------------------------------------------------
 
 
-def test_the_cycle_prunes_the_expired_oauth_states(db_session: Session) -> None:
-    """`refresh_tokens` has this same problem and, per residuo R8, no pruning at all.
-    The sync is the only recurring job this system has, so it is where the housekeeping
-    goes."""
-    account = connected_account(db_session)
-    db_session.add(
-        GoogleOAuthState(
-            jti=f"scaduto-{uuid4().hex[:8]}",
-            code_verifier="v" * 43,
-            user_id=account.user_id,
-            expires_at=datetime.now(UTC) - timedelta(minutes=10),
-        )
-    )
-    db_session.flush()
-
-    report = sync_service(db_session, FakeGmail()).sync(actor_for(account))
-    assert report.states_pruned == 1
-    assert db_session.execute(select(func.count()).select_from(GoogleOAuthState)).scalar_one() == 0
-
-
 def test_a_readonly_actor_cannot_sync(db_session: Session) -> None:
     account = connected_account(db_session)
     fake = FakeGmail()
@@ -714,6 +703,53 @@ def test_no_failure_of_the_cycle_carries_a_token(db_session: Session) -> None:
     assert REFRESH_TOKEN not in printed
     assert fake.access_token not in printed
     assert TOKEN_KEY.decode() not in printed
+
+
+def test_a_listing_that_stays_down_answers_gmail_unavailable_and_frees_the_lock(
+    db_session: Session, db_engine: Engine
+) -> None:
+    """Gmail failing after every retry used to let the transport's own exception out of
+    `sync` (the API answered 500 to an exhausted quota). It is the person's to retry, and
+    it is the same `GmailUnavailable` a failed token refresh answers. The token refresh
+    succeeds here: it is the *listing* that is refused, which is the call a cycle makes
+    after the one the test above covers."""
+    account = connected_account(db_session)
+    _customer(db_session, "info@acme.it")
+    fake = FakeGmail()
+
+    def exhausted(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        if urlparse(url).netloc == API_HOST:
+            return 429, b'{"error": {"status": "RESOURCE_EXHAUSTED"}}', {"Retry-After": "0"}
+        return fake(method, url, headers, body, max_bytes=max_bytes)
+
+    transport = GmailTransport(http=exhausted, sleep=lambda _: None)
+    settings = gmail_settings()
+    service = GmailSyncService(
+        db_session,
+        settings=settings,
+        transport=transport,
+        tokens=GoogleTokenClient(
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            transport=transport,
+        ),
+    )
+
+    with pytest.raises(GmailUnavailable) as failure:
+        service.sync(actor_for(account))
+
+    assert failure.value.details["upstream_status"] == 429
+    # The lock is not left behind by the failure.
+    with Session(db_engine) as other:
+        assert GmailRepository(other).try_sync_lock(account.id) is True
+        GmailRepository(other).release_sync_lock(account.id)
 
 
 def test_the_fake_refuses_the_query_real_gmail_answers_nothing_to() -> None:

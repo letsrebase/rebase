@@ -21,12 +21,18 @@ from pigrocrm_api.deps import (
     ActorDep,
     BaseSettingsDep,
     SessionDep,
+    get_actor,
     invalidate_space_settings,
 )
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.tenancy import tenant_slug
 
-router = APIRouter(prefix="/api/settings/space", tags=["settings"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/settings/space",
+    tags=["settings"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("", response_model=SpaceSettingsRead)

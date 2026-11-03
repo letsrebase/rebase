@@ -7,14 +7,19 @@ from uuid import UUID
 from mcp.server import MCPServer
 
 from pigrocrm.core.db import SortDirection
-from pigrocrm.core.documents.schemas import DocumentListQuery
+from pigrocrm.core.documents.schemas import DocumentListQuery, DocumentTipo, OfferState
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
     documents,
 )
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import BoundedLimit, OfferStateArg, VersionNumber
+from pigrocrm_mcp.tools.params import (
+    BoundedLimit,
+    OfferStateArg,
+    VersionNumber,
+    literal_arg,
+    parse_legal_entity_id,
+)
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -63,8 +68,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 customer_id=UUID(customer_id) if customer_id else None,
                 deal_id=UUID(deal_id) if deal_id else None,
                 azienda_id=parse_legal_entity_id(azienda_id),
-                tipo=tipo,  # type: ignore[arg-type]
-                stato=stato,  # type: ignore[arg-type]
+                tipo=literal_arg("tipo", tipo, DocumentTipo),
+                stato=literal_arg("stato", stato, OfferState),
                 search=search,
                 limit=cast(int, limit),
                 # An opaque string since slice 6 -- see `search_customers`.

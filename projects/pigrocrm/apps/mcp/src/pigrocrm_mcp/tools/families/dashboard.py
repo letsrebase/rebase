@@ -9,8 +9,7 @@ from pigrocrm.core.dashboard.schemas import PeriodoQuery
 from pigrocrm_mcp.annotations import READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
-from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
-from pigrocrm_mcp.tools.params import IsoDateStr
+from pigrocrm_mcp.tools.params import IsoDateStr, parse_legal_entity_id
 
 
 def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:

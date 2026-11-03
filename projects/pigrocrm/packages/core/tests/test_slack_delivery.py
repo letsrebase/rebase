@@ -608,24 +608,17 @@ def test_a_post_the_channel_refused_is_tried_again(world: World) -> None:
 # --- the command's line ------------------------------------------------------------------
 
 
-def test_the_roots_label_is_the_one_the_command_uses() -> None:
-    import pigrocrm.core.cli as cli
-    from pigrocrm.core.reminders import run
-
-    assert run.ROOT_LABEL == cli.ROOT_LABEL
-
-
 def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import pigrocrm.core.cli as cli
+    import pigrocrm.core.cli.cron as cli_cron
     from pigrocrm.core.reminders.run import ReminderOutcome
 
-    cli._stampa_promemoria(
+    cli_cron._print_reminder_outcome(
         ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0, slacks=2, emails=1),
         dry_run=False,
     )
-    cli._stampa_promemoria(
+    cli_cron._print_reminder_outcome(
         ReminderOutcome("root", "eseguito", raised=3, delivered=2, ended=0), dry_run=True
     )
 
@@ -638,8 +631,10 @@ def test_the_line_counts_slack_beside_push_and_email_only_when_it_sent(
 
 
 def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Session) -> None:
+    from pigrocrm.core.reminders.directory import Directory
     from pigrocrm.core.reminders.dispatch import ChannelResult
     from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
+    from pigrocrm.core.reminders.preferences import ReminderSettings
 
     def refused(session: Session) -> None:
         for _ in range(2):  # the second insert breaks the unique key
@@ -651,7 +646,7 @@ def test_a_write_a_channel_asked_for_that_fails_loses_only_itself(db_session: Se
 
     engine = ReminderEngine(db_session, slack_settings())
     result = engine.record_pass(
-        Evaluation((), frozenset(), frozenset()),
+        Evaluation((), frozenset(), frozenset(), Directory([], None), ReminderSettings([])),
         job="reminders",
         sent=ChannelResult(writes=[refused, fine]),
     )

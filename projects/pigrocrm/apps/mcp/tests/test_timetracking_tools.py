@@ -91,7 +91,7 @@ async def test_list_period_locks_shows_the_months_log_time_will_refuse(
     agent can *read* a decision a person took, not that it could take it.
 
     `UMANO` and not this file's `ADMIN`, which is `type="mcp"`: `close_period` is one of
-    the operations `AGENT_FORBIDDEN_ACTIONS` refuses to any agent credential
+    the operations `FULL_ACCESS_ACTIONS` refuses to any agent credential
     whatever its role, so an mcp actor here would be setting up the fixture by doing the
     very thing the test says an agent cannot do. It passed until that ban existed."""
     PeriodLockService(mcp_session).close_period(PeriodLockCreate(anno=2026, mese=1), UMANO)

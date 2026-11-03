@@ -28,6 +28,7 @@ from pigrocrm.core.mail import giorno_breve
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
+from pigrocrm.core.reminders.detectors.text import giorni, giorni_fa
 from pigrocrm.core.timetracking.models import TimeEntry
 
 PAST_CLOSE = REMINDER_TYPES["deal_past_close"]
@@ -96,7 +97,7 @@ def detect_past_close(ctx: DetectorContext) -> list[Detection]:
                 title=f"Deal oltre la chiusura prevista: {deal.nome}",
                 detail=(
                     f"Doveva chiudere {giorno_breve(deal.data_chiusura_prevista)}, "
-                    + ("ieri" if late == 1 else f"{late} giorni fa")
+                    f"{giorni_fa(late)}"
                 ),
             )
         )
@@ -166,7 +167,7 @@ def detect_stale(ctx: DetectorContext) -> list[Detection]:
                 type_key="deal_stale",
                 measure=idle,
                 title=f"Deal fermo: {deal.nome}",
-                detail=f"Niente da {idle} giorni (ultima cosa: {giorno_breve(last_activity)})",
+                detail=f"Niente da {giorni(idle)} (ultima cosa: {giorno_breve(last_activity)})",
             )
         )
     return found

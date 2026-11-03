@@ -26,9 +26,8 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     One per azienda is enforced by the database (REB-615, spec 2026-10-03 §1.2):
     `azienda_id` is `unique=True`, so a second insert for the same azienda fails on
     the constraint, which is what turns two concurrent first-time saves into one row
-    and one `Conflict`. It used to be a `singleton` column and one row ever; a space
-    with one azienda sees no difference, and a space whose owner never saved this
-    profile still has no row, which `issue` keeps answering `NotFound` on.
+    and one `Conflict`. A space whose owner never saved this profile has no row, which
+    `issue` answers with `NotFound`.
     """
 
     __tablename__ = "fiscal_profile"

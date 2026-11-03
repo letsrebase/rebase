@@ -7,6 +7,7 @@ the MCP suite's container; Task 5 adds spaces provisioned on the same server.
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -85,6 +86,8 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
 
 @pytest_asyncio.fixture
 async def served(http_settings: Settings) -> AsyncIterator[tuple[McpHttpApp, httpx2.AsyncClient]]:
+    # The registry database is the boot's to create; the server only reads it.
+    ensure_tenants_database(http_settings).dispose()
     app = create_app(http_settings, overrides_ttl=0.0)
     async with app.lifespan():
         transport = httpx2.ASGITransport(app=app)
@@ -183,13 +186,29 @@ async def test_without_a_valid_pat_the_answer_is_one_uniform_401(
 
 
 @pytest.mark.asyncio
+async def test_a_refused_bearer_is_logged_once_and_never_with_the_token(
+    served: tuple[McpHttpApp, httpx2.AsyncClient], caplog: pytest.LogCaptureFixture
+) -> None:
+    """PMCP-08: a guessing run against the endpoint leaves a trace the operator can count,
+    and the trace carries neither the credential nor anything the caller typed."""
+    _, client = served
+    secret = "pgc_a-secret-nobody-should-read-in-a-log"
+    with caplog.at_level(logging.WARNING, logger="pigrocrm_mcp.http"):
+        response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(secret)})
+    assert response.status_code == 401
+    refused = [r for r in caplog.records if r.name == "pigrocrm_mcp.http"]
+    assert len(refused) == 1 and refused[0].levelno == logging.WARNING
+    assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_a_revoked_token_is_indistinguishable_from_an_unknown_one(
     served: tuple[McpHttpApp, httpx2.AsyncClient], root_token: tuple[str, UUID], mcp_engine: Engine
 ) -> None:
     raw, user_id = root_token
     with session_factory(mcp_engine)() as session:
         service = PatService(session, settings=Settings(_env_file=None))  # type: ignore[call-arg]
-        [record] = service.list(Actor(id=user_id, type="user", role="collaboratore"))
+        [record] = service.list_own(Actor(id=user_id, type="user", role="collaboratore"))
         service.revoke(record.id, Actor(id=user_id, type="user", role="collaboratore"))
         session.commit()
     _, client = served
@@ -249,7 +268,9 @@ async def test_the_token_use_is_stamped(
     app, _ = served
     await _tool_names(app, "http://prova/mcp", raw)
     with session_factory(mcp_engine)() as session:
-        [record] = PatService(session).list(Actor(id=user_id, type="user", role="collaboratore"))
+        [record] = PatService(session).list_own(
+            Actor(id=user_id, type="user", role="collaboratore")
+        )
     assert record.last_used_at is not None
 
 

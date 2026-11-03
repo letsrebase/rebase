@@ -11,14 +11,14 @@ from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 
 # Derived and never written as a literal, for the reason `packages/core/tests/
 # periodo_fiscale.py` sets out at length: a suite with `2026-09` in it is a suite with an
 # expiry date on it. `TimeEntryService` refuses a day after today, so the hours go on the
 # first of the current month -- always in the month being read, never in the future, and
 # the same day on every run.
-OGGI = oggi_in_italia()
+OGGI = today_local()
 MESE = OGGI.strftime("%Y-%m")
 PRIMO = OGGI.replace(day=1)
 ULTIMO = OGGI.replace(day=calendar.monthrange(OGGI.year, OGGI.month)[1])

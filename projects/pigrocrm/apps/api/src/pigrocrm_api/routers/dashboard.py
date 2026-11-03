@@ -18,7 +18,7 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from pigrocrm.core.dashboard.schemas import (
     CommercialDashboard,
@@ -28,10 +28,15 @@ from pigrocrm.core.dashboard.schemas import (
     ReceivablesDashboard,
 )
 from pigrocrm.core.dashboard.service import DashboardService
-from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep
+from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/dashboard",
+    tags=["dashboard"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 # The sidebar's azienda (REB-630, spec 2026-10-03 §1.9): one more predicate on every
 # figure, never a change in its arithmetic. Omitted, the figures of every azienda add up,

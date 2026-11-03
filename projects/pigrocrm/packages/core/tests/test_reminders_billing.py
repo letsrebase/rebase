@@ -990,7 +990,9 @@ def test_the_details_say_one_day_and_yesterday_and_never_one_days(world: World) 
 
 
 def test_the_italian_helpers_pluralise_and_use_a_decimal_comma() -> None:
-    from pigrocrm.core.reminders.detectors.billing_text import (
+    from pigrocrm.core.reminders.detectors.text import (
+        ago,
+        counted,
         giornate,
         giorni,
         giorni_fa,
@@ -1006,6 +1008,10 @@ def test_the_italian_helpers_pluralise_and_use_a_decimal_comma() -> None:
     assert voci(1) == "1 voce" and voci(3) == "3 voci"
     assert ore(Decimal("1")) == "1 ora" and ore(Decimal("2.25")) == "2,25 ore"
     assert giorni_fa(1) == "ieri" and giorni_fa(2) == "2 giorni fa"
+    assert ago(0) == "oggi" and ago(1) == "ieri" and ago(2) == "2 giorni fa"
+    assert counted(1, "minuto", "minuti") == "1 minuto" and counted(61, "minuto", "minuti") == (
+        "61 minuti"
+    )
 
 
 def test_the_hours_detail_counts_in_italian(world: World) -> None:

@@ -19,10 +19,13 @@ picks the same plan and the heap has not moved. Observing that is observing the 
 a reason to differ, not the presence of a guarantee. So the property is established three
 ways instead:
 
-1. *By construction.* The last ordering key is asserted to be the table's primary key, on
-   every branch. A primary key is unique, so no two rows can tie on every key, so the order
-   is total -- that is an argument, not a sample.
-2. *By exhibiting the ties.* The first two keys are read off the same predicate and shown
+1. *By ordering planted ties.* Every branch is given rows on three rungs of the ladder and
+   dates spread over a few days, so that scores tie, `updated_at` ties within them, and
+   only the third key can order what is left; the rows the repository returns must then be
+   in non-increasing `(score, updated_at, id)` order. `id` is the primary key, unique by
+   definition, so no two rows can tie on the whole key: that is an argument, and the
+   planted ties are what show it is exercised.
+2. *By exhibiting the ties.* The first two keys are read off the same rows and shown
    to collide, in bulk. If they did not, the third key would be decoration and every
    assertion about it would be unfalsifiable.
 3. *By taking the reason to agree away.* Between every pair of runs the heap is reshuffled:
@@ -42,13 +45,12 @@ differently, and a dict that iterates in a different order compares equal as a m
 from __future__ import annotations
 
 import json
-import re
 from collections import Counter
 from typing import Any
 
 import pytest
 from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, SMALL, build_corpus
-from sqlalchemy import insert, select, text
+from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -67,7 +69,6 @@ from pigrocrm.core.search.repository import (
     SearchRepository,
 )
 from pigrocrm.core.search.schemas import SearchQuery
-from pigrocrm.core.search.scoring import row_score
 from pigrocrm.core.search.service import SearchService
 
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
@@ -214,42 +215,70 @@ def test_repeated_runs_under_four_access_paths_produce_one_byte_identical_respon
     assert sum(seen.values()) == _RUNS
 
 
-def test_the_last_ordering_key_is_the_primary_key_so_no_two_rows_can_tie(
-    db_session: Session,
+# The term each branch is searched with in the ordering test: `Ingegneria` is in the sector
+# of the corpus' customers, deals, documents and invoices, and a surname is what people have.
+_TERMS = {"people": "Rossi"}
+
+
+def _plant_a_ladder(session: Session, table: str, column: str, term: str) -> None:
+    """Six rows on each of three rungs of §8.5's ladder (the term itself, a prefix, a word
+    inside), and `updated_at` spread over four days: score ties for `updated_at` to break,
+    and `updated_at` ties for `id` to break. Raw SQL like `_reshuffle`, because an ORM
+    flush would fire `onupdate` over the dates just set."""
+    for offset, value in ((0, term), (6, f"{term} Plus"), (12, f"Gran {term}")):
+        session.execute(
+            text(
+                f"UPDATE {table} SET {column} = :value WHERE id IN ("
+                f"  SELECT id FROM {table} WHERE deleted_at IS NULL ORDER BY id "
+                f"  LIMIT 6 OFFSET {offset})"
+            ),
+            {"value": value},
+        )
+    session.execute(
+        text(
+            f"UPDATE {table} SET updated_at = timestamptz '2020-01-01' "
+            "+ (abs(hashtext(id::text)) % 4) * interval '1 day'"
+        )
+    )
+
+
+@pytest.mark.parametrize("branch", _BRANCHES, ids=[branch[0] for branch in _BRANCHES])
+def test_every_branch_orders_by_score_then_updated_at_then_id(
+    db_session: Session, branch: tuple[str, Any, Any]
 ) -> None:
-    """Totality argued rather than sampled.
+    """All three keys, in order, descending, on every trigram branch, read off the rows the
+    repository returns.
 
-    Twenty matching runs say the rows did not reorder; they cannot say the rows *could not*
-    reorder. This can: the final `ORDER BY` term of every branch's statement is that table's
-    primary key, a primary key is unique by definition, so no two rows tie on the whole key
-    and the sequence Postgres may return is exactly one.
-
-    Read off the compiled statement rather than off SQLAlchemy's private `_order_by_clauses`,
-    because what settles the question is the SQL the server is asked to run.
+    A branch that ordered by `updated_at DESC, id DESC` alone would be perfectly
+    deterministic and completely wrong, so would one that ordered by the score ascending,
+    and so would one that dropped the third key: each of them returns the planted rows in a
+    different sequence from the one asserted here. The planted ties are what make that so,
+    and the test says so itself rather than passing on a corpus where nothing ties.
     """
-    repo = SearchRepository(db_session)
-    for table, model, fields in _BRANCHES:
-        primary_key = list(model.__table__.primary_key.columns)
-        assert [column.name for column in primary_key] == ["id"], (
-            f"{table} does not have `id` alone as its primary key, so ordering by it last "
-            "does not make the order total"
-        )
+    table, model, fields = branch
+    term = _TERMS.get(table, "Ingegneria")
+    build_corpus(db_session, SMALL)
+    _plant_a_ladder(db_session, table, fields[0].name, term)
 
-        compiled = str(
-            repo._scored(model, fields, "Ingegneria", 5).compile(
-                db_session.get_bind(), compile_kwargs={"literal_binds": True}
-            )
-        )
-        assert "ORDER BY" in compiled, f"{table} is not ordered at all:\n{compiled}"
-        order_by = compiled.split("ORDER BY", 1)[1]
-        # The score expression carries commas of its own, so the keys are matched by name
-        # and by what follows them rather than split on `,`.
-        assert re.search(rf"\b{table}\.id DESC\s*(\n\s*)?(LIMIT|$)", order_by), (
-            f"{table}'s last ordering key is not its primary key:\n{order_by}"
-        )
-        assert f"{table}.updated_at DESC" in order_by, (
-            f"{table} lost §8.5's second ordering key:\n{order_by}"
-        )
+    rows = db_session.execute(
+        SearchRepository(db_session)._scored(model, fields, term, 10_000)
+    ).all()
+
+    keys = [(row[1], row[0].updated_at, row[0].id) for row in rows]
+    assert len(keys) >= 18, f"{table}: only {len(keys)} rows matched the planted ladder"
+    assert keys == sorted(keys, reverse=True), (
+        f"{table}'s rows are not in non-increasing (score, updated_at, id) order"
+    )
+    pairs = list(zip(keys, keys[1:], strict=False))
+    assert len({score for score, _, _ in keys}) >= 3, (
+        f"{table}: the ladder gave fewer than 3 scores"
+    )
+    assert any(a[0] == b[0] and a[1] != b[1] for a, b in pairs), (
+        f"{table}: no tie in the score was broken by updated_at, so that key was not exercised"
+    )
+    assert any(a[:2] == b[:2] and a[2] != b[2] for a, b in pairs), (
+        f"{table}: no tie in score and updated_at was broken by id, so that key was not exercised"
+    )
 
 
 def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
@@ -264,11 +293,12 @@ def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
     build_corpus(db_session, SMALL)
     repo = SearchRepository(db_session)
 
-    keys = db_session.execute(
-        select(row_score(CUSTOMER_FIELDS, "Ingegneria"), Customer.updated_at, Customer.id).where(
-            *repo._predicate(Customer, CUSTOMER_FIELDS, "Ingegneria")
-        )
-    ).all()
+    keys = [
+        (row[1], row[0].updated_at, row[0].id)
+        for row in db_session.execute(
+            repo._scored(Customer, CUSTOMER_FIELDS, "Ingegneria", 10_000)
+        ).all()
+    ]
 
     assert len(keys) > 10, (
         f"only {len(keys)} customers matched, which is not enough rows for a tie to be meaningful"
@@ -447,43 +477,4 @@ def test_the_group_order_is_fixed_and_not_by_count(db_session: Session) -> None:
     assert by_count != _FIXED_GROUP_ORDER, (
         "on this term the fixed order and the by-count order coincide, so the assertion "
         f"above cannot tell them apart: {[(g.entity, g.totale) for g in results.gruppi]}"
-    )
-
-
-@pytest.mark.parametrize("branch", _BRANCHES, ids=[branch[0] for branch in _BRANCHES])
-def test_every_branch_is_ordered_by_the_score_before_anything_else(
-    db_session: Session, branch: tuple[str, Any, Any]
-) -> None:
-    """All three keys, in order, descending, on all four branches.
-
-    A branch that ordered by `updated_at DESC, id DESC` alone would be perfectly
-    deterministic and completely wrong, and every other test in this file would pass. So
-    would one that ordered by the score ascending, which is the same mistake spelled with
-    one word.
-
-    The three keys are located by position rather than by splitting on one of them: a
-    `split` on a separator that is not there returns the whole string, and an assertion
-    about "what comes before the second key" then quietly becomes an assertion about the
-    whole clause.
-    """
-    table, model, fields = branch
-    compiled = str(
-        SearchRepository(db_session)
-        ._scored(model, fields, "Ingegneria", 5)
-        .compile(db_session.get_bind(), compile_kwargs={"literal_binds": True})
-    )
-    order_by = compiled.split("ORDER BY", 1)[1]
-
-    at_score = order_by.find("word_similarity")
-    at_updated = order_by.find(f"{table}.updated_at DESC")
-    at_id = order_by.find(f"{table}.id DESC")
-    assert -1 not in (at_score, at_updated, at_id), (
-        f"{table} is missing one of §8.5's three ordering keys (score {at_score}, "
-        f"updated_at {at_updated}, id {at_id}):\n{order_by}"
-    )
-    assert at_score < at_updated < at_id, (
-        f"{table}'s ordering keys are not score, then updated_at, then id:\n{order_by}"
-    )
-    assert order_by[:at_updated].rstrip().rstrip(",").endswith("DESC"), (
-        f"{table} does not order by the score *descending*, so the best match is last:\n{order_by}"
     )

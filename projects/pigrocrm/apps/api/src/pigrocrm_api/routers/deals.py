@@ -1,14 +1,10 @@
 from datetime import date
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response, status
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, Response, status
+from pydantic import BaseModel, Field
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import (
     BindTimeRequest,
     BudgetQuery,
@@ -16,7 +12,6 @@ from pigrocrm.core.analytics.schemas import (
     DealPnl,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
 from pigrocrm.core.deals.schemas import (
     DealCreate,
     DealListQuery,
@@ -25,8 +20,10 @@ from pigrocrm.core.deals.schemas import (
     DealUpdate,
 )
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.documents.schemas import DocumentRead
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.invoices.schemas import InvoiceRead
+from pigrocrm.core.timetracking.billing import TimeBilling
 from pigrocrm.core.timetracking.report import TimeReportService
 from pigrocrm.core.timetracking.schemas import (
     DealRateUpdate,
@@ -38,11 +35,25 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.query_params import CUSTOM_QUERY_DESCRIPTION, parse_custom_filter
+from pigrocrm_api.query_params import (
+    AZIENDA_QUERY_DESCRIPTION,
+    CustomParams,
+    KeysetParams,
+    SearchParams,
+    SortedParams,
+    sort_field,
+)
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/deals", tags=["deals"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/deals",
+    tags=["deals"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -63,50 +74,23 @@ def create(data: DealCreate, session: SessionDep, actor: ActorDep) -> DealRead:
     return DealService(session).create(data, actor)
 
 
-@router.get("", response_model=DealPage)
-def list_deals(
-    session: SessionDep,
-    actor: ActorDep,
-    # SafeStr: see the identical comment on list_customers (routers/customers.py)
-    # -- these are ordinary query parameters, not Create/Update schema fields, so
-    # the guard has to sit on the parameter itself for FastAPI's own validation to
-    # catch it as a 422 before DealListQuery is hand-built below.
-    search: Annotated[SafeStr | None, Query()] = None,
-    customer_id: Annotated[UUID | None, Query()] = None,
-    stage_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: Annotated[
-        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
-    ] = None,
-    custom: Annotated[list[SafeStr] | None, Query(description=CUSTOM_QUERY_DESCRIPTION)] = None,
+class DealListParams(SortedParams, SearchParams, CustomParams):
+    customer_id: UUID | None = None
+    stage_id: UUID | None = None
+    azienda_id: UUID | None = Field(default=None, description=AZIENDA_QUERY_DESCRIPTION)
     # The two drill-throughs of the operational dashboard's signal cards (§6.2). Each card
     # links here and nowhere else, and the rows returned are counted by the same predicate
     # function the card's `COUNT` uses -- so the count and the list cannot drift apart.
-    fatturato_non_vinto: Annotated[bool, Query()] = False,
-    da_fatturare: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    # `str`, not `UUID`, since slice 6 -- see the identical comment on list_customers
-    # (routers/customers.py). The `cursor` on `list_deal_time_entries` further down
-    # stays a `UUID`: `time_entries` has no sort whitelist and still pages by id.
-    cursor: Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)] = None,
-    # A plain string and not a `Literal` -- see the reasoning on list_customers
-    # (routers/customers.py).
-    sort: Annotated[SafeStr | None, Query(description="created_at | updated_at | nome")] = None,
-    dir: Annotated[SortDirection, Query()] = "asc",
+    fatturato_non_vinto: bool = False
+    da_fatturare: bool = False
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "nome")
+
+
+@router.get("", response_model=DealPage)
+def list_deals(
+    session: SessionDep, actor: ActorDep, params: Annotated[DealListParams, Query()]
 ) -> DealPage:
-    query = DealListQuery(
-        search=search,
-        customer_id=customer_id,
-        stage_id=stage_id,
-        azienda_id=azienda_id,
-        custom=parse_custom_filter(custom),
-        fatturato_non_vinto=fatturato_non_vinto,
-        da_fatturare=da_fatturare,
-        limit=limit,
-        cursor=cursor,
-        sort=sort,
-        dir=dir,
-    )
-    return DealService(session).list(query, actor)
+    return DealService(session).list(params.to_query(DealListQuery), actor)
 
 
 @router.get("/{deal_id}", response_model=DealRead)
@@ -137,14 +121,12 @@ def restore(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealRead:
     return DealService(session).restore(deal_id, actor)
 
 
-@router.get("/{deal_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    deal_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    return ActivityService(session).timeline("deal", deal_id, limit)
+router.include_router(timeline_router("deal", id_param="deal_id"))
+
+
+class DealTimeEntriesParams(KeysetParams):
+    da: date | None = None
+    a: date | None = None
 
 
 @router.get("/{deal_id}/time-entries", response_model=TimeEntryPage)
@@ -152,13 +134,10 @@ def deal_time_entries(
     deal_id: UUID,
     session: SessionDep,
     actor: ActorDep,
-    da: Annotated[date | None, Query()] = None,
-    a: Annotated[date | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[UUID | None, Query()] = None,
+    params: Annotated[DealTimeEntriesParams, Query()],
 ) -> TimeEntryPage:
     return TimeEntryService(session).list(
-        TimeEntryListQuery(deal_id=deal_id, da=da, a=a, limit=limit, cursor=cursor), actor
+        params.to_query(TimeEntryListQuery, deal_id=deal_id), actor
     )
 
 
@@ -193,32 +172,39 @@ def recalculate_rates(
 
 
 @router.get("/{deal_id}/time-report")
-def time_report(
+def time_report_xlsx(
     deal_id: UUID,
     session: SessionDep,
     actor: ActorDep,
     storage: StorageDep,
     mese: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
-    formato: Annotated[Literal["pdf", "xlsx"], Query()] = "pdf",
 ) -> Response:
-    """Two recipients, two needs (§2.1): the PDF gets attached to the invoice, the XLSX
-    gets filtered by whoever checks it. `formato` is a `Literal`, so an unsupported
-    value is a 422 rather than a branch nobody wrote.
+    """The XLSX of the month's hours, streamed: it is a working copy that whoever checks
+    it filters, not an artefact, so nothing is archived and a GET is safe. The PDF is
+    `POST /time-report/pdf`, which archives a document (§2.1)."""
+    filename, content = TimeReportService(session, storage).build_xlsx(deal_id, mese, actor)
+    return attachment_response(content, XLSX_CONTENT_TYPE, filename)
 
-    The PDF is archived as a `document` and this returns its id, matching the slice 2
-    rule that the bytes are fetched from the document download endpoint; the XLSX is
-    streamed, because it is a working copy and not an artefact.
-    """
-    service = TimeReportService(session, storage)
-    if formato == "xlsx":
-        filename, content = service.build_xlsx(deal_id, mese, actor)
-        return Response(
-            content=content,
-            media_type=XLSX_CONTENT_TYPE,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    document = service.render_pdf(deal_id, mese, actor)
-    return JSONResponse(status_code=status.HTTP_201_CREATED, content=jsonable_encoder(document))
+
+@router.post(
+    "/{deal_id}/time-report/pdf",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def render_time_report_pdf(
+    deal_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    mese: Annotated[str, Query(description="Periodo nella forma AAAA-MM")],
+) -> DocumentRead:
+    """The month's hours as a PDF, archived as a `document` of the deal, which this
+    returns: the bytes are fetched from the document download endpoint, like every other
+    archived file, and the PDF gets attached to the invoice. A POST because it creates a
+    document -- every call archives a new version, never overwriting an earlier one."""
+    # Before the lookups: a `readonly` caller learns nothing, not even that the deal exists.
+    actor.require_write("create_document")
+    return TimeReportService(session, storage).render_pdf(deal_id, mese, actor)
 
 
 @router.get("/{deal_id}/pnl", response_model=DealPnl)
@@ -274,9 +260,8 @@ def to_invoice_draft(
     somebody is redoing, while hours on an *issued* invoice come back as a 409 naming the
     document -- one does not invoice the same work twice.
 
-    `storage` is passed rather than left to the service's own settings fallback: this is
-    the one method in `AnalyticsService` that constructs an `InvoiceService`, whose
+    `storage` is passed rather than left to the service's own settings fallback: the
     backend is the same process-wide one every other document route resolves through
     `StorageDep`.
     """
-    return AnalyticsService(session, storage).bind_time_to_invoice(deal_id, data, actor)
+    return TimeBilling(session, storage).bind_to_invoice(deal_id, data, actor)

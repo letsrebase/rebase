@@ -81,7 +81,17 @@ def test_well_formed_slugs_pass(slug: str) -> None:
 
 @pytest.mark.parametrize(
     "slug",
-    ["ab", "-abc", "abc-", "Studio", "studio rossi", "a_b_c", "x" * 33, *sorted(RESERVED_SLUGS)],
+    [
+        "ab",
+        "-abc",
+        "abc-",
+        "Studio",
+        "studio rossi",
+        "a_b_c",
+        "x" * 33,
+        "abc-de\n",
+        *sorted(RESERVED_SLUGS),
+    ],
 )
 def test_malformed_and_reserved_slugs_are_refused_with_a_reason(slug: str) -> None:
     reason = validate_slug(slug)

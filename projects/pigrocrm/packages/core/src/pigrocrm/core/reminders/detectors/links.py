@@ -5,6 +5,14 @@ a deal (an attività, a timer, the deal itself) the deal's, and the owner of the
 that deal belongs to; for one linked to a customer, a person or an invoice, the customer's
 (and an invoice's deal's). The customer's owner is the field (REB-773), never a guess from
 its deals. Both are looked up in bulk, once per detector run, never once per subject.
+
+**The recipient rule, for every detector.** A subject that can hang on a deal is told to
+`Links.owners`, the deal's owner and the customer's: the attività, timer, deal and hours
+types, and the invoice types of `billing.py` (with `invoice_days_unlinked`). A contract and
+one of its days have no deal, so the types about them (`contracts.py`, `days.py` and the
+contract types of `billing_contracts.py`) are told to the customer's owner alone,
+`Links.customer_owner_id`. Either way `Directory.recipients` then scopes the set to the
+subject's azienda and falls back to the space's owner.
 """
 
 from __future__ import annotations

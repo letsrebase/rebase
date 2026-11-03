@@ -162,6 +162,13 @@ class IdentityService:
         identity = self._get_or_create(normalized)
         jti = uuid4()
         now = datetime.now(UTC)
+        # The identity's expired sessions go with each login (B-07): a row per login that
+        # nothing else deletes, and an expired one is refused whatever it says.
+        self.session.execute(
+            delete(IdentitySession).where(
+                IdentitySession.identity_id == identity.id, IdentitySession.expires_at < now
+            )
+        )
         expires_at = now + timedelta(days=self.settings.identity_token_days)
         self.session.add(IdentitySession(identity_id=identity.id, jti=jti, expires_at=expires_at))
         self.session.commit()

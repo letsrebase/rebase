@@ -41,7 +41,7 @@ from pigrocrm_api.deps import reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import reset_rate_limit
 
-ENGAGEMENTS_TOKEN = "un-token-per-la-porta"
+ENGAGEMENTS_TOKEN = "un-token-per-la-porta-lungo-abbastanza"
 REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 FREELANCER_EMAIL = "ada@studio.it"
 # How `Conflict` renders its message (`errors.py`): the problem's `detail` carries the

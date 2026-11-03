@@ -20,6 +20,14 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
+# The `SECURITY DEFINER` helpers of migration 0048 that migration 0066 closed to PUBLIC.
+DEFINER_FUNCTIONS = (
+    "sollecito_di_messaggio(uuid, text)",
+    "tipo_fattura_del_pdf(uuid)",
+    "deal_attivi_del_cliente(uuid)",
+    "cliente_archiviato(uuid)",
+)
+
 # The role name and the password travel as transaction-local settings into one plpgsql
 # block, which quotes them with `format('%I')` and `format('%L')`: a role or a password
 # with a quote in it is then an identifier and a literal, never a piece of SQL.
@@ -28,6 +36,8 @@ DO $$
 DECLARE
     ruolo text := current_setting('pigrocrm.app_role');
     parola text := current_setting('pigrocrm.app_password');
+    funzioni text := current_setting('pigrocrm.definer_functions');
+    funzione text;
 BEGIN
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ruolo) THEN
@@ -62,6 +72,19 @@ BEGIN
         'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', ruolo
     );
     EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', ruolo);
+    -- The schema's version is the owner's: the application role has no business moving it.
+    IF to_regclass('public.alembic_version') IS NOT NULL THEN
+        EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON alembic_version FROM %I', ruolo);
+    END IF;
+    -- The four SECURITY DEFINER helpers the row policies call (migration 0066 took
+    -- EXECUTE away from PUBLIC): the role that evaluates the policies needs it back, and
+    -- the role's name is only known here.
+    FOR funzione IN SELECT unnest(string_to_array(funzioni, ';'))
+    LOOP
+        IF to_regprocedure(funzione) IS NOT NULL THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', funzione, ruolo);
+        END IF;
+    END LOOP;
     EXECUTE format(
         'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
         'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I',
@@ -102,9 +125,10 @@ def ensure_application_role(owner_url: str | URL, app_url: str | URL) -> bool:
             connection.execute(
                 text(
                     "SELECT set_config('pigrocrm.app_role', :name, true), "
-                    "set_config('pigrocrm.app_password', :password, true)"
+                    "set_config('pigrocrm.app_password', :password, true), "
+                    "set_config('pigrocrm.definer_functions', :functions, true)"
                 ),
-                {"name": name, "password": password},
+                {"name": name, "password": password, "functions": ";".join(DEFINER_FUNCTIONS)},
             )
             connection.execute(text(_ENSURE_ROLE))
     finally:

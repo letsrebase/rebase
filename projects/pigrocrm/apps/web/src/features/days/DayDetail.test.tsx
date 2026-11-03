@@ -199,7 +199,7 @@ describe('a day’s page', () => {
     serving(detail({ stato: 'contestato', azioni: [] }))
     vi.mocked(fetchWithRefresh).mockResolvedValue({
       ok: true,
-      headers: new Headers({ 'Content-Disposition': 'attachment; filename="fascicolo-x.zip"' }),
+      headers: new Headers({ 'Content-Disposition': "attachment; filename*=UTF-8''fascicolo-x.zip" }),
       blob: () => Promise.resolve(new Blob(['zip'])),
     } as Response)
     URL.createObjectURL = vi.fn(() => 'blob:x')

@@ -85,8 +85,8 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # `Date`, never a timestamp: this is the date printed on the document and the one
     # that decides the fiscal year, not an instant. The previous system's `toISOString()` moved an
     # invoice issued on 31 December at 23:30 CET into the next year.
-    data_emissione: Mapped[date | None] = mapped_column(Date, default=None)
-    data_scadenza: Mapped[date | None] = mapped_column(Date, default=None)
+    data_emissione: Mapped[date | None] = mapped_column(Date, default=None, index=True)
+    data_scadenza: Mapped[date | None] = mapped_column(Date, default=None, index=True)
     # The accrual period: the days the work belongs to, as opposed to the day the
     # document was issued (ORB-61). Header level, because every real case so far has
     # been one month for the whole document; a per-line period would be a second place
@@ -122,7 +122,9 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # An integer because a snapshot written today is read by code from three years
     # hence, and an unversioned JSON payload is interpreted by guessing.
     snapshot_versione: Mapped[int | None] = mapped_column(Integer, default=None)
-    stato_pagamento: Mapped[str] = mapped_column(String(14), nullable=False, default="da_incassare")
+    stato_pagamento: Mapped[str] = mapped_column(
+        String(14), nullable=False, default="da_incassare", index=True
+    )
     data_incasso: Mapped[date | None] = mapped_column(Date, default=None)
     # Why this column exists even though the slice performs no transmission: the XML
     # is a deliverable the user hands to their own intermediary. Without it the system
@@ -130,8 +132,12 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # deposited with the Agenzia delle Entrate, and would treat both the same.
     trasmessa_esternamente_il: Mapped[date | None] = mapped_column(Date, default=None)
     xml_hash_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
-    pdf_document_id: Mapped[UUID | None] = mapped_column(ForeignKey("documents.id"), default=None)
-    xml_document_id: Mapped[UUID | None] = mapped_column(ForeignKey("documents.id"), default=None)
+    pdf_document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("documents.id"), default=None, index=True
+    )
+    xml_document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("documents.id"), default=None, index=True
+    )
     # A conversion is a new row pointing at the proforma, not a state change in place:
     # otherwise "immutable after emission" would be a property of something that *was*
     # mutable, verifiable only by reconstructing the history.

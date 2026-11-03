@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.crypto import seal, unseal
 from pigrocrm.core.drive.account import CONSENT_WARNING_HOURS, GoogleDriveAccountService
 from pigrocrm.core.drive.errors import DriveConsentExpired, DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
@@ -31,13 +32,12 @@ from pigrocrm.core.drive.schemas import (
 )
 from pigrocrm.core.drive.transport import DriveTransport
 from pigrocrm.core.errors import Conflict, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal, unseal
 from pigrocrm.core.gmail.errors import ConsentExpired, CredentialRevoked
 from pigrocrm.core.gmail.models import GoogleAccount, GoogleOAuthState
-from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import SCOPE_EMAIL
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
-from pigrocrm.core.gmail.transport import MAX_HTTP_ATTEMPTS, GmailTransport
+from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.http import MAX_ATTEMPTS
 from pigrocrm.core.tenants import space_base_settings
 
 
@@ -294,7 +294,7 @@ def test_a_failed_code_exchange_is_reported_as_a_drive_failure_not_a_gmail_one(
     assert "Gmail" not in caught.value.message and "casella" not in caught.value.message
 
     down_fake = _drive_fake("sub-drive", "drive@example.it")
-    down_fake.fail_with = [(503, b"{}", {})] * MAX_HTTP_ATTEMPTS
+    down_fake.fail_with = [(503, b"{}", {})] * MAX_ATTEMPTS
     with pytest.raises(Conflict) as unavailable:
         _complete_drive(_drive_service(db_session, down_fake), _actor(admin_user), "c2")
 
@@ -405,15 +405,37 @@ def test_disconnect_forgets_the_cached_token_and_erases_the_credential(
     assert "drive.account_scollegato" in kinds
 
 
+def test_starting_a_drive_consent_prunes_the_expired_states(
+    db_session: Session, admin_user: User
+) -> None:
+    """The registry is tidied by whoever starts a consent: a space with Drive and no Gmail
+    never runs the Gmail sync, which is what used to prune it."""
+    db_session.add(
+        GoogleOAuthState(
+            jti="scaduto",
+            code_verifier="v" * 43,
+            user_id=admin_user.id,
+            expires_at=datetime.now(UTC) - timedelta(minutes=10),
+            purpose="drive",
+        )
+    )
+    db_session.flush()
+    service = _drive_service(db_session, _drive_fake("sub-1", "titolare@example.it"))
+
+    url = service.start(_actor(admin_user))
+
+    state = parse_qs(urlparse(url).query)["state"][0]
+    assert db_session.execute(select(GoogleOAuthState.jti)).scalars().all() == [state]
+
+
 def test_a_gmail_state_cannot_complete_the_drive_flow(
     db_session: Session, admin_user: User
 ) -> None:
-    """`consume_state`'s `purpose` filter, exercised end to end: a state minted by the
-    Gmail flow is unknown to the Drive one, and vice versa -- the callback of one flow
-    cannot be replayed as if it belonged to the other."""
-    gmail_repo = GmailRepository(db_session)
+    """The state repository's `purpose` filter, exercised end to end: a state minted by
+    the Gmail flow is unknown to the Drive one, and vice versa -- the callback of one
+    flow cannot be replayed as if it belonged to the other."""
     gmail_jti = "a-gmail-state"
-    gmail_repo.add_state(
+    db_session.add(
         GoogleOAuthState(
             jti=gmail_jti,
             code_verifier="v" * 43,
@@ -1084,7 +1106,7 @@ def test_set_roots_refuses_a_write_folder_from_a_collaboratore_and_writes_nothin
             _as(collab),
         )
 
-    assert caught.value.details["action"] == "scegliere la cartella di scrittura Drive"
+    assert caught.value.details["action"] == "set_drive_storage_folder"
     assert caught.value.details["required_roles"] == ["admin"]
     db_session.refresh(account)
     assert account.root_folder_ids == ["1RadiceOriginale0001"]

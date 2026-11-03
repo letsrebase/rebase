@@ -1,10 +1,10 @@
 """An import links a document as an invoice's PDF while a version that is not a PDF is
 uploaded onto that same document (REB-480).
 
-`DocumentService._check_invoice_pdf` refuses a non-PDF version on a document an invoice
+`DocumentUploads.check_invoice_pdf` refuses a non-PDF version on a document an invoice
 names as its PDF, and to do that it reads the link. `import_issued` writes the link only
-at its commit, after `_validate_original_pdf` has read the document's current version
-among its pure checks. With nothing between them both reads pass: the upload sees no
+at its commit, after `OriginalPdfResolver._validate_document` has read the document's
+current version among its pure checks. With nothing between them both reads pass: the upload sees no
 link, the import sees a PDF, and the invoice ends up naming a document whose current
 version is XML. Greptile found it on PR #420. Both paths now lock the document's row
 before they read, so whichever comes second waits for the first to commit.
@@ -36,6 +36,7 @@ from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.invoices.original_pdf import OriginalPdfResolver
 from pigrocrm.core.invoices.schemas import InvoiceImport, InvoiceLineImport, PdfSorgente
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -151,8 +152,8 @@ def test_an_xml_upload_during_an_import_of_the_same_pdf_waits_and_is_refused(
     import does, and once the import commits it must be refused, leaving the invoice's
     PDF a PDF.
 
-    `_validate_original_pdf` is wrapped to hold the import there, right after its read,
-    until the upload has had two seconds to get through. Without the lock the upload
+    `OriginalPdfResolver._validate_document` is wrapped to hold the import there, right
+    after its read, until the upload has had two seconds to get through. Without the lock the upload
     needs a few milliseconds and comes back with a new version: the `not done` assertion
     fails first, and the refusal assertion after it."""
     factory = session_factory(db_engine)
@@ -171,15 +172,17 @@ def test_an_xml_upload_during_an_import_of_the_same_pdf_waits_and_is_refused(
 
         validated = Event()
         release = Event()
-        original: Callable[..., UUID] = InvoiceService._validate_original_pdf
+        original: Callable[..., UUID] = OriginalPdfResolver._validate_document
 
-        def held_after_the_read(self: InvoiceService, customer: UUID, document_id: UUID) -> UUID:
+        def held_after_the_read(
+            self: OriginalPdfResolver, customer: UUID, document_id: UUID
+        ) -> UUID:
             result = original(self, customer, document_id)
             validated.set()
             release.wait(timeout=30)
             return result
 
-        monkeypatch.setattr(InvoiceService, "_validate_original_pdf", held_after_the_read)
+        monkeypatch.setattr(OriginalPdfResolver, "_validate_document", held_after_the_read)
 
         def import_it() -> UUID:
             with factory() as session:

@@ -11,6 +11,7 @@ from periodo_fiscale import GIORNO_PRIMA, OGGI, PRIMO_DEL_MESE
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.analytics.pnl import deal_states
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.deals.models import Deal
@@ -66,6 +67,31 @@ def test_an_open_deal_and_a_closed_one_never_share_a_total(
     assert pnl.in_corso.margine_percentuale is None
     # And there is deliberately no combined field to read by mistake.
     assert not hasattr(pnl, "totale")
+
+
+def test_the_state_of_each_deal_is_read_in_one_batch_and_agrees_with_its_own_summary(
+    db_session: Session,
+    open_deal_with_hours: UUID,
+    closed_deal_with_invoice: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`period_pnl` used to build a full `deal_summary` (every entry of the deal, summed in
+    Python) once per deal in the window. It now asks for the states of all of them at once
+    and must never go back to the per-deal read; and the batch has to give each deal the
+    state its own summary gives, because that is what `deal_pnl` shows beside it."""
+    expected = {
+        deal_id: TimeEntryService(db_session).deal_summary(deal_id, READER).stato
+        for deal_id in (open_deal_with_hours, closed_deal_with_invoice)
+    }
+    assert deal_states(db_session, list(expected)) == expected
+    assert set(expected.values()) == {"in corso", "chiuso"}
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("period_pnl read a deal summary per deal")
+
+    monkeypatch.setattr(TimeEntryService, "deal_summary", refuse)
+    pnl = AnalyticsService(db_session).period_pnl(PERIODO, READER)
+    assert (pnl.chiusi.deal, pnl.in_corso.deal) == (1, 1)
 
 
 def test_a_general_expense_has_its_own_row_and_touches_no_deal(

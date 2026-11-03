@@ -8,6 +8,7 @@ word (`invalid_auth`), and the method, nothing else.
 """
 
 from pigrocrm.core.errors import Conflict
+from pigrocrm.core.http import UpstreamUnavailable
 
 SLACK_ENTITY = "slack_workspace"
 _RECONNECT = "ricollega Slack da Impostazioni → Slack"
@@ -57,11 +58,9 @@ class SlackRefused(Conflict):
         self.method = method
 
 
-def slack_unavailable(status: int) -> Conflict:
+class SlackUnavailable(UpstreamUnavailable):
     """Transient, after every retry was spent: wait and try again, as opposed to
-    re-installing. A plain `Conflict`, since nothing matches on it beyond reporting it."""
-    return Conflict(
-        SLACK_ENTITY,
-        f"Slack non ha risposto correttamente (codice {status}). Riprova più tardi",
-        status=status,
-    )
+    re-installing. Nothing matches on it beyond reporting it."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(SLACK_ENTITY, "Slack", status)

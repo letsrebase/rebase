@@ -1,8 +1,5 @@
-from types import SimpleNamespace
-
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import Column, Integer, MetaData, Table
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -421,42 +418,6 @@ def test_restore_on_a_customer_that_was_never_deleted_does_not_log_a_restored_en
 
     kinds = [e.kind for e in ActivityService(db_session).timeline("customer", customer.id)]
     assert "restored" not in kinds
-
-
-def test_soft_delete_fails_loudly_if_the_deals_table_lacks_the_expected_column(
-    db_session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Returning 0 from `count_active_deals` is only correct when `deals` does not
-    exist yet, or exists with the expected column. If it exists without `customer_id`,
-    that is a bug in this code, not "no deals" -- silently returning 0 would let
-    `soft_delete` remove a customer that might still have deals attached.
-
-    Task 12 registered the real `Deal` model, which -- by construction -- always has
-    `customer_id`, so the pre-Task-12 technique this test used (registering a second,
-    bare `Table("deals", Base.metadata, ...)` directly alongside the real one) no
-    longer works: a `MetaData` instance rejects two tables sharing the same name with
-    `InvalidRequestError`, and that collision now fires for *every* test in the suite,
-    not just this one, because collecting `test_deals.py` alone -- regardless of
-    execution order -- imports `pigrocrm.core.deals.models` and registers the real
-    table on the shared `Base.metadata` as a side effect. Patching the module-level
-    `Base` name that `count_active_deals` actually looks up
-    (`pigrocrm.core.customers.repository.Base`) substitutes a throwaway, unrelated
-    `MetaData` for the duration of this test only -- the real, shared `Base.metadata`
-    every other test depends on is never touched, and `monkeypatch` reverts the
-    substitution automatically, with no `finally` needed. Mirrors
-    `test_delete_fails_loudly_if_the_deals_table_lacks_the_expected_column` in
-    test_pipeline.py."""
-    fake_metadata = MetaData()
-    Table("deals", fake_metadata, Column("id", Integer, primary_key=True))
-    monkeypatch.setattr(
-        "pigrocrm.core.customers.repository.Base", SimpleNamespace(metadata=fake_metadata)
-    )
-
-    service = CustomerService(db_session)
-    customer = service.create(CustomerCreate(ragione_sociale="ACME"), ADMIN)
-
-    with pytest.raises(RuntimeError):
-        service.soft_delete(customer.id, ADMIN)
 
 
 def test_search_matches_name_vat_and_email(db_session: Session) -> None:

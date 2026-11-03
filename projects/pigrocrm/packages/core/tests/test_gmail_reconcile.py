@@ -25,6 +25,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.customer_fixtures import make_customer
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
     actor_for,
@@ -39,7 +40,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_EMAIL, SCOPE_SEND, EmailDraftCreate, EmailDraftRead
@@ -49,15 +49,8 @@ BODY = "Gentile Ada, in allegato la fattura."
 SUBJECT = "Fattura 2026/14"
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme", email="info@acme.it")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _draft(session: Session, account: GoogleAccount, **overrides: Any) -> EmailDraftRead:
-    customer = _customer(session)
+    customer = make_customer(session, email="info@acme.it")
     return draft_service(session).create(
         EmailDraftCreate(
             entity_type="customer",
@@ -425,7 +418,7 @@ def test_the_approximate_match_will_not_steal_a_message_another_draft_already_cl
     first one's email: that would make one message the record of two sends, and the
     second draft would read as delivered when nothing left."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     already_sent = GmailMessage(
         google_account_id=account.id,
         gmail_message_id="sent-claimed",

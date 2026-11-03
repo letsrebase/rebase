@@ -27,7 +27,7 @@ generated OpenAPI document rather than against this file's own route list.
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings
@@ -44,11 +44,16 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.send import EmailSendService, reconcile_only
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage.base import DocumentStorage
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.routers.gmail import token_client
+from pigrocrm_api.google_tokens import token_client
 
-router = APIRouter(prefix="/api/email-drafts", tags=["email-drafts"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/email-drafts",
+    tags=["email-drafts"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 def _drafts(session: Session, settings: Settings) -> EmailDraftService:
@@ -56,10 +61,9 @@ def _drafts(session: Session, settings: Settings) -> EmailDraftService:
 
 
 def _sender(session: Session, settings: Settings, storage: DocumentStorage) -> EmailSendService:
-    """`token_client` is `routers/gmail.py`'s per-process `GoogleTokenClient` cache, reused
-    rather than re-created here. A fresh client per request throws away every cached
-    access token -- an extra OAuth round trip on every send -- and would make
-    `disconnect`'s `forget()` clear a cache nobody was going to read."""
+    """`token_client` is the per-process `GoogleTokenClient` cache (`google_tokens.py`),
+    reused rather than re-created here: a fresh client per request throws away every cached
+    access token -- an extra OAuth round trip on every send."""
     return EmailSendService(
         session,
         settings=settings,

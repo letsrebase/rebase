@@ -2,13 +2,17 @@
 its last run, its last failure and how that reads. An admin's, like every section of
 Impostazioni but the two personal ones; the record is `reminder_job_run`."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from pigrocrm.core.reminders.jobs import ScheduledJobService, ScheduledJobsRead
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(tags=["scheduled-jobs"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    tags=["scheduled-jobs"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("/api/scheduled-jobs", response_model=ScheduledJobsRead)

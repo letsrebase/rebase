@@ -22,8 +22,8 @@
  * The core's indirect strings (`_SETTINGS_ACTION`, `_ROOTS_ACTION`, and since REB-415
  * the send's `_SEND_ACTION` and `_RECONCILE_ACTION`) resolve here the way ruff resolves
  * nothing: by reading the constant's own assignment in the file that guards with it.
- * Their values are Italian on purpose (they surface inside a sentence), and they are
- * keys here too, so the two sides stay one fact.
+ * Their values are the English action keys, the same strings the table holds, so the two
+ * sides stay one fact.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'

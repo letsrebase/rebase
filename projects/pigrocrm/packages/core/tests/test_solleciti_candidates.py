@@ -21,8 +21,8 @@ from fakes.invoice_fixtures import unpaid_invoice
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import GmailMessage, PaymentReminder
 from pigrocrm.core.gmail.send import EmailSendService
 from pigrocrm.core.gmail.solleciti import SollecitiService
@@ -35,7 +35,7 @@ def _service(session: Session) -> SollecitiService:
 
 
 def _days_ago(days: int) -> date:
-    return oggi_in_italia() - timedelta(days=days)
+    return today_local() - timedelta(days=days)
 
 
 # --- condition 1: it has been paid ---------------------------------------------------

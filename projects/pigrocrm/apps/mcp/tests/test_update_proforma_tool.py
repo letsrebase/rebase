@@ -14,9 +14,9 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.emitter.schemas import LegalEntityUpsert
 from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -69,7 +69,7 @@ async def test_a_proforma_is_created_dated_today_and_takes_a_period_and_a_date(
         )
         assert not created.is_error, created.content[0].text
         body = created.structured_content
-        assert body["data_emissione"] == oggi_in_italia().isoformat()
+        assert body["data_emissione"] == today_local().isoformat()
         assert body["competenza_da"] is None and body["competenza_a"] is None
 
         dated = await client.call_tool(

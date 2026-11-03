@@ -18,17 +18,20 @@ from typing import Any
 from mcp.server import MCPServer
 
 from pigrocrm.core.config import Settings
+from pigrocrm.core.reminders.catalogue import Severity
 from pigrocrm.core.reminders.jobs import ScheduledJobService
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import (
     AcknowledgeRequest,
     ReminderPreferenceWrite,
+    SnoozeOptionName,
     SnoozeRequest,
 )
 from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.params import literal_arg
 
 
 def _preferences(context: McpContext) -> ReminderPreferenceService:
@@ -101,7 +104,7 @@ def register(
         """Segna un promemoria come visto per chi chiede, alla gravità vista (`warning`, `serious`,
         `critical`). Torna a comparire se sale di gravità. `key` è `tipo:identificativo`.
         """
-        data = AcknowledgeRequest(key=key, severity=severity)  # type: ignore[arg-type]
+        data = AcknowledgeRequest(key=key, severity=literal_arg("severity", severity, Severity))
         return (
             _state(context)
             .acknowledge(context.actor, data.key, data.severity)
@@ -115,7 +118,11 @@ def register(
         `in_a_month`, mai una data libera. Torna a comparire quel giorno, o prima se sale di
         gravità.
         """
-        data = SnoozeRequest(key=key, severity=severity, until=until)  # type: ignore[arg-type]
+        data = SnoozeRequest(
+            key=key,
+            severity=literal_arg("severity", severity, Severity),
+            until=literal_arg("until", until, SnoozeOptionName),
+        )
         return (
             _state(context)
             .snooze(context.actor, data.key, data.severity, data.until)

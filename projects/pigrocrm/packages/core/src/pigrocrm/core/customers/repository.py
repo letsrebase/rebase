@@ -1,16 +1,21 @@
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import column, func, or_, select, table, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CUSTOMER_SORTS, CustomerListQuery
-from pigrocrm.core.db import Base, decode_cursor, escape_like, keyset_predicate, order_by
+from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
 
 # `pg_advisory_xact_lock(int, int)`: a namespace of this project's own, as
 # `gmail/repository.py` does for the sync, and one key per serialized operation.
 CUSTOMERS_LOCK_NAMESPACE = 0x7092
 _IMPORT_LOCK_KEY = 1
+
+
+# The columns of `deals` this repository reads, without importing the model (see
+# `count_active_deals`).
+_DEALS = table("deals", column("customer_id"), column("deleted_at"))
 
 
 class CustomerRepository:
@@ -137,37 +142,9 @@ class CustomerRepository:
         )
 
     def count_active_deals(self, customer_id: UUID) -> int:
-        """Queries the deals table through `Base.metadata` rather than importing the
-        model. Deals are written in Task 12: importing `pigrocrm.core.deals.models`
-        here -- at module level or inside the function -- would raise
-        `ModuleNotFoundError` in this task's own tests. Going through `Base.metadata`
-        keeps the dependency one-directional (deals references customers, never the
-        other way round) and lets this method start returning real counts the moment
-        the deals model is registered, with no edit here.
-
-        Mirrors `PipelineRepository.count_deals_in_stage`'s shape exactly: returning 0
-        is only correct for "the `deals` table does not exist yet". If `deals` exists
-        but does not expose `customer_id` -- the FK column, verified against the plan's
-        Task 12 `Deal` model -- that is a bug in this code, not "no deals for this
-        customer": returning 0 there would let `soft_delete` remove a customer that
-        still has deals, so this raises instead of guessing.
-
-        `deleted_at` is treated more leniently than `customer_id`: its presence narrows
-        "active" to exclude an already-archived deal, but -- unlike `customer_id` --
-        it was not the column this correction verified against the plan, so a `deals`
-        table lacking it simply counts every matching deal rather than raising.
-        """
-        deals_table = Base.metadata.tables.get("deals")
-        if deals_table is None:
-            return 0  # i deal arrivano in un task successivo
-        customer_id_column = deals_table.c.get("customer_id")
-        if customer_id_column is None:
-            # La tabella esiste ma non ha la colonna attesa: e' un errore di codice,
-            # non l'assenza di deal. Restituire 0 qui permetterebbe di cancellare un
-            # cliente che ha ancora deal collegati.
-            raise RuntimeError(
-                "la tabella deals non espone customer_id: aggiornare count_active_deals"
-            )
+        """The customer's live deals, whoever's azienda they sit in: what `soft_delete`
+        decides on. `deals` is named as a bare table and not imported as the model:
+        `deals` imports this package's neighbours, which import this one."""
         # Past the row-level policies, through the definer function of migration 0048
         # (REB-634): a deal of an azienda this session cannot see still keeps its
         # customer from being archived, or the invariant `soft_delete` guards would
@@ -182,11 +159,9 @@ class CustomerRepository:
         """The active deals of the customer this session may see: what a refusal may
         say out loud, where `count_active_deals` is what it decides on (a count of
         rows out of the caller's sight is a fact about another azienda)."""
-        deals_table = Base.metadata.tables["deals"]
         stmt = (
             select(func.count())
-            .select_from(deals_table)
-            .where(deals_table.c["customer_id"] == customer_id)
-            .where(deals_table.c["deleted_at"].is_(None))
+            .select_from(_DEALS)
+            .where(_DEALS.c.customer_id == customer_id, _DEALS.c.deleted_at.is_(None))
         )
         return int(self.session.execute(stmt).scalar_one())

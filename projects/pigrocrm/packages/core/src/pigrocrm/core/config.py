@@ -1,12 +1,11 @@
-import base64
-import binascii
 from functools import lru_cache
 from typing import Literal
 from zoneinfo import available_timezones
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from pigrocrm.core.crypto import decode_aes256_key
 from pigrocrm.core.errors import Conflict
 
 # RFC 7518 Section 3.2: an HS256 key shorter than 32 bytes is weaker than the
@@ -14,8 +13,18 @@ from pigrocrm.core.errors import Conflict
 # a silent warning (easy to miss in production logs) into a startup failure instead.
 MIN_JWT_SECRET_LENGTH = 32
 
-# AES-256-GCM, which is what encrypts `google_accounts.refresh_token_ciphertext`.
-GOOGLE_TOKEN_KEY_BYTES = 32
+# The bearers other services present to the registry and engagements doors are shared
+# secrets between two deployments: as long as the signing key, for the same reason.
+MIN_SERVICE_TOKEN_LENGTH = 32
+
+# What `jwt_secret` is when nothing configures it. Public, so a signing key that still
+# holds it is forgeable: `require_production_secrets` refuses it at API boot, and the
+# default itself stays so that a bare `Settings()` (a CLI command, a test) builds.
+DEFAULT_JWT_SECRET = "change-me-in-production-please-set-a-real-secret"
+# The placeholders a copied `.env.example` or a default carries: none of them is a secret.
+KNOWN_PLACEHOLDER_JWT_SECRETS = frozenset(
+    {DEFAULT_JWT_SECRET, "cambia-questo-con-un-segreto-vero-di-almeno-32-caratteri"}
+)
 
 # The default ceiling on the text of one file, wherever it was read from: a file on
 # Drive (`drive/reader.py::read_text`) or a document archived in the CRM
@@ -32,7 +41,19 @@ TEXT_MAX_BYTES_DEFAULT = 262_144
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PIGROCRM_", env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://pigrocrm:pigrocrm@localhost:5432/pigrocrm"
+    # Which of these an installation chooses: the ones `docker-compose.yml` forwards in
+    # `x-api-environment`. The rest hold their default on every deploy, and
+    # `tests/test_compose_environment.py::NOT_FORWARDED` records why for each one; that test
+    # fails a new field that is in neither place.
+    #
+    # A `Settings` reaches logs, tracebacks and debugger frames, so every credential in it
+    # (the database URLs, which carry passwords, the signing key, the bearer tokens, the
+    # client secrets, the API keys) is `repr=False`. Ids and public URLs are not secrets and
+    # stay visible: hiding them would only make a misconfiguration harder to read.
+
+    database_url: str = Field(
+        default="postgresql+psycopg://pigrocrm:pigrocrm@localhost:5432/pigrocrm", repr=False
+    )
     # The owner's URL, for what the application role may not do: `alembic upgrade`,
     # `ensure-space-defaults`, `CREATE DATABASE` and the grants themselves (REB-634, spec
     # 2026-10-03 §4 «The role»). `database_url` above is the role every request runs as,
@@ -40,12 +61,12 @@ class Settings(BaseSettings):
     # policies; the owner and a superuser are not kept there. Empty means one URL for
     # both, which is what a development checkout and the test suite run with: then no
     # second role exists, nothing is created at boot, and a superuser sees every row.
-    admin_database_url: str = ""
+    admin_database_url: str = Field(default="", repr=False)
     # The registry of spaces -- which slug maps to which database; see
     # docs/superpowers/specs/2026-09-08-spazi-un-database-per-tenant-design.md. Empty
     # means the CRM's own server and credentials, database `pigrocrm_tenants`. Each
     # space's own database is created beside it by `tenants.service.TenantService.provision`.
-    tenants_database_url: str = ""
+    tenants_database_url: str = Field(default="", repr=False)
     # Where `alembic.ini` lives, for migrating a freshly created space's database with
     # the same env.py production runs. Empty resolves to packages/core/alembic.ini next
     # to this package, which is where both the checkout and the API image keep it.
@@ -55,6 +76,9 @@ class Settings(BaseSettings):
     # same cookies -- so the titolare's CRM has an address shaped like everyone else's.
     # Empty means the root answers only without a prefix. Reserved for signups when set.
     root_slug: str = ""
+    # The most spaces the registry may hold: the public signup (`POST /api/tenants/`) refuses
+    # once it does, because each space is a database and a migration run on the same server.
+    max_spaces: int = Field(default=1000, ge=1)
     # Lets another service read the registry of spaces: `GET /api/tenants/` answers a
     # caller presenting it as a bearer token with every row (slug, owner, date), which is
     # how the rebase hub shows which spaces exist and whose they are (ORB-142). Empty,
@@ -81,20 +105,25 @@ class Settings(BaseSettings):
     # token, unreachable hub, anything but a 200: the answer is «not a member» and the
     # signup goes on. The community is the fast lane, never a gate.
     hub_url: str = "https://letsrebase.com"
-    jwt_secret: str = "change-me-in-production-please-set-a-real-secret"
-    access_token_minutes: int = 15
+    # The HS256 signing key of every token. Public until an operator sets it: the default
+    # builds a `Settings` for the CLI and the tests, and `require_production_secrets` is what
+    # refuses to serve with it. Compose requires the variable (`:?`).
+    jwt_secret: str = Field(default=DEFAULT_JWT_SECRET, repr=False)
+    # The access token's lifetime is the revocation window (see `refresh_token_days`); a
+    # day is already far more than a revocation window should be.
+    access_token_minutes: int = Field(default=15, ge=1, le=1440)
     # Six months, sliding: `/api/auth/refresh` consumes the old jti and issues a new row
     # whose expiry is measured from now, so anyone who uses the CRM never sees the login
     # again and anyone who leaves it for six months does (spec 9 §5.6). The access token
     # stays at fifteen minutes: that is the revocation window, not the session length.
-    refresh_token_days: int = 180
+    refresh_token_days: int = Field(default=180, ge=1, le=3650)
     # The cross-space identity cookie's own lifetime (design 2026-09-23 §2, REB-376):
     # deliberately the same 180 days as refresh_token_days, because it is meant to
     # outlive any single space's own session -- the one artifact in that design built
     # to survive a switch between spaces without asking for a fresh proof each time.
     # Revocable through `IdentitySession.jti`, the same shape `refresh_token_days`
     # already has through `RefreshToken.jti`.
-    identity_token_days: int = 180
+    identity_token_days: int = Field(default=180, ge=1, le=3650)
     # Must stay True in production: it is what stops the auth cookies from ever being
     # sent over plain HTTP. It exists as a *setting* rather than a hardcoded True only
     # because of one browser: Chrome and Firefox treat "localhost" as a secure context
@@ -106,6 +135,10 @@ class Settings(BaseSettings):
     # Set PIGROCRM_COOKIE_SECURE=false for that one case. Anyone tempted to flip this
     # in production because "it's just a flag" should re-read this paragraph first.
     cookie_secure: bool = True
+    # Browser origins, comma-separated, allowed to call the API across origins (the CORS
+    # middleware of `pigrocrm_api`). Empty, the default: none, the API answers only the
+    # origin that serves the app. Read through `cors_origin_list`.
+    cors_origins: str = ""
     # How many `POST /api/auth/login` attempts one client address gets per minute: a
     # token bucket of its own (`pigrocrm_api.ratelimit.spend_one`), never a share of
     # the signup routes' five, because a failed login is a full argon2id verify at the
@@ -121,14 +154,16 @@ class Settings(BaseSettings):
     # `apps/web/scripts/e2e-env.sh` the way it declares `cookie_secure`. Nothing else
     # has a reason to move it. `ge=1` because a bucket that starts below one token
     # answers 429 to every login for good, and a misconfiguration that locks everyone
-    # out should fail at boot, not at the first person's login.
-    login_requests_per_minute: int = Field(default=10, ge=1)
+    # out should fail at boot, not at the first person's login; `le` is two orders of
+    # magnitude above the e2e suite's budget, so a typo cannot switch the limit off.
+    login_requests_per_minute: int = Field(default=10, ge=1, le=10_000)
 
     # Whether a personal access token may perform the operations listed in
-    # `actor.AGENT_FORBIDDEN_ACTIONS` -- issuing and annulling invoices, rates, cost
-    # categories, period locks, the hours-to-invoice bridge and the annual estimate --
-    # plus sending mail and preparing a payment reminder. (Not the fiscal profile nor
-    # the emitter: an admin's token writes those on every installation, ORB-188.)
+    # `agent_actions.FULL_ACCESS_ACTIONS` -- issuing and annulling invoices, rates, cost
+    # categories, period locks, the hours-to-invoice bridge, the annual estimate and the
+    # Drive and Gmail reads. (Not the fiscal profile nor the emitter: an admin's token
+    # writes those on every installation, ORB-188. Sending mail is a person's, never a
+    # token's, whatever this says.)
     #
     # `False` by default, and the default is the one nobody has to think about. Those
     # operations are not merely privileged, they are **irreversible in ways the rest of
@@ -161,7 +196,7 @@ class Settings(BaseSettings):
     # depending on who looked at it.
     #
     # It is a setting rather than a constant because `db/clock.py` is now the *only*
-    # clock -- `clock.oggi_in_italia()` delegates to it -- so changing this changes the
+    # clock -- `clock.today_local()` delegates to it -- so changing this changes the
     # fiscal calendar too, deliberately and in one place. An operator who moves it off
     # Europe/Rome is telling the product where the invoices are issued from, which is
     # the only reading under which one clock and one answer stay true.
@@ -191,7 +226,7 @@ class Settings(BaseSettings):
     # (`GDriveStorage.verify_root_accessible`) while it builds the backend, rather than
     # leaving it to fail mid-upload: that is start-up on the MCP adapter and the first
     # document operation on the API, which is where `get_storage` resolves.
-    gdrive_service_account_json: str = ""
+    gdrive_service_account_json: str = Field(default="", repr=False)
     gdrive_root_folder_id: str = ""
     # Rendering. The image installs Pandoc and Typst at these names (Dockerfile.api).
     pandoc_binary: str = "pandoc"
@@ -202,11 +237,8 @@ class Settings(BaseSettings):
     # answer Conflict, and the MCP tools are never registered. That is what lets
     # someone who self-hosts precisely in order not to have Google not have Google.
     google_client_id: str = ""
-    # `repr=False` on the two secrets below, and nowhere else in this class: a
-    # `Settings` object reaches logs, tracebacks and debugger frames, and both of these
-    # are halves of a credential to a *third-party* account. The client id and the
-    # public URL are not secrets and stay visible, because hiding them would only make
-    # a misconfiguration harder to read.
+    # The two secrets below are halves of a credential to a *third-party* account (the
+    # note at the top of the class says why every credential is `repr=False`).
     google_client_secret: str = Field(default="", repr=False)
     # 32 raw bytes, base64-encoded. Encrypts `google_accounts.refresh_token_ciphertext`
     # at rest. The key lives outside the database on purpose: a dump, a backup or a
@@ -294,16 +326,25 @@ class Settings(BaseSettings):
     # MCP server reports every tool call to PostHog when this holds the project key,
     # the same public `phc_` key the browsers carry in `shared/analytics`. Empty: the
     # installation measures nothing. Read by `pigrocrm_mcp.analytics` and by
-    # `core/telemetry.py` (the weekly digest's own event, REB-221).
-    posthog_key: str = ""
+    # `core/telemetry.py` (the weekly digest's own event, REB-221). Not a secret, but it
+    # lets anyone holding it write events into the project, so it stays out of reprs too.
+    posthog_key: str = Field(default="", repr=False)
     posthog_host: str = "https://eu.i.posthog.com"
 
-    gmail_sync_address_batch_size: int = 20
-    gmail_backfill_days: int = 90
-    gmail_watermark_overlap_hours: int = 24
-    gmail_body_max_bytes: int = 262_144
-    gmail_attachment_max_bytes: int = 20_971_520
-    gmail_send_grace_minutes: int = 15
+    # The Gmail numbers below are plain integers that reach no service-level range check,
+    # so each carries the bound a legitimate value cannot cross: a batch, a window or a
+    # ceiling of zero would sync nothing, fetch no history or refuse every message, and a
+    # typo of a few orders of magnitude would fetch the mailbox or hold it in memory.
+    gmail_sync_address_batch_size: int = Field(default=20, ge=1, le=100)
+    # The same range as `SpaceSettingsUpdate.gmail_backfill_days`, which a space's admin
+    # may move from Impostazioni.
+    gmail_backfill_days: int = Field(default=90, ge=1, le=3650)
+    # `0` is a legitimate value: no overlap, at the price of the boundary message.
+    gmail_watermark_overlap_hours: int = Field(default=24, ge=0, le=720)
+    gmail_body_max_bytes: int = Field(default=262_144, ge=1, le=10_485_760)
+    # Gmail's own ceiling for a message is 25 MiB to send and 50 MiB to receive.
+    gmail_attachment_max_bytes: int = Field(default=20_971_520, ge=1, le=52_428_800)
+    gmail_send_grace_minutes: int = Field(default=15, ge=1, le=1440)
     # --- Drive (slice 9C). The text of one file the titolare pointed at, capped.
     # `ge=1` because a ceiling of zero would return an empty document for every file
     # and read as "this file has no text"; the upper bound is what an agent's context
@@ -315,16 +356,18 @@ class Settings(BaseSettings):
     # widen what a Drive folder may pour into an answer, and the two ceilings guard
     # bytes that arrive by different doors.
     document_text_max_bytes: int = Field(default=TEXT_MAX_BYTES_DEFAULT, ge=1, le=10_485_760)
-    # Whether reconciliation may rely on Gmail preserving the Message-ID we supply.
-    # Spec 6.3 requires this to be verified rather than assumed, because the fallback
-    # (matching on recipient + subject + internalDate) is an approximate comparison and
-    # cannot tell two near-identical sends apart. The check is recorded in
-    # docs/superpowers/notes/2026-08-20-gmail-message-id-verification.md, and as of
-    # today that note records **UNVERIFIED**: nobody has yet run it against a real
-    # Gmail. The default stays `true` because the exact path is the one the design is
-    # built around and the fallback is worse -- but it is an assumption about a third
-    # party until that note says otherwise, and an operator who sees delivered mail
-    # being reported as `fallito` should try `false` first.
+    # Whether reconciliation first asks Gmail for the Message-ID we supplied
+    # (`rfc822msgid:`, exact) before the approximate match of spec 6.3. Whether Gmail keeps
+    # a client-supplied Message-ID is **UNVERIFIED**: nobody has run the check against a
+    # real Gmail (`docs/superpowers/notes/2026-08-20-gmail-message-id-verification.md`),
+    # and Google's own issue tracker (446748944, 2025-09-22) shows a send stored under a
+    # `...@mail.gmail.com` id instead. So the default does not bet on it: `_find_sent` runs
+    # the approximate match whenever the exact lookup finds nothing, whatever this says,
+    # which makes `true` the choice that cannot lose. If Gmail keeps the id, the lookup
+    # is exact; if it replaces it, the lookup answers nothing and costs one request per
+    # unresolved send. `false` only saves that request: it never changes a verdict, so it
+    # is not a remedy for delivered mail reported as `fallito`. The setting follows what
+    # the note records (`tests/test_gmail_message_id_contract.py`).
     gmail_reconcile_by_message_id: bool = True
 
     # The three numbers that decide whether a reminder is legitimate, bearable and
@@ -372,6 +415,19 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("registry_token", "engagements_token")
+    @classmethod
+    def _service_token_must_be_long_enough(cls, value: str, info: ValidationInfo) -> str:
+        # Empty is legal and means the door does not exist; a token that is set is a shared
+        # secret between two deployments, so a short one fails the boot instead of guarding
+        # the door with something a script can guess.
+        if value and len(value) < MIN_SERVICE_TOKEN_LENGTH:
+            raise ValueError(
+                f"{info.field_name} must be at least {MIN_SERVICE_TOKEN_LENGTH} characters "
+                "long when it is set, or empty to switch the route off"
+            )
+        return value
+
     @field_validator("timezone")
     @classmethod
     def _timezone_must_be_a_real_zone(cls, value: str) -> str:
@@ -391,10 +447,30 @@ class Settings(BaseSettings):
         """`admin_database_url`, or `database_url` when none was configured."""
         return self.admin_database_url or self.database_url
 
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """`cors_origins` as a list: split on commas, stripped, empties dropped."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def require_production_secrets(settings: Settings) -> None:
+    """Raises `ValueError` when the signing key is still a published placeholder on an
+    installation that serves over TLS.
+
+    The API calls it at boot, and only the API: the key signs sessions, and nothing else
+    that builds a `Settings` (the CLI, the tests) needs a real one. `cookie_secure=False`
+    is the documented switch for plain-HTTP development, so that is what lets a
+    placeholder through. Names the variable and never quotes the value."""
+    if settings.cookie_secure and settings.jwt_secret in KNOWN_PLACEHOLDER_JWT_SECRETS:
+        raise ValueError(
+            "PIGROCRM_JWT_SECRET is still a placeholder, which anyone can use to forge a "
+            "session: set a real secret (for example `openssl rand -hex 32`)"
+        )
 
 
 def gmail_configured(settings: Settings) -> bool:
@@ -415,33 +491,15 @@ def require_gmail_configured(settings: Settings) -> None:
 
 
 def decode_google_token_key(settings: Settings) -> bytes:
-    """Raises `ValueError` naming the variable, never quoting the value.
+    """The AES-256-GCM key of the Gmail and Drive refresh tokens. Raises `ValueError`
+    naming the variable, never quoting the value (`crypto.decode_aes256_key`).
 
     Called at startup when `google_accounts` has at least one row (apps/api deps),
     so a missing or malformed key fails the boot rather than the first sync -- the
     same discipline as `_jwt_secret_must_be_long_enough`. Not a pydantic validator,
     because the empty default has to stay legal for every install that has no Gmail.
     """
-    if not settings.google_token_key:
-        raise ValueError(
-            "PIGROCRM_GOOGLE_TOKEN_KEY is not set, but google_accounts holds at least "
-            "one stored refresh token. Without the key those rows cannot be decrypted."
-        )
-    try:
-        key = base64.b64decode(settings.google_token_key, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        # `from exc` and not the value: `binascii.Error` quotes the offending input in
-        # some builds, so the cause is kept for the traceback while this message -- the
-        # one anything might format on its own -- names only the variable. The API's
-        # handler renders `DomainError`, so a `ValueError` here reaches the process log
-        # and nowhere else, which is the one place a malformed key belongs.
-        raise ValueError("PIGROCRM_GOOGLE_TOKEN_KEY is not valid base64") from exc
-    if len(key) != GOOGLE_TOKEN_KEY_BYTES:
-        raise ValueError(
-            f"PIGROCRM_GOOGLE_TOKEN_KEY must decode to exactly {GOOGLE_TOKEN_KEY_BYTES} "
-            f"bytes for AES-256-GCM, got {len(key)}"
-        )
-    return key
+    return decode_aes256_key(settings.google_token_key, "PIGROCRM_GOOGLE_TOKEN_KEY")
 
 
 def slack_configured(settings: Settings) -> bool:
@@ -464,15 +522,4 @@ def require_slack_configured(settings: Settings) -> None:
 def decode_slack_token_key(settings: Settings) -> bytes:
     """The AES-256-GCM key of the bot tokens. Raises `ValueError` naming the variable and
     never quoting the value, as `decode_google_token_key` does and for the same reasons."""
-    if not settings.slack_token_key:
-        raise ValueError("PIGROCRM_SLACK_TOKEN_KEY is not set, so a Slack token cannot be read")
-    try:
-        key = base64.b64decode(settings.slack_token_key, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise ValueError("PIGROCRM_SLACK_TOKEN_KEY is not valid base64") from exc
-    if len(key) != GOOGLE_TOKEN_KEY_BYTES:
-        raise ValueError(
-            f"PIGROCRM_SLACK_TOKEN_KEY must decode to exactly {GOOGLE_TOKEN_KEY_BYTES} "
-            f"bytes for AES-256-GCM, got {len(key)}"
-        )
-    return key
+    return decode_aes256_key(settings.slack_token_key, "PIGROCRM_SLACK_TOKEN_KEY")

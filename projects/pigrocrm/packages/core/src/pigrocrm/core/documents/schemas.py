@@ -44,7 +44,6 @@ ALLOWED_CONTENT_TYPES: dict[str, str] = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
 
-CONTENT_TYPE_MAX_LENGTH = 100
 STORAGE_KEY_MAX_LENGTH = 255
 # Postgres `Integer` tops out at 2**31-1; 100 MB is far below it and is a defensible
 # ceiling for a document nobody wants to email either.

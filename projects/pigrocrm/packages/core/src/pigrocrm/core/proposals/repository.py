@@ -18,6 +18,11 @@ class ProposalRepository:
     def get(self, proposal_id: UUID) -> Proposal | None:
         return self.session.get(Proposal, proposal_id)
 
+    def get_for_update(self, proposal_id: UUID) -> Proposal | None:
+        """The row locked and overwritten from the database: `session.get` alone would
+        return an already-loaded copy with its old `stato` (`populate_existing`)."""
+        return self.session.get(Proposal, proposal_id, with_for_update=True, populate_existing=True)
+
     def add(self, proposal: Proposal) -> Proposal:
         self.session.add(proposal)
         self.session.flush()

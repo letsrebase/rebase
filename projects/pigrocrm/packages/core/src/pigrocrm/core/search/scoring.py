@@ -143,14 +143,21 @@ def field_score(field: ScoredField, term: str) -> ColumnElement[Decimal]:
     ).label(f"score_{field.name}")
 
 
-def row_score(fields: Sequence[ScoredField], term: str) -> ColumnElement[Decimal]:
+def field_scores(fields: Sequence[ScoredField], term: str) -> list[ColumnElement[Decimal]]:
+    """One score per field, in the order of `fields`: the only place `word_similarity` is
+    evaluated. A caller that needs the row's score, its best field and a filter on it
+    computes these once (in a subquery) and combines them with `combine_scores` and
+    `pick_field`, rather than asking each of those to compute every field again."""
+    return [field_score(field, term) for field in fields]
+
+
+def combine_scores(scores: Sequence[ColumnElement[Decimal]]) -> ColumnElement[Decimal]:
     """`max(peso × punteggio_campo)` over the fields that matched.
 
     The maximum and not the sum: summing would let two mediocre matches outrank one exact
     one, and would rank a row higher merely for having more populated columns -- an order
     no user could explain to themselves.
     """
-    scores = [field_score(field, term) for field in fields]
     if len(scores) == 1:
         # `greatest` of one argument is legal in Postgres, but writing it would put a
         # function call around every single-field entity's score for nothing.
@@ -158,7 +165,9 @@ def row_score(fields: Sequence[ScoredField], term: str) -> ColumnElement[Decimal
     return func.round(func.greatest(*scores), SCORE_SCALE).label("punteggio")
 
 
-def best_field(fields: Sequence[ScoredField], term: str) -> ColumnElement[str]:
+def pick_field(
+    fields: Sequence[ScoredField], scores: Sequence[ColumnElement[Decimal]]
+) -> ColumnElement[str]:
     """The name of the field that produced the row score.
 
     Declared in the same order as `fields`, so ties resolve to the earlier field -- which
@@ -166,12 +175,22 @@ def best_field(fields: Sequence[ScoredField], term: str) -> ColumnElement[str]:
     (criterion 4). `CASE` evaluates its arms in written order, which is what makes that a
     guarantee rather than a habit of the planner.
     """
-    top = row_score(fields, term)
+    top = combine_scores(scores)
     branches = [
-        (func.round(field_score(field, term), SCORE_SCALE) == top, literal(field.name))
-        for field in fields
+        (func.round(score, SCORE_SCALE) == top, literal(field.name))
+        for field, score in zip(fields, scores, strict=True)
     ]
     return case(*branches, else_=literal(fields[0].name)).label("campo")
+
+
+def row_score(fields: Sequence[ScoredField], term: str) -> ColumnElement[Decimal]:
+    """The score of a row over its own columns, for a caller that needs it once."""
+    return combine_scores(field_scores(fields, term))
+
+
+def best_field(fields: Sequence[ScoredField], term: str) -> ColumnElement[str]:
+    """The name of the field that produced `row_score`, over the row's own columns."""
+    return pick_field(fields, field_scores(fields, term))
 
 
 def matches_any(fields: Sequence[ScoredField], term: str) -> ColumnElement[bool]:

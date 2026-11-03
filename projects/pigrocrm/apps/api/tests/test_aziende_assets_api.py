@@ -37,7 +37,7 @@ def test_an_admin_uploads_reads_and_removes_the_logo_and_the_signature(
     assert served.content == SVG
     assert served.headers["x-content-type-options"] == "nosniff"
     assert "default-src 'none'" in served.headers["content-security-policy"]
-    assert served.headers["content-disposition"] == 'inline; filename="logo.svg"'
+    assert served.headers["content-disposition"] == "inline; filename*=UTF-8''logo.svg"
 
     # A PNG replaces the SVG, under its own name.
     assert _put(logged_in, logo, BLANK_PNG, "mark.png").json()["logo_key"].endswith(".png")
@@ -88,6 +88,24 @@ def test_a_collaboratore_is_refused_on_the_writes_and_served_on_the_reads(
     assert _put(collaborator_client, logo, BLANK_PNG).status_code == 403
     assert collaborator_client.delete(logo).status_code == 403
     assert collaborator_client.get(logo).status_code == 404
+
+
+def test_the_role_is_checked_before_the_body_is_read(
+    collaborator_client: TestClient,
+) -> None:
+    """A body that is not multipart at all: a refused role answers 403 and never reaches
+    the parser. Were the body parsed first (as a declared `File()` parameter does), this
+    would be the parser's 400."""
+    junk = {"content-type": "multipart/form-data; boundary=x"}
+    url = azienda_url(collaborator_client, "/logo")
+    assert collaborator_client.put(url, content=b"not multipart", headers=junk).status_code == 403
+
+
+def test_a_body_without_the_file_part_is_a_422_naming_the_file(logged_in: TestClient) -> None:
+    url = azienda_url(logged_in, "/logo")
+    response = logged_in.put(url, files={"altro": ("x.png", BLANK_PNG, "image/png")})
+    assert response.status_code == 422
+    assert response.json()["field"] == "file"
 
 
 def test_an_unknown_azienda_is_404_on_every_image_route(logged_in: TestClient) -> None:
