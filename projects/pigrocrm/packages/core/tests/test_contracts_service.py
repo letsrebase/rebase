@@ -109,7 +109,7 @@ def test_contract_create_rejects_end_before_start() -> None:
     but the schema is what gives a clean 422 instead of a raw IntegrityError."""
     import pydantic
 
-    with pytest.raises(pydantic.ValidationError, match="end"):
+    with pytest.raises(pydantic.ValidationError, match="fine non può precedere inizio"):
         _create_payload(uuid4(), end=date(2025, 1, 1))
 
 
