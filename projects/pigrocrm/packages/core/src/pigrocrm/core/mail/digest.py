@@ -21,8 +21,8 @@ def _hours_recorded(value: Decimal) -> str:
     return "1 ora registrata" if value == 1 else f"{_hours_it(value)} ore registrate"
 
 
-def _count(n: int, singolare: str, plurale: str) -> str:
-    return f"1 {singolare}" if n == 1 else f"{n} {plurale}"
+def _count(n: int, singular: str, plurale: str) -> str:
+    return f"1 {singular}" if n == 1 else f"{n} {plurale}"
 
 
 def _delay(days: int | None) -> str:
@@ -59,8 +59,8 @@ def digest_subject(digest: WeeklyDigest) -> str:
         parti.append(_hours_recorded(digest.hours.total_hours))
     if digest.offers_pending:
         parti.append(_count(len(digest.offers_pending), "offerta in attesa", "offerte in attesa"))
-    if digest.deal_mossi:
-        parti.append(_count(len(digest.deal_mossi), "deal mosso", "deal mossi"))
+    if digest.deal_moves:
+        parti.append(_count(len(digest.deal_moves), "deal mosso", "deal mossi"))
     if not parti:
         return "La tua settimana in PigroCRM"
     return "La tua settimana: " + ", ".join(parti)
@@ -221,11 +221,11 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # entry, the only comparison `WeekHours` carries with it.
     hours = digest.hours
     if hours is not None:
-        copertura = len(hours.days) - len(hours.days_without_hours)
+        coverage = len(hours.days) - len(hours.days_without_hours)
         line_total = f"{_hours_recorded(hours.total_hours)} questa settimana"
-        riga_copertura = f"{copertura} giorni su {len(hours.days)} con ore registrate"
+        line_coverage = f"{coverage} giorni su {len(hours.days)} con ore registrate"
         # Nothing external in either line, so text and html are the same string.
-        section("Le ore", [(line_total, line_total), (riga_copertura, riga_copertura)])
+        section("Le ore", [(line_total, line_total), (line_coverage, line_coverage)])
 
     # 6. «In pipeline»: the open stages, the deals moved, the offers awaiting an answer.
     lines_pipeline: list[tuple[str, str]] = [
@@ -240,8 +240,8 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
             _row("La pipeline completa", url=link("/app/deal"), label="Vai alla pipeline")
         )
     lines_pipeline += [
-        _row(f"{mossa.title} è passato a {mossa.stage_name} ({day_short(mossa.when)})")
-        for mossa in digest.deal_mossi
+        _row(f"{move.title} è passato a {move.stage_name} ({day_short(move.when)})")
+        for move in digest.deal_moves
     ]
     lines_pipeline += [
         _row(
@@ -258,11 +258,11 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     # `dashboard/service.py`), so it goes through `link()` like every other path.
     lines_signals = [
         _row(
-            f"{segnale.label}: {segnale.count}",
-            url=link(segnale.link),
+            f"{signal.label}: {signal.count}",
+            url=link(signal.link),
             label="Vedi",
         )
-        for segnale in digest.signals
+        for signal in digest.signals
     ]
     section("Da sistemare", lines_signals)
 
@@ -275,14 +275,14 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
         (tasks.overdue, tasks.overdue_total, True),
         (tasks.in_week, tasks.in_week_total, False),
     ):
-        for riga in group:
-            when = day_short(riga.due_date)
+        for line in group:
+            when = day_short(line.due_date)
             if delay:
-                when += f" — {_count(riga.days_of_delay or 0, 'day', 'days')} di ritardo"
+                when += f" — {_count(line.days_of_delay or 0, 'day', 'days')} di ritardo"
             lines_fare.append(
                 _row(
-                    f"{riga.title} — {when}",
-                    url=link(f"/app/activities?open={riga.task_id}"),
+                    f"{line.title} — {when}",
+                    url=link(f"/app/activities?open={line.task_id}"),
                     label="Apri",
                 )
             )

@@ -86,14 +86,14 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     Every near miss differs from a wanted row in **exactly one** clause, which is what makes
     the negative tests below able to fail one at a time:
 
-      * `fatturato non vinto` -- an invoiced deal on an *open* stage. The invoiced deal on a
-        `perso` stage is the row that separates `tipo == "open"` from `tipo != "won"`, and
+      * `invoiced but not won` -- an invoiced deal on an *open* stage. The invoiced deal on a
+        `lost` stage is the row that separates `type == "open"` from `type != "won"`, and
         the drill-through must not absorb it: a lost deal that was invoiced is a different
         problem with a different remedy.
-      * `vinto da fatturare` -- a won deal with billable, unbilled hours. Beside it: a won
+      * `won not yet invoiced` -- a won deal with billable, unbilled hours. Beside it: a won
         deal whose hours are already on an invoice line, one whose hours are not billable,
         one whose entry is soft-deleted, and an *open* deal with unbilled billable hours.
-      * `scaduto non incassato` -- an issued, unpaid invoice past its due date. Beside it:
+      * `overdue unpaid` -- an issued, unpaid invoice past its due date. Beside it:
         one due *today* (the row that separates `<` from `<=`), one with no due date at
         all, one already collected, and one annulled.
     """
@@ -104,28 +104,28 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         legal_entity_id = committed_default_legal_entity(session)
         stages = {
             code: PipelineStage(
-                nome=f"{_PREFIX} {code}",
+                name=f"{_PREFIX} {code}",
                 position=index,
                 default_probability=probability,
                 type=type,
             )
             for index, (code, type, probability) in enumerate(
-                (("aperto", "open", 20), ("won", "won", 100), ("lost", "lost", 0))
+                (("open", "open", 20), ("won", "won", 100), ("lost", "lost", 0))
             )
         }
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         user = User(
             email=f"{_PREFIX.lower()}-{uuid7()}@example.test",
             password_hash="x",
-            nome="Operatore",
+            name="Operatore",
             role="collaborator",
         )
         session.add_all([*stages.values(), customer, user])
         session.flush()
 
-        def _deal(nome: str, stage: str) -> Deal:
+        def _deal(name: str, stage: str) -> Deal:
             deal = Deal(
-                nome=f"{_PREFIX} {nome}",
+                name=f"{_PREFIX} {name}",
                 customer_id=customer.id,
                 pipeline_stage_id=stages[stage].id,
                 probability=stages[stage].default_probability,
@@ -176,7 +176,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
                 # Inside the current week, so the same rows also give the week card
                 # something to show: a signal corpus that left the week empty would leave
                 # half this dashboard untested.
-                data=today,
+                date=today,
                 hours=Decimal(hours),
                 description="Lavorazione",
                 billable=billable,
@@ -192,25 +192,25 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             session.flush()
             return entry
 
-        # -- fatturato ma non vinto ------------------------------------------------
-        invoiced_open = _deal("fatturato aperto", "aperto")
+        # -- invoiced but not won -------------------------------------------------
+        invoiced_open = _deal("fatturato aperto", "open")
         _invoice(invoiced_open, due_date=date(2026, 4, 1))  # also the overdue one
         # A second invoice on the same deal: the signal counts *deals*, so this must not
         # make it two.
-        _invoice(invoiced_open, payment_status="incassata")
+        _invoice(invoiced_open, payment_status="paid")
         invoiced_lost = _deal("fatturato perso", "lost")
-        _invoice(invoiced_lost, payment_status="incassata")
+        _invoice(invoiced_lost, payment_status="paid")
         # An invoiced deal already won: the state the signal exists to say is missing.
         invoiced_won = _deal("fatturato vinto", "won")
-        _invoice(invoiced_won, payment_status="incassata")
+        _invoice(invoiced_won, payment_status="paid")
 
-        # -- vinto ma da fatturare -------------------------------------------------
+        # -- won but not yet invoiced ------------------------------------------------
         won_backlog = _deal("vinto arretrato", "won")
         # Two entries on one deal, for the same reason: one signal, not two.
         _entry(won_backlog)
         _entry(won_backlog, hours="2.00")
         won_already_invoiced = _deal("vinto gia fatturato", "won")
-        invoice_lines = _invoice(won_already_invoiced, payment_status="incassata")
+        invoice_lines = _invoice(won_already_invoiced, payment_status="paid")
         line = InvoiceLine(
             invoice_id=invoice_lines.id,
             line_number=1,
@@ -225,16 +225,16 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         _entry(won_already_invoiced, invoice_line_id=line.id)
         _entry(_deal("vinto non fatturabile", "won"), billable=False)
         _entry(_deal("vinto cancellato", "won"), deleted=True)
-        _entry(_deal("aperto arretrato", "aperto"))
+        _entry(_deal("aperto arretrato", "open"))
 
-        # -- scaduto e non incassato -----------------------------------------------
+        # -- overdue and unpaid ----------------------------------------------
         # The three near misses of the overdue predicate, each differing in one clause.
         _invoice(None, due_date=today)  # due today is not overdue: `<`, not `<=`
         _invoice(None, due_date=None)  # a null due date is never overdue
-        _invoice(None, payment_status="incassata", due_date=date(2026, 1, 1))
+        _invoice(None, payment_status="paid", due_date=date(2026, 1, 1))
         _invoice(None, status="cancelled", due_date=date(2026, 1, 1))
 
-        # -- concentrazione sopra soglia (REB-371) ------------------------------
+        # -- concentration above threshold (REB-371) -----------------------------
         # Two customers, both outside the single-customer register the other three
         # signals share. `year` is set explicitly here (§7.1's fiscal register value,
         # never derived from `issue_date`) because `revenue_by_customer` filters
@@ -243,19 +243,19 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         # one customer's own share at 0.90 (over the default 0.30 threshold) and the
         # other's at 0.10 (under it), clear of the boundary so the ordinary case needs
         # no exact-float care.
-        concentrato = Customer(legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={})
-        diluito = Customer(legal_name=f"{_PREFIX} Diluito", country="IT", custom_fields={})
-        session.add_all([concentrato, diluito])
+        concentrated = Customer(legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={})
+        diluted = Customer(legal_name=f"{_PREFIX} Diluito", country="IT", custom_fields={})
+        session.add_all([concentrated, diluted])
         session.flush()
         session.add_all(
             [
                 Invoice(
-                    customer_id=concentrato.id,
+                    customer_id=concentrated.id,
                     type="invoice",
                     status="issued",
                     year=today.year,
                     number=9001,
-                    payment_status="incassata",
+                    payment_status="paid",
                     taxable_amount=Decimal("900.00"),
                     vat_amount=Decimal("0.00"),
                     stamp_duty=Decimal("0.00"),
@@ -266,12 +266,12 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
                     custom_fields={},
                 ),
                 Invoice(
-                    customer_id=diluito.id,
+                    customer_id=diluted.id,
                     type="invoice",
                     status="issued",
                     year=today.year,
                     number=9002,
-                    payment_status="incassata",
+                    payment_status="paid",
                     taxable_amount=Decimal("100.00"),
                     vat_amount=Decimal("0.00"),
                     stamp_duty=Decimal("0.00"),
@@ -312,15 +312,15 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             session.execute(delete(Activity).where(Activity.kind == f"{_PREFIX}.test"))
             session.execute(
                 delete(TimeEntry).where(
-                    TimeEntry.deal_id.in_(select(Deal.id).where(Deal.nome.like(f"{_PREFIX} %")))
+                    TimeEntry.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
                 )
             )
             session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id.in_(corpus_invoices)))
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(corpus_customers)))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(User).where(User.nome == "Operatore"))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
+            session.execute(delete(User).where(User.name == "Operatore"))
             remove_legal_entity(session, legal_entity_id)
             session.commit()
 
@@ -353,12 +353,13 @@ def _invoices(engine: Engine, query: InvoiceListQuery) -> list[Invoice]:
 
 def test_it_takes_no_period() -> None:
     """§6: the current week and a backlog are the two things that make no sense in the
-    past, so there is no period parameter to get wrong. The azienda (REB-630) is a
-    scope, not a period: it narrows the same week and the same backlog to one azienda's
+    past, so there is no period parameter to get wrong. The legal entity (REB-630) is a
+    scope, not a period: it narrows the same week and the same backlog to one legal entity's
     rows, and «tutte» leaves it out."""
     signature = inspect.signature(DashboardService.get_operational_dashboard)
     assert list(signature.parameters) == ["self", "actor", "legal_entity_id"]
-    assert "da" not in signature.parameters and "a" not in signature.parameters
+    assert "date_from" not in signature.parameters
+    assert "date_to" not in signature.parameters
 
 
 def test_the_week_is_the_current_one(seeded: Seeded) -> None:
@@ -421,8 +422,8 @@ def test_no_signal_is_stored_anywhere() -> None:
 
 def test_the_recent_feed_is_capped_at_fifty(seeded: Seeded) -> None:
     result = _dashboard(seeded.engine)
-    assert len(result.recent_task) <= 50
-    assert f"{_PREFIX}.test" in [row.kind for row in result.recent_task]
+    assert len(result.recent_activity) <= 50
+    assert f"{_PREFIX}.test" in [row.kind for row in result.recent_activity]
 
 
 def test_no_new_economic_total_appears_on_this_page(seeded: Seeded) -> None:
@@ -447,7 +448,7 @@ def test_the_service_runs_in_repeatable_read(seeded: Seeded) -> None:
     assert level == "repeatable read"
 
 
-# --- signal 1: fatturato ma non vinto --------------------------------------------------
+# --- signal 1: invoiced but not won --------------------------------------------------
 
 
 def test_the_invoiced_but_not_won_signal_counts_deals(seeded: Seeded) -> None:
@@ -464,14 +465,14 @@ def test_the_invoiced_but_not_won_card_equals_its_drill_through(seeded: Seeded) 
     count = _signal(seeded.engine, "invoiced_unwon")
     rows = _deals(seeded.engine, DealListQuery(invoiced_unwon=True, limit=_ALL))
     assert count == len(rows)
-    assert {row.nome for row in rows} == {f"{_PREFIX} fatturato aperto"}
+    assert {row.name for row in rows} == {f"{_PREFIX} fatturato aperto"}
 
 
 @pytest.mark.parametrize(
     ("escluso", "perche"),
     [
         ("fatturato vinto", "il deal è già vinto, che è lo stato che il segnale cerca"),
-        ("fatturato perso", "un deal perso e fatturato è un problema diverso: tipo == 'open'"),
+        ("fatturato perso", "a lost and invoiced deal is a different problem: type == 'open'"),
         ("vinto arretrato", "non ha nessuna fattura emessa"),
     ],
 )
@@ -480,10 +481,10 @@ def test_the_invoiced_but_not_won_filter_excludes_each_row_it_must(
 ) -> None:
     """The negative half, one clause at a time. Without it a filter that returned every
     deal would still pass the equality test whenever the count was wrong the same way."""
-    nomi = {
-        row.nome for row in _deals(seeded.engine, DealListQuery(invoiced_unwon=True, limit=_ALL))
+    names = {
+        row.name for row in _deals(seeded.engine, DealListQuery(invoiced_unwon=True, limit=_ALL))
     }
-    assert f"{_PREFIX} {excluded}" not in nomi, why
+    assert f"{_PREFIX} {excluded}" not in names, why
 
 
 def test_the_invoiced_but_not_won_filter_composes_with_the_others(seeded: Seeded) -> None:
@@ -496,7 +497,7 @@ def test_the_invoiced_but_not_won_filter_composes_with_the_others(seeded: Seeded
     assert rows == []
 
 
-# --- signal 2: vinto ma da fatturare ---------------------------------------------------
+# --- signal 2: won but not yet invoiced ---------------------------------------------------
 
 
 def test_the_won_but_to_invoice_signal_counts_deals_with_unbilled_billable_hours(
@@ -511,7 +512,7 @@ def test_the_won_but_to_invoice_card_equals_its_drill_through(seeded: Seeded) ->
     count = _signal(seeded.engine, "vinto_da_fatturare")
     rows = _deals(seeded.engine, DealListQuery(to_invoice=True, limit=_ALL))
     assert count == len(rows)
-    assert {row.nome for row in rows} == {f"{_PREFIX} vinto arretrato"}
+    assert {row.name for row in rows} == {f"{_PREFIX} vinto arretrato"}
 
 
 @pytest.mark.parametrize(
@@ -527,19 +528,19 @@ def test_the_won_but_to_invoice_card_equals_its_drill_through(seeded: Seeded) ->
 def test_the_won_but_to_invoice_filter_excludes_each_row_it_must(
     seeded: Seeded, excluded: str, why: str
 ) -> None:
-    nomi = {row.nome for row in _deals(seeded.engine, DealListQuery(to_invoice=True, limit=_ALL))}
-    assert f"{_PREFIX} {excluded}" not in nomi, why
+    names = {row.name for row in _deals(seeded.engine, DealListQuery(to_invoice=True, limit=_ALL))}
+    assert f"{_PREFIX} {excluded}" not in names, why
 
 
 def test_the_won_but_to_invoice_filter_composes_with_the_others(seeded: Seeded) -> None:
     rows = _deals(
         seeded.engine,
-        DealListQuery(to_invoice=True, stage_id=seeded.stages["aperto"], limit=_ALL),
+        DealListQuery(to_invoice=True, stage_id=seeded.stages["open"], limit=_ALL),
     )
     assert rows == []
 
 
-# --- signal 3: scaduto e non incassato -------------------------------------------------
+# --- signal 3: overdue and unpaid -------------------------------------------------
 
 
 def test_the_overdue_signal_counts_and_sends_nothing(seeded: Seeded) -> None:
@@ -574,7 +575,7 @@ def test_the_overdue_filter_composes_with_the_others(seeded: Seeded) -> None:
     assert rows == []
 
 
-# --- signal 4: concentrazione sopra soglia (REB-371) -----------------------------------
+# --- signal 4: concentration above threshold (REB-371) -----------------------------------
 
 
 def test_the_concentration_signal_counts_customers_over_the_configured_share(
@@ -592,8 +593,8 @@ def test_the_concentration_signal_names_the_customer_that_crosses_it(seeded: See
     concentration table would show, checked by name rather than only by count."""
     with session_factory(seeded.engine)() as session:
         rows = AnalyticsRepository(session).revenue_by_customer(today_local().year)
-    sopra = {row.legal_name for row in rows if row.share > 0.30}
-    assert sopra == {f"{_PREFIX} Concentrato"}
+    above = {row.legal_name for row in rows if row.share > 0.30}
+    assert above == {f"{_PREFIX} Concentrato"}
 
 
 def test_the_concentration_signal_reflects_a_differently_configured_threshold(
@@ -603,20 +604,20 @@ def test_the_concentration_signal_reflects_a_differently_configured_threshold(
     `DashboardService` the same way every other per-space setting reaches a service --
     not a constant this module could drift from without a test noticing."""
     with session_factory(seeded.engine)() as session:
-        stringente = Settings(
+        strict = Settings(
             _env_file=None,
             preferred_concentration_threshold=0.95,  # type: ignore[call-arg]
         )
-        alto = DashboardService(session, stringente).get_operational_dashboard(READONLY)
-    assert _code(alto, "concentrazione_sopra_soglia") == 0
+        high = DashboardService(session, strict).get_operational_dashboard(READONLY)
+    assert _code(high, "concentrazione_sopra_soglia") == 0
 
     with session_factory(seeded.engine)() as session:
-        permissivo = Settings(
+        lenient = Settings(
             _env_file=None,
             preferred_concentration_threshold=0.05,  # type: ignore[call-arg]
         )
-        basso = DashboardService(session, permissivo).get_operational_dashboard(READONLY)
-    assert _code(basso, "concentrazione_sopra_soglia") == 2
+        low = DashboardService(session, lenient).get_operational_dashboard(READONLY)
+    assert _code(low, "concentrazione_sopra_soglia") == 2
 
 
 def test_the_concentration_signal_link_is_the_economic_tab(seeded: Seeded) -> None:

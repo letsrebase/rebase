@@ -227,11 +227,11 @@ def test_the_payment_row_carries_the_code_and_its_words() -> None:
 
 
 def test_the_totals_block_appears_only_when_there_is_vat() -> None:
-    """A forfettario invoice has no VAT, and the inherited layout printed no totals
-    block at all: the payment table already carries the amount. An ordinario invoice
+    """A flat-rate-regime invoice has no VAT, and the inherited layout printed no totals
+    block at all: the payment table already carries the amount. An ordinary-regime invoice
     must still show its VAT. The stamp never brings the block back: nearly every
-    forfettario invoice above 77,47 EUR carries one, its declaration under the rule
-    already states it, and a `2,00 €` row under Imposta would read as charged to the
+    flat-rate invoice above 77,47 EUR carries one, its declaration under the rule
+    already states it, and a `2,00 €` row under the VAT row would read as charged to the
     customer when the total does not include it."""
     assert build_scope(_export(), reference=None)["invoice"]["mostra_totali"] is False
     assert (

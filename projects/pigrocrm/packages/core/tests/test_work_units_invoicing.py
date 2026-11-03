@@ -113,7 +113,7 @@ def _rate_card(db_session: Session, contract: Contract, **overrides: object) -> 
 def _work_unit(db_session: Session, contract: Contract, **overrides: object) -> WorkUnit:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "quantity": Decimal("1.00"),
         "description": "Giornata di consulenza",
         "status": "worked",
@@ -154,8 +154,8 @@ def test_two_days_in_the_same_month_on_the_same_rate_card_become_one_line(
 ) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, data=date(2026, 3, 5))
-    _work_unit(db_session, contract, data=date(2026, 3, 12))
+    _work_unit(db_session, contract, date=date(2026, 3, 5))
+    _work_unit(db_session, contract, date=date(2026, 3, 12))
 
     lines, groups = unbilled_work_unit_lines(db_session, contract.id)
 
@@ -170,8 +170,8 @@ def test_two_days_in_the_same_month_on_the_same_rate_card_become_one_line(
 def test_days_in_different_months_become_separate_lines(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, data=date(2026, 3, 5))
-    _work_unit(db_session, contract, data=date(2026, 4, 2))
+    _work_unit(db_session, contract, date=date(2026, 3, 5))
+    _work_unit(db_session, contract, date=date(2026, 4, 2))
 
     lines, groups = unbilled_work_unit_lines(db_session, contract.id)
 
@@ -188,8 +188,8 @@ def test_days_under_different_rate_cards_in_the_same_month_stay_separate(
     _rate_card(
         db_session, contract, valid_from=date(2026, 3, 16), valid_to=None, amount=Decimal("600.00")
     )
-    _work_unit(db_session, contract, data=date(2026, 3, 5))
-    _work_unit(db_session, contract, data=date(2026, 3, 20))
+    _work_unit(db_session, contract, date=date(2026, 3, 5))
+    _work_unit(db_session, contract, date=date(2026, 3, 20))
 
     lines, _ = unbilled_work_unit_lines(db_session, contract.id)
 
@@ -220,7 +220,7 @@ def test_an_already_billed_day_is_never_gathered_twice(db_session: Session) -> N
 def test_a_day_with_no_covering_rate_card_is_refused_not_invented(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract, valid_from=date(2026, 1, 1), valid_to=date(2026, 2, 28))
-    _work_unit(db_session, contract, data=date(2026, 3, 5))  # outside the card's validity
+    _work_unit(db_session, contract, date=date(2026, 3, 5))  # outside the card's validity
 
     with pytest.raises(ValidationFailed):
         unbilled_work_unit_lines(db_session, contract.id)
@@ -238,8 +238,8 @@ def test_no_unbilled_days_returns_empty_not_an_error(db_session: Session) -> Non
 
 def test_bind_work_units_sets_invoice_line_id_per_group(db_session: Session) -> None:
     contract = _contract(db_session)
-    first = _work_unit(db_session, contract, data=date(2026, 3, 1))
-    second = _work_unit(db_session, contract, data=date(2026, 3, 2))
+    first = _work_unit(db_session, contract, date=date(2026, 3, 1))
+    second = _work_unit(db_session, contract, date=date(2026, 3, 2))
     line_a = _bare_invoice_line(db_session, contract)
     line_b = _bare_invoice_line(db_session, contract)
 
@@ -264,8 +264,8 @@ def test_assemble_creates_an_invoice_line_through_replace_lines_and_binds_the_da
     _install_fiscal_and_legal_entity_profiles(db_session)
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    first = _work_unit(db_session, contract, data=date(2026, 3, 5))
-    second = _work_unit(db_session, contract, data=date(2026, 3, 12))
+    first = _work_unit(db_session, contract, date=date(2026, 3, 5))
+    second = _work_unit(db_session, contract, date=date(2026, 3, 12))
 
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN
@@ -295,7 +295,7 @@ def test_assemble_never_bills_the_same_day_twice(
     _install_fiscal_and_legal_entity_profiles(db_session)
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, data=date(2026, 3, 5))
+    _work_unit(db_session, contract, date=date(2026, 3, 5))
 
     assemble_unbilled_work_units_into_new_invoice(db_session, local_storage, contract.id, ADMIN)
 
@@ -326,8 +326,8 @@ def test_assemble_takes_only_the_days_of_the_period_asked_for(
     _install_fiscal_and_legal_entity_profiles(db_session)
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    october = _work_unit(db_session, contract, data=date(2026, 10, 7))
-    november = _work_unit(db_session, contract, data=date(2026, 11, 4))
+    october = _work_unit(db_session, contract, date=date(2026, 10, 7))
+    november = _work_unit(db_session, contract, date=date(2026, 11, 4))
 
     invoice = assemble_unbilled_work_units_into_new_invoice(
         db_session, local_storage, contract.id, ADMIN, date(2026, 10, 1), date(2026, 10, 31)
@@ -365,10 +365,10 @@ def test_the_preview_is_the_invoice_the_button_would_make(
     _install_fiscal_and_legal_entity_profiles(db_session)
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, data=date(2026, 10, 7))
-    _work_unit(db_session, contract, data=date(2026, 10, 8), quantity=Decimal("0.50"))
-    _work_unit(db_session, contract, data=date(2026, 11, 3))
-    _work_unit(db_session, contract, data=date(2026, 11, 4), status="proposed")
+    _work_unit(db_session, contract, date=date(2026, 10, 7))
+    _work_unit(db_session, contract, date=date(2026, 10, 8), quantity=Decimal("0.50"))
+    _work_unit(db_session, contract, date=date(2026, 11, 3))
+    _work_unit(db_session, contract, date=date(2026, 11, 4), status="proposed")
 
     preview = billable_days(db_session, contract.id)
 
@@ -397,8 +397,8 @@ def test_the_preview_names_the_days_no_rate_card_covers_instead_of_refusing(
 ) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract, valid_from=date(2026, 1, 1), valid_to=date(2026, 2, 28))
-    _work_unit(db_session, contract, data=date(2026, 2, 3))
-    _work_unit(db_session, contract, data=date(2026, 3, 5))
+    _work_unit(db_session, contract, date=date(2026, 2, 3))
+    _work_unit(db_session, contract, date=date(2026, 3, 5))
 
     preview = billable_days(db_session, contract.id)
 
@@ -414,7 +414,7 @@ def test_the_preview_counts_the_days_worked_without_the_approval_the_contract_re
     contract.requires_prior_approval = True
     db_session.flush()
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, data=date(2026, 3, 5))  # no approval: redirected
+    _work_unit(db_session, contract, date=date(2026, 3, 5))  # no approval: redirected
 
     preview = billable_days(db_session, contract.id)
 
@@ -647,7 +647,7 @@ def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_customers_
     assert default is not None
     second = LegalEntityService(db_session).create(
         LegalEntityCreate(
-            nome="rebase ltd",
+            name="rebase ltd",
             legal_name="Rebase Ltd",
             vat_number="GB123456789",
             country="GB",

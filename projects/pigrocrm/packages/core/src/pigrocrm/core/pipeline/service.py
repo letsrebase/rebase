@@ -17,7 +17,7 @@ from pigrocrm.core.pipeline.schemas import (
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # (code, nome, posizione, probabilita_default, tipo). `seed_defaults` deduplicates on
-# `code`, never on `nome` -- see `PipelineStage`'s docstring for why.
+# `code`, never on `name` -- see `PipelineStage`'s docstring for why.
 DEFAULT_STAGES: list[tuple[str, str, int, int, str]] = [
     ("lead", "Lead", 0, 10, "open"),
     ("contacted", "Contattato", 1, 25, "open"),
@@ -32,7 +32,7 @@ ENTITY = "pipeline_stage"
 
 # `code` is the stable identity and `type` is the only attribute other logic depends
 # on (`default_stage`, and every won/lost reading of a deal), so both belong in an
-# entry that has to stay readable after the stage itself is gone. `nome` is here
+# entry that has to stay readable after the stage itself is gone. `name` is here
 # because it is the only part a human recognises. `position` and
 # `default_probability` are left out of the identity: they are cosmetic, and their
 # changes are already carried in full by `updated`.
@@ -102,7 +102,7 @@ class PipelineService:
         for key, value in changes.items():
             setattr(stage, key, value)
 
-        # `code` rather than `nome` identifies the stage in the payload: `nome` is
+        # `code` rather than `name` identifies the stage in the payload: `name` is
         # exactly what a rename moves, and pinning the entry to a value that the entry
         # itself is recording a change to would make the timeline unreadable. Nothing
         # is recorded when the patch changed nothing -- see `field_changes`.

@@ -44,7 +44,7 @@ class DocumentTemplating:
         turned into `TemplateVariable` objects). This needs the live ORM row instead:
         `declared_variables` reads `template.declared_variables` as the raw list of
         dicts JSONB actually stores, and `template.body_markdown`/`template.type`/
-        `template.nome` feed straight into rendering. Going through
+        `template.name` feed straight into rendering. Going through
         `templates.repo.get` directly is what `TemplateService.declared_variables`
         itself documents as the expected call shape for a `Template` already in hand.
         """

@@ -1,7 +1,7 @@
 """The ordinary regime has a pack of its own (REB-760).
 
-An azienda on `it-standard` is held to no forfettario ceiling, computes none of the
-forfettario's taxes and issues invoices with VAT: the rate it enters or the profile's
+A legal entity on `it-standard` is held to no flat-rate ceiling, computes none of the
+flat-rate taxes and issues invoices with VAT: the rate it enters or the profile's
 22%, no `Natura`, no stamp duty, `RF01` in the XML. The pack is what says so, not a
 branch on the regime code, and the pairing of a code with a pack is refused both ways.
 """
@@ -35,7 +35,7 @@ YEAR = today_local().year
 def service(db_session: Session, local_storage: LocalFileStorage) -> InvoiceService:
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            nome="rossi",
+            name="rossi",
             legal_name="Studio Rossi S.r.l.",
             vat_number="09876543210",
             tax_code="09876543210",
@@ -70,9 +70,9 @@ def customer_id(db_session: Session) -> UUID:
 
 
 def test_the_ordinary_pack_proposes_the_regime_and_the_standard_rate(db_session: Session) -> None:
-    """A body that names only the pack gets `RF01`, 22%, no `Natura`, no bollo and none
-    of the forfettario's three income parameters, which are the pack's defaults and not
-    the forfettario's."""
+    """A body that names only the pack gets `RF01`, 22%, no `Natura`, no stamp duty and none
+    of the flat-rate regime's three income parameters, which are the pack's defaults and not
+    the flat-rate regime's."""
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(legal_name="Studio Rossi"), ADMIN
     )
@@ -198,8 +198,8 @@ def test_an_ordinary_legal_entity_has_no_ceiling_and_no_flat_rate_estimate(
 def test_the_economic_overview_draws_no_estimate_for_a_regime_without_one(
     service: InvoiceService, db_session: Session
 ) -> None:
-    """The cash is shown and the forfettario's cards are not: an ordinary azienda gets no
-    card of zeros where the estimate would be, while the forfettario keeps its own."""
+    """The cash is shown and the flat-rate cards are not: an ordinary legal entity gets no
+    card of zeros where the estimate would be, while the flat-rate one keeps its own."""
     overview = AnalyticsService(db_session).economic_overview(YEAR, ADMIN)
     assert overview.tax is None and overview.projected_tax is None
     assert overview.actual_net is None

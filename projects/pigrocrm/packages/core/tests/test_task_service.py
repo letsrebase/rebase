@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from orologio import TODAY_IN_ITALY, congela
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -141,7 +141,7 @@ def test_an_activity_may_belong_to_nobody(service: TaskService) -> None:
 def test_completing_records_the_day_it_was_done(
     service: TaskService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     created = _create(service)
 
     done = service.complete(created.id, ADMIN)
@@ -157,7 +157,7 @@ def test_completing_twice_does_not_move_the_date(
 ) -> None:
     """A second click on a checkbox. The date is when the work happened, so it must not
     slide to today every time somebody presses it again."""
-    congela(monkeypatch)
+    freeze(monkeypatch)
     created = _create(service)
     first = service.complete(created.id, ADMIN)
     again = service.complete(created.id, ADMIN)
@@ -270,7 +270,7 @@ def test_assigning_to_a_disabled_user_is_refused(service: TaskService, db_sessio
     user = User(
         email=f"spento-{uuid4()}@example.test",
         password_hash="x",
-        nome="Spento",
+        name="Spento",
         role="collaborator",
         active=False,
     )
@@ -377,7 +377,7 @@ def test_the_timeline_records_what_happened_to_it(
 
     kinds = db_session.execute(
         text(
-            "SELECT kind FROM activities WHERE entity_type = 'attivita' AND entity_id = :id "
+            "SELECT kind FROM activities WHERE entity_type = 'task' AND entity_id = :id "
             "ORDER BY occurred_at, id"
         ),
         {"id": str(created.id)},
@@ -389,11 +389,11 @@ def test_the_timeline_records_what_happened_to_it(
 # --- the Oggi panel (spec 2026-09-03 §5, REB-725) ---------------------------------------
 
 
-def _person(db_session: Session, nome: str) -> UUID:
+def _person(db_session: Session, name: str) -> UUID:
     user = User(
-        email=f"{nome.lower()}-{uuid4()}@example.test",
+        email=f"{name.lower()}-{uuid4()}@example.test",
         password_hash="x",
-        nome=nome,
+        name=name,
         role="collaborator",
     )
     db_session.add(user)
@@ -407,7 +407,7 @@ def test_today_cuts_the_open_commitments_into_four_sections(
     """Overdue is before today, «oggi» is today, the week opens tomorrow and closes at
     today plus seven, and the undated stand apart. The boundary days are the ones a
     off-by-one would move, so each side of each is asserted."""
-    congela(monkeypatch)
+    freeze(monkeypatch)
     today = TODAY_IN_ITALY
     io = _person(db_session, "Io")
     other = _person(db_session, "Altri")
@@ -438,7 +438,7 @@ def test_today_counts_only_open_commitments_and_reports_the_whole_total(
 ) -> None:
     """Completing an overdue commitment takes it out of the count; and a section holds
     `limit` rows while `total` stays the real number, because the sidebar prints it."""
-    congela(monkeypatch)
+    freeze(monkeypatch)
     today = TODAY_IN_ITALY
     io = _person(db_session, "Io")
     for n in range(3):
@@ -456,7 +456,7 @@ def test_today_counts_only_open_commitments_and_reports_the_whole_total(
 def test_today_without_an_assignee_is_the_whole_space(
     service: TaskService, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     today = TODAY_IN_ITALY
     _create(service, title="di nessuno", due_date=today - timedelta(days=1))
     _create(
@@ -475,7 +475,7 @@ def test_today_without_an_assignee_is_the_whole_space(
 def test_today_mine_and_nobodys_leaves_out_to_colleagues(
     service: TaskService, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     yesterday = TODAY_IN_ITALY - timedelta(days=1)
     io, collega = _person(db_session, "Io"), _person(db_session, "Collega")
     _create(service, title="mia", due_date=yesterday, assigned_to=io)
@@ -513,10 +513,10 @@ def test_the_window_stays_strict_unless_asked_otherwise(
     service: TaskService, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The weekly digest reads `open_in_the_window` with a person and no flag: it lists
-    what is theirs, so an attività nobody holds must stay out of it."""
+    what is theirs, so a task nobody holds must stay out of it."""
     from pigrocrm.core.tasks.repository import TaskRepository
 
-    congela(monkeypatch)
+    freeze(monkeypatch)
     yesterday = TODAY_IN_ITALY - timedelta(days=1)
     io = _person(db_session, "Io")
     _create(service, title="mia", due_date=yesterday, assigned_to=io)

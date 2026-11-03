@@ -191,7 +191,7 @@ class TenantService:
                     # nothing fiscal (REB-615: `ensure_defaults` writes it, so a space
                     # that somehow lacks one gets it at the next boot too). Inside the
                     # same try: a space that fails here is undone like one whose
-                    # migration failed. `nome` is capped at 200 by `TenantSignup`,
+                    # migration failed. `name` is capped at 200 by `TenantSignup`,
                     # under the emitter's 255; a name that is only spaces would make
                     # an empty header, so the slug stands in for it.
                     ensure_defaults(space, name=data.name.strip() or data.slug)

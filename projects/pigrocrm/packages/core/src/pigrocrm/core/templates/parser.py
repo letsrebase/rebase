@@ -501,7 +501,7 @@ class DeclaredPaths:
     the current element's own properties. These are never something a caller
     supplies at the root -- they describe the shape of each element of whichever
     root array the enclosing `#each` iterates -- so mixing them into `root` would
-    tell a caller it needs to supply a top-level `nome`, when what is actually true
+    tell a caller it needs to supply a top-level `name`, when what is actually true
     is that each element of (say) `lines` needs one.
     """
 

@@ -83,7 +83,7 @@ def test_a_supplied_rate_is_stored_as_a_percentage(db_session: Session) -> None:
     )
     assert profile.social_security_rate == Decimal("25.72")
     stored = db_session.execute(
-        text("SELECT aliquota_inps FROM fiscal_profile WHERE id = :id"), {"id": profile.id}
+        text("SELECT social_security_rate FROM fiscal_profile WHERE id = :id"), {"id": profile.id}
     ).scalar_one()
     assert stored == Decimal("25.72")
 

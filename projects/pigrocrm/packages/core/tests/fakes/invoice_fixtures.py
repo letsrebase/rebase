@@ -34,7 +34,7 @@ from pigrocrm.core.invoices.models import Invoice
 # Per-process, so two invoices in one test never collide on `uq_invoices_year_number`.
 # It only has to be unique within a test's own transaction, but a shared counter costs
 # nothing and removes the question.
-_NUMERI = count(1)
+_NUMBERS = count(1)
 
 
 def unpaid_invoice(
@@ -62,7 +62,7 @@ def unpaid_invoice(
     issue = due - timedelta(days=30)
     year = year if year is not None else issue.year
     if number is None:
-        number = next(_NUMERI)
+        number = next(_NUMBERS)
         # The counter is per process and the schema is shared by the whole session, so a
         # previous test's committed row could already hold this pair. Cheap to ask.
         while session.execute(
@@ -70,7 +70,7 @@ def unpaid_invoice(
             .select_from(Invoice)
             .where(Invoice.year == year, Invoice.number == number)
         ).scalar_one():
-            number = next(_NUMERI)
+            number = next(_NUMBERS)
 
     invoice = Invoice(
         customer_id=customer.id,

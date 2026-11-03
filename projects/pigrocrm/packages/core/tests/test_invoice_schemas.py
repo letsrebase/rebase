@@ -101,7 +101,7 @@ def test_a_unit_price_beyond_twelve_digits_is_refused_before_postgres_sees_it() 
 def test_to_line_never_carries_its_own_vat_nature() -> None:
     """`vat_nature` and `legal_reference` are the regime's answer, not the caller's:
     accepting them would make the table constraint
-    `(aliquota_iva = 0) = (natura IS NOT NULL)` reachable from a request body."""
+    `(vat_rate = 0) = (vat_nature IS NOT NULL)` reachable from a request body."""
     assert "vat_nature" not in InvoiceLineIn.model_fields
     assert "legal_reference" not in InvoiceLineIn.model_fields
     with pytest.raises(ValidationError):
@@ -192,7 +192,7 @@ def test_a_snapshot_round_trips_through_json_with_its_version() -> None:
         },
     )
     payload = snapshot.model_dump(mode="json")
-    assert payload["versione"] == 1
+    assert payload["version"] == 1
     restored = InvoiceSnapshot.model_validate(payload)
     assert restored == snapshot
 
@@ -202,7 +202,7 @@ def test_an_unversioned_snapshot_payload_is_refused() -> None:
     no version is interpreted by guessing. That is what the column costs and what it
     buys."""
     with pytest.raises(ValidationError):
-        InvoiceSnapshot.model_validate({"emittente": {}, "customer": {}, "tax": {}})
+        InvoiceSnapshot.model_validate({"legal_entity": {}, "customer": {}, "tax": {}})
 
 
 def test_an_issue_request_may_carry_a_date_and_nothing_else() -> None:
@@ -267,7 +267,7 @@ def test_an_imported_number_stops_at_the_register_ceiling() -> None:
     its own document ids as `900142`, one column away from the register number on the same
     screenshot: a slipped value would raise `last_number` to it -- irreversibly, since
     the counter never moves backwards -- make every later SdI file name ambiguous (it
-    embeds `anno * 10000 + numero`), and turn `undeclared_gaps` into a
+    embeds `year * 10000 + number`), and turn `undeclared_gaps` into a
     two-hundred-thousand-element list. The refusal belongs at the schema, before the
     service takes the year's counter lock, which is why it is pinned here.
     """
@@ -290,7 +290,7 @@ def test_a_declared_gap_stops_at_the_same_ceiling() -> None:
 
 
 def test_an_import_has_no_reference_field() -> None:
-    """`invoices.reference` is constrained to `NULL` on every `tipo = 'fattura'`
+    """`invoices.reference` is constrained to `NULL` on every `type = 'invoice'`
     row (`ck_invoices_reference_only_on_proforma`), and an import always produces
     a `invoice`: the field is absent from the schema, not merely optional, so a
     caller supplying it is refused here rather than at the database's own CHECK."""

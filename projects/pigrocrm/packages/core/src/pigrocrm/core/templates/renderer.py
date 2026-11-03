@@ -41,7 +41,7 @@ __all__ = [
 
 # The generic "template body" field name, unused: every
 # error this module raises now names the specific variable or dotted path at
-# fault as `field` instead (`variable.nome`, or `".".join(path)`) -- naming
+# fault as `field` instead (`variable.name`, or `".".join(path)`) -- naming
 # "which variable" via the same structured detail every caller already knows to
 # read, not only recoverable by parsing the free-text `reason`. Kept as ENTITY
 # only; there is no more FIELD constant to keep alongside it.
@@ -148,7 +148,7 @@ def _resolve(path: tuple[str, ...], scopes: list[dict[str, Any]]) -> tuple[bool,
 
 def _first_root_line_referencing(nodes: tuple[Node, ...], name: str) -> int | None:
     """The template line of the first node -- a bare `{{nome...}}`, or the path an
-    `#if`/`#each` itself names -- whose top-level path segment is `nome`, at the
+    `#if`/`#each` itself names -- whose top-level path segment is `name`, at the
     *root* level only. Mirrors `parser.declared_paths`'s own root/loop_relative
     split exactly (same recursion, same `inside_each` gate): a `{{nome}}` inside
     an `#each` body is relative to that loop's current item, a different
@@ -156,7 +156,7 @@ def _first_root_line_referencing(nodes: tuple[Node, ...], name: str) -> int | No
     share a spelling, and must not be mistaken for a match.
 
     Used only to enrich a missing-required-variable error with a line, on a
-    genuinely best-effort basis: `None` when `nome` is declared but never
+    genuinely best-effort basis: `None` when `name` is declared but never
     referenced anywhere at the root level, which is a legitimate shape --
     declared, not deduced (spec 4.3) -- not a bug to paper over with a fabricated
     line number.
@@ -320,7 +320,7 @@ def _render_variable(
 ) -> str:
     # `field` is the dotted path itself, not the constant
     # "corpo_markdown" -- naming *which* variable failed via the same structured
-    # detail `_check_declared`'s error uses (`variable.nome` there), rather than
+    # detail `_check_declared`'s error uses (`variable.name` there), rather than
     # leaving that fact recoverable only by parsing the free-text `reason`.
     dotted = ".".join(path)
     found, value = _resolve(path, scopes)
@@ -393,7 +393,7 @@ def _render_each(
         )
     for item in value:
         # `this` is the item itself; a dict item's own keys also become a scope, so
-        # `{{nome}}` inside `{{#each righe}}` reads the row's `nome` and falls back
+        # `{{nome}}` inside `{{#each righe}}` reads the row's `name` and falls back
         # to the outer scope when the row has none (`_resolve` walks scopes
         # outward). Pushed and popped per item, not left on the stack, so a
         # `{{this}}` two loops removed cannot see an inner loop's own item.

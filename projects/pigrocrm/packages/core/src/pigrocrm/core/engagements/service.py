@@ -652,7 +652,7 @@ class EngagementService:
         owner = UserRepository(space).get_by_email(email)
         created = DealService(space).create(
             DealCreate(
-                name=deal_name(letter.number, letter.role, letter.legal_entity),
+                name=deal_name(letter.number, letter.role, letter.company_name),
                 customer_id=customer_id,
                 hourly_rate=(letter.fee / HOURS_PER_DAY).quantize(RATE_PLACES),
                 budgeted_hours=(
@@ -660,9 +660,9 @@ class EngagementService:
                     if letter.expected_days is not None
                     else None
                 ),
-                expected_close_date=letter.data_fine,
+                expected_close_date=letter.end_date,
                 owner_id=owner.id if owner is not None and owner.active else None,
-                note=_deal_note(letter.number, letter.legal_entity),
+                note=_deal_note(letter.number, letter.company_name),
             ),
             Actor.rebase(),
             rebase_ref=deal_marker(match_id),

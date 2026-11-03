@@ -41,8 +41,8 @@ def test_line_value_is_a_rounded_product() -> None:
 
 def test_line_value_without_a_factor_is_none_not_zero() -> None:
     """A silent fall back to 0.00 would say "this work was free", which is a lie that
-    sums. `None` is excluded from the aggregate and counted separately as "ore senza
-    tariffa" (§5.1)."""
+    sums. `None` is excluded from the aggregate and counted separately as "hours without a
+    rate" (§5.1)."""
     assert line_value(Decimal("8.00"), None) is None
 
 

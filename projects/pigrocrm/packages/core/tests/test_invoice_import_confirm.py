@@ -55,7 +55,7 @@ ADMIN = Actor(id=None, type="user", role="admin")
 # `LegalEntity` is what makes them "outgoing" for the account holder.
 SUPPLIER_VAT_NUMBER = "01234567890"
 SUPPLIER_CF = "BNCCHR85M41H501Z"
-# Their `CessionarioCommittente` (cliente).
+# Their `CessionarioCommittente` (customer).
 CUSTOMER_VAT_NUMBER = "09876543210"
 
 
@@ -82,7 +82,7 @@ def _legal_entity(session: Session, **overrides: object) -> LegalEntity:
         "vat_number": SUPPLIER_VAT_NUMBER,
         "tax_code": SUPPLIER_CF,
         "country": "IT",
-        "predefinita": True,
+        "is_default": True,
     }
     base.update(overrides)
     existing = LegalEntityRepository(session).default()
@@ -180,7 +180,7 @@ def test_confirming_a_fresh_invoice_produces_exactly_what_import_issued_would_by
     assert invoice.payment_status == "unpaid"
     lines = service.repo.lines(invoice.id)
     assert [
-        (riga.description, riga.quantity, riga.unit_price, riga.total_price) for riga in lines
+        (line.description, line.quantity, line.unit_price, line.total_price) for line in lines
     ] == [
         (
             "Consulenza professionale - marzo 2026",
@@ -349,7 +349,7 @@ def test_to_customer_of_another_legal_entity_is_refused_and_nothing_is_written(
     naming the party, and no invoice is written."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
-        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", predefinita=False
+        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", is_default=False
     )
     db_session.add(other)
     db_session.flush()
@@ -392,7 +392,7 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
     refusal is found before the first write: nothing of the request is written."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
-        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", predefinita=False
+        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", is_default=False
     )
     db_session.add(other)
     db_session.flush()
@@ -431,12 +431,12 @@ def test_a_refusal_in_a_later_file_leaves_the_earlier_files_unwritten(
 def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    """The same tax id on file under another azienda is not this invoice's customer:
+    """The same tax id on file under another legal entity is not this invoice's customer:
     the review does not propose it, and a confirmation that creates the counterparty
-    makes one on the azienda the file landed on instead of reusing the other's."""
+    makes one on the legal entity the file landed on instead of reusing the other's."""
     service = _svc(db_session, local_storage)
     other = LegalEntity(
-        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", predefinita=False
+        legal_name="Acme Ltd", vat_number="IE6388047V", country="IE", is_default=False
     )
     db_session.add(other)
     db_session.flush()
@@ -459,13 +459,13 @@ def test_the_automatic_match_never_attaches_to_customer_of_another_legal_entity(
     assert created.legal_entity_id == row.legal_entity_id
 
 
-def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterpartys_batch(
+def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterparty_batch(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    """Design record §7 item 5's own acceptance: a `lotto` batch from a brand-new
+    """Design record §7 item 5's own acceptance: a batch (a `Lotto`) from a brand-new
     counterparty produces exactly one new `Customer` row, with every invoice in
     that batch attached to it -- never one per invoice, even though `invoice.
-    cliente` is parsed fresh for each `FatturaElettronicaBody` in the file."""
+    customer` is parsed fresh for each `FatturaElettronicaBody` in the file."""
     service = _svc(db_session, local_storage)
     document_id = _document(db_session, local_storage, _fixture(LOTTO))
     before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
@@ -523,7 +523,7 @@ def test_a_register_failure_after_the_customer_insert_leaves_neither_committed(
 def test_a_conflict_on_the_customer_creating_invoice_does_not_poison_the_rest_of_the_batch(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    """The dangling-cache regression: the first invoice in a `lotto` batch creates
+    """The dangling-cache regression: the first invoice in a batch (a `Lotto`) creates
     a customer for a brand-new counterparty, then hits a register-rule conflict of
     its own (a declared gap) and rolls back -- taking that customer with it. The
     *second* invoice, from the same counterparty, must not reuse the now-rolled-
@@ -597,11 +597,11 @@ def test_an_agent_credential_without_full_access_is_forbidden(
 def test_no_legal_entities_configured_refuses_rather_than_guesses(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    # Since REB-615 every space has its azienda from the first boot, so «not configured»
-    # is an azienda with neither fiscal id, and the refusal names that field rather
+    # Since REB-615 every space has its legal entity from the first boot, so «not configured»
+    # is a legal entity with neither fiscal id, and the refusal names that field rather
     # than a missing row: the import never guesses which P.IVA is ours. Blanked here
-    # rather than assumed, since the race tests commit an identity on the default azienda.
-    db_session.execute(text("UPDATE emitter_profile SET partita_iva = NULL, codice_fiscale = NULL"))
+    # rather than assumed, since the race tests commit an identity on the default legal entity.
+    db_session.execute(text("UPDATE legal_entities SET vat_number = NULL, tax_code = NULL"))
     document_id = _document(db_session, local_storage, _fixture(CONSULTING))
     with pytest.raises(ValidationFailed) as caught:
         InvoiceService(db_session, local_storage).confirm_import(document_id, ADMIN)
@@ -613,11 +613,11 @@ def test_vat_nature_is_read_from_the_line_itself_never_reconstructed_by_rate_alo
     """Regression: an invoice can carry two `DatiRiepilogo` blocks at the *same*
     rate with a *different* `vat_nature` each -- a mixed-exemption invoice, and
     exactly the case this codebase's own `totals.RecapGroup` already keys on
-    the pair `(aliquota_iva, natura)` for the export side. Reconstructing a
+    the pair `(vat_rate, vat_nature)` for the export side. Reconstructing a
     line's `vat_nature` from `recaps` matched by rate alone would silently tag
-    both lines with whichever riepilogo happened to be seen first; this proves
-    each line keeps its own, correctly-parsed `vat_nature`, and `riferimento_
-    normativo` is looked up by the matching pair, not by rate alone."""
+    both lines with whichever recap happened to be seen first; this proves
+    each line keeps its own, correctly-parsed `vat_nature`, and `legal_reference` is
+    looked up by the matching pair, not by rate alone."""
     customer = ParsedInvoiceParty(
         legal_name="Cliente Test",
         address="Via Test 1",
@@ -678,7 +678,7 @@ def test_vat_nature_is_read_from_the_line_itself_never_reconstructed_by_rate_alo
         vat_amount=Decimal("0.00"),
         total=Decimal("800.00"),
         social_security_pension_fund=[],
-        termini_payment=[],
+        payment_terms=[],
         transmission=ParsedInvoiceTransmission(id_transmitter="X", send_sequential="1"),
     )
 

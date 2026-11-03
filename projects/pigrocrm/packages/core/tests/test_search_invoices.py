@@ -11,7 +11,7 @@ The shape cases are the interesting half. `2026/7` and `7/2026` are both how peo
 the same number, and `007` means "invoice seven" -- while `007` searched as a trigram over
 `memo` means "every invoice whose description contains 007", which is not an answer.
 
-**A bare number is never shorter than three characters**, because `SearchQuery.deadline` is
+**A bare number is never shorter than three characters**, because `SearchQuery.term` is
 `min_length=3` (§8.2: a trigram index cannot serve a pattern with no trigram in it, and
 the palette issues no request below the threshold). So the reachable spelling of "invoice
 seven" is `007`, or `2026/7`, and `7` is not a term this branch can ever be asked. The
@@ -84,8 +84,8 @@ def invoices(db_session: Session) -> Customer:
 
     `2026/7` and `2025/7` share a number across two years, which is what makes "a bare
     number finds it in every year" a real assertion rather than a lookup. `2026/123` and
-    `2025/400` are the exclusivity pair: the second's *causale* contains "123" while its
-    number does not, so a search for `123` that also trigrammed the causale would return
+    `2025/400` are the exclusivity pair: the second's *memo* contains "123" while its
+    number does not, so a search for `123` that also trigrammed the memo would return
     two rows instead of one.
     """
     customer = Customer(legal_name="Cliente Srl", country="IT", custom_fields={})
@@ -122,7 +122,7 @@ def invoices(db_session: Session) -> Customer:
 
 
 def _group(db_session: Session, term: str) -> SearchGroup:
-    results = SearchService(db_session).search_everything(SearchQuery(deadline=term), READONLY)
+    results = SearchService(db_session).search_everything(SearchQuery(term=term), READONLY)
     return next(group for group in results.groups if group.entity == "invoice")
 
 
@@ -132,16 +132,16 @@ def test_the_invoice_group_is_always_present_and_fifth(
     """A missing group and an empty group render identically in a palette (§8.6), and the
     order is fixed because a palette whose sections move between keystrokes cannot be
     driven with the keyboard."""
-    results = SearchService(db_session).search_everything(SearchQuery(deadline="zzzqqq"), READONLY)
+    results = SearchService(db_session).search_everything(SearchQuery(term="zzzqqq"), READONLY)
     assert [group.entity for group in results.groups] == [
         "customer",
         "person",
         "deal",
         "document",
         "invoice",
-        "attivita",
+        "task",
     ]
-    # Fifth since Task C12, and since REB-723 no longer last: the attività branch follows it.
+    # Fifth since Task C12, and since REB-723 no longer last: the task branch follows it.
     invoices_group = next(group for group in results.groups if group.entity == "invoice")
     assert invoices_group.total == 0
     assert invoices_group.hits == []
@@ -195,7 +195,7 @@ def test_to_fiscal_number_term_does_not_also_trigram_the_memo(
 ) -> None:
     """The two paths are exclusive, and this is the assertion that measures it.
 
-    `2025/400`'s causale is "Rata 123 del contratto quadro" and its number is 400. A branch
+    `2025/400`'s memo is "Rata 123 del contratto quadro" and its number is 400. A branch
     that ran both paths for `123` would return it beside `2026/123`, and the palette would
     show two invoices for a search that named exactly one. Trigramming a number is how "show
     me invoice 123" becomes "every invoice whose description mentions 123".
@@ -217,7 +217,7 @@ def test_a_draft_invoice_has_no_number_and_is_not_found_by_one(
 ) -> None:
     """`year`/`number` are NULL until emission -- that is what makes "a failed creation
     cannot burn a number" true by construction (slice 3). A draft is still findable by its
-    causale, and its label says `draft` where the number would be rather than `None/None`.
+    memo, and its label says `draft` where the number would be rather than `None/None`.
     """
     db_session.add(
         Invoice(
@@ -243,7 +243,7 @@ def test_a_draft_invoice_has_no_number_and_is_not_found_by_one(
     assert by_memo.total == 1
     assert by_memo.hits[0].label == "bozza — Bozza 456 da rivedere"
 
-    # And the number in its causale does not make it reachable as a fiscal number: an
+    # And the number in its memo does not make it reachable as a fiscal number: an
     # unnumbered row has no number to be equal to, which is the point of the NULL.
     assert _group(db_session, "456").total == 0
 
@@ -334,7 +334,7 @@ def test_the_group_is_truncated_to_the_limit_and_reports_the_real_count(
     db_session.flush()
 
     results = SearchService(db_session).search_everything(
-        SearchQuery(deadline="sopralluogo", limit=3), READONLY
+        SearchQuery(term="sopralluogo", limit=3), READONLY
     )
     group = next(g for g in results.groups if g.entity == "invoice")
     assert len(group.hits) == 3

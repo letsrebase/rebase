@@ -26,7 +26,7 @@ READER = Actor(id=None, type="user", role="readonly")
 # invoice, and `issue()` refuses a `issue_date` outside the current fiscal year, so a
 # literal `2026-03` was a date on which every test in this file would begin failing at
 # once. See `periodo_fiscale.py` -- "this year, March" would not have been a fix either.
-PERIOD = BudgetQuery(date_from=FIRST_OF_MONTH, a=TODAY)
+PERIOD = BudgetQuery(date_from=FIRST_OF_MONTH, date_to=TODAY)
 
 BudgetedDeal = Callable[..., UUID]
 
@@ -122,14 +122,14 @@ def test_zero_estimated_hours_behave_identically_to_null(
         budgeted_value="10000.00",
         hours_logged="40.00",
         revenue="4000.00",
-        nome="Preventivo a zero",
+        name="Preventivo a zero",
     )
     null = budgeted_deal(
         budgeted_hours=None,
         budgeted_value="10000.00",
         hours_logged="40.00",
         revenue="4000.00",
-        nome="Senza preventivo ore",
+        name="Senza preventivo ore",
     )
     items = {
         r.deal_id: r for r in AnalyticsService(db_session).budget_vs_actual(PERIOD, READER).items
@@ -214,7 +214,7 @@ def test_the_average_rate_is_the_row_that_matters_most(
         budgeted_value="10000.00",
         hours_logged="80.00",
         revenue="4000.00",
-        nome="Progetto lento",
+        name="Progetto lento",
     )
     slow_row = _row(db_session, slow)
     assert slow_row.average_budgeted_rate == Decimal("100.00")
@@ -247,7 +247,7 @@ def test_the_list_is_paginated_from_the_first_commit(
             budgeted_value="1000.00",
             hours_logged="1.00",
             revenue="100.00",
-            nome=f"Deal {index}",
+            name=f"Deal {index}",
         )
     service = AnalyticsService(db_session)
     page = service.budget_vs_actual(
@@ -299,4 +299,4 @@ def test_an_inverted_window_is_refused(db_session: Session) -> None:
         AnalyticsService(db_session).budget_vs_actual(
             BudgetQuery(date_from=date(2026, 3, 31), date_to=date(2026, 3, 1)), READER
         )
-    assert excinfo.value.details["field"] == "a"
+    assert excinfo.value.details["field"] == "to"

@@ -95,7 +95,7 @@ class ProposalService:
                 ENTITY,
                 "proposed_fields",
                 _first_error(exc),
-                expected="{'contract_id', 'data', 'quantita', 'descrizione', 'approvazione'}",
+                expected="{'contract_id', 'date', 'quantity', 'description', 'approval'}",
             ) from exc
 
     # ---- create (the one proposal-creation step, reachable from any door) ---------
@@ -135,7 +135,7 @@ class ProposalService:
             if work_unit_fields.contract_id != data.contract_id:
                 raise ValidationFailed(
                     ENTITY,
-                    "campi_proposti.contract_id",
+                    "proposed_fields.contract_id",
                     "non corrisponde al contract_id della proposta",
                     expected=str(data.contract_id),
                 )
@@ -326,7 +326,7 @@ class ProposalService:
         if fields.contract_id != proposal.contract_id:
             raise ValidationFailed(
                 ENTITY,
-                "campi_accettati.contract_id",
+                "accepted_fields.contract_id",
                 "non corrisponde al contract_id della proposta",
                 expected=str(proposal.contract_id),
             )

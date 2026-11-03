@@ -82,7 +82,7 @@ def _contract(db_session: Session, *, expense_policy: dict[str, object] | None =
 
 
 def _category(db_session: Session) -> CostCategory:
-    category = CostCategory(nome=f"Categoria {uuid4()}", position=0)
+    category = CostCategory(name=f"Categoria {uuid4()}", position=0)
     db_session.add(category)
     db_session.flush()
     return category
@@ -94,7 +94,7 @@ def _expense(
     payload: dict[str, object] = {
         "contract_id": contract.id,
         "category_id": category.id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "amount": Decimal("120.00"),
         "description": "Biglietto treno",
         "pre_authorized": False,
@@ -134,8 +134,8 @@ def _bare_invoice_line(db_session: Session, contract: Contract) -> InvoiceLine:
 def test_two_reimbursable_expenses_become_two_separate_lines(db_session: Session) -> None:
     contract = _contract(db_session)
     category = _category(db_session)
-    _expense(db_session, contract, category, data=date(2026, 3, 1), amount=Decimal("50.00"))
-    _expense(db_session, contract, category, data=date(2026, 3, 20), amount=Decimal("75.00"))
+    _expense(db_session, contract, category, date=date(2026, 3, 1), amount=Decimal("50.00"))
+    _expense(db_session, contract, category, date=date(2026, 3, 20), amount=Decimal("75.00"))
 
     lines, expense_ids = unbilled_contract_expense_lines(db_session, contract.id)
     assert len(lines) == 2
@@ -189,7 +189,7 @@ def test_the_cap_is_never_applied_by_this_step(db_session: Session) -> None:
         expense_policy={
             "kind": "reimbursable_with_cap",
             "amount_cap": "10.00",
-            "richiede_preautorizzazione": False,
+            "requires_pre_authorization": False,
         },
     )
     category = _category(db_session)
@@ -205,8 +205,8 @@ def test_the_cap_is_never_applied_by_this_step(db_session: Session) -> None:
 def test_bind_contract_expenses_sets_invoice_line_id_per_expense(db_session: Session) -> None:
     contract = _contract(db_session)
     category = _category(db_session)
-    first = _expense(db_session, contract, category, data=date(2026, 3, 1))
-    second = _expense(db_session, contract, category, data=date(2026, 3, 2))
+    first = _expense(db_session, contract, category, date=date(2026, 3, 1))
+    second = _expense(db_session, contract, category, date=date(2026, 3, 2))
     line_a = _bare_invoice_line(db_session, contract)
     line_b = _bare_invoice_line(db_session, contract)
 
@@ -327,7 +327,7 @@ def test_the_draft_is_issued_under_the_contracts_legal_entity_not_the_customers_
     assert default is not None
     second = LegalEntityService(db_session).create(
         LegalEntityCreate(
-            nome="rebase ltd",
+            name="rebase ltd",
             legal_name="Rebase Ltd",
             vat_number="GB123456789",
             country="GB",

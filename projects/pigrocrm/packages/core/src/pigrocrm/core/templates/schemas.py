@@ -36,7 +36,7 @@ TemplateType = Literal[
     "payment_reminder",
 ]
 
-# Mirrors `Template.nome`'s column width (models.py). Without this an over-length
+# Mirrors `Template.name`'s column width (models.py). Without this an over-length
 # value reaches Postgres and raises sqlalchemy.exc.DataError -- not a subclass of
 # IntegrityError, so the service's `except IntegrityError` around the unique-name
 # constraint would not catch it.
@@ -55,7 +55,7 @@ VARIABLE_LABEL_MAX_LENGTH = 120
 class TemplateVariable(BaseModel):
     """One entry of `declared_variables`: a variable the compilation form asks the
     user to fill in before rendering (spec 4.3) -- declared, not deduced. Shaped to
-    match `templates.renderer.DeclaredVariable` field-for-field (`nome`, `label`,
+    match `templates.renderer.DeclaredVariable` field-for-field (`name`, `label`,
     `type`, `required`), which is what `TemplateService.preview` builds from this
     on its way into `render_template`; `options` is the one addition, carrying a
     `select`/`multiselect` variable's own choices for the form to render, the same

@@ -75,7 +75,7 @@ def committed(db_engine: Engine) -> Iterator[Committed]:
     session.add(customer)
     session.flush()
     deal = Deal(
-        nome="ATOMIC Impianto",
+        name="ATOMIC Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
         probability=10,
@@ -101,7 +101,7 @@ def committed(db_engine: Engine) -> Iterator[Committed]:
         # `activities.entity_id` is a plain UUID, not a foreign key, so nothing cascades.
         session.execute(delete(Activity).where(Activity.entity_id.in_(touched)))
         session.execute(delete(Document).where(Document.title.like("ATOMIC %")))
-        session.execute(delete(Deal).where(Deal.nome.like("ATOMIC %")))
+        session.execute(delete(Deal).where(Deal.name.like("ATOMIC %")))
         session.execute(delete(Customer).where(Customer.legal_name.like("ATOMIC %")))
         session.execute(delete(PipelineStage))
         session.execute(delete(AutomationConfig))

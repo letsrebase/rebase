@@ -106,8 +106,8 @@ def test_complete_stores_the_bot_token_sealed_and_matches_users_by_email(
     db_session: Session,
 ) -> None:
     admin = make_user(db_session, email="mario@example.it")
-    ada = make_user(db_session, email="ada@example.it", nome="Ada", role="collaborator")
-    nobody = make_user(db_session, email="nessuno@example.it", nome="Nessuno", role="readonly")
+    ada = make_user(db_session, email="ada@example.it", name="Ada", role="collaborator")
+    nobody = make_user(db_session, email="nessuno@example.it", name="Nessuno", role="readonly")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("ADA@example.it", "UADA")
@@ -353,9 +353,9 @@ def _page(session: Session, fake: FakeSlack, admin_actor: Actor) -> SlackHealth:
 def test_the_page_lists_every_active_user_with_how_they_were_matched(
     db_session: Session,
 ) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@example.it", nome="Ada", role="collaborator")
-    gone = make_user(db_session, email="gone@example.it", nome="Gone", role="collaborator")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@example.it", name="Ada", role="collaborator")
+    gone = make_user(db_session, email="gone@example.it", name="Gone", role="collaborator")
     gone.active = False
     db_session.flush()
     fake = FakeSlack()
@@ -366,7 +366,7 @@ def test_the_page_lists_every_active_user_with_how_they_were_matched(
 
     assert health.configured is True
     assert health.workspace is not None and health.workspace.team_name == "Acme Test"
-    by_name = {member.nome: member for member in health.members}
+    by_name = {member.name: member for member in health.members}
     assert set(by_name) == {"Mario", "Ada"}
     assert by_name["Mario"].state == "matched"
     assert by_name["Ada"].state == "unmatched"
@@ -383,8 +383,8 @@ def test_the_page_reads_unconfigured_as_a_state_not_an_error(db_session: Session
 
 
 def test_an_admin_fixes_a_mismatch_by_giving_the_slack_address(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@studio.example", nome="Ada", role="collaborator")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@studio.example", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("ada.bianchi@acme.example", "UADA")
@@ -406,8 +406,8 @@ def test_an_admin_fixes_a_mismatch_by_giving_the_slack_address(db_session: Sessi
 def test_a_fix_names_what_is_wrong_when_nobody_or_somebody_else_has_the_address(
     db_session: Session,
 ) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@studio.example", nome="Ada", role="collaborator")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@studio.example", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     connect(db_session, fake, admin)
@@ -420,7 +420,7 @@ def test_a_fix_names_what_is_wrong_when_nobody_or_somebody_else_has_the_address(
 
 
 def test_unlinking_goes_back_to_the_automatic_match(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("m.rossi@acme.example", "UOTHER")
@@ -439,8 +439,8 @@ def test_unlinking_goes_back_to_the_automatic_match(db_session: Session) -> None
 def test_look_again_finds_a_person_who_joined_slack_after_the_connection(
     db_session: Session,
 ) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    ada = make_user(db_session, email="ada@example.it", nome="Ada", role="collaborator")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    ada = make_user(db_session, email="ada@example.it", name="Ada", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     connect(db_session, fake, admin)
@@ -453,8 +453,8 @@ def test_look_again_finds_a_person_who_joined_slack_after_the_connection(
 
 
 def test_two_users_never_share_one_slack_member(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    twin = make_user(db_session, email="mario.old@example.it", nome="Gemello")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    twin = make_user(db_session, email="mario.old@example.it", name="Gemello")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member(twin.email, "UMARIO")
@@ -467,8 +467,8 @@ def test_two_users_never_share_one_slack_member(db_session: Session) -> None:
 
 
 def test_deactivated_slack_accounts_and_bots_are_not_a_match(db_session: Session) -> None:
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
-    bot_owner = make_user(db_session, email="bot@example.it", nome="Bot", role="collaborator")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
+    bot_owner = make_user(db_session, email="bot@example.it", name="Bot", role="collaborator")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO", deleted=True)
     fake.add_member("bot@example.it", "UBOT2", is_bot=True)
@@ -483,7 +483,7 @@ def test_an_unmatched_user_is_asked_again_only_after_a_day(db_session: Session) 
     from pigrocrm.core.slack.matching import SlackMatcher
     from pigrocrm.core.slack.repository import SlackRepository
 
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
     fake = FakeSlack()
     connect(db_session, fake, admin)  # nobody in Slack: a `none` link
     lookups = len(fake.calls("users.lookupByEmail"))
@@ -712,7 +712,7 @@ def test_an_automatic_match_never_overwrites_a_correction_made_while_slack_answe
     from pigrocrm.core.slack.matching import SlackMatcher
     from pigrocrm.core.slack.repository import SlackRepository
 
-    admin = make_user(db_session, email="mario@example.it", nome="Mario")
+    admin = make_user(db_session, email="mario@example.it", name="Mario")
     fake = FakeSlack()
     fake.add_member("mario@example.it", "UMARIO")
     fake.add_member("m.rossi@acme.example", "UOTHER")

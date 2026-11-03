@@ -9,8 +9,8 @@ own and empty, so what is left is the root, as a single installation sees it.
 
 Two properties are asserted here rather than described:
 
-* **Who the cron is.** `sync` refuses an actor with no id (`solo un utente può
-  sincronizzare una casella`) because the mailbox belongs to a person, so the command
+* **Who the cron is.** `sync` refuses an actor with no id (only a user can
+  synchronise a mailbox) because the mailbox belongs to a person, so the command
   cannot simply pass `Actor.system()` the way `createadmin` does. It builds a *system*
   actor carrying the mailbox owner's id, and the timeline says so: `actor_type` is
   `system`, because nobody pressed anything.
@@ -100,7 +100,7 @@ def cli_gmail(
         connection.execute(text("delete from google_accounts"))
         connection.execute(text("delete from reminder_job_run"))
         connection.execute(text("delete from users where email like 'user-%@example.it'"))
-        connection.execute(text("delete from customers where ragione_sociale like 'CLI %'"))
+        connection.execute(text("delete from customers where legal_name like 'CLI %'"))
 
 
 def _connect(

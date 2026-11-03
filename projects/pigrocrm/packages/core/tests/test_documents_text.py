@@ -1,6 +1,6 @@
 """`DocumentService.extract_text`: the data inside an archived file, made readable.
 
-The case this exists for is concrete. A codice destinatario is printed on a signed
+The case this exists for is concrete. An SDI recipient code is printed on a signed
 order form and written nowhere else in the CRM; before this, recovering it meant
 downloading the PDF and reading it by eye, which an agent cannot do and a person should
 not have to. So what these tests hold to is not "the extractor works" -- `test_text.py`

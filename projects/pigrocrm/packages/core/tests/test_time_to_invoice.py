@@ -57,7 +57,7 @@ def _log(
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=user_id,
-            data=day,
+            date=day,
             hours=Decimal(hours),
             description=f"Attivita' {day.isoformat()}",
             billable=billable,
@@ -70,8 +70,8 @@ def _log(
 def _lines(session: Session, invoice_id: UUID) -> list[tuple[UUID, Decimal, Decimal, str]]:
     rows = session.execute(
         text(
-            "SELECT id, quantita, prezzo_unitario, descrizione FROM invoice_lines "
-            "WHERE invoice_id = :inv ORDER BY numero_linea"
+            "SELECT id, quantity, unit_price, description FROM invoice_lines "
+            "WHERE invoice_id = :inv ORDER BY line_number"
         ),
         {"inv": invoice_id},
     ).all()
@@ -84,8 +84,8 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
     seeded_user_id: UUID,
     local_storage: LocalFileStorage,
 ) -> None:
-    """One line per `(tariffa_applicata, mese)`, with `quantita = Sum(ore)` and
-    `prezzo_unitario = tariffa`. Not one line per entry: an invoice with forty lines is
+    """One line per `(applied_rate, month)`, with `quantity = Sum(hours)` and
+    `unit_price = rate`. Not one line per entry: an invoice with forty lines is
     unreadable for the client, and the detail already has its place -- the timesheet
     attached to it."""
     entries = []
@@ -133,16 +133,16 @@ def test_thirty_seven_entries_on_three_rates_and_two_months_become_six_lines(
     # to some line and every count above still correct -- this join is what catches it.
     bound = db_session.execute(
         text(
-            "SELECT t.id, t.tariffa_applicata, t.data, l.prezzo_unitario, l.descrizione "
+            "SELECT t.id, t.applied_rate, t.date, l.unit_price, l.description "
             "FROM time_entries t JOIN invoice_lines l ON l.id = t.invoice_line_id "
             "WHERE t.deal_id = :deal"
         ),
         {"deal": billable_deal_id},
     ).all()
     assert len(bound) == 37
-    for _, rate, data, price, description in bound:
+    for _, rate, entry_date, price, description in bound:
         assert Decimal(rate) == Decimal(price)
-        assert ("marzo" if data.month == 3 else "aprile") in description
+        assert ("marzo" if entry_date.month == 3 else "aprile") in description
 
     # The description names the month and the hours, which is what makes a six-line
     # invoice legible next to a timesheet the client can check it against.
@@ -248,7 +248,7 @@ def test_the_derived_value_stops_being_consulted_once_the_invoice_exists(
 
     issued_taxable_amount = Decimal(
         db_session.execute(
-            text("SELECT imponibile FROM invoices WHERE id = :id"), {"id": invoice.id}
+            text("SELECT taxable_amount FROM invoices WHERE id = :id"), {"id": invoice.id}
         ).scalar_one()
     )
     # The two figures, and the size and direction of the disagreement, named outright:
@@ -379,7 +379,7 @@ def test_non_billable_entries_are_refused_by_definition(
     seeded_user_id: UUID,
     local_storage: LocalFileStorage,
 ) -> None:
-    """`fatturabile = False` is a property of the work itself -- an internal meeting, a
+    """`billable = False` is a property of the work itself -- an internal meeting, a
     rewrite nobody agreed to pay for -- so it never belongs on a draft, whatever rate it
     happens to carry."""
     internal = _log(
@@ -503,7 +503,7 @@ def test_an_entry_from_another_deal_is_refused(
         budgeted_value=None,
         hours_logged="1.00",
         revenue=None,
-        nome="Progetto estraneo",
+        name="Progetto estraneo",
     )
     stray = db_session.execute(
         text("SELECT id FROM time_entries WHERE deal_id = :deal LIMIT 1"), {"deal": other}

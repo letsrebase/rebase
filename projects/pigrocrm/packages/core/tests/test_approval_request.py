@@ -53,7 +53,7 @@ def _contract(session: Session) -> Contract:
 
 
 def _day(day: date, quantity: str = "1", description: str = "Workshop") -> ApprovalRequestDay:
-    return ApprovalRequestDay(data=day, quantity=Decimal(quantity), description=description)
+    return ApprovalRequestDay(date=day, quantity=Decimal(quantity), description=description)
 
 
 def _prepare(*days: ApprovalRequestDay) -> ApprovalRequestPrepare:
@@ -143,7 +143,7 @@ def test_preparing_records_the_days_as_proposed_and_files_the_draft_in_one_go(
         WRITER,
     )
 
-    assert [(d.data, d.status) for d in prepared.work_units] == [
+    assert [(d.date, d.status) for d in prepared.work_units] == [
         (date(2026, 11, 2), "proposed"),
         (date(2026, 11, 3), "proposed"),
         (date(2026, 11, 4), "proposed"),
@@ -170,7 +170,7 @@ def test_a_date_the_contract_already_holds_a_day_for_refuses_the_whole_request(
     assert refused.value.details["date"] == ["2026-11-03"]
 
     # Nothing of the refused request was written: only the first request's day exists.
-    assert db_session.scalars(select(WorkUnit.data)).all() == [date(2026, 11, 3)]
+    assert db_session.scalars(select(WorkUnit.date)).all() == [date(2026, 11, 3)]
 
 
 def test_a_withdrawn_day_frees_its_date_for_a_new_request(db_session: Session) -> None:
@@ -254,6 +254,6 @@ def test_the_prepared_request_leaves_from_the_owners_mailbox_and_the_days_stay_p
     assert message["To"] == "amministrazione@acme.example"
     assert "io@example.it" in str(message["From"])
     assert message["Subject"] == "Richiesta di approvazione"
-    assert [d.status for d in db_session.scalars(select(WorkUnit).order_by(WorkUnit.data))] == [
+    assert [d.status for d in db_session.scalars(select(WorkUnit).order_by(WorkUnit.date))] == [
         "proposed"
     ] * 3

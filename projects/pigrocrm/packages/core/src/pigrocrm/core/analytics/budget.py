@@ -39,7 +39,7 @@ def budget_vs_actual(session: Session, repo: AnalyticsRepository, query: BudgetQ
     and `deals.budgeted_value` have existed since slice 1 and have never been read
     by anybody. The actuals are the one missing half.
 
-    Keyset pagination on `(nome, id)`: the cursor is the id of the last deal of the
+    Keyset pagination on `(name, id)`: the cursor is the id of the last deal of the
     previous page, the deals after it are asked of the database, and only the page's
     deals are aggregated. A cursor naming no deal is refused, never read as "page one",
     which would let a client following `next_cursor` loop forever.

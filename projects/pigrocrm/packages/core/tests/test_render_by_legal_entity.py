@@ -1,7 +1,7 @@
-"""Every PDF and every mail speaks for the azienda of its record (REB-627, spec
-2026-10-03 §1.8, §6): a document of azienda X carries X's header and X's logo, the
+"""Every PDF and every mail speaks for the legal entity of its record (REB-627, spec
+2026-10-03 §1.8, §6): a document of legal entity X carries X's header and X's logo, the
 invoice PDF of X likewise, a reminder for X's invoice signs as X and names X's IBAN, a
-draft about X's customer leaves in X's name and under X's domain. The second azienda is
+draft about X's customer leaves in X's name and under X's domain. The second legal entity is
 written by row, since nothing creates one before milestone 5.
 """
 
@@ -57,7 +57,7 @@ def _default(session: Session) -> LegalEntity:
 
 def _second(session: Session) -> LegalEntity:
     row = LegalEntity(
-        nome="rebase",
+        name="rebase",
         legal_name="Rebase S.r.l.",
         vat_number="09876543210",
         country="IT",
@@ -79,10 +79,10 @@ def _fiscal(session: Session, legal_entity_id: UUID, iban: str) -> None:
     )
 
 
-def _customer_of(session: Session, legal_entity_id: UUID, nome: str = "Overseas") -> UUID:
+def _customer_of(session: Session, legal_entity_id: UUID, name: str = "Overseas") -> UUID:
     return (
         CustomerService(session)
-        .create(CustomerCreate(legal_name=f"{nome} S.r.l.", legal_entity_id=legal_entity_id), ADMIN)
+        .create(CustomerCreate(legal_name=f"{name} S.r.l.", legal_entity_id=legal_entity_id), ADMIN)
         .id
     )
 
@@ -98,7 +98,7 @@ def test_to_document_renders_from_its_own_legal_entity_with_its_logo(
     customer_id = _customer_of(db_session, second.id)
     template = TemplateService(db_session).create(
         TemplateCreate(
-            nome="Brief", type="documento", body_markdown="# {{cliente.ragione_sociale}}\n"
+            name="Brief", type="document", body_markdown="# {{cliente.ragione_sociale}}\n"
         ),
         ADMIN,
     )
@@ -200,12 +200,12 @@ def test_to_mail_speaks_for_the_legal_entity_of_its_record(
     customer_id = _customer_of(db_session, second.id)
     deal = DealService(db_session).create(
         DealCreate(
-            nome="Migration", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
+            name="Migration", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id
         ),
         ADMIN,
     )
-    person = Person(nome="Ada", last_name="Lovelace", customer_id=customer_id)
-    loose = Person(nome="Nessuno", last_name="Di Nessuno")
+    person = Person(name="Ada", last_name="Lovelace", customer_id=customer_id)
+    loose = Person(name="Nessuno", last_name="Di Nessuno")
     db_session.add_all([person, loose])
     db_session.flush()
     repo = GmailRepository(db_session)

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fakes.customer_fixtures import make_customer
-from orologio import TODAY_IN_ITALY, congela
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -103,9 +103,9 @@ def test_get_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
         service.get(uuid4(), ADMIN)
 
 
-def test_contract_create_rejects_fine_before_inizio() -> None:
+def test_contract_create_rejects_end_before_start() -> None:
     """An inverted validity period is never even constructed -- Greptile flagged
-    this as unenforced; ck_contracts_fine_ordered is the database's own backstop,
+    this as unenforced; ck_contracts_end_ordered is the database's own backstop,
     but the schema is what gives a clean 422 instead of a raw IntegrityError."""
     import pydantic
 
@@ -369,7 +369,7 @@ def test_concentration_cap_reports_whether_a_threshold_is_exceeded(db_session: S
 def test_concentration_cap_defaults_as_of_to_today(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = ContractService(db_session).create(
         _create_payload(customer.id, start=date(2025, 6, 1)), ADMIN
@@ -700,7 +700,7 @@ def test_changing_the_expense_policy_reevaluates_the_expenses_not_yet_billed(
     """`reimbursable` is written by a trigger when an expense is written. A policy that
     changes later must not leave an expense «Da fatturare» under the old verdict."""
     customer = make_customer(db_session)
-    category = CostCategory(nome="Trasferte", position=0)
+    category = CostCategory(name="Trasferte", position=0)
     db_session.add(category)
     db_session.flush()
     contracts = ContractService(db_session)
@@ -712,7 +712,7 @@ def test_changing_the_expense_policy_reevaluates_the_expenses_not_yet_billed(
         created.id,
         ContractExpenseCreate(
             category_id=category.id,
-            data=date(2026, 3, 5),
+            date=date(2026, 3, 5),
             amount=Decimal("42.00"),
             description="Biglietto treno",
         ),
@@ -726,7 +726,7 @@ def test_changing_the_expense_policy_reevaluates_the_expenses_not_yet_billed(
     contracts.update(
         created.id,
         ContractUpdate(
-            expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": False}
+            expense_policy={"kind": "reimbursable", "requires_pre_authorization": False}
         ),
         ADMIN,
     )
@@ -741,7 +741,7 @@ def test_changing_the_expense_policy_reevaluates_the_expenses_not_yet_billed(
         {"kind": "reimbursable_with_cap"},
         {"kind": "reimbursable_with_cap", "amount_cap": "molto"},
         {"kind": "reimbursable", "amount_cap": "500.00"},
-        {"kind": "reimbursable", "richiede_preautorizzazione": "si"},
+        {"kind": "reimbursable", "requires_pre_authorization": "yes"},
     ],
 )
 def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_update(
@@ -756,7 +756,7 @@ def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_update(
 def test_the_three_expense_policy_shapes_are_accepted_on_update() -> None:
     for policy in (
         {"kind": "not_reimbursable"},
-        {"kind": "reimbursable", "richiede_preautorizzazione": True},
+        {"kind": "reimbursable", "requires_pre_authorization": True},
         {"kind": "reimbursable_with_cap", "amount_cap": "500.00"},
     ):
         assert ContractUpdate(expense_policy=policy).expense_policy == policy
@@ -953,7 +953,7 @@ def test_a_rate_card_of_another_contract_is_not_found(db_session: Session) -> No
     "policy",
     [
         {},
-        {"mode": "rimborsabili"},
+        {"mode": "reimbursable"},
         {"type": "not_reimbursable"},
         {"kind": "reimbursable_with_cap"},
         {"kind": "reimbursable", "amount_cap": "500.00"},
@@ -969,7 +969,9 @@ def test_an_expense_policy_the_trigger_cannot_read_is_refused_on_create(
         _create_payload(customer.id, expense_policy=policy)
 
 
-def test_a_customers_and_an_aziendas_contracts_are_filtered_in_sql(db_session: Session) -> None:
+def test_a_customers_and_a_legal_entities_contracts_are_filtered_in_sql(
+    db_session: Session,
+) -> None:
     first = make_customer(db_session)
     second = make_customer(db_session)
     contracts = ContractService(db_session)

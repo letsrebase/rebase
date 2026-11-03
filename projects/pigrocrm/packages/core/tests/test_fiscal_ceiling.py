@@ -1,12 +1,12 @@
-"""The ceiling engine and the rivalsa invoice line, against real invoice rows --
+"""The ceiling engine and the expense-recovery invoice line, against real invoice rows --
 REB-361, REB-344 §8-9, REB-352 §2/§6.
 
 No `InvoiceService` here on purpose: what these tests exercise is the arithmetic
 against rows that already satisfy the schema's own constraints, the same way
 `fakes/invoice_fixtures.py` builds an issued invoice as a row rather than through an
-emission. The full create-issue-export cycle, including the rivalsa line surviving
+emission. The full create-issue-export cycle, including the expense-recovery line surviving
 `issue()`'s own natura/riferimento_normativo consistency check and a real FatturaPA
-export, is `test_invoice_rivalsa_line.py`.
+export, is `test_invoice_expense-recovery_line.py`.
 """
 
 from datetime import date
@@ -137,7 +137,7 @@ def test_paid_revenue_excludes_unpaid_invoices_and_other_years(db_session: Sessi
     assert paid_revenue_for_calendar_year(db_session, YEAR) == Decimal("1000.00")
 
 
-def test_paid_revenue_falls_back_to_data_emissione_when_data_incasso_is_unset(
+def test_paid_revenue_falls_back_to_issue_date_when_payment_date_is_unset(
     db_session: Session,
 ) -> None:
     """`stato_pagamento = 'incassato'` with no `payment_date` recorded still counts,
@@ -189,7 +189,7 @@ def test_evaluate_pack_evaluates_both_ceilings_off_one_paid_revenue_figure(
 def test_to_social_security_surcharge_line_counts_toward_the_paid_revenue_in_full(
     db_session: Session,
 ) -> None:
-    """REB-352 §2's own "no code change is needed for the ceiling side" -- a rivalsa
+    """REB-352 §2's own "no code change is needed for the ceiling side" -- a expense-recovery
     line is one more line inside `Invoice.taxable_amount`, no filtering needed."""
     charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
     _paid(
@@ -201,7 +201,7 @@ def test_to_social_security_surcharge_line_counts_toward_the_paid_revenue_in_ful
     assert paid_revenue_for_calendar_year(db_session, YEAR) == Decimal("1040.00")
 
 
-# --- rivalsa_line_for_contract: pure, no session ------------------------------------
+# --- expense-recovery_line_for_contract: pure, no session ------------------------------------
 
 
 def test_no_line_is_produced_without_the_contracts_election() -> None:
@@ -260,7 +260,7 @@ def test_excluded_from_coefficient_base_sums_only_social_security_surcharge_tagg
         lines=[("Consulenza", Decimal("1000.00")), (charge.description_line, Decimal("40.00"))],
         payment_date=date(YEAR, 6, 20),
     )
-    # No rivalsa line at all -- must not contribute anything.
+    # No expense-recovery line at all -- must not contribute anything.
     _invoice(
         db_session,
         number=2,
@@ -330,7 +330,7 @@ def test_a_contract_without_the_election_leaves_nothing_to_exclude(
     db_session: Session,
 ) -> None:
     """The other half of the same Done-when: a contract that never elects the
-    rivalsa produces no line, so there is nothing for the tagged-figure query to
+    expense-recovery produces no line, so there is nothing for the tagged-figure query to
     find either -- the two functions agree by construction, not by coincidence."""
     line = social_security_surcharge_line_for_contract(
         IT_FLAT_RATE_PACK, applies_social_charge=False, fee_subtotal=Decimal("1000.00")

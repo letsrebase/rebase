@@ -217,7 +217,7 @@ class DigestService:
         hours = week_hours if week_hours.total_hours > 0 else None
 
         # 5. «Da emettere»: the count of won deals with unbilled hours, and the backlog.
-        #    The same `COUNT` the dashboard's `vinto_da_fatturare` signal ran above, asked
+        #    The same `COUNT` the dashboard's `won_to_invoice` signal ran above, asked
         #    again rather than fished out of `operational.signals` by its code: the report
         #    would then depend on a *label* staying spelled that way, and the two cannot
         #    disagree anyway -- both statements read the same `REPEATABLE READ` snapshot.
@@ -230,7 +230,7 @@ class DigestService:
             for row in deals.pipeline_summary()
             if row.number > 0
         ]
-        deal_mossi = self._movements(deals, date_from, date_to)
+        deal_moves = self._movements(deals, date_from, date_to)
         offers = DocumentRepository(self.session).pending_offers(_OFFERS_SHOWN)
 
         backlog = operational.backlog
@@ -249,7 +249,7 @@ class DigestService:
             paid=self._lines(paid_rows, names, lambda row: row.payment_date),
             hours=hours,
             pipeline=pipeline,
-            deal_mossi=deal_mossi,
+            deal_moves=deal_moves,
             offers_pending=[
                 DigestOffer(
                     # `PendingOffer` carries its ids as strings, because the commercial
@@ -407,15 +407,15 @@ class DigestService:
 
         One query for every title, never one per row.
         """
-        zona = ZoneInfo(self.settings.timezone)
+        zone = ZoneInfo(self.settings.timezone)
         rows = ActivityRepository(self.session).by_kind_between(
             [_STAGE_CHANGED],
-            datetime.combine(date_from, time.min, tzinfo=zona),
-            datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=zona),
+            datetime.combine(date_from, time.min, tzinfo=zone),
+            datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=zone),
             limit=_MOVEMENTS_READ,
         )
         lines = [
-            (row, row.occurred_at.astimezone(zona).date())
+            (row, row.occurred_at.astimezone(zone).date())
             for row in rows
             if row.entity_type == _ENTITY_DEAL
         ]

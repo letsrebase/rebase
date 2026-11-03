@@ -1,8 +1,8 @@
 """What each scheduled job last did, and how that reads (REB-764).
 
 The record is `reminder_job_run`, one row per job, written by the four cron commands
-(their tests are `test_cli_*.py`) and read here by `ScheduledJobService`, which Impostazioni
-→ Esecuzioni and the `describe_scheduled_jobs` tool render. These tests hold the clock's two
+(their tests are `test_cli_*.py`) and read here by `ScheduledJobService`, which Settings
+→ Runs and the `describe_scheduled_jobs` tool render. These tests hold the clock's two
 rules, that a failure never moves the last success and a success ends a failure, and the
 reading's states, their precedence and the boundary of each.
 """
@@ -49,7 +49,7 @@ def _row(session: Session, job: str) -> ReminderJobRun:
 
 
 def _mailbox(session: Session, *, status: str = "active") -> None:
-    owner = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="P", role="admin")
+    owner = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="P", role="admin")
     session.add(owner)
     session.flush()
     session.add(

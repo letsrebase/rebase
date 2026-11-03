@@ -119,12 +119,12 @@ def spaces(settings: Settings, registry: Engine) -> Iterator[None]:
             service.provision(
                 TenantSignup(
                     slug=slug,
-                    nome=f"Studio {slug}",
+                    name=f"Studio {slug}",
                     email=TITOLARI.get(slug, OWNER_EMPTY),
                 )
             )
             if slug in TITOLARI:
-                _one_invoice(settings, slug, _week_scorsa(settings))
+                _one_invoice(settings, slug, _last_week(settings))
         yield
     finally:
         for slug in SPACES:
@@ -141,7 +141,7 @@ def _none_week_sent(settings: Settings, spaces: None) -> Iterator[None]:
     """What a run writes, undone. The `digests` row is what makes the second Monday say
     «già inviato», so a test that left one behind would decide the next one's answer."""
     yield
-    for engine in [_motore(settings, slug) for slug in SPACES] + [_root_engine(settings)]:
+    for engine in [_space_engine(settings, slug) for slug in SPACES] + [_root_engine(settings)]:
         try:
             with engine.begin() as connection:
                 connection.execute(text("delete from activities where entity_type = 'digest'"))
@@ -166,15 +166,15 @@ def cron(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> RecordingSender
 # --- the corpus, and reading a space back --------------------------------------------
 
 
-def _week_scorsa(settings: Settings) -> tuple[date, date]:
+def _last_week(settings: Settings) -> tuple[date, date]:
     """The week that has just closed, computed here and not through `previous_week`: a
     fixture that derived its window from a function under test would move with it."""
     today = today_local(settings)
-    lunedi = today - timedelta(days=today.isoweekday() - 1 + 7)
-    return lunedi, lunedi + timedelta(days=6)
+    monday = today - timedelta(days=today.isoweekday() - 1 + 7)
+    return monday, monday + timedelta(days=6)
 
 
-def _motore(settings: Settings, slug: str) -> Engine:
+def _space_engine(settings: Settings, slug: str) -> Engine:
     return create_engine(tenant_database_url(settings, tenant_database_name(slug)), future=True)
 
 
@@ -186,7 +186,7 @@ def _seed_root(settings: Settings) -> None:
     """The root as `createadmin` and a year of use leave it: an admin who has since been
     switched off, created first; the titolare, the first admin still active; a
     collaborator; and one invoice in the week."""
-    lunedi = _week_scorsa(settings)[0]
+    monday = _last_week(settings)[0]
     engine = _root_engine(settings)
     try:
         with session_factory(engine)() as session:
@@ -198,25 +198,25 @@ def _seed_root(settings: Settings) -> None:
                 session.add(
                     User(
                         email=email,
-                        nome=email.split("@")[0],
+                        name=email.split("@")[0],
                         role=role,
                         active=active,
                         created_at=datetime.combine(
-                            lunedi - timedelta(days=days), datetime.min.time(), UTC
+                            monday - timedelta(days=days), datetime.min.time(), UTC
                         ),
                     )
                 )
             # And the azienda `createadmin` writes with the first admin (REB-615), which
             # the root's one invoice below belongs to (REB-619).
-            committed_default_legal_entity(session, nome="Radice")
+            committed_default_legal_entity(session, name="Radice")
             session.commit()
     finally:
         engine.dispose()
-    _write_invoice(_root_engine(settings), _week_scorsa(settings))
+    _write_invoice(_root_engine(settings), _last_week(settings))
 
 
 def _one_invoice(settings: Settings, slug: str, week: tuple[date, date]) -> None:
-    _write_invoice(_motore(settings, slug), week)
+    _write_invoice(_space_engine(settings, slug), week)
 
 
 def _write_invoice(engine: Engine, week: tuple[date, date]) -> None:
@@ -255,13 +255,11 @@ def _write_invoice(engine: Engine, week: tuple[date, date]) -> None:
 
 def _weeks(settings: Settings, slug: str | None) -> list[str]:
     """What the space remembers of the weeks it was mailed; `None` is the root."""
-    engine = _motore(settings, slug) if slug is not None else _root_engine(settings)
+    engine = _space_engine(settings, slug) if slug is not None else _root_engine(settings)
     try:
         with engine.connect() as connection:
             return list(
-                connection.execute(text("select settimana from digests order by settimana"))
-                .scalars()
-                .all()
+                connection.execute(text("select week from digests order by week")).scalars().all()
             )
     finally:
         engine.dispose()
@@ -269,8 +267,8 @@ def _weeks(settings: Settings, slug: str | None) -> list[str]:
 
 def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
     """The space's `digest` row as `(it has run, its failure)`, `None` for no row: what
-    Impostazioni → Esecuzioni and `job_late` read."""
-    engine = _motore(settings, slug) if slug is not None else _root_engine(settings)
+    the Settings → Runs page and `job_late` read."""
+    engine = _space_engine(settings, slug) if slug is not None else _root_engine(settings)
     try:
         with engine.connect() as connection:
             row = connection.execute(
@@ -296,7 +294,7 @@ def _my(sender: RecordingSender) -> list[Mail]:
 def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
     settings: Settings, cron: RecordingSender, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    iso = iso_week(_week_scorsa(settings)[0])
+    iso = iso_week(_last_week(settings)[0])
 
     assert cli.main(["digest"]) == 0
 
@@ -335,8 +333,8 @@ def test_the_root_installation_gets_its_week_like_a_space(
     root_slug: str,
     base: str,
 ) -> None:
-    """REB-263: the root holds the titolare's real data and has no registry row, so the
-    walk alone never mailed it. Its database is `database_url`, its titolare the first
+    """REB-263: the root holds the owner's real data and has no registry row, so the
+    walk alone never mailed it. Its database is `database_url`, its owner the first
     admin still active, its links carry `PIGROCRM_ROOT_SLUG` like a space's carry its
     slug, and `--slug root` visits it alone, without the registry."""
 
@@ -347,7 +345,7 @@ def test_the_root_installation_gets_its_week_like_a_space(
         cli, "get_settings", lambda: settings.model_copy(update={"root_slug": root_slug})
     )
     monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", no_registry)
-    iso = iso_week(_week_scorsa(settings)[0])
+    iso = iso_week(_last_week(settings)[0])
 
     assert cli.main(["digest", "--slug", ROOT_LABEL]) == 0
 
@@ -383,7 +381,7 @@ def test_a_week_already_sent_is_not_sent_a_second_time(
     """Two crons on the same Monday -- a retry, a rerun by hand -- are one mail. The
     `digests` row is unique on the week, and the second run says which week it is skipping
     so the log answers «did last week go out» without opening the database."""
-    iso = iso_week(_week_scorsa(settings)[0])
+    iso = iso_week(_last_week(settings)[0])
     assert cli.main(["digest", "--slug", UNO]) == 0
     capsys.readouterr()
 
@@ -452,10 +450,10 @@ def test_a_space_where_everybody_switched_it_off_is_said_and_not_sent(
     (`users.weekly_digest`), and the cron reports it rather than obeying it in
     silence: a space that receives nothing for weeks has to be distinguishable in the log
     from a space that is not being visited at all."""
-    engine = _motore(settings, UNO)
+    engine = _space_engine(settings, UNO)
     try:
         with engine.begin() as connection:
-            connection.execute(text("update users set digest_settimanale = false"))
+            connection.execute(text("update users set weekly_digest = false"))
         assert cli.main(["digest", "--slug", UNO]) == 0
 
         assert capsys.readouterr().out.strip() == f"{UNO}: nessun destinatario"
@@ -463,21 +461,21 @@ def test_a_space_where_everybody_switched_it_off_is_said_and_not_sent(
         assert _weeks(settings, UNO) == []
     finally:
         with engine.begin() as connection:
-            connection.execute(text("update users set digest_settimanale = true"))
+            connection.execute(text("update users set weekly_digest = true"))
         engine.dispose()
 
 
-def test_forza_with_a_day_of_that_week_sends_it_again(
+def test_force_with_a_day_of_that_week_sends_it_again(
     settings: Settings, cron: RecordingSender, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """How a week is resent: `--date` names any day of it and `--force` says the row that
     is already there is not an answer. The row moves, it is not duplicated."""
-    lunedi = _week_scorsa(settings)[0]
-    iso = iso_week(lunedi)
+    monday = _last_week(settings)[0]
+    iso = iso_week(monday)
     assert cli.main(["digest", "--slug", UNO]) == 0
     capsys.readouterr()
 
-    assert cli.main(["digest", "--slug", UNO, "--force", "--date", lunedi.isoformat()]) == 0
+    assert cli.main(["digest", "--slug", UNO, "--force", "--date", monday.isoformat()]) == 0
 
     assert capsys.readouterr().out.strip() == f"{UNO}: inviato a 1"
     assert [mail.to for mail in _my(cron)] == [TITOLARI[UNO], TITOLARI[UNO]]
@@ -496,18 +494,18 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     `skipped` line on stderr naming the exception's type, and the spaces beside it are
     mailed in the same run. `tenant_database_url` is patched on the module `digest`
     imports it from, because that is where the name is resolved at call time; this file's
-    own `_motore` holds the real function and goes on reaching the real databases, which
+    own `_space_engine` holds the real function and goes on reaching the real databases, which
     is what lets the fixtures clean up after this test.
     """
     import pigrocrm.core.cli.spaces_walk as tenants_database
 
-    vero = tenants_database.tenant_database_url
+    real = tenants_database.tenant_database_url
     monkeypatch.setattr(
         tenants_database,
         "tenant_database_url",
-        lambda settings, db_name: vero(
+        lambda settings, db_name: real(
             settings,
-            "pigrocrm_spazio_mai_creato" if db_name == tenant_database_name(DUE) else db_name,
+            "pigrocrm_space_never_created" if db_name == tenant_database_name(DUE) else db_name,
         ),
     )
 
@@ -534,10 +532,10 @@ def test_a_client_that_cannot_be_built_is_one_line_and_still_shuts_the_sdk_down(
     """
     closed: list[str] = []
 
-    def esplode(_settings: Settings) -> None:
+    def explode(_settings: Settings) -> None:
         raise RuntimeError("chiave storta")
 
-    monkeypatch.setattr(cli_cron, "tracker_from_settings", esplode)
+    monkeypatch.setattr(cli_cron, "tracker_from_settings", explode)
     monkeypatch.setattr(telemetry, "shutdown", lambda: closed.append("shutdown"))
 
     assert cli.main(["digest", "--slug", UNO]) == 0
@@ -593,21 +591,21 @@ def test_every_space_the_command_walked_has_its_clock_moved_whatever_the_outcome
 
     for slug in (*SPACES, None):
         assert _clock(settings, slug) == (True, None), slug
-    assert "orologio non scritto" not in capsys.readouterr().err
+    assert "frozen_clock non scritto" not in capsys.readouterr().err
 
 
 def test_a_space_where_nobody_wants_the_report_still_counts_as_a_run(
     settings: Settings, cron: RecordingSender
 ) -> None:
-    engine = _motore(settings, UNO)
+    engine = _space_engine(settings, UNO)
     try:
         with engine.begin() as connection:
-            connection.execute(text("update users set digest_settimanale = false"))
+            connection.execute(text("update users set weekly_digest = false"))
         assert cli.main(["digest", "--slug", UNO]) == 0
         assert _clock(settings, UNO) == (True, None), "nessun destinatario ran to the end"
     finally:
         with engine.begin() as connection:
-            connection.execute(text("update users set digest_settimanale = true"))
+            connection.execute(text("update users set weekly_digest = true"))
         engine.dispose()
 
 
@@ -651,13 +649,13 @@ def test_a_space_the_command_cannot_open_is_recorded_nowhere_and_says_so_once(
     the whole record, and the clock simply stops moving, which reads as late."""
     import pigrocrm.core.cli.spaces_walk as tenants_database
 
-    vero = tenants_database.tenant_database_url
+    real = tenants_database.tenant_database_url
     monkeypatch.setattr(
         tenants_database,
         "tenant_database_url",
-        lambda settings, db_name: vero(
+        lambda settings, db_name: real(
             settings,
-            "pigrocrm_spazio_mai_creato" if db_name == tenant_database_name(DUE) else db_name,
+            "pigrocrm_space_never_created" if db_name == tenant_database_name(DUE) else db_name,
         ),
     )
 
@@ -701,6 +699,6 @@ def test_a_clock_that_cannot_be_written_is_a_line_and_the_digest_still_exits_zer
     assert cli.main(["digest", "--slug", UNO]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.splitlines() == [f"{UNO}: orologio non scritto (RuntimeError)"]
+    assert captured.err.splitlines() == [f"{UNO}: frozen_clock non scritto (RuntimeError)"]
     assert f"{UNO}: inviato a 1" in captured.out
     assert _clock(settings, UNO) is None

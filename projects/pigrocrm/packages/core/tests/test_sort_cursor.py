@@ -197,7 +197,7 @@ def test_order_by_puts_nulls_last_in_both_directions(db_session: Session) -> Non
     last *descending* is not, and getting it by accident is how the null tail ends up at
     the top of page one with no cursor value to resume from."""
     for last_name in ("Bianchi", None, "Rossi"):
-        db_session.add(Person(nome="Marco", last_name=last_name, custom_fields={}))
+        db_session.add(Person(first_name="Marco", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     ascending = db_session.scalars(
@@ -216,7 +216,7 @@ def test_order_by_breaks_ties_in_the_direction_of_travel(db_session: Session) ->
     the direction is exactly what lets a single ascending `(col, id)` index serve `desc`
     as a backward scan, and it is the reason the whitelist can be as short as it is.
     """
-    same_surname = [Person(nome="A", last_name="Rossi", custom_fields={}) for _ in range(3)]
+    same_surname = [Person(first_name="A", last_name="Rossi", custom_fields={}) for _ in range(3)]
     for person in same_surname:
         db_session.add(person)
     db_session.flush()
@@ -230,7 +230,7 @@ def test_order_by_breaks_ties_in_the_direction_of_travel(db_session: Session) ->
 
 
 def test_the_keyset_predicate_resumes_exactly_after_the_cursor_row(db_session: Session) -> None:
-    rows = [Person(nome="A", last_name=c, custom_fields={}) for c in ("B", "C", None, None)]
+    rows = [Person(first_name="A", last_name=c, custom_fields={}) for c in ("B", "C", None, None)]
     for row in rows:
         db_session.add(row)
     db_session.flush()
@@ -253,7 +253,7 @@ def test_the_keyset_predicate_from_a_non_null_value_still_reaches_the_null_tail(
     """The clause people forget. Without `OR col IS NULL`, paging ascending stops at the
     last non-null row and the null tail is never returned at all."""
     for last_name in ("B", None):
-        db_session.add(Person(nome="A", last_name=last_name, custom_fields={}))
+        db_session.add(Person(first_name="A", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     first = db_session.scalars(select(Person).order_by(*order_by(_NULLABLE, "asc"))).all()[0]
@@ -277,7 +277,7 @@ def test_the_keyset_predicate_never_repeats_and_never_skips_a_row(db_session: Se
     """
     surnames = ("Rossi", "Bianchi", "Rossi", None, "Verdi", None, "Bianchi")
     for last_name in surnames:
-        db_session.add(Person(nome="A", last_name=last_name, custom_fields={}))
+        db_session.add(Person(first_name="A", last_name=last_name, custom_fields={}))
     db_session.flush()
 
     for direction in ("asc", "desc"):

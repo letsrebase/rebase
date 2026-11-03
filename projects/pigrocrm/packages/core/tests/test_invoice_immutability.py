@@ -9,7 +9,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
-from orologio import fissa_today
+from frozen_clock import freeze_today
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -45,7 +45,7 @@ TODAY = today_local()
 
 @pytest.fixture(autouse=True)
 def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
-    fissa_today(monkeypatch, TODAY)
+    freeze_today(monkeypatch, TODAY)
 
 
 @pytest.fixture
@@ -168,10 +168,10 @@ def test_marking_transmitted_is_a_one_way_door(service: InvoiceService, customer
     rather than optimistic -- without it the system could not tell an invoice that
     never left from one already deposited with the Agenzia delle Entrate."""
     invoice_id = _issue(service, customer_id)
-    marked = service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(data=TODAY), ADMIN)
+    marked = service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(date=TODAY), ADMIN)
     assert marked.transmitted_externally_at == TODAY
     with pytest.raises(ImmutableField) as caught:
-        service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(data=TODAY), ADMIN)
+        service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(date=TODAY), ADMIN)
     assert caught.value.details["field"] == "transmitted_externally_at"
 
 
@@ -182,7 +182,7 @@ def test_a_transmitted_invoice_cannot_be_annulled(
     -- so it happens outside PigroCRM and the application says so, instead of offering
     a button that pretends to solve it."""
     invoice_id = _issue(service, customer_id)
-    service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(data=TODAY), ADMIN)
+    service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(date=TODAY), ADMIN)
     with pytest.raises(Conflict) as caught:
         service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     assert "nota di credito" in caught.value.message
@@ -192,7 +192,7 @@ def test_a_future_transmission_date_is_refused(service: InvoiceService, customer
     invoice_id = _issue(service, customer_id)
     with pytest.raises(ValidationFailed) as caught:
         service.mark_transmitted_externally(
-            invoice_id, InvoiceTransmitted(data=TODAY + timedelta(days=1)), ADMIN
+            invoice_id, InvoiceTransmitted(date=TODAY + timedelta(days=1)), ADMIN
         )
     assert caught.value.details["field"] == "transmitted_externally_at"
 
@@ -210,21 +210,21 @@ def test_a_transmission_date_before_the_issue_date_is_refused(
     issued = service.issue(draft.id, InvoiceIssue(issue_date=TODAY), ADMIN)
     with pytest.raises(ValidationFailed):
         service.mark_transmitted_externally(
-            issued.id, InvoiceTransmitted(data=TODAY - timedelta(days=1)), ADMIN
+            issued.id, InvoiceTransmitted(date=TODAY - timedelta(days=1)), ADMIN
         )
 
 
 def test_a_draft_cannot_be_marked_transmitted(service: InvoiceService, customer_id: UUID) -> None:
     draft = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
     with pytest.raises(Conflict):
-        service.mark_transmitted_externally(draft.id, InvoiceTransmitted(data=TODAY), ADMIN)
+        service.mark_transmitted_externally(draft.id, InvoiceTransmitted(date=TODAY), ADMIN)
 
 
 def test_marking_transmitted_requires_admin(service: InvoiceService, customer_id: UUID) -> None:
     invoice_id = _issue(service, customer_id)
     with pytest.raises(PermissionDenied):
         service.mark_transmitted_externally(
-            invoice_id, InvoiceTransmitted(data=TODAY), COLLABORATOR
+            invoice_id, InvoiceTransmitted(date=TODAY), COLLABORATOR
         )
 
 

@@ -320,7 +320,7 @@ class PdfSource(BaseModel):
     Exactly one of the two, and the `model_validator` is what says so rather than a
     check in the service: two sources would leave "which one is the original?" to be
     answered by whichever branch the service happened to test first, and none would
-    make `pdf_sorgente: {}` mean "no PDF" -- which already has a spelling, omitting the
+    make `pdf_source: {}` mean "no PDF" -- which already has a spelling, omitting the
     field entirely.
 
     `drive_file_id` is held to `drive/query.py`'s strict pattern here, at the edge,
@@ -347,7 +347,7 @@ class PdfSource(BaseModel):
             # to escape as a `ValidationFailed`: this is a schema, and a caller that
             # builds a `PdfSource` gets one kind of error for every malformed field.
             try:
-                checked_outside_id(self.drive_file_id, field="pdf_sorgente.drive_file_id")
+                checked_outside_id(self.drive_file_id, field="pdf_source.drive_file_id")
             except ValidationFailed as exc:
                 raise ValueError(exc.message) from exc
         return self

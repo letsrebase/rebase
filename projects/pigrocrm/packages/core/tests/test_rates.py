@@ -137,7 +137,7 @@ def test_raising_a_rate_today_does_not_move_an_already_written_entrys_value(
     entry = TimeEntry(
         deal_id=seeded_deal_id,
         user_id=seeded_user_id,
-        data=date(2026, 3, 10),
+        date=date(2026, 3, 10),
         hours=Decimal("8.00"),
         description="Analisi effettuata lo scorso trimestre",
         applied_rate=resolved.rate,

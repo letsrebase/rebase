@@ -42,15 +42,15 @@ def compute_lines(
     proforma whose customer changed country is repaired by replacing its lines.
     """
     computed: list[ComputedLine] = []
-    for index, riga in enumerate(lines, start=1):
+    for index, line in enumerate(lines, start=1):
         rate, vat_nature, reference = strategy.resolve_line_vat(
-            riga.vat_rate, profile, country_customer=country_customer
+            line.vat_rate, profile, country_customer=country_customer
         )
         total_price = line_total(
-            quantity=riga.quantity,
-            unit_price=riga.unit_price,
-            discount_percentage=riga.discount_percentage,
-            discount_amount=riga.discount_amount,
+            quantity=line.quantity,
+            unit_price=line.unit_price,
+            discount_percentage=line.discount_percentage,
+            discount_amount=line.discount_amount,
         )
         # The factors mirror `Numeric(12, 6)` in the schema; their product goes to
         # `invoice_lines.total_price`, which is `Numeric(12, 2)`, and no Pydantic bound
@@ -69,12 +69,12 @@ def compute_lines(
         computed.append(
             ComputedLine(
                 line_number=index,
-                description=riga.description,
-                quantity=riga.quantity,
-                unit_of_measure=riga.unit_of_measure,
-                unit_price=riga.unit_price,
-                discount_percentage=riga.discount_percentage,
-                discount_amount=riga.discount_amount,
+                description=line.description,
+                quantity=line.quantity,
+                unit_of_measure=line.unit_of_measure,
+                unit_price=line.unit_price,
+                discount_percentage=line.discount_percentage,
+                discount_amount=line.discount_amount,
                 total_price=total_price,
                 vat_rate=rate,
                 vat_nature=vat_nature,
@@ -150,20 +150,20 @@ def persist_lines(
 ) -> None:
     """Replace the invoice's stored lines with `computed`."""
     repo.clear_lines(invoice.id)
-    for riga in computed:
+    for line in computed:
         repo.add_line(
             InvoiceLine(
                 invoice_id=invoice.id,
-                line_number=riga.line_number,
-                description=riga.description,
-                quantity=riga.quantity,
-                unit_of_measure=riga.unit_of_measure,
-                unit_price=riga.unit_price,
-                discount_percentage=riga.discount_percentage,
-                discount_amount=riga.discount_amount,
-                total_price=riga.total_price,
-                vat_rate=riga.vat_rate,
-                vat_nature=riga.vat_nature,
-                legal_reference=riga.legal_reference,
+                line_number=line.line_number,
+                description=line.description,
+                quantity=line.quantity,
+                unit_of_measure=line.unit_of_measure,
+                unit_price=line.unit_price,
+                discount_percentage=line.discount_percentage,
+                discount_amount=line.discount_amount,
+                total_price=line.total_price,
+                vat_rate=line.vat_rate,
+                vat_nature=line.vat_nature,
+                legal_reference=line.legal_reference,
             )
         )

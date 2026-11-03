@@ -1,10 +1,11 @@
 """AnalyticsService.year_overview / .build_year_csv -- REB-757.
 
-The year of one azienda as the accountant reads it. What these hold the code to: the
+The year of one legal entity as the accountant reads it. What these hold the code to: the
 register is the same universe `annual_revenue` sums (so its total is the revenue
-figure), the rivalsa and the stamp duty are kept apart without leaving the total, the
-regime and the treatment come off what each invoice froze, and the CSV opens in an
-Italian-locale spreadsheet (BOM, semicolon, comma decimals) and totals to the register.
+figure), the social-security surcharge and the stamp duty are kept apart without
+leaving the total, the regime and the treatment come off what each invoice froze, and
+the CSV opens in an Italian-locale spreadsheet (BOM, semicolon,
+comma decimals) and totals to the register.
 """
 
 import csv
@@ -107,9 +108,9 @@ def test_the_register_lists_the_issued_invoices_in_number_order_with_the_total(
 def test_the_stamp_duty_and_the_social_security_surcharge_are_kept_apart(
     db_session: Session, service: InvoiceService
 ) -> None:
-    """A 2,000 euro fee with its 4% rivalsa line owes the 2 euro stamp duty on the
-    untaxed amount. The rivalsa is inside `taxable_amount` (it is a line like any other, and
-    counts toward the ceiling); the bollo is not, and its sentence is the invoice's own."""
+    """A 2,000 euro fee with its 4% social-security surcharge line owes the 2 euro stamp duty on the
+    untaxed amount. The surcharge is inside `taxable_amount` (it is a line like any other, and
+    counts toward the ceiling); the stamp duty is not, and its sentence is the invoice's own."""
     _issue(
         service,
         _customer(db_session),

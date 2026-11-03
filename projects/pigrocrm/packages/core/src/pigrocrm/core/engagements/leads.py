@@ -120,7 +120,7 @@ class LeadService:
             raise LeadsSpaceNotConfigured()
         # The answer carries the deal's link, built from `PIGROCRM_PUBLIC_URL`.
         self.door._require_public_url()
-        email = str(data.contact_person.email).strip().lower()
+        email = str(data.contact.email).strip().lower()
         key = f"{LOCK_PREFIX}{email}"
         with self.registry_engine.connect() as lock:
             try:
@@ -194,9 +194,9 @@ class LeadService:
             deal.id,
             KIND_LINKED,
             Actor.rebase(),
-            {"request": str(request_id), "legal_entity": data.legal_entity},
+            {"request": str(request_id), "company": data.company},
         )
-        append_first_note(space, "deal", deal.id, data.deal.note, Actor.rebase())
+        append_first_note(space, "deal", deal.id, data.deal.notes, Actor.rebase())
         DealService(space).attach_rebase_ref(deal.id, marker, Actor.rebase())
         return self._answer(slug, deal.customer_id, person_id, deal.id, created=False)
 
@@ -231,7 +231,7 @@ class LeadService:
                 CustomerService(space)
                 ._insert(
                     CustomerCreate(
-                        legal_name=data.legal_entity,
+                        legal_name=data.company,
                         note=(
                             "Creato da rebase dalla richiesta di un'azienda sull'hub il "
                             f"{today_local(self.settings):%d/%m/%Y}."
@@ -255,11 +255,11 @@ class LeadService:
                     PersonService(space)
                     ._insert(
                         PersonCreate(
-                            first_name=data.contact_person.first_name,
-                            last_name=data.contact_person.last_name,
+                            first_name=data.contact.first_name,
+                            last_name=data.contact.last_name,
                             email=email,
-                            phone=data.contact_person.phone,
-                            linkedin=data.contact_person.linkedin_url,
+                            phone=data.contact.phone,
+                            linkedin=data.contact.linkedin_url,
                             customer_id=customer_id,
                         ),
                         actor,
@@ -267,10 +267,10 @@ class LeadService:
                     .id
                 )
 
-        notes = [data.deal.note] if data.deal.note else []
-        if known_name is not None and not _same_name(data.legal_entity, known_name):
+        notes = [data.deal.notes] if data.deal.notes else []
+        if known_name is not None and not _same_name(data.company, known_name):
             notes.append(
-                f"Nome indicato nella richiesta: {data.legal_entity}. "
+                f"Nome indicato nella richiesta: {data.company}. "
                 f"Cliente già presente nel CRM: {known_name}."
             )
         deal = DealService(space).create(

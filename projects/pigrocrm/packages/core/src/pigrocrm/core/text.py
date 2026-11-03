@@ -196,9 +196,9 @@ def file_text(content: bytes, *, mime: str, max_bytes: int) -> FileText:
     # field a caller has for it: the extraction stopped early (the page ceiling, or the
     # budget), and the text that came back did not fit `max_bytes`. Either alone is a
     # `troncato: true`; only "read to the end and it fitted" is false.
-    whole, interrotto = _extracted(content, mime=mime, budget=max_bytes)
-    text, tagliato = _truncate(whole, max_bytes)
-    return FileText(text=text, mime=mime, truncated=tagliato or interrotto)
+    whole, interrupted = _extracted(content, mime=mime, budget=max_bytes)
+    text, cut = _truncate(whole, max_bytes)
+    return FileText(text=text, mime=mime, truncated=cut or interrupted)
 
 
 def _truncate(text: str, max_bytes: int) -> tuple[str, bool]:
@@ -244,14 +244,14 @@ def _pdf_text(content: bytes, budget: int | None) -> tuple[str, bool]:
     """
     pages: list[str] = []
     held = 0
-    interrotto = False
+    interrupted = False
     try:
         reader = PdfReader(BytesIO(content))
         # Counted before the slice, because the slice is what has to be reported: a
         # document with more pages than the ceiling is answered without them, and
         # `len(reader.pages)` is a property of the parsed cross-reference table rather
         # than a second pass over the file.
-        interrotto = len(reader.pages) > MAX_PDF_PAGES
+        interrupted = len(reader.pages) > MAX_PDF_PAGES
         for page in reader.pages[:MAX_PDF_PAGES]:
             text = page.extract_text() or ""
             pages.append(text)
@@ -261,14 +261,14 @@ def _pdf_text(content: bytes, budget: int | None) -> tuple[str, bool]:
             if budget is not None and held > budget:
                 # Short of the last page it was allowed to read, so short of the
                 # document -- whether or not the join below ends up over `max_bytes`.
-                interrotto = interrotto or len(pages) < min(len(reader.pages), MAX_PDF_PAGES)
+                interrupted = interrupted or len(pages) < min(len(reader.pages), MAX_PDF_PAGES)
                 break
     except Exception:
         # `False`, not `interrotto`: a malformation discovered on page three of a
         # thousand-page file is not a truncation, and the caller is told the document
         # has no readable text (see the docstring).
         return "", False
-    return "\n".join(page.strip() for page in pages if page.strip()), interrotto
+    return "\n".join(page.strip() for page in pages if page.strip()), interrupted
 
 
 def _docx_text(content: bytes) -> str:

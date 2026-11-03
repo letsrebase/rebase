@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 from fakes.customer_fixtures import make_customer
-from orologio import TODAY_IN_ITALY, congela
+from frozen_clock import TODAY_IN_ITALY, freeze
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from tax_period import TODAY
@@ -40,7 +40,7 @@ def cost_category_id(db_session: Session) -> UUID:
 
     return (
         CostCategoryService(db_session)
-        .create_cost_category(CostCategoryCreate(nome=f"Cassa test {TODAY.isoformat()}"), ADMIN)
+        .create_cost_category(CostCategoryCreate(name=f"Cassa test {TODAY.isoformat()}"), ADMIN)
         .id
     )
 
@@ -60,7 +60,7 @@ def test_the_year_adds_up_month_by_month_and_costs_are_not_revenue(
     CostService(db_session).create(
         CostCreate(
             category_id=cost_category_id,
-            data=TODAY,
+            date=TODAY,
             amount=Decimal("120.00"),
             description="Hosting",
         ),
@@ -96,7 +96,7 @@ def test_an_issued_unpaid_invoice_is_projected_not_collected(
 ) -> None:
     invoice_id = _invoice_of(db_session, issued_invoice_line_id)
     total = db_session.execute(
-        text("select totale from invoices where id = :id"), {"id": str(invoice_id)}
+        text("select total from invoices where id = :id"), {"id": str(invoice_id)}
     ).scalar_one()
     overview = AnalyticsService(db_session).cash_overview(TODAY.year, COLLABORATOR)
     assert overview.paid == Decimal("0.00")
@@ -235,8 +235,8 @@ def _issued_for_period(
 def test_the_cash_view_reads_by_accrual_period_by_default_and_by_the_money_on_request(
     db_session: Session, local_storage: LocalFileStorage, draft_invoice_line_id: UUID
 ) -> None:
-    """Ivan, 2026-09-10: «deve essere per mese di competenza non incassato o emissione
-    della fattura», then a switch with competenza as the default. Three documents, all
+    """Ivan, 2026-09-10: "it must be by accrual month, not by collection or invoice
+    issue", then a switch with accrual as the default. Three documents, all
     dated today, all declaring another month as their period: a paid invoice, an unpaid
     one and a proforma. By accrual all three sit in the declared month; by the money the
     paid one sits where it was collected, the unpaid one where it falls due (its issue
@@ -423,7 +423,7 @@ def test_cash_overview_carries_an_irrevocability_marker_for_an_open_ended_contra
     """Serving notice "today" (frozen at `TODAY_IN_ITALY`) still runs the contract's
     own 30-day notice period, so the window closes 30 days out -- regardless of
     which `year` is on screen, since the notice period is measured from today."""
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(db_session, customer, termination_notice_days=30, end=None)
 
@@ -432,7 +432,7 @@ def test_cash_overview_carries_an_irrevocability_marker_for_an_open_ended_contra
     markers = [m for m in overview.contractual_due_dates if m.contract_id == contract.id]
     assert len(markers) == 1
     assert markers[0].type == "irrevocability_end"
-    assert markers[0].data == date(2026, 1, 31)
+    assert markers[0].date == date(2026, 1, 31)
     assert markers[0].customer_id == customer.id
     assert markers[0].title == "Consulenza CTO"
 
@@ -440,20 +440,20 @@ def test_cash_overview_carries_an_irrevocability_marker_for_an_open_ended_contra
 def test_cash_overview_clips_the_irrevocability_marker_to_the_contracts_own_end(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(db_session, customer, termination_notice_days=90, end=date(2026, 1, 10))
 
     overview = AnalyticsService(db_session).cash_overview(TODAY_IN_ITALY.year, COLLABORATOR)
 
     markers = [m for m in overview.contractual_due_dates if m.contract_id == contract.id]
-    assert [m.data for m in markers if m.type == "irrevocability_end"] == [date(2026, 1, 10)]
+    assert [m.date for m in markers if m.type == "irrevocability_end"] == [date(2026, 1, 10)]
 
 
 def test_cash_overview_carries_a_renewal_deadline_marker(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(
         db_session,
@@ -470,13 +470,13 @@ def test_cash_overview_carries_a_renewal_deadline_marker(
         for m in overview.contractual_due_dates
         if m.contract_id == contract.id and m.type == "renewal_due"
     ]
-    assert [m.data for m in markers] == [date(2026, 4, 2)]
+    assert [m.date for m in markers] == [date(2026, 4, 2)]
 
 
 def test_cash_overview_has_no_renewal_marker_for_a_contract_with_no_renewal_clause(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(db_session, customer, renewal_type="none", end=date(2026, 6, 1))
 
@@ -495,7 +495,7 @@ def test_cash_overview_excludes_a_marker_falling_outside_the_queried_year(
     """`termination_notice_days=400` pushes the window past `TODAY_IN_ITALY`'s own
     year: absent from that year's calendar, present the moment the calendar reaches
     the year the window actually falls in."""
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(db_session, customer, termination_notice_days=400, end=None)
 
@@ -504,13 +504,13 @@ def test_cash_overview_excludes_a_marker_falling_outside_the_queried_year(
 
     assert not [m for m in this_year.contractual_due_dates if m.contract_id == contract.id]
     markers = [m for m in next_year.contractual_due_dates if m.contract_id == contract.id]
-    assert [m.data for m in markers] == [date(2027, 2, 5)]
+    assert [m.date for m in markers] == [date(2027, 2, 5)]
 
 
 def test_cash_overview_excludes_a_marker_for_a_soft_deleted_contract(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    congela(monkeypatch)
+    freeze(monkeypatch)
     customer = make_customer(db_session)
     contract = _contract(db_session, customer, termination_notice_days=1, end=None)
     contract.deleted_at = datetime.now(UTC)

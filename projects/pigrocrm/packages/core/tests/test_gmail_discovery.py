@@ -167,14 +167,14 @@ def test_discovery_answers_who_at_the_domain_wrote_or_was_written_to(db_session:
     found = {row.address: row for row in report.matching}
     assert set(found) == {"marco@example.com", "sarah@example.com"}
     marco = found["marco@example.com"]
-    assert marco.nome == "Marco Bianchi"
+    assert marco.name == "Marco Bianchi"
     assert marco.messages == 2
     # Two messages in one conversation: the page counts conversations, so this is one.
     assert marco.conversations == 1
     assert marco.last_message == datetime.fromtimestamp(
         fake.messages["m2"].internal_date_ms / 1000, tz=UTC
     )
-    assert found["sarah@example.com"].nome == "Sarah Miller"
+    assert found["sarah@example.com"].name == "Sarah Miller"
     assert found["sarah@example.com"].messages == 1
 
 
@@ -188,7 +188,7 @@ def test_a_display_name_longer_than_a_person_takes_is_clipped(db_session: Sessio
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert [len(row.nome) for row in report.matching] == [255]
+    assert [len(row.name) for row in report.matching] == [255]
 
 
 def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> None:
@@ -260,7 +260,7 @@ def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -
 
     account = connected_account(db_session)
     customer = _example(db_session)
-    db_session.add(Person(nome="Marco", email="Marco@Example.com", customer_id=customer.id))
+    db_session.add(Person(first_name="Marco", email="Marco@Example.com", customer_id=customer.id))
     db_session.flush()
     fake = FakeGmail()
     fake.messages["m1"] = _mail(1, frm="marco@example.com", to=MAILBOX, thread="t1")

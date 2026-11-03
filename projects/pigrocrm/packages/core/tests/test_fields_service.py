@@ -57,7 +57,7 @@ def test_select_without_options_is_rejected(db_session: Session) -> None:
 def test_non_select_with_options_is_rejected(db_session: Session) -> None:
     service = FieldDefinitionService(db_session)
     with pytest.raises(ValidationFailed):
-        _create(service, key="nome", field_type="text", options=["a"])
+        _create(service, key="name", field_type="text", options=["a"])
 
 
 def test_field_type_cannot_be_changed(db_session: Session) -> None:

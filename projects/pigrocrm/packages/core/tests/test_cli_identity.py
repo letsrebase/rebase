@@ -81,14 +81,14 @@ def test_the_cli_indexes_every_users_row_not_only_the_owner_and_is_idempotent(
     owner = f"owner-{uuid4()}@studio.it"
     invited = f"invited-{uuid4()}@studio.it"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email=owner))
+        service.provision(TenantSignup(slug=slug, name="Ada", email=owner))
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
         try:
             with session_factory(space)() as space_session:
                 UserService(space_session).create(
-                    UserCreate(email=invited, password=None, nome="Bea", role="collaborator"),
+                    UserCreate(email=invited, password=None, name="Bea", role="collaborator"),
                     Actor.system(),
                 )
         finally:
@@ -131,8 +131,8 @@ def test_overlapping_owner_emails_across_spaces_produce_one_identity_row_per_add
     slug_a = f"prova-overlap-a-{uuid4().hex[:8]}"
     slug_b = f"prova-overlap-b-{uuid4().hex[:8]}"
     try:
-        service.provision(TenantSignup(slug=slug_a, nome="Ada", email=shared))
-        service.provision(TenantSignup(slug=slug_b, nome="Ada", email=shared))
+        service.provision(TenantSignup(slug=slug_a, name="Ada", email=shared))
+        service.provision(TenantSignup(slug=slug_b, name="Ada", email=shared))
 
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
         assert cli.main(["rebuild-identity-index"]) == 0
@@ -163,7 +163,7 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_indexes_the_others(
     ghost = f"prova-fantasma-{uuid4().hex[:8]}"
     owner = f"reachable-{uuid4()}@studio.it"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email=owner))
+        service.provision(TenantSignup(slug=slug, name="Ada", email=owner))
         registry_session.add(
             Tenant(slug=ghost, db_name=tenant_database_name(ghost), owner_email="x@studio.it")
         )
@@ -212,7 +212,7 @@ def test_a_space_with_no_users_is_reported_and_touches_no_identity(
     service = TenantService(registry_session, settings)
     slug = f"prova-vuoto-{uuid4().hex[:8]}"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email=f"solo-{uuid4()}@studio.it"))
+        service.provision(TenantSignup(slug=slug, name="Ada", email=f"solo-{uuid4()}@studio.it"))
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )

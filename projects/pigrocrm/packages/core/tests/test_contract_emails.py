@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contract_emails.schemas import (
+    AttachmentKind,
     ContractEmailTemplateCreate,
     ContractEmailTemplateUpdate,
 )
@@ -82,7 +83,7 @@ def _setup(db_session: Session) -> Contract:
     db_session.add(customer)
     db_session.flush()
     db_session.add(
-        Person(customer_id=customer.id, nome="Mario", last_name="Verdi", email="mario@acme.example")
+        Person(customer_id=customer.id, name="Mario", last_name="Verdi", email="mario@acme.example")
     )
     contract = Contract(
         customer_id=customer.id,
@@ -109,19 +110,19 @@ def _setup(db_session: Session) -> Contract:
 
 
 def _template(
-    db_session: Session, contract: Contract, attachments: list[str] | None = None
+    db_session: Session, contract: Contract, attachments: list[AttachmentKind] | None = None
 ) -> UUID:
     return (
         ContractEmailService(db_session)
         .create(
             contract.id,
             ContractEmailTemplateCreate(
-                nome="Fattura mensile",
+                name="Fattura mensile",
                 subject="Fattura {{numero_fattura}} - {{contratto}}",
                 body=BODY,
                 attachments=attachments
                 if attachments is not None
-                else ["fattura_pdf", "registro_pdf"],  # type: ignore[arg-type]
+                else ["invoice_pdf", "register_pdf"],
             ),
             ADMIN,
         )
@@ -134,7 +135,7 @@ def _issued_invoice(db_session: Session, storage: LocalFileStorage, contract: Co
         db_session.add(
             WorkUnit(
                 contract_id=contract.id,
-                data=day,
+                date=day,
                 quantity=Decimal("1.00"),
                 description="Giornata",
                 status="worked",
@@ -153,7 +154,7 @@ def test_a_template_is_saved_listed_and_archived(db_session: Session) -> None:
     service = ContractEmailService(db_session)
     template_id = _template(db_session, contract)
 
-    assert [t.nome for t in service.list_for_contract(contract.id, ADMIN)] == ["Fattura mensile"]
+    assert [t.name for t in service.list_for_contract(contract.id, ADMIN)] == ["Fattura mensile"]
     archived = service.update(
         contract.id, template_id, ContractEmailTemplateUpdate(active=False), ADMIN
     )
@@ -166,7 +167,7 @@ def test_an_unknown_variable_is_refused_when_the_template_is_saved(db_session: S
         ContractEmailService(db_session).create(
             contract.id,
             ContractEmailTemplateCreate(
-                nome="Rotto", subject="Ciao", body="Ciao {{nome_inventato}}"
+                name="Rotto", subject="Ciao", body="Ciao {{nome_inventato}}"
             ),
             ADMIN,
         )
@@ -178,7 +179,7 @@ def test_two_templates_of_a_contract_cannot_share_a_name_in_any_case(db_session:
     with pytest.raises(Conflict):
         ContractEmailService(db_session).create(
             contract.id,
-            ContractEmailTemplateCreate(nome="FATTURA MENSILE", subject="x", body="y"),
+            ContractEmailTemplateCreate(name="FATTURA MENSILE", subject="x", body="y"),
             ADMIN,
         )
 
@@ -187,7 +188,7 @@ def test_a_reader_cannot_save_a_template(db_session: Session) -> None:
     contract = _setup(db_session)
     with pytest.raises(PermissionDenied):
         ContractEmailService(db_session).create(
-            contract.id, ContractEmailTemplateCreate(nome="x", subject="x", body="y"), READER
+            contract.id, ContractEmailTemplateCreate(name="x", subject="x", body="y"), READER
         )
 
 
@@ -218,7 +219,7 @@ def test_a_draft_invoice_is_not_sent(db_session: Session, local_storage: LocalFi
     db_session.add(
         WorkUnit(
             contract_id=contract.id,
-            data=date(2026, 10, 7),
+            date=date(2026, 10, 7),
             quantity=Decimal("1.00"),
             description="Giornata",
             status="worked",
@@ -284,7 +285,7 @@ def test_a_template_of_another_contract_is_not_found(db_session: Session) -> Non
     template_id = _template(db_session, contract)
     with pytest.raises(NotFound):
         ContractEmailService(db_session).update(
-            other.id, template_id, ContractEmailTemplateUpdate(nome="x"), ADMIN
+            other.id, template_id, ContractEmailTemplateUpdate(name="x"), ADMIN
         )
 
 
@@ -298,10 +299,10 @@ def test_an_agent_cannot_write_a_template_or_prepare_a_draft(
 
     with pytest.raises(AgentForbidden):
         service.create(
-            contract.id, ContractEmailTemplateCreate(nome="x", subject="x", body="y"), agent
+            contract.id, ContractEmailTemplateCreate(name="x", subject="x", body="y"), agent
         )
     with pytest.raises(AgentForbidden):
-        service.update(contract.id, template_id, ContractEmailTemplateUpdate(nome="z"), agent)
+        service.update(contract.id, template_id, ContractEmailTemplateUpdate(name="z"), agent)
     with pytest.raises(AgentForbidden):
         service.prepare(
             contract.id,

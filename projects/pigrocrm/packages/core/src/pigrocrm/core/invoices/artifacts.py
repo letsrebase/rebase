@@ -286,7 +286,7 @@ class InvoiceArtifacts:
                 f"il {kind} rigenerato non coincide con quello originale: e' una "
                 "divergenza da segnalare, non una nuova versione da salvare",
                 expected=expected_hash,
-                ottenuto=digest,
+                obtained=digest,
                 field="xml_hash_sha256" if kind == "xml" else "hash_sha256",
             )
 
@@ -454,7 +454,7 @@ class InvoiceArtifacts:
                 "il file XML archiviato non coincide piu' con l'hash registrato: "
                 "una divergenza da segnalare, non un file da servire",
                 expected=invoice.xml_hash_sha256,
-                ottenuto=digest,
+                obtained=digest,
                 field="xml_hash_sha256",
             )
         return data

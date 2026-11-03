@@ -159,10 +159,10 @@ class CostCategoryService:
         return CostCategoryRead.model_validate(category)
 
     def seed_defaults(self, actor: Actor) -> list[CostCategoryRead]:
-        """Idempotent, deduplicating on `code` and never on `nome`.
+        """Idempotent, deduplicating on `code` and never on `name`.
 
         Residual R11 records the bug this avoids: `PipelineService.seed_defaults`
-        deduplicated on `nome`, the one field a user is free to change, so a renamed
+        deduplicated on `name`, the one field a user is free to change, so a renamed
         seed row produced a duplicate on the next seed. Returns only what it actually
         created, so a caller can tell "seeded" from "already there".
         """

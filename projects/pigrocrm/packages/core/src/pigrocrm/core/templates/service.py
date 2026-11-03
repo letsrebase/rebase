@@ -239,9 +239,9 @@ class TemplateService:
         return tuple(
             DeclaredVariable(
                 name=v["name"],
-                label=v["etichetta"],
-                type=v["tipo"],
-                required=v["obbligatoria"],
+                label=v["label"],
+                type=v["type"],
+                required=v["required"],
             )
             for v in template.declared_variables
         )

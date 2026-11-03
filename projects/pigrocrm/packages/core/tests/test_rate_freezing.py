@@ -38,7 +38,7 @@ def test_raising_a_rate_today_does_not_move_an_old_period(
             TimeEntryCreate(
                 deal_id=seeded_deal_id,
                 user_id=seeded_user_id,
-                data=date(2026, 3, day),
+                date=date(2026, 3, day),
                 hours=Decimal("8.00"),
                 description=f"Giorno {day}",
             ),
@@ -66,7 +66,7 @@ def test_raising_a_rate_today_does_not_move_an_old_period(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 4, 1),
+            date=date(2026, 4, 1),
             hours=Decimal("1.00"),
             description="Aprile",
         ),
@@ -88,7 +88,7 @@ def test_clearing_a_rate_column_altogether_leaves_written_rows_intact(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 1),
+            date=date(2026, 3, 1),
             hours=Decimal("2.00"),
             description="x",
         ),

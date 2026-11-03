@@ -83,7 +83,7 @@ def _contract(session: Session) -> Contract:
 def _day(session: Session, contract: Contract, day: date, status: str = "worked") -> WorkUnit:
     unit = WorkUnit(
         contract_id=contract.id,
-        data=day,
+        date=day,
         quantity=Decimal("1.00"),
         description="Giornata di consulenza",
         status=status,

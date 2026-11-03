@@ -53,7 +53,7 @@ def _legal_entity(session: Session, **overrides: object) -> LegalEntity:
         "vat_number": SUPPLIER_VAT_NUMBER,
         "tax_code": SUPPLIER_CF,
         "country": "IT",
-        "predefinita": True,
+        "is_default": True,
     }
     base.update(overrides)
     existing = LegalEntityRepository(session).default()

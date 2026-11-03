@@ -1,4 +1,4 @@
-"""The sixth branch of the global search: an attività by its title and its notes (REB-723,
+"""The sixth branch of the global search: a task by its title and its notes (REB-723,
 slice 7 §10 criterion 9).
 
 What is pinned: both columns are searched, a title above a mention in the notes, the
@@ -37,9 +37,9 @@ def _add(session: Session, title: str, **columns: object) -> Task:
 
 def _group(session: Session, term: str, limit: int = 5) -> SearchGroup:
     results = SearchService(session).search_everything(
-        SearchQuery(deadline=term, limit=limit), READONLY
+        SearchQuery(term=term, limit=limit), READONLY
     )
-    return next(group for group in results.groups if group.entity == "attivita")
+    return next(group for group in results.groups if group.entity == "task")
 
 
 def test_a_word_of_the_title_finds_it(db_session: Session) -> None:

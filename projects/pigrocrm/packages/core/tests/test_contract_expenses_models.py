@@ -41,7 +41,7 @@ def _contract(db_session: Session, *, expense_policy: dict[str, Any]) -> Contrac
 
 
 def _category(db_session: Session) -> CostCategory:
-    category = CostCategory(nome=f"Categoria {uuid4()}", position=0)
+    category = CostCategory(name=f"Categoria {uuid4()}", position=0)
     db_session.add(category)
     db_session.flush()
     return category
@@ -53,7 +53,7 @@ def _expense(
     payload: dict[str, object] = {
         "contract_id": contract.id,
         "category_id": category.id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "amount": Decimal("100.00"),
         "description": "Biglietto treno",
         "pre_authorized": False,
@@ -116,7 +116,7 @@ def test_reimbursable_with_no_preauth_requirement_is_reimbursable_unauthorised(
 ) -> None:
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": False},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": False},
     )
     category = _category(db_session)
     expense = _expense(db_session, contract, category, pre_authorized=False)
@@ -126,7 +126,7 @@ def test_reimbursable_with_no_preauth_requirement_is_reimbursable_unauthorised(
 def test_reimbursable_with_no_preauth_requirement_absent_key_defaults_to_reimbursable(
     db_session: Session,
 ) -> None:
-    """`richiede_preautorizzazione` absent from the JSONB (not merely `false`)
+    """`requires_pre_authorization` absent from the JSONB (not merely `false`)
     falls back to `false` too -- mastro's own column default, ported."""
     contract = _contract(db_session, expense_policy={"kind": "reimbursable"})
     category = _category(db_session)
@@ -142,7 +142,7 @@ def test_reimbursable_requiring_preauth_is_reimbursable_when_authorised(
 ) -> None:
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category = _category(db_session)
     expense = _expense(
@@ -163,7 +163,7 @@ def test_reimbursable_requiring_preauth_is_flagged_not_reimbursable_when_missing
     unapproved day (spec §5, §7)."""
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category = _category(db_session)
     expense = _expense(db_session, contract, category, pre_authorized=False)
@@ -179,7 +179,7 @@ def test_reimbursable_with_cap_ignores_the_postal_code_amount_itself(db_session:
         expense_policy={
             "kind": "reimbursable_with_cap",
             "amount_cap": "50.00",
-            "richiede_preautorizzazione": False,
+            "requires_pre_authorization": False,
         },
     )
     category = _category(db_session)
@@ -196,7 +196,7 @@ def test_reimbursable_with_cap_ignores_the_postal_code_amount_itself(db_session:
 def test_reimbursable_is_recomputed_on_update_not_only_on_insert(db_session: Session) -> None:
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category = _category(db_session)
     expense = _expense(db_session, contract, category, pre_authorized=False)
@@ -214,7 +214,7 @@ def test_reimbursable_flips_back_to_false_if_pre_authorized_is_unset(
 ) -> None:
     contract = _contract(
         db_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category = _category(db_session)
     expense = _expense(

@@ -32,11 +32,11 @@ def admin() -> Actor:
     ("entity_type", "label", "colliding_key"),
     [
         ("time_entry", "Ore", "hours"),
-        ("time_entry", "Data", "data"),
+        ("time_entry", "Data", "date"),
         ("time_entry", "Descrizione", "description"),
         ("cost", "Importo", "amount"),
-        ("cost", "Data", "data"),
-        ("deal", "Nome", "nome"),
+        ("cost", "Data", "date"),
+        ("deal", "Nome", "name"),
         ("customer", "Ragione sociale", "legal_name"),
         # `note` is no column since the notes thread (REB-879), but a Create takes it as the
         # first note, so a custom field may not take the name.

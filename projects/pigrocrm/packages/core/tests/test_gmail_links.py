@@ -84,7 +84,7 @@ def _acme(session: Session) -> Customer:
 
 
 def _ada(session: Session, customer: Customer) -> Person:
-    person = Person(nome="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
+    person = Person(name="Ada", last_name="Byron", email="ada@acme.it", customer_id=customer.id)
     session.add(person)
     session.flush()
     return person
@@ -117,7 +117,7 @@ def test_an_email_appears_on_the_person_and_on_her_customer(
     account = connected_account(db_session)
     customer = _acme(db_session)
     person = _ada(db_session, customer)
-    deal = Deal(nome="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
+    deal = Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
     db_session.add(deal)
     db_session.flush()
 

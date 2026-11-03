@@ -1,13 +1,13 @@
 """Two booleans, and every change to them audited.
 
 Spec §9.6: `automation_config` is a single row like `legal_entities` and
-`fiscal_profile`, admin-only, and every modification writes an activity -- residuo **R5**
+`fiscal_profile`, admin-only, and every modification writes an activity -- residue **R5**
 closed for this table, with slice 3 §7.1's argument: changing what the system will do by
 itself to future data is of a different order of seriousness from renaming a stage.
 
 R5 itself stays open, and it is worth being exact about what it says, because "closing R5"
-is a claim this task cannot make. R5 (`2026-08-07-slice-1a-residui.md`) is *"Nessun audit
-trail per configurazione e token"*: no timeline entries for **field definitions, pipeline
+is a claim this task cannot make. R5 (`2026-08-07-slice-1a-residui.md`) is *"No audit
+trail for configuration and tokens"*: no timeline entries for **field definitions, pipeline
 stages, users and personal access tokens**. None of those four gains one here. What this
 task does is keep a *fifth* piece of configuration off that list on the day it is
 introduced, which is the only kind of progress against R5 a new table can make.
@@ -179,7 +179,7 @@ def test_an_unknown_field_is_refused_rather_than_ignored() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        AutomationConfigUpdate(to_3_offer_rejected_perde_deal=True)  # type: ignore[call-arg]
+        AutomationConfigUpdate(to_3_offer_rejected_loses_deal=True)  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize("actor", [COLLABORATOR, READONLY])

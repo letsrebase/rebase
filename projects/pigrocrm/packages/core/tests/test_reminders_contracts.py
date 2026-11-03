@@ -92,11 +92,11 @@ class World:
         return row
 
     def day(
-        self, contract: Contract, data: date, status: str = "worked", **fields: object
+        self, contract: Contract, day: date, status: str = "worked", **fields: object
     ) -> WorkUnit:
         row = WorkUnit(
             contract_id=contract.id,
-            data=data,
+            date=day,
             quantity=Decimal("1.00"),
             description="Giornata",
             status=status,
@@ -147,14 +147,14 @@ class World:
 @pytest.fixture
 def world(db_session: Session) -> World:
     legal_entity = db_session.scalars(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).one()
     users = {}
     for name, role in (("owner", "admin"), ("carol", "collaborator")):
         user = User(
             email=f"{name}-{uuid4()}@example.test",
             password_hash="x",
-            nome=name.title(),
+            name=name.title(),
             role=role,
         )
         db_session.add(user)
@@ -277,11 +277,11 @@ def test_contract_expiring_goes_to_the_customers_owner_scoped_to_the_legal_entit
     world: World,
 ) -> None:
     contract = world.contract(end=_ahead(20))
-    other = LegalEntity(nome="Altra", legal_name="Altra Srl", country="IT")
+    other = LegalEntity(name="Altra", legal_name="Altra Srl", country="IT")
     world.session.add(other)
     world.session.flush()
     scoped = User(
-        email=f"s-{uuid4()}@example.test", password_hash="x", nome="Scoped", role="collaborator"
+        email=f"s-{uuid4()}@example.test", password_hash="x", name="Scoped", role="collaborator"
     )
     scoped.limited_scope = True
     world.session.add(scoped)

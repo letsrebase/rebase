@@ -288,7 +288,7 @@ def test_a_reply_from_a_person_on_the_customer_counts_as_the_customer_replying(
     account = connected_account(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30))
     db_session.add(
-        Person(customer_id=invoice.customer_id, nome="Ada", email="ada@acme.it"),
+        Person(customer_id=invoice.customer_id, first_name="Ada", email="ada@acme.it"),
     )
     db_session.add(
         GmailMessage(

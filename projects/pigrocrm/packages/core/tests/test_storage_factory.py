@@ -1,8 +1,8 @@
 """Which credential writes the documents, and when that question gets answered.
 
 Two ways to configure Drive after slice 9: the service account every earlier
-installation set up in the environment, and the titolare's *own* connected account
-writing into a folder they chose in Impostazioni → Drive. The first is fully known at
+installation set up in the environment, and the owner's *own* connected account
+writing into a folder they chose in Settings → Drive. The first is fully known at
 startup. The second is not known at startup at all -- the row it lives in may not exist
 yet, and the API has to boot anyway, or nobody can reach the settings page that would
 create it. So the second one resolves at the first operation instead, and that is the
@@ -117,7 +117,7 @@ def _account(
     """
     user = User(
         email=f"drive-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
         role=role,
         active=True,
@@ -243,7 +243,7 @@ def test_a_half_configured_service_account_is_still_a_startup_failure() -> None:
 
 
 def test_gdrive_with_a_session_factory_returns_a_lazy_storage_and_opens_no_session() -> None:
-    """The whole reason this storage is lazy: the API must start before the titolare has
+    """The whole reason this storage is lazy: the API must start before the owner has
     connected Drive. Construction therefore reads nothing -- proven by a factory that
     fails the test if it is ever called."""
     storage = storage_from_settings(
@@ -271,7 +271,7 @@ def test_storage_account_finds_the_active_account_that_has_a_write_folder(
 def test_storage_account_ignores_an_account_with_no_write_folder(db_session: Session) -> None:
     """Connected is not configured. A Drive whose `storage_folder_id` is still `None`
     can be read from, and writing into it would mean picking a folder somewhere in the
-    titolare's personal Drive on their behalf."""
+    owner's personal Drive on their behalf."""
     _account(db_session, storage_folder_id=None)
     assert DriveRepository(db_session).storage_account() is None
 
@@ -451,13 +451,13 @@ def test_signed_url_without_a_connected_drive_refuses_too(db_session: Session) -
         storage.signed_url(KEY, TTL)
 
 
-# --- Configured: the titolare's own credential, the titolare's own folder -------------
+# --- Configured: the owner's own credential, the owner's own folder -------------
 
 
 def test_put_writes_under_the_chosen_folder_with_the_owners_own_bearer_token(
     db_session: Session,
 ) -> None:
-    """The slice in one test: the bytes land under the folder the titolare picked -- one
+    """The slice in one test: the bytes land under the folder the owner picked -- one
     folder per customer beneath it, exactly the arrangement the service account
     produces -- and every request that put them there carried *their* access token,
     obtained by refreshing the sealed refresh token on their row."""
@@ -516,7 +516,7 @@ def test_the_transport_is_built_once_and_reused_across_operations(db_session: Se
 
 
 def test_changing_the_write_folder_takes_effect_without_a_restart(db_session: Session) -> None:
-    """`updated_at` is the seam. The titolare changes the folder in Impostazioni →
+    """`updated_at` is the seam. The owner changes the folder in Settings →
     Drive; the next upload has to land in the new one. A storage that resolved once and
     never looked again would keep writing into the old folder until somebody restarted
     the API, with nothing on any screen to say so."""
@@ -886,7 +886,7 @@ def test_a_grant_without_the_write_scope_refuses_the_upload_with_guidance(
     """`drive.file` is the scope that lets this credential create a file at all, and
     until now nothing checked it before a write.
 
-    A titolare can arrive here honestly: the consent screen lets a person tick fewer
+    An owner can arrive here honestly: the consent screen lets a person tick fewer
     scopes than were asked for, and a Google client whose scope list changes between
     two authorisations leaves older grants short of one. What happened then was a
     `files.create` refused by Google as a 403 inside `GDriveStorage`, surfacing as
@@ -932,7 +932,7 @@ def test_a_read_refused_over_the_missing_scope_is_not_worded_as_a_write(
     opposite of true.
 
     So the sentence names the archive rather than the direction of travel, and the
-    guidance -- reconnect from Impostazioni → Drive -- is unchanged, because the fix is.
+    guidance -- reconnect from Settings → Drive -- is unchanged, because the fix is.
     `put` and `delete` keep the write wording: those really are writes, and naming them
     is more precise than naming the archive.
     """

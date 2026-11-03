@@ -55,7 +55,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     # list of users, never one per row, and `legal_entities` below is what every reader
     # answers with. `delete-orphan`, so clearing the list deletes the rows.
     scopes: Mapped[list["UserLegalEntity"]] = relationship(
-        lazy="selectin", cascade="all, delete-orphan", order_by="UserLegalEntity.azienda_id"
+        lazy="selectin", cascade="all, delete-orphan", order_by="UserLegalEntity.legal_entity_id"
     )
 
     __table_args__ = (Index("uq_users_email_lower", func.lower(email), unique=True),)

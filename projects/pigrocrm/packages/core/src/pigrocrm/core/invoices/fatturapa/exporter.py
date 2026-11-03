@@ -195,7 +195,7 @@ class InvoicePaExporter:
         pattern to a real foreign postcode here is what ORB-38 was: `issue` had already
         spent the number by the time this method refused.
         """
-        italiano = is_italian(party)
+        italian = is_italian(party)
         headquarters = etree.SubElement(parent, "Sede")
         self._text(
             headquarters,
@@ -208,7 +208,7 @@ class InvoicePaExporter:
         self._text(
             headquarters,
             "CAP",
-            party.cap.strip() if italiano else POSTAL_CODE_FOREIGN,
+            party.cap.strip() if italian else POSTAL_CODE_FOREIGN,
             entity=entity,
             field="cap",
             pattern=CAP_RE,
@@ -224,7 +224,7 @@ class InvoicePaExporter:
         # that is legitimately without. Outside Italy it is omitted whatever the record
         # holds, since the element is the code of an Italian province and nothing else.
         province = (party.province or "").strip().upper()
-        if italiano and province:
+        if italian and province:
             self._text(
                 headquarters,
                 "Provincia",
@@ -260,8 +260,8 @@ class InvoicePaExporter:
         the customer's is read from the customer.
         """
         block = etree.SubElement(parent, tag)
-        elemento = etree.SubElement(block, "IdPaese")
-        elemento.text = country.strip().upper()
+        element = etree.SubElement(block, "IdPaese")
+        element.text = country.strip().upper()
         self._text(
             block,
             "IdCodice",
@@ -574,8 +574,8 @@ class InvoicePaExporter:
 
     def _goods_services_data(self, body: etree._Element, invoice: InvoiceForExport) -> None:
         goods = etree.SubElement(body, "DatiBeniServizi")
-        for riga in invoice.lines:
-            self._detail_line(goods, riga, invoice)
+        for invoice_line in invoice.lines:
+            self._detail_line(goods, invoice_line, invoice)
         for group in build_recap(
             [
                 ComputedLine(
@@ -597,7 +597,7 @@ class InvoicePaExporter:
             self._summary_data(goods, group)
 
     def _detail_line(
-        self, parent: etree._Element, riga: InvoiceLineRead, invoice: InvoiceForExport
+        self, parent: etree._Element, invoice_line: InvoiceLineRead, invoice: InvoiceForExport
     ) -> None:
         """Sequence: NumeroLinea, TipoCessionePrestazione?, CodiceArticolo*,
         Descrizione, Quantita?, UnitaMisura?, DataInizioPeriodo?, DataFinePeriodo?,
@@ -615,22 +615,22 @@ class InvoicePaExporter:
         # A real line number per real line. The previous system hardcoded 1, quantity 1 and the
         # whole total as the unit price, so the detail of the work never reached the
         # customer.
-        number.text = str(riga.line_number)
+        number.text = str(invoice_line.line_number)
         self._text(
             line,
             "Descrizione",
-            riga.description,
+            invoice_line.description,
             entity="invoice_line",
             field="description",
             max_length=DESCRIPTION_MAX,
         )
         quantity = etree.SubElement(line, "Quantita")
-        quantity.text = format_amount_8(riga.quantity)
-        if (riga.unit_of_measure or "").strip():
+        quantity.text = format_amount_8(invoice_line.quantity)
+        if (invoice_line.unit_of_measure or "").strip():
             self._text(
                 line,
                 "UnitaMisura",
-                riga.unit_of_measure or "",
+                invoice_line.unit_of_measure or "",
                 entity="invoice_line",
                 field="unit_of_measure",
                 max_length=UNIT_OF_MEASURE_MAX,
@@ -645,17 +645,17 @@ class InvoicePaExporter:
             end = etree.SubElement(line, "DataFinePeriodo")
             end.text = self._iso(invoice.accrual_to)
         price = etree.SubElement(line, "PrezzoUnitario")
-        price.text = format_amount_8(riga.unit_price)
+        price.text = format_amount_8(invoice_line.unit_price)
         # `ScontoMaggiorazione` is deliberately not emitted: the discount is already
         # inside `total_price` (totals.py::line_total), and declaring it twice would
         # make the SdI's own check on PrezzoTotale fail.
         total = etree.SubElement(line, "PrezzoTotale")
-        total.text = format_amount_2(riga.total_price)
+        total.text = format_amount_2(invoice_line.total_price)
         rate = etree.SubElement(line, "AliquotaIVA")
-        rate.text = format_rate(riga.vat_rate)
-        if riga.vat_nature:
+        rate.text = format_rate(invoice_line.vat_rate)
+        if invoice_line.vat_nature:
             vat_nature = etree.SubElement(line, "Natura")
-            vat_nature.text = riga.vat_nature
+            vat_nature.text = invoice_line.vat_nature
 
     def _summary_data(self, parent: etree._Element, group: RecapGroup) -> None:
         """Sequence: AliquotaIVA, VAT nature?, SpeseAccessorie?, Arrotondamento?,

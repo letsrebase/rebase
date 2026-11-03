@@ -15,13 +15,13 @@ year at once, which is the same shape as the previous system's defect `db/clock.
 describes -- an instant projected into the wrong zone landing a document in the wrong
 fiscal year.
 
-`congela` freezes that instant on both sides of the disagreement:
+`freeze` freezes that instant on both sides of the disagreement:
 
   * `pigrocrm.core.db.clock._now` is frozen, so `today_local()` answers `TODAY_IN_ITALY`
     (1 January 2026): the real function, real `ZoneInfo` conversion, only the instant
     supplied.
   * each production module named by the caller gets a `date` whose `today()` answers
-    `TODAY_OF_PROCESSO` (31 December 2025), which is what the standard library would
+    `TODAY_OF_PROCESS` (31 December 2025), which is what the standard library would
     genuinely return for that instant on a host running in UTC.
 
 There is exactly one place to freeze, `db.clock._now`, because there is exactly one place
@@ -44,35 +44,35 @@ from pigrocrm.core.db import clock as db_clock
 from pigrocrm.core.db.clock import ITALY_TZ
 
 # 00:30 on 1 January in Rome. In UTC this instant is still 23:30 on 31 December.
-ISTANTE = datetime(2026, 1, 1, 0, 30, tzinfo=ITALY_TZ)
+FROZEN_INSTANT = datetime(2026, 1, 1, 0, 30, tzinfo=ITALY_TZ)
 
-TODAY_IN_ITALY: date = ISTANTE.astimezone(ITALY_TZ).date()
-TODAY_OF_PROCESSO: date = ISTANTE.astimezone(UTC).date()
+TODAY_IN_ITALY: date = FROZEN_INSTANT.astimezone(ITALY_TZ).date()
+TODAY_OF_PROCESS: date = FROZEN_INSTANT.astimezone(UTC).date()
 
-assert TODAY_IN_ITALY != TODAY_OF_PROCESSO, "the whole point is that these two differ"
+assert TODAY_IN_ITALY != TODAY_OF_PROCESS, "the whole point is that these two differ"
 
 
-class _DataDiSistema(date):
+class _SystemDate(date):
     """`date` whose `today()` answers as the standard library would on a UTC host."""
 
     @classmethod
     def today(cls) -> date:
-        return TODAY_OF_PROCESSO
+        return TODAY_OF_PROCESS
 
 
-def congela(monkeypatch: pytest.MonkeyPatch, *moduli: object) -> None:
-    """Freeze `ISTANTE`, and make `date.today()` inside `moduli` lie the way UTC does."""
-    monkeypatch.setattr(db_clock, "_now", lambda: ISTANTE.astimezone(UTC))
-    for modulo in moduli:
-        monkeypatch.setattr(modulo, "date", _DataDiSistema, raising=False)
+def freeze(monkeypatch: pytest.MonkeyPatch, *modules: object) -> None:
+    """Freeze `FROZEN_INSTANT`, and make `date.today()` inside `modules` lie the way UTC does."""
+    monkeypatch.setattr(db_clock, "_now", lambda: FROZEN_INSTANT.astimezone(UTC))
+    for module in modules:
+        monkeypatch.setattr(module, "date", _SystemDate, raising=False)
 
 
-def fissa_today(monkeypatch: pytest.MonkeyPatch, day: date) -> None:
+def freeze_today(monkeypatch: pytest.MonkeyPatch, day: date) -> None:
     """Pin the product clock to midday in Rome on `day`, the day a module computed once
     at import (`TODAY = today_local()`): a run that crosses midnight would otherwise compare
     the service's new day with the old one."""
-    istante = datetime(day.year, day.month, day.day, 12, 0, tzinfo=ITALY_TZ)
-    monkeypatch.setattr(db_clock, "_now", lambda: istante.astimezone(UTC))
+    instant = datetime(day.year, day.month, day.day, 12, 0, tzinfo=ITALY_TZ)
+    monkeypatch.setattr(db_clock, "_now", lambda: instant.astimezone(UTC))
 
 
-__all__ = ["ISTANTE", "fissa_today", "TODAY_OF_PROCESSO", "TODAY_IN_ITALY", "congela"]
+__all__ = ["FROZEN_INSTANT", "freeze_today", "TODAY_OF_PROCESS", "TODAY_IN_ITALY", "freeze"]

@@ -37,7 +37,7 @@ TODAY = date(2026, 10, 26)  # a Monday
 
 
 def _user(session: Session, role: str = "collaborator") -> User:
-    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", nome="Persona", role=role)
+    user = User(email=f"u-{uuid4()}@example.test", password_hash="x", name="Persona", role=role)
     session.add(user)
     session.flush()
     return user
@@ -172,7 +172,7 @@ def test_a_key_must_name_a_known_type_and_a_subject(db_session: Session) -> None
     user = _user(db_session)
     service = ReminderStateService(db_session)
 
-    for bad in ("nonsense", "nope:1", "attivita_overdue:", "attivita_overdue:a b"):
+    for bad in ("nonsense", "nope:1", "task_overdue:", "task_overdue:a b"):
         with pytest.raises(ValidationFailed):
             service.acknowledge(_actor(user), bad, "warning")
 

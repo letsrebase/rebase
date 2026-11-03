@@ -123,11 +123,11 @@ def propose_day_mapping(
         return None
 
     proposed_amount = sum_money(_price_work_unit_on_date(day, rate_cards) for day in picked)
-    date_scelte = [day.date for day in picked]
+    date_chosen = [day.date for day in picked]
     return WorkUnitDayMappingProposal(
         work_unit_ids=[day.id for day in picked],
-        period_from=min(date_scelte),
-        period_to=max(date_scelte),
+        period_from=min(date_chosen),
+        period_to=max(date_chosen),
         days_number=len(picked),
         proposed_amount=proposed_amount,
         line_amount=line_amount,

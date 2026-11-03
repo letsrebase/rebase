@@ -56,14 +56,14 @@ def test_not_found_message_and_str() -> None:
 def test_validation_failed_message_and_str() -> None:
     """Error message is available on .message and str(exc)."""
     err = ValidationFailed("customer", "vat_number", "must be 11 digits")
-    assert err.message == "customer.partita_iva: must be 11 digits"
-    assert str(err) == "customer.partita_iva: must be 11 digits"
+    assert err.message == "customer.vat_number: must be 11 digits"
+    assert str(err) == "customer.vat_number: must be 11 digits"
 
 
 def test_permission_denied_message_and_str() -> None:
     """Error message is available on .message and str(exc)."""
     err = PermissionDenied("update_deal", ["admin", "collaborator"], "readonly")
-    expected_msg = "update_deal requires one of ['admin', 'collaboratore'], actor has readonly"
+    expected_msg = "update_deal requires one of ['admin', 'collaborator'], actor has readonly"
     assert err.message == expected_msg
     assert str(err) == expected_msg
 
@@ -141,7 +141,7 @@ def test_require_write_and_admin_by_role(
 
 
 def test_collaborator_passes_write_but_not_admin() -> None:
-    """Demonstrates role distinction: collaboratore can write but not administer."""
+    """Demonstrates role distinction: collaborator can write but not administer."""
     actor = Actor(id=None, type="user", role="collaborator")
     actor.require_write("update_field")  # should not raise
     with pytest.raises(PermissionDenied):

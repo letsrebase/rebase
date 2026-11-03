@@ -55,19 +55,19 @@ from pigrocrm.core.pipeline.models import PipelineStage
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
 
 _PREFIX = "ECON"
-_DA = date(2026, 3, 1)
-_A = date(2026, 3, 31)
+_DATE_FROM = date(2026, 3, 1)
+_DATE_TO = date(2026, 3, 31)
 
 # Every figure below, derived by hand from the four rows the fixture writes. They are
 # literals rather than expressions for the reason criterion 1 exists: an expectation
 # recomputed the way the code computes it agrees with a wrong implementation.
-_REVENUE_IN_PROGRESS = Decimal("1000.00")  # the March invoice on the open deal, imponibile
-_REVENUE_CLOSED = Decimal("500.00")  # the March invoice on the won deal, imponibile
+_REVENUE_IN_PROGRESS = Decimal("1000.00")  # the March invoice on the open deal, taxable amount
+_REVENUE_CLOSED = Decimal("500.00")  # the March invoice on the won deal, taxable amount
 _REVENUE_PERIOD = Decimal("1500.00")  # their sum, which is what the raw SELECT returns
-_REVENUE_SE_SEGUISSE_TOTAL = Decimal("1830.00")  # 1220.00 + 610.00
+_REVENUE_IF_IT_FOLLOWED_TOTAL = Decimal("1830.00")  # 1220.00 + 610.00
 _UNPAID = Decimal("14028.78")  # 1220.00 + 610.00 + 12198.78, no period
-_UNPAID_SE_SEGUISSE_TAXABLE_AMOUNT = Decimal("11499.00")  # 1000 + 500 + 9999
-_EXPIRED = Decimal("1220.00")  # the one row whose data_scadenza is already past
+_UNPAID_IF_IT_FOLLOWED_TAXABLE_AMOUNT = Decimal("11499.00")  # 1000 + 500 + 9999
+_EXPIRED = Decimal("1220.00")  # the one row whose due_date is already past
 _ISSUED_INVOICES = 2
 
 
@@ -97,23 +97,23 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
         _require_an_empty_register(session)
         legal_entity_id = committed_default_legal_entity(session)
         open = PipelineStage(
-            nome=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
+            name=f"{_PREFIX} aperto", position=0, default_probability=20, type="open"
         )
         won = PipelineStage(
-            nome=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
+            name=f"{_PREFIX} vinto", position=1, default_probability=100, type="won"
         )
         customer = Customer(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add_all([open, won, customer])
         session.flush()
         deal_open = Deal(
-            nome=f"{_PREFIX} in corso",
+            name=f"{_PREFIX} in corso",
             customer_id=customer.id,
             pipeline_stage_id=open.id,
             probability=20,
             custom_fields={},
         )
         deal_won = Deal(
-            nome=f"{_PREFIX} chiuso",
+            name=f"{_PREFIX} chiuso",
             customer_id=customer.id,
             pipeline_stage_id=won.id,
             probability=100,
@@ -174,9 +174,9 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
     finally:
         with factory() as session:
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(_corpus_customers())))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.legal_name.like(f"{_PREFIX} %")))
-            session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            session.execute(delete(PipelineStage).where(PipelineStage.name.like(f"{_PREFIX} %")))
             remove_legal_entity(session, legal_entity_id)
             session.commit()
 
@@ -239,7 +239,7 @@ def _add_invoice(
 
 
 def _dashboard(
-    engine: Engine, date_from: date | None = _DA, date_to: date | None = _A
+    engine: Engine, date_from: date | None = _DATE_FROM, date_to: date | None = _DATE_TO
 ) -> EconomicDashboard:
     with session_factory(engine)() as session:
         return DashboardService(session).get_economic_dashboard(
@@ -254,7 +254,7 @@ def test_the_revenue_equals_the_owning_service_to_the_cent(rf01_corpus: Corpus) 
     result = _dashboard(rf01_corpus.engine)
     with session_factory(rf01_corpus.engine)() as session:
         pnl = AnalyticsService(session).period_pnl(
-            PeriodPnlQuery(date_from=_DA, date_to=_A), READONLY
+            PeriodPnlQuery(date_from=_DATE_FROM, date_to=_DATE_TO), READONLY
         )
     assert result.pnl.closed.revenue == pnl.closed.revenue
     assert result.pnl.in_progress.revenue == pnl.in_progress.revenue
@@ -268,7 +268,7 @@ def test_the_pnl_is_embedded_verbatim_and_not_flattened(rf01_corpus: Corpus) -> 
     result = _dashboard(rf01_corpus.engine)
     with session_factory(rf01_corpus.engine)() as session:
         pnl = AnalyticsService(session).period_pnl(
-            PeriodPnlQuery(date_from=_DA, date_to=_A), READONLY
+            PeriodPnlQuery(date_from=_DATE_FROM, date_to=_DATE_TO), READONLY
         )
     assert result.pnl == pnl
 
@@ -279,9 +279,9 @@ def test_the_period_reaches_the_owning_service_unchanged(rf01_corpus: Corpus) ->
     here and nowhere else. `customer_id` is `None` because §5 has no customer filter -- the
     dashboard is the whole business."""
     result = _dashboard(rf01_corpus.engine)
-    assert (result.pnl.date_from, result.pnl.date_to) == (_DA, _A)
-    assert result.period.date_from == _DA
-    assert result.period.date_to == _A
+    assert (result.pnl.date_from, result.pnl.date_to) == (_DATE_FROM, _DATE_TO)
+    assert result.period.date_from == _DATE_FROM
+    assert result.period.date_to == _DATE_TO
     assert result.pnl.customer_id is None
 
 
@@ -304,11 +304,11 @@ def test_the_revenue_equals_a_direct_sql_sum_on_an_independent_path(
     with session_factory(rf01_corpus.engine)() as session:
         direct = session.execute(
             text(
-                "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-                "WHERE tipo = 'fattura' AND stato = 'emessa' AND deleted_at IS NULL "
-                "AND data_emissione BETWEEN :da AND :a"
+                "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+                "WHERE type = 'invoice' AND status = 'issued' AND deleted_at IS NULL "
+                "AND issue_date BETWEEN :date_from AND :date_to"
             ),
-            {"da": _DA, "a": _A},
+            {"date_from": _DATE_FROM, "date_to": _DATE_TO},
         ).scalar_one()
     assert Decimal(direct) == _REVENUE_PERIOD
     assert result.pnl.closed.revenue + result.pnl.in_progress.revenue == Decimal(direct)
@@ -325,11 +325,13 @@ def test_each_column_carries_its_own_known_figure(rf01_corpus: Corpus) -> None:
 def test_the_revenue_follows_taxable_amount_and_fails_if_it_follows_total(
     rf01_corpus: Corpus,
 ) -> None:
-    """§5.1: `fatturato = Σ imponibile`, and this slice introduces no third meaning."""
+    """§5.1: `invoiced = Σ taxable_amount`, and this slice introduces no third meaning."""
     result = _dashboard(rf01_corpus.engine)
     total = result.pnl.closed.revenue + result.pnl.in_progress.revenue
     assert total == _REVENUE_PERIOD
-    assert total != _REVENUE_SE_SEGUISSE_TOTAL, "revenue must follow `taxable_amount`, not `total`"
+    assert total != _REVENUE_IF_IT_FOLLOWED_TOTAL, (
+        "revenue must follow `taxable_amount`, not `total`"
+    )
 
 
 def test_unpaid_follows_total_and_fails_if_it_follows_taxable_amount(
@@ -339,8 +341,8 @@ def test_unpaid_follows_total_and_fails_if_it_follows_taxable_amount(
     must arrive in the bank, VAT included -- money collected on the State's behalf."""
     result = _dashboard(rf01_corpus.engine)
     assert result.unpaid == _UNPAID
-    assert result.unpaid != _UNPAID_SE_SEGUISSE_TAXABLE_AMOUNT, (
-        "da_incassare must follow `total`, not `taxable_amount`"
+    assert result.unpaid != _UNPAID_IF_IT_FOLLOWED_TAXABLE_AMOUNT, (
+        "unpaid must follow `total`, not `taxable_amount`"
     )
 
 
@@ -414,7 +416,7 @@ def test_the_service_runs_in_repeatable_read(rf01_corpus: Corpus) -> None:
     second *service* to the same transaction and the level must survive that."""
     with session_factory(rf01_corpus.engine)() as session:
         DashboardService(session).get_economic_dashboard(
-            PeriodQuery(date_from=_DA, date_to=_A), READONLY
+            PeriodQuery(date_from=_DATE_FROM, date_to=_DATE_TO), READONLY
         )
         level = session.execute(text("SHOW transaction_isolation")).scalar_one()
     assert level == "repeatable read"
@@ -444,16 +446,16 @@ def test_whether_the_period_can_still_move_is_on_the_response(rf01_corpus: Corpu
 
 
 def test_no_fiscal_field_appears_anywhere_on_this_dashboard(rf01_corpus: Corpus) -> None:
-    """§5.3: the fiscal estimate stays at /app/analisi/fiscale, admin-only. A dashboard is
+    """§5.3: the fiscal estimate stays at /app/analysis/tax, admin-only. A dashboard is
     the screen most likely to end up in a screenshot or a screen share. Checked by field
     name over the rendered JSON, not by intention."""
     result = _dashboard(rf01_corpus.engine)
     rendered = result.model_dump_json()
     for forbidden in (
-        "imponibile_fiscale",
+        "fiscal_taxable_income",
         "substitute_tax",
-        "contributi",
-        "netto_stimato",
+        "contributions",
+        "estimated_net",
         "profitability_coefficient",
         "substitute_tax_rate",
         "social_security_rate",
@@ -466,5 +468,5 @@ def test_no_deal_level_margin_and_no_year_on_year_comparison() -> None:
     refuses to enable by inertia, and a year-on-year comparison whose prior period is
     partly written is worse than none."""
     fields = set(EconomicDashboard.model_fields)
-    for forbidden in ("deal_in_evidenza", "margine_per_deal", "anno_precedente", "confronto"):
+    for forbidden in ("highlighted_deal", "margin_per_deal", "previous_year", "comparison"):
         assert forbidden not in fields, forbidden

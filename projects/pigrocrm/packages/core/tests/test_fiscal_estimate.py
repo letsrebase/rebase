@@ -223,8 +223,8 @@ def test_the_service_reads_the_year_from_issued_invoices_only(
     confirmed proforma never touches the register, and a draft is a proposal."""
     expected = db_session.execute(
         text(
-            "SELECT COALESCE(SUM(imponibile), 0) FROM invoices "
-            "WHERE anno = :anno AND tipo = 'fattura' AND stato = 'emessa' "
+            "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
+            "WHERE year = :year AND type = 'invoice' AND status = 'issued' "
             "  AND deleted_at IS NULL"
         ),
         {"year": YEAR},
@@ -334,15 +334,15 @@ def test_there_is_no_per_deal_variant_anywhere() -> None:
     ]
 
 
-# --- REB-361: the rivalsa amount never reaches the coefficiente base ---------------
+# --- REB-361: the social security surcharge never reaches the coefficient base ---------------
 
 
 def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_base(
     db_session: Session,
 ) -> None:
-    """REB-352 §2's tension, resolved per §6: a rivalsa line counts toward the
+    """REB-352 §2's tension, resolved by §6: a surcharge line counts toward the
     ceiling in full (`AnalyticsRepository.annual_revenue` sums it, unmodified) but
-    must never reach the coefficiente base -- `estimate_income`'s `revenue` here must
+    must never reach the coefficient base -- `estimate_income`'s `revenue` here must
     read 1000.00, the fee alone, not 1040.00, or the surcharge gets taxed at 67% like
     ordinary income."""
     from datetime import date

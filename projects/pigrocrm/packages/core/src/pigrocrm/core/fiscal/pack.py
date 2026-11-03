@@ -167,7 +167,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
     version="1",
     ceilings=(
         Ceiling(
-            id="soglia_ricavi",
+            id="revenue_ceiling",
             label="Soglia di ricavi e compensi del regime forfettario",
             threshold=Decimal("85000.00"),
             basis="cash_received_calendar_year",
@@ -184,7 +184,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
             ),
         ),
         Ceiling(
-            id="soglia_fuoriuscita_immediata",
+            id="immediate_exit_ceiling",
             label="Soglia di fuoriuscita immediata dal regime forfettario",
             threshold=Decimal("100000.00"),
             basis="cash_received_calendar_year",

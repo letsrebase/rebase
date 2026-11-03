@@ -75,7 +75,7 @@ class DealRepository:
         return {row[0]: row[1] for row in rows}
 
     def names(self, deal_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `nome` of each given deal, in one query.
+        """The `name` of each given deal, in one query.
 
         The sibling of `customer_names` above, for rows that arrive naming a deal by id
         and nothing else. Its caller is the weekly report (spec 2026-09-16 §3.1, section
@@ -145,7 +145,7 @@ class DealRepository:
         **Every** configured stage, not only the open ones (2026-09-09): a card that stops
         at the last open stage never says where the work ended up, and «Vinto» and «Perso»
         are the two places a pipeline exists to reach. Each row carries its `stage_type` so
-        the renderer groups the closed ones by that rather than by `nome`, which the user
+        the renderer groups the closed ones by that rather than by `name`, which the user
         may rename. The closed rows count what sits in the stage *today* and are not
         filtered by any period -- nothing here ever was; the period question is answered by
         `closed_in_period`, above the same card, and one card with two meanings is how two

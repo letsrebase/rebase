@@ -33,11 +33,11 @@ from pigrocrm.core.tenants.service import migrate_to_head
 _serial = count()
 
 
-def _user(session: Session, nome: str, *, active: bool = True) -> User:
+def _user(session: Session, name: str, *, active: bool = True) -> User:
     user = User(
-        email=f"{nome.lower().replace(' ', '.')}-{next(_serial)}@example.test",
+        email=f"{name.lower().replace(' ', '.')}-{next(_serial)}@example.test",
         password_hash="x",
-        nome=nome,
+        name=name,
         role="admin",
         active=active,
     )
@@ -70,9 +70,9 @@ def _created(
 
 
 def _customer(
-    session: Session, nome: str, creator: User | None, *, actor_type: str = "mcp"
+    session: Session, name: str, creator: User | None, *, actor_type: str = "mcp"
 ) -> Customer:
-    customer = Customer(legal_name=nome, country="IT", custom_fields={})
+    customer = Customer(legal_name=name, country="IT", custom_fields={})
     session.add(customer)
     session.flush()
     _created(session, "customer", customer.id, creator, actor_type=actor_type)
@@ -81,16 +81,16 @@ def _customer(
 
 def _stage(session: Session) -> PipelineStage:
     stage = PipelineStage(
-        nome=f"Fase {next(_serial)}", position=0, default_probability=10, type="open"
+        name=f"Fase {next(_serial)}", position=0, default_probability=10, type="open"
     )
     session.add(stage)
     session.flush()
     return stage
 
 
-def _deal(session: Session, nome: str, customer: Customer, creator: User | None) -> Deal:
+def _deal(session: Session, name: str, customer: Customer, creator: User | None) -> Deal:
     deal = Deal(
-        nome=nome,
+        name=name,
         customer_id=customer.id,
         pipeline_stage_id=_stage(session).id,
         probability=10,
@@ -250,7 +250,7 @@ def root_settings(db_engine: Engine) -> Iterator[Settings]:
         engine = create_engine(configured.database_url, future=True)
         try:
             with session_factory(engine)() as session:
-                committed_default_legal_entity(session, nome="Radice")
+                committed_default_legal_entity(session, name="Radice")
                 session.commit()
         finally:
             engine.dispose()
@@ -287,7 +287,7 @@ def _owners(settings: Settings) -> dict[str, str | None]:
         with engine.connect() as connection:
             rows = connection.execute(
                 text(
-                    "select c.ragione_sociale, u.nome from customers c "
+                    "select c.legal_name, u.name from customers c "
                     "left join users u on u.id = c.owner_id"
                 )
             ).all()
@@ -338,8 +338,8 @@ def test_a_change_committed_between_the_plan_and_the_apply_is_respected(root: Ro
                 other.execute(
                     text(
                         "update customers set owner_id = "
-                        "(select id from users where nome = 'rebase') "
-                        "where ragione_sociale = 'ACME Srl'"
+                        "(select id from users where name = 'rebase') "
+                        "where legal_name = 'ACME Srl'"
                     )
                 )
             assert apply_owner_backfill(session, plan) == 0

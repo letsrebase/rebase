@@ -399,7 +399,7 @@ def test_it_goes_to_the_people_on_the_customer_when_there_is_no_generic_address(
     account = connected_account(db_session)
     _profiles(db_session)
     invoice = unpaid_invoice(db_session, due=_days_ago(30), email=None)
-    db_session.add(Person(customer_id=invoice.customer_id, nome="Ada", email="Ada@Acme.IT"))
+    db_session.add(Person(customer_id=invoice.customer_id, first_name="Ada", email="Ada@Acme.IT"))
     db_session.commit()
 
     read = _service(db_session).create_reminder(invoice.id, actor_for(account))
@@ -727,7 +727,7 @@ def _cleanup(
         # The fiscal profile first: since REB-615 it references its azienda, and a
         # delete in the old order fails on the foreign key and leaks the whole cleanup.
         session.execute(delete(FiscalProfile))
-        session.execute(delete(LegalEntity).where(LegalEntity.predefinita.is_(False)))
+        session.execute(delete(LegalEntity).where(LegalEntity.is_default.is_(False)))
         if user_id is not None:
             session.execute(delete(User).where(User.id == user_id))
         session.commit()

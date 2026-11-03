@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from orologio import congela
+from frozen_clock import freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -59,13 +59,13 @@ def test_the_seeded_template_exists_and_names_no_freelancer(db_session: Session)
 
     created = TemplateService(db_session).seed_defaults(ADMIN)
     # Three since ORB-171: the default offer a space is born with joined the two.
-    assert [t.nome for t in created] == [
+    assert [t.name for t in created] == [
         TIME_REPORT_TEMPLATE_NAME,
         PAYMENT_REMINDER_TEMPLATE_NAME,
         OFFER_TEMPLATE_NAME,
     ]
-    assert [t.type for t in created] == ["rapporto_ore", "sollecito", "offerta"]
-    # Idempotent, deduplicating case-insensitively on `nome` to match uq_templates_nome.
+    assert [t.type for t in created] == ["hours_report", "payment_reminder", "offer"]
+    # Idempotent, deduplicating case-insensitively on `name` to match uq_templates_name.
     assert TemplateService(db_session).seed_defaults(ADMIN) == []
 
     body = (ASSETS / "template-time-report.md").read_text(encoding="utf-8")
@@ -105,7 +105,7 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("2.50"),
             description=HOSTILE,
         ),
@@ -115,7 +115,7 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 20),
+            date=date(2026, 3, 20),
             hours=Decimal("1.25"),
             description="Revisione",
         ),
@@ -126,7 +126,7 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 4, 1),
+            date=date(2026, 4, 1),
             hours=Decimal("8.00"),
             description="Aprile",
         ),
@@ -172,7 +172,7 @@ def test_the_pdf_renders_and_contains_the_hostile_description_verbatim(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("2.50"),
             description=HOSTILE,
         ),
@@ -214,14 +214,14 @@ def test_the_compilation_date_is_italys_own_day_not_the_processs(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2025, 12, 3),
+            date=date(2025, 12, 3),
             hours=Decimal("2.00"),
             description="Dicembre",
         ),
         WRITER,
     )
 
-    congela(monkeypatch, report_module)
+    freeze(monkeypatch, report_module)
     variables = TimeReportService(db_session, storage=None).variables_for(
         seeded_deal_id, "2025-12", WRITER
     )

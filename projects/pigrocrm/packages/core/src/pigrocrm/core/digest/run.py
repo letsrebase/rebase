@@ -146,7 +146,7 @@ def sections_with_lines(digest: WeeklyDigest) -> int:
             bool(digest.issued),
             bool(digest.paid),
             digest.hours is not None,
-            bool(digest.pipeline or digest.deal_mossi or digest.offers_pending),
+            bool(digest.pipeline or digest.deal_moves or digest.offers_pending),
             bool(digest.signals),
             not digest.tasks.empty,
         ]
@@ -181,7 +181,7 @@ class DigestRun:
         owner_email: str | None,
         week: tuple[date, date],
         *,
-        forza: bool = False,
+        force: bool = False,
         dry_run: bool = False,
     ) -> DigestOutcome:
         """The whole decision for one space, in the order the module docstring gives.
@@ -224,8 +224,8 @@ class DigestRun:
         if self._space_empty():
             return self._without_write(DigestOutcome(slug, "empty", iso))
 
-        riga_id = self._line_of_week(iso)
-        if riga_id is not None and not forza:
+        line_id = self._line_of_week(iso)
+        if line_id is not None and not force:
             return self._without_write(DigestOutcome(slug, "already_sent", iso))
 
         # Plain values, taken now: the `User` objects behind them expire on the rollback
@@ -247,7 +247,7 @@ class DigestRun:
                 iso,
                 actor,
                 recipients,
-                riga_id,
+                line_id,
                 week,
                 dry_run=dry_run,
             )
@@ -275,7 +275,7 @@ class DigestRun:
         iso: str,
         actor: Actor,
         recipients: list[tuple[UUID, str, tuple[UUID, ...] | None]],
-        riga_id: UUID | None,
+        line_id: UUID | None,
         week: tuple[date, date],
         *,
         dry_run: bool,
@@ -354,13 +354,13 @@ class DigestRun:
                 None,
             )
 
-        indirizzi = [address for _, address in accepted]
-        riga = self._record(iso, indirizzi, riga_id)
+        addresses = [address for _, address in accepted]
+        line = self._record(iso, addresses, line_id)
         # Last touch on the session before the commit, as `ActivityService.record`'s own
         # contract requires: it flushes into this transaction and never commits.
         ActivityService(self.session).record(
             ENTITY,
-            riga.id,
+            line.id,
             KIND,
             actor,
             {"week": iso, "recipients": len(accepted), "sections": sections},
@@ -427,7 +427,7 @@ class DigestRun:
             select(Digest.id).where(Digest.week == iso)
         ).scalar_one_or_none()
 
-    def _record(self, iso: str, indirizzi: list[str], riga_id: UUID | None) -> Digest:
+    def _record(self, iso: str, addresses: list[str], line_id: UUID | None) -> Digest:
         """The week's row: created, or -- under `forza` -- moved.
 
         `digests.week` is unique, so a resend cannot be a second row: it updates the
@@ -436,13 +436,13 @@ class DigestRun:
         column default uses, and it is an instant rather than a calendar day -- the thing
         `db/clock.py` bans is projecting `now()` onto a *date*, which nothing here does.
         """
-        if riga_id is None:
-            riga = Digest(week=iso, sent_to=indirizzi, occurred_at=datetime.now(UTC))
-            self.session.add(riga)
+        if line_id is None:
+            line = Digest(week=iso, sent_to=addresses, occurred_at=datetime.now(UTC))
+            self.session.add(line)
             self.session.flush()
-            return riga
-        riga = self.session.get_one(Digest, riga_id)
-        riga.sent_to = indirizzi
-        riga.occurred_at = datetime.now(UTC)
+            return line
+        line = self.session.get_one(Digest, line_id)
+        line.sent_to = addresses
+        line.occurred_at = datetime.now(UTC)
         self.session.flush()
-        return riga
+        return line

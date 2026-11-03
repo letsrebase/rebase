@@ -44,7 +44,7 @@ def _log(service: TimeEntryService, deal_id: UUID, user_id: UUID) -> UUID:
         TimeEntryCreate(
             deal_id=deal_id,
             user_id=user_id,
-            data=date(2026, 3, 4),
+            date=date(2026, 3, 4),
             hours=Decimal("2.00"),
             description="x",
         ),
@@ -118,7 +118,7 @@ def test_issuing_the_invoice_freezes_the_bound_hour(
 
     for field, value in [
         ("hours", Decimal("3.00")),
-        ("data", date(2026, 3, 5)),
+        ("date", date(2026, 3, 5)),
         ("applied_rate", Decimal("99.000000")),
         ("description", "Altro"),
     ]:

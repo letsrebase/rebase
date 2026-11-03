@@ -1,7 +1,7 @@
 """**Criterion 4.** The same database and the same term produce a byte-identical response
 on twenty runs, and the order that makes that true is total.
 
-The third sort key (`id DESC`) exists for this and only this: `punteggio DESC,
+The third sort key (`id DESC`) exists for this and only this: `score DESC,
 updated_at DESC` is not a total order, and on this schema it is not even close to one.
 `TimestampMixin` gives `updated_at` a `server_default` of `func.now()`, which Postgres
 resolves to `transaction_timestamp()` -- constant for a whole transaction -- so *every* row
@@ -108,7 +108,7 @@ _ACCESS_PATHS = (
     ("no bitmap scan", "off", "on", "off"),
 )
 
-_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice", "attivita"]
+_FIXED_GROUP_ORDER = ["customer", "person", "deal", "document", "invoice", "task"]
 
 
 def _set_access_path(session: Session, seqscan: str, indexscan: str, bitmapscan: str) -> None:
@@ -136,8 +136,8 @@ def _reshuffle(session: Session) -> int:
     moved = 0
     for table, column in (
         ("customers", "country"),
-        ("people", "nome"),
-        ("deals", "nome"),
+        ("people", "name"),
+        ("deals", "name"),
         ("documents", "title"),
     ):
         moved += session.execute(
@@ -161,7 +161,7 @@ def _renderings(session: Session, term: str, limit: int = 5) -> Counter[bytes]:
     changes the order for a different reason.
     """
     service = SearchService(session)
-    query = SearchQuery(deadline=term, limit=limit)
+    query = SearchQuery(term=term, limit=limit)
     seen: Counter[bytes] = Counter()
     for run in range(_RUNS):
         _, seqscan, indexscan, bitmapscan = _ACCESS_PATHS[run % len(_ACCESS_PATHS)]
@@ -175,7 +175,7 @@ def _renderings(session: Session, term: str, limit: int = 5) -> Counter[bytes]:
 def _assert_one_rendering(seen: Counter[bytes], term: str) -> None:
     assert len(seen) == 1, (
         f"{len(seen)} distinct responses across {_RUNS} runs of {term!r} -- the order is "
-        "not total. Check that every branch orders by punteggio DESC, updated_at DESC, "
+        "not total. Check that every branch orders by score DESC, updated_at DESC, "
         "id DESC.\n"
         + "\n".join(
             f"  seen {count}x: {rendering.decode()[:400]}" for rendering, count in seen.items()
@@ -192,7 +192,7 @@ def _assert_the_response_is_worth_comparing(rendering: bytes) -> None:
     could move.
     """
     payload = json.loads(rendering)
-    groups = payload["gruppi"]
+    groups = payload["groups"]
     assert [group["entity"] for group in groups] == _FIXED_GROUP_ORDER, payload
     hits = [hit for group in groups for hit in group["hits"]]
     assert len(hits) > 1, (
@@ -284,7 +284,7 @@ def test_every_branch_orders_by_score_then_updated_at_then_id(
 def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
     """The other half of the argument above: the third key is load-bearing, not decoration.
 
-    If `punteggio, updated_at` were already unique, `id DESC` would never break anything and
+    If `score, updated_at` were already unique, `id DESC` would never break anything and
     every assertion about it would pass no matter what it said. They are not: the score is a
     four-place decimal off a four-rung ladder, and `updated_at` defaults to
     `transaction_timestamp()`, which is one value for the whole build. Both halves are
@@ -346,7 +346,7 @@ def test_the_property_holds_for_a_term_with_nothing_but_ties(db_session: Session
     # And the group really did fill up, so the five that were compared were five chosen out
     # of two hundred rather than the only five there were.
     results = SearchService(db_session).search_everything(
-        SearchQuery(deadline="Identica", limit=5), READONLY
+        SearchQuery(term="Identica", limit=5), READONLY
     )
     customers = next(group for group in results.groups if group.entity == "customer")
     assert len(customers.hits) == 5
@@ -378,14 +378,14 @@ def test_the_property_survives_the_rows_being_physically_reordered(db_session: S
     db_session.flush()
 
     service = SearchService(db_session)
-    query = SearchQuery(deadline="Riordinabile", limit=5)
+    query = SearchQuery(term="Riordinabile", limit=5)
     before = service.search_everything(query, READONLY).model_dump_json().encode()
 
     moved = db_session.execute(
         text(
-            "UPDATE customers SET nazione = nazione "
-            "WHERE ragione_sociale LIKE 'Riordinabile Srl %%' "
-            "AND right(ragione_sociale, 1) IN ('0', '2', '4', '6', '8')"
+            "UPDATE customers SET country = country "
+            "WHERE legal_name LIKE 'Riordinabile Srl %%' "
+            "AND right(legal_name, 1) IN ('0', '2', '4', '6', '8')"
         )
     ).rowcount
     assert moved == 100, f"the reshuffle moved {moved} rows, not the half it meant to"
@@ -423,7 +423,7 @@ def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> No
     db_session.flush()
 
     results = SearchService(db_session).search_everything(
-        SearchQuery(deadline=KNOWN_VAT_NUMBER), READONLY
+        SearchQuery(term=KNOWN_VAT_NUMBER), READONLY
     )
     customers = next(group for group in results.groups if group.entity == "customer")
 
@@ -444,7 +444,7 @@ def test_a_prefix_outranks_a_mid_word_match(db_session: Session) -> None:
     db_session.flush()
 
     results = SearchService(db_session).search_everything(
-        SearchQuery(deadline="Vulcan", limit=5), READONLY
+        SearchQuery(term="Vulcan", limit=5), READONLY
     )
     labels = [
         hit.label
@@ -466,9 +466,7 @@ def test_the_group_order_is_fixed_and_not_by_count(db_session: Session) -> None:
     pass against a service that sorted its groups by size.
     """
     build_corpus(db_session, SMALL)
-    results = SearchService(db_session).search_everything(
-        SearchQuery(deadline="Ingegneria"), READONLY
-    )
+    results = SearchService(db_session).search_everything(SearchQuery(term="Ingegneria"), READONLY)
 
     assert [group.entity for group in results.groups] == _FIXED_GROUP_ORDER
     by_count = [group.entity for group in sorted(results.groups, key=lambda group: -group.total)]

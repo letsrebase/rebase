@@ -82,7 +82,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
 
         session.add(
             Deal(
-                nome="DASH aperto",
+                name="DASH aperto",
                 customer_id=customer_id,
                 pipeline_stage_id=stages["lead"].id,
                 expected_value=Decimal("1000.00"),
@@ -93,7 +93,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         )
         session.add(
             Deal(
-                nome="DASH vinto",
+                name="DASH vinto",
                 customer_id=customer_id,
                 pipeline_stage_id=stages["won"].id,
                 expected_value=Decimal("5000.00"),
@@ -104,7 +104,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         )
         session.add(
             Deal(
-                nome="DASH perso",
+                name="DASH perso",
                 customer_id=customer_id,
                 pipeline_stage_id=stages["lost"].id,
                 expected_value=Decimal("2000.00"),
@@ -131,7 +131,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     finally:
         with factory() as session:
             session.execute(delete(Document).where(Document.title.like("DASH %")))
-            session.execute(delete(Deal).where(Deal.nome.like("DASH %")))
+            session.execute(delete(Deal).where(Deal.name.like("DASH %")))
             session.execute(delete(Customer).where(Customer.legal_name.like("DASH %")))
             session.execute(delete(PipelineStage))
             session.commit()
@@ -264,7 +264,7 @@ def test_every_figure_comes_from_one_instant(
         with session_factory(seeded.engine)() as outside:
             outside.add(
                 Deal(
-                    nome="DASH intruso",
+                    name="DASH intruso",
                     customer_id=seeded.customer_id,
                     pipeline_stage_id=seeded.stages["won"].id,
                     expected_value=Decimal("7000.00"),
@@ -386,16 +386,16 @@ def test_the_expected_closures_window_runs_thirty_days_past_the_period(
         # outside the window; clearing it keeps this assertion independent of which day of
         # the month the suite happens to run on.
         session.execute(
-            text("UPDATE deals SET data_chiusura_prevista = NULL WHERE nome = 'DASH aperto'")
+            text("UPDATE deals SET expected_close_date = NULL WHERE name = 'DASH aperto'")
         )
-        for nome, when in (
+        for name, when in (
             ("DASH dentro", date_from + timedelta(days=1)),
             ("DASH vicino", date_to + timedelta(days=20)),
             ("DASH lontano", date_to + timedelta(days=50)),
         ):
             session.add(
                 Deal(
-                    nome=nome,
+                    name=name,
                     customer_id=seeded.customer_id,
                     pipeline_stage_id=seeded.stages["contacted"].id,
                     expected_value=Decimal("100.00"),
@@ -416,7 +416,7 @@ def test_the_unattributable_count_is_declared(seeded: Seeded) -> None:
     with session_factory(seeded.engine)() as session:
         session.add(
             Deal(
-                nome="DASH storico",
+                name="DASH storico",
                 customer_id=seeded.customer_id,
                 pipeline_stage_id=seeded.stages["won"].id,
                 expected_value=Decimal("900.00"),
@@ -437,7 +437,7 @@ def test_the_signal_is_present_on_the_commercial_dashboard(seeded: Seeded) -> No
     assert result.accepted_offers_deal_not_won == 0
 
     with session_factory(seeded.engine)() as session:
-        deal = session.execute(text("SELECT id FROM deals WHERE nome = 'DASH aperto'")).scalar_one()
+        deal = session.execute(text("SELECT id FROM deals WHERE name = 'DASH aperto'")).scalar_one()
         session.add(
             Document(
                 deal_id=deal,

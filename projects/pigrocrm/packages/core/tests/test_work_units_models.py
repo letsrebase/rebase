@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fakes.customer_fixtures import make_customer
-from sqlalchemy import text
+from sqlalchemy import RowMapping, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,6 @@ from pigrocrm.core.work_units.models import (
     WORK_UNIT_TRANSITIONS,
     Approval,
     WorkUnit,
-    WorkUnitTransition,
 )
 
 
@@ -72,7 +71,7 @@ def _approval(db_session: Session, contract: Contract) -> Approval:
 def _work_unit(db_session: Session, contract: Contract, **overrides: object) -> WorkUnit:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "data": date(2026, 3, 5),
+        "date": date(2026, 3, 5),
         "quantity": Decimal("1.00"),
         "description": "Giornata di consulenza",
         "status": "worked",
@@ -88,11 +87,11 @@ def _work_unit(db_session: Session, contract: Contract, **overrides: object) -> 
     return work_unit
 
 
-def _transitions(db_session: Session, work_unit_id: UUID) -> list[WorkUnitTransition]:
+def _transitions(db_session: Session, work_unit_id: UUID) -> list[RowMapping]:
     return list(
         db_session.execute(
             text(
-                "SELECT id, work_unit_id, stato_precedente, stato_nuovo, attore, motivo, seq "
+                "SELECT id, work_unit_id, previous_status, new_status, actor, reason, seq "
                 "FROM work_unit_transitions WHERE work_unit_id = :wid ORDER BY seq"
             ),
             {"wid": work_unit_id},
@@ -157,7 +156,7 @@ def _drive_to(
     db_session: Session, contract: Contract, target_status: str, *, day: date
 ) -> WorkUnit:
     path = _PATH_TO[target_status]
-    work_unit = _work_unit(db_session, contract, status=path[0], data=day)
+    work_unit = _work_unit(db_session, contract, status=path[0], date=day)
     for step in path[1:]:
         work_unit.status = step
         db_session.flush()
@@ -277,35 +276,35 @@ def test_two_live_work_units_on_the_same_contract_and_date_are_refused(
     db_session: Session,
 ) -> None:
     contract = _contract(db_session)
-    _work_unit(db_session, contract, data=date(2026, 5, 1), status="proposed")
+    _work_unit(db_session, contract, date=date(2026, 5, 1), status="proposed")
     with pytest.raises(IntegrityError):
-        _work_unit(db_session, contract, data=date(2026, 5, 1), status="proposed")
+        _work_unit(db_session, contract, date=date(2026, 5, 1), status="proposed")
 
 
 def test_two_work_units_on_different_dates_are_both_accepted(db_session: Session) -> None:
     contract = _contract(db_session)
-    first = _work_unit(db_session, contract, data=date(2026, 5, 1), status="proposed")
-    second = _work_unit(db_session, contract, data=date(2026, 5, 2), status="proposed")
+    first = _work_unit(db_session, contract, date=date(2026, 5, 1), status="proposed")
+    second = _work_unit(db_session, contract, date=date(2026, 5, 2), status="proposed")
     assert first.id != second.id
 
 
 def test_revoking_a_day_frees_its_date_for_a_fresh_proposal(db_session: Session) -> None:
     contract = _contract(db_session)
-    first = _work_unit(db_session, contract, data=date(2026, 5, 1), status="proposed")
+    first = _work_unit(db_session, contract, date=date(2026, 5, 1), status="proposed")
     first.status = "revoked"
     db_session.flush()
-    second = _work_unit(db_session, contract, data=date(2026, 5, 1), status="proposed")
+    second = _work_unit(db_session, contract, date=date(2026, 5, 1), status="proposed")
     assert second.id != first.id
 
 
 def test_to_non_billable_day_still_occupies_its_date(db_session: Session) -> None:
     """`non_billable` is excluded from nothing: it is still real, recorded work."""
     contract = _contract(db_session)
-    work_unit = _work_unit(db_session, contract, data=date(2026, 5, 1), status="worked")
+    work_unit = _work_unit(db_session, contract, date=date(2026, 5, 1), status="worked")
     work_unit.status = "non_billable"
     db_session.flush()
     with pytest.raises(IntegrityError):
-        _work_unit(db_session, contract, data=date(2026, 5, 1), status="proposed")
+        _work_unit(db_session, contract, date=date(2026, 5, 1), status="proposed")
 
 
 # ---- the append-only transition log ---------------------------------------------------
@@ -373,7 +372,7 @@ def test_actor_and_reason_reach_the_log_through_session_local_settings(
         {"a": '{"kind": "human", "id": "' + str(uuid4()) + '"}'},
     )
     db_session.execute(
-        text("SELECT set_config('pigrocrm.motivo', :m, true)"),
+        text("SELECT set_config('pigrocrm.reason', :m, true)"),
         {"m": "il cliente ha confermato via email"},
     )
     work_unit.status = "approved"
@@ -410,7 +409,7 @@ def test_a_transition_row_cannot_be_updated(db_session: Session) -> None:
     work_unit = _work_unit(db_session, contract, status="proposed")
     with pytest.raises(IntegrityError):
         db_session.execute(
-            text("UPDATE work_unit_transitions SET motivo = 'riscritto' WHERE work_unit_id = :wid"),
+            text("UPDATE work_unit_transitions SET reason = 'rewritten' WHERE work_unit_id = :wid"),
             {"wid": work_unit.id},
         )
 

@@ -218,5 +218,5 @@ class ParsedInvoice(BaseModel):
     total: Decimal
     stamp_duty: Decimal | None = None
     social_security_pension_fund: list[ParsedInvoiceSocialCharge]
-    termini_payment: list[ParsedInvoicePaymentTerms]
+    payment_terms: list[ParsedInvoicePaymentTerms]
     transmission: ParsedInvoiceTransmission

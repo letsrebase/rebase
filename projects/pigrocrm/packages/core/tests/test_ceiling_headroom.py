@@ -29,9 +29,9 @@ ADMIN = Actor(id=None, type="system", role="admin")
 READER = Actor(id=None, type="user", role="readonly")
 
 REVENUE_CEILING = IT_FLAT_RATE_PACK.ceilings[0]
-FUORIUSCITA_CEILING = IT_FLAT_RATE_PACK.ceilings[1]
+IMMEDIATE_EXIT_CEILING = IT_FLAT_RATE_PACK.ceilings[1]
 assert REVENUE_CEILING.id == "soglia_ricavi"
-assert FUORIUSCITA_CEILING.id == "soglia_fuoriuscita_immediata"
+assert IMMEDIATE_EXIT_CEILING.id == "soglia_fuoriuscita_immediata"
 
 YEAR = 2024
 
@@ -91,12 +91,12 @@ def test_headroom_reports_room_remaining_before_each_active_ceiling(db_session: 
     assert revenue_threshold.revenue == Decimal("60000.00")
     assert revenue_threshold.remaining == Decimal("25000.00")
     assert revenue_threshold.exceeded is False
-    fuoriuscita = next(s for s in headroom.thresholds if s.id == "soglia_fuoriuscita_immediata")
-    assert fuoriuscita.remaining == Decimal("40000.00")
+    immediate_exit = next(s for s in headroom.thresholds if s.id == "soglia_fuoriuscita_immediata")
+    assert immediate_exit.remaining == Decimal("40000.00")
 
 
 def test_headroom_states_how_much_of_each_ceiling_is_used(db_session: Session) -> None:
-    """`usage` is `ricavi / soglia`, computed here so a progress bar is drawn from a
+    """`usage` is `revenue / threshold`, computed here so a progress bar is drawn from a
     figure the server produced: 60,000 of 85,000 is 0.7059, of 100,000 is 0.6."""
     _configure_profile(db_session)
     _paid_invoice(db_session, number=1, year=YEAR, taxable_amount=Decimal("60000.00"))
@@ -108,7 +108,7 @@ def test_headroom_states_how_much_of_each_ceiling_is_used(db_session: Session) -
 
 
 def test_an_ordinary_regime_legal_entity_has_no_flat_rate_ceiling(db_session: Session) -> None:
-    """The 85,000 and 100,000 euro thresholds belong to the forfettario. An azienda on
+    """The 85,000 and 100,000 euro thresholds belong to the flat-rate regime. A legal entity on
     the ordinary regime points at `it-standard` (REB-760), which declares no ceiling:
     `thresholds` is empty, for the room and for the simulator alike, and nothing is raised."""
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(pack_id="it-standard"), ADMIN)

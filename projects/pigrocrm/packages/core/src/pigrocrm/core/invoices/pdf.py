@@ -163,21 +163,21 @@ def address_display(party: dict[str, Any]) -> str:
     than printing them empty: the same defect in the domestic case.
     """
     country = (party.get("country") or "").strip().upper()
-    pezzi = [
-        pezzo
-        for pezzo in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
-        if pezzo
+    pieces = [
+        piece
+        for piece in ((party.get("cap") or "").strip(), (party.get("city") or "").strip())
+        if piece
     ]
     province = (party.get("province") or "").strip().upper()
     if country == "IT" and province:
-        pezzi.append(f"({province})")
+        pieces.append(f"({province})")
     if country:
-        pezzi.append(country)
+        pieces.append(country)
     address = (party.get("address") or "").strip()
-    resto = " ".join(pezzi)
-    if address and resto:
-        return f"{address}, {resto}"
-    return address or resto
+    rest = " ".join(pieces)
+    if address and rest:
+        return f"{address}, {rest}"
+    return address or rest
 
 
 def identifier_vat(party: dict[str, Any]) -> str:
@@ -300,12 +300,12 @@ def build_scope(export: InvoiceForExport, *, reference: str | None) -> dict[str,
         },
         "righe": [
             {
-                "numero_linea": str(riga.line_number),
-                "descrizione": riga.description,
-                "iva": format_vat(riga.vat_rate, riga.vat_nature),
-                "prezzo_totale": format_euro(riga.total_price),
+                "numero_linea": str(line.line_number),
+                "descrizione": line.description,
+                "iva": format_vat(line.vat_rate, line.vat_nature),
+                "prezzo_totale": format_euro(line.total_price),
             }
-            for riga in export.lines
+            for line in export.lines
         ],
     }
 
@@ -352,9 +352,9 @@ def _declaration_regime(export: InvoiceForExport) -> str:
     small and under the rule: a flat-rate regime invoice has to say why it carries no VAT.
     """
     distinct: list[str] = []
-    for riga in export.lines:
-        if riga.legal_reference and riga.legal_reference not in distinct:
-            distinct.append(riga.legal_reference)
+    for line in export.lines:
+        if line.legal_reference and line.legal_reference not in distinct:
+            distinct.append(line.legal_reference)
     if distinct:
         return " ".join(distinct)
     return export.snapshot.tax.legal_reference or _EMPTY

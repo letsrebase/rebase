@@ -132,7 +132,7 @@ class OriginalPdfResolver:
             if not entry.folder and entry.mime != PDF_MIME:
                 raise ValidationFailed(
                     ENTITY,
-                    "pdf_sorgente.drive_file_id",
+                    "pdf_source.drive_file_id",
                     f"il file su Drive non è un PDF ma un {entry.mime}: l'originale di "
                     "una fattura è il PDF che il cliente ha ricevuto",
                     expected=PDF_MIME,
@@ -148,7 +148,7 @@ class OriginalPdfResolver:
         if not content:
             raise ValidationFailed(
                 ENTITY,
-                "pdf_sorgente.drive_file_id",
+                "pdf_source.drive_file_id",
                 "il file su Drive è vuoto",
                 expected="almeno un byte",
             )

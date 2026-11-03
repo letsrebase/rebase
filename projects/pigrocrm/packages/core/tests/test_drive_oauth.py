@@ -48,7 +48,7 @@ def admin_user(db_session: Session) -> User:
     # persisted user row for the foreign keys below.
     user = User(
         email=f"drive-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
         role="admin",
         active=True,
@@ -670,7 +670,7 @@ def test_health_names_the_admin_whose_account_holds_the_spaces_storage(
     `drive.file`."""
     other_admin = User(
         email=f"other-admin-{uuid4().hex[:8]}@example.it",
-        nome="Bruno",
+        name="Bruno",
         password_hash="x",
         role="admin",
         active=True,
@@ -702,7 +702,7 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
     land there."""
     other_admin = User(
         email=f"other-admin-{uuid4().hex[:8]}@example.it",
-        nome="Bruno",
+        name="Bruno",
         password_hash="x",
         role="admin",
         active=True,
@@ -1059,7 +1059,7 @@ def test_set_roots_is_refused_for_a_readonly_actor(db_session: Session, admin_us
 def _collaborator(session: Session) -> User:
     user = User(
         email=f"collab-{uuid4().hex[:8]}@example.it",
-        nome="Collaboratore",
+        name="Collaboratore",
         password_hash="x",
         role="collaborator",
         active=True,

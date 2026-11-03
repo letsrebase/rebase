@@ -57,7 +57,7 @@ def _configure(session: Session) -> None:
         ),
         HUMAN,
     )
-    # After the azienda, which the profile belongs to since REB-615.
+    # After the legal entity, which the profile belongs to since REB-615.
     FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), HUMAN)
 
 
@@ -112,7 +112,7 @@ def _cleanup(factory, invoice_id: UUID | None, customer_id: UUID | None) -> None
             cleaner.execute(Invoice.__table__.delete().where(Invoice.__table__.c.id == invoice_id))
         cleaner.execute(text("DELETE FROM invoice_counters"))
         cleaner.execute(text("DELETE FROM fiscal_profile"))
-        cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
+        cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
         if customer_id is not None:
             cleaner.execute(
                 Customer.__table__.delete().where(Customer.__table__.c.id == customer_id)

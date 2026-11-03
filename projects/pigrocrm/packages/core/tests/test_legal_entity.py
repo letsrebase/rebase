@@ -115,8 +115,8 @@ def test_as_template_values_exposes_the_profile_under_legal_entity(db_session: S
     service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     values = service.as_template_values(ADMIN)
-    assert values["emittente"]["ragione_sociale"] == "Studio Rossi"
-    assert values["emittente"]["partita_iva"] == "01234567890"
+    assert values["emittente"]["legal_name"] == "Studio Rossi"
+    assert values["emittente"]["vat_number"] == "01234567890"
     assert "singleton" not in values["emittente"]
 
 
@@ -130,7 +130,7 @@ def test_upsert_converts_a_true_insert_race_into_a_clean_conflict(
 ) -> None:
     """Simulates two concurrent first-time saves: `repo.default()` reports no row for
     both, so both take the insert branch, and only the partial unique index on
-    `predefinita` stops the second.
+    `is_default` stops the second.
 
     This is the case an earlier draft of `upsert` got wrong: it called
     `repo.add(...)` -- which flushes -- *before* the `try/except IntegrityError`,
@@ -178,7 +178,7 @@ def test_email_signature_reaches_to_template_scope_under_legal_entity(db_session
     service = LegalEntityService(db_session)
     service.upsert_default(_upsert(email_signature="Mario Rossi\nConsulente"), ADMIN)
     scope = service.as_template_values(ADMIN)
-    assert scope["emittente"]["firma_email"] == "Mario Rossi\nConsulente"
+    assert scope["emittente"]["email_signature"] == "Mario Rossi\nConsulente"
 
 
 def test_email_signature_is_bounded_and_rejects_to_nul_byte() -> None:
@@ -198,7 +198,7 @@ def test_email_signature_is_bounded_and_rejects_to_nul_byte() -> None:
 
 def _second_legal_entity(db_session: Session, **overrides: object) -> LegalEntity:
     values: dict[str, object] = {
-        "nome": "rebase",
+        "name": "rebase",
         "legal_name": "Rebase S.r.l.",
         "vat_number": "09876543210",
         "country": "IT",
@@ -210,21 +210,21 @@ def _second_legal_entity(db_session: Session, **overrides: object) -> LegalEntit
     return row
 
 
-def test_nome_is_derived_from_the_ragione_sociale_when_missing(db_session: Session) -> None:
+def test_nome_is_derived_from_the_legal_name_when_missing(db_session: Session) -> None:
     read = LegalEntityService(db_session).upsert_default(_upsert(legal_name="S" * 120), ADMIN)
-    assert read.nome == "S" * 80
-    assert read.predefinita is True
+    assert read.name == "S" * 80
+    assert read.is_default is True
     assert read.active is True
 
 
 def test_the_list_puts_the_default_first_and_hides_an_inactive_one(db_session: Session) -> None:
     service = LegalEntityService(db_session)
     service.upsert_default(_upsert(legal_name="Zeta"), ADMIN)
-    second = _second_legal_entity(db_session, nome="alfa")
-    assert [a.nome for a in service.list(ADMIN)] == ["Zeta", "alfa"]
+    second = _second_legal_entity(db_session, name="alfa")
+    assert [a.name for a in service.list(ADMIN)] == ["Zeta", "alfa"]
     service.deactivate(second.id, ADMIN)
-    assert [a.nome for a in service.list(ADMIN)] == ["Zeta"]
-    assert [a.nome for a in service.list(ADMIN, only_active=False)] == ["Zeta", "alfa"]
+    assert [a.name for a in service.list(ADMIN)] == ["Zeta"]
+    assert [a.name for a in service.list(ADMIN, only_active=False)] == ["Zeta", "alfa"]
 
 
 def test_two_legal_entities_hold_two_fiscal_profiles_apart(db_session: Session) -> None:
@@ -256,8 +256,8 @@ def test_the_default_moves_in_one_step_and_never_onto_an_inactive_legal_entity(
     first = service.upsert_default(_upsert(), ADMIN)
     second = _second_legal_entity(db_session)
     moved = service.set_default(second.id, ADMIN)
-    assert moved.predefinita is True
-    assert service.get(ADMIN, first.id).predefinita is False
+    assert moved.is_default is True
+    assert service.get(ADMIN, first.id).is_default is False
     assert service.get(ADMIN).id == second.id
     service.deactivate(first.id, ADMIN)
     with pytest.raises(ValidationFailed):
@@ -278,10 +278,10 @@ def test_update_addresses_one_legal_entity_and_leaves_the_other_alone(db_session
     second = _second_legal_entity(db_session)
     read = service.update(
         second.id,
-        _upsert(legal_name="Rebase S.r.l.", vat_number="09876543210", nome="rb"),
+        _upsert(legal_name="Rebase S.r.l.", vat_number="09876543210", name="rb"),
         ADMIN,
     )
-    assert read.nome == "rb"
+    assert read.name == "rb"
     assert service.get(ADMIN).legal_name == "Studio Rossi"
 
 
@@ -355,7 +355,7 @@ def _create(**overrides: object) -> LegalEntityCreate:
     payload: dict[str, object] = {
         # A create carries no version (REB-622): the upsert's fields without it.
         **_upsert().model_dump(exclude={"updated_at"}),
-        "nome": "rebase ltd",
+        "name": "rebase ltd",
         "legal_name": "Rebase Ltd",
         "vat_number": "GB123456789",
         "country": "GB",
@@ -373,7 +373,7 @@ def test_create_gives_to_second_legal_entity_its_profile_in_one_call(db_session:
     service = LegalEntityService(db_session)
     first = service.upsert_default(_upsert(), ADMIN)
     created = service.create(_create(), ADMIN)
-    assert (created.nome, created.predefinita, created.active) == ("rebase ltd", False, True)
+    assert (created.name, created.is_default, created.active) == ("rebase ltd", False, True)
     assert created.vat_number == "GB123456789"
     profile = FiscalProfileService(db_session).get(ADMIN, created.id)
     assert (profile.pack_id, profile.default_vat_rate) == ("non-it", Decimal("20.00"))
@@ -382,7 +382,7 @@ def test_create_gives_to_second_legal_entity_its_profile_in_one_call(db_session:
 
 def test_the_first_legal_entity_to_space_creates_is_its_default(db_session: Session) -> None:
     created = LegalEntityService(db_session).create(_create(), ADMIN)
-    assert created.predefinita is True
+    assert created.is_default is True
     assert LegalEntityService(db_session).get(ADMIN).id == created.id
 
 
@@ -519,7 +519,7 @@ def test_a_creation_takes_no_version(db_session: Session) -> None:
     rather than carrying a field `create` would have to ignore."""
     with pytest.raises(PydanticValidationError):
         LegalEntityCreate(
-            nome="x",
+            name="x",
             legal_name="X",
             fiscal_profile=FiscalProfileUpsert(),
             updated_at=datetime(2026, 1, 1, tzinfo=UTC),  # type: ignore[call-arg]

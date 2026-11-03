@@ -277,7 +277,7 @@ def test_a_proforma_consumed_between_the_read_and_the_write_is_a_conflict(
         invoice = read(invoice_id)
         # What `issue` does to a proforma, reduced to the one column the CHECK reads.
         db_session.execute(
-            text("UPDATE invoices SET stato = 'consumata' WHERE id = :id"), {"id": invoice_id}
+            text("UPDATE invoices SET status = 'consumed' WHERE id = :id"), {"id": invoice_id}
         )
         return invoice
 
@@ -564,8 +564,8 @@ def test_a_version_that_is_not_a_pdf_is_never_served_as_the_invoices_pdf(
     service: InvoiceService, customer_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A version written before REB-480, when `add_version` took any allowed type here.
-    The download answers it as a missing PDF, the 404 the web already words as «non è
-    disponibile», and «Rigenera documenti» (`produce_artifacts`) stores a PDF over it."""
+    The download answers it as a missing PDF, the 404 the web already words as «not
+    available», and «Regenerate documents» (`produce_artifacts`) stores a PDF over it."""
     invoice_id = _issue(service, customer_id)
     pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
     with monkeypatch.context() as patched:
