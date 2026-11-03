@@ -68,11 +68,11 @@ export function InvoiceDoor({ assistantConnected }: { assistantConnected: boolea
   }
 
   return (
-    <section aria-labelledby="porta-fattura" className="space-y-3 border p-4">
+    <section aria-labelledby="door-invoice" className="space-y-3 border p-4">
       <header className="flex items-start gap-3">
         <FileText className="mt-0.5 size-5 shrink-0" aria-hidden />
         <div className="space-y-1">
-          <h3 id="porta-fattura" className="font-medium">
+          <h3 id="door-invoice" className="font-medium">
             Carica l’ultima fattura che hai emesso
           </h3>
           <p className="text-muted-foreground text-sm">

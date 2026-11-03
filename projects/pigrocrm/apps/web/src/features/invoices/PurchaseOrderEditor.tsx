@@ -83,18 +83,18 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
 
       <div className="grid max-w-2xl gap-4 sm:grid-cols-4">
         <div className="space-y-2">
-          <Label htmlFor="ordine-numero">Numero ordine</Label>
+          <Label htmlFor="purchase-order-number">Numero ordine</Label>
           <Input
-            id="ordine-numero"
+            id="purchase-order-number"
             value={draft.purchase_order_number}
             disabled={update.isPending}
             onChange={(event) => set('purchase_order_number', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-data">Data ordine</Label>
+          <Label htmlFor="purchase-order-date">Data ordine</Label>
           <Input
-            id="ordine-data"
+            id="purchase-order-date"
             type="date"
             value={draft.purchase_order_date}
             disabled={update.isPending}
@@ -102,18 +102,18 @@ export function PurchaseOrderEditor({ invoice }: { invoice: Invoice }) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-cig">CIG</Label>
+          <Label htmlFor="purchase-order-tender-code">CIG</Label>
           <Input
-            id="ordine-cig"
+            id="purchase-order-tender-code"
             value={draft.purchase_order_tender_code}
             disabled={update.isPending}
             onChange={(event) => set('purchase_order_tender_code', event.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ordine-cup">CUP</Label>
+          <Label htmlFor="purchase-order-project-code">CUP</Label>
           <Input
-            id="ordine-cup"
+            id="purchase-order-project-code"
             value={draft.purchase_order_project_code}
             disabled={update.isPending}
             onChange={(event) => set('purchase_order_project_code', event.target.value)}

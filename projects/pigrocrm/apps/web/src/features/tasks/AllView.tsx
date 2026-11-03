@@ -87,7 +87,7 @@ function LinkFilter({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-96">
-        <RecordPicker id="filtro-collegamento" value={value} onChange={onChange} />
+        <RecordPicker id="filter-link" value={value} onChange={onChange} />
       </PopoverContent>
     </Popover>
   )

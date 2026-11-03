@@ -8,7 +8,7 @@ import type { PreferenceType } from './preferences'
  */
 const GROUPS: readonly { id: string; label: string; keys: readonly string[] }[] = [
   {
-    id: 'attivita',
+    id: 'tasks',
     label: 'Attività e deal',
     keys: [
       'task_due',
@@ -34,7 +34,7 @@ const GROUPS: readonly { id: string; label: string; keys: readonly string[] }[] 
     ],
   },
   {
-    id: 'contratti',
+    id: 'contracts',
     label: 'Contratti, giornate e approvazioni',
     keys: [
       'contract_expiring',

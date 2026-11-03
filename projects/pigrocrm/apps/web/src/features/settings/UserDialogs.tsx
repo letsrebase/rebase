@@ -181,9 +181,9 @@ export function InviteUserDialog({ onClose }: { onClose: () => void }) {
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="invite-ruolo">Ruolo</Label>
+            <Label htmlFor="invite-role">Ruolo</Label>
             <Select value={roleValue} onValueChange={(value) => setRole(value as typeof roleValue)}>
-              <SelectTrigger id="invite-ruolo" className="w-full">
+              <SelectTrigger id="invite-role" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

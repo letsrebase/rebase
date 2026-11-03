@@ -235,9 +235,9 @@ export function PipelinePanel() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="stage-tipo">Tipo</Label>
+              <Label htmlFor="stage-type">Tipo</Label>
               <Select value={typeValue} onValueChange={(value) => setType(value as typeof typeValue)}>
-                <SelectTrigger id="stage-tipo" className="w-full">
+                <SelectTrigger id="stage-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

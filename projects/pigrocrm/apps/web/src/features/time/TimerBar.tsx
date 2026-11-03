@@ -228,7 +228,7 @@ export function TimerBar({
 
       <div className="flex items-center gap-2">
         <Checkbox
-          id="timer-fatturabile"
+          id="timer-billable"
           checked={billable}
           onCheckedChange={(checked) => {
             const next = checked === true
@@ -236,7 +236,7 @@ export function TimerBar({
             if (timer) patch({ billable: next })
           }}
         />
-        <Label htmlFor="timer-fatturabile" className="flex items-center gap-1 font-normal">
+        <Label htmlFor="timer-billable" className="flex items-center gap-1 font-normal">
           <BadgeEuro className="size-4" aria-hidden="true" />
           Fatturabile
         </Label>

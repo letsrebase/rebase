@@ -74,9 +74,9 @@ export function PeriodsPanel() {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
-          <Label htmlFor="periodo-da-chiudere">Chiudi il mese</Label>
+          <Label htmlFor="period-from-to-close">Chiudi il mese</Label>
           <Input
-            id="periodo-da-chiudere"
+            id="period-from-to-close"
             type="month"
             value={month}
             onChange={(event) => setMonth(event.target.value)}

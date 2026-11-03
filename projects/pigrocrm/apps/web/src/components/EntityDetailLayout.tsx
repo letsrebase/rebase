@@ -118,11 +118,11 @@ export function EntityDetailLayout({
         tabs={
           <TabsList variant="line">
             <TabsTrigger value="panoramica">Panoramica</TabsTrigger>
-            {documents && <TabsTrigger value="documenti">Documenti</TabsTrigger>}
+            {documents && <TabsTrigger value="documents">Documenti</TabsTrigger>}
             {invoices && <TabsTrigger value="invoices">Fatture</TabsTrigger>}
-            {contracts && <TabsTrigger value="contratti">Contratti</TabsTrigger>}
+            {contracts && <TabsTrigger value="contracts">Contratti</TabsTrigger>}
             {hours && <TabsTrigger value="hours">Ore</TabsTrigger>}
-            {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
+            {economics && <TabsTrigger value="economics">Economia</TabsTrigger>}
             {/* Before the Email and the Timeline tabs: those two are a record of what
                 already happened, and this is what is still to be done. */}
             {tasks && <TabsTrigger value="tasks">Attività</TabsTrigger>}
@@ -130,7 +130,7 @@ export function EntityDetailLayout({
                 and everything to the left of them is a thing the user maintains. */}
             {emails && <TabsTrigger value="email">Email</TabsTrigger>}
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="collegamenti">Collegamenti</TabsTrigger>
+            <TabsTrigger value="links">Collegamenti</TabsTrigger>
           </TabsList>
         }
       />
@@ -140,7 +140,7 @@ export function EntityDetailLayout({
           {overview}
         </TabsContent>
         {documents && (
-          <TabsContent value="documenti" className="mt-6">
+          <TabsContent value="documents" className="mt-6">
             {documents}
           </TabsContent>
         )}
@@ -150,7 +150,7 @@ export function EntityDetailLayout({
           </TabsContent>
         )}
         {contracts && (
-          <TabsContent value="contratti" className="mt-6">
+          <TabsContent value="contracts" className="mt-6">
             {contracts}
           </TabsContent>
         )}
@@ -160,7 +160,7 @@ export function EntityDetailLayout({
           </TabsContent>
         )}
         {economics && (
-          <TabsContent value="economia" className="mt-6">
+          <TabsContent value="economics" className="mt-6">
             {economics}
           </TabsContent>
         )}
@@ -177,7 +177,7 @@ export function EntityDetailLayout({
         <TabsContent value="timeline" className="mt-6">
           <Timeline entityType={entityType} entityId={entityId} limit={timelineLimit} />
         </TabsContent>
-        <TabsContent value="collegamenti" className="mt-6">
+        <TabsContent value="links" className="mt-6">
           {links ?? <p className="text-muted-foreground">Nessun collegamento.</p>}
         </TabsContent>
       </div>

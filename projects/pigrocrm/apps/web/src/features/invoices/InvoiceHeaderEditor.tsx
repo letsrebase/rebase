@@ -78,9 +78,9 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
       <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
         {isProforma ? (
           <div className="space-y-2">
-            <Label htmlFor="fattura-data">Data</Label>
+            <Label htmlFor="invoice-date">Data</Label>
             <Input
-              id="fattura-data"
+              id="invoice-date"
               type="date"
               required
               value={issueDate}
@@ -90,9 +90,9 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
         ) : null}
         <AccrualPeriodFields idPrefix="invoice" value={accrual} onChange={setAccrual} />
         <div className="space-y-2">
-          <Label htmlFor="fattura-scadenza">Scadenza</Label>
+          <Label htmlFor="invoice-due-date">Scadenza</Label>
           <Input
-            id="fattura-scadenza"
+            id="invoice-due-date"
             type="date"
             value={dueDate}
             onChange={(event) => setDueDate(event.target.value)}

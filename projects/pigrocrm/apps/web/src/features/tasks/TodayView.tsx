@@ -180,7 +180,7 @@ export function TodayView({
         ) : (
           <>
             <Section
-              id="oggi-in-ritardo"
+              id="today-in-late"
               title="In ritardo"
               group={panel.data.overdue}
               empty="Niente in ritardo."
@@ -189,7 +189,7 @@ export function TodayView({
               tone="danger"
             />
             <Section
-              id="oggi-oggi"
+              id="today-today"
               title="Oggi"
               group={panel.data.today_due}
               empty="Niente in scadenza oggi."
@@ -197,7 +197,7 @@ export function TodayView({
               showDueDate={false}
             />
             <Section
-              id="oggi-prossimi"
+              id="today-upcoming"
               title="Prossimi sette giorni"
               group={panel.data.next_seven_days}
               empty="Niente nei prossimi sette giorni."
@@ -205,7 +205,7 @@ export function TodayView({
               showDueDate
             />
             <Section
-              id="oggi-senza-scadenza"
+              id="today-no-due-date"
               title="Senza scadenza"
               group={panel.data.without_due_date}
               empty="Niente senza scadenza."

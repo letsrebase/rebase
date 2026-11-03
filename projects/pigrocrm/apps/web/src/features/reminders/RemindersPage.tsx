@@ -97,14 +97,14 @@ export function RemindersPage() {
             )}
 
             {handled.length > 0 && (
-              <section aria-labelledby="avvisi-gestiti">
-                <h2 id="avvisi-gestiti" className="text-sm font-semibold">
+              <section aria-labelledby="reminders-handled">
+                <h2 id="reminders-handled" className="text-sm font-semibold">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="-ml-2.5"
                     aria-expanded={showHandled}
-                    aria-controls="avvisi-gestiti-elenco"
+                    aria-controls="reminders-handled-list"
                     onClick={() => setShowHandled((value) => !value)}
                   >
                     <ChevronDown
@@ -118,7 +118,7 @@ export function RemindersPage() {
                   </Button>
                 </h2>
                 {showHandled && (
-                  <ul id="avvisi-gestiti-elenco" className="mt-2 border-t">
+                  <ul id="reminders-handled-list" className="mt-2 border-t">
                     {handled.map((reminder) => (
                       <ReminderRow key={reminder.key} reminder={reminder} />
                     ))}

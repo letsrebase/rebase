@@ -175,12 +175,12 @@ export function GmailPanel() {
       <div className="space-y-2 border-t pt-4">
         <div className="flex items-start gap-2">
           <Checkbox
-            id="gmail-elimina-messaggi"
+            id="gmail-delete-messages"
             className="mt-1"
             checked={deleteMessages}
             onCheckedChange={(checked) => setDeleteMessages(checked === true)}
           />
-          <Label htmlFor="gmail-elimina-messaggi" className="font-normal leading-snug">
+          <Label htmlFor="gmail-delete-messages" className="font-normal leading-snug">
             Elimina anche le email già archiviate nel CRM. È irreversibile.
           </Label>
         </div>

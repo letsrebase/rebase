@@ -376,12 +376,12 @@ function NewProformaDialog({
           {fixedCustomerId === undefined ? (
             <>
               <div className="space-y-2">
-                <Label htmlFor="proforma-cliente">
+                <Label htmlFor="proforma-customer">
                   Cliente
                   <span className="ml-1 text-destructive">*</span>
                 </Label>
                 <CustomerPicker
-                  id="proforma-cliente"
+                  id="proforma-customer"
                   value={customerId === '' ? null : customerId}
                   onChange={(customer) => chooseCustomer(customer?.id ?? '')}
                 />
@@ -410,12 +410,12 @@ function NewProformaDialog({
           {issuedBy !== undefined ? <FixedField label="Emessa da" value={issuedBy.nome} /> : null}
 
           <div className="space-y-2">
-            <Label htmlFor="proforma-causale">
+            <Label htmlFor="proforma-description">
               Causale
               <span className="ml-1 text-destructive">*</span>
             </Label>
             <Input
-              id="proforma-causale"
+              id="proforma-description"
               value={memo}
               onChange={(event) => setMemo(event.target.value)}
               placeholder="Consulenza settembre 2026"

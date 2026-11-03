@@ -4,6 +4,6 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 // docs/design/DECISIONS.md): `settings/template.tsx` is the real page now.
 export const Route = createFileRoute('/app/impostazioni/template')({
   beforeLoad: () => {
-    throw redirect({ to: '/app/settings/template' })
+    throw redirect({ to: '/app/settings/templates' })
   },
 })

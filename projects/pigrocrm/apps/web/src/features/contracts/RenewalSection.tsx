@@ -106,9 +106,9 @@ function AssumptionForm({ contractId, currency, assumption, canWrite }: Assumpti
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="renewal-probabilita">Probabilità di rinnovo (%)</Label>
+        <Label htmlFor="renewal-probability">Probabilità di rinnovo (%)</Label>
         <Input
-          id="renewal-probabilita"
+          id="renewal-probability"
           type="number"
           min={0}
           max={100}
@@ -133,9 +133,9 @@ function AssumptionForm({ contractId, currency, assumption, canWrite }: Assumpti
         {errorOn('expected_volume')}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="renewal-orizzonte">Orizzonte</Label>
+        <Label htmlFor="renewal-horizon">Orizzonte</Label>
         <Input
-          id="renewal-orizzonte"
+          id="renewal-horizon"
           type="date"
           value={horizon}
           disabled={!canWrite}
@@ -220,9 +220,9 @@ export function RenewalSection({ contract }: { contract: Contract }) {
               <div>
                 <h3 className="mb-3 text-sm font-medium">Ricavi programmati</h3>
                 <div className="mb-3 max-w-xs space-y-2">
-                  <Label htmlFor="renewal-fino-al">Fino al (escluso)</Label>
+                  <Label htmlFor="renewal-until">Fino al (escluso)</Label>
                   <Input
-                    id="renewal-fino-al"
+                    id="renewal-until"
                     type="date"
                     value={end}
                     onChange={(event) => setChosenEnd(event.target.value)}

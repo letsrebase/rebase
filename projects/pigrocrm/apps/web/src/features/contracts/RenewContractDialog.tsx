@@ -32,15 +32,15 @@ type RenewableContract = Pick<
   'id' | 'title' | 'end' | 'next_contract_id'
 >
 
-type EndMode = 'stessa_duration' | 'duration' | 'data'
+type EndMode = 'same_duration' | 'duration' | 'date'
 
 const END_MODES: Record<EndMode, string> = {
-  stessa_duration: 'Stessa durata',
+  same_duration: 'Stessa durata',
   duration: 'Durata',
-  data: 'Data di fine',
+  date: 'Data di fine',
 }
 
-const END_MODE_ORDER: EndMode[] = ['stessa_duration', 'duration', 'data']
+const END_MODE_ORDER: EndMode[] = ['same_duration', 'duration', 'date']
 
 const UNIT_LABELS: Record<RenewalDuration['unit'], string> = {
   days: 'Giorni',
@@ -70,7 +70,7 @@ interface FormValues {
 const EMPTY_FORM: FormValues = {
   title: '',
   start: '',
-  mode: 'stessa_duration',
+  mode: 'same_duration',
   count: '1',
   unit: 'months',
   end: '',
@@ -86,7 +86,7 @@ function toBody(values: FormValues): RenewContractBody {
   if (values.start !== '') body.start = values.start
   if (values.mode === 'duration') {
     body.duration = { count: Number(values.count.trim()), unit: values.unit }
-  } else if (values.mode === 'data' && values.end !== '') {
+  } else if (values.mode === 'date' && values.end !== '') {
     body.end = values.end
   }
   return body
@@ -129,7 +129,7 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
     setProblem(null)
     // An end date chosen and left blank is not «same duration»: the person did not pick
     // that, so the dialog asks instead of renewing for a term they never named.
-    if (values.mode === 'data' && values.end === '') {
+    if (values.mode === 'date' && values.end === '') {
       setProblem({
         type: 'about:blank',
         title: 'Dati non validi',
@@ -177,9 +177,9 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
         </DialogHeader>
 
         <div className="space-y-2">
-          <Label htmlFor="renew-titolo">Titolo</Label>
+          <Label htmlFor="renew-title">Titolo</Label>
           <Input
-            id="renew-titolo"
+            id="renew-title"
             placeholder={contract.title}
             value={values.title}
             onChange={(event) => set('title', event.target.value)}
@@ -189,9 +189,9 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="renew-inizio">Inizio</Label>
+          <Label htmlFor="renew-start">Inizio</Label>
           <Input
-            id="renew-inizio"
+            id="renew-start"
             type="date"
             value={values.start}
             onChange={(event) => set('start', event.target.value)}
@@ -215,7 +215,7 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
               ))}
             </SelectContent>
           </Select>
-          {values.mode === 'stessa_duration' && (
+          {values.mode === 'same_duration' && (
             <p className="text-xs text-muted-foreground">
               Il nuovo contratto dura quanto questo.
             </p>
@@ -225,9 +225,9 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
         {values.mode === 'duration' && (
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="renew-conteggio">Quanto dura</Label>
+              <Label htmlFor="renew-count">Quanto dura</Label>
               <Input
-                id="renew-conteggio"
+                id="renew-count"
                 type="number"
                 min={1}
                 value={values.count}
@@ -237,12 +237,12 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
               {errorOn('count', 'duration')}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="renew-unita">Unità</Label>
+              <Label htmlFor="renew-unit">Unità</Label>
               <Select
                 value={values.unit}
                 onValueChange={(value) => set('unit', value as RenewalDuration['unit'])}
               >
-                <SelectTrigger id="renew-unita" className="w-full">
+                <SelectTrigger id="renew-unit" className="w-full">
                   <SelectValue placeholder="Seleziona…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -258,7 +258,7 @@ export function RenewContractDialog({ open, onOpenChange, contract }: DialogProp
           </div>
         )}
 
-        {values.mode === 'data' && (
+        {values.mode === 'date' && (
           <div className="space-y-2">
             <Label htmlFor="renew-fine">Data di fine</Label>
             <Input

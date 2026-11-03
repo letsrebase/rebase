@@ -27,7 +27,7 @@
  */
 export const SETTINGS_GROUPS = [
   {
-    id: 'personale',
+    id: 'personal',
     label: 'Personale',
     tabs: [
       { value: 'profile', label: 'Profilo' },
@@ -45,26 +45,26 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
-    id: 'clienti-deal',
+    id: 'customers-deals',
     label: 'Clienti e deal',
     tabs: [
       { value: 'fields', label: 'Campi' },
       { value: 'pipeline', label: 'Pipeline' },
-      { value: 'template', label: 'Template' },
+      { value: 'templates', label: 'Template' },
     ],
   },
   {
-    id: 'fatturazione',
+    id: 'invoicing',
     label: 'Fatturazione e costi',
     tabs: [
-      { value: 'legal_entities', label: 'Aziende' },
+      { value: 'legal-entities', label: 'Aziende' },
       { value: 'cost-categories', label: 'Categorie costo' },
       { value: 'rates', label: 'Tariffe' },
       { value: 'periods', label: 'Periodi' },
     ],
   },
   {
-    id: 'collegamenti',
+    id: 'connections',
     label: 'Collegamenti',
     tabs: [
       { value: 'gmail', label: 'Gmail' },
@@ -74,7 +74,7 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
-    id: 'reminder',
+    id: 'reminders',
     label: 'Promemoria e automazioni',
     tabs: [
       // The space's reminder defaults (REB-735), admin only like every section but the two

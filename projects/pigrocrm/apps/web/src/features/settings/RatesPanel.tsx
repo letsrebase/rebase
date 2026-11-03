@@ -278,9 +278,9 @@ export function RatesPanel() {
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-2">
-            <Label htmlFor="nuovo-deal-tariffa">Aggiungi una tariffa a un deal</Label>
+            <Label htmlFor="new-deal-rate">Aggiungi una tariffa a un deal</Label>
             <Select value={newDeal} onValueChange={setNewDeal}>
-              <SelectTrigger id="nuovo-deal-tariffa" className="w-72">
+              <SelectTrigger id="new-deal-rate" className="w-72">
                 <SelectValue placeholder="Seleziona un deal…" />
               </SelectTrigger>
               <SelectContent>
@@ -293,9 +293,9 @@ export function RatesPanel() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nuova-tariffa">Tariffa (€/h)</Label>
+            <Label htmlFor="new-rate">Tariffa (€/h)</Label>
             <Input
-              id="nuova-tariffa"
+              id="new-rate"
               type="number"
               step="0.000001"
               value={newRate}

@@ -131,7 +131,7 @@ export function UsersPanel() {
     },
     {
       header: 'Ultimo accesso',
-      id: 'ultimo_accesso',
+      id: 'last_login',
       // `None` until the account's first session -- a password login or an accepted
       // invitation (REB-297) -- so an em dash reads as "never", not as a blank cell
       // that looks like a loading state.

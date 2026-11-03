@@ -205,11 +205,11 @@ export function CostCategoriesPanel() {
 
       <div className="flex items-center gap-2">
         <Checkbox
-          id="includi-archiviate"
+          id="include-archived"
           checked={includeArchived}
           onCheckedChange={(checked) => setIncludeArchived(checked === true)}
         />
-        <Label htmlFor="includi-archiviate" className="font-normal">
+        <Label htmlFor="include-archived" className="font-normal">
           Includi archiviate
         </Label>
       </div>
@@ -237,9 +237,9 @@ export function CostCategoriesPanel() {
             </p>
           )}
           <div className="space-y-2">
-            <Label htmlFor="categoria-nome">Nome</Label>
+            <Label htmlFor="category-name">Nome</Label>
             <Input
-              id="categoria-nome"
+              id="category-name"
               aria-invalid={dialogFieldError?.field === 'nome'}
               value={nome}
               onChange={(event) => setName(event.target.value)}

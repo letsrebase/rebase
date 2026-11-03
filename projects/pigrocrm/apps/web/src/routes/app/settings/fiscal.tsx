@@ -5,6 +5,6 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 // answering, the way the Italian ones retired on 2026-09-21 still do.
 export const Route = createFileRoute('/app/settings/fiscal')({
   beforeLoad: () => {
-    throw redirect({ to: '/app/settings/aziende' })
+    throw redirect({ to: '/app/settings/legal-entities' })
   },
 })

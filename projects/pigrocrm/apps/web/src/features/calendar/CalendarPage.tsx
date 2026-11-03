@@ -169,11 +169,11 @@ export function CalendarPage({
             </p>
 
             {withoutDueDate.length > 0 && (
-              <section aria-labelledby="senza-scadenza" className="space-y-2">
+              <section aria-labelledby="no-due-date" className="space-y-2">
                 {/* Outside the grid, and that is the point: a commitment with no date
                     cannot be drawn in a cell, is not late and is not for today. A NULL
                     is not zero days. */}
-                <h2 id="senza-scadenza" className="text-sm font-medium">
+                <h2 id="no-due-date" className="text-sm font-medium">
                   Senza scadenza
                 </h2>
                 <ul className="space-y-2 text-sm">

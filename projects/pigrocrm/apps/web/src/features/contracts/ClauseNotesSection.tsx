@@ -158,9 +158,9 @@ function ClauseNoteDialog({ open, onOpenChange, contractId, note }: DialogProps)
         </DialogHeader>
 
         <div className="space-y-2">
-          <Label htmlFor="clause-riferimento">Clausola</Label>
+          <Label htmlFor="clause-reference">Clausola</Label>
           <Input
-            id="clause-riferimento"
+            id="clause-reference"
             placeholder="Art. 8.3 Rinnovo"
             value={values.clause_reference}
             onChange={(event) => set('clause_reference', event.target.value)}
@@ -170,9 +170,9 @@ function ClauseNoteDialog({ open, onOpenChange, contractId, note }: DialogProps)
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="clause-testo">Testo letterale</Label>
+          <Label htmlFor="clause-text">Testo letterale</Label>
           <Textarea
-            id="clause-testo"
+            id="clause-text"
             rows={4}
             value={values.literal_text}
             onChange={(event) => set('literal_text', event.target.value)}
@@ -183,9 +183,9 @@ function ClauseNoteDialog({ open, onOpenChange, contractId, note }: DialogProps)
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="clause-interpretazione">Interpretazione adottata</Label>
+          <Label htmlFor="clause-interpretation">Interpretazione adottata</Label>
           <Textarea
-            id="clause-interpretazione"
+            id="clause-interpretation"
             rows={4}
             value={values.adopted_interpretation}
             onChange={(event) => set('adopted_interpretation', event.target.value)}

@@ -106,18 +106,18 @@ export function EmailTemplateDialog({ contractId, template, open, onOpenChange }
           {errorOn('nome')}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email-template-oggetto">Oggetto</Label>
+          <Label htmlFor="email-template-subject">Oggetto</Label>
           <Input
-            id="email-template-oggetto"
+            id="email-template-subject"
             value={values.subject}
             onChange={(event) => set('subject', event.target.value)}
           />
           {errorOn('subject')}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email-template-corpo">Testo</Label>
+          <Label htmlFor="email-template-body">Testo</Label>
           <Textarea
-            id="email-template-corpo"
+            id="email-template-body"
             rows={9}
             value={values.body}
             onChange={(event) => set('body', event.target.value)}

@@ -260,8 +260,8 @@ describe('AppShell', () => {
     )
     renderShell()
 
-    const attivita = await sidebar().findByRole('link', { name: /^Attività\s*3 in ritardo$/ })
-    expect(attivita).toBeInTheDocument()
+    const tasksLink = await sidebar().findByRole('link', { name: /^Attività\s*3 in ritardo$/ })
+    expect(tasksLink).toBeInTheDocument()
     // Asked for the signed-in user's own, a single row: the sidebar wants the number.
     expect(GET).toHaveBeenCalledWith('/api/activities/today', {
       params: { query: { assigned_to: 'u-1', include_unassigned: true, limit: 1 } },

@@ -20,21 +20,21 @@ export function PeriodPicker({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <label className="text-sm text-muted-foreground" htmlFor="periodo-da">
+      <label className="text-sm text-muted-foreground" htmlFor="period-from">
         Dal
       </label>
       <input
-        id="periodo-da"
+        id="period-from"
         type="date"
         value={period.da}
         onChange={(event) => onChange({ ...period, da: event.target.value })}
         className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
-      <label className="text-sm text-muted-foreground" htmlFor="periodo-a">
+      <label className="text-sm text-muted-foreground" htmlFor="period-to">
         al
       </label>
       <input
-        id="periodo-a"
+        id="period-to"
         type="date"
         value={period.a}
         onChange={(event) => onChange({ ...period, a: event.target.value })}

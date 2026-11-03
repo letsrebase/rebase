@@ -65,8 +65,8 @@ export function CellDays({ days }: { days: readonly CalendarWorkUnit[] }) {
 export function PanelDays({ day: calendarDay, days }: { day: string; days: readonly CalendarWorkUnit[] }) {
   const canWrite = useCanWrite()
   return (
-    <section aria-labelledby="giornate-del-giorno" className="space-y-2">
-      <h3 id="giornate-del-giorno" className="text-sm font-medium">
+    <section aria-labelledby="work-units-of-day" className="space-y-2">
+      <h3 id="work-units-of-day" className="text-sm font-medium">
         Giornate
       </h3>
       {days.length === 0 ? (

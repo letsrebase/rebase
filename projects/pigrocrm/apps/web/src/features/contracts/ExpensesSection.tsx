@@ -189,9 +189,9 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
             {errorOn('data')}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="expense-importo">Importo ({currencySign(currency)})</Label>
+            <Label htmlFor="expense-amount">Importo ({currencySign(currency)})</Label>
             <Input
-              id="expense-importo"
+              id="expense-amount"
               inputMode="decimal"
               placeholder="42.00"
               value={values.amount}
@@ -203,9 +203,9 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="expense-descrizione">Descrizione</Label>
+          <Label htmlFor="expense-description">Descrizione</Label>
           <Input
-            id="expense-descrizione"
+            id="expense-description"
             value={values.description}
             onChange={(event) => set('description', event.target.value)}
             aria-invalid={fieldError?.field === 'description'}
@@ -226,9 +226,9 @@ function ExpenseDialog({ open, onOpenChange, contractId, currency, expense }: Di
           </div>
           {values.pre_authorized && (
             <div className="space-y-2">
-              <Label htmlFor="expense-riferimento">Riferimento dell’autorizzazione</Label>
+              <Label htmlFor="expense-reference">Riferimento dell’autorizzazione</Label>
               <Input
-                id="expense-riferimento"
+                id="expense-reference"
                 placeholder="email del 2 marzo"
                 value={values.authorization_reference}
                 onChange={(event) => set('authorization_reference', event.target.value)}

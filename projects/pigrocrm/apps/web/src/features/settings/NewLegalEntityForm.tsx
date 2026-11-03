@@ -275,9 +275,9 @@ export function NewLegalEntityForm({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="nuova-regime">Regime</Label>
+          <Label htmlFor="new-regime">Regime</Label>
           <select
-            id="nuova-regime"
+            id="new-regime"
             className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
             value={values.regime}
             disabled={create.isPending}
@@ -301,9 +301,9 @@ export function NewLegalEntityForm({
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="nuova-aliquota_iva_default">Aliquota IVA predefinita</Label>
+          <Label htmlFor="new-default-vat-rate">Aliquota IVA predefinita</Label>
           <Input
-            id="nuova-aliquota_iva_default"
+            id="new-default-vat-rate"
             value={values.default_vat_rate}
             disabled={create.isPending}
             aria-invalid={fieldError?.field === 'default_vat_rate' ? true : undefined}
@@ -323,9 +323,9 @@ export function NewLegalEntityForm({
         </div>
         {values.regime === 'RF01' ? null : (
           <div className="space-y-2">
-            <Label htmlFor="nuova-natura_default">Natura</Label>
+            <Label htmlFor="new-default-vat-nature">Natura</Label>
             <Input
-              id="nuova-natura_default"
+              id="new-default-vat-nature"
               value={values.default_vat_nature}
               disabled={create.isPending}
               aria-invalid={fieldError?.field === 'default_vat_nature' ? true : undefined}
@@ -343,9 +343,9 @@ export function NewLegalEntityForm({
           </div>
         )}
         <div className="space-y-2">
-          <Label htmlFor="nuova-iban">IBAN</Label>
+          <Label htmlFor="new-iban">IBAN</Label>
           <Input
-            id="nuova-iban"
+            id="new-iban"
             value={values.iban}
             disabled={create.isPending}
             aria-invalid={fieldError?.field === 'iban' ? true : undefined}

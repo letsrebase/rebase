@@ -305,9 +305,9 @@ export function TemplatesPanel() {
                 ) : null}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="template-tipo">Tipo</Label>
+                <Label htmlFor="template-type">Tipo</Label>
                 <Select value={type} onValueChange={setType}>
-                  <SelectTrigger id="template-tipo">
+                  <SelectTrigger id="template-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -322,9 +322,9 @@ export function TemplatesPanel() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="template-corpo">Corpo Markdown</Label>
+              <Label htmlFor="template-body">Corpo Markdown</Label>
               <Textarea
-                id="template-corpo"
+                id="template-body"
                 value={bodyText}
                 rows={14}
                 className="font-mono text-sm"

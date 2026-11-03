@@ -180,9 +180,9 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
             {description.isError && <QueryErrorBanner error={description.error} />}
 
             <div className="space-y-1">
-              <Label htmlFor="document-titolo">Titolo</Label>
+              <Label htmlFor="document-title">Titolo</Label>
               <Input
-                id="document-titolo"
+                id="document-title"
                 value={String(values.native[TITLE_FIELD_KEY] ?? '')}
                 onChange={(event) => change(TITLE_FIELD_KEY, event.target.value)}
               />
