@@ -33,6 +33,7 @@ from pigrocrm.core.deals.value import (
     line_term,
     summarize,
     term_total,
+    terms_overlap,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
@@ -116,7 +117,7 @@ def _check_lines(lines: list[DealValueLineIn], close_date: date | None) -> Value
     rated = [(index, line, term) for index, (line, term) in enumerate(pairs) if line.unit != "flat"]
     for position, (index, line, term) in enumerate(rated):
         for other_index, other, other_term in rated[position + 1 :]:
-            if _overlaps(term, other_term):
+            if terms_overlap(term, other_term):
                 raise ValidationFailed(
                     ENTITY,
                     "value_lines",
@@ -142,12 +143,6 @@ def _check_lines(lines: list[DealValueLineIn], close_date: date | None) -> Value
             expected=f"meno di {VALUE_LIMIT}",
         )
     return summary
-
-
-def _overlaps(a: ValueTerm, b: ValueTerm) -> bool:
-    """Whether two rated terms are in force together: from its start to its end, or with no
-    end when it has none."""
-    return (a.end is None or b.start <= a.end) and (b.end is None or a.start <= b.end)
 
 
 def _line_key(line: DealValueLineIn | DealValueLine) -> tuple[object, ...]:
@@ -321,9 +316,11 @@ class DealService:
         """The single-deal read: the list shape plus the lines behind its figures."""
         read = self._read(deal)
         lines = self.repo.value_lines([deal.id]).get(deal.id, [])
+        contract = self.repo.linked_contract(deal.id)
         return DealDetailRead(
             **read.model_dump(),
             value_lines=[DealValueLineRead.model_validate(line) for line in lines],
+            contract_id=None if contract is None else contract[0],
         )
 
     def preview_value(self, data: ValuePreviewIn) -> ValuePreviewRead:
@@ -420,7 +417,9 @@ class DealService:
 
     def update(self, deal_id: UUID, data: DealUpdate, actor: Actor) -> DealDetailRead:
         actor.require_write("update_deal")
-        deal = self.repo.get(deal_id)
+        # Locked, so a conversion into a contract running at the same time either sees the
+        # lines this call writes or is seen by it, never neither.
+        deal = self.repo.get_locked(deal_id)
         if deal is None:
             raise NotFound(ENTITY, deal_id)
 
@@ -440,9 +439,19 @@ class DealService:
             _line_key(line) for line in stored
         ]
         summary: ValueSummary | None = None
+        contract = self.repo.linked_contract(deal.id)
+        if lines_changed and contract is not None:
+            # The cards of the contract are the price from the conversion on: two sources
+            # of it would drift apart.
+            raise Conflict(
+                ENTITY,
+                f"il deal è diventato il contratto «{contract[1]}»: le righe di valore non si "
+                "modificano più, il prezzo è quello del contratto",
+                contract_id=str(contract[0]),
+            )
         if new_lines is not None:
             summary = _check_lines(new_lines, close_date)
-        elif stored and close_date != deal.expected_close_date:
+        elif stored and close_date != deal.expected_close_date and contract is None:
             # A line with no start moves with the close date, so the rule that two day or
             # hour lines never overlap is checked again.
             _check_lines(

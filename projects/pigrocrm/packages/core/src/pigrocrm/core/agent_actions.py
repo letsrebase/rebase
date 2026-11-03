@@ -72,6 +72,7 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "set_offer_state",
         # Contracts.
         "create_contract",
+        "convert_deal_to_contract",
         "update_contract",
         "set_contract_state",
         "create_rate_card",
@@ -268,6 +269,7 @@ ACTION_LABELS: dict[str, str] = {
     "connect_slack": "collegare Slack",
     "disconnect_slack": "scollegare Slack",
     "manage_slack": "gestire Slack",
+    "convert_deal_to_contract": "trasformare un deal in contratto",
 }
 
 

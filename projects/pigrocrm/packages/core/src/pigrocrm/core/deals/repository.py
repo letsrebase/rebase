@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, Numeric, and_, case, delete, func, literal, select, true
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import ClosedInPeriod, PipelineStageSummary
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
@@ -36,6 +37,24 @@ class DealRepository:
         if deal.deleted_at is not None and not include_deleted:
             return None
         return deal
+
+    def get_locked(self, deal_id: UUID) -> Deal | None:
+        """`get`, holding a row lock until the transaction ends: a write to the deal's value
+        lines and its conversion into a contract run one after the other, so neither reads
+        what the other is about to change."""
+        deal = self.session.execute(
+            select(Deal).where(Deal.id == deal_id).with_for_update()
+        ).scalar_one_or_none()
+        if deal is None or deal.deleted_at is not None:
+            return None
+        return deal
+
+    def linked_contract(self, deal_id: UUID) -> tuple[UUID, str] | None:
+        """The id and title of the contract this deal was converted into, if it was."""
+        row = self.session.execute(
+            select(Contract.id, Contract.title).where(Contract.deal_id == deal_id)
+        ).first()
+        return None if row is None else (row[0], row[1])
 
     def get_many(self, deal_ids: Collection[UUID]) -> list[Deal]:
         """The live deals among `deal_ids`, in one query. An id with no live deal is absent."""

@@ -125,6 +125,10 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     previous_contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, unique=True
     )
+    # The deal this contract was converted from (spec 2026-11-03 §8), written only by
+    # `ContractService.create_from_deal`. Unique: a deal becomes at most one contract. A
+    # renewal does not carry it; the chain is `previous_contract_id`.
+    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, unique=True)
     note: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 

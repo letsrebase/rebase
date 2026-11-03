@@ -115,6 +115,13 @@ def occurrences(term: ValueTerm) -> list[date]:
     return _stepped(term.start, _last_day(term), _STEP_MONTHS[term.delivery_period])
 
 
+def terms_overlap(a: ValueTerm, b: ValueTerm) -> bool:
+    """Whether two terms are in force together: each from its start to its end, or with no
+    end when it has none. What decides that a deal, or a contract, has at most one day or hour
+    rate in force on a date."""
+    return (a.end is None or b.start <= a.end) and (b.end is None or a.start <= b.end)
+
+
 def term_total(term: ValueTerm) -> Decimal:
     return round_money(term.unit_price * term.quantity * len(occurrences(term)))
 

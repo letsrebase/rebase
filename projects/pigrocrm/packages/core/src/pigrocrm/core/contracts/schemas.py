@@ -129,6 +129,37 @@ class ContractCreate(BaseModel):
         return self
 
 
+class ContractFromDeal(BaseModel):
+    """What a person (or an agent) gives, or confirms, to turn a won deal into a contract
+    (spec 2026-11-03 §8). The deal gives the customer, the legal entity and the rate cards;
+    the contract starts as `draft` and its payment terms stay empty, so they cascade from the
+    customer. Every field is required, `end` included (`null` is a contract with no end): the
+    proposal (`ContractFromDealProposal`) is a suggestion to confirm, never a default that
+    applies itself."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: SafeStr = Field(max_length=TITLE_MAX_LENGTH)
+    start: date
+    end: date | None
+    renewal_type: RenewalType
+    renewal_notice_days: int | None = Field(default=None, ge=0)
+    termination_notice_days: int = Field(ge=0)
+    billing_cadence: SafeStr = Field(max_length=BILLING_CADENCE_MAX_LENGTH)
+    expense_policy: dict[str, Any]
+
+    @field_validator("expense_policy")
+    @classmethod
+    def _expense_policy_is_readable(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return check_expense_policy(value)
+
+    @model_validator(mode="after")
+    def _end_not_before_start(self) -> "ContractFromDeal":
+        if self.end is not None and self.end < self.start:
+            raise ValueError("fine non può precedere inizio")
+        return self
+
+
 class ContractUpdate(BaseModel):
     """A partial patch of everything `ContractCreate` writes except the customer, which
     a contract never changes. `status` is absent: it moves through `ContractStateChange`
@@ -228,6 +259,8 @@ class ContractRead(BaseModel):
     expense_policy: dict[str, Any]
     status: str
     previous_contract_id: UUID | None
+    # The deal this contract was converted from, if it was.
+    deal_id: UUID | None
     note: str | None
     custom_fields: dict[str, Any]
     created_at: datetime
@@ -293,6 +326,28 @@ class RateCardCreate(BaseModel):
         if self.valid_to is not None and self.valid_to < self.valid_from:
             raise ValueError("valid_to non può precedere valid_from")
         return self
+
+
+class ProposedRateCard(RateCardCreate):
+    """A rate card the conversion of a deal would create. Its own schema, and not
+    `RateCardCreate` itself, so that one stays an input-only schema in the OpenAPI document:
+    a model used on both sides is published twice (`-Input` and `-Output`)."""
+
+
+class ContractFromDealProposal(BaseModel):
+    """What the conversion of a deal would start from: the title, the start and the end the
+    deal suggests and the rate cards its lines become with that start. `end` is `null` when
+    a line has none, and for a deal of lump sums alone, where the person enters the delivery
+    date. A line with no start of its own takes the start the contract is confirmed with, so
+    the cards listed here are the ones the proposed start gives."""
+
+    deal_id: UUID
+    customer_id: UUID
+    legal_entity_id: UUID
+    title: str
+    start: date
+    end: date | None
+    cards: list[ProposedRateCard]
 
 
 class RateCardUpdate(BaseModel):

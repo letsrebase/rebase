@@ -205,6 +205,9 @@ class DealDetailRead(DealRead):
     """The single-deal read: the list shape and the lines behind its figures."""
 
     value_lines: list[DealValueLineRead] = []
+    # The contract this deal was converted into, if it was: from then on its lines are
+    # locked and the contract is the one source of the price.
+    contract_id: UUID | None = None
 
 
 class ValuePreviewIn(BaseModel):
