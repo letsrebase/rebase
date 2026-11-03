@@ -455,7 +455,7 @@ SCENARIOS: dict[str, tuple[Scenario, set[str]]] = {
     ),
     "task through every state": (
         _task,
-        {"created", "updated", "completed", "riaperta", "cancelled", "archived", "restored"},
+        {"created", "updated", "completed", "reopened", "cancelled", "archived", "restored"},
     ),
     "time entry created, updated, archived, restored": (
         _time_entry,
