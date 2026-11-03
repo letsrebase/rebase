@@ -889,7 +889,7 @@
   }
  },
  "list_duplicates": {
-  "description": "Chi è in lista due volte (REB-800): `mergeable` sono le coppie di schede vive con\nlo stesso profilo LinkedIn, che `merge_freelancers` può unire; `from_review` quelle\nche hanno in comune solo il nome o il telefono, da guardare prima di decidere,\nmai unite da sole; `signups` quante iscrizioni ripetono un profilo (nessuna\nscheda da unire: restano fuori dalle liste dei lead). Per ogni coppia `survivor` è\nla scheda col CV più recente, quella che tiene, e `absorbed` quella che entra\nnell'altra. Solo lettura, senza indirizzi.",
+  "description": "Chi è in lista due volte (REB-800): `mergeable` sono le coppie di schede vive con\nlo stesso profilo LinkedIn, che `merge_freelancers` può unire; `to_review` quelle\nche hanno in comune solo il nome o il telefono, da guardare prima di decidere,\nmai unite da sole; `signups` quante iscrizioni ripetono un profilo (nessuna\nscheda da unire: restano fuori dalle liste dei lead). Per ogni coppia `survivor` è\nla scheda col CV più recente, quella che tiene, e `absorbed` quella che entra\nnell'altra. Solo lettura, senza indirizzi.",
   "inputSchema": {
    "type": "object",
    "properties": {},

@@ -167,7 +167,7 @@ def test_the_pairs_are_listed_for_an_admin_only(
     _login(client, sender)
     listed = client.get("/api/hub/talent/duplicates")
     assert listed.status_code == 200
-    assert listed.json() == {"mergeable": [], "from_review": [], "signups": 0}
+    assert listed.json() == {"mergeable": [], "to_review": [], "signups": 0}
 
 
 def test_a_member_is_refused_the_pairs_and_the_merge(

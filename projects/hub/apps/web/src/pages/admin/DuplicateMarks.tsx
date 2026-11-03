@@ -28,7 +28,7 @@ export function DuplicatePill({ others }: { others: readonly string[] }) {
 export function DuplicateOf({ freelancerId }: { freelancerId: string }) {
   const duplicates = useDuplicates()
   if (!duplicates.data) return null
-  const others = [...duplicates.data.mergeable, ...duplicates.data.from_review].flatMap((pair) =>
+  const others = [...duplicates.data.mergeable, ...duplicates.data.to_review].flatMap((pair) =>
     pair.survivor.freelancer_id === freelancerId
       ? [pair.absorbed.freelancer_id]
       : pair.absorbed.freelancer_id === freelancerId

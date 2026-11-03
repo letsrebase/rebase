@@ -211,7 +211,7 @@ def talent_duplicates(
     report = find_duplicates(session)
     lines.append(
         f"{len(report.mergeable)} coppie unibili (stesso LinkedIn), "
-        f"{len(report.from_review)} da rivedere (solo nome o telefono), "
+        f"{len(report.to_review)} da rivedere (solo nome o telefono), "
         f"{len(report.signups)} iscrizioni che ripetono un profilo"
     )
     failed = 0
@@ -249,7 +249,7 @@ def talent_duplicates(
             lines.append(f"{head} bloccata: {exc.message}")
             continue
         lines.append(f"{head} {_merge_line(done, short=True)}")
-    for pair in report.from_review:
+    for pair in report.to_review:
         lines.append(
             f"da rivedere: {pair.survivor.freelancer_id} e {pair.absorbed.freelancer_id} "
             f"[{','.join(pair.signals)}]"

@@ -44,8 +44,8 @@ const SAME_NAME: DuplicatePair = {
   signals: ['first_name', 'phone'],
   mergeable: false,
 }
-const BOTH: DuplicateList = { mergeable: [LINKED], from_review: [SAME_NAME], signups: 0 }
-const NONE: DuplicateList = { mergeable: [], from_review: [], signups: 0 }
+const BOTH: DuplicateList = { mergeable: [LINKED], to_review: [SAME_NAME], signups: 0 }
+const NONE: DuplicateList = { mergeable: [], to_review: [], signups: 0 }
 
 const MERGED: MergeResult = {
   survivor_freelancer_id: 'f2',
@@ -113,7 +113,7 @@ describe('«Duplicati» (REB-800)', () => {
   })
 
   it('says a card with no CV has none', async () => {
-    serve(() => ({ ...BOTH, from_review: [] }))
+    serve(() => ({ ...BOTH, to_review: [] }))
     mount()
     const pair = (await screen.findByRole('region', { name: 'Stessa persona' })).querySelector('li')!
     expect(within(pair).queryByText('Nessun CV')).toBeNull()

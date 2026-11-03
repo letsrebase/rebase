@@ -98,7 +98,7 @@ def test_a_letter_the_law_or_the_page_would_not_allow_is_refused(change: dict[st
         LetterFields(**{**REQUIRED, **change})  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("mode", ["to_work_unit", "to_body"])
+@pytest.mark.parametrize("mode", ["to_work_unit", "lump_sum"])
 def test_the_two_payment_modes_are_kept_as_written(mode: str) -> None:
     assert LetterFields(**{**REQUIRED, "mode": mode}).mode == mode  # type: ignore[arg-type]
 

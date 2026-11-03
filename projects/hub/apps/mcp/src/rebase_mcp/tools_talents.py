@@ -34,7 +34,7 @@ from rebase_mcp.tools_common import (
 
 def _without_addresses(page: dict[str, Any]) -> dict[str, Any]:
     """The duplicates' page for an agent: the pairs by name and id, never an address."""
-    for key in ("mergeable", "from_review"):
+    for key in ("mergeable", "to_review"):
         for pair in page[key]:
             for side in ("survivor", "absorbed"):
                 pair[side].pop("email", None)
@@ -244,7 +244,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     @mcp.tool()
     def list_duplicates() -> dict[str, Any]:
         """Chi è in lista due volte (REB-800): `mergeable` sono le coppie di schede vive con
-        lo stesso profilo LinkedIn, che `merge_freelancers` può unire; `from_review` quelle
+        lo stesso profilo LinkedIn, che `merge_freelancers` può unire; `to_review` quelle
         che hanno in comune solo il nome o il telefono, da guardare prima di decidere,
         mai unite da sole; `signups` quante iscrizioni ripetono un profilo (nessuna
         scheda da unire: restano fuori dalle liste dei lead). Per ogni coppia `survivor` è

@@ -353,7 +353,7 @@ lead (`rebase_core.leads.card_by_linkedin`, in the three lead lists).
 
 Two live cards that share a profile are a *unibile* pair (`rebase_core.duplicates.find_duplicates`);
 the same name or telephone number only flags (`duplicate_possible_of` on a Talenti row and in
-`get_talent`, `from_review`), never merged on its own. A Talenti page reads only its own cards
+`get_talent`, `to_review`), never merged on its own. A Talenti page reads only its own cards
 and the cards sharing a key with them (`duplicates.duplicates_of`, two statements however many
 people there are); the whole-table read is `find_duplicates`, for the report and the command.
 `PersonMergeService` (`rebase_core.merge`;

@@ -36,7 +36,7 @@ describe('the line a merge leaves (REB-800)', () => {
 describe('the number of pairs to look at (REB-800)', () => {
   it('counts the two groups together and ignores the sign-ups, which have nothing to merge', () => {
     const pair = { survivor: {}, absorbed: {}, signals: [], mergeable: true }
-    const list = { mergeable: [pair, pair], from_review: [pair], signups: 5 } as unknown as DuplicateList
+    const list = { mergeable: [pair, pair], to_review: [pair], signups: 5 } as unknown as DuplicateList
     expect(pairCount(list)).toBe(3)
   })
 })

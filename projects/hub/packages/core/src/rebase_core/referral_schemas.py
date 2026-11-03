@@ -199,7 +199,7 @@ class ReferralRewardStateChange(BaseModel):
 
 class ReferralRewardPrice(BaseModel):
     """`POST /api/hub/admin/referrals/{id}/price`: what an admin fills in by hand for a
-    reward `record_reward_if_signed` left with no figure (an `to_body` letter with no
+    reward `record_reward_if_signed` left with no figure (a `lump_sum` letter with no
     `expected_days` estimate, design record 2026-09-26)."""
 
     model_config = ConfigDict(extra="forbid")

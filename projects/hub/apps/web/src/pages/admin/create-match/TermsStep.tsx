@@ -21,7 +21,7 @@ import { StepFooter } from './StepFooter'
 
 const PAY_MODES: readonly { mode: PayMode; label: string; per: string }[] = [
   { mode: 'to_work_unit', label: 'A giornata', per: 'al giorno' },
-  { mode: 'to_body', label: 'A corpo', per: 'in tutto' },
+  { mode: 'lump_sum', label: 'A corpo', per: 'in tutto' },
 ]
 
 type Invalid = (field: string) => true | undefined
@@ -128,7 +128,7 @@ function Payment({
           {feeHint(regime)}
         </p>
       </div>
-      {mode === 'to_body' &&
+      {mode === 'lump_sum' &&
         TO_BODY_FIELDS.map((field) => (
           <LetterInput key={field} field={field} form={form} onChange={onChange} invalid={invalid} />
         ))}

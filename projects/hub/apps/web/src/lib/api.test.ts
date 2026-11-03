@@ -132,7 +132,7 @@ describe('the api client', () => {
 
   it('reads the duplicate pairs, and merges one card into another by id (REB-800)', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
-    spy.mockResolvedValueOnce(answer(200, { mergeable: [], from_review: [], signups: 2 }))
+    spy.mockResolvedValueOnce(answer(200, { mergeable: [], to_review: [], signups: 2 }))
     const list = await admin.duplicates()
     expect(spy.mock.calls[0]![0]).toBe('/api/hub/talent/duplicates')
     expect(list.signups).toBe(2)

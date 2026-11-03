@@ -133,26 +133,26 @@ describe('«Crea match» in three steps (REB-476)', () => {
 
   it('compares the fee with the day rate after reading both the Italian way', () => {
     const daily = withPayMode({ ...LETTER_EMPTY, fee: '1.500' }, 'to_work_unit')
-    expect(switchPayMode(daily, 'to_body', '1500').fee).toBe('')
-    expect(switchPayMode({ ...daily, fee: '1.500,00' }, 'to_body', '1500').fee).toBe('')
-    expect(switchPayMode({ ...daily, fee: '1,5' }, 'to_body', '1500').fee).toBe('1,5')
+    expect(switchPayMode(daily, 'lump_sum', '1500').fee).toBe('')
+    expect(switchPayMode({ ...daily, fee: '1.500,00' }, 'lump_sum', '1500').fee).toBe('')
+    expect(switchPayMode({ ...daily, fee: '1,5' }, 'lump_sum', '1500').fee).toBe('1,5')
   })
 
   it('does not take the day rate for a lump sum, and puts it back for an empty day-rate fee', () => {
     const daily = withPayMode({ ...LETTER_EMPTY, fee: '480' }, 'to_work_unit')
-    expect(switchPayMode(daily, 'to_body', '480')).toMatchObject({ mode: 'to_body', unit: 'a corpo', fee: '' })
-    expect(switchPayMode({ ...daily, fee: '480,00' }, 'to_body', '480').fee).toBe('')
-    expect(switchPayMode({ ...daily, fee: '500' }, 'to_body', '480').fee).toBe('500')
-    const lump = withPayMode({ ...LETTER_EMPTY, fee: '' }, 'to_body')
+    expect(switchPayMode(daily, 'lump_sum', '480')).toMatchObject({ mode: 'lump_sum', unit: 'a corpo', fee: '' })
+    expect(switchPayMode({ ...daily, fee: '480,00' }, 'lump_sum', '480').fee).toBe('')
+    expect(switchPayMode({ ...daily, fee: '500' }, 'lump_sum', '480').fee).toBe('500')
+    const lump = withPayMode({ ...LETTER_EMPTY, fee: '' }, 'lump_sum')
     expect(switchPayMode(lump, 'to_work_unit', '480')).toMatchObject({ mode: 'to_work_unit', fee: '480' })
     expect(switchPayMode({ ...lump, fee: '12000' }, 'to_work_unit', '480').fee).toBe('12000')
-    expect(switchPayMode(daily, 'to_body', '').fee).toBe('480')
+    expect(switchPayMode(daily, 'lump_sum', '').fee).toBe('480')
   })
 
   it('sets modalità and unità together, and reads anything but «a corpo» as a day rate', () => {
-    const body = withPayMode(LETTER_EMPTY, 'to_body')
-    expect(body).toMatchObject({ mode: 'to_body', unit: 'a corpo' })
-    expect(payModeOf(body)).toBe('to_body')
+    const body = withPayMode(LETTER_EMPTY, 'lump_sum')
+    expect(body).toMatchObject({ mode: 'lump_sum', unit: 'a corpo' })
+    expect(payModeOf(body)).toBe('lump_sum')
     expect(payModeOf(LETTER_EMPTY)).toBe('to_work_unit')
   })
 
@@ -171,7 +171,7 @@ describe('«Crea match» in three steps (REB-476)', () => {
       acceptance: null,
       billing_deadlines: null,
     })
-    expect(letterToSend(withPayMode(form, 'to_body'))).toMatchObject({
+    expect(letterToSend(withPayMode(form, 'lump_sum'))).toMatchObject({
       results: 'Il modulo',
       acceptance: 'Collaudo',
       billing_deadlines: 'A consegna',

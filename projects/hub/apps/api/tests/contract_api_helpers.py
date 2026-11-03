@@ -29,7 +29,7 @@ LETTER = {
     "role": "Backend developer",
     "activities": "Le API del prodotto.",
     "start_date": "2026-10-01",
-    "mode": "to_body",
+    "mode": "lump_sum",
     "fee": "450",
     "payment_days": 30,
     "month_end": True,

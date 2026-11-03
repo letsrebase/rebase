@@ -122,7 +122,7 @@ async def test_list_duplicates_answers_the_pairs_without_an_address(
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:
             listed: dict[str, Any] = _payload(await client.call_tool("list_duplicates", {}))
-        assert len(listed["mergeable"]) == 1 and listed["from_review"] == []
+        assert len(listed["mergeable"]) == 1 and listed["to_review"] == []
         pair = listed["mergeable"][0]
         assert {pair["survivor"]["freelancer_id"], pair["absorbed"]["freelancer_id"]} == {
             str(older),

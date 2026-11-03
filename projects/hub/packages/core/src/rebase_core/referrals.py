@@ -86,7 +86,7 @@ def reward_base(
     `fee` already daily) has a well-defined margin per day,
     `budget_giornaliero - compenso`, projected over `expected_days` when an admin
     estimated one, else one day's margin -- the conservative floor a reward never
-    guesses past. An `to_body` letter's `fee` is already a lump sum for the whole
+    guesses past. An `lump_sum` letter's `fee` is already a lump sum for the whole
     engagement, so it is compared against the client's own projected total,
     `budget_giornaliero * giorni_previsti`; with no estimate there is no total to
     project, and this returns `None` for an admin to price by hand on the ledger, the
@@ -118,7 +118,7 @@ def can_mature(kind: str, status: str) -> bool:
 
 
 def letter_unit(data: Mapping[str, Any]) -> str:
-    """How a letter prices its fee, `to_work_unit` or `to_body` (`PAY_MODES`): its printed
+    """How a letter prices its fee, `to_work_unit` or `lump_sum` (`PAY_MODES`): its printed
     `modalita`, read back as the mode it was written from, which the reward's base is
     decided on by equality. The one reading of that field, shared by the reward at
     signing, its projection, and the lists that show the letter's fee. A letter without one
@@ -443,7 +443,7 @@ class ReferralService:
         same `match_reward_base` the reward at signing uses, times `rate`, quantized the
         same way. `None` when there is nothing to project -- the match is cancelled or
         past the point a first signature can land (`EARNING_MATCH_STATES`), or the base
-        is unknown (an `to_body` letter with no `expected_days`, or a snapshot never
+        is unknown (a `lump_sum` letter with no `expected_days`, or a snapshot never
         taken). The one projection, read by the «Match» list and by the ledger."""
         if match.cancelled_at is not None or match.status not in EARNING_MATCH_STATES:
             return None

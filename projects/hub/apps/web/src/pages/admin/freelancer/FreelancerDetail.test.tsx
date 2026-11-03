@@ -256,7 +256,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
       'GET /api/hub/freelancers/f1/audit': [],
       'GET /api/hub/freelancers/f1/card': noCard('f1'),
     })
-    mount('/admin/freelance/f1', { mergeable: [LINKED_PAIR], from_review: [], signups: 0 })
+    mount('/admin/freelance/f1', { mergeable: [LINKED_PAIR], to_review: [], signups: 0 })
     const banner = await screen.findByRole('banner')
     expect(await within(banner).findByRole('link', { name: 'Possibile duplicato' })).toHaveAttribute(
       'href',
@@ -271,7 +271,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
       'GET /api/hub/freelancers/f1/card': noCard('f1'),
     })
     const elsewhere = { ...LINKED_PAIR, survivor: person('f8', 'Linus', 'Torvalds'), absorbed: person('f9', 'Dennis', 'Ritchie') }
-    mount('/admin/freelance/f1', { mergeable: [elsewhere], from_review: [], signups: 0 })
+    mount('/admin/freelance/f1', { mergeable: [elsewhere], to_review: [], signups: 0 })
     await screen.findByRole('banner')
     await settle()
     expect(screen.queryByText('Possibile duplicato')).toBeNull()

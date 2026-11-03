@@ -63,7 +63,7 @@ export interface paths {
         };
         /**
          * List Companies
-         * @description REB-285 adds `q` (nome_azienda/referente/email/progetto, trigram-ordered),
+         * @description REB-285 adds `q` (company_name/referente/email/progetto, trigram-ordered),
          *     `cursor`, and every filter after `origin` beside the original `limit`/`status`.
          */
         get: operations["list_companies_api_hub_companies_get"];
@@ -853,7 +853,7 @@ export interface paths {
         /**
          * Set Referral Price
          * @description What an admin prices by hand for a reward `record_reward_if_signed` left with
-         *     no figure (an `to_body` letter with no `expected_days` estimate).
+         *     no figure (a `lump_sum` letter with no `expected_days` estimate).
          */
         post: operations["set_referral_price_api_hub_referrals__reward_id__price_post"];
         delete?: never;
@@ -2061,7 +2061,7 @@ export interface paths {
         put?: never;
         /**
          * Propose Team
-         * @description «Proponi il team» and «Rigenera» (`previous_id`, `nota`). 503 «Il team builder è
+         * @description «Proponi il team» and «Rigenera» (`previous_id`, `note`). 503 «Il team builder è
          *     spento.» without a key or with the switch off, 503 «Troppe richieste…» with every
          *     slot taken, the client's share of the day used or the day's proposals spent, 502 when
          *     Claude does not answer.
@@ -3678,8 +3678,8 @@ export interface components {
         DuplicateListRead: {
             /** Mergeable */
             mergeable: components["schemas"]["DuplicatePairRead"][];
-            /** From Review */
-            from_review: components["schemas"]["DuplicatePairRead"][];
+            /** To Review */
+            to_review: components["schemas"]["DuplicatePairRead"][];
             /** Signups */
             signups: number;
         };
@@ -4193,7 +4193,7 @@ export interface components {
             /** Rebase Contact */
             rebase_contact: string | null;
             /** Mode */
-            mode: ("to_work_unit" | "to_body") | null;
+            mode: ("to_work_unit" | "lump_sum") | null;
             /** Fee */
             fee: string | null;
             /** Unit */
@@ -4268,7 +4268,7 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "to_work_unit" | "to_body";
+            mode: "to_work_unit" | "lump_sum";
             /** Fee */
             fee: number | string;
             /** Unit */
@@ -5228,7 +5228,7 @@ export interface components {
         };
         /**
          * PromoteRequest
-         * @description `POST /admins/promote`'s body: an email, and `nome`/`last_name` for an address
+         * @description `POST /admins/promote`'s body: an email, and `first_name`/`last_name` for an address
          *     with no `users` row yet -- ignored, harmlessly, when one already exists.
          */
         PromoteRequest: {
@@ -5461,7 +5461,7 @@ export interface components {
         /**
          * ReferralRewardPrice
          * @description `POST /api/hub/admin/referrals/{id}/price`: what an admin fills in by hand for a
-         *     reward `record_reward_if_signed` left with no figure (an `to_body` letter with no
+         *     reward `record_reward_if_signed` left with no figure (a `lump_sum` letter with no
          *     `expected_days` estimate, design record 2026-09-26).
          */
         ReferralRewardPrice: {
@@ -5955,8 +5955,8 @@ export interface components {
          *     `signups` row with no card, ORB-163) as one row, `status` `lead` for the bare ones
          *     and the freelancer's own state otherwise. `origin` names how the row came to be --
          *     `form` for a bare sign-up (the landing's own sign-up form), `wizard` for a card the
-         *     person filled in themselves (`compilata_da == "persona"`), `admin` for one an admin
-         *     drafted from research (`compilata_da == "admin"`, ORB-155). Distinct from
+         *     person filled in themselves (`filled_by == "person"`), `admin` for one an admin
+         *     drafted from research (`filled_by == "admin"`, ORB-155). Distinct from
          *     `Freelancer.origin`/`Signup`'s own UTM columns, which name the page and the
          *     campaign a submission started from, not the channel that created the row.
          *

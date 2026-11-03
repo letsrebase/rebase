@@ -598,7 +598,7 @@ def test_the_check_of_a_lump_sum_without_the_optional_lines_and_without_tax_data
         "ACME S.r.l.",
         _letter_fields(
             fee=Decimal("12000.5"),
-            mode="to_body",
+            mode="lump_sum",
             unit=None,
             payment_days=60,
             month_end=False,
@@ -641,7 +641,7 @@ def test_the_check_of_an_occasional_lump_sum_says_gross_and_without_vat() -> Non
     recap, what_happens = check_sentences(
         "Ada Lovelace",
         "ACME S.r.l.",
-        _letter_fields(fee=Decimal("5000"), mode="to_body", unit=None),
+        _letter_fields(fee=Decimal("5000"), mode="lump_sum", unit=None),
         "to_send",
         missing_tax_data=False,
         regime="occasional",

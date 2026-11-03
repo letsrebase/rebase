@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 # What the page prints for each pay mode (`contract_schemas.PAY_MODES`): the contract text
 # is Italian.
-PAY_MODE_WORDS = {"to_work_unit": "a giornata", "to_body": "a corpo"}
+PAY_MODE_WORDS = {"to_work_unit": "a giornata", "lump_sum": "a corpo"}
 
 # A state as a sentence names it («questo è annullato»): the stored values are English, the
 # sentences are Italian.

@@ -10,8 +10,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_core.errors import NotFound
 from rebase_core.card_provenance import sha
+from rebase_core.errors import NotFound
 from rebase_core.hub_facts import HubFacts, MatchFact, hub_facts
 from rebase_core.models import AdminAction, Company, Freelancer, Match, Note, User
 

@@ -12,7 +12,7 @@ export function useDuplicates() {
 
 /** How many pairs an admin has to look at, the two groups together. */
 export function pairCount(list: DuplicateList): number {
-  return list.mergeable.length + list.from_review.length
+  return list.mergeable.length + list.to_review.length
 }
 
 function rows(count: number): string {

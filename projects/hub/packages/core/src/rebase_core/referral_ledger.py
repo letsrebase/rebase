@@ -340,7 +340,7 @@ class ReferralLedgerService:
         self, reward_id: UUID, base_amount: Decimal, reward_amount: Decimal
     ) -> ReferralReward:
         """What an admin fills in by hand for a reward `record_reward_if_signed` left
-        with no figure (an `to_body` letter with no `expected_days` estimate).
+        with no figure (a `lump_sum` letter with no `expected_days` estimate).
         Refused once a state beyond `to_confirm` was already recorded against the
         figure it replaces -- price it, then move it, never the other way."""
         row = self._require_reward(reward_id)

@@ -7,7 +7,7 @@ too). Two live cards whose people share a profile are the same person, and an ad
 
 **What only flags.** The same name, or the same telephone number, is a reason to look,
 never to merge: two people are called «Marco Rossi», a number is shared by a studio, and
-a merge moves contracts. Those pairs are listed for review (`from_review`), carry
+a merge moves contracts. Those pairs are listed for review (`to_review`), carry
 `duplicate_possible_of` on a Talenti row, and are merged only by an admin who has read
 both cards, through the same merge.
 
@@ -123,7 +123,7 @@ class LeadDuplicate:
 @dataclass(frozen=True)
 class DuplicateReport:
     mergeable: list[DuplicatePair] = field(default_factory=list)
-    from_review: list[DuplicatePair] = field(default_factory=list)
+    to_review: list[DuplicatePair] = field(default_factory=list)
     signups: list[LeadDuplicate] = field(default_factory=list)
 
 
@@ -231,7 +231,7 @@ def find_duplicates(session: Session) -> DuplicateReport:
     pairs = _pairs_among(session.execute(_live_people()).all())
     return DuplicateReport(
         mergeable=[p for p in pairs if p.mergeable],
-        from_review=[p for p in pairs if not p.mergeable],
+        to_review=[p for p in pairs if not p.mergeable],
         signups=_lead_duplicates(session),
     )
 
@@ -440,7 +440,7 @@ class DuplicatePairRead(ResponseModel):
 
 class DuplicateListRead(ResponseModel):
     mergeable: list[DuplicatePairRead]
-    from_review: list[DuplicatePairRead]
+    to_review: list[DuplicatePairRead]
     signups: int
 
 
@@ -471,7 +471,7 @@ def duplicate_list(session: Session) -> DuplicateListRead:
 
     return DuplicateListRead(
         mergeable=[read(p) for p in report.mergeable],
-        from_review=[read(p) for p in report.from_review],
+        to_review=[read(p) for p in report.to_review],
         signups=len(report.signups),
     )
 

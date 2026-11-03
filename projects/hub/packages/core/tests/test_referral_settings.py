@@ -278,7 +278,7 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean_referrals: Sessio
     _active_framework(clean_referrals, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     body = _match_body(company_id, expected_days=None)
-    body.letter.mode, body.letter.unit = "to_body", "a corpo"
+    body.letter.mode, body.letter.unit = "lump_sum", "a corpo"
     match = MatchService(clean_referrals, renderer, SIGNER, today=lambda: TODAY).create(
         freelancer_id, body, admin_id
     )

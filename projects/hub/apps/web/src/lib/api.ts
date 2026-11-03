@@ -521,7 +521,7 @@ export type Letter = Record<LetterTextKey, string | null> & {
 }
 export type LetterDraft = Narrow<
   { [K in keyof Letter]: Letter[K] | null },
-  { mode: 'to_work_unit' | 'to_body' | null }
+  { mode: 'to_work_unit' | 'lump_sum' | null }
 >
 export type Customer = Schemas['CustomerDate']
 export type CustomerDraft = { [K in keyof Customer]: string | null }
@@ -817,7 +817,7 @@ export const admin = {
   talent: (filters: TalentsFilters & { cursor?: string; limit?: number } = {}) =>
     unwrap(client.GET('/api/hub/talent', { params: { query: filled(filters) } }), reading<TalentList>()),
   /** Who is on the list twice (REB-800): the pairs that share a LinkedIn profile
-   *  (`mergeable`) and the ones that only share a name or a number (`from_review`). */
+   *  (`mergeable`) and the ones that only share a name or a number (`to_review`). */
   duplicates: () => unwrap(client.GET('/api/hub/talent/duplicates'), reading<DuplicateList>()),
   /** «Unisci» (REB-800): the card `absorbedId` into the card `survivorId`. A refusal is a
    *  409 carrying the API's sentence; the merge is undone from the shell only. */
@@ -1048,7 +1048,7 @@ export const admin = {
       }),
       reading<ReferralLedgerItem>(),
     ),
-  /** What an admin prices by hand for a reward left with no figure (an `to_body`
+  /** What an admin prices by hand for a reward left with no figure (a `lump_sum`
    *  letter with no estimated days). */
   setReferralPrice: (id: string, baseAmount: string, rewardAmount: string) =>
     unwrap(

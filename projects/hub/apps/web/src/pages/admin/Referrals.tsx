@@ -375,7 +375,7 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
  * The referral ledger (P-REB-44): every reward a signed first letter earned, newest
  * first, with the two rates that decide how much right above it -- a database row an
  * admin edits here, never an environment variable (design record 2026-09-26). A
- * reward with no computed figure (an `to_body` letter with no estimated days) gets
+ * reward with no computed figure (a `lump_sum` letter with no estimated days) gets
  * one typed in by hand instead of the usual line, and moves only once it has one. An
  * admin confirms a reward, then marks it paid once the transfer happened outside the
  * hub -- tracking only, nothing here pays anyone.

@@ -217,7 +217,7 @@ describe('«Possibile duplicato» and the way into «Duplicati» (REB-800)', () 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { total: 1, items: [{ ...CARD_TALENT, duplicate_possible_of: [] }], by_status: {} }),
     )
-    mount('/admin/talent', { mergeable: [LINKED_PAIR], from_review: [NAME_PAIR], signups: 0 })
+    mount('/admin/talent', { mergeable: [LINKED_PAIR], to_review: [NAME_PAIR], signups: 0 })
     expect(await screen.findByRole('link', { name: 'Duplicati · 2' })).toHaveAttribute(
       'href',
       '/admin/talent/duplicates',

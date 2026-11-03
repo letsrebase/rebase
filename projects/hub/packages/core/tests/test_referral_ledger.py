@@ -48,8 +48,8 @@ from rebase_core.referrals import ReferralService
     [
         ("draft", False, "to_work_unit", 20, Decimal("700.00")),
         ("awaiting_signature", False, "to_work_unit", None, Decimal("35.00")),
-        ("draft", False, "to_body", 20, Decimal("1555.00")),
-        ("draft", False, "to_body", None, None),
+        ("draft", False, "lump_sum", 20, Decimal("1555.00")),
+        ("draft", False, "lump_sum", None, None),
         ("cancelled", False, "to_work_unit", 20, None),
         ("draft", True, "to_work_unit", 20, None),
         ("active", False, "to_work_unit", 20, None),
@@ -154,7 +154,7 @@ def test_a_match_with_no_referral_lists_none_and_an_unpriceable_one_projects_not
     service = MatchService(clean_referrals, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
     plain = service.create(plain_id, _match_body(company_id), admin_id)
     body = _match_body(company_id, expected_days=None)
-    body.letter.mode, body.letter.unit = "to_body", "a corpo"
+    body.letter.mode, body.letter.unit = "lump_sum", "a corpo"
     lump = service.create(referred_id, body, admin_id)
 
     listed = {item.id: item for item in _match_list(clean_referrals)}
@@ -162,7 +162,7 @@ def test_a_match_with_no_referral_lists_none_and_an_unpriceable_one_projects_not
     assert listed[plain.id].referrals == []
     (side,) = listed[lump.id].referrals
     assert (side.status, side.amount) == ("expected", None)
-    assert listed[lump.id].unit_letter == "to_body"
+    assert listed[lump.id].unit_letter == "lump_sum"
 
 
 def test_a_cancelled_match_still_names_its_referral_but_promises_no_amount(

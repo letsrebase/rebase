@@ -53,9 +53,9 @@ from rebase_core.referrals import ReferralService, reward_base
         # No estimate: one day's margin, the conservative floor.
         ("to_work_unit", None, Decimal("350")),
         # A lump sum compared against the client's own projected total.
-        ("to_body", 20, Decimal("7000")),
+        ("lump_sum", 20, Decimal("7000")),
         # A lump sum with nothing to project against: no reliable base.
-        ("to_body", None, None),
+        ("lump_sum", None, None),
         # A fee above the client's budget is rebase's own loss, never a negative reward.
         ("to_work_unit", 1, Decimal("0")),
     ],

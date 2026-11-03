@@ -297,7 +297,7 @@ def test_two_cards_with_one_profile_are_one_mergeable_pair_and_the_newest_cv_win
 
     report = find_duplicates(twice)
 
-    assert len(report.mergeable) == 1 and report.from_review == []
+    assert len(report.mergeable) == 1 and report.to_review == []
     pair = report.mergeable[0]
     assert pair.survivor.freelancer_id == new_card.id
     assert pair.absorbed.freelancer_id == old_card.id
@@ -315,9 +315,9 @@ def test_the_same_name_or_telephone_only_flags_and_is_never_mergeable(twice: Ses
     report = find_duplicates(twice)
 
     assert report.mergeable == []
-    signals = sorted(p.signals for p in report.from_review)
+    signals = sorted(p.signals for p in report.to_review)
     assert signals == [(FIRST_NAME,), (PHONE,)]
-    assert not any(p.mergeable for p in report.from_review)
+    assert not any(p.mergeable for p in report.to_review)
 
 
 def test_to_pair_with_an_admins_card_is_not_mergeable_and_keeps_the_admin(twice: Session) -> None:
@@ -329,8 +329,8 @@ def test_to_pair_with_an_admins_card_is_not_mergeable_and_keeps_the_admin(twice:
     _card(twice, member, NOW)
     twice.commit()
     report = find_duplicates(twice)
-    assert report.mergeable != [] or report.from_review != []
-    pair = (report.mergeable + report.from_review)[0]
+    assert report.mergeable != [] or report.to_review != []
+    pair = (report.mergeable + report.to_review)[0]
     assert pair.survivor.admin is True and pair.absorbed.admin is False
 
 
@@ -343,7 +343,7 @@ def test_a_merged_card_is_no_longer_a_pair(twice: Session) -> None:
     twice.commit()
     PersonMergeService(twice).merge(new_card.id, old_card.id, admin.id)
     report = find_duplicates(twice)
-    assert report.mergeable == [] and report.from_review == []
+    assert report.mergeable == [] and report.to_review == []
 
 
 def test_sign_ups_that_repeat_a_profile_are_listed_and_never_merged(twice: Session) -> None:
@@ -404,7 +404,7 @@ def test_the_admin_list_names_both_sides_of_a_pair(twice: Session) -> None:
     _card(twice, newer, NOW)
     twice.commit()
     listed = duplicate_list(twice)
-    assert len(listed.mergeable) == 1 and listed.from_review == [] and listed.signups == 0
+    assert len(listed.mergeable) == 1 and listed.to_review == [] and listed.signups == 0
     pair = listed.mergeable[0]
     assert (pair.survivor.email, pair.absorbed.email) == ("nuova@studio.it", "vecchia@studio.it")
     assert pair.mergeable is True and pair.survivor.has_cv is True
@@ -585,7 +585,7 @@ def _full_scan_flags(session: Session, ids: list[UUID]) -> dict[UUID, list[UUID]
     wanted = set(ids)
     answer: dict[UUID, list[UUID]] = {}
     report = find_duplicates(session)
-    for pair in (*report.mergeable, *report.from_review):
+    for pair in (*report.mergeable, *report.to_review):
         for mine, other in (
             (pair.survivor, pair.absorbed),
             (pair.absorbed, pair.survivor),

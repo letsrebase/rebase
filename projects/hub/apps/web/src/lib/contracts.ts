@@ -313,12 +313,12 @@ export const LETTER_MULTILINE: ReadonlySet<LetterFieldKey> = new Set<LetterField
 
 /** «Come si paga»: one choice that the letter prints twice, as `mode` and as the
  *  fee's `unit` («450,00 € a giornata»), so the page sets both. */
-export type PayMode = 'to_work_unit' | 'to_body'
+export type PayMode = 'to_work_unit' | 'lump_sum'
 /** The words the letter prints after the fee (`unit`): what the core's `PAY_MODE_WORDS` says. */
-const PAY_UNIT_WORDS: Record<PayMode, string> = { to_work_unit: 'a giornata', to_body: 'a corpo' }
+const PAY_UNIT_WORDS: Record<PayMode, string> = { to_work_unit: 'a giornata', lump_sum: 'a corpo' }
 
 export function payModeOf(form: LetterForm): PayMode {
-  return form.mode.trim() === 'to_body' ? 'to_body' : 'to_work_unit'
+  return form.mode.trim() === 'lump_sum' ? 'lump_sum' : 'to_work_unit'
 }
 
 export function withPayMode(form: LetterForm, mode: PayMode): LetterForm {
@@ -354,7 +354,7 @@ export function switchPayMode(form: LetterForm, mode: PayMode, dayRate: string):
   const next = withPayMode(form, mode)
   const fee = form.fee.trim()
   if (!dayRate) return next
-  if (mode === 'to_body' && fee && amount(fee) === amount(dayRate)) return { ...next, fee: '' }
+  if (mode === 'lump_sum' && fee && amount(fee) === amount(dayRate)) return { ...next, fee: '' }
   if (mode === 'to_work_unit' && !fee) return { ...next, fee: dayRate }
   return next
 }
@@ -402,7 +402,7 @@ export const OTHER_TERMS_FIELDS: ReadonlySet<string> = new Set(
  *  invoice dates, even ones typed «A corpo» before switching back: the form keeps them
  *  for a switch back, the letter does not get them. */
 export function letterToSend(form: LetterForm): Letter {
-  if (payModeOf(form) === 'to_body') return toLetter(form)
+  if (payModeOf(form) === 'lump_sum') return toLetter(form)
   return toLetter({ ...form, ...Object.fromEntries(TO_BODY_FIELDS.map((field) => [field, ''])) })
 }
 

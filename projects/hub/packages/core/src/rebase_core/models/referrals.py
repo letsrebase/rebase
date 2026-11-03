@@ -87,7 +87,7 @@ class ReferralReward(Base, PrimaryKeyMixin, TimestampMixin):
     that letter (`Company.daily_budget` against the letter's `fee`, never
     the freelancer's fee alone, which the contract flow never lets a freelancer's own
     document see either), projected over `Match.expected_days` when the admin
-    estimated one; `None` when there is no reliable figure to project (an `to_body`
+    estimated one; `None` when there is no reliable figure to project (a `lump_sum`
     letter with no estimate), left for an admin to price by hand on the ledger.
     `reward_amount` is `None` exactly when `base_amount` is. `status` moves by hand
     only, `to_confirm` to `confirmed` to `paid`: nothing here pays anyone."""

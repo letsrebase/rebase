@@ -732,7 +732,7 @@ def set_referral_price(
     admin: AdminDep, session: SessionDep, reward_id: UUID, payload: ReferralRewardPrice
 ) -> ReferralLedgerItem:
     """What an admin prices by hand for a reward `record_reward_if_signed` left with
-    no figure (an `to_body` letter with no `expected_days` estimate)."""
+    no figure (a `lump_sum` letter with no `expected_days` estimate)."""
     service = ReferralLedgerService(session)
     service.set_price(reward_id, payload.base_amount, payload.reward_amount)
     return service.get_ledger_item(reward_id)

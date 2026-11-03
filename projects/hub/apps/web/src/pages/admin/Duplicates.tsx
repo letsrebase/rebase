@@ -79,11 +79,11 @@ export function AdminDuplicates() {
               onMerge={(pair) => setPending({ pair, soft: false })}
             />
           )}
-          {list.from_review.length > 0 && (
+          {list.to_review.length > 0 && (
             <PairSection
               title="Da guardare"
               note="Hanno in comune solo il nome o il telefono: guarda le due schede prima di unirle."
-              pairs={list.from_review}
+              pairs={list.to_review}
               soft
               onMerge={(pair) => setPending({ pair, soft: true })}
             />

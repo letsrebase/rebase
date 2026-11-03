@@ -62,9 +62,9 @@ Day = date
 # «Come si paga»: the two ways a letter prices its fee, and the only values `mode` may
 # take. A closed set, not free text, because the referral reward's base (`reward_base`)
 # is decided on it by equality.
-PayMode = Literal["to_work_unit", "to_body"]
+PayMode = Literal["to_work_unit", "lump_sum"]
 DAY_RATE: PayMode = "to_work_unit"
-LUMP_SUM: PayMode = "to_body"
+LUMP_SUM: PayMode = "lump_sum"
 PAY_MODES: tuple[PayMode, ...] = (DAY_RATE, LUMP_SUM)
 # The day-rate unit a letter starts from, as the page prints it (`PAY_MODE_WORDS`).
 DAY_RATE_UNIT = PAY_MODE_WORDS[DAY_RATE]

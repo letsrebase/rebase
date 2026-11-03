@@ -188,7 +188,7 @@ export function settle(): Promise<void> {
 }
 
 /** `GET /api/hub/talent/duplicati` when nobody is on the list twice. */
-export const NO_DUPLICATES = { mergeable: [], from_review: [], signups: 0 }
+export const NO_DUPLICATES = { mergeable: [], to_review: [], signups: 0 }
 
 /** The admin routes these pages sit on, without the frame and its guard: the pages
  *  read `useParams` and render `Link`s, so a router has to be there. The pathless

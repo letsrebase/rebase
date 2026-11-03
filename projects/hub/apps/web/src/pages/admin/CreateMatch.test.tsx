@@ -790,7 +790,7 @@ describe('step 2, «Condizioni»', () => {
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
     expect(body.letter).toMatchObject({
-      mode: 'to_body',
+      mode: 'lump_sum',
       unit: 'a corpo',
       fee: '12000.00',
       results: 'Il modulo di prenotazione',
