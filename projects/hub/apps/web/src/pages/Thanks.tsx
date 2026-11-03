@@ -24,7 +24,7 @@ export function Thanks() {
         Nel frattempo, se lavori in proprio,{' '}
         <a
           className="underline underline-offset-2"
-          href="https://pigro.letsrebase.com/app/registrati"
+          href="https://pigro.letsrebase.com/app/register"
         >
           PigroCRM è tuo, gratis
         </a>
