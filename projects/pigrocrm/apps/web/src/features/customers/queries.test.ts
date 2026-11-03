@@ -53,7 +53,7 @@ describe('buildCustomerColumns', () => {
 
   it('appends one column per custom field', () => {
     const fields: FieldDefinition[] = [
-      { key: 'industry', label: 'Settore', type: 'text', required: false, options: [] },
+      { key: 'settore', label: 'Settore', type: 'text', required: false, options: [] },
     ]
     const headers = buildCustomerColumns(fields).map((column) => column.header)
     expect(headers).toContain('Settore')

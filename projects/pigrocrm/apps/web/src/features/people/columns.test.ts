@@ -87,7 +87,7 @@ describe('buildPersonColumns', () => {
    *  state a checkbox does not have. */
   it('renders a checkbox column as No when the record carries no value for it', () => {
     const available: FieldDefinition = {
-      key: 'available',
+      key: 'disponibile',
       label: 'Disponibile per nuovi progetti',
       type: 'checkbox',
       required: false,
@@ -95,20 +95,20 @@ describe('buildPersonColumns', () => {
     }
     const [, , , , , checkbox] = buildPersonColumns([available])
     expect(cellValue(checkbox!, { ...BASE_PERSON, custom_fields: {} })).toBe('No')
-    expect(cellValue(checkbox!, { ...BASE_PERSON, custom_fields: { available: false } })).toBe('No')
-    expect(cellValue(checkbox!, { ...BASE_PERSON, custom_fields: { available: true } })).toBe('Sì')
+    expect(cellValue(checkbox!, { ...BASE_PERSON, custom_fields: { 'disponibile': false } })).toBe('No')
+    expect(cellValue(checkbox!, { ...BASE_PERSON, custom_fields: { 'disponibile': true } })).toBe('Sì')
   })
 
   it('keeps zero and false as real custom-field values, not a dash', () => {
     const scoreField: FieldDefinition = {
-      key: 'score',
+      key: 'punteggio',
       label: 'Punteggio',
       type: 'number',
       required: false,
       options: [],
     }
     const [, , , , , score] = buildPersonColumns([scoreField])
-    expect(cellValue(score!, { ...BASE_PERSON, custom_fields: { score: 0 } })).toBe('0')
+    expect(cellValue(score!, { ...BASE_PERSON, custom_fields: { 'punteggio': 0 } })).toBe('0')
   })
 })
 

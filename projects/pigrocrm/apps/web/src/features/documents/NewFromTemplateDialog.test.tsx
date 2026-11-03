@@ -24,7 +24,7 @@ const DESCRIPTION: TemplateDescription = {
   type: 'offer',
   variables: [
     { name: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
-    { name: 'urgent', label: 'Urgente', type: 'checkbox', required: false, options: [] },
+    { name: 'urgente', label: 'Urgente', type: 'checkbox', required: false, options: [] },
   ],
   used_journeys: [['subject'], ['customer', 'legal_name']],
   variables_not_used: [],
@@ -68,7 +68,7 @@ describe('variablesToFields', () => {
   it('maps a declared variable onto the FieldDefinition DynamicFieldRenderer expects', () => {
     expect(variablesToFields(DESCRIPTION.variables)).toEqual([
       { key: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
-      { key: 'urgent', label: 'Urgente', type: 'checkbox', required: false, options: [] },
+      { key: 'urgente', label: 'Urgente', type: 'checkbox', required: false, options: [] },
     ])
   })
 })
@@ -121,7 +121,7 @@ describe('NewFromTemplateDialog', () => {
       expect(sentBody).toBeDefined()
       // `false` is a value, never a blank: an unchecked box the user looked at is an
       // answer, and `mode="create"` is what makes DynamicForm seed it.
-      expect(sentBody?.variables.urgent).toBe(false)
+      expect(sentBody?.variables['urgente']).toBe(false)
       expect(sentBody?.variables.subject).toBe('Advisory')
     })
   })

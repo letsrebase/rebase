@@ -56,7 +56,7 @@ describe('buildDealColumns', () => {
 
   it('appends one column per custom field', () => {
     const fields: FieldDefinition[] = [
-      { key: 'source', label: 'Fonte', type: 'text', required: false, options: [] },
+      { key: 'fonte', label: 'Fonte', type: 'text', required: false, options: [] },
     ]
     const headers = buildDealColumns(fields).map((column) => column.header)
     expect(headers).toContain('Fonte')
@@ -99,7 +99,7 @@ describe('buildDealColumns', () => {
    *  same `renderFieldValue`). */
   it('renders a checkbox custom column as No when the record carries no value for it', () => {
     const active: FieldDefinition = {
-      key: 'urgent',
+      key: 'urgente',
       label: 'Urgente',
       type: 'checkbox',
       required: false,
@@ -107,19 +107,19 @@ describe('buildDealColumns', () => {
     }
     const [, , , , urgent] = buildDealColumns([active])
     expect(cellValue(urgent!, { ...BASE_DEAL, custom_fields: {} })).toBe('No')
-    expect(cellValue(urgent!, { ...BASE_DEAL, custom_fields: { urgent: true } })).toBe('Sì')
+    expect(cellValue(urgent!, { ...BASE_DEAL, custom_fields: { 'urgente': true } })).toBe('Sì')
   })
 
   it('keeps zero and false as real custom-field values, not a dash', () => {
     const scoreField: FieldDefinition = {
-      key: 'score',
+      key: 'punteggio',
       label: 'Punteggio',
       type: 'number',
       required: false,
       options: [],
     }
     const [, , , , score] = buildDealColumns([scoreField])
-    expect(cellValue(score!, { ...BASE_DEAL, custom_fields: { score: 0 } })).toBe('0')
+    expect(cellValue(score!, { ...BASE_DEAL, custom_fields: { 'punteggio': 0 } })).toBe('0')
   })
 })
 

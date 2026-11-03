@@ -30,7 +30,7 @@ describe('toFormValues', () => {
     created_at: '2026-01-01',
     name: 'Acme',
     value: '10.00',
-    custom_fields: { industry: 'PMI', legacy: 'x' },
+    custom_fields: { 'settore': 'PMI', 'vecchio': 'x' },
   }
 
   it('seeds exactly the listed native keys, never the rest of the row', () => {
@@ -44,9 +44,9 @@ describe('toFormValues', () => {
   it('copies custom_fields whole into its own namespace, detached from the row', () => {
     const result = toFormValues(entity, ['name'])
 
-    expect(result.custom).toEqual({ industry: 'PMI', legacy: 'x' })
-    result.custom.industry = 'changed'
-    expect(entity.custom_fields.industry).toBe('PMI')
+    expect(result.custom).toEqual({ 'settore': 'PMI', 'vecchio': 'x' })
+    result.custom['settore'] = 'changed'
+    expect(entity.custom_fields['settore']).toBe('PMI')
   })
 
   it('answers an empty custom namespace for an entity without custom_fields', () => {
@@ -77,15 +77,15 @@ describe('toRequestBody', () => {
   })
 
   it('clears a custom field only with null, and only when it used to hold a value', () => {
-    const initial = values({}, { industry: 'PMI', empty: '' })
+    const initial = values({}, { 'settore': 'PMI', empty: '' })
 
-    const body = toRequestBody(values({}, { industry: '', empty: '', fatto: false }), {
+    const body = toRequestBody(values({}, { 'settore': '', empty: '', fatto: false }), {
       fields: FIELDS,
       initial,
       isRenderedCustomKey: rendersEverything,
     })
 
-    expect(body.custom_fields).toEqual({ industry: null, fatto: false })
+    expect(body.custom_fields).toEqual({ 'settore': null, fatto: false })
   })
 
   it('leaves out a custom value whose definition is no longer rendered', () => {

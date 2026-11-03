@@ -83,7 +83,7 @@ function currentMonth(): { da: string; a: string } {
  */
 async function readSignal(page: Page): Promise<number> {
   const { da, a } = currentMonth()
-  const response = await page.request.get('/api/dashboard/sales', { params: { da, a } })
+  const response = await page.request.get('/api/dashboard/sales', { params: { from: da, to: a } })
   expect(response.status(), await response.text()).toBe(200)
   const body = (await response.json()) as { accepted_offers_deal_not_won: number }
   const value = body.accepted_offers_deal_not_won
@@ -248,7 +248,7 @@ test.describe('il ciclo completo — metà umana', () => {
     expect(sulCartellino).toBeGreaterThanOrEqual(1)
 
     await page.goto('/app/deal/list?to_invoice=true')
-    await expect(page).toHaveURL(/\/app\/deal\/list\?da_fatturare=true/)
+    await expect(page).toHaveURL(/\/app\/deal\/list\?to_invoice=true/)
     // Filtered rather than bare: `DataTable`'s own loading indicator is also a `status`,
     // so `getByRole('status')` alone is two elements and a strict-mode violation.
     const bandiera = page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })

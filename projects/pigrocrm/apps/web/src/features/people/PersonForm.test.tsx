@@ -60,7 +60,7 @@ const SENIORITY: FieldDefinition = {
 }
 
 const AVAILABLE: FieldDefinition = {
-  key: 'available',
+  key: 'disponibile',
   label: 'Disponibile',
   type: 'checkbox',
   required: false,
@@ -183,7 +183,7 @@ describe('PersonForm', () => {
     await userEvent.type(screen.getByLabelText(/^Nome/), 'Luigi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
-    expect(submitted(onSubmit)).toEqual({ first_name: 'Luigi', custom_fields: { available: false } })
+    expect(submitted(onSubmit)).toEqual({ first_name: 'Luigi', custom_fields: { 'disponibile': false } })
   })
 
   /** The other side of the same rule (see `DynamicForm.test.tsx`): doing this on

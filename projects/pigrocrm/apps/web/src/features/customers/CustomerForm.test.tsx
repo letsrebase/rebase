@@ -43,7 +43,7 @@ const BASE_CUSTOMER: Customer = {
 }
 
 const INDUSTRY: FieldDefinition = {
-  key: 'industry',
+  key: 'settore',
   label: 'Settore',
   type: 'select',
   required: false,
@@ -81,7 +81,7 @@ describe('CustomerForm', () => {
         open
         onOpenChange={vi.fn()}
         customFields={[INDUSTRY]}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { industry: 'PMI' } })}
+        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { 'settore': 'PMI' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -92,7 +92,7 @@ describe('CustomerForm', () => {
       legal_name: 'ACME Srl',
       country: 'IT',
       payment_end_of_month: false,
-      custom_fields: { industry: 'PMI' },
+      custom_fields: { 'settore': 'PMI' },
     })
   })
 
@@ -122,7 +122,7 @@ describe('CustomerForm', () => {
         // The definition was archived: `GET /api/schema/customer` no longer lists it,
         // so nothing renders it -- but the record still carries the value.
         customFields={[]}
-        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { industry: 'PMI' } })}
+        initial={customerToFormValues({ ...BASE_CUSTOMER, custom_fields: { 'settore': 'PMI' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -131,7 +131,7 @@ describe('CustomerForm', () => {
 
     const payload = submitted(onSubmit)
     // Not a top-level key: that is the 422 this defect actually was.
-    expect(payload).not.toHaveProperty('industry')
+    expect(payload).not.toHaveProperty('settore')
     // Not `{settore: null}` either: that would delete the stored value instead of
     // leaving it alone. Omitted is the only spelling that preserves it.
     expect(payload.custom_fields).toEqual({})
@@ -252,7 +252,7 @@ describe('CustomerForm', () => {
     const initial = customerToFormValues({
       ...BASE_CUSTOMER,
       phone: '02123456',
-      custom_fields: { industry: 'PMI' },
+      custom_fields: { 'settore': 'PMI' },
     })
     renderWithClient(
       <CustomerForm
@@ -275,7 +275,7 @@ describe('CustomerForm', () => {
       country: 'IT',
       phone: '',
       payment_end_of_month: false,
-      custom_fields: { industry: null },
+      custom_fields: { 'settore': null },
     })
   })
 })

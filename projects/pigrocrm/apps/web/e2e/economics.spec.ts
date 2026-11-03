@@ -283,7 +283,7 @@ test.describe('economics', () => {
 
     await page.goto(`/app/deal/${dealId}`)
     await page.getByRole('tab', { name: 'Economia' }).click()
-    await expect(page.getByText('closed', { exact: true })).toBeVisible()
+    await expect(page.getByText('chiuso', { exact: true })).toBeVisible()
     await expect(riga(page, 'Ricavi fatturati')).toContainText('2.400,00 €')
     await expect(riga(page, 'Ricavi fatturati')).toContainText('1 fatture emesse')
     await expect(riga(page, 'Margine lordo')).toContainText('1.800,00 €')

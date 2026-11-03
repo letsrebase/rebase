@@ -103,7 +103,7 @@ test.describe('il calendario', () => {
     // week of a month -- so the assertion is made through the API, which is the same
     // claim without a week-dependent screen.
     const entries = await page.request.get('/api/time-entries', {
-      params: { da: `${Month}-01`, a: `${Month}-01` },
+      params: { from: `${Month}-01`, to: `${Month}-01` },
     })
     expect(entries.status(), await entries.text()).toBe(200)
     const body = (await entries.json()) as { items: { hours: string; description: string }[] }

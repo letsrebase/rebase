@@ -134,18 +134,18 @@ describe('toContractBody', () => {
   })
 
   it('leaves a stored custom value whose definition is archived out of the body', () => {
-    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { legacy: 'x' } })
+    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { 'vecchio': 'x' } })
     expect(toContractBody(initial, initial, nothingRendered)).toEqual({})
   })
 
   it('sends a cleared rendered custom field as null so the service removes it', () => {
-    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { contact_person: 'Rossi' } })
+    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { 'referente': 'Rossi' } })
     const body = toContractBody(
-      { ...initial, custom: { contact_person: '' } },
+      { ...initial, custom: { 'referente': '' } },
       initial,
-      (key) => key === 'contact_person',
+      (key) => key === 'referente',
     )
-    expect(body).toEqual({ custom_fields: { contact_person: null } })
+    expect(body).toEqual({ custom_fields: { 'referente': null } })
   })
 })
 
@@ -166,7 +166,7 @@ describe('toContractBody review fixes', () => {
   })
 
   it('does not resend a custom value nobody touched', () => {
-    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { contact_person: 'Rossi' } })
-    expect(toContractBody(initial, initial, (key) => key === 'contact_person')).toEqual({})
+    const initial = contractToFormValues({ ...CONTRACT, custom_fields: { 'referente': 'Rossi' } })
+    expect(toContractBody(initial, initial, (key) => key === 'referente')).toEqual({})
   })
 })

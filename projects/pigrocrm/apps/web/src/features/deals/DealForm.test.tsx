@@ -54,7 +54,7 @@ const BASE_DEAL: Deal = {
 }
 
 const SOURCE: FieldDefinition = {
-  key: 'source',
+  key: 'fonte',
   label: 'Fonte',
   type: 'select',
   required: false,
@@ -62,7 +62,7 @@ const SOURCE: FieldDefinition = {
 }
 
 const URGENT: FieldDefinition = {
-  key: 'urgent',
+  key: 'urgente',
   label: 'Urgente',
   type: 'checkbox',
   required: false,
@@ -84,7 +84,7 @@ describe('DealForm', () => {
         open
         onOpenChange={vi.fn()}
         customFields={[SOURCE]}
-        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { source: 'referral' } })}
+        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { 'fonte': 'referral' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -98,7 +98,7 @@ describe('DealForm', () => {
     expect(submitted(onSubmit)).toEqual({
       name: 'Sito vetrina',
       probability: 10,
-      custom_fields: { source: 'referral' },
+      custom_fields: { 'fonte': 'referral' },
     })
   })
 
@@ -118,7 +118,7 @@ describe('DealForm', () => {
         open
         onOpenChange={vi.fn()}
         customFields={[]}
-        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { source: 'referral' } })}
+        initial={dealToFormValues({ ...BASE_DEAL, custom_fields: { 'fonte': 'referral' } })}
         onSubmit={onSubmit}
       />,
     )
@@ -126,7 +126,7 @@ describe('DealForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     const payload = submitted(onSubmit)
-    expect(payload).not.toHaveProperty('source')
+    expect(payload).not.toHaveProperty('fonte')
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({ name: 'Sito vetrina', probability: 10, custom_fields: {} })
   })
@@ -142,7 +142,7 @@ describe('DealForm', () => {
 
     expect(submitted(onSubmit)).toEqual({
       name: 'Progetto nuovo',
-      custom_fields: { urgent: false },
+      custom_fields: { 'urgente': false },
     })
   })
 
@@ -216,7 +216,7 @@ describe('DealForm', () => {
     const onSubmit = vi.fn()
     const initial = dealToFormValues({
       ...BASE_DEAL,
-      custom_fields: { source: 'referral' },
+      custom_fields: { 'fonte': 'referral' },
     })
     renderWithClient(
       <DealForm
@@ -237,7 +237,7 @@ describe('DealForm', () => {
     expect(submitted(onSubmit)).toEqual({
       name: '',
       probability: 10,
-      custom_fields: { source: null },
+      custom_fields: { 'fonte': null },
     })
   })
 

@@ -28,7 +28,7 @@ test('typing a field label one keystroke at a time still derives the whole key, 
 
   const dialog = page.getByRole('dialog')
   await typeLikeAHuman(dialog.getByLabel('Etichetta'), 'Settore')
-  await expect(dialog.getByLabel('Chiave')).toHaveValue('industry')
+  await expect(dialog.getByLabel('Chiave')).toHaveValue('settore')
 
   // The brief's own sample button text here was "Salva" -- FieldsPanel's create
   // dialog actually says "Crea" (`{create.isPending ? 'Creazione…' : 'Crea'}`);
