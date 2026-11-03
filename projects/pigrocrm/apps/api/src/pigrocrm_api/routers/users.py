@@ -71,7 +71,7 @@ def _invitation_mail(
     settings: Settings,
     origin: str,
     email: str,
-    invited_from: str,
+    inviter_name: str,
     name: str | None,
     raw: str,
 ) -> Mail:
@@ -83,7 +83,7 @@ def _invitation_mail(
     slug = tenant_slug(request)
     space = slug or settings.root_slug or "PigroCRM"
     url = _invite_url(origin, f"/{slug}" if slug else "", raw)
-    return invitation_mail(email, space, invited_from, url, name=name, days=INVITATION_TTL_DAYS)
+    return invitation_mail(email, space, inviter_name, url, name=name, days=INVITATION_TTL_DAYS)
 
 
 @router.post("/invites", response_model=InvitationRead, status_code=status.HTTP_201_CREATED)

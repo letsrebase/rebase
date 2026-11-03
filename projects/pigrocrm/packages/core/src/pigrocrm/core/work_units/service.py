@@ -337,7 +337,10 @@ class WorkUnitService:
             and query.date_to < query.date_from
         ):
             raise ValidationFailed(
-                WORK_UNIT_ENTITY, "to", "non puo' precedere 'from'", expected=f">= {query.date_from}"
+                WORK_UNIT_ENTITY,
+                "to",
+                "non puo' precedere 'from'",
+                expected=f">= {query.date_from}",
             )
         rows = self.repo.list_labelled(query)
         return WorkUnitList(

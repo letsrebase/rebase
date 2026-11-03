@@ -7,7 +7,7 @@ from pigrocrm.core.mail.transport import Mail
 
 
 def invitation_mail(
-    to: str, space: str, invited_from: str, url: str, *, name: str | None = None, days: int
+    to: str, space: str, inviter_name: str, url: str, *, name: str | None = None, days: int
 ) -> Mail:
     """A space gains a person (spec 2026-09-17 §5): who invited them, the space, the
     link, and that no password is involved. `name` is the person's own name when the
@@ -22,7 +22,7 @@ def invitation_mail(
     safe_url = e(url, quote=True)
     text = (
         f"{greeting}\n\n"
-        f"{invited_from} ti ha invitato a entrare nello spazio PigroCRM di {space}. "
+        f"{inviter_name} ti ha invitato a entrare nello spazio PigroCRM di {space}. "
         "Basta un click, senza scegliere una password:\n\n"
         f"{url}\n\n"
         f"Il link vale {days} giorni e funziona una volta sola. Se non te lo aspettavi, "
@@ -32,7 +32,7 @@ def invitation_mail(
     body = "\n".join(
         (
             f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
-            f'<p style="margin:0 0 24px 0;">{e(invited_from)} ti ha invitato a entrare nello '
+            f'<p style="margin:0 0 24px 0;">{e(inviter_name)} ti ha invitato a entrare nello '
             f"spazio PigroCRM di {e(space)}. Basta un click, senza scegliere una password.</p>",
             button(safe_url, "Entra nello spazio"),
             f'<p {small}word-break:break-all;">Se il bottone non si apre, copia questo '

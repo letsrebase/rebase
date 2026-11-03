@@ -942,7 +942,7 @@ def test_spaces_lists_an_invitation_held_in_a_space_the_address_has_no_account_i
             "slug": SLUG2,
             "role": "collaborator",
             "invitation": True,
-            "invited_from": inviter,
+            "invited_by": inviter,
             "name": "Ada",
         }
     finally:
@@ -964,7 +964,7 @@ def test_an_invitation_that_carries_no_name_lists_without_one(
             "slug": SLUG2,
             "role": "collaborator",
             "invitation": True,
-            "invited_from": inviter,
+            "invited_by": inviter,
         }
     finally:
         _drop_second_tenant(container_settings)

@@ -160,7 +160,7 @@ def test_resend_kills_the_old_token(db_session: Session) -> None:
     with pytest.raises(InvitationUnknown):
         InvitationService(db_session).peek(stale, space="x")
     peek = InvitationService(db_session).peek(fresh, space="studio")
-    assert peek.space == "studio" and peek.invited_from == "Ada" and peek.name == "Luca"
+    assert peek.space == "studio" and peek.invited_by == "Ada" and peek.name == "Luca"
     # A peek is not a spend.
     assert row.accepted_at is None
 
@@ -523,7 +523,7 @@ def test_offer_for_shows_a_live_invitation_to_the_address_it_was_sent_to(
     service = InvitationService(db_session)
     offer = service.offer_for("atteso@x.it")
     assert offer is not None
-    assert (offer.role, offer.invited_from, offer.name) == ("readonly", "Ada", None)
+    assert (offer.role, offer.invited_by, offer.name) == ("readonly", "Ada", None)
     assert service.offer_for("altro@x.it") is None
     # Dead is not an offer: an expired row waits for a resend, a revoked one is over.
     row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
