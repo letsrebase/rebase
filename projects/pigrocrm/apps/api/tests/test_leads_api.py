@@ -41,7 +41,9 @@ def _body(**overrides: Any) -> dict[str, Any]:
         "contact": {"first_name": "Maria", "last_name": "Rossi", "email": MARIA},
         "deal": {
             "name": "Acme S.r.l.: Backend developer",
-            "expected_value": "24000.00",
+            "value_lines": [
+                {"unit": "flat", "delivery_period": "one_off", "unit_price": "24000.00"}
+            ],
             "notes": "Richiesta dell'azienda.",
         },
     }
@@ -211,12 +213,28 @@ def test_an_explicit_deal_is_linked_and_a_missing_one_is_422(
         {"company": ""},
         {"extra": "sorpresa"},
         {"deal": {"name": "x" * 256}},
-        {"deal": {"name": "ok", "expected_value": "1000000000000.00"}},
+        {
+            "deal": {
+                "name": "ok",
+                "value_lines": [
+                    {"unit": "flat", "delivery_period": "one_off", "unit_price": "1000000000000.00"}
+                ],
+            }
+        },
     ],
 )
 def test_a_body_that_does_not_validate_is_422(lead_client: TestClient, bad: dict[str, Any]) -> None:
     refused = lead_client.put(f"/api/rebase/leads/{uuid4()}", json=_body(**bad), headers=_bearer())
     assert refused.status_code == 422, refused.text
+
+
+def test_the_old_single_value_is_refused_naming_it(lead_client: TestClient) -> None:
+    old = {"name": "ok", "expected_value": "24000.00"}
+    refused = lead_client.put(
+        f"/api/rebase/leads/{uuid4()}", json=_body(deal=old), headers=_bearer()
+    )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["detail"][0]["loc"][-2:] == ["deal", "expected_value"]
 
 
 def test_an_unconfigured_space_is_503(container_settings: Settings) -> None:

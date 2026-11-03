@@ -73,7 +73,9 @@ def _body(**parts: Any) -> LeadUpsert:
         },
         "deal": {
             "name": "Acme S.r.l.: Backend developer",
-            "expected_value": "24000.00",
+            "value_lines": [
+                {"unit": "flat", "delivery_period": "one_off", "unit_price": "24000.00"}
+            ],
             "expected_close_date": "2099-01-15",
             "notes": "Richiesta dell'azienda: cerca uno sviluppatore backend.",
         },
@@ -196,6 +198,31 @@ def test_first_call_files_customer_person_and_deal(door: Door) -> None:
         assert "cerca uno sviluppatore backend" in deal_note
         assert lead_marker(request_id) not in deal_note
         assert deal.rebase_refs == [lead_marker(request_id)]
+
+
+def test_a_monthly_open_ended_day_line_is_worth_twelve_months(door: Door) -> None:
+    line = {
+        "unit": "day",
+        "delivery_period": "monthly",
+        "unit_price": "400.00",
+        "quantity": "6.00",
+        "start": "2099-01-15",
+    }
+    answer = door.service().file(uuid4(), _body(deal={"value_lines": [line]}))
+
+    with _space(door) as space:
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None
+        assert deal.expected_value == Decimal("28800.00")
+
+
+def test_a_lead_with_no_lines_files_a_deal_with_no_value(door: Door) -> None:
+    answer = door.service().file(uuid4(), _body(deal={"value_lines": None}))
+
+    with _space(door) as space:
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None
+        assert deal.expected_value is None
 
 
 def test_every_write_is_recorded_as_rebase(door: Door) -> None:
