@@ -23,7 +23,7 @@ const CATEGORIES = [
 const base = {
   contract_id: 'c1',
   category_id: 'cat-1',
-  data: '2026-03-05',
+  date: '2026-03-05',
   pre_authorized: false,
   authorization_reference: null,
   document_id: null,

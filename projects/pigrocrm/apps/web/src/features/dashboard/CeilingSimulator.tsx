@@ -187,7 +187,7 @@ export function Simulator({
   const [amountText, setValue] = useState('')
   const [hours, setHours] = useState('')
   const [rate, setRate] = useState('')
-  const [data, setData] = useState(`${defaultYear}-12-31`)
+  const [date, setDate] = useState(`${defaultYear}-12-31`)
   const uid = useId()
   const [asked, setAsked] = useState<{
     year: number
@@ -218,15 +218,15 @@ export function Simulator({
       hours,
       rate,
       deal: dealId === '' ? null : latestDeal.current,
-      data,
+      date,
       contractId,
     })
     const missingContract = !hasCeilings && contractId === ''
-    const year = yearOfIso(data)
+    const year = yearOfIso(date)
     if (!request.ok || year === null || missingContract) {
       setErrors({
         ...(request.ok ? {} : request.errors),
-        ...(year === null ? { data: 'Scegli una data tra il 2000 e il 2200.' } : {}),
+        ...(year === null ? { date: 'Scegli una data tra il 2000 e il 2200.' } : {}),
         ...(missingContract ? { contract: 'Scegli un contratto con un tetto.' } : {}),
       })
       setAsked(null)
@@ -341,21 +341,21 @@ export function Simulator({
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-2">
-          <Label htmlFor={`${uid}-data`}>Incasso previsto il</Label>
+          <Label htmlFor={`${uid}-date`}>Incasso previsto il</Label>
           <Input
-            id={`${uid}-data`}
+            id={`${uid}-date`}
             type="date"
-            value={data}
-            onChange={(event) => edit(setData)(event.target.value)}
+            value={date}
+            onChange={(event) => edit(setDate)(event.target.value)}
             className="w-44"
-            aria-invalid={errors.data ? true : undefined}
+            aria-invalid={errors.date ? true : undefined}
           />
           <p className="text-xs text-muted-foreground">
             {hasCeilings
               ? 'Conta l’anno solare dell’incasso.'
               : 'Conta l’anno di anniversario del contratto che contiene questa data.'}
           </p>
-          {errors.data ? <FieldError>{errors.data}</FieldError> : null}
+          {errors.date ? <FieldError>{errors.date}</FieldError> : null}
         </div>
         <Button type="submit" disabled={simulation.isFetching}>
           Simula

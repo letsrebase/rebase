@@ -50,7 +50,7 @@ const entry = {
   id: 'e1',
   deal_id: DEAL,
   user_id: USER,
-  data: '2026-03-09',
+  date: '2026-03-09',
   hours: '2.50',
   description: 'Analisi',
   billable: true,

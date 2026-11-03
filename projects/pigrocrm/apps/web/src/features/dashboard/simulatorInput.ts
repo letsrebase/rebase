@@ -58,7 +58,7 @@ export type SimulatorFields = {
   } | null
   /** The day the money arrives, `YYYY-MM-DD`. Sent whenever it is given: the server reads
    *  the year of a contract's cap from it, and the ceilings' year from `year`. */
-  data?: string
+  date?: string
   /** A contract with a cap on the customer's share, to read the addition against too. */
   contractId?: string | null
 }
@@ -128,7 +128,7 @@ export function simulatorRequest(fields: SimulatorFields): SimulatorRequest {
     ok: true,
     input: {
       ...request.input,
-      ...(fields.data ? { expected_date: fields.data } : {}),
+      ...(fields.date ? { expected_date: fields.date } : {}),
       ...(fields.contractId ? { contract_id: fields.contractId } : {}),
     },
   }

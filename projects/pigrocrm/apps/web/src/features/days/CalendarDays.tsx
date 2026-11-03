@@ -94,7 +94,7 @@ export function PanelDays({ day: calendarDay, days }: { day: string; days: reado
       )}
       {canWrite ? (
         <Button asChild variant="outline" size="sm">
-          <Link to="/app/days/new" search={{ data: calendarDay }}>
+          <Link to="/app/days/new" search={{ date: calendarDay }}>
             <CalendarPlus className="mr-2 size-4" aria-hidden />
             Registra una giornata
           </Link>

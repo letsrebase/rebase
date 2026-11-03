@@ -24,7 +24,7 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     id: 'e1',
     deal_id: DEAL,
     user_id: 'u1',
-    data: '2026-03-09',
+    date: '2026-03-09',
     hours: '2.50',
     description: 'Analisi',
     billable: true,

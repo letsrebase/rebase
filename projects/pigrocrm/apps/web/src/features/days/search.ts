@@ -9,11 +9,11 @@ export interface DaysSearch {
 
 export interface NewDaySearch {
   contract?: string
-  data?: string
+  date?: string
 }
 
 const Month = /^\d{4}-(?:0[1-9]|1[0-2])$/
-const DATA = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
+const DatePattern = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function text(value: unknown, pattern: RegExp): string | undefined {
@@ -30,7 +30,8 @@ export function validateDaysSearch(search: Record<string, unknown>): DaysSearch 
 }
 
 export function validateNewDaySearch(search: Record<string, unknown>): NewDaySearch {
-  return { contract: text(search.contract, UUID), data: text(search.data, DATA) }
+  // `?data=` is what links written before the English rename say.
+  return { contract: text(search.contract, UUID), date: text(search.date ?? search.data, DatePattern) }
 }
 
 /** The first and last day of `AAAA-MM`, as the API's `da` and `a`. */

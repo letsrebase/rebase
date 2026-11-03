@@ -389,7 +389,7 @@ describe('InvoiceActions', () => {
       { body: unknown },
     ]
     expect(path).toContain('/transmitted')
-    expect(options.body).toEqual({ data: '2026-09-02' })
+    expect(options.body).toEqual({ date: '2026-09-02' })
 
   })
 

@@ -16,7 +16,7 @@ const CUSTOMER_ID = '5b0d7190-0000-4000-8000-000000000002'
 
 const DAY = {
   contract_id: CONTRACT_ID,
-  data: '2026-11-05',
+  date: '2026-11-05',
   quantity: 1,
   description: 'Sopralluogo al magazzino di Verona',
   approval: {

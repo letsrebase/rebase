@@ -32,7 +32,7 @@ const REGISTER = {
   entries: [
     {
       work_unit_id: 'w1',
-      data: '2026-10-07',
+      date: '2026-10-07',
       quantity: '1.00',
       description: 'Giornata',
       status: 'invoiced',
@@ -46,7 +46,7 @@ const REGISTER = {
     },
     {
       work_unit_id: 'w2',
-      data: '2026-10-08',
+      date: '2026-10-08',
       quantity: '0.50',
       description: 'Mezza giornata',
       status: 'invoiced',

@@ -66,7 +66,7 @@ const timeEntry = (overrides: Record<string, unknown> = {}) => ({
   id: 'e1',
   deal_id: DEAL,
   user_id: USER,
-  data: '2026-03-09',
+  date: '2026-03-09',
   hours: '2.50',
   description: 'Analisi',
   billable: true,
@@ -129,7 +129,7 @@ function renderGrid(entries: ReturnType<typeof timeEntry>[] = []) {
 
 describe('WeekGrid', () => {
   it('shows a row total, a column total and a grand total summed in integer hundredths', async () => {
-    renderGrid([timeEntry(), timeEntry({ id: 'e2', data: '2026-03-11', hours: '1.25' })])
+    renderGrid([timeEntry(), timeEntry({ id: 'e2', date: '2026-03-11', hours: '1.25' })])
     expect(await screen.findByText('Progetto Alfa')).toBeInTheDocument()
     expect(await screen.findByTestId(`row-total-${DEAL}`)).toHaveTextContent('3,75')
     expect(await screen.findByTestId('column-total-2026-03-09')).toHaveTextContent('2,5')
@@ -153,7 +153,7 @@ describe('WeekGrid', () => {
     // and the grid is the logged-in user's own week.
     expect(posted[0]).toMatchObject({
       deal_id: DEAL,
-      data: '2026-03-09',
+      date: '2026-03-09',
       hours: '3.5',
       user_id: USER,
     })

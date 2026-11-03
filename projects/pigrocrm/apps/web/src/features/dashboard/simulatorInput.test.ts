@@ -107,19 +107,19 @@ describe('the request the fields make', () => {
 
   it('carries the day the money arrives, and the contract chosen, beside the estimate', () => {
     expect(
-      simulatorRequest({ ...BLANK, value: '20000', data: '2027-03-15', contractId: 'c1' }),
+      simulatorRequest({ ...BLANK, value: '20000', date: '2027-03-15', contractId: 'c1' }),
     ).toEqual({
       ok: true,
       input: { budgeted_value: '20000', expected_date: '2027-03-15', contract_id: 'c1' },
     })
-    expect(simulatorRequest({ ...BLANK, value: '20000', data: '2027-03-15', contractId: null })).toEqual({
+    expect(simulatorRequest({ ...BLANK, value: '20000', date: '2027-03-15', contractId: null })).toEqual({
       ok: true,
       input: { budgeted_value: '20000', expected_date: '2027-03-15' },
     })
   })
 
   it('still refuses an estimate it cannot read, whatever contract is chosen', () => {
-    expect(simulatorRequest({ ...BLANK, data: '2027-03-15', contractId: 'c1' })).toMatchObject({
+    expect(simulatorRequest({ ...BLANK, date: '2027-03-15', contractId: 'c1' })).toMatchObject({
       ok: false,
     })
   })

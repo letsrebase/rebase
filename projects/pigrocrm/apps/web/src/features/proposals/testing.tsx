@@ -16,7 +16,7 @@ export function proposal(overrides: Partial<Proposal> = {}): Proposal {
     target_type: 'work_unit',
     proposed_fields: {
       contract_id: CONTRACT_ID,
-      data: '2026-11-05',
+      date: '2026-11-05',
       quantity: 1,
       description: 'Sopralluogo al magazzino di Verona',
       approval: {

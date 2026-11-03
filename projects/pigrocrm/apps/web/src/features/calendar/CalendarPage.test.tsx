@@ -279,7 +279,7 @@ describe('CalendarPage', () => {
     // refuses: the calendar fills that form, it does not write the table.
     expect(postedBody()).toEqual({
       path: '/api/time-entries',
-      body: expect.objectContaining({ deal_id: DEAL, data: '2026-09-14', hours: '8.00' }),
+      body: expect.objectContaining({ deal_id: DEAL, date: '2026-09-14', hours: '8.00' }),
     })
   })
 

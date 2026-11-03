@@ -81,7 +81,7 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
   id: ENTRY_A,
   deal_id: DEAL,
   user_id: '33333333-3333-7333-8333-333333333333',
-  data: '2026-03-10',
+  date: '2026-03-10',
   hours: '10.00',
   description: 'Analisi',
   billable: true,

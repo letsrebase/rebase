@@ -14,8 +14,8 @@ describe('the days register’s URL', () => {
   })
 
   it('keeps a contract and a date for the form and drops a date that is not one', () => {
-    expect(validateNewDaySearch({ contract: ID, data: '2026-03-02' })).toEqual({ contract: ID, data: '2026-03-02' })
-    expect(validateNewDaySearch({ data: '2026-02-30x' })).toEqual({ contract: undefined, data: undefined })
+    expect(validateNewDaySearch({ contract: ID, date: '2026-03-02' })).toEqual({ contract: ID, date: '2026-03-02' })
+    expect(validateNewDaySearch({ date: '2026-02-30x' })).toEqual({ contract: undefined, date: undefined })
   })
 })
 

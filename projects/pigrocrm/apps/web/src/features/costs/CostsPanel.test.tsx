@@ -36,7 +36,7 @@ const cost = (overrides: Record<string, unknown> = {}) => ({
   id: 'c1',
   deal_id: DEAL,
   category_id: 'cat1',
-  data: '2026-03-05',
+  date: '2026-03-05',
   amount: '2500.50',
   description: 'Licenza',
   supplier: 'ACME',
