@@ -543,7 +543,7 @@ test.describe('a visitor from a campaign', () => {
       // which page it is on (ORB-167).
       expect(doors.some((href) => href!.startsWith('/hub/freelance?perk=guida&utm_source=linkedin'))).toBe(true)
       for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('from'), href!).toBe(path === '/' ? 'home' : 'pigrocrm')
-      expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe(path === '/' ? 'home' : 'pigrocrm')
+      expect(await page.evaluate(() => sessionStorage.getItem('rebase.from'))).toBe(path === '/' ? 'home' : 'pigrocrm')
       // The rest of the page's links are what the markup says.
       expect(await page.locator('a[href="/privacy"]').count()).toBeGreaterThan(0)
       expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBe('utm_source=linkedin&utm_campaign=orbita&utm_id=42')
@@ -556,7 +556,7 @@ test.describe('a visitor from a campaign', () => {
     expect(doors.filter((href) => href!.includes('utm_'))).toEqual([])
     for (const href of doors) expect(new URL(href!, 'https://letsrebase.com').searchParams.get('from'), href!).toBe('home')
     expect(await page.evaluate(() => sessionStorage.getItem('rebase.utm'))).toBeNull()
-    expect(await page.evaluate(() => sessionStorage.getItem('rebase.da'))).toBe('home')
+    expect(await page.evaluate(() => sessionStorage.getItem('rebase.from'))).toBe('home')
   })
 })
 
