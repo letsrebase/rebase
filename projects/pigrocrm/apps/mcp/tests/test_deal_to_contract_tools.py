@@ -54,6 +54,13 @@ async def test_an_agent_reads_the_proposal_then_converts_the_won_deal(
         )
         assert [card["type"] for card in proposal["cards"]] == ["one_off", "daily"]
 
+        moved = _payload(
+            await client.call_tool(
+                "preview_deal_contract", {"deal_id": deal_id, "start": "2026-03-01"}
+            )
+        )
+        assert moved["start"] == "2026-03-01"
+
         contract = _payload(
             await client.call_tool(
                 "convert_deal_to_contract",

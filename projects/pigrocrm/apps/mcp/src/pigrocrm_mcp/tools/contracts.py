@@ -43,10 +43,10 @@ def convert_deal(context: McpContext, deal_id: str, data: dict[str, Any]) -> dic
     )
 
 
-def propose_from_deal(context: McpContext, deal_id: str) -> dict[str, Any]:
+def propose_from_deal(context: McpContext, deal_id: str, start: date | None) -> dict[str, Any]:
     return (
         ContractService(context.session)
-        .proposal_from_deal(UUID(deal_id), context.actor)
+        .proposal_from_deal(UUID(deal_id), context.actor, start)
         .model_dump(mode="json")
     )
 

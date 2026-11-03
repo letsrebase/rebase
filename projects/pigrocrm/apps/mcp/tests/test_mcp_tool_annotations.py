@@ -75,6 +75,8 @@ _IRREVERSIBLE = {
     "recalculate_rates",
     "discard_proforma",
     "set_offer_state",
+    # A won deal becomes one contract and its lines are locked for good: no tool turns it back.
+    "convert_deal_to_contract",
 }
 # A `create_*` that is not additive: `close_previous` shortens the rate card in force.
 _CREATES_THAT_OVERWRITE = {"create_rate_card"}

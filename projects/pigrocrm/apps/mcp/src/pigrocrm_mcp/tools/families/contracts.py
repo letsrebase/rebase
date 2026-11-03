@@ -89,7 +89,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             },
         )
 
-    @mcp.tool(annotations=ADDITIVE)
+    @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def convert_deal_to_contract(
         deal_id: str,
@@ -101,6 +101,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         billing_cadence: str,
         expense_policy: dict[str, Any],
         renewal_notice_days: int | None = None,
+        custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Turn a won deal into a `draft` contract for its customer, one rate card per value line.
         Only a won deal with lines and no contract; its lines are locked afterwards. Pass the
@@ -120,17 +121,19 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
                 "termination_notice_days": termination_notice_days,
                 "billing_cadence": billing_cadence,
                 "expense_policy": expense_policy,
+                "custom_fields": custom_fields or {},
             },
         )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def preview_deal_contract(deal_id: str) -> dict[str, Any]:
+    def preview_deal_contract(deal_id: str, start: IsoDateStr = None) -> dict[str, Any]:
         """What `convert_deal_to_contract` would start from: the `title`, `start` and `end` the deal
         suggests (`end` null: no line has one, ask for the delivery date) and the rate `cards` its
-        lines become. Saves nothing.
+        lines become. Pass `start` (`YYYY-MM-DD`) to see them for another start: lines with no
+        start follow it, and so do `end` and `cards`. Saves nothing.
         """
-        return contracts.propose_from_deal(context, deal_id)
+        return contracts.propose_from_deal(context, deal_id, iso_date(start, "start"))
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
