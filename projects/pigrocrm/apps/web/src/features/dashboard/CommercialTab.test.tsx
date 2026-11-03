@@ -75,7 +75,14 @@ const RESPONSE = {
       weighted_value: '0.00',
     },
   ],
-  closings: { won: 3, lost: 1, won_value: '15000.00', conversion_rate: '75.00' },
+  closings: {
+    won: 3,
+    lost: 1,
+    won_value: '15000.00',
+    won_monthly_recurring: '500.00',
+    conversion_rate: '75.00',
+  },
+  open_monthly_recurring: '1250.00',
   offers_pending: [
     {
       document_id: 'd1',
@@ -131,6 +138,21 @@ describe('CommercialTab', () => {
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     renderTab()
     expect(await screen.findByText('15.000,00 €')).toBeInTheDocument()
+  })
+
+  it('shows the monthly recurring value of the open and of the won deals, each per month', async () => {
+    // REB-931: a fee of 500 a month is a figure per month. It sits in its own card and
+    // leaves «Valore vinto» as the API sent it, so no total quietly includes it.
+    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
+    renderTab()
+    const open = await screen.findByRole('group', { name: 'Ricorrente mensile dei deal aperti' })
+    expect(within(open).getByText('1.250,00 €/mese')).toBeInTheDocument()
+    const won = screen.getByRole('group', {
+      name: 'Ricorrente mensile dei deal vinti nel periodo',
+    })
+    expect(within(won).getByText('500,00 €/mese')).toBeInTheDocument()
+    const value = screen.getByRole('group', { name: 'Valore vinto nel periodo' })
+    expect(within(value).getByText('15.000,00 €')).toBeInTheDocument()
   })
 
   it('shows the conversion rate, and shows a dash rather than 0% when it is null', async () => {
