@@ -176,7 +176,7 @@ async def test_update_proforma_refuses_to_invoice_and_to_consumed_proforma(
             "update_proforma", {"invoice_id": proforma_id, "issue_date": "2026-09-06"}
         )
         assert frozen.is_error
-        assert "consumed" in frozen.content[0].text
+        assert "consumata" in frozen.content[0].text
         read = await client.call_tool("get_invoice", {"invoice_id": proforma_id})
         assert read.structured_content["issue_date"] == "2026-09-05"
 

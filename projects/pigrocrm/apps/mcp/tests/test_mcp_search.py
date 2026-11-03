@@ -109,7 +109,7 @@ async def test_the_docstring_example_actually_works(server: Any, mcp_session: Se
     customers = _payload(result)["groups"][0]
     assert [hit["label"] for hit in customers["hits"]] == ["Frammento Srl"]
     assert customers["hits"][0]["field"] == "vat_number"
-    assert customers["hits"][0]["sottotitolo"] == _DOCSTRING_VAT_NUMBER
+    assert customers["hits"][0]["subtitle"] == _DOCSTRING_VAT_NUMBER
 
 
 async def test_the_docstring_promises_the_example_it_is_tested_against(server: Any) -> None:
@@ -128,7 +128,7 @@ async def test_the_docstring_promises_the_example_it_is_tested_against(server: A
     # tool searches five is how an agent concludes an invoice does not exist rather than
     # that it did not look -- the same silent partial result the branch was added to close,
     # moved from the response into the documentation.
-    assert "invoices" in description, description
+    assert "fatture" in description, description
     assert "2026/7" in description, description
 
 

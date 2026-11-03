@@ -78,7 +78,9 @@ async def test_every_row_an_agent_writes_carries_the_token_owner_and_the_mcp_cha
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         await client.call_tool("add_note", {"customer_id": customer["id"], "text": "una nota"})
         person = _payload(
-            await client.call_tool("create_person", {"first_name": "Anna", "customer_id": customer["id"]})
+            await client.call_tool(
+                "create_person", {"first_name": "Anna", "customer_id": customer["id"]}
+            )
         )
         await client.call_tool("add_note", {"person_id": person["id"], "text": "una nota"})
         deal = _payload(

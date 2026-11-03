@@ -184,7 +184,7 @@ async def test_the_tool_promises_the_agent_a_date_and_a_default(dashboard_server
         payload = _payload(await client.call_tool("get_commercial_dashboard", {}))
 
     assert payload["period"] == {"date_from": first.isoformat(), "date_to": last.isoformat()}
-    for bound in ("da", "a"):
+    for bound in ("date_from", "date_to"):
         advertised = tool.input_schema["properties"][bound]
         formats = {branch.get("format") for branch in advertised.get("anyOf", [advertised])}
         assert "date" in formats, advertised
@@ -261,7 +261,7 @@ async def test_two_calls_in_a_row_both_succeed(dashboard_server: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    ("arguments", "perche"),
+    ("arguments", "why"),
     [
         ({"date_from": "2026-03-31", "date_to": "2026-03-01"}, "il periodo è invertito"),
         ({"date_from": "2026-03-01"}, "metà periodo non è un periodo"),
@@ -391,20 +391,20 @@ async def test_the_operational_feed_hides_account_events_from_an_agent_token(
     try:
         async with Client(dashboard_server) as client:
             feed = _payload(await client.call_tool("get_operational_dashboard", {}))
-        raw = json.dumps(feed["recent_task"])
+        raw = json.dumps(feed["recent_activity"])
         assert marker not in raw
         assert f"{_PREFIX}-tok" not in raw
-        assert {row["entity_type"] for row in feed["recent_task"]}.isdisjoint(
+        assert {row["entity_type"] for row in feed["recent_activity"]}.isdisjoint(
             {"invitation", "user", "digest"}
         )
         # The business row is still there: the filter narrows the feed, it does not empty it.
-        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["recent_task"]]
+        assert f"{_PREFIX}.updated" in [row["kind"] for row in feed["recent_activity"]]
 
         # A person administering the space keeps the whole feed.
         person = Actor(id=None, type="user", role="admin")
         with factory() as session:
             full = DashboardService(session).get_operational_dashboard(person)
-        assert "invitation" in {row.entity_type for row in full.recent_task}
+        assert "invitation" in {row.entity_type for row in full.recent_activity}
     finally:
         with factory() as session:
             session.execute(delete(Activity).where(Activity.id.in_(ids)))

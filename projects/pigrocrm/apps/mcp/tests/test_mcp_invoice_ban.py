@@ -510,7 +510,7 @@ def test_the_source_scan_actually_reads_more_than_one_file() -> None:
     # sweep silently narrowing back to `tools/` fails here instead of leaving every ban
     # below green over a directory it no longer looks at.
     assert "def status_customer(" in source  # prompts/customer.py
-    assert "def chiusura_mese(" in source  # prompts/dashboards.py
+    assert "def closing_month(" in source  # prompts/dashboards.py
 
 
 def test_the_registration_scan_reads_every_module_and_not_only_the_first() -> None:
@@ -878,7 +878,7 @@ def test_the_wide_scan_really_reads_the_resources_the_prompts_and_the_server() -
     assert "def render_customer(" in source  # resources/entities.py
     assert "def customer_resource(" in source  # server.py's inline @mcp.resource
     assert "def status_customer(" in source  # prompts/customer.py
-    assert "def revisione_pipeline(" in source  # prompts/dashboards.py
+    assert "def review_pipeline(" in source  # prompts/dashboards.py
     assert "def search_everything(" in source  # tools/families/shared.py, i.e. the old width
 
 

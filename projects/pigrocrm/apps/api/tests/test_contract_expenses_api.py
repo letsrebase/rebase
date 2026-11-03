@@ -60,7 +60,7 @@ def test_create_reports_the_trigger_computed_reimbursable(logged_in: TestClient)
 def test_create_flags_non_reimbursable_without_a_422(logged_in: TestClient) -> None:
     contract_id = _contract_id(
         logged_in,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(logged_in)
 
@@ -159,4 +159,4 @@ def test_create_refuses_a_malformed_expense_policy_with_422(logged_in: TestClien
         },
     )
     assert response.status_code == 422, response.text
-    assert "politica_spese.kind" in response.text
+    assert "expense_policy.kind" in response.text

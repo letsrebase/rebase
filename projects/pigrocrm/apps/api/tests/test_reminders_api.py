@@ -27,9 +27,7 @@ def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
         "/api/reminders/preferences/space/task_overdue", json={"channels": ["email"]}
     )
     assert default.status_code == 200, default.text
-    mine = logged_in.patch(
-        "/api/reminders/preferences/me/task_overdue", json={"enabled": False}
-    )
+    mine = logged_in.patch("/api/reminders/preferences/me/task_overdue", json={"enabled": False})
     assert mine.status_code == 200, mine.text
 
     read = logged_in.get("/api/reminders/preferences").json()

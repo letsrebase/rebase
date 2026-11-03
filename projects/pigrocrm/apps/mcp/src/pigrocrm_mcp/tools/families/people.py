@@ -61,7 +61,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_person(person_id: str) -> dict[str, Any]:
-        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge una persona, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `person://<id>`).
         """
         return people.get(context, person_id)

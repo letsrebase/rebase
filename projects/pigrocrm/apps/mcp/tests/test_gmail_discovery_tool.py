@@ -419,6 +419,6 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
     proposals = payload["result"] if isinstance(payload, dict) else payload
     assert all(proposal["provenance"] == PROVENANCE_TEXT_FREE for proposal in proposals)
     assert [proposal["domain"] for proposal in proposals] == ["acme.it"]
-    assert proposals[0]["people"][0]["first_name"] == "Marco Bianchi"
+    assert proposals[0]["people"][0]["name"] == "Marco Bianchi"
     assert mcp_session.scalar(select(func.count()).select_from(GmailMessage)) == messages_before
     assert mcp_session.scalar(select(func.count()).select_from(Customer)) == customers_before

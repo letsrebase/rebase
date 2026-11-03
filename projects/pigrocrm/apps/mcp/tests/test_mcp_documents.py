@@ -193,10 +193,10 @@ async def test_preview_template_renders_without_creating_a_document(
             "preview_template",
             {
                 "template_id": seeded_template_id,
-                # `customer` is supplied by the caller here, unlike
+                # `cliente` is supplied by the caller here, unlike
                 # `create_document_from_template`, which reads it off the record: a
                 # preview is not filed under anything, so there is no record to read.
-                "variables": {"subject": "Advisory", "customer": {"legal_name": "ACME"}},
+                "variables": {"subject": "Advisory", "cliente": {"ragione_sociale": "ACME"}},
             },
         )
         assert not result.is_error, result.content[0].text
@@ -330,7 +330,7 @@ async def test_describe_legal_entity_reads_the_issuer_every_header_prints(
     assert profile["vat_number"] == "01234567890"
     # Whether a logo is set, never its storage key (REB-627): the keys are the server's,
     # and an agent that reads this hands it back to `update_legal_entity` unchanged.
-    assert profile["ha_logo"] is False
+    assert profile["has_logo"] is False
     assert "logo_key" not in profile
 
 

@@ -57,11 +57,11 @@ async def test_a_parameter_the_tool_does_not_have_is_refused_with_the_closest_na
 
 async def test_a_misspelt_search_parameter_is_no_longer_silently_ignored(server) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("search_customers", {"limit": 5})
+        result = await client.call_tool("search_customers", {"limite": 5})
 
     assert result.is_error
     message = result.content[0].text
-    assert "limit" in message
+    assert "limite" in message
     assert "forse `limit`" in message
 
 
@@ -129,7 +129,7 @@ async def test_move_deal_with_two_different_destinations_is_refused(server) -> N
     ("tool", "arguments", "field"),
     [
         ("search_customers", {"cursor": 5}, "cursor"),
-        ("describe_schema", {"entity_type": "invoice"}, "entity_type"),
+        ("describe_schema", {"entity_type": "fattura"}, "entity_type"),
         ("describe_schema", {"entity_type": 7}, "entity_type"),
         ("update_customer", {"customer_id": str(uuid4()), "changes": "note"}, "changes"),
         ("search_everything", {"term": "ab"}, "term"),
@@ -149,7 +149,7 @@ async def test_a_wrongly_typed_or_out_of_range_argument_names_its_field(
 
 async def test_a_wrong_enum_value_lists_the_allowed_ones(server) -> None:
     async with Client(server) as client:
-        result = await client.call_tool("describe_schema", {"entity_type": "invoice"})
+        result = await client.call_tool("describe_schema", {"entity_type": "fattura"})
 
     message = result.content[0].text
     assert "non è uno dei valori ammessi" in message

@@ -537,7 +537,7 @@ async def test_import_drive_file_files_the_document_and_records_where_it_came_fr
     assert version.size == len(TXT_TEXT.encode())
 
     payload = (
-        mcp_session.execute(select(Activity.payload).where(Activity.kind == "document.importato"))
+        mcp_session.execute(select(Activity.payload).where(Activity.kind == "document.imported"))
         .scalars()
         .one()
     )

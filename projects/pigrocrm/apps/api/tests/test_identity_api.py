@@ -914,9 +914,7 @@ def _expire_invitations(settings: Settings, slug: str) -> None:
         engine.dispose()
 
 
-def _graces_invitation_to_ada(
-    grace: TestClient, name: str | None = "Ada"
-) -> tuple[str, str]:
+def _graces_invitation_to_ada(grace: TestClient, name: str | None = "Ada") -> tuple[str, str]:
     """Grace opens SLUG2 and invites Ada, who has no account there. The mail never
     reaches the test (nothing reads it), as for the person this fix is for. Returns the
     token the mail carried and the name its inviter goes by."""

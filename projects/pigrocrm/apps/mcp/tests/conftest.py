@@ -158,9 +158,9 @@ def seeded_template_id(mcp_session: Session) -> str:
         TemplateCreate(
             name="Consulenza CTO",
             type="offer",
-            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
+            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{subject}}",
             declared_variables=[
-                TemplateVariable(name="oggetto", label="Oggetto", type="text", required=True)
+                TemplateVariable(name="subject", label="Oggetto", type="text", required=True)
             ],
         ),
         SETUP,

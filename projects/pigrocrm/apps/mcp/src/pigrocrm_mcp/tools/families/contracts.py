@@ -103,9 +103,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @guard
     def update_contract(contract_id: str, changes: ContractChanges) -> dict[str, Any]:
         """Aggiorna un contratto. `end`, `payment_days` e `note` si svuotano con `null`.
-        `payment_days` e `payment_end_of_month` insieme o nessuno dei due;
-        `renewal_notice_days` è obbligatorio se `renewal_type` non è `none`. Lo stato si
-        cambia con `set_contract_state`.
+        `payment_days` e `payment_end_of_month` vanno insieme; `renewal_notice_days` serve se
+        `renewal_type` non è `none`. Stato: `set_contract_state`.
         """
         return contracts.update(context, contract_id, changes)
 
@@ -128,12 +127,12 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         title: str | None = None,
     ) -> dict[str, Any]:
         """Rinnova un contratto in uno successivo `active`, collegato al precedente, con gli stessi
-        termini: comincia il giorno dopo la fine e dura quanto prima. Per cambiare le date passa
+        termini: parte il giorno dopo la fine e dura quanto prima. Per cambiare le date passa
         `start` (YYYY-MM-DD, dopo la fine), `end` oppure `duration_count` con `duration_unit`
         (`days`, `weeks`, `months`, `years`); `end` e durata insieme no. Passano le schede
         tariffarie che arrivano al nuovo termine (date adattate), non assunzione di rinnovo,
-        spese, giornate e note sulle clausole. Si rinnova una volta e solo un contratto con una
-        fine. Chiedi conferma alla persona prima.
+        spese, giornate e note sulle clausole. Una volta sola, solo con una `end`. Prima
+        chiedi conferma.
         """
         data: dict[str, Any] = {"start": start, "end": end, "title": title}
         if (duration_count is None) != (duration_unit is None):

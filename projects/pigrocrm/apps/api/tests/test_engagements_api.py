@@ -307,9 +307,9 @@ def test_report_answers_the_hours(door_client: TestClient, container_settings: S
     assert body["slug"] == linked["slug"]
     assert body["deal_url"] == linked["deal_url"]
     assert [g["description"] for g in body["days"]] == ["Setup", "API"]
-    assert body["hours_total"] == "16.00"
-    assert body["invoiced_hours"] == "0.00"
-    assert body["hours_uninvoiced"] == "16.00"
+    assert body["total_hours"] == "16.00"
+    assert body["billed_hours"] == "0.00"
+    assert body["unbilled_hours"] == "16.00"
 
 
 def _gone_problem(refused: httpx.Response) -> None:

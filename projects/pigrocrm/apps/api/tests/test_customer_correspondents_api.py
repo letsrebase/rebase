@@ -199,7 +199,11 @@ def test_one_address_becomes_a_person_of_the_customer(
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert (body["first_name"], body["last_name"], body["email"]) == ("Marco", "Bianchi", "marco@acme.it")
+    assert (body["first_name"], body["last_name"], body["email"]) == (
+        "Marco",
+        "Bianchi",
+        "marco@acme.it",
+    )
     assert body["customer_id"] == str(customer.id)
     person = api_session.execute(select(Person).where(Person.email == "marco@acme.it")).scalar_one()
     assert person.customer_id == customer.id

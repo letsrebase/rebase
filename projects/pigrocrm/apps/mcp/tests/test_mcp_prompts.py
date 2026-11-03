@@ -760,7 +760,10 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
 
     assert "boom" not in caught.value.message
     assert "Rivedi" not in caught.value.message
-    assert caught.value.message in {"Internal server error", "Error rendering prompt customer-status"}
+    assert caught.value.message in {
+        "Internal server error",
+        "Error rendering prompt customer-status",
+    }
     assert caught.value.code not in {DOMAIN_REFUSAL, INVALID_PARAMS}
 
 

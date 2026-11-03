@@ -109,7 +109,7 @@ def test_report_lists_what_differs_and_what_was_cleared() -> None:
 
     # `only_in_detail` is on one side only and `updated_at` is bookkeeping: neither is
     # a change. A custom field that appeared or emptied is.
-    assert result["changed"] == ["custom_fields.canale", "custom_fields.sede", "name", "note"]
+    assert result["changed"] == ["custom_fields.channel", "custom_fields.sede", "name", "note"]
     assert result["cleared"] == {"custom_fields.sede": "Roma", "note": "da togliere"}
     assert result["name"] == "Nuovo"
 

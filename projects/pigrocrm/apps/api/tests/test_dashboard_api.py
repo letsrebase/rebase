@@ -80,7 +80,7 @@ OPERATIONAL_KEYS = {
     "week",
     "backlog",
     "signals",
-    "recent_task",
+    "recent_activity",
 }
 
 RECEIVABLES_KEYS = {
@@ -468,7 +468,7 @@ def test_a_period_on_the_operational_endpoint_is_ignored_not_honoured(
     answer is byte-for-byte the one given without it, rather than merely a 200 -- a route
     that had quietly grown a period would still answer 200.
 
-    `calculated_at` and `recent_task` are excluded: the first is a different instant
+    `calculated_at` and `recent_activity` are excluded: the first is a different instant
     by construction, and the second is a global feed any other committed activity moves.
     """
     plain = logged_in.get("/api/dashboard/operational").json()

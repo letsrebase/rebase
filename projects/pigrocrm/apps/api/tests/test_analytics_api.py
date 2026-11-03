@@ -353,7 +353,7 @@ def test_the_ceiling_headroom_route_serialises_decimals_as_strings(
     body = response.json()
     assert body["year"] == YEAR
     assert body["pack_id"] == "it-flat-rate"
-    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
     assert revenue_threshold["threshold"] == "85000.00"
     assert isinstance(revenue_threshold["revenue"], str)
     assert isinstance(revenue_threshold["remaining"], str)
@@ -388,7 +388,7 @@ def test_the_simulator_adds_the_typed_value_and_answers_would_this_fit(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["brief_addition"] == "20000.00"
-    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
     assert revenue_threshold["simulated_revenue"] == "20000.00"
     assert revenue_threshold["falls_within"] is True
 
