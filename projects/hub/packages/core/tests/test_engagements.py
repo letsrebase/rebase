@@ -1006,7 +1006,7 @@ def _invoice(
         "type": kind,
         "year": year,
         "number": number,
-        "status": "emessa",
+        "status": "issued",
         "payment_status": "unpaid",
         "date": "2027-01-31",
         **extra,
@@ -1050,10 +1050,21 @@ def _crm(
     }
 
 
+def test_report_names_an_invoice_by_the_codes_the_crm_sends() -> None:
+    """The CRM's invoice type is `invoice` (it was `fattura`): a day's column names an
+    invoice by its bare number and any other type, a proforma, by its type first."""
+    invoice, proforma = _invoice("invoice", 7), _invoice("proforma", 7)
+    crm = _crm([_entry("2026-11-02", "8.00", "Setup", invoice), _entry("2026-11-03", "8.00", "", proforma)])
+
+    days = group_report(crm, None)["by_day"]
+
+    assert [d.invoices for d in days] == [["7/2026"], ["proforma 7/2026"]]
+
+
 def test_report_groups_by_iso_week_and_month() -> None:
     """ISO weeks cross the year: 1 January 2027 is still in 2026's week 53, and 4 January
     opens 2027's first. Days, weeks and months all sum to the same total."""
-    invoice, proforma = _invoice("fattura", 12), _invoice("proforma", 3)
+    invoice, proforma = _invoice("invoice", 12), _invoice("proforma", 3)
     crm = _crm(
         [
             _entry("2026-12-28", "8.00", "Setup", invoice),
@@ -1086,8 +1097,8 @@ def test_report_groups_by_iso_week_and_month() -> None:
     # The same invoices, each with its own share of the day (REB-505).
     shares = [[(i.number, i.kind, i.hours) for i in d.hours_by_invoice] for d in fields["by_day"]]
     assert shares == [
-        [("12/2026", "fattura", Decimal("12.00")), ("3/2026", "proforma", Decimal("2.50"))],
-        [("12/2026", "fattura", Decimal("8.00"))],
+        [("12/2026", "invoice", Decimal("12.00")), ("3/2026", "proforma", Decimal("2.50"))],
+        [("12/2026", "invoice", Decimal("8.00"))],
         [],
         [],
     ]
@@ -1116,8 +1127,8 @@ def test_report_groups_by_iso_week_and_month() -> None:
     assert fields["equivalent_days"] == Decimal("4.31")
     invoices = [(i.number, i.kind, i.date, i.status, i.hours) for i in fields["invoices"]]
     assert invoices == [
-        ("12/2026", "fattura", date(2027, 1, 31), "emessa", Decimal("20.00")),
-        ("3/2026", "proforma", None, "emessa", Decimal("2.50")),
+        ("12/2026", "invoice", date(2027, 1, 31), "issued", Decimal("20.00")),
+        ("3/2026", "proforma", None, "issued", Decimal("2.50")),
     ]
 
     twelve_days = _crm([_entry(f"2026-10-{day:02d}", "8.00") for day in range(1, 13)])
@@ -1135,7 +1146,7 @@ def test_report_gives_each_invoice_its_own_share_of_a_day() -> None:
     """REB-505: 2 November holds 8 hours, 3 on invoice 14/2026 and 5 not billed, and
     14/2026 gets its 3, never the day's 8. 3 November splits between 13/2026 and
     14/2026, and a proforma numbered 14 stays apart from the invoice 14."""
-    thirteen, fourteen = _invoice("fattura", 13), _invoice("fattura", 14)
+    thirteen, fourteen = _invoice("invoice", 13), _invoice("invoice", 14)
     proforma = _invoice("proforma", 14)
     crm = _crm(
         [
@@ -1155,10 +1166,10 @@ def test_report_gives_each_invoice_its_own_share_of_a_day() -> None:
         (date(2026, 11, 3), Decimal("8.00"), ["13/2026", "14/2026", "proforma 14/2026"]),
     ]
     assert [[(i.number, i.kind, i.hours) for i in d.hours_by_invoice] for d in days] == [
-        [("14/2026", "fattura", Decimal("3.00"))],
+        [("14/2026", "invoice", Decimal("3.00"))],
         [
-            ("13/2026", "fattura", Decimal("3.00")),
-            ("14/2026", "fattura", Decimal("3.75")),
+            ("13/2026", "invoice", Decimal("3.00")),
+            ("14/2026", "invoice", Decimal("3.75")),
             ("14/2026", "proforma", Decimal("1.25")),
         ],
     ]
@@ -1212,7 +1223,7 @@ def _asked(http: RecordedPigro) -> list[tuple[str, str]]:
 def test_report_answers_the_whole_engagement_by_default(clean: Session) -> None:
     today = date(2026, 11, 15)
     match_id = _linked_match(clean, date(2026, 10, 1))
-    invoice = _invoice("fattura", 12)
+    invoice = _invoice("invoice", 12)
     body = _crm(
         [_entry("2026-10-01", "8.00", "Setup", invoice)],
         [{**invoice, "hours": "8.00"}],
@@ -1300,7 +1311,7 @@ def test_report_walks_800_day_windows(clean: Session) -> None:
     start = date(2026, 10, 1)
     today = start + timedelta(days=1000)
     match_id = _linked_match(clean, start)
-    invoice = _invoice("fattura", 12)
+    invoice = _invoice("invoice", 12)
     first = _crm(
         [_entry("2026-10-01", "8.00", "Setup", invoice)],
         [{**invoice, "hours": "8.00"}],

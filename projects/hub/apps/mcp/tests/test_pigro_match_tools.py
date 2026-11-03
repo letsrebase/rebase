@@ -122,10 +122,10 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
 
     invoice = {
         "id": "0192e0a0-0000-7000-8000-0000000f0012",
-        "type": "fattura",
+        "type": "invoice",
         "year": 2026,
         "number": 12,
-        "status": "emessa",
+        "status": "issued",
         "payment_status": "unpaid",
         "date": "2026-10-31",
     }
@@ -172,14 +172,14 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
             "hours": "8.00",
             "descriptions": ["Setup"],
             "invoices": ["12/2026"],
-            "hours_by_invoice": [{"number": "12/2026", "kind": "fattura", "hours": "8.00"}],
+            "hours_by_invoice": [{"number": "12/2026", "kind": "invoice", "hours": "8.00"}],
         }
         assert body["invoices"] == [
             {
                 "number": "12/2026",
-                "kind": "fattura",
+                "kind": "invoice",
                 "date": "2026-10-31",
-                "status": "emessa",
+                "status": "issued",
                 "payment_status": "unpaid",
                 "hours": "8.00",
             }

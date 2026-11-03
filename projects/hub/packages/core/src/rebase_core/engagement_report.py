@@ -113,7 +113,7 @@ def _invoice_number(invoice: _CrmInvoice) -> str:
 
 def _invoice_label(invoice: _CrmInvoice) -> str:
     number = _invoice_number(invoice)
-    return number if invoice.type == "fattura" else f"{invoice.type} {number}"
+    return number if invoice.type == "invoice" else f"{invoice.type} {number}"
 
 
 def _labels(entries: Iterable[_CrmEntry]) -> list[str]:

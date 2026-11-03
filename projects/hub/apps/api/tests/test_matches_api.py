@@ -668,10 +668,10 @@ def test_without_the_cookie_the_check_is_a_401(client: TestClient, admin: None) 
 
 INVOICE = {
     "id": "0192e0a0-0000-7000-8000-0000000f0012",
-    "type": "fattura",
+    "type": "invoice",
     "year": 2026,
     "number": 12,
-    "status": "emessa",
+    "status": "issued",
     "payment_status": "unpaid",
     "date": "2026-10-31",
 }
@@ -845,7 +845,7 @@ def test_get_report_answers_the_grouped_report(
                 "hours": "8.00",
                 "descriptions": ["Setup"],
                 "invoices": ["12/2026"],
-                "hours_by_invoice": [{"number": "12/2026", "kind": "fattura", "hours": "8.00"}],
+                "hours_by_invoice": [{"number": "12/2026", "kind": "invoice", "hours": "8.00"}],
             },
             {
                 "date": "2026-10-02",
@@ -867,9 +867,9 @@ def test_get_report_answers_the_grouped_report(
         "invoices": [
             {
                 "number": "12/2026",
-                "kind": "fattura",
+                "kind": "invoice",
                 "date": "2026-10-31",
-                "status": "emessa",
+                "status": "issued",
                 "payment_status": "unpaid",
                 "hours": "8.00",
             }
