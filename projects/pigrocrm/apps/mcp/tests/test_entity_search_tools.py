@@ -68,7 +68,7 @@ async def test_search_people_filters_by_a_custom_field(server, mcp_session: Sess
             await client.call_tool("search_people", {"custom": {"seniority": "senior"}})
         )
 
-    assert [p["name"] for p in found["items"]] == ["A"]
+    assert [p["first_name"] for p in found["items"]] == ["A"]
 
 
 async def test_search_deals_filters_by_a_custom_field(server, mcp_session: Session) -> None:

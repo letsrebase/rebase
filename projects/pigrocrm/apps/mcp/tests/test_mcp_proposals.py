@@ -135,7 +135,7 @@ async def test_propose_day_then_accept_creates_the_approval_and_the_approved_wor
     assert work_unit.status == "approved"
     approval = mcp_session.get(Approval, work_unit.approval_id)
     assert approval is not None
-    assert approval.origin == {"kind": "agente", "proposal_id": proposal_id}
+    assert approval.origin == {"kind": "agent", "proposal_id": proposal_id}
 
 
 async def test_propose_contract_then_accept_creates_the_contract_and_repoints_the_document(

@@ -119,8 +119,8 @@ def cycle_server(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
     """One customer, one open deal, and two offers on it: one still `sent` and stalled,
     one already `accepted` while the deal was never moved.
 
-    The second offer is the whole reason the signal has anything to count. "Offerta
-    accettata, deal non vinto" is what automation A1 *not* firing looks like from the
+    The second offer is the whole reason the signal has anything to count. "Offer
+    accepted, deal not won" is what automation A1 *not* firing looks like from the
     dashboard, and a corpus without such a row would let the assertion below pass against a
     count wired to nothing.
     """

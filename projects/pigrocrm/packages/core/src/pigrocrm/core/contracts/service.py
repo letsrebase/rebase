@@ -38,6 +38,7 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.labels import CONTRACT_STATUS, label
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
@@ -202,7 +203,7 @@ class ContractService:
         if contract.status == data.status:
             raise Conflict(
                 ENTITY,
-                f"il contratto è già «{data.status}»",
+                f"il contratto è già «{label(CONTRACT_STATUS, data.status)}»",
                 contract_id=str(contract_id),
             )
         previous = contract.status

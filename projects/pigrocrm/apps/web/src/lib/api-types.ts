@@ -5221,10 +5221,10 @@ export interface components {
             /** Entry Ids */
             entry_ids: string[];
             /**
-             * Group By By Month
+             * Group By Month
              * @default true
              */
-            group_by_by_month: boolean;
+            group_by_month: boolean;
         };
         /** BudgetPage */
         BudgetPage: {

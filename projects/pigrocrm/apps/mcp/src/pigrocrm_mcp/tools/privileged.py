@@ -435,7 +435,7 @@ def register(
     @mcp.tool(annotations=ADDITIVE)
     @guard
     def bind_time_to_invoice(
-        deal_id: str, entry_ids: list[str], group_by_by_month: bool = True
+        deal_id: str, entry_ids: list[str], group_by_month: bool = True
     ) -> dict[str, Any]:
         """Trasforma le ore in `entry_ids` nelle righe di una fattura **in bozza**, collegandole.
         Non emette nulla né consuma numeri: poi la bozza si legge e, se giusta, si passa a
@@ -455,7 +455,7 @@ def register(
                 UUID(deal_id),
                 BindTimeRequest(
                     entry_ids=[UUID(entry_id) for entry_id in entry_ids],
-                    group_by_by_month=group_by_by_month,
+                    group_by_month=group_by_month,
                 ),
                 context.actor,
             )

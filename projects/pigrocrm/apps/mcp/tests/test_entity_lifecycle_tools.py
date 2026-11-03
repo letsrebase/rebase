@@ -67,7 +67,9 @@ async def test_create_person_without_a_customer_is_allowed(server) -> None:
     stay optional at the actual MCP boundary, not merely on the underlying schema."""
     async with Client(server) as client:
         person = _payload(
-            await client.call_tool("create_person", {"first_name": "Giulia", "last_name": "Bianchi"})
+            await client.call_tool(
+                "create_person", {"first_name": "Giulia", "last_name": "Bianchi"}
+            )
         )
 
     assert person["customer_id"] is None

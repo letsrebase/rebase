@@ -1,6 +1,6 @@
-"""The one azienda every API test space has (REB-616).
+"""The one legal entity every API test space has (REB-616).
 
-A real space is born with its default azienda (`ensure_defaults` writes it at
+A real space is born with its default legal entity (`ensure_defaults` writes it at
 provisioning), and since REB-615 the fiscal profile belongs to it, so a test that used
 to `PUT /api/emitter` or `/api/fiscal-profile` now addresses `/api/legal-entities/{id}`. The
 autouse fixture in `conftest.py` seeds that row for every test; this helper reads its

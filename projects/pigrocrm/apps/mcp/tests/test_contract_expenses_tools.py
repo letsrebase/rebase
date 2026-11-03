@@ -67,7 +67,7 @@ async def test_create_reports_the_trigger_computed_reimbursable(server, mcp_sess
 async def test_create_flags_non_reimbursable_without_failing(server, mcp_session) -> None:
     contract_id = _contract_id(
         mcp_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(mcp_session)
 
@@ -115,7 +115,7 @@ async def test_a_bad_argument_comes_back_as_guidance_not_a_pydantic_dump(
 async def test_update_recomputes_reimbursable_and_list_reflects_it(server, mcp_session) -> None:
     contract_id = _contract_id(
         mcp_session,
-        expense_policy={"kind": "reimbursable", "richiede_preautorizzazione": True},
+        expense_policy={"kind": "reimbursable", "requires_pre_authorization": True},
     )
     category_id = _category_id(mcp_session)
 

@@ -254,13 +254,13 @@ def test_an_unknown_day_is_a_404(logged_in: TestClient) -> None:
 
 def test_the_month_carries_each_days_state_on_its_date(logged_in: TestClient) -> None:
     contract_id = _contract(logged_in, requires_prior_approval=True)
-    giorno = date(2026, 3, 2)
-    _record(logged_in, contract_id, giorno.isoformat())
+    work_day = date(2026, 3, 2)
+    _record(logged_in, contract_id, work_day.isoformat())
 
     month = logged_in.get("/api/calendar", params={"month": "2026-03"})
 
     assert month.status_code == 200, month.text
-    day = next(d for d in month.json()["days"] if d["day"] == giorno.isoformat())
+    day = next(d for d in month.json()["days"] if d["day"] == work_day.isoformat())
     assert [
         (g["contract_title"], g["customer_name"], g["quantity"], g["status"])
         for g in day["work_units"]

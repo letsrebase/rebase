@@ -116,14 +116,14 @@ RULE_DESCRIPTIONS: dict[AutomationRuleCode, tuple[str, str]] = {
     "A1": (
         "Offerta accettata → deal vinto",
         "Quando un'offerta passa da «inviata» ad «accettata», il deal collegato viene "
-        "spostato nello stato con codice «won», o nell'unico stato di tipo «won». Se lo "
+        "spostato nello stato con codice «vinto», o nell'unico stato di tipo «won». Se lo "
         "stato manca o ce ne sono due, l'automazione non indovina: non fa nulla e "
         "registra il motivo.",
     ),
     "A2": (
         "Offerta inviata → il deal avanza",
         "Quando un'offerta passa da «bozza» a «inviata», il deal collegato avanza allo "
-        "stato con codice «offer», ma solo se la sua posizione attuale è precedente. Non "
+        "stato con codice «offerta», ma solo se la sua posizione attuale è precedente. Non "
         "torna mai indietro: un deal già in negoziazione non retrocede perché è stata "
         "mandata una seconda offerta.",
     ),

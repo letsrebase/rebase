@@ -26,8 +26,8 @@ SETUP = Actor(id=None, type="system", role="admin")
 
 
 def _ensure_committed_default(engine: Engine) -> None:
-    """One committed default azienda in the worker's database (REB-623): since the
-    chain, a customer row and everything under it need an azienda, and a world that
+    """One committed default legal entity in the worker's database (REB-623): since the
+    chain, a customer row and everything under it need an legal entity, and a world that
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
@@ -60,7 +60,7 @@ def mcp_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     connection = mcp_engine.connect()
     transaction = connection.begin()
-    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # The default legal entity every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
     from pigrocrm.core.legal_entities.models import LegalEntity
 
@@ -158,9 +158,9 @@ def seeded_template_id(mcp_session: Session) -> str:
         TemplateCreate(
             name="Consulenza CTO",
             type="offer",
-            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
+            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{subject}}",
             declared_variables=[
-                TemplateVariable(name="oggetto", label="Oggetto", type="text", required=True)
+                TemplateVariable(name="subject", label="Oggetto", type="text", required=True)
             ],
         ),
         SETUP,

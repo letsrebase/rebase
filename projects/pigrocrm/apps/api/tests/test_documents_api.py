@@ -37,7 +37,7 @@ from pigrocrm.core.tenants import SpaceRegistry  # noqa: E402
 from pigrocrm_api.deps import get_storage  # noqa: E402
 
 PDF = b"%PDF-1.7\nfinto\n"
-# A Drive file id of the shape the titolare types into Impostazioni → Drive.
+# A Drive file id of the shape the owner types into Settings → Drive.
 STORAGE_FOLDER = "1CartellaScritturaAPI"
 REFRESH_TOKEN = "1//0gApiDriveStorageRefresh"
 DRIVE_MAILBOX = "titolare@example.it"
@@ -195,7 +195,7 @@ def test_set_offer_state_and_refuse_an_undeclared_transition(logged_in: TestClie
         == "sent"
     )
     conflict = logged_in.post(f"/api/documents/{document_id}/status", json={"status": "draft"})
-    assert conflict.status_code == 200  # inviata -> bozza is allowed
+    assert conflict.status_code == 200  # sent -> draft is allowed
     # Now back in "bozza", whose only legal exit is "inviata": "accettata" is refused.
     forbidden = logged_in.post(f"/api/documents/{document_id}/status", json={"status": "accepted"})
     assert forbidden.status_code == 409

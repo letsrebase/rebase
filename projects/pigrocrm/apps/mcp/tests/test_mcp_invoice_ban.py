@@ -510,7 +510,7 @@ def test_the_source_scan_actually_reads_more_than_one_file() -> None:
     # sweep silently narrowing back to `tools/` fails here instead of leaving every ban
     # below green over a directory it no longer looks at.
     assert "def status_customer(" in source  # prompts/customer.py
-    assert "def chiusura_mese(" in source  # prompts/dashboards.py
+    assert "def closing_month(" in source  # prompts/dashboards.py
 
 
 def test_the_registration_scan_reads_every_module_and_not_only_the_first() -> None:
@@ -780,10 +780,10 @@ def test_the_privileged_module_is_the_only_place_they_appear() -> None:
             "coprendo la cosa sbagliata"
         )
 
-    dentro, outside = _privileged_imports_of_server()
-    assert dentro == {module.stem for module in PRIVILEGED_MODULES}, (
+    inside, outside = _privileged_imports_of_server()
+    assert inside == {module.stem for module in PRIVILEGED_MODULES}, (
         "un modulo privilegiato non e' importato dentro `if resolved_settings."
-        f"mcp_full_access:`: dentro la guardia ci sono {sorted(dentro)}"
+        f"mcp_full_access:`: dentro la guardia ci sono {sorted(inside)}"
     )
     assert not outside, (
         f"{sorted(outside)} sono importati fuori dalla guardia: verrebbero registrati "
@@ -833,10 +833,10 @@ def _privileged_imports_of_server() -> tuple[set[str], set[str]]:
                     found |= {alias.name for alias in node.names}
         return found
 
-    nomi = {module.stem for module in PRIVILEGED_MODULES}
-    dentro = imported_names(list(guards)) & nomi
-    all = imported_names([tree]) & nomi
-    return dentro, all - dentro
+    names = {module.stem for module in PRIVILEGED_MODULES}
+    inside = imported_names(list(guards)) & names
+    all = imported_names([tree]) & names
+    return inside, all - inside
 
 
 def _agent_reachable_source() -> str:
@@ -878,7 +878,7 @@ def test_the_wide_scan_really_reads_the_resources_the_prompts_and_the_server() -
     assert "def render_customer(" in source  # resources/entities.py
     assert "def customer_resource(" in source  # server.py's inline @mcp.resource
     assert "def status_customer(" in source  # prompts/customer.py
-    assert "def revisione_pipeline(" in source  # prompts/dashboards.py
+    assert "def review_pipeline(" in source  # prompts/dashboards.py
     assert "def search_everything(" in source  # tools/families/shared.py, i.e. the old width
 
 

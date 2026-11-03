@@ -353,7 +353,7 @@ def test_the_ceiling_headroom_route_serialises_decimals_as_strings(
     body = response.json()
     assert body["year"] == YEAR
     assert body["pack_id"] == "it-flat-rate"
-    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
     assert revenue_threshold["threshold"] == "85000.00"
     assert isinstance(revenue_threshold["revenue"], str)
     assert isinstance(revenue_threshold["remaining"], str)
@@ -388,7 +388,7 @@ def test_the_simulator_adds_the_typed_value_and_answers_would_this_fit(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["brief_addition"] == "20000.00"
-    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
     assert revenue_threshold["simulated_revenue"] == "20000.00"
     assert revenue_threshold["falls_within"] is True
 
@@ -438,8 +438,8 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     legal_entity: dict[str, Any],
     fiscal_profile: dict[str, Any],
 ) -> None:
-    """400 EUR invoiced, at 67% / 5% / 26.07%: imponibile 268.00, imposta 13.40,
-    contributi 66.37, netto 320.23 -- the chain checked end to end over HTTP, because a
+    """400 EUR invoiced, at 67% / 5% / 26.07%: taxable base 268.00, tax 13.40,
+    contributions 66.37, net 320.23 -- the chain checked end to end over HTTP, because a
     report that silently lost a rate would still answer 200 with plausible numbers."""
     deal_id, user_id = _seed_deal_and_user(logged_in)
     entry_id = _log_hours(logged_in, deal_id, user_id)
@@ -662,14 +662,14 @@ def test_the_period_report_takes_a_base_and_defaults_to_emission(
     deal_id, _ = _seed_deal_and_user(logged_in)
     customer_id = logged_in.get(f"/api/deals/{deal_id}").json()["customer_id"]
     first = TODAY.replace(day=1)
-    fine_mese_prima = first - timedelta(days=1)
+    prev_month_end = first - timedelta(days=1)
     draft = logged_in.post(
         "/api/invoices",
         json={
             "customer_id": customer_id,
             "deal_id": deal_id,
-            "accrual_from": fine_mese_prima.replace(day=1).isoformat(),
-            "accrual_to": fine_mese_prima.isoformat(),
+            "accrual_from": prev_month_end.replace(day=1).isoformat(),
+            "accrual_to": prev_month_end.isoformat(),
             "lines": [{"description": "Consulenza", "unit_price": "1000.00"}],
         },
     )
@@ -689,8 +689,8 @@ def test_the_period_report_takes_a_base_and_defaults_to_emission(
     assert by_emission.json()["base"] == "issue"
     assert by_accrual.json()["base"] == "accrual"
     last_month = {
-        "from": fine_mese_prima.replace(day=1).isoformat(),
-        "to": fine_mese_prima.isoformat(),
+        "from": prev_month_end.replace(day=1).isoformat(),
+        "to": prev_month_end.isoformat(),
         "base": "accrual",
     }
     assert _revenue(logged_in.get("/api/analytics/pnl", params=last_month).json()) == "1000.00"
@@ -711,7 +711,7 @@ def test_the_openapi_document_describes_the_base_parameter_in_italian(
     assert "accrual" in params["base"]["description"]
 
 
-# --- one azienda at a time for the taxes, every azienda for the cash (REB-631) ---------
+# --- one legal entity at a time for the taxes, every legal entity for the cash (REB-631) ---------
 
 LTD = {
     "name": "rebase ltd",
@@ -777,7 +777,7 @@ def test_the_fiscal_routes_resolve_alone_on_one_legal_entity_and_need_it_on_two(
         named = logged_in.get(path, params={**params, "legal_entity_id": default})
         assert named.status_code == 200, (path, named.text)
         assert named.json()["legal_entity_id"] == default
-    # The foreign azienda has a profile but no ceilings, and no forfettario estimate.
+    # The foreign legal entity has a profile but no ceilings, and no flat-rate regime estimate.
     foreign = logged_in.get(
         "/api/analytics/ceilings", params={"year": YEAR, "legal_entity_id": second}
     )
@@ -798,20 +798,24 @@ def test_the_overview_in_all_sums_the_legal_entities_and_keeps_no_estimate(
         assert response.status_code == 200, response.text
         return response.json()
 
-    tutte = overview()
+    all_entities = overview()
     studio = overview(legal_entity_id=default)
     foreign = overview(legal_entity_id=second)
     assert (studio["pension_fund"]["paid"], foreign["pension_fund"]["paid"]) == (
         "1000.00",
         "5000.00",
     )
-    assert tutte["pension_fund"]["paid"] == "6000.00"
-    assert (tutte["legal_entity_id"], studio["legal_entity_id"]) == (None, default)
-    # Two aziende, no estimate in «tutte»: the page asks `/fiscal` per azienda instead.
-    assert tutte["tax"] is None
+    assert all_entities["pension_fund"]["paid"] == "6000.00"
+    assert (all_entities["legal_entity_id"], studio["legal_entity_id"]) == (None, default)
+    # Two legal entities, no estimate in "all entities": the page asks `/fiscal` per
+    # legal entity instead.
+    assert all_entities["tax"] is None
     assert studio["tax"] is not None and studio["tax"]["revenue"] == "1000.00"
-    assert {row["legal_entity_id"] for row in tutte["customer_concentration"]} == {default, second}
-    assert all(row["share"] == 1.0 for row in tutte["customer_concentration"])
+    assert {row["legal_entity_id"] for row in all_entities["customer_concentration"]} == {
+        default,
+        second,
+    }
+    assert all(row["share"] == 1.0 for row in all_entities["customer_concentration"])
     pnl = logged_in.get("/api/analytics/pnl", params={**PERIOD, "legal_entity_id": second})
     assert pnl.status_code == 200, pnl.text
     assert pnl.json()["legal_entity_id"] == second

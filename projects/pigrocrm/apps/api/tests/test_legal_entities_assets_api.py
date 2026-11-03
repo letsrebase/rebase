@@ -117,7 +117,7 @@ def test_an_unknown_legal_entity_is_404_on_every_image_route(logged_in: TestClie
 
 def test_the_openapi_document_declares_the_six_routes(logged_in: TestClient) -> None:
     paths = logged_in.get("/openapi.json").json()["paths"]
-    for slot in ("logo", "firma"):
+    for slot in ("logo", "signature"):
         operations = paths[f"/api/legal-entities/{{legal_entity_id}}/{slot}"]
         assert set(operations) == {"get", "put", "delete"}
         assert "multipart/form-data" in operations["put"]["requestBody"]["content"]

@@ -65,6 +65,7 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.google.credential import open_refresh_token
+from pigrocrm.core.labels import SEND_STATE, label
 from pigrocrm.core.storage.base import DocumentStorage
 
 ENTITY = "email_draft"
@@ -699,7 +700,9 @@ class EmailSendService:
 
 
 def _already(state: str) -> str:
-    return _ALREADY.get(state, f"questa email non è inviabile nello stato {state}")
+    return _ALREADY.get(
+        state, f"questa email non è inviabile nello stato {label(SEND_STATE, state)}"
+    )
 
 
 def _changed_since_read() -> Conflict:

@@ -38,6 +38,7 @@ from pigrocrm.core.documents.text import DocumentText
 from pigrocrm.core.documents.uploads import DocumentUploads
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
+from pigrocrm.core.labels import DOCUMENT_STATUS, label
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.storage.base import DocumentStorage
 
@@ -241,7 +242,8 @@ class DocumentService:
         if status not in allowed:
             raise Conflict(
                 ENTITY,
-                f"da '{document.status}' non si puo' passare a '{status}'",
+                f"da '{label(DOCUMENT_STATUS, document.status)}' non si puo' passare a "
+                f"'{label(DOCUMENT_STATUS, status)}'",
                 status_current=document.status,
                 transitions_allowed=sorted(allowed),
             )

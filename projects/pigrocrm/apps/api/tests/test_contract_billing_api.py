@@ -136,7 +136,7 @@ def test_the_register_json_csv_and_pdf_agree_on_the_month(
         f"/api/contracts/{contract['id']}/invoice-days",
         json={"date_from": "2026-10-01", "date_to": "2026-10-31"},
     ).json()
-    period = {"date_from": "2026-10-01", "date_to": "2026-10-31"}
+    period = {"from": "2026-10-01", "to": "2026-10-31"}
 
     register = logged_in.get(f"/api/contracts/{contract['id']}/register", params=period)
     assert register.status_code == 200, register.text

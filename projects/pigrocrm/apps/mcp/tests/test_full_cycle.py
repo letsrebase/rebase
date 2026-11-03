@@ -180,7 +180,7 @@ def _revenue_from_sql(session: Session, deal_id: UUID) -> Decimal:
         session.execute(
             text(
                 "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
-                "WHERE deal_id = :id AND tipo = 'fattura' AND stato = 'emessa' "
+                "WHERE deal_id = :id AND type = 'invoice' AND status = 'issued' "
                 "  AND deleted_at IS NULL"
             ),
             {"id": deal_id},
@@ -244,7 +244,7 @@ async def test_the_full_cycle_ends_on_the_tool_an_agent_cannot_find(
     #    inherits. The link-based reading would leave the work in neither figure: priced,
     #    done, and invisible until somebody pressed "issue".
     draft = TimeBilling(mcp_session, storage).bind_to_invoice(
-        deal_id, BindTimeRequest(entry_ids=[entry_id], group_by_by_month=True), umano
+        deal_id, BindTimeRequest(entry_ids=[entry_id], group_by_month=True), umano
     )
     assert draft.status == "draft"
     assert draft.taxable_amount == Decimal("800.00")

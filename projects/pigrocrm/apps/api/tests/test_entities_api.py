@@ -284,8 +284,12 @@ def test_list_people_filters_by_a_custom_query_param(logged_in: TestClient) -> N
             "field_type": "text",
         },
     )
-    logged_in.post("/api/people", json={"first_name": "A", "custom_fields": {"seniority": "senior"}})
-    logged_in.post("/api/people", json={"first_name": "B", "custom_fields": {"seniority": "junior"}})
+    logged_in.post(
+        "/api/people", json={"first_name": "A", "custom_fields": {"seniority": "senior"}}
+    )
+    logged_in.post(
+        "/api/people", json={"first_name": "B", "custom_fields": {"seniority": "junior"}}
+    )
 
     page = logged_in.get("/api/people", params={"custom": "seniority:senior"}).json()
     assert [p["first_name"] for p in page["items"]] == ["A"]
@@ -309,5 +313,5 @@ def test_list_deals_filters_by_a_custom_query_param(logged_in: TestClient) -> No
     )
     assert created_b.status_code == 201, created_b.text
 
-    page = logged_in.get("/api/deals", params={"custom": "fonte:referral"}).json()
+    page = logged_in.get("/api/deals", params={"custom": "source:referral"}).json()
     assert [d["name"] for d in page["items"]] == ["A"]

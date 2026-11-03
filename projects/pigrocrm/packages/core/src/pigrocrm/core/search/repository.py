@@ -37,6 +37,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.labels import DOCUMENT_TYPE, TASK_STATUS, label
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.search.schemas import (
     COUNT_CEILING,
@@ -324,7 +325,7 @@ class SearchRepository:
             term,
             limit,
             label=lambda row: row.title,
-            subtitle=lambda row: row.type,
+            subtitle=lambda row: label(DOCUMENT_TYPE, row.type),
             scope=_own(Document, legal_entity_id),
         )
 
@@ -386,7 +387,7 @@ class SearchRepository:
     @staticmethod
     def _task_subtitle(row: Any) -> str | None:
         if row.status != "open":
-            return str(row.status)
+            return label(TASK_STATUS, row.status)
         if row.due_date is None:
             return "senza scadenza"
         return str(row.due_date.strftime("%d/%m/%Y"))

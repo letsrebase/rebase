@@ -570,7 +570,9 @@ async def test_no_tool_prepares_a_payment_reminder(gmail_server: Any) -> None:
     becoming an automated persecution, with nobody having decided to chase it at all."""
     names = await _tool_names(gmail_server)
 
-    assert not [name for name in names if "reminder" in name and not name.startswith("list_")]
+    assert not [
+        name for name in names if "payment_reminder" in name and not name.startswith("list_")
+    ]
     assert not [name for name in names if "sollecit" in name]
 
 

@@ -115,8 +115,8 @@ async def test_an_admin_agent_sets_the_legal_entity_and_to_malformed_value_names
 async def test_the_legal_entity_read_can_be_handed_back_to_the_write_unchanged(
     mcp_session: Session, tmp_path: Path
 ) -> None:
-    """The round trip the write's docstring prescribes -- «leggi prima, rimanda indietro
-    l'oggetto letto con le modifiche» -- has to validate: `LegalEntityUpsert` forbids
+    """The round trip the write's docstring prescribes -- "read first, send back
+    the object read with the changes" -- has to validate: `LegalEntityUpsert` forbids
     extra keys, so the read must not carry `id` or the timestamps."""
     server = _server(mcp_session, ADMIN, tmp_path)
     async with Client(server) as client:
@@ -187,8 +187,8 @@ async def test_an_admin_agent_opens_to_second_legal_entity_with_its_profile(
             },
         )
         assert not created.is_error, created.content[0].text
-        nuova = created.structured_content
-        assert (nuova["name"], nuova["is_default"], nuova["active"]) == ("rebase ltd", False, True)
+        fresh = created.structured_content
+        assert (fresh["name"], fresh["is_default"], fresh["active"]) == ("rebase ltd", False, True)
         listed = await client.call_tool("list_legal_entities", {})
         rows = listed.structured_content
         if isinstance(rows, dict):
@@ -196,7 +196,7 @@ async def test_an_admin_agent_opens_to_second_legal_entity_with_its_profile(
             rows = rows["result"]
         assert [a["name"] for a in rows] == ["Studio Verdi", "rebase ltd"]
         profile = await client.call_tool(
-            "describe_fiscal_profile", {"legal_entity_id": nuova["id"]}
+            "describe_fiscal_profile", {"legal_entity_id": fresh["id"]}
         )
         assert profile.structured_content["pack_id"] == "non-it"
         refused = await client.call_tool(

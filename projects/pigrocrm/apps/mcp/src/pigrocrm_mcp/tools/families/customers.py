@@ -100,7 +100,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_customer(customer_id: str) -> dict[str, Any]:
-        """Legge un cliente, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge un cliente, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `customer://<id>`).
         """
         return customers.get(context, customer_id)

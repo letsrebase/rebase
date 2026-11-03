@@ -120,7 +120,7 @@ def test_availability_says_why(spaces_client: TestClient) -> None:
     assert spaces_client.get("/api/tenants/app/available").json() == {
         "slug": "app",
         "available": False,
-        "reason": "questo name è riservato",
+        "reason": "questo nome è riservato",
     }
     assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
 
@@ -255,7 +255,7 @@ def test_the_root_slug_is_the_root_itself_and_nobody_elses_name(
             assert sum("Path=/studiorossi/;" in c for c in deletions) == 2
             assert sum("Path=/;" in c for c in deletions) == 2
             assert client.get("/api/tenants/studiorossi/available").json()["reason"] == (
-                "questo name è riservato"
+                "questo nome è riservato"
             )
             refused = client.post("/api/tenants/", json={**SIGNUP, "slug": "studiorossi"})
             assert refused.status_code == 422, refused.text

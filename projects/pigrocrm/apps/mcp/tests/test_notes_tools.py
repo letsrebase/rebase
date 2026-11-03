@@ -143,7 +143,7 @@ async def test_a_note_is_signed_with_the_token_owner_and_the_mcp_channel(
     assert added["editable"] is True
     assert "provenance" in added
     assert thread["note"] == [{k: v for k, v in added.items() if k != "provenance"}]
-    assert thread["note_totale"] == 1
+    assert thread["note_total"] == 1
 
 
 async def test_no_note_tool_takes_an_author_or_a_date(marco_server: Any) -> None:
@@ -270,7 +270,7 @@ async def test_an_admin_edits_and_deletes_a_note_of_somebody_else(
     assert edited["edited_by"] == "Anna Neri"
     assert deleted == {"status": "eliminata", "note_id": second["id"]}
     assert [note["text"] for note in thread["note"]] == ["Corretta"]
-    assert thread["note_totale"] == 1
+    assert thread["note_total"] == 1
 
 
 async def test_a_note_the_system_or_rebase_wrote_is_refused_even_to_an_admin(
@@ -346,11 +346,11 @@ async def test_get_carries_the_latest_notes_newest_first_and_says_how_many_there
     assert len(texts) == 50
     assert texts[0] == "nota 054"
     assert texts[-1] == "nota 005"
-    assert read["note_totale"] == 55
+    assert read["note_total"] == 55
     assert read["provenance"] == PROVENANCE_TEXT_FREE
     description = tools[GET_TOOLS[entity_type][0]].description
     assert "ultime 50 note" in description
-    assert "note_totale" in description
+    assert "note_total" in description
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])
@@ -429,7 +429,9 @@ async def test_create_with_a_note_makes_it_the_first_note_signed_by_the_token_ow
             )
         )
         person = _payload(
-            await client.call_tool("create_person", {"first_name": "Anna", "note": "Referente tecnico"})
+            await client.call_tool(
+                "create_person", {"first_name": "Anna", "note": "Referente tecnico"}
+            )
         )
         threads = {
             "customer": await _thread(client, "customer", UUID(customer["id"])),
@@ -454,7 +456,7 @@ async def test_create_without_a_note_writes_none(marco_server: Any) -> None:
         customer = _payload(await client.call_tool("create_customer", {"legal_name": "ACME"}))
         thread = await _thread(client, "customer", UUID(customer["id"]))
 
-    assert thread["note"] == [] and thread["note_totale"] == 0
+    assert thread["note"] == [] and thread["note_total"] == 0
 
 
 @pytest.mark.parametrize("entity_type", ["deal", "customer", "person"])

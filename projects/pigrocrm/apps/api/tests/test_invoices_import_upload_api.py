@@ -179,9 +179,9 @@ def test_to_customer_of_another_legal_entity_is_to_422_that_names_the_party_and_
     legal_entity: dict[str, Any],
     customer: dict[str, Any],
 ) -> None:
-    """REB-783: the dialog lists only the file's azienda's customers, but the id is the
-    caller's, so the confirmation itself refuses one from another azienda, and one of
-    the right azienda still imports."""
+    """REB-783: the dialog lists only the file's legal entity's customers, but the id is the
+    caller's, so the confirmation itself refuses one from another legal entity, and one of
+    the right legal entity still imports."""
     content = _fixture(CONSULTING)
     ltd = logged_in.post(
         "/api/legal-entities",

@@ -72,7 +72,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_deal(deal_id: str) -> dict[str, Any]:
-        """Legge un deal, con le ultime 50 note (`note`, dalla più recente; `note_totale`
+        """Legge un deal, con le ultime 50 note (`note`, dalla più recente; `note_total`
         le conta, tutte in `deal://<id>`).
         """
         return deals.get(context, deal_id)

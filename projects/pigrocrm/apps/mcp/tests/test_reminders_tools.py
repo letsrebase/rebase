@@ -123,7 +123,7 @@ async def test_an_agent_lists_the_reminders_of_its_person(mcp_session: Session) 
 
 
 async def test_an_admins_agent_reads_how_the_scheduled_jobs_went(mcp_session: Session) -> None:
-    """REB-764: the same read as Impostazioni → Esecuzioni, and an admin's like it."""
+    """REB-764: the same read as Settings → Runs, and an admin's like it."""
     from pigrocrm.core.reminders.jobs import REMINDER_PASS_JOB, JobClock
 
     JobClock(mcp_session).succeeded(REMINDER_PASS_JOB)

@@ -97,16 +97,16 @@ async def test_an_agent_resolves_to_name_to_an_id_and_assigns_an_task_with_it(
     async with Client(server) as client:
         members = (await client.call_tool("list_members", {})).structured_content["result"]
         found = next(m["id"] for m in members if m["name"] == "Bruno")
-        attivita = await client.call_tool(
+        task = await client.call_tool(
             "create_task", {"title": "Chiamare il cliente", "assigned_to": found}
         )
         reassigned = await client.call_tool(
             "update_task",
-            {"task_id": attivita.structured_content["id"], "changes": {"assigned_to": found}},
+            {"task_id": task.structured_content["id"], "changes": {"assigned_to": found}},
         )
 
     assert found == str(bruno.id)
-    assert attivita.structured_content["assigned_to"] == found
+    assert task.structured_content["assigned_to"] == found
     assert reassigned.structured_content["changed"] == []
 
 

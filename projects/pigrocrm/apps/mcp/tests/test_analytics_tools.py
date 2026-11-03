@@ -165,7 +165,7 @@ async def test_get_ceiling_headroom_reports_the_configured_packs_thresholds(
         result = await client.call_tool("get_ceiling_headroom", {"year": TODAY.year})
     body = result.structured_content
     assert body["pack_id"] == "it-flat-rate"
-    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
     assert revenue_threshold["threshold"] == "85000.00"
     assert revenue_threshold["remaining"] == "85000.00"
 
@@ -188,7 +188,7 @@ async def test_simulate_ceiling_adds_the_typed_value(server, mcp_session: Sessio
         )
     body = result.structured_content
     assert body["brief_addition"] == "20000.00"
-    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "soglia_ricavi")
+    revenue_threshold = next(s for s in body["thresholds"] if s["id"] == "revenue_ceiling")
     assert revenue_threshold["falls_within"] is True
 
 
