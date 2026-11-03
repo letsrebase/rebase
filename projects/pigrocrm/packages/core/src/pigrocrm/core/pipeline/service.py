@@ -59,7 +59,7 @@ def _check_probability(value: int | None) -> None:
 
 
 def _conflicting_code(code: str | None) -> Conflict:
-    return Conflict("pipeline_stage", "esiste già uno stato con questo code", stage_code=code)
+    return Conflict("pipeline_stage", "esiste già uno stato con questo codice", stage_code=code)
 
 
 class PipelineService:

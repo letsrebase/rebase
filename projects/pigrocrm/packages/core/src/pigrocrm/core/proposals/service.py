@@ -340,7 +340,7 @@ class ProposalService:
             self.session,
             lambda exc: Conflict(
                 "work_unit",
-                "esiste già un day non concluso per questo contratto in questa data",
+                "esiste già una giornata non conclusa per questo contratto in questa data",
                 contract_id=str(fields.contract_id),
                 date=str(fields.date),
             ),

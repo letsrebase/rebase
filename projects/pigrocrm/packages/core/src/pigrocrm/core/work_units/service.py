@@ -163,7 +163,7 @@ class WorkUnitService:
             raise ValidationFailed(
                 WORK_UNIT_ENTITY,
                 "status",
-                f"un work_unit non si crea direttamente in stato '{data.status}'",
+                f"una giornata non si crea direttamente in stato '{data.status}'",
                 expected=f"uno tra {sorted(WORK_UNIT_ENTRY_STATUSES)}",
             )
         if ContractRepository(self.session).get(data.contract_id) is None:
