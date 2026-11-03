@@ -311,7 +311,7 @@ class InvitationService:
         inviter = self.users.get(row.invited_by)
         return InvitationPeek(
             space=space,
-            invited_by=inviter.name if inviter is not None else "",
+            inviter_name=inviter.name if inviter is not None else "",
             name=row.name,
         )
 
@@ -409,7 +409,7 @@ class InvitationService:
         role = as_role(row.role)
         return InvitationOffer(
             role=role,
-            invited_by=inviter.name if inviter is not None else "",
+            inviter_name=inviter.name if inviter is not None else "",
             name=row.name,
         )
 

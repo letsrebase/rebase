@@ -189,7 +189,7 @@ def test_the_peek_shows_the_invitation_and_does_not_spend_it(
     raw = _token_from(sender.sent[0].text)
     peek = logged_in.get("/api/auth/invite", params={"t": raw})
     assert peek.status_code == 200, peek.text
-    assert peek.json() == {"space": "PigroCRM", "invited_by": "Admin", "name": "Luca"}
+    assert peek.json() == {"space": "PigroCRM", "inviter_name": "Admin", "name": "Luca"}
     # Reading is not spending: two peeks and the accept still work.
     assert logged_in.get("/api/auth/invite", params={"t": raw}).status_code == 200
     assert logged_in.post("/api/auth/invite", json={"t": raw}).status_code == 200

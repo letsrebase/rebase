@@ -921,7 +921,7 @@ describe('the space switcher', () => {
   // goes to the acceptance page rather than entering a space this address has no seat in.
   it('lists an invitation beside the spaces, marked as one', async () => {
     GET.mockResolvedValue({
-      data: [{ slug: 'rebase', role: 'collaborator', invitation: true, invited_by: 'Ivan' }],
+      data: [{ slug: 'rebase', role: 'collaborator', invitation: true, inviter_name: 'Ivan' }],
       response: { status: 200 },
     })
     renderShell()

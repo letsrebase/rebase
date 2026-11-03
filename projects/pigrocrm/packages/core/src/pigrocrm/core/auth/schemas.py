@@ -85,7 +85,7 @@ class InvitationPeek(BaseModel):
     the invitee has no business seeing the row's ids or expiry arithmetic."""
 
     space: str
-    invited_by: str
+    inviter_name: str
     name: str | None
 
 
@@ -96,7 +96,7 @@ class InvitationOffer(BaseModel):
     ids or its expiry arithmetic."""
 
     role: Role
-    invited_by: str
+    inviter_name: str
     name: str | None
 
 

@@ -28,7 +28,7 @@ function dead(status: number, code: string, detail: string) {
   return { error: { code, detail }, response: { status } }
 }
 
-const PEEK = { space: 'Studio Bianchi', invited_by: 'Ada Admin', name: 'Luca' }
+const PEEK = { space: 'Studio Bianchi', inviter_name: 'Ada Admin', name: 'Luca' }
 const PEEK_NO_NAME = { ...PEEK, name: null }
 
 /** GET routed the way the page uses it: the peek on `/api/auth/invite`, the bare

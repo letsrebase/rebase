@@ -121,7 +121,7 @@ describe('the login page', () => {
 })
 
 describe('the chooser (REB-377)', () => {
-  type Row = { slug: string; role: string; invitation?: true; invited_by?: string; name?: string }
+  type Row = { slug: string; role: string; invitation?: true; inviter_name?: string; name?: string }
   function mockSpaces(spaces: Row[] | null, status = 200) {
     GET.mockImplementation((path: string) => {
       if (path === '/api/identity/spaces') {
@@ -239,7 +239,7 @@ describe('the chooser (REB-377)', () => {
   it('lists an invitation as a row that says who sent it', async () => {
     mockSpaces([
       { slug: 'studio', role: 'admin' },
-      { slug: 'rebase', role: 'collaborator', invitation: true, invited_by: 'Ivan', name: 'Ada' },
+      { slug: 'rebase', role: 'collaborator', invitation: true, inviter_name: 'Ivan', name: 'Ada' },
     ])
     render(<LoginPage />)
     const invitation = await screen.findByRole('button', { name: /rebase/ })
@@ -256,7 +256,7 @@ describe('the chooser (REB-377)', () => {
   })
 
   it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
-    mockSpaces([{ slug: 'rebase', role: 'collaborator', invitation: true, invited_by: 'Ivan' }])
+    mockSpaces([{ slug: 'rebase', role: 'collaborator', invitation: true, inviter_name: 'Ivan' }])
     POST.mockResolvedValue({
       data: { url: '/rebase/app/invite?t=abc' },
       response: { status: 200 },

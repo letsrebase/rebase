@@ -122,13 +122,13 @@ class IdentitySpace(BaseModel):
     `invitation` is on the rows of a different kind (REB-678), and on no other: a space where
     this address holds an open invitation and no account yet, so a mail that never
     arrived does not leave the invitation unfindable. `role` is then the role it
-    carries, `invited_by` who sent it and `name` the name it holds (absent when the
+    carries, `inviter_name` who sent it and `name` the name it holds (absent when the
     acceptance page will ask). The route leaves out whatever is still its default."""
 
     slug: str
     role: str
     invitation: Literal[True] | None = None
-    invited_by: str | None = None
+    inviter_name: str | None = None
     name: str | None = None
 
 
@@ -169,7 +169,7 @@ def _space_entry_for(settings: Settings, slug: str, email: str) -> IdentitySpace
                 slug=slug,
                 role=offer.role,
                 invitation=True,
-                invited_by=offer.invited_by,
+                inviter_name=offer.inviter_name,
                 name=offer.name,
             )
     except SQLAlchemyError:

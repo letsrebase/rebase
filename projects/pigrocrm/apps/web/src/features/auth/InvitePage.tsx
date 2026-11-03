@@ -171,8 +171,8 @@ export function InvitePage({
           </CardTitle>
           {state.kind === 'peek' && (
             <CardDescription>
-              {state.peek.invited_by
-                ? `${state.peek.invited_by} ti ha invitato in questo spazio.`
+              {state.peek.inviter_name
+                ? `${state.peek.inviter_name} ti ha invitato in questo spazio.`
                 : 'Sei stato invitato in questo spazio.'}
             </CardDescription>
           )}
