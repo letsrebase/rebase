@@ -170,7 +170,7 @@ def test_the_period_is_echoed_back_normalised(seeded: Seeded) -> None:
 def test_an_inverted_period_is_a_named_validation_error(seeded: Seeded) -> None:
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date(2026, 3, 31), date(2026, 3, 1))
-    assert caught.value.details["field"] == "da"
+    assert caught.value.details["field"] == "from"
 
 
 def test_an_absurdly_long_period_is_refused(seeded: Seeded) -> None:
@@ -178,7 +178,7 @@ def test_an_absurdly_long_period_is_refused(seeded: Seeded) -> None:
     `da=0001-01-01` is a full scan requested from a query string."""
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date(1900, 1, 1), date(2026, 12, 31))
-    assert caught.value.details["field"] == "a"
+    assert caught.value.details["field"] == "to"
 
 
 def test_the_ceiling_is_at_max_period_days_exactly(seeded: Seeded) -> None:
@@ -190,7 +190,7 @@ def test_the_ceiling_is_at_max_period_days_exactly(seeded: Seeded) -> None:
 
     with pytest.raises(ValidationFailed) as caught:
         _dashboard(seeded.engine, date_from, date_from + timedelta(days=MAX_PERIOD_DAYS + 1))
-    assert caught.value.details["field"] == "a"
+    assert caught.value.details["field"] == "to"
 
 
 @pytest.mark.parametrize(
