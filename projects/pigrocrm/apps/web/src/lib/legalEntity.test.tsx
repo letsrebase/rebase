@@ -88,12 +88,12 @@ describe('LegalEntityProvider', () => {
 
     act(() => result.current.select('a2'))
     expect(result.current.selected).toBe('a2')
-    expect(localStorage.getItem('pigrocrm.azienda:/studio:u1')).toBe('a2')
+    expect(localStorage.getItem('pigrocrm.legal-entity:/studio:u1')).toBe('a2')
     expect(result.current.byId('a2')?.nome).toBe('rebase')
 
     act(() => result.current.select(null))
     expect(result.current.selected).toBeNull()
-    expect(localStorage.getItem('pigrocrm.azienda:/studio:u1')).toBeNull()
+    expect(localStorage.getItem('pigrocrm.legal-entity:/studio:u1')).toBeNull()
   })
 
   it('reads the stored choice back, and drops one that names no active azienda any more', async () => {

@@ -169,7 +169,7 @@ describe('TokensPanel', () => {
     mockGets(ok([]))
     renderPanel()
     expect(await screen.findByText(/senza scadenza/i)).toBeInTheDocument()
-    expect(screen.getByText(/creare altri amministratori/i)).toBeInTheDocument()
+    expect(screen.getByText(/tranne gestire utenti, token, impostazioni, posta e collegamenti/i)).toBeInTheDocument()
   })
 
   /**

@@ -322,8 +322,9 @@ export function TokensPanel() {
         <p className="text-sm text-muted-foreground">
           Un token eredita <strong>l&apos;intero ruolo di chi lo crea</strong> e va{' '}
           <strong>senza scadenza</strong>: chiunque lo possieda può fare, tramite l&apos;API,
-          tutto ciò che puoi fare tu — un token creato da un amministratore può anche creare altri
-          amministratori. Trattalo come una password: non condividerlo e revocalo subito se
+          tutto ciò che puoi fare tu, tranne gestire utenti, token, impostazioni, posta e
+          collegamenti: quelle operazioni restano solo a una persona che accede dall&apos;app.
+          Trattalo come una password: non condividerlo e revocalo subito se
           sospetti che sia stato esposto.
         </p>
 

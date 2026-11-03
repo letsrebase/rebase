@@ -59,7 +59,7 @@ const OneLegalEntity: LegalEntityValue = {
 export const LegalEntityContext = createContext<LegalEntityValue>(OneLegalEntity)
 
 export function legalEntityKey(userId: string): string {
-  return `pigrocrm.azienda:${tenantPrefix || '/'}:${userId}`
+  return `pigrocrm.legal-entity:${tenantPrefix || '/'}:${userId}`
 }
 
 /** Every access is guarded: a browser that refuses storage simply forgets the choice. */
